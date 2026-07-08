@@ -1,0 +1,22 @@
+services:
+  backend:
+    image: python:3.12-slim
+    working_dir: /app/backend
+    volumes:
+      - .:/app
+      - /home:/home
+    ports:
+      - "5000:5000"
+    command: >
+      sh -c "apt-get update &&
+             apt-get install -y libpam0g-dev gcc &&
+             pip install -r requirements.txt &&
+             PYTHONPATH=/app/backend uvicorn app.main:app --host 0.0.0.0 --port 5000"
+  frontend:
+    image: node:22-bookworm
+    working_dir: /app/frontend
+    volumes:
+      - .:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev"

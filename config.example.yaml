@@ -1,0 +1,27 @@
+server:
+  host: "0.0.0.0"
+  port: 5000
+  use_https: false
+  tls_cert: null
+  tls_key: null
+
+auth:
+  provider: "pam"
+  session_cookie_name: "webnas_session"
+
+paths:
+  default_root: "home"
+  allowed_roots: []
+  data_dir: "/var/lib/webnas"
+  log_dir: "/var/log/webnas"
+  temp_dir: "/var/lib/webnas/tmp"
+
+security:
+  max_upload_size_mb: 2048
+  rate_limit_login_per_minute: 5
+  rate_limit_admin_per_minute: 20
+  allow_chmod: true
+  allow_chown: false
+  system_uid_threshold: 1000
+  session_secret: "change-this-secret-during-install"
+  cookie_secure: false
