@@ -12,9 +12,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .audit import configure_logging, logger
+from .apps import router as apps_router
 from .auth import authenticate, user_home
 from .config import get_config
-from .file_ops import download_response, list_dir, mime_for, run_user_op, save_upload
+from .file_ops import download_response, list_dir, mime_for, run_user_op, save_upload, tree_dir
+from .network_mounts import assert_write_allowed, router as mounts_router
 from .path_policy import resolve_user_path
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
 from .settings import router as settings_router
@@ -24,6 +26,13 @@ configure_logging()
 app = FastAPI(title="WebNAS", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(settings_router)
+app.include_router(apps_router)
+app.include_router(mounts_router)
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "service": "webnas"}
 
 
 class LoginRequest(BaseModel):
@@ -39,6 +48,11 @@ class CopyMoveRequest(BaseModel):
     src: str | None = None
     srcs: list[str] | None = None
     dst: str
+    priority: int = 0
+
+
+class PriorityRequest(BaseModel):
+    priority: int
 
 
 class RenameRequest(BaseModel):
@@ -84,6 +98,7 @@ def _resolve_sources(username: str, payload: CopyMoveRequest) -> list[Path]:
 def _resolve_destination(username: str, payload: CopyMoveRequest) -> Path:
     destination = resolve_user_path(username, payload.dst)
     resolve_user_path(username, str(destination.parent))
+    assert_write_allowed(destination)
     return destination
 
 
@@ -119,19 +134,37 @@ def me(user=Depends(current_user)):
 
 
 @app.get("/api/files/list")
-def files_list(path: str | None = None, user=Depends(current_user)):
-    return {"path": str(resolve_user_path(user.username, path)), "items": list_dir(user.username, path)}
+def files_list(
+    path: str | None = None,
+    sort: str | None = "name",
+    direction: str = "asc",
+    page: int = 1,
+    page_size: int = 20,
+    folders_first: bool = True,
+    filter: str | None = None,
+    user=Depends(current_user),
+):
+    payload = list_dir(user.username, path, sort=sort, direction=direction, page=page, page_size=page_size, folders_first=folders_first, filter_text=filter)
+    payload["path"] = payload["current_path"]
+    return payload
+
+
+@app.get("/api/files/tree")
+def files_tree(path: str | None = None, user=Depends(current_user)):
+    return tree_dir(user.username, path)
 
 
 @app.post("/api/files/mkdir")
 def mkdir(payload: PathRequest, user=Depends(csrf_user)):
     target = resolve_user_path(user.username, payload.path)
+    assert_write_allowed(target)
     return run_user_op(user.username, "mkdir", {"path": str(target)})
 
 
 @app.post("/api/files/create")
 def create(payload: PathRequest, user=Depends(csrf_user)):
     target = resolve_user_path(user.username, payload.path)
+    assert_write_allowed(target)
     return run_user_op(user.username, "create", {"path": str(target)})
 
 
@@ -140,7 +173,7 @@ def copy(payload: CopyMoveRequest, user=Depends(csrf_user)):
     srcs = _resolve_sources(user.username, payload)
     dst = _resolve_destination(user.username, payload)
     _reject_destination_conflicts(srcs, dst)
-    task = task_store.create(user.username, "copy", {"srcs": [str(src) for src in srcs], "dst": str(dst)})
+    task = task_store.create(user.username, "copy", {"srcs": [str(src) for src in srcs], "dst": str(dst), "priority": payload.priority})
     return {"task_id": task.id}
 
 
@@ -149,7 +182,7 @@ def move(payload: CopyMoveRequest, user=Depends(csrf_user)):
     srcs = _resolve_sources(user.username, payload)
     dst = _resolve_destination(user.username, payload)
     _reject_destination_conflicts(srcs, dst)
-    task = task_store.create(user.username, "move", {"srcs": [str(src) for src in srcs], "dst": str(dst)})
+    task = task_store.create(user.username, "move", {"srcs": [str(src) for src in srcs], "dst": str(dst), "priority": payload.priority})
     return {"task_id": task.id}
 
 
@@ -157,12 +190,15 @@ def move(payload: CopyMoveRequest, user=Depends(csrf_user)):
 def rename(payload: RenameRequest, user=Depends(csrf_user)):
     src = resolve_user_path(user.username, payload.src)
     dst = resolve_user_path(user.username, payload.dst)
+    assert_write_allowed(src)
+    assert_write_allowed(dst)
     return run_user_op(user.username, "rename", {"src": str(src), "dst": str(dst)})
 
 
 @app.post("/api/files/delete")
 def delete(payload: PathRequest, user=Depends(csrf_user)):
     target = resolve_user_path(user.username, payload.path)
+    assert_write_allowed(target)
     task = task_store.create(user.username, "delete", {"path": str(target)})
     return {"task_id": task.id}
 
@@ -170,6 +206,7 @@ def delete(payload: PathRequest, user=Depends(csrf_user)):
 @app.post("/api/files/trash")
 def trash(payload: PathRequest, user=Depends(csrf_user)):
     target = resolve_user_path(user.username, payload.path)
+    assert_write_allowed(target)
     return run_user_op(user.username, "trash", {"path": str(target)})
 
 
@@ -208,12 +245,13 @@ def chmod(payload: ChmodRequest, user=Depends(csrf_user)):
     if not get_config().security.allow_chmod:
         raise HTTPException(403, "chmod is disabled")
     target = resolve_user_path(user.username, payload.path)
+    assert_write_allowed(target)
     return run_user_op(user.username, "chmod", {"path": str(target), "mode": payload.mode})
 
 
 @app.get("/api/tasks")
-def tasks(user=Depends(current_user)):
-    return [_task_payload(task) for task in task_store.list_for(user.username)]
+def tasks(status: str | None = None, user=Depends(current_user)):
+    return [_task_payload(task) for task in task_store.list_for(user.username, status)]
 
 
 @app.get("/api/tasks/{task_id}")
@@ -232,8 +270,8 @@ def cancel_task(task_id: str, user=Depends(csrf_user)):
 
 
 @app.get("/api/files/tasks")
-def file_tasks(user=Depends(current_user)):
-    return [_task_payload(task) for task in task_store.list_for(user.username)]
+def file_tasks(status: str | None = None, user=Depends(current_user)):
+    return [_task_payload(task) for task in task_store.list_for(user.username, status)]
 
 
 @app.get("/api/files/tasks/{task_id}")
@@ -247,6 +285,35 @@ def file_task(task_id: str, user=Depends(current_user)):
 @app.post("/api/files/tasks/{task_id}/cancel")
 def file_task_cancel(task_id: str, user=Depends(csrf_user)):
     if not task_store.cancel(user.username, task_id):
+        raise HTTPException(404, "Task not found")
+    return {"ok": True}
+
+
+@app.post("/api/files/tasks/{task_id}/pause")
+def file_task_pause(task_id: str, user=Depends(csrf_user)):
+    if not task_store.pause(user.username, task_id):
+        raise HTTPException(404, "Task not found or cannot be paused")
+    return {"ok": True}
+
+
+@app.post("/api/files/tasks/{task_id}/resume")
+def file_task_resume(task_id: str, user=Depends(csrf_user)):
+    if not task_store.resume(user.username, task_id):
+        raise HTTPException(404, "Task not found or cannot be resumed")
+    return {"ok": True}
+
+
+@app.post("/api/files/tasks/{task_id}/retry")
+def file_task_retry(task_id: str, user=Depends(csrf_user)):
+    task = task_store.retry(user.username, task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    return {"task_id": task.id}
+
+
+@app.patch("/api/files/tasks/{task_id}/priority")
+def file_task_priority(task_id: str, payload: PriorityRequest, user=Depends(csrf_user)):
+    if not task_store.set_priority(user.username, task_id, payload.priority):
         raise HTTPException(404, "Task not found")
     return {"ok": True}
 

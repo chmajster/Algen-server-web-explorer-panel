@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from ..auth import current_process_can_impersonate
 from ..config import get_config
+from ..proxmox_guard import assert_path_allowed, validate_rsync_args
 
 PROGRESS_RE = re.compile(
     r"^\s*(?P<bytes>[\d,]+)\s+(?P<percent>\d+)%\s+(?P<speed>\S+)\s+(?P<eta>\d+:\d+:\d+)"
@@ -124,7 +125,10 @@ def rsync_destination_arg(destination: Path) -> str:
 
 
 def build_rsync_command(source_paths: list[Path], destination: Path) -> list[str]:
-    extra_args = get_config().file_tasks.rsync_extra_args
+    for source in source_paths:
+        assert_path_allowed(source, "rsync-source", include_parent=True)
+    assert_path_allowed(destination, "rsync-destination", include_parent=True)
+    extra_args = validate_rsync_args(get_config().file_tasks.rsync_extra_args)
     return [
         find_rsync(),
         "--archive",
@@ -132,11 +136,29 @@ def build_rsync_command(source_paths: list[Path], destination: Path) -> list[str
         "--info=progress2",
         "--stats",
         "--partial",
+        "--partial-dir=.webnas-partial",
         "--protect-args",
         *extra_args,
         *[rsync_source_arg(source) for source in source_paths],
         rsync_destination_arg(destination),
     ]
+
+
+def cleanup_partial_files(username: str, destination: Path, on_error: Callable[[str], None]) -> None:
+    partial_dir = destination / ".webnas-partial" if destination.is_dir() else destination.parent / ".webnas-partial"
+    if not partial_dir.exists():
+        return
+    result = subprocess.run(
+        ["rm", "-rf", "--", str(partial_dir)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        shell=False,
+        preexec_fn=_drop_privileges(username),
+    )
+    if result.returncode != 0:
+        on_error(result.stderr.strip() or f"Could not clean partial files: {partial_dir}")
 
 
 def terminate_process(process: subprocess.Popen[str]) -> None:
@@ -184,6 +206,7 @@ def start_rsync(username: str, cmd: list[str]) -> subprocess.Popen[str]:
 def remove_sources_after_move(username: str, source_paths: list[Path], on_error: Callable[[str], None]) -> None:
     errors: list[str] = []
     for source in sorted(source_paths, key=lambda path: len(path.parts), reverse=True):
+        assert_path_allowed(source, "move-cleanup", include_parent=True)
         result = subprocess.run(
             ["rm", "-rf", "--", str(source)],
             capture_output=True,

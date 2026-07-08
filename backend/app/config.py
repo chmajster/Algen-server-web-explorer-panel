@@ -43,10 +43,66 @@ class SecurityConfig(BaseModel):
 
 class FileTasksConfig(BaseModel):
     max_parallel: int = 2
+    max_parallel_per_user: int = 1
     log_tail_lines: int = 80
     enable_sse: bool = True
     rsync_path: str | None = None
     rsync_extra_args: list[str] = Field(default_factory=list)
+
+
+class ProxmoxConfig(BaseModel):
+    detect: bool = True
+    safe_mode: bool = True
+    block_system_user_management: bool = True
+    block_system_group_management: bool = True
+    block_chown: bool = True
+    block_chmod_on_protected_paths: bool = True
+    block_delete_on_protected_paths: bool = True
+    block_move_on_protected_paths: bool = True
+    block_rsync_on_protected_paths: bool = True
+    block_service_management: bool = True
+    allow_only_home_roots_on_proxmox: bool = True
+    require_explicit_install_confirmation: bool = True
+    install_abort_on_proxmox_without_flag: bool = True
+    protected_paths: list[str] = Field(default_factory=lambda: [
+        "/etc/pve",
+        "/var/lib/pve-cluster",
+        "/var/lib/vz",
+        "/var/lib/lxc",
+        "/etc/network",
+        "/etc/network/interfaces",
+        "/etc/hosts",
+        "/etc/hostname",
+        "/etc/resolv.conf",
+        "/etc/apt",
+        "/etc/systemd",
+        "/etc/default",
+        "/etc/modprobe.d",
+        "/etc/modules-load.d",
+        "/boot",
+        "/root",
+        "/usr/share/perl5/PVE",
+        "/var/log/pve",
+        "/run/pve",
+        "/run/lock",
+        "/dev",
+        "/proc",
+        "/sys",
+        "/run",
+        "/mnt/pve",
+        "/rpool",
+    ])
+
+
+class SystemdConfig(BaseModel):
+    allowed_services: list[str] = Field(default_factory=lambda: [
+        "webnas.service",
+        "smbd.service",
+        "nmbd.service",
+        "nginx.service",
+        "caddy.service",
+        "docker.service",
+    ])
 
 
 class AppConfig(BaseModel):
@@ -55,6 +111,9 @@ class AppConfig(BaseModel):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     file_tasks: FileTasksConfig = Field(default_factory=FileTasksConfig)
+    proxmox: ProxmoxConfig = Field(default_factory=ProxmoxConfig)
+    systemd: SystemdConfig = Field(default_factory=SystemdConfig)
+    systemd_allowed_services: list[str] = Field(default_factory=list)
 
 
 DEFAULT_CONFIG_PATHS = (

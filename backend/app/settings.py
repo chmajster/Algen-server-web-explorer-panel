@@ -19,6 +19,14 @@ from .audit import logger
 from .auth import authenticate
 from .config import get_config
 from .path_policy import resolve_user_path
+from .proxmox_guard import (
+    assert_admin_group_allowed,
+    assert_admin_user_allowed,
+    assert_chown_allowed,
+    assert_service_allowed,
+    diagnostic as proxmox_diagnostic,
+)
+from .resource_dashboard import collect_dashboard
 from .security import SessionUser, get_session_user, require_csrf
 
 router = APIRouter()
@@ -26,6 +34,46 @@ router = APIRouter()
 SUPPORTED_LANGUAGES = {"pl-PL", "en-US"}
 SUPPORTED_THEMES = {"light", "dark", "system"}
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
+SERVICE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+(?:\.service)?$")
+CRITICAL_SYSTEMD_SERVICES = {
+    "pveproxy",
+    "pvedaemon",
+    "pve-cluster",
+    "corosync",
+    "networking",
+    "ssh",
+    "sshd",
+    "systemd-logind",
+    "dbus",
+    "systemd-journald",
+}
+PROTECTED_LOCAL_USERS = {
+    "root",
+    "daemon",
+    "bin",
+    "sys",
+    "sync",
+    "games",
+    "man",
+    "lp",
+    "mail",
+    "news",
+    "uucp",
+    "proxy",
+    "www-data",
+    "backup",
+    "list",
+    "irc",
+    "gnats",
+    "nobody",
+    "systemd-network",
+    "systemd-resolve",
+    "messagebus",
+    "pve",
+    "pvedaemon",
+    "pveproxy",
+}
+PROTECTED_LOCAL_GROUPS = {"root", "daemon", "sudo", "wheel", "shadow", "adm", "www-data", "backup", "pve", "pveadmin", "pveproxy", "pve-cluster"}
 
 
 class AdminRateLimiter:
@@ -61,6 +109,10 @@ class AdminPassword(BaseModel):
     confirm: bool = True
 
 
+class ServiceAction(AdminPassword):
+    confirm_restart: bool = False
+
+
 class UserCreate(AdminPassword):
     username: str
     password: str
@@ -84,6 +136,12 @@ class UserPatch(AdminPassword):
 class AdminChangePassword(AdminPassword):
     new_password: str
     force_change: bool = False
+
+
+class UserQuota(AdminPassword):
+    soft_mb: int
+    hard_mb: int | None = None
+    mountpoint: str | None = None
 
 
 class GroupCreate(AdminPassword):
@@ -148,6 +206,34 @@ def _validate_password_text(value: str) -> str:
     return value
 
 
+def _is_manageable_uid(uid: int) -> bool:
+    return uid >= get_config().security.system_uid_threshold
+
+
+def _assert_manageable_user(username: str, *, action: str) -> pwd.struct_passwd | None:
+    username = _validate_name(username, "user")
+    if username in PROTECTED_LOCAL_USERS or username.startswith("pve"):
+        raise HTTPException(403, "System account cannot be managed from WebNAS")
+    try:
+        pw = pwd.getpwnam(username)
+    except KeyError:
+        if action == "create":
+            return None
+        raise
+    if not _is_manageable_uid(pw.pw_uid):
+        raise HTTPException(403, "System account cannot be managed from WebNAS")
+    assert_admin_user_allowed(username, pw.pw_uid, action)
+    return pw
+
+
+def _assert_manageable_group(groupname: str) -> str:
+    groupname = _validate_name(groupname, "group")
+    if groupname in PROTECTED_LOCAL_GROUPS or groupname.startswith("pve"):
+        raise HTTPException(403, "System group cannot be managed from WebNAS")
+    assert_admin_group_allowed(groupname, "manage")
+    return groupname
+
+
 def _run(args: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=60, check=False)
     if result.returncode != 0:
@@ -178,6 +264,7 @@ def _user_info(username: str) -> dict:
         "gecos": pw.pw_gecos,
         "is_system": pw.pw_uid < get_config().security.system_uid_threshold,
         "is_admin": _is_admin(username),
+        "manageable": _is_manageable_uid(pw.pw_uid) and pw.pw_name not in PROTECTED_LOCAL_USERS and not pw.pw_name.startswith("pve"),
     }
 
 
@@ -204,6 +291,93 @@ def _require_admin(user: SessionUser, password: str, request: Request, action: s
 
 def _audit(actor: str, action: str, target: str) -> None:
     logger.info("admin_action actor=%s action=%s target=%s", actor, action, target)
+
+
+def _normalize_service(service: str) -> str:
+    if not SERVICE_RE.fullmatch(service):
+        raise HTTPException(400, "Invalid service name")
+    return service if service.endswith(".service") else f"{service}.service"
+
+
+def _service_base(service: str) -> str:
+    return _normalize_service(service).removesuffix(".service")
+
+
+def _configured_allowed_services() -> set[str]:
+    cfg = get_config()
+    allowed = {_normalize_service(service) for service in cfg.systemd.allowed_services}
+    allowed.update(_normalize_service(service) for service in cfg.systemd_allowed_services)
+    allowed.add("webnas.service")
+    return allowed
+
+
+def _is_webnas_managed_service(service: str) -> bool:
+    normalized = _normalize_service(service)
+    return normalized == "webnas.service" or normalized.startswith("webnas-")
+
+
+def _assert_systemd_service_allowed(service: str) -> str:
+    normalized = _normalize_service(service)
+    base = normalized.removesuffix(".service")
+    if base in CRITICAL_SYSTEMD_SERVICES or base.startswith("pve"):
+        raise HTTPException(403, "Critical system service is protected")
+    assert_service_allowed(normalized)
+    if normalized not in _configured_allowed_services() and not _is_webnas_managed_service(normalized):
+        raise HTTPException(403, "Service is not in systemd_allowed_services")
+    return normalized
+
+
+def _systemctl(args: list[str], *, timeout: int = 15) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([_tool("systemctl"), *args], capture_output=True, text=True, timeout=timeout, check=False)
+
+
+def _service_show(service: str) -> dict[str, str]:
+    result = _systemctl(["show", service, "--property=Id,LoadState,ActiveState,SubState,UnitFileState,ActiveEnterTimestampMonotonic,NRestarts"], timeout=5)
+    values: dict[str, str] = {}
+    if result.returncode != 0:
+        return values
+    for line in result.stdout.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            values[key] = value
+    return values
+
+
+def _service_uptime_seconds(values: dict[str, str]) -> int | None:
+    try:
+        active_since = int(values.get("ActiveEnterTimestampMonotonic") or "0")
+    except ValueError:
+        return None
+    if active_since <= 0:
+        return None
+    uptime = Path("/proc/uptime")
+    if not uptime.exists():
+        return None
+    now_us = int(float(uptime.read_text(encoding="utf-8").split()[0]) * 1_000_000)
+    return max(0, (now_us - active_since) // 1_000_000)
+
+
+def _service_last_error(service: str) -> str:
+    if not shutil.which("journalctl"):
+        return ""
+    result = subprocess.run([_tool("journalctl"), "-u", service, "-p", "warning..alert", "-n", "1", "--no-pager"], capture_output=True, text=True, timeout=8, check=False)
+    if result.returncode != 0:
+        return ""
+    return "\n".join(line for line in result.stdout.splitlines() if line.strip())[-1000:]
+
+
+def _service_payload(service: str) -> dict:
+    normalized = _assert_systemd_service_allowed(service)
+    values = _service_show(normalized)
+    return {
+        "name": normalized,
+        "status": values.get("ActiveState", "unknown"),
+        "sub_state": values.get("SubState", ""),
+        "enabled": values.get("UnitFileState", "unknown"),
+        "uptime_seconds": _service_uptime_seconds(values),
+        "last_error": _service_last_error(normalized),
+        "managed_by_webnas": _is_webnas_managed_service(normalized),
+    }
 
 
 def _browser_language(header: str | None) -> str:
@@ -239,6 +413,7 @@ def settings_patch(payload: MePatch, user: SessionUser = Depends(_current_user))
 
 @router.post("/api/settings/change-password")
 def settings_change_password(payload: ChangePasswordRequest, user: SessionUser = Depends(_current_user)):
+    assert_admin_user_allowed(user.username, pwd.getpwnam(user.username).pw_uid, "password")
     authenticate(user.username, payload.current_password)
     _run([_tool("chpasswd")], input_text=f"{user.username}:{_validate_password_text(payload.new_password)}\n")
     logger.info("password_changed user=%s target=%s", user.username, user.username)
@@ -249,15 +424,18 @@ def settings_change_password(payload: ChangePasswordRequest, user: SessionUser =
 def admin_users(user: SessionUser = Depends(_current_user)):
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
-    return [_user_info(entry.pw_name) for entry in pwd.getpwall()]
+    return [_user_info(entry.pw_name) for entry in pwd.getpwall() if _is_manageable_uid(entry.pw_uid) and entry.pw_name not in PROTECTED_LOCAL_USERS and not entry.pw_name.startswith("pve")]
 
 
 @router.post("/api/admin/users")
 def admin_user_create(payload: UserCreate, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "create_user")
     username = _validate_name(payload.username, "user")
+    _assert_manageable_user(username, action="create")
+    if payload.system:
+        raise HTTPException(400, "Creating system users is not allowed")
     args = [_tool("useradd")]
-    args.append("--system" if payload.system else "--user-group")
+    args.append("--user-group")
     if payload.create_home:
         args.append("--create-home")
     if payload.shell:
@@ -265,7 +443,7 @@ def admin_user_create(payload: UserCreate, request: Request, user: SessionUser =
     if payload.gecos:
         args.extend(["--comment", payload.gecos])
     if payload.groups:
-        args.extend(["--groups", ",".join(_validate_name(group, "group") for group in payload.groups)])
+        args.extend(["--groups", ",".join(_assert_manageable_group(group) for group in payload.groups)])
     args.append(username)
     _run(args)
     _run([_tool("chpasswd")], input_text=f"{username}:{_validate_password_text(payload.password)}\n")
@@ -279,6 +457,7 @@ def admin_user_create(payload: UserCreate, request: Request, user: SessionUser =
 def admin_user_get(username: str, user: SessionUser = Depends(_current_user)):
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
+    _assert_manageable_user(username, action="read")
     return _user_info(_validate_name(username, "user"))
 
 
@@ -286,17 +465,18 @@ def admin_user_get(username: str, user: SessionUser = Depends(_current_user)):
 def admin_user_patch(username: str, payload: UserPatch, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "update_user")
     username = _validate_name(username, "user")
+    _assert_manageable_user(username, action="update")
     args = [_tool("usermod")]
     if payload.shell:
         args.extend(["--shell", payload.shell])
     if payload.gecos is not None:
         args.extend(["--comment", payload.gecos])
     if payload.groups_add:
-        args.extend(["--append", "--groups", ",".join(_validate_name(group, "group") for group in payload.groups_add)])
+        args.extend(["--append", "--groups", ",".join(_assert_manageable_group(group) for group in payload.groups_add)])
     if len(args) > 1:
         _run([*args, username])
     for group in payload.groups_remove:
-        _run([_tool("gpasswd"), "--delete", username, _validate_name(group, "group")])
+        _run([_tool("gpasswd"), "--delete", username, _assert_manageable_group(group)])
     if payload.create_home:
         Path(pwd.getpwnam(username).pw_dir).mkdir(parents=True, exist_ok=True)
     if payload.force_password_change is True:
@@ -311,6 +491,7 @@ def admin_user_patch(username: str, payload: UserPatch, request: Request, user: 
 def admin_user_delete(username: str, payload: AdminPassword, request: Request, advanced: bool = False, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "delete_user")
     username = _validate_name(username, "user")
+    _assert_manageable_user(username, action="delete")
     if not payload.confirm:
         raise HTTPException(400, "Confirmation required")
     if username == user.username:
@@ -329,6 +510,7 @@ def admin_user_delete(username: str, payload: AdminPassword, request: Request, a
 def admin_user_lock(username: str, payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "lock_user")
     username = _validate_name(username, "user")
+    _assert_manageable_user(username, action="lock")
     _run([_tool("usermod"), "--lock", username])
     _audit(user.username, "lock_user", username)
     return {"ok": True}
@@ -338,6 +520,7 @@ def admin_user_lock(username: str, payload: AdminPassword, request: Request, use
 def admin_user_unlock(username: str, payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "unlock_user")
     username = _validate_name(username, "user")
+    _assert_manageable_user(username, action="unlock")
     _run([_tool("usermod"), "--unlock", username])
     _audit(user.username, "unlock_user", username)
     return {"ok": True}
@@ -347,11 +530,31 @@ def admin_user_unlock(username: str, payload: AdminPassword, request: Request, u
 def admin_user_password(username: str, payload: AdminChangePassword, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "change_user_password")
     username = _validate_name(username, "user")
+    _assert_manageable_user(username, action="password")
     _run([_tool("chpasswd")], input_text=f"{username}:{_validate_password_text(payload.new_password)}\n")
     if payload.force_change:
         _run([_tool("chage"), "-d", "0", username])
     _audit(user.username, "change_user_password", username)
     return {"ok": True}
+
+
+@router.post("/api/admin/users/{username}/quota")
+def admin_user_quota(username: str, payload: UserQuota, request: Request, user: SessionUser = Depends(_current_user)):
+    _require_admin(user, payload.admin_password, request, "set_user_quota")
+    pw = _assert_manageable_user(username, action="quota")
+    if pw is None:
+        raise HTTPException(404, "User not found")
+    if payload.soft_mb < 0 or (payload.hard_mb is not None and payload.hard_mb < payload.soft_mb):
+        raise HTTPException(400, "Invalid quota")
+    setquota = shutil.which("setquota")
+    if not setquota:
+        raise HTTPException(503, "Quota tools are not installed on this system")
+    mountpoint = payload.mountpoint or str(Path(pw.pw_dir).anchor or "/")
+    soft_blocks = payload.soft_mb * 1024
+    hard_blocks = (payload.hard_mb if payload.hard_mb is not None else payload.soft_mb) * 1024
+    _run([setquota, "-u", username, str(soft_blocks), str(hard_blocks), "0", "0", mountpoint])
+    _audit(user.username, "set_user_quota", f"{username}:{payload.soft_mb}:{hard_blocks // 1024}:{mountpoint}")
+    return {"ok": True, "quota_supported": True}
 
 
 @router.get("/api/admin/groups")
@@ -364,7 +567,7 @@ def admin_groups(user: SessionUser = Depends(_current_user)):
 @router.post("/api/admin/groups")
 def admin_group_create(payload: GroupCreate, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "create_group")
-    groupname = _validate_name(payload.groupname, "group")
+    groupname = _assert_manageable_group(payload.groupname)
     args = [_tool("groupadd")]
     if payload.system:
         args.append("--system")
@@ -376,9 +579,9 @@ def admin_group_create(payload: GroupCreate, request: Request, user: SessionUser
 @router.patch("/api/admin/groups/{groupname}")
 def admin_group_patch(groupname: str, payload: GroupPatch, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "update_group")
-    groupname = _validate_name(groupname, "group")
+    groupname = _assert_manageable_group(groupname)
     if payload.new_name:
-        _run([_tool("groupmod"), "--new-name", _validate_name(payload.new_name, "group"), groupname])
+        _run([_tool("groupmod"), "--new-name", _assert_manageable_group(payload.new_name), groupname])
     _audit(user.username, "update_group", groupname)
     return {"ok": True}
 
@@ -386,7 +589,7 @@ def admin_group_patch(groupname: str, payload: GroupPatch, request: Request, use
 @router.delete("/api/admin/groups/{groupname}")
 def admin_group_delete(groupname: str, payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "delete_group")
-    groupname = _validate_name(groupname, "group")
+    groupname = _assert_manageable_group(groupname)
     if not payload.confirm:
         raise HTTPException(400, "Confirmation required")
     _run([_tool("groupdel"), groupname])
@@ -397,8 +600,9 @@ def admin_group_delete(groupname: str, payload: AdminPassword, request: Request,
 @router.post("/api/admin/groups/{groupname}/members")
 def admin_group_add_member(groupname: str, payload: GroupMember, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "add_group_member")
-    groupname = _validate_name(groupname, "group")
+    groupname = _assert_manageable_group(groupname)
     username = _validate_name(payload.username, "user")
+    _assert_manageable_user(username, action="update")
     _run([_tool("usermod"), "--append", "--groups", groupname, username])
     _audit(user.username, "add_group_member", f"{groupname}:{username}")
     return {"ok": True}
@@ -407,8 +611,9 @@ def admin_group_add_member(groupname: str, payload: GroupMember, request: Reques
 @router.delete("/api/admin/groups/{groupname}/members/{username}")
 def admin_group_remove_member(groupname: str, username: str, payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "remove_group_member")
-    groupname = _validate_name(groupname, "group")
+    groupname = _assert_manageable_group(groupname)
     username = _validate_name(username, "user")
+    _assert_manageable_user(username, action="update")
     _run([_tool("gpasswd"), "--delete", username, groupname])
     _audit(user.username, "remove_group_member", f"{groupname}:{username}")
     return {"ok": True}
@@ -417,6 +622,7 @@ def admin_group_remove_member(groupname: str, username: str, payload: AdminPassw
 @router.post("/api/admin/files/ownership")
 def admin_file_ownership(payload: ChownRequest, request: Request, user: SessionUser = Depends(_current_user)):
     target = resolve_user_path(user.username, payload.path)
+    assert_chown_allowed(target)
     if payload.owner:
         _require_admin(user, payload.admin_password, request, "change_owner")
     elif payload.group and not _is_admin(user.username):
@@ -449,9 +655,86 @@ def admin_system_status(user: SessionUser = Depends(_current_user)):
     }
 
 
+@router.get("/api/system/resources")
+def system_resources(user: SessionUser = Depends(_current_user)):
+    return collect_dashboard(user.username, is_admin=_is_admin(user.username))
+
+
 @router.post("/api/admin/system/restart")
 def admin_system_restart(payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "restart_system")
+    assert_service_allowed("webnas.service")
     _run([_tool("systemctl"), "restart", "webnas.service"])
     _audit(user.username, "restart_system", "webnas.service")
     return {"ok": True}
+
+
+@router.get("/api/admin/system/logs")
+def admin_system_logs(lines: int = 120, user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    limit = max(20, min(lines, 500))
+    if shutil.which("journalctl"):
+        result = subprocess.run(
+            [_tool("journalctl"), "-u", "webnas", "-n", str(limit), "--no-pager"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        if result.returncode == 0:
+            return {"source": "journalctl", "lines": result.stdout.splitlines()[-limit:]}
+    log_dir = Path(get_config().paths.log_dir)
+    candidates = sorted(log_dir.glob("*.log"), key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True) if log_dir.exists() else []
+    if not candidates:
+        return {"source": "none", "lines": []}
+    return {"source": str(candidates[0]), "lines": candidates[0].read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]}
+
+
+@router.get("/api/admin/system/services")
+def admin_systemd_services(user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    services = sorted(_configured_allowed_services())
+    return [_service_payload(service) for service in services]
+
+
+@router.get("/api/admin/system/services/{service}")
+def admin_systemd_service(service: str, user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    return _service_payload(service)
+
+
+@router.post("/api/admin/system/services/{service}/{action}")
+def admin_systemd_service_action(service: str, action: str, payload: ServiceAction, request: Request, user: SessionUser = Depends(_current_user)):
+    if action not in {"start", "stop", "restart", "enable", "disable"}:
+        raise HTTPException(404, "Unsupported service action")
+    normalized = _assert_systemd_service_allowed(service)
+    if action == "restart" and not payload.confirm_restart:
+        raise HTTPException(400, "Restart requires explicit confirmation")
+    _require_admin(user, payload.admin_password, request, f"systemd_{action}")
+    _run([_tool("systemctl"), action, normalized])
+    _audit(user.username, f"systemd_{action}", normalized)
+    return _service_payload(normalized)
+
+
+@router.get("/api/admin/system/services/{service}/logs")
+def admin_systemd_service_logs(service: str, lines: int = 160, user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    normalized = _assert_systemd_service_allowed(service)
+    limit = max(20, min(lines, 500))
+    if not shutil.which("journalctl"):
+        return {"source": "none", "lines": []}
+    result = subprocess.run([_tool("journalctl"), "-u", normalized, "-n", str(limit), "--no-pager"], capture_output=True, text=True, timeout=15, check=False)
+    if result.returncode != 0:
+        return {"source": "journalctl", "lines": [result.stderr.strip() or "Could not read service logs"]}
+    return {"source": "journalctl", "lines": result.stdout.splitlines()[-limit:]}
+
+
+@router.get("/api/admin/system/proxmox-safety")
+def admin_proxmox_safety(user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    return proxmox_diagnostic(user.username)

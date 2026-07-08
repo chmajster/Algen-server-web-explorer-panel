@@ -48,6 +48,56 @@ def test_create_move_task_is_queued(monkeypatch, tmp_path: Path):
     assert task.status == TaskStatus.queued
 
 
+def test_rejects_move_directory_into_itself(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    source = tmp_path / "source"
+    source.mkdir()
+    manager = FileTaskManager()
+
+    with pytest.raises(HTTPException):
+        manager.create_transfer("alice", "move", [str(source)], str(source))
+
+
+def test_rejects_move_directory_into_child(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    source = tmp_path / "source"
+    child = source / "child"
+    child.mkdir(parents=True)
+    manager = FileTaskManager()
+
+    with pytest.raises(HTTPException):
+        manager.create_transfer("alice", "move", [str(source)], str(child))
+
+
+def test_persists_transfer_history(monkeypatch, tmp_path: Path):
+    cfg = SimpleNamespace(paths=SimpleNamespace(data_dir=str(tmp_path)), file_tasks=SimpleNamespace(max_parallel=2, max_parallel_per_user=1, log_tail_lines=80))
+    monkeypatch.setattr(file_task_manager, "get_config", lambda: cfg)
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    manager = FileTaskManager()
+    task = manager.create_transfer("alice", "copy", [str(tmp_path / "a")], str(tmp_path / "b"), priority=4)
+    task.status = TaskStatus.completed
+    manager._persist(task)
+
+    loaded = FileTaskManager()
+
+    assert loaded.get("alice", task.id) is not None
+    assert loaded.get("alice", task.id).priority == 4
+
+
+def test_retry_creates_new_queued_task(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    manager = FileTaskManager()
+    task = manager.create_transfer("alice", "copy", [str(tmp_path / "a")], str(tmp_path / "b"))
+    task.status = TaskStatus.failed
+
+    retry = manager.retry("alice", task.id)
+
+    assert retry is not None
+    assert retry.id != task.id
+    assert retry.status == TaskStatus.queued
+    assert retry.retry_count == 1
+
+
 def test_cancel_queued_task(tmp_path: Path):
     manager = FileTaskManager()
     task = FileTask(id="task1", username="alice", type="copy", source_paths=[str(tmp_path / "a")], destination_path=str(tmp_path / "b"))

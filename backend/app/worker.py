@@ -21,17 +21,35 @@ def drop_privileges(username: str) -> None:
 
 def info(path: Path) -> dict:
     st = path.lstat()
+    is_symlink = path.is_symlink()
+    is_dir = path.is_dir()
+    target = ""
+    if is_symlink:
+        try:
+            resolved = path.resolve(strict=True)
+            if resolved.is_relative_to(path.parent.resolve(strict=False)):
+                target = str(resolved)
+        except OSError:
+            target = ""
     return {
         "name": path.name,
         "path": str(path),
-        "is_dir": path.is_dir(),
+        "type": "folder" if is_dir else path.suffix.lower().lstrip(".") or "file",
+        "is_dir": is_dir,
         "size": st.st_size,
         "owner": pwd.getpwuid(st.st_uid).pw_name,
         "group": grp.getgrgid(st.st_gid).gr_name,
         "mode": stat.filemode(st.st_mode),
         "permissions": oct(stat.S_IMODE(st.st_mode)),
         "modified": st.st_mtime,
-        "mime": "directory" if path.is_dir() else "file",
+        "mtime": st.st_mtime,
+        "mime": "directory" if is_dir else "file",
+        "can_read": os.access(path, os.R_OK),
+        "can_write": os.access(path, os.W_OK),
+        "can_delete": os.access(path.parent, os.W_OK),
+        "can_rename": os.access(path.parent, os.W_OK),
+        "is_symlink": is_symlink,
+        "target": target or None,
     }
 
 

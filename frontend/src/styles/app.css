@@ -73,7 +73,15 @@ button { border: 0; cursor: pointer; }
 .topbar { top: 0; }
 .topbar strong { margin-right: auto; }
 .taskbar { bottom: 0; border-top: 1px solid rgba(255,255,255,.32); border-bottom: 0; }
-.task { padding: 5px 9px; border-radius: 6px; background: rgba(255,255,255,.18); }
+.taskbar button, .task {
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 6px;
+  color: inherit;
+  background: rgba(255,255,255,.18);
+}
+.taskbar button.active { background: rgba(47,143,189,.32); }
+.task-summary { margin-left: auto; font-size: 12px; opacity: .82; }
 .desktop-icons {
   position: fixed;
   top: 72px;
@@ -94,18 +102,15 @@ button { border: 0; cursor: pointer; }
 }
 .window {
   position: fixed;
-  top: 82px;
-  left: 124px;
-  width: min(1120px, calc(100vw - 148px));
-  height: min(720px, calc(100vh - 150px));
   display: grid;
-  grid-template-rows: 38px 48px 38px 1fr;
+  grid-template-rows: 38px auto auto minmax(0, 1fr);
   border-radius: 8px;
   overflow: hidden;
   background: rgba(248,250,250,.91);
   color: #17202a;
   box-shadow: 0 26px 90px rgba(20,35,44,.32);
 }
+.window.active { box-shadow: 0 30px 100px rgba(20,35,44,.42); }
 .app.dark .window { background: rgba(30,40,44,.93); color: #edf4f5; }
 .window-title {
   display: flex;
@@ -115,7 +120,24 @@ button { border: 0; cursor: pointer; }
   background: rgba(255,255,255,.36);
 }
 .window-controls { display: flex; gap: 7px; }
-.window-controls span { width: 10px; height: 10px; border-radius: 50%; background: #b9c5c9; }
+.window-controls button {
+  width: 26px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: inherit;
+  background: rgba(255,255,255,.35);
+}
+.resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
 .toolbar {
   display: flex;
   gap: 8px;
@@ -166,6 +188,16 @@ aside button {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+aside button span {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: .68;
+}
+.sidebar-heading {
+  margin: 8px 4px 0;
+  font-size: 12px;
+  opacity: .7;
+}
 .list-view, .grid-view { min-width: 0; overflow: auto; padding: 10px; }
 .file-row {
   min-width: 0;
@@ -195,6 +227,100 @@ aside button {
 }
 .grid-view .file-row span:not(.name), .grid-view .row-actions { display: none; }
 .file-row:hover, .file-row.selected { background: rgba(54,135,165,.18); }
+.explorer-v2 {
+  grid-row: 4 / -1;
+}
+.directory-tree button.active {
+  background: rgba(54,135,165,.2);
+}
+.directory-tree button > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0;
+  opacity: 1;
+}
+.tree-resizer {
+  cursor: col-resize;
+  background: rgba(100,119,126,.16);
+}
+.tree-error {
+  color: #9f1d1d;
+  padding: 0 8px;
+}
+.file-table {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+.file-table-grid {
+  min-width: 0;
+  overflow: auto;
+  padding: 8px;
+}
+.file-header,
+.file-table .file-row {
+  display: grid;
+  grid-template-columns: 28px 28px minmax(160px, 1.6fr) 88px 90px 110px 110px 104px 160px 112px;
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 8px;
+}
+.file-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(234,242,244,.95);
+}
+.app.dark .file-header { background: rgba(50,62,66,.96); }
+.file-header button {
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+}
+.file-table.compact .file-header,
+.file-table.compact .file-row {
+  min-height: 30px;
+  font-size: 12px;
+}
+.selection-bar,
+.pagination,
+.filter-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(100,119,126,.14);
+}
+.pagination {
+  justify-content: flex-end;
+  border-top: 1px solid rgba(100,119,126,.14);
+  border-bottom: 0;
+}
+.selection-bar button,
+.pagination button {
+  min-height: 28px;
+  border-radius: 5px;
+  padding: 0 9px;
+  color: inherit;
+  background: rgba(255,255,255,.42);
+}
+.table-skeleton {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.table-skeleton span {
+  height: 34px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255,255,255,.22), rgba(255,255,255,.55), rgba(255,255,255,.22));
+}
 .name {
   min-width: 0;
   overflow: hidden;
@@ -246,30 +372,72 @@ aside button {
   color: white;
 }
 .toasts .error { background: #9f1d1d; }
-.transfer-panel {
+.notification-center {
   position: fixed;
-  right: 18px;
-  bottom: 58px;
-  z-index: 12;
-  width: min(620px, calc(100vw - 36px));
-  max-height: min(460px, calc(100vh - 126px));
+  top: 52px;
+  right: 14px;
+  z-index: 30;
+  width: min(360px, calc(100vw - 28px));
+  max-height: calc(100vh - 110px);
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(248,250,250,.96);
+  color: #17202a;
+  box-shadow: 0 20px 70px rgba(20,35,44,.3);
+  border-right: 0;
+}
+.app.dark .notification-center { background: rgba(30,40,44,.96); color: #edf4f5; }
+.notification-center header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.notification-center div, .notification-center p {
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(90,108,116,.14);
+}
+.notification-center .error { color: inherit; background: rgba(159,29,29,.22); }
+.transfer-panel {
+  grid-row: 2 / -1;
+  min-height: 0;
   display: grid;
   grid-template-rows: 34px 1fr;
   overflow: hidden;
-  border-radius: 8px;
-  background: rgba(248,250,250,.95);
+  border-radius: 0;
+  background: transparent;
   color: #17202a;
-  box-shadow: 0 20px 60px rgba(20,35,44,.28);
 }
 .app.dark .transfer-panel {
-  background: rgba(30,40,44,.96);
+  background: transparent;
   color: #edf4f5;
 }
 .transfer-panel > header {
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 0 12px;
   border-bottom: 1px solid rgba(100,119,126,.18);
+}
+.transfer-filters {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  overflow-x: auto;
+}
+.transfer-filters button {
+  min-height: 24px;
+  border-radius: 5px;
+  padding: 0 7px;
+  color: inherit;
+  background: transparent;
+}
+.transfer-filters button.active {
+  background: rgba(47,143,189,.2);
 }
 .transfer-list {
   min-height: 0;
@@ -331,11 +499,153 @@ aside button {
   white-space: pre-wrap;
   font-size: 12px;
 }
+.transfer-log.error {
+  color: #fee2e2;
+  background: rgba(127,29,29,.86);
+}
+.transfer-details {
+  display: grid;
+  gap: 8px;
+}
+.transfer-details dl {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+.transfer-details dt {
+  opacity: .7;
+}
+.transfer-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.transfer-details code {
+  white-space: pre-wrap;
+}
 .settings-shell {
   grid-row: 2 / -1;
   min-height: 0;
   display: grid;
   grid-template-columns: 210px 1fr;
+}
+.logs-app {
+  grid-row: 2 / -1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.logs-app pre {
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  background: rgba(0,0,0,.12);
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 170px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 7px;
+  background: rgba(248,250,250,.98);
+  color: #17202a;
+  box-shadow: 0 18px 55px rgba(20,35,44,.28);
+}
+.app.dark .context-menu { background: rgba(30,40,44,.98); color: #edf4f5; }
+.context-menu button, .context-menu a {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 5px;
+  color: inherit;
+  text-decoration: none;
+  background: transparent;
+}
+.context-menu button:hover, .context-menu a:hover { background: rgba(47,143,189,.16); }
+.context-menu button:disabled { opacity: .45; cursor: default; }
+.dashboard-app {
+  grid-row: 2 / -1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: auto;
+}
+.empty-state {
+  margin: 16px;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+.metric-card {
+  min-height: 132px;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 12px;
+  border-radius: 7px;
+  background: rgba(255,255,255,.38);
+}
+.app.dark .metric-card { background: rgba(255,255,255,.08); }
+.metric-card span, .metric-card small { opacity: .74; }
+.metric-card strong { font-size: 24px; }
+.sparkline {
+  width: 100%;
+  height: 46px;
+}
+.sparkline path {
+  fill: none;
+  stroke: #2f8fbd;
+  stroke-width: 3;
+}
+.dashboard-warnings {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 0;
+}
+.dashboard-warnings span {
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #7c2d12;
+  background: rgba(254,243,199,.9);
+}
+.dashboard-section {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+.dashboard-section h2 {
+  margin: 4px 0;
+  font-size: 16px;
+}
+.disk-list {
+  display: grid;
+  gap: 6px;
+}
+.disk-list > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) repeat(3, auto);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.25);
+}
+.disk-list > div.warn { background: rgba(254,202,202,.72); }
+.app.dark .disk-list > div { background: rgba(255,255,255,.08); }
+.disk-list strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .settings-tabs {
   min-width: 0;
@@ -364,6 +674,28 @@ aside button {
   display: grid;
   gap: 14px;
   align-content: start;
+}
+.safe-mode-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(180, 83, 9, .35);
+  border-radius: 6px;
+  color: #7c2d12;
+  background: rgba(254, 243, 199, .88);
+}
+.safe-mode-banner div {
+  display: grid;
+  gap: 3px;
+}
+.safe-mode-banner span {
+  font-size: 13px;
+}
+.app.dark .safe-mode-banner {
+  color: #fed7aa;
+  background: rgba(124, 45, 18, .34);
 }
 .settings-section h2 {
   margin: 6px 0 0;
@@ -423,12 +755,15 @@ aside button {
 .admin-list > div {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(110px, 1fr) 70px minmax(160px, 2fr) repeat(3, auto);
+  grid-template-columns: minmax(110px, 1fr) 70px minmax(160px, 2fr);
   gap: 8px;
   align-items: center;
   padding: 8px;
   border-radius: 6px;
   background: rgba(255,255,255,.24);
+}
+.admin-list > div button {
+  width: fit-content;
 }
 .admin-list span {
   min-width: 0;
@@ -436,23 +771,133 @@ aside button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.store-app,
+.mounts-app,
+.services-app {
+  min-height: 0;
+  height: calc(100% - 34px);
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  background: rgba(255,255,255,.2);
+}
+.store-list {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 10px;
+  border-right: 1px solid rgba(100,119,126,.18);
+  overflow: auto;
+}
+.store-list button {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  min-height: 62px;
+  padding: 10px;
+  border-radius: 6px;
+  text-align: left;
+  color: inherit;
+  background: rgba(255,255,255,.42);
+}
+.store-list button.active,
+.store-list button:hover {
+  background: rgba(54,135,165,.2);
+}
+.store-list span {
+  font-size: 12px;
+  opacity: .72;
+}
+.store-detail {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 14px;
+  overflow: auto;
+}
+.store-detail > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.store-detail h2,
+.store-detail h3,
+.store-detail p {
+  margin: 0;
+}
+.store-detail h2 {
+  font-size: 20px;
+}
+.store-detail p {
+  margin-top: 4px;
+  opacity: .72;
+}
+.store-section {
+  display: grid;
+  gap: 10px;
+}
+.store-section > button,
+.store-detail .toolbar button {
+  min-height: 34px;
+  border-radius: 6px;
+  padding: 0 12px;
+  color: inherit;
+  background: rgba(255,255,255,.72);
+}
+.store-log {
+  min-height: 130px;
+  max-height: 280px;
+  margin: 0;
+  padding: 10px;
+  border-radius: 6px;
+  overflow: auto;
+  color: #dff7ea;
+  background: #172126;
+  white-space: pre-wrap;
+}
+.app.dark .store-app,
+.app.dark .mounts-app,
+.app.dark .services-app,
+.app.dark .store-list button,
+.app.dark .store-section > button,
+.app.dark .store-detail .toolbar button {
+  background: rgba(255,255,255,.08);
+}
 @media (max-width: 760px) {
   .desktop-icons { display: none; }
   .window {
     top: 52px;
     left: 8px;
-    width: calc(100vw - 16px);
-    height: calc(100vh - 104px);
+    width: calc(100vw - 16px) !important;
+    height: calc(100vh - 104px) !important;
   }
   .file-layout { grid-template-columns: 1fr; }
+  .explorer-v2 {
+    grid-template-columns: 1fr !important;
+  }
+  .explorer-v2 .directory-tree {
+    position: absolute;
+    z-index: 6;
+    inset: 86px auto 44px 0;
+    width: min(82vw, 320px);
+    background: inherit;
+  }
+  .tree-resizer { display: none; }
   aside { display: none; }
+  .explorer-v2 aside { display: flex; }
   .toolbar { overflow-x: auto; }
   .list-view .file-row { grid-template-columns: 28px minmax(120px,1fr) 80px; }
   .list-view .file-row span:nth-of-type(n+3), .list-view .row-actions { display: none; }
-  .transfer-panel {
-    left: 8px;
-    right: 8px;
-    width: auto;
+  .file-header { display: none; }
+  .file-table .file-row {
+    grid-template-columns: 28px 28px minmax(120px, 1fr) 80px;
+    align-items: center;
+  }
+  .file-table .file-row span:nth-of-type(n+4),
+  .file-table .file-row .row-actions {
+    display: none;
   }
   .settings-shell { grid-template-columns: 1fr; }
   .settings-tabs {
@@ -461,4 +906,11 @@ aside button {
     border-bottom: 1px solid rgba(100,119,126,.18);
   }
   .admin-list > div { grid-template-columns: 1fr; }
+  .store-app, .mounts-app, .services-app { grid-template-columns: 1fr; }
+  .store-list {
+    display: flex;
+    border-right: 0;
+    border-bottom: 1px solid rgba(100,119,126,.18);
+  }
+  .store-list button { min-width: 180px; }
 }

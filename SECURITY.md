@@ -11,3 +11,13 @@
 - File operations run in a worker process that drops privileges to the authenticated user.
 
 For production, set a strong `security.session_secret`, enable HTTPS at a reverse proxy or through configured TLS, and review whether `/home` is the correct `ReadWritePaths` boundary for your server.
+
+## Proxmox VE Host Safety
+
+Running WebNAS directly on a Proxmox VE host is supported only in a restricted Safe Mode. The recommended production deployment is a VM or LXC container.
+
+When Proxmox is detected, WebNAS protects host-critical paths such as `/etc/pve`, `/var/lib/pve-cluster`, `/var/lib/vz`, `/var/lib/lxc`, `/mnt/pve`, `/etc/network`, `/boot`, `/root`, `/dev`, `/proc`, `/sys`, `/run`, and `/rpool`. Safe Mode blocks delete, trash, move, rename, upload, create, mkdir, chmod, chown, and rsync operations on those paths or their parents.
+
+Safe Mode also blocks system user/group management, protected group membership changes, root password changes through the panel, and service management outside `webnas.service`. The UI shows a banner in Settings, and admins can inspect `GET /api/admin/system/proxmox-safety`.
+
+The installer refuses direct Proxmox host installation unless `--allow-proxmox-host-install` is provided. Even then it must not modify Proxmox cluster configuration, storage, network configuration, Proxmox repositories, or Proxmox services.

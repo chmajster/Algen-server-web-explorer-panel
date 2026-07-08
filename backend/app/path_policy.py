@@ -5,8 +5,10 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from .audit import logger
 from .auth import user_home
 from .config import get_config
+from .proxmox_guard import assert_path_allowed, validate_allowed_roots
 
 
 def _real(path: str | Path) -> Path:
@@ -16,8 +18,16 @@ def _real(path: str | Path) -> Path:
 def allowed_roots(username: str) -> list[Path]:
     cfg = get_config()
     if cfg.paths.allowed_roots:
-        return [_real(root.replace("{username}", username)) for root in cfg.paths.allowed_roots]
-    return [_real(user_home(username))]
+        roots = [_real(root.replace("{username}", username)) for root in cfg.paths.allowed_roots]
+    else:
+        roots = [_real(user_home(username))]
+    try:
+        from .network_mounts import visible_mount_roots
+
+        roots.extend(visible_mount_roots(username))
+    except Exception:
+        pass
+    return validate_allowed_roots(username, roots, cfg)
 
 
 def resolve_user_path(username: str, requested: str | None) -> Path:
@@ -27,9 +37,11 @@ def resolve_user_path(username: str, requested: str | None) -> Path:
     for root in roots:
         try:
             candidate.relative_to(root)
+            assert_path_allowed(candidate, "resolve", include_parent=True)
             return candidate
         except ValueError:
             continue
+    logger.info("path_policy_denied user=%s requested=%s reason=outside_allowed_roots", username, requested)
     raise HTTPException(403, "Path is outside allowed roots")
 
 

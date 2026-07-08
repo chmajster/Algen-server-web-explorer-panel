@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webnas"
+version = "0.1.0"
+description = "WebNAS Linux web file explorer panel"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.116.1",
+  "uvicorn[standard]==0.35.0",
+  "python-multipart==0.0.20",
+  "PyYAML==6.0.2",
+  "python-pam==2.0.2",
+  "itsdangerous==2.2.0",
+  "aiofiles==24.1.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "backend"}
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 160
+exclude = ["frontend", "node_modules", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["B008", "E501"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "backend"
+packages = ["app"]
+ignore_missing_imports = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+warn_unused_ignores = false
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+
+[tool.bandit]
+exclude_dirs = ["backend/tests", "frontend", "node_modules"]
+skips = ["B101", "B603", "B607", "B404"]

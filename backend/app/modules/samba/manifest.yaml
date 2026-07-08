@@ -1,0 +1,21 @@
+name: Samba
+description: SMB/CIFS file sharing service managed by WebNAS.
+version: "1.0.0"
+apt_packages:
+  - samba
+  - smbclient
+systemd_services:
+  - smbd
+  - nmbd
+ports:
+  - 137/udp
+  - 138/udp
+  - 139/tcp
+  - 445/tcp
+config_paths:
+  - /etc/samba/smb.conf
+data_paths:
+  - /var/lib/samba
+permissions:
+  - root required for package install, systemd service control, and smbpasswd
+proxmox_safe: true

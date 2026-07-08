@@ -28,7 +28,62 @@ security:
 
 file_tasks:
   max_parallel: 2
+  max_parallel_per_user: 1
   log_tail_lines: 80
   enable_sse: true
   rsync_path: null
   rsync_extra_args: []
+
+systemd:
+  allowed_services:
+    - "webnas.service"
+    - "smbd.service"
+    - "nmbd.service"
+    - "nginx.service"
+    - "caddy.service"
+    - "docker.service"
+
+# Compatibility alias for deployments that prefer a flat key.
+systemd_allowed_services: []
+
+proxmox:
+  detect: true
+  safe_mode: true
+  block_system_user_management: true
+  block_system_group_management: true
+  block_chown: true
+  block_chmod_on_protected_paths: true
+  block_delete_on_protected_paths: true
+  block_move_on_protected_paths: true
+  block_rsync_on_protected_paths: true
+  block_service_management: true
+  allow_only_home_roots_on_proxmox: true
+  require_explicit_install_confirmation: true
+  install_abort_on_proxmox_without_flag: true
+  protected_paths:
+    - "/etc/pve"
+    - "/var/lib/pve-cluster"
+    - "/var/lib/vz"
+    - "/var/lib/lxc"
+    - "/etc/network"
+    - "/etc/network/interfaces"
+    - "/etc/hosts"
+    - "/etc/hostname"
+    - "/etc/resolv.conf"
+    - "/etc/apt"
+    - "/etc/systemd"
+    - "/etc/default"
+    - "/etc/modprobe.d"
+    - "/etc/modules-load.d"
+    - "/boot"
+    - "/root"
+    - "/usr/share/perl5/PVE"
+    - "/var/log/pve"
+    - "/run/pve"
+    - "/run/lock"
+    - "/dev"
+    - "/proc"
+    - "/sys"
+    - "/run"
+    - "/mnt/pve"
+    - "/rpool"

@@ -1,21 +1,136 @@
 # WebNAS
 
-WebNAS is a Linux web administration panel inspired by NAS-style desktop interfaces without copying third-party branding or UI assets. The MVP includes PAM login, a desktop web UI, and a File Manager for browsing the authenticated user's home directory.
+WebNAS is a web NAS administration panel for Linux, similar in spirit to Synology-style file management while using its own interface and assets. It gives a server a clean browser panel for local Linux users, PAM login, systemd startup, and rsync-powered file operations.
 
-## MVP Features
+See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 
-- FastAPI backend with PAM authentication.
-- HTTP-only signed sessions and CSRF protection.
-- Login rate limiting.
-- React + TypeScript + Vite frontend.
-- File Manager with list/icon views, breadcrumbs, directory sidebar, upload, download, copy, move, rename, delete, trash, preview, search, stat, chmod, multi-select, and drag-and-drop move.
-- Background tasks for copy, move, and delete.
-- Copy and move transfers use `rsync` and expose live progress: status, percent, speed, transferred bytes, ETA, current file, exit code, and log tail.
-- Ubuntu/Debian installer, updater, uninstaller, and systemd service.
+## Features
+
+- Web file explorer for browsing a logged-in Linux user's home directory.
+- Copy and move operations through `rsync`.
+- Real-time transfer tracking with progress, speed, ETA, current file, exit code, and log tail.
+- Transfer cancellation from the UI and API.
+- PAM authentication with local Linux accounts.
+- FastAPI backend and React + TypeScript + Vite frontend.
+- Default port `5000`.
+- One-command installer with systemd/autostart support.
+- Optional firewall setup for `ufw` or `firewalld`.
+
+## Szybki start
+
+Requirements: Debian, Ubuntu, Raspberry Pi OS, Fedora, or RHEL-like Linux with systemd and root/sudo access.
+
+One-command installation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+```
+
+Default address after installation:
+
+```text
+http://IP_SERWERA:5000
+```
+
+Login uses local Linux accounts through PAM. Check service status with:
+
+```bash
+sudo systemctl status webnas
+```
+
+Update by running the installer again. It detects an existing `/opt/webnas` installation and asks whether to update, create a backup, or abort.
+
+Uninstall:
+
+```bash
+sudo /opt/webnas/uninstall.sh
+```
+
+## Instalacja
+
+Install with `curl`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+```
+
+Install with `wget`:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+```
+
+Safer download-review-run flow:
+
+```bash
+curl -fsSL -o install.sh https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh
+chmod +x install.sh
+sudo ./install.sh
+```
+
+Custom port example:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash -s -- --port 5000
+```
+
+Useful installer options:
+
+```bash
+sudo ./install.sh --port 8080 --install-dir /opt/webnas --user webnas --yes
+sudo ./install.sh --skip-build
+sudo ./install.sh --no-firewall
+```
+
+## Pobieranie instalatora
+
+Direct installer URL:
+
+```text
+https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh
+```
+
+## Service Commands
+
+```bash
+sudo systemctl status webnas
+sudo systemctl restart webnas
+sudo journalctl -u webnas -f
+```
+
+Healthcheck:
+
+```text
+GET /api/health
+```
+
+## Proxmox VE Host Safety
+
+Direct installation on a Proxmox VE host is intentionally restricted. The safer production setup is to run WebNAS inside a VM or LXC container. If the installer detects Proxmox VE through `/etc/pve`, `pveversion`, or Proxmox services, it aborts unless you pass:
+
+```bash
+sudo ./install.sh --allow-proxmox-host-install
+```
+
+With that flag, WebNAS runs in Proxmox Safe Mode. The backend blocks file operations, chmod/chown, delete, move, rsync, user/group administration, and service management that could touch Proxmox cluster, storage, VM/LXC, network, boot, runtime, or system paths. Protected examples include `/etc/pve`, `/var/lib/vz`, `/var/lib/lxc`, `/mnt/pve`, `/etc/network`, `/boot`, `/root`, `/dev`, `/proc`, `/sys`, `/run`, and `/rpool`.
+
+On Proxmox, effective roots are limited to the authenticated user's home directory or `/srv/webnas-shares/{username}`. Admin diagnostics are available at:
+
+```text
+GET /api/admin/system/proxmox-safety
+```
+
+The Settings panel shows a Proxmox Safe Mode banner when the backend reports that Safe Mode is active.
 
 ## Development
 
-Backend:
+Start backend and frontend without systemd:
+
+```bash
+./dev-start.sh
+```
+
+Manual backend:
 
 ```bash
 cd backend
@@ -25,7 +140,7 @@ pip install -r requirements.txt
 PYTHONPATH=$PWD uvicorn app.main:app --reload --host 0.0.0.0 --port 5000
 ```
 
-Frontend:
+Manual frontend:
 
 ```bash
 cd frontend
@@ -33,19 +148,35 @@ npm install
 npm run dev
 ```
 
-For full per-user file access, run the backend on Linux with sufficient privileges to drop into the authenticated user context.
+For full per-user file access, run the backend on Linux with sufficient privileges for PAM and user file operations.
 
 ## File Transfers
 
-`/api/files/copy` and `/api/files/move` enqueue `rsync` transfer tasks. Move is implemented as rsync first and source removal only after a successful transfer, so a failed or cancelled move keeps the source intact.
+`/api/files/copy` and `/api/files/move` enqueue durable `rsync` transfer tasks. Tasks are stored in SQLite at `paths.data_dir/transfers.sqlite3`, so completed, failed, and cancelled transfer history remains visible after a service restart. Move is implemented as rsync first and source removal only after a successful transfer, so a failed, paused, or cancelled move keeps the source intact.
+
+The transfer manager supports:
+
+- priority queueing,
+- global and per-user parallel limits,
+- pause and resume using rsync partial transfers,
+- cancellation with `.webnas-partial` cleanup,
+- retry after failure,
+- history filters for active, completed, failed, and cancelled transfers,
+- detail view with command preview, exit code, stderr/log tail, file counts, average speed, and start/end time,
+- protection against moving a directory into itself or one of its children.
 
 Task endpoints:
 
 ```text
 GET  /api/files/tasks
+GET  /api/files/tasks?status=active|finished|failed|cancelled
 GET  /api/files/tasks/{task_id}
 GET  /api/files/tasks/{task_id}/events
 POST /api/files/tasks/{task_id}/cancel
+POST /api/files/tasks/{task_id}/pause
+POST /api/files/tasks/{task_id}/resume
+POST /api/files/tasks/{task_id}/retry
+PATCH /api/files/tasks/{task_id}/priority
 ```
 
-The frontend uses Server-Sent Events for live updates when available and falls back to polling. Completed transfers stay visible in the Transfers panel until the user hides them. To debug transfer failures, inspect the task `log_tail`, `rsync_exit_code`, and the service log.
+The frontend uses Server-Sent Events for live updates when available and falls back to polling. To debug transfer failures, inspect `error_message`, `stderr_tail`, `log_tail`, `rsync_exit_code`, and the service log.
