@@ -25,3 +25,10 @@ security:
   system_uid_threshold: 1000
   session_secret: "change-this-secret-during-install"
   cookie_secure: false
+
+file_tasks:
+  max_parallel: 2
+  log_tail_lines: 80
+  enable_sse: true
+  rsync_path: null
+  rsync_extra_args: []

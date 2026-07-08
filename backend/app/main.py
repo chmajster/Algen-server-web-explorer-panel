@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import base64
+import asyncio
+import json
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -33,7 +36,8 @@ class PathRequest(BaseModel):
 
 
 class CopyMoveRequest(BaseModel):
-    src: str
+    src: str | None = None
+    srcs: list[str] | None = None
     dst: str
 
 
@@ -60,6 +64,36 @@ def csrf_user(request: Request):
     user = get_session_user(request)
     require_csrf(request, user)
     return user
+
+
+def _task_payload(task):
+    return task.to_dict() if hasattr(task, "to_dict") else task.__dict__
+
+
+def _resolve_sources(username: str, payload: CopyMoveRequest) -> list[Path]:
+    raw_sources = payload.srcs or ([payload.src] if payload.src else [])
+    if not raw_sources:
+        raise HTTPException(400, "At least one source path is required")
+    sources = [resolve_user_path(username, source) for source in raw_sources]
+    for source in sources:
+        if not source.exists():
+            raise HTTPException(404, f"Source does not exist: {source.name}")
+    return sources
+
+
+def _resolve_destination(username: str, payload: CopyMoveRequest) -> Path:
+    destination = resolve_user_path(username, payload.dst)
+    resolve_user_path(username, str(destination.parent))
+    return destination
+
+
+def _reject_destination_conflicts(sources: list[Path], destination: Path) -> None:
+    if len(sources) > 1 and (not destination.exists() or not destination.is_dir()):
+        raise HTTPException(400, "Multiple sources require an existing destination directory")
+    for source in sources:
+        target = destination / source.name if destination.exists() and destination.is_dir() else destination
+        if target.exists():
+            raise HTTPException(409, f"Destination already exists: {target.name}")
 
 
 @app.post("/api/auth/login")
@@ -103,17 +137,19 @@ def create(payload: PathRequest, user=Depends(csrf_user)):
 
 @app.post("/api/files/copy")
 def copy(payload: CopyMoveRequest, user=Depends(csrf_user)):
-    src = resolve_user_path(user.username, payload.src)
-    dst = resolve_user_path(user.username, payload.dst)
-    task = task_store.create(user.username, "copy", {"src": str(src), "dst": str(dst)})
+    srcs = _resolve_sources(user.username, payload)
+    dst = _resolve_destination(user.username, payload)
+    _reject_destination_conflicts(srcs, dst)
+    task = task_store.create(user.username, "copy", {"srcs": [str(src) for src in srcs], "dst": str(dst)})
     return {"task_id": task.id}
 
 
 @app.post("/api/files/move")
 def move(payload: CopyMoveRequest, user=Depends(csrf_user)):
-    src = resolve_user_path(user.username, payload.src)
-    dst = resolve_user_path(user.username, payload.dst)
-    task = task_store.create(user.username, "move", {"src": str(src), "dst": str(dst)})
+    srcs = _resolve_sources(user.username, payload)
+    dst = _resolve_destination(user.username, payload)
+    _reject_destination_conflicts(srcs, dst)
+    task = task_store.create(user.username, "move", {"srcs": [str(src) for src in srcs], "dst": str(dst)})
     return {"task_id": task.id}
 
 
@@ -177,7 +213,7 @@ def chmod(payload: ChmodRequest, user=Depends(csrf_user)):
 
 @app.get("/api/tasks")
 def tasks(user=Depends(current_user)):
-    return [task.__dict__ for task in task_store.list_for(user.username)]
+    return [_task_payload(task) for task in task_store.list_for(user.username)]
 
 
 @app.get("/api/tasks/{task_id}")
@@ -185,7 +221,7 @@ def task(task_id: str, user=Depends(current_user)):
     found = task_store.get(user.username, task_id)
     if not found:
         raise HTTPException(404, "Task not found")
-    return found.__dict__
+    return _task_payload(found)
 
 
 @app.delete("/api/tasks/{task_id}")
@@ -193,6 +229,49 @@ def cancel_task(task_id: str, user=Depends(csrf_user)):
     if not task_store.cancel(user.username, task_id):
         raise HTTPException(404, "Task not found")
     return {"ok": True}
+
+
+@app.get("/api/files/tasks")
+def file_tasks(user=Depends(current_user)):
+    return [_task_payload(task) for task in task_store.list_for(user.username)]
+
+
+@app.get("/api/files/tasks/{task_id}")
+def file_task(task_id: str, user=Depends(current_user)):
+    found = task_store.get(user.username, task_id)
+    if not found:
+        raise HTTPException(404, "Task not found")
+    return _task_payload(found)
+
+
+@app.post("/api/files/tasks/{task_id}/cancel")
+def file_task_cancel(task_id: str, user=Depends(csrf_user)):
+    if not task_store.cancel(user.username, task_id):
+        raise HTTPException(404, "Task not found")
+    return {"ok": True}
+
+
+@app.get("/api/files/tasks/{task_id}/events")
+async def file_task_events(task_id: str, user=Depends(current_user)):
+    if not get_config().file_tasks.enable_sse:
+        raise HTTPException(404, "Task event streaming is disabled")
+
+    async def events():
+        last = ""
+        while True:
+            found = task_store.get(user.username, task_id)
+            if not found:
+                yield "event: error\ndata: {\"error\":\"Task not found\"}\n\n"
+                return
+            payload = json.dumps(_task_payload(found), ensure_ascii=False)
+            if payload != last:
+                yield f"data: {payload}\n\n"
+                last = payload
+            if found.status in {"completed", "failed", "cancelled"}:
+                return
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"

@@ -13,9 +13,27 @@ export type FileItem = {
 
 export type Task = {
   id: string;
+  type: string;
   op: string;
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  source_paths: string[];
+  destination_path: string;
+  started_at: number | null;
+  finished_at: number | null;
+  bytes_transferred: number;
+  total_bytes: number;
+  progress_percent: number;
   progress: number;
+  speed_bps: number;
+  speed_human: string;
+  eta_seconds: number | null;
+  eta_human: string;
+  current_file: string;
+  files_done: number;
+  files_total: number;
+  rsync_exit_code: number | null;
+  error_message: string;
+  log_tail: string[];
   errors: string[];
 };
 
@@ -78,15 +96,17 @@ export const api = {
   list: (path?: string) => request<{ path: string; items: FileItem[] }>(`/api/files/list?path=${encodeURIComponent(path || "")}`),
   mkdir: (path: string) => request("/api/files/mkdir", { method: "POST", body: JSON.stringify({ path }) }),
   create: (path: string) => request("/api/files/create", { method: "POST", body: JSON.stringify({ path }) }),
-  copy: (src: string, dst: string) => request<{ task_id: string }>("/api/files/copy", { method: "POST", body: JSON.stringify({ src, dst }) }),
-  move: (src: string, dst: string) => request<{ task_id: string }>("/api/files/move", { method: "POST", body: JSON.stringify({ src, dst }) }),
+  copy: (src: string | string[], dst: string) => request<{ task_id: string }>("/api/files/copy", { method: "POST", body: JSON.stringify(Array.isArray(src) ? { srcs: src, dst } : { src, dst }) }),
+  move: (src: string | string[], dst: string) => request<{ task_id: string }>("/api/files/move", { method: "POST", body: JSON.stringify(Array.isArray(src) ? { srcs: src, dst } : { src, dst }) }),
   rename: (src: string, dst: string) => request("/api/files/rename", { method: "POST", body: JSON.stringify({ src, dst }) }),
   delete: (path: string) => request<{ task_id: string }>("/api/files/delete", { method: "POST", body: JSON.stringify({ path }) }),
   trash: (path: string) => request("/api/files/trash", { method: "POST", body: JSON.stringify({ path }) }),
   preview: (path: string) => request<{ path: string; mime: string; content_base64: string }>(`/api/files/preview?path=${encodeURIComponent(path)}`),
   stat: (path: string) => request<FileItem>(`/api/files/stat?path=${encodeURIComponent(path)}`),
   search: (path: string, query: string) => request<{ items: FileItem[] }>(`/api/files/search?path=${encodeURIComponent(path)}&query=${encodeURIComponent(query)}`),
-  tasks: () => request<Task[]>("/api/tasks"),
+  tasks: () => request<Task[]>("/api/files/tasks"),
+  task: (taskId: string) => request<Task>(`/api/files/tasks/${encodeURIComponent(taskId)}`),
+  cancelTask: (taskId: string) => request("/api/files/tasks/" + encodeURIComponent(taskId) + "/cancel", { method: "POST", body: "{}" }),
   upload: (path: string, file: File) => {
     const body = new FormData();
     body.set("path", path);

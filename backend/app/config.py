@@ -41,11 +41,20 @@ class SecurityConfig(BaseModel):
     cookie_secure: bool = False
 
 
+class FileTasksConfig(BaseModel):
+    max_parallel: int = 2
+    log_tail_lines: int = 80
+    enable_sse: bool = True
+    rsync_path: str | None = None
+    rsync_extra_args: list[str] = Field(default_factory=list)
+
+
 class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    file_tasks: FileTasksConfig = Field(default_factory=FileTasksConfig)
 
 
 DEFAULT_CONFIG_PATHS = (

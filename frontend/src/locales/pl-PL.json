@@ -84,4 +84,16 @@
   "notify.logout": "Wyloguj",
   "notify.theme": "Motyw",
   "error.generic": "Wystapil blad"
+  ,"transfers.title": "Transfery"
+  ,"transfers.copy": "Kopiowanie"
+  ,"transfers.move": "Przenoszenie"
+  ,"transfers.source": "Zrodlo"
+  ,"transfers.destination": "Cel"
+  ,"transfers.currentFile": "Aktualny plik"
+  ,"transfers.details": "Szczegoly"
+  ,"transfers.hide": "Ukryj"
+  ,"transfers.cancel": "Anuluj"
+  ,"transfers.transferred": "Przeslano"
+  ,"transfers.eta": "ETA"
+  ,"transfers.status": "Status"
 }

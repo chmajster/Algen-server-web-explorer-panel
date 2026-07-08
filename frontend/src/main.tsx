@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Copy,
@@ -46,6 +46,10 @@ function formatSize(size: number) {
     unit = units.shift() || unit;
   }
   return `${value.toFixed(value > 100 ? 0 : 1)} ${unit}`;
+}
+
+function shortPath(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).slice(-2).join("/") || path;
 }
 
 function message(err: unknown, fallback: string) {
@@ -126,7 +130,7 @@ function Preview({ item, onClose, t }: { item: FileItem | null; onClose: () => v
   );
 }
 
-function FileManager({ toast, t }: { toast: (text: string, type?: "ok" | "error") => void; t: T }) {
+function FileManager({ toast, t, tasks }: { toast: (text: string, type?: "ok" | "error") => void; t: T; tasks: Task[] }) {
   const [path, setPath] = useState("");
   const [items, setItems] = useState<FileItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -134,6 +138,7 @@ function FileManager({ toast, t }: { toast: (text: string, type?: "ok" | "error"
   const [query, setQuery] = useState("");
   const [clipboard, setClipboard] = useState<{ mode: "copy" | "move"; paths: string[] } | null>(null);
   const [preview, setPreview] = useState<FileItem | null>(null);
+  const [refreshedTasks, setRefreshedTasks] = useState<Set<string>>(new Set());
 
   async function load(next = path) {
     try {
@@ -151,6 +156,12 @@ function FileManager({ toast, t }: { toast: (text: string, type?: "ok" | "error"
     }
   }
   useEffect(() => { load(""); }, []);
+  useEffect(() => {
+    const completed = tasks.filter((task) => ["copy", "move"].includes(task.type) && task.status === "completed" && !refreshedTasks.has(task.id));
+    if (!completed.length) return;
+    setRefreshedTasks((current) => new Set([...current, ...completed.map((task) => task.id)]));
+    load();
+  }, [tasks]);
 
   const selectedItems = useMemo(() => items.filter((item) => selected.has(item.path)), [items, selected]);
   function toggle(item: FileItem, multi: boolean) {
@@ -171,7 +182,10 @@ function FileManager({ toast, t }: { toast: (text: string, type?: "ok" | "error"
   }
   async function paste() {
     if (!clipboard) return;
-    for (const src of clipboard.paths) {
+    if (clipboard.paths.length > 1) {
+      await (clipboard.mode === "copy" ? api.copy(clipboard.paths, path) : api.move(clipboard.paths, path));
+    } else {
+      const src = clipboard.paths[0];
       const name = src.split("/").pop() || "item";
       const dst = joinPath(path, name);
       await (clipboard.mode === "copy" ? api.copy(src, dst) : api.move(src, dst));
@@ -225,6 +239,57 @@ function FileManager({ toast, t }: { toast: (text: string, type?: "ok" | "error"
       </div>
       <Preview item={preview} onClose={() => setPreview(null)} t={t} />
     </Window>
+  );
+}
+
+function TransferPanel({ tasks, t, toast }: { tasks: Task[]; t: T; toast: (text: string, type?: "ok" | "error") => void }) {
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const visible = tasks.filter((task) => ["copy", "move"].includes(task.type) && !hidden.has(task.id));
+  if (!visible.length) return null;
+  async function cancel(taskId: string) {
+    try {
+      await api.cancelTask(taskId);
+    } catch (err) {
+      toast(message(err, t("error.generic")), "error");
+    }
+  }
+  return (
+    <section className="transfer-panel">
+      <header><strong>{t("transfers.title")}</strong></header>
+      <div className="transfer-list">
+        {visible.map((task) => {
+          const expanded = open.has(task.id);
+          const done = ["completed", "failed", "cancelled"].includes(task.status);
+          const progress = task.progress_percent ?? task.progress ?? 0;
+          return (
+            <article key={task.id} className={`transfer-item ${task.status}`}>
+              <div className="transfer-main">
+                <strong>{t(`transfers.${task.type}`)}</strong>
+                <span>{t("transfers.status")}: {task.status}</span>
+                <button onClick={() => setOpen((current) => { const next = new Set(current); next.has(task.id) ? next.delete(task.id) : next.add(task.id); return next; })}>{t("transfers.details")}</button>
+                {!done && <button onClick={() => cancel(task.id)}>{t("transfers.cancel")}</button>}
+                {done && <button onClick={() => setHidden((current) => new Set([...current, task.id]))}>{t("transfers.hide")}</button>}
+              </div>
+              <div className="transfer-progress"><span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></div>
+              <div className="transfer-meta">
+                <span>{progress}%</span>
+                <span>{task.speed_human || "0 B/s"}</span>
+                <span>{t("transfers.transferred")}: {formatSize(task.bytes_transferred || 0)} / {formatSize(task.total_bytes || 0)}</span>
+                <span>{t("transfers.eta")}: {task.eta_human || "-"}</span>
+              </div>
+              <div className="transfer-paths">
+                <span>{t("transfers.source")}: {task.source_paths.map(shortPath).join(", ")}</span>
+                <span>{t("transfers.destination")}: {shortPath(task.destination_path)}</span>
+                {task.current_file && <span>{t("transfers.currentFile")}: {task.current_file}</span>}
+                {task.error_message && <span className="error">{task.error_message}</span>}
+              </div>
+              {expanded && <pre className="transfer-log">{(task.log_tail || []).join("\n")}</pre>}
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -344,6 +409,7 @@ function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeApp, setActiveApp] = useState<"files" | "settings">("files");
+  const eventSources = useRef<Map<string, EventSource>>(new Map());
   const t = (key: string) => translate(language, key);
   function toast(text: string, type: "ok" | "error" = "ok") {
     const id = Date.now();
@@ -361,6 +427,33 @@ function App() {
     const timer = setInterval(() => api.tasks().then(setTasks).catch(() => undefined), 1500);
     return () => clearInterval(timer);
   }, [user]);
+  useEffect(() => {
+    if (!user || typeof EventSource === "undefined") return;
+    const active = new Set(tasks.filter((task) => ["queued", "running"].includes(task.status)).map((task) => task.id));
+    for (const taskId of active) {
+      if (eventSources.current.has(taskId)) continue;
+      const source = new EventSource(`/api/files/tasks/${encodeURIComponent(taskId)}/events`);
+      source.onmessage = (event) => {
+        const nextTask = JSON.parse(event.data) as Task;
+        setTasks((current) => current.map((task) => task.id === nextTask.id ? nextTask : task));
+        if (["completed", "failed", "cancelled"].includes(nextTask.status)) {
+          source.close();
+          eventSources.current.delete(taskId);
+        }
+      };
+      source.onerror = () => {
+        source.close();
+        eventSources.current.delete(taskId);
+      };
+      eventSources.current.set(taskId, source);
+    }
+    for (const [taskId, source] of eventSources.current) {
+      if (!active.has(taskId)) {
+        source.close();
+        eventSources.current.delete(taskId);
+      }
+    }
+  }, [tasks, user]);
   const resolvedTheme = theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : theme === "system" ? "dark" : theme;
   if (!user) return <Login onLogin={setUser} t={t} />;
   return (
@@ -375,7 +468,8 @@ function App() {
         <button onClick={() => setActiveApp("files")}><HardDrive size={28} /> {t("app.files")}</button>
         <button onClick={() => setActiveApp("settings")}><Settings size={28} /> {t("app.settings")}</button>
       </div>
-      {activeApp === "files" ? <FileManager toast={toast} t={t} /> : <SettingsApp t={t} toast={toast} onLanguage={changeLanguage} onTheme={setTheme} />}
+      {activeApp === "files" ? <FileManager toast={toast} t={t} tasks={tasks} /> : <SettingsApp t={t} toast={toast} onLanguage={changeLanguage} onTheme={setTheme} />}
+      <TransferPanel tasks={tasks} t={t} toast={toast} />
       <footer className="taskbar">
         <span>{activeApp === "files" ? t("app.fileManager") : t("app.settings")}</span>
         {tasks.slice(-3).map((task) => <span key={task.id} className={`task ${task.status}`}>{task.op}: {task.status} {task.progress}%</span>)}

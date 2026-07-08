@@ -8,6 +8,7 @@ import os
 import pwd
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 
@@ -35,10 +36,18 @@ def info(path: Path) -> dict:
 
 
 def copy_any(src: Path, dst: Path) -> None:
-    if src.is_dir():
-        shutil.copytree(src, dst, dirs_exist_ok=False)
+    rsync = shutil.which("rsync")
+    if not rsync:
+        raise SystemExit("rsync is required for copy operations")
+    subprocess.run([rsync, "--archive", "--protect-args", str(src), str(dst)], check=True, shell=False)
+
+
+def move_any(src: Path, dst: Path) -> None:
+    copy_any(src, dst)
+    if src.is_dir() and not src.is_symlink():
+        shutil.rmtree(src)
     else:
-        shutil.copy2(src, dst)
+        src.unlink()
 
 
 def main() -> None:
@@ -66,7 +75,7 @@ def main() -> None:
         copy_any(Path(payload["src"]), Path(payload["dst"]))
         print(json.dumps({"ok": True}))
     elif op == "move":
-        shutil.move(payload["src"], payload["dst"])
+        move_any(Path(payload["src"]), Path(payload["dst"]))
         print(json.dumps({"ok": True}))
     elif op == "rename":
         Path(payload["src"]).rename(payload["dst"])

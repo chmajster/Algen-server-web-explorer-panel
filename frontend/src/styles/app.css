@@ -233,7 +233,7 @@ aside button {
 .toasts {
   position: fixed;
   right: 18px;
-  bottom: 58px;
+  top: 58px;
   z-index: 20;
   display: grid;
   gap: 8px;
@@ -246,6 +246,91 @@ aside button {
   color: white;
 }
 .toasts .error { background: #9f1d1d; }
+.transfer-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 58px;
+  z-index: 12;
+  width: min(620px, calc(100vw - 36px));
+  max-height: min(460px, calc(100vh - 126px));
+  display: grid;
+  grid-template-rows: 34px 1fr;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(248,250,250,.95);
+  color: #17202a;
+  box-shadow: 0 20px 60px rgba(20,35,44,.28);
+}
+.app.dark .transfer-panel {
+  background: rgba(30,40,44,.96);
+  color: #edf4f5;
+}
+.transfer-panel > header {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(100,119,126,.18);
+}
+.transfer-list {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding: 10px;
+}
+.transfer-item {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border-radius: 7px;
+  background: rgba(255,255,255,.42);
+}
+.app.dark .transfer-item { background: rgba(255,255,255,.08); }
+.transfer-main, .transfer-meta, .transfer-paths {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.transfer-main strong { margin-right: auto; }
+.transfer-main button {
+  min-height: 28px;
+  border-radius: 6px;
+  padding: 0 9px;
+  color: inherit;
+  background: rgba(255,255,255,.66);
+}
+.transfer-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(90,108,116,.22);
+}
+.transfer-progress span {
+  display: block;
+  height: 100%;
+  background: #2f8fbd;
+  transition: width .2s ease;
+}
+.transfer-meta, .transfer-paths {
+  font-size: 12px;
+  opacity: .9;
+}
+.transfer-paths span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.transfer-log {
+  max-height: 150px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(0,0,0,.12);
+  white-space: pre-wrap;
+  font-size: 12px;
+}
 .settings-shell {
   grid-row: 2 / -1;
   min-height: 0;
@@ -364,6 +449,11 @@ aside button {
   .toolbar { overflow-x: auto; }
   .list-view .file-row { grid-template-columns: 28px minmax(120px,1fr) 80px; }
   .list-view .file-row span:nth-of-type(n+3), .list-view .row-actions { display: none; }
+  .transfer-panel {
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
   .settings-shell { grid-template-columns: 1fr; }
   .settings-tabs {
     flex-direction: row;

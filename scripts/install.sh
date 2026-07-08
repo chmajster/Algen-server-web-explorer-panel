@@ -37,7 +37,7 @@ if [[ ! -d /etc/pam.d ]] || ! ldconfig -p 2>/dev/null | grep -q "libpam.so"; the
   echo "PAM support is required but was not detected. Install PAM development/runtime packages and retry."
   exit 1
 fi
-required_tools=(useradd usermod userdel groupadd groupmod groupdel passwd chage chpasswd gpasswd chown chmod systemctl)
+required_tools=(rsync useradd usermod userdel groupadd groupmod groupdel passwd chage chpasswd gpasswd chown chmod systemctl)
 missing_tools=()
 for tool in "${required_tools[@]}"; do
   if ! command -v "${tool}" >/dev/null 2>&1; then

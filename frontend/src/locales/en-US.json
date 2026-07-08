@@ -84,4 +84,16 @@
   "notify.logout": "Log out",
   "notify.theme": "Theme",
   "error.generic": "Something went wrong"
+  ,"transfers.title": "Transfers"
+  ,"transfers.copy": "Copy"
+  ,"transfers.move": "Move"
+  ,"transfers.source": "Source"
+  ,"transfers.destination": "Destination"
+  ,"transfers.currentFile": "Current file"
+  ,"transfers.details": "Details"
+  ,"transfers.hide": "Hide"
+  ,"transfers.cancel": "Cancel"
+  ,"transfers.transferred": "Transferred"
+  ,"transfers.eta": "ETA"
+  ,"transfers.status": "Status"
 }
