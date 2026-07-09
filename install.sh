@@ -71,7 +71,7 @@ Options:
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
   --existing-action ACTION
-                          Existing install action: update, backup-update, remove, remove-app, or abort
+                          Existing install action: update, backup-config, remove, remove-app, remove-all, or abort
   --update-config         Also regenerate config.yaml during update actions
   --help                  Show this help
 EOF
@@ -159,8 +159,8 @@ parse_args() {
       --existing-action)
         [[ $# -ge 2 ]] || fail "--existing-action requires a value"
         case "$2" in
-          update|backup-update|remove|remove-app|abort) EXISTING_ACTION="$2" ;;
-          *) fail "--existing-action must be one of: update, backup-update, remove, remove-app, abort" ;;
+          update|backup-config|remove|remove-app|remove-all|abort) EXISTING_ACTION="$2" ;;
+          *) fail "--existing-action must be one of: update, backup-config, remove, remove-app, remove-all, abort" ;;
         esac
         NON_INTERACTIVE="yes"
         shift 2
@@ -466,16 +466,17 @@ handle_existing_installation() {
     return
   fi
   if [[ "$ASSUME_YES" == "yes" ]]; then
-    ACTION="backup-update"
+    ACTION="update"
     UPDATE_CONFIG="no"
     return
   fi
   printf 'Choose action:\n'
-  printf '  1) Backup and update files (keep config)\n'
-  printf '  2) Remove and fresh install\n'
-  printf '  3) Update files only (keep config)\n'
-  printf '  4) Remove app only\n'
-  printf '  5) Abort\n'
+  printf '  1) Update application (keep config)\n'
+  printf '  2) Backup config\n'
+  printf '  3) Remove application and reinstall\n'
+  printf '  5) Remove app\n'
+  printf '  6) Remove app and all files\n'
+  printf '  7) Abort\n'
   local choice=""
   if choice="$(read_from_tty "Action [1]: ")"; then
     :
@@ -484,23 +485,23 @@ handle_existing_installation() {
     choice="1"
   fi
   case "${choice:-1}" in
-    1) ACTION="backup-update" ;;
-    2)
+    1) ACTION="update" ;;
+    2) ACTION="backup-config" ;;
+    3)
       confirm "Remove ${INSTALL_DIR} and install fresh?" "no" || fail "Installation cancelled"
       ACTION="remove"
       UPDATE_CONFIG="yes"
       ;;
-    3) ACTION="update" ;;
-    4) ACTION="remove-app" ;;
-    5) fail "Installation cancelled" ;;
+    5) ACTION="remove-app" ;;
+    6) ACTION="remove-all" ;;
+    7) fail "Installation cancelled" ;;
     *) fail "Invalid choice" ;;
   esac
-  prompt_config_update
 }
 
 prompt_config_update() {
   case "$ACTION" in
-    update|backup-update)
+    update)
       if [[ "$UPDATE_CONFIG" == "yes" ]]; then
         return
       fi
@@ -516,15 +517,32 @@ prompt_config_update() {
   esac
 }
 
-backup_existing() {
+backup_config_only() {
+  if [[ "$ACTION" != "backup-config" ]]; then
+    return 1
+  fi
+  section "Backing up config"
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    fail "Config file does not exist: ${CONFIG_FILE}"
+  fi
   local stamp backup_dir
   stamp="$(date +%Y%m%d-%H%M%S)"
-  if [[ "$ACTION" == "backup-update" || -f "$CONFIG_FILE" ]]; then
+  backup_dir="/var/backups/webnas/${stamp}"
+  install -d -m 0750 "$backup_dir"
+  cp -a "$CONFIG_FILE" "${backup_dir}/config.yaml"
+  ok "Config backup created: ${backup_dir}/config.yaml"
+  return 0
+}
+
+backup_before_reinstall() {
+  local stamp backup_dir
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  if [[ "$ACTION" == "remove" ]]; then
     backup_dir="/var/backups/webnas/${stamp}"
     install -d -m 0750 "$backup_dir"
     [[ -d "$INSTALL_DIR" ]] && rsync -a "$INSTALL_DIR/" "${backup_dir}/app/"
     [[ -f "$CONFIG_FILE" ]] && cp -a "$CONFIG_FILE" "${backup_dir}/config.yaml"
-    ok "Backup created: ${backup_dir}"
+    ok "Pre-reinstall backup created: ${backup_dir}"
   fi
 }
 
@@ -538,32 +556,8 @@ remove_existing_installation() {
   ok "Removed ${INSTALL_DIR}"
 }
 
-choose_remove_scope() {
-  printf 'Choose removal scope:\n'
-  printf '  1) Remove application only\n'
-  printf '  2) Remove application and config\n'
-  printf '  3) Remove application, data, and logs\n'
-  printf '  4) Remove application, config, data, and logs\n'
-  printf '  5) Cancel\n'
-  local choice=""
-  if choice="$(read_from_tty "Removal scope [1]: ")"; then
-    :
-  else
-    printf 'Removal scope [1]: 1\n' >&2
-    choice="1"
-  fi
-  case "${choice:-1}" in
-    1) REMOVE_SCOPE="app" ;;
-    2) REMOVE_SCOPE="app-config" ;;
-    3) REMOVE_SCOPE="app-data-logs" ;;
-    4) REMOVE_SCOPE="all" ;;
-    5) fail "Installation cancelled" ;;
-    *) fail "Invalid choice" ;;
-  esac
-}
-
 remove_app_only() {
-  if [[ "$ACTION" != "remove-app" ]]; then
+  if [[ "$ACTION" != "remove-app" && "$ACTION" != "remove-all" ]]; then
     return 1
   fi
   section "Removing application"
@@ -572,21 +566,13 @@ remove_app_only() {
   assert_removable_path "$CONFIG_DIR"
   assert_removable_path "$DATA_DIR"
   assert_removable_path "$LOG_DIR"
-  choose_remove_scope
-  case "$REMOVE_SCOPE" in
-    app)
-      confirm "Remove application files from ${INSTALL_DIR} only?" "no" || fail "Installation cancelled"
-      ;;
-    app-config)
-      confirm "Remove application files and config from ${CONFIG_DIR}?" "no" || fail "Installation cancelled"
-      ;;
-    app-data-logs)
-      confirm "Remove application files, data, and logs from ${DATA_DIR}, ${LOG_DIR}?" "no" || fail "Installation cancelled"
-      ;;
-    all)
-      confirm "Remove application, config, data, and logs?" "no" || fail "Installation cancelled"
-      ;;
-  esac
+  if [[ "$ACTION" == "remove-all" ]]; then
+    REMOVE_SCOPE="all"
+    confirm "Remove application, config, data, and logs?" "no" || fail "Installation cancelled"
+  else
+    REMOVE_SCOPE="app"
+    confirm "Remove application files from ${INSTALL_DIR} only?" "no" || fail "Installation cancelled"
+  fi
   systemctl disable --now "${SERVICE_NAME}.service" 2>/dev/null || true
   rm -f "$SERVICE_FILE"
   rm -f "$PAM_SERVICE_FILE"
@@ -742,8 +728,6 @@ Restart=on-failure
 RestartSec=3
 # WebNAS uses PAM and drops file-operation workers into authenticated Linux
 # user contexts. Root is required when that impersonation model is enabled.
-User=${SERVICE_USER}
-Group=${SERVICE_GROUP}
 NoNewPrivileges=false
 PrivateTmp=true
 ProtectSystem=full
@@ -809,6 +793,14 @@ validate_installation() {
     else
       print_runtime_diagnostics
       fail "Backend service is not active"
+    fi
+    local service_uid
+    service_uid="$(systemctl show "$SERVICE_NAME" -p MainPID --value | xargs -r -I{} ps -o euid= -p {} 2>/dev/null | tr -d ' ')"
+    if [[ "$service_uid" == "0" ]]; then
+      ok "Backend service runs as root for PAM and per-user impersonation"
+    else
+      print_runtime_diagnostics
+      fail "Backend service must run as root for local PAM authentication; current euid=${service_uid:-unknown}"
     fi
     if command -v ss >/dev/null 2>&1; then
       local port_ready="no"
@@ -907,6 +899,10 @@ main() {
   require_root
   prompt_install_dir
   handle_existing_installation
+  if backup_config_only; then
+    INSTALL_COMPLETED="yes"
+    return
+  fi
   if remove_app_only; then
     INSTALL_COMPLETED="yes"
     return
@@ -917,7 +913,7 @@ main() {
   prompt_configuration
   install_dependencies
   setup_node_runtime
-  backup_existing
+  backup_before_reinstall
   ensure_service_user
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
   remove_existing_installation
