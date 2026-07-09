@@ -398,6 +398,14 @@ PY
 
 setup_python() {
   section "Installing Python packages"
+  python3 - <<'PY'
+import sys
+
+required = (3, 11)
+if sys.version_info < required:
+    version = ".".join(str(part) for part in sys.version_info[:3])
+    raise SystemExit(f"WebNAS requires Python {required[0]}.{required[1]} or newer; found Python {version}")
+PY
   python3 -m venv "${INSTALL_DIR}/backend/.venv"
   "${INSTALL_DIR}/backend/.venv/bin/pip" install --upgrade pip wheel
   "${INSTALL_DIR}/backend/.venv/bin/pip" install -r "${INSTALL_DIR}/backend/requirements.txt"
