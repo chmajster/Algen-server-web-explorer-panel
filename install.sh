@@ -448,6 +448,7 @@ prompt_configuration() {
 handle_existing_installation() {
   if [[ ! -d "$INSTALL_DIR" ]]; then
     ACTION="install"
+    UPDATE_CONFIG="yes"
     section "Installation check"
     ok "No existing installation found in ${INSTALL_DIR}"
     if [[ "$ASSUME_YES" != "yes" ]]; then
@@ -461,16 +462,18 @@ handle_existing_installation() {
   if [[ -n "$EXISTING_ACTION" ]]; then
     ACTION="$EXISTING_ACTION"
     [[ "$ACTION" != "abort" ]] || fail "Installation cancelled"
+    prompt_config_update
     return
   fi
   if [[ "$ASSUME_YES" == "yes" ]]; then
     ACTION="backup-update"
+    UPDATE_CONFIG="no"
     return
   fi
   printf 'Choose action:\n'
-  printf '  1) Backup and update\n'
+  printf '  1) Backup and update files (keep config)\n'
   printf '  2) Remove and fresh install\n'
-  printf '  3) Update existing installation\n'
+  printf '  3) Update files only (keep config)\n'
   printf '  4) Remove app only\n'
   printf '  5) Abort\n'
   local choice=""
@@ -485,12 +488,14 @@ handle_existing_installation() {
     2)
       confirm "Remove ${INSTALL_DIR} and install fresh?" "no" || fail "Installation cancelled"
       ACTION="remove"
+      UPDATE_CONFIG="yes"
       ;;
     3) ACTION="update" ;;
     4) ACTION="remove-app" ;;
     5) fail "Installation cancelled" ;;
     *) fail "Invalid choice" ;;
   esac
+  prompt_config_update
 }
 
 prompt_config_update() {
@@ -907,7 +912,6 @@ main() {
   detect_package_manager
   detect_proxmox_host
   prepare_source
-  prompt_config_update
   prompt_configuration
   install_dependencies
   setup_node_runtime
