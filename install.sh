@@ -19,6 +19,7 @@ ASSUME_YES="no"
 NON_INTERACTIVE="no"
 ACTION="install"
 EXISTING_ACTION=""
+REMOVE_SCOPE=""
 ALLOW_PROXMOX_HOST_INSTALL="no"
 IS_PROXMOX="no"
 
@@ -64,7 +65,7 @@ Options:
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
   --existing-action ACTION
-                          Existing install action: update, backup-update, remove, or abort
+                          Existing install action: update, backup-update, remove, remove-app, or abort
   --help                  Show this help
 EOF
 }
@@ -140,8 +141,8 @@ parse_args() {
       --existing-action)
         [[ $# -ge 2 ]] || fail "--existing-action requires a value"
         case "$2" in
-          update|backup-update|remove|abort) EXISTING_ACTION="$2" ;;
-          *) fail "--existing-action must be one of: update, backup-update, remove, abort" ;;
+          update|backup-update|remove|remove-app|abort) EXISTING_ACTION="$2" ;;
+          *) fail "--existing-action must be one of: update, backup-update, remove, remove-app, abort" ;;
         esac
         NON_INTERACTIVE="yes"
         shift 2
@@ -220,6 +221,15 @@ validate_install_dir() {
   [[ "$INSTALL_DIR" = /* ]] || fail "Installation directory must be an absolute path"
   [[ "$INSTALL_DIR" != "/" ]] || fail "Installation directory cannot be /"
   [[ "$INSTALL_DIR" != "/etc" && "$INSTALL_DIR" != "/usr" && "$INSTALL_DIR" != "/bin" && "$INSTALL_DIR" != "/lib" ]] || fail "Choose a dedicated installation directory, for example /opt/webnas"
+}
+
+assert_removable_path() {
+  local path="$1"
+  case "$path" in
+    "$INSTALL_DIR"|"$CONFIG_DIR"|"$DATA_DIR"|"$LOG_DIR") return 0 ;;
+    ""|/|/etc|/var|/opt|/home|/root|/mnt|/mnt/pve|/var/lib/vz|/etc/pve) ;;
+  esac
+  fail "Refusing unsafe removal path: ${path}"
 }
 
 detect_package_manager() {
@@ -369,7 +379,8 @@ handle_existing_installation() {
   printf '  1) Backup and update\n'
   printf '  2) Remove and fresh install\n'
   printf '  3) Update existing installation\n'
-  printf '  4) Abort\n'
+  printf '  4) Remove app only\n'
+  printf '  5) Abort\n'
   local choice=""
   if choice="$(read_from_tty "Action [1]: ")"; then
     :
@@ -384,7 +395,8 @@ handle_existing_installation() {
       ACTION="remove"
       ;;
     3) ACTION="update" ;;
-    4) fail "Installation cancelled" ;;
+    4) ACTION="remove-app" ;;
+    5) fail "Installation cancelled" ;;
     *) fail "Invalid choice" ;;
   esac
 }
@@ -409,6 +421,82 @@ remove_existing_installation() {
   validate_install_dir
   rm -rf --one-file-system "$INSTALL_DIR"
   ok "Removed ${INSTALL_DIR}"
+}
+
+choose_remove_scope() {
+  printf 'Choose removal scope:\n'
+  printf '  1) Remove application only\n'
+  printf '  2) Remove application and config\n'
+  printf '  3) Remove application, data, and logs\n'
+  printf '  4) Remove application, config, data, and logs\n'
+  printf '  5) Cancel\n'
+  local choice=""
+  if choice="$(read_from_tty "Removal scope [1]: ")"; then
+    :
+  else
+    printf 'Removal scope [1]: 1\n' >&2
+    choice="1"
+  fi
+  case "${choice:-1}" in
+    1) REMOVE_SCOPE="app" ;;
+    2) REMOVE_SCOPE="app-config" ;;
+    3) REMOVE_SCOPE="app-data-logs" ;;
+    4) REMOVE_SCOPE="all" ;;
+    5) fail "Installation cancelled" ;;
+    *) fail "Invalid choice" ;;
+  esac
+}
+
+remove_app_only() {
+  if [[ "$ACTION" != "remove-app" ]]; then
+    return 1
+  fi
+  section "Removing application"
+  validate_install_dir
+  assert_removable_path "$INSTALL_DIR"
+  assert_removable_path "$CONFIG_DIR"
+  assert_removable_path "$DATA_DIR"
+  assert_removable_path "$LOG_DIR"
+  choose_remove_scope
+  case "$REMOVE_SCOPE" in
+    app)
+      confirm "Remove application files from ${INSTALL_DIR} only?" "no" || fail "Installation cancelled"
+      ;;
+    app-config)
+      confirm "Remove application files and config from ${CONFIG_DIR}?" "no" || fail "Installation cancelled"
+      ;;
+    app-data-logs)
+      confirm "Remove application files, data, and logs from ${DATA_DIR}, ${LOG_DIR}?" "no" || fail "Installation cancelled"
+      ;;
+    all)
+      confirm "Remove application, config, data, and logs?" "no" || fail "Installation cancelled"
+      ;;
+  esac
+  systemctl disable --now "${SERVICE_NAME}.service" 2>/dev/null || true
+  rm -f "$SERVICE_FILE"
+  systemctl daemon-reload 2>/dev/null || true
+  rm -rf --one-file-system "$INSTALL_DIR"
+  ok "Removed application files from ${INSTALL_DIR}"
+  case "$REMOVE_SCOPE" in
+    app)
+      ok "Kept config, data, and logs in ${CONFIG_DIR}, ${DATA_DIR}, ${LOG_DIR}"
+      ;;
+    app-config)
+      rm -rf --one-file-system "$CONFIG_DIR"
+      ok "Removed config from ${CONFIG_DIR}"
+      ok "Kept data and logs in ${DATA_DIR}, ${LOG_DIR}"
+      ;;
+    app-data-logs)
+      rm -rf --one-file-system "$DATA_DIR" "$LOG_DIR"
+      ok "Removed data and logs from ${DATA_DIR}, ${LOG_DIR}"
+      ok "Kept config in ${CONFIG_DIR}"
+      ;;
+    all)
+      rm -rf --one-file-system "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
+      ok "Removed config, data, and logs from ${CONFIG_DIR}, ${DATA_DIR}, ${LOG_DIR}"
+      ;;
+  esac
+  return 0
 }
 
 ensure_service_user() {
@@ -611,6 +699,7 @@ main() {
   require_root
   prompt_install_dir
   handle_existing_installation
+  remove_app_only && return
   detect_package_manager
   detect_proxmox_host
   prepare_source
