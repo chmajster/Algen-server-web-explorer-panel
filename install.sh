@@ -31,6 +31,7 @@ LOG_DIR="/var/log/webnas"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 WORK_DIR=""
 SOURCE_DIR=""
+CURRENT_STEP="startup"
 
 if [[ -t 1 ]]; then
   RED="$(printf '\033[31m')"
@@ -76,13 +77,23 @@ info() { log "INFO" "$BLUE" "$1"; }
 ok() { log "OK" "$GREEN" "$1"; }
 warn() { log "WARN" "$YELLOW" "$1"; }
 fail() { log "ERROR" "$RED" "$1"; exit 1; }
-section() { printf '\n%b==> %s%b\n' "$BOLD" "$1" "$RESET"; }
+section() {
+  CURRENT_STEP="$1"
+  printf '\n%b==> %s%b\n' "$BOLD" "$1" "$RESET"
+}
 
 on_error() {
   local line="$1"
   local code="$2"
+  trap - ERR
   printf '\n%b[ERROR]%b Installation failed at line %s with exit code %s.\n' "$RED" "$RESET" "$line" "$code" >&2
-  printf 'Check the last command output above. If systemd was reached, inspect: journalctl -u %s -n 80 --no-pager\n' "$SERVICE_NAME" >&2
+  printf 'Failed step: %s\n' "$CURRENT_STEP" >&2
+  printf 'Check the command output directly above this error.\n' >&2
+  if [[ -f "$SERVICE_FILE" ]]; then
+    printf 'Systemd service exists; inspect: journalctl -u %s -n 80 --no-pager\n' "$SERVICE_NAME" >&2
+  else
+    printf 'Systemd service was not installed yet, so journalctl may have no entries.\n' >&2
+  fi
 }
 trap 'on_error "$LINENO" "$?"' ERR
 
