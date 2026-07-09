@@ -416,6 +416,10 @@ prompt_install_dir() {
 }
 
 prompt_configuration() {
+  if [[ "$ACTION" == "update" ]]; then
+    validate_port
+    return
+  fi
   if [[ "$NON_INTERACTIVE" != "yes" ]]; then
     section "Configuration"
     PORT="$(ask "Application port" "$PORT")"
