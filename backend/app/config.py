@@ -19,6 +19,7 @@ class ServerConfig(BaseModel):
 
 class AuthConfig(BaseModel):
     provider: Literal["pam"] = "pam"
+    pam_service: str = "webnas"
     session_cookie_name: str = "webnas_session"
 
 

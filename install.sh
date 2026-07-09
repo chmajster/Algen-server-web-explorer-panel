@@ -30,6 +30,7 @@ CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 DATA_DIR="/var/lib/webnas"
 LOG_DIR="/var/log/webnas"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+PAM_SERVICE_FILE="/etc/pam.d/${SERVICE_NAME}"
 WORK_DIR=""
 SOURCE_DIR=""
 CURRENT_STEP="startup"
@@ -583,6 +584,7 @@ remove_app_only() {
   esac
   systemctl disable --now "${SERVICE_NAME}.service" 2>/dev/null || true
   rm -f "$SERVICE_FILE"
+  rm -f "$PAM_SERVICE_FILE"
   systemctl daemon-reload 2>/dev/null || true
   rm -rf --one-file-system "$INSTALL_DIR"
   ok "Removed application files from ${INSTALL_DIR}"
@@ -661,6 +663,31 @@ PY
   chmod 0640 "$CONFIG_FILE"
   chown "root:${SERVICE_GROUP}" "$CONFIG_FILE" || chown root:root "$CONFIG_FILE"
   ok "Config written: ${CONFIG_FILE}"
+}
+
+write_pam_service() {
+  section "Installing PAM service"
+  if [[ -f /etc/pam.d/common-auth && -f /etc/pam.d/common-account ]]; then
+    cat > "$PAM_SERVICE_FILE" <<'EOF'
+# PAM policy for WebNAS local Linux user login.
+auth      include common-auth
+account   include common-account
+password  include common-password
+session   include common-session
+EOF
+  elif [[ -f /etc/pam.d/system-auth ]]; then
+    cat > "$PAM_SERVICE_FILE" <<'EOF'
+# PAM policy for WebNAS local Linux user login.
+auth      include system-auth
+account   include system-auth
+password  include system-auth
+session   include system-auth
+EOF
+  else
+    fail "Could not find a supported PAM base policy in /etc/pam.d"
+  fi
+  chmod 0644 "$PAM_SERVICE_FILE"
+  ok "PAM service installed: ${PAM_SERVICE_FILE}"
 }
 
 setup_python() {
@@ -891,6 +918,7 @@ main() {
   copy_application
   setup_python
   write_config
+  write_pam_service
   build_frontend
   install_uninstaller
   write_service

@@ -43,8 +43,9 @@ def authenticate(username: str, password: str) -> None:
     assert_login_allowed(username)
     if not password:
         raise HTTPException(401, "Invalid username or password")
+    cfg = get_config()
     authenticator = pam.pam()
-    if not authenticator.authenticate(username, password):
+    if not authenticator.authenticate(username, password, service=cfg.auth.pam_service):
         raise HTTPException(401, "Invalid username or password")
 
 
