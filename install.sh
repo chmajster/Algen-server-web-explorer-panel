@@ -18,6 +18,7 @@ SKIP_BUILD="no"
 ASSUME_YES="no"
 NON_INTERACTIVE="no"
 ACTION="install"
+EXISTING_ACTION=""
 ALLOW_PROXMOX_HOST_INSTALL="no"
 IS_PROXMOX="no"
 
@@ -62,6 +63,8 @@ Options:
   --skip-build            Skip frontend build
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
+  --existing-action ACTION
+                          Existing install action: update, backup-update, or abort
   --help                  Show this help
 EOF
 }
@@ -134,6 +137,15 @@ parse_args() {
         NON_INTERACTIVE="yes"
         shift
         ;;
+      --existing-action)
+        [[ $# -ge 2 ]] || fail "--existing-action requires a value"
+        case "$2" in
+          update|backup-update|abort) EXISTING_ACTION="$2" ;;
+          *) fail "--existing-action must be one of: update, backup-update, abort" ;;
+        esac
+        NON_INTERACTIVE="yes"
+        shift 2
+        ;;
       --help|-h)
         usage
         exit 0
@@ -145,6 +157,17 @@ parse_args() {
   done
 }
 
+read_from_tty() {
+  local prompt="$1"
+  local answer=""
+  if [[ -e /dev/tty ]]; then
+    read -r -p "$prompt" answer </dev/tty || return 1
+    printf '%s' "$answer"
+    return 0
+  fi
+  return 1
+}
+
 ask() {
   local prompt="$1"
   local default="$2"
@@ -154,10 +177,11 @@ ask() {
     printf '%s' "$default"
     return
   fi
-  if [[ -r /dev/tty ]]; then
-    read -r -p "${prompt} [${default}]: " answer </dev/tty || answer=""
+  if answer="$(read_from_tty "${prompt} [${default}]: ")"; then
+    :
   else
     printf '%s [%s]: %s\n' "$prompt" "$default" "$default" >&2
+    answer="$default"
   fi
   printf '%s' "${answer:-$default}"
 }
@@ -172,8 +196,8 @@ confirm() {
     return
   fi
   local answer=""
-  if [[ -r /dev/tty ]]; then
-    read -r -p "${prompt} ${suffix} " answer </dev/tty || answer="$default"
+  if answer="$(read_from_tty "${prompt} ${suffix} ")"; then
+    :
   else
     printf '%s %s %s\n' "$prompt" "$suffix" "$default" >&2
     answer="$default"
@@ -325,6 +349,11 @@ handle_existing_installation() {
 
   section "Existing installation detected"
   warn "${INSTALL_DIR} already exists"
+  if [[ -n "$EXISTING_ACTION" ]]; then
+    ACTION="$EXISTING_ACTION"
+    [[ "$ACTION" != "abort" ]] || fail "Installation cancelled"
+    return
+  fi
   if [[ "$ASSUME_YES" == "yes" ]]; then
     ACTION="backup-update"
     return
@@ -334,8 +363,8 @@ handle_existing_installation() {
   printf '  2) Backup and update\n'
   printf '  3) Abort\n'
   local choice=""
-  if [[ -r /dev/tty ]]; then
-    read -r -p "Action [2]: " choice </dev/tty || choice="2"
+  if choice="$(read_from_tty "Action [2]: ")"; then
+    :
   else
     printf 'Action [2]: 2\n' >&2
     choice="2"
