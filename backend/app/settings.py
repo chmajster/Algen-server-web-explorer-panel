@@ -113,6 +113,10 @@ class ServiceAction(AdminPassword):
     confirm_restart: bool = False
 
 
+class UpdateAction(AdminPassword):
+    update_config: bool = False
+
+
 class UserCreate(AdminPassword):
     username: str
     password: str
@@ -250,6 +254,17 @@ def _tool(name: str) -> str:
 
 def _groups_for(username: str) -> list[str]:
     return sorted(group.gr_name for group in grp.getgrall() if username in group.gr_mem or group.gr_gid == pwd.getpwnam(username).pw_gid)
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _git_output(args: list[str], *, timeout: int = 20) -> str:
+    result = subprocess.run([_tool("git"), *args], cwd=_repo_root(), capture_output=True, text=True, timeout=timeout, check=False)
+    if result.returncode != 0:
+        raise HTTPException(400, result.stderr.strip() or "Git command failed")
+    return result.stdout.strip()
 
 
 def _user_info(username: str) -> dict:
@@ -667,6 +682,42 @@ def admin_system_restart(payload: AdminPassword, request: Request, user: Session
     _run([_tool("systemctl"), "restart", "webnas.service"])
     _audit(user.username, "restart_system", "webnas.service")
     return {"ok": True}
+
+
+@router.get("/api/admin/system/updates/check")
+def admin_updates_check(user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    local = _git_output(["rev-parse", "HEAD"])
+    branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"])
+    remote = _git_output(["ls-remote", "origin", branch]).split()
+    if not remote:
+        raise HTTPException(400, f"Could not find remote branch: origin/{branch}")
+    remote_sha = remote[0]
+    return {
+        "branch": branch,
+        "local": local,
+        "remote": remote_sha,
+        "update_available": local != remote_sha,
+    }
+
+
+@router.post("/api/admin/system/updates/download")
+def admin_updates_download(payload: UpdateAction, request: Request, user: SessionUser = Depends(_current_user)):
+    _require_admin(user, payload.admin_password, request, "download_update")
+    installer = _repo_root() / "install.sh"
+    if not installer.exists():
+        raise HTTPException(500, f"Installer not found: {installer}")
+    command = [_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
+    if payload.update_config:
+        command.append("--update-config")
+    log_path = Path(get_config().paths.log_dir) / "update.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write("\n=== WebNAS update started ===\n")
+        process = subprocess.Popen(command, cwd=_repo_root(), stdout=log, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    _audit(user.username, "download_update", f"pid={process.pid}")
+    return {"ok": True, "pid": process.pid, "log": str(log_path)}
 
 
 @router.get("/api/admin/system/logs")

@@ -84,6 +84,8 @@ export type SettingsMe = {
 export type AdminUser = SettingsMe & { is_system: boolean; manageable: boolean };
 export type AdminGroup = { name: string; gid: number; members: string[] };
 export type SystemStatus = { service: string; version: string; port: number; data_dir: string; log_dir: string; temp_dir: string };
+export type UpdateStatus = { branch: string; local: string; remote: string; update_available: boolean };
+export type UpdateStart = { ok: boolean; pid: number; log: string };
 export type SystemLogs = { source: string; lines: string[] };
 export type SystemdService = {
   name: string;
@@ -290,6 +292,8 @@ export const api = {
   systemLogs: (lines = 160) => request<SystemLogs>(`/api/admin/system/logs?lines=${lines}`),
   proxmoxSafety: () => request<ProxmoxSafety>("/api/admin/system/proxmox-safety"),
   restartSystem: (admin_password: string) => request("/api/admin/system/restart", { method: "POST", body: JSON.stringify({ admin_password }) }),
+  checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
+  downloadUpdates: (admin_password: string, update_config = false) => request<UpdateStart>("/api/admin/system/updates/download", { method: "POST", body: JSON.stringify({ admin_password, update_config }) }),
   systemdServices: () => request<SystemdService[]>("/api/admin/system/services"),
   systemdServiceAction: (service: string, action: "start" | "stop" | "restart" | "enable" | "disable", admin_password: string, confirm_restart = false) => request<SystemdService>(`/api/admin/system/services/${encodeURIComponent(service)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm_restart }) }),
   systemdServiceLogs: (service: string, lines = 200) => request<SystemLogs>(`/api/admin/system/services/${encodeURIComponent(service)}/logs?lines=${lines}`),

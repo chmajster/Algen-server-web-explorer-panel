@@ -36,7 +36,7 @@ import {
   Users,
   X
 } from "lucide-react";
-import { AdminGroup, AdminUser, api, downloadUrl, FileItem, login, logout, me, ProxmoxSafety, SettingsMe, SystemdService, SystemLogs, Task } from "./api";
+import { AdminGroup, AdminUser, api, downloadUrl, FileItem, login, logout, me, ProxmoxSafety, SettingsMe, SystemdService, SystemLogs, Task, UpdateStatus } from "./api";
 import type { NetworkMount, NetworkMountPayload, ResourceDashboard, SambaConfig, SambaShare, StoreApp as StoreModule } from "./api";
 import { AppIcon } from "./components/AppIcon";
 import { detectLanguage, Language, supportedLanguages, translate } from "./i18n";
@@ -870,6 +870,7 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [system, setSystem] = useState<Record<string, unknown> | null>(null);
   const [safety, setSafety] = useState<ProxmoxSafety | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
 
   async function load() {
@@ -896,6 +897,25 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
     }
   }
   const adminPassword = () => form.admin_password || prompt(t("settings.adminPassword")) || "";
+  async function checkUpdates() {
+    try {
+      const result = await api.checkUpdates();
+      setUpdateStatus(result);
+      toast(result.update_available ? "Update available" : "Application is up to date");
+    } catch (err) {
+      toast(message(err, "Could not check updates"), "error");
+    }
+  }
+  async function downloadUpdates() {
+    const admin_password = adminPassword();
+    if (!admin_password) return;
+    try {
+      const result = await api.downloadUpdates(admin_password);
+      toast(`Update started, pid ${result.pid}`);
+    } catch (err) {
+      toast(message(err, "Could not start update"), "error");
+    }
+  }
 
   return (
     <>
@@ -981,7 +1001,17 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
                   <dt>Protected paths</dt><dd>{safety.protected_paths.slice(0, 8).join(", ")}{safety.protected_paths.length > 8 ? "..." : ""}</dd>
                   <dt>Warnings</dt><dd>{safety.warnings.join(" ")}</dd>
                 </dl>}
-                <button onClick={() => submit(t("action.restart"), () => api.restartSystem(adminPassword()))}><RefreshCw size={16} />{t("action.restart")}</button>
+                <div className="toolbar">
+                  <button onClick={checkUpdates}><Search size={16} />Check updates</button>
+                  <button onClick={downloadUpdates}><Download size={16} />Download updates</button>
+                  <button onClick={() => submit(t("action.restart"), () => api.restartSystem(adminPassword()))}><RefreshCw size={16} />{t("action.restart")}</button>
+                </div>
+                {updateStatus && <dl className="info-grid">
+                  <dt>Update</dt><dd>{updateStatus.update_available ? "Available" : "Up to date"}</dd>
+                  <dt>Branch</dt><dd>{updateStatus.branch}</dd>
+                  <dt>Local</dt><dd>{updateStatus.local.slice(0, 12)}</dd>
+                  <dt>Remote</dt><dd>{updateStatus.remote.slice(0, 12)}</dd>
+                </dl>}
               </>}
             </section>
           )}
