@@ -64,7 +64,7 @@ Options:
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
   --existing-action ACTION
-                          Existing install action: update, backup-update, or abort
+                          Existing install action: update, backup-update, remove, or abort
   --help                  Show this help
 EOF
 }
@@ -140,8 +140,8 @@ parse_args() {
       --existing-action)
         [[ $# -ge 2 ]] || fail "--existing-action requires a value"
         case "$2" in
-          update|backup-update|abort) EXISTING_ACTION="$2" ;;
-          *) fail "--existing-action must be one of: update, backup-update, abort" ;;
+          update|backup-update|remove|abort) EXISTING_ACTION="$2" ;;
+          *) fail "--existing-action must be one of: update, backup-update, remove, abort" ;;
         esac
         NON_INTERACTIVE="yes"
         shift 2
@@ -310,11 +310,14 @@ prepare_source() {
   ok "Source downloaded"
 }
 
+prompt_install_dir() {
+  validate_install_dir
+}
+
 prompt_configuration() {
   if [[ "$NON_INTERACTIVE" != "yes" ]]; then
     section "Configuration"
     PORT="$(ask "Application port" "$PORT")"
-    INSTALL_DIR="$(ask "Installation directory" "$INSTALL_DIR")"
     SERVICE_USER="$(ask "Service user" "$SERVICE_USER")"
     confirm "Start service after installation?" "yes" && START_SERVICE="yes" || START_SERVICE="no"
     confirm "Enable systemd autostart?" "yes" && ENABLE_AUTOSTART="yes" || ENABLE_AUTOSTART="no"
@@ -326,7 +329,6 @@ prompt_configuration() {
   fi
 
   validate_port
-  validate_install_dir
 
   section "Summary"
   printf 'Port:             %s\n' "$PORT"
@@ -344,6 +346,11 @@ prompt_configuration() {
 handle_existing_installation() {
   if [[ ! -d "$INSTALL_DIR" ]]; then
     ACTION="install"
+    section "Installation check"
+    ok "No existing installation found in ${INSTALL_DIR}"
+    if [[ "$ASSUME_YES" != "yes" ]]; then
+      confirm "Start new installation?" "yes" || fail "Installation cancelled"
+    fi
     return
   fi
 
@@ -359,20 +366,25 @@ handle_existing_installation() {
     return
   fi
   printf 'Choose action:\n'
-  printf '  1) Update existing installation\n'
-  printf '  2) Backup and update\n'
-  printf '  3) Abort\n'
+  printf '  1) Backup and update\n'
+  printf '  2) Remove and fresh install\n'
+  printf '  3) Update existing installation\n'
+  printf '  4) Abort\n'
   local choice=""
-  if choice="$(read_from_tty "Action [2]: ")"; then
+  if choice="$(read_from_tty "Action [1]: ")"; then
     :
   else
-    printf 'Action [2]: 2\n' >&2
-    choice="2"
+    printf 'Action [1]: 1\n' >&2
+    choice="1"
   fi
-  case "${choice:-2}" in
-    1) ACTION="update" ;;
-    2) ACTION="backup-update" ;;
-    3) fail "Installation cancelled" ;;
+  case "${choice:-1}" in
+    1) ACTION="backup-update" ;;
+    2)
+      confirm "Remove ${INSTALL_DIR} and install fresh?" "no" || fail "Installation cancelled"
+      ACTION="remove"
+      ;;
+    3) ACTION="update" ;;
+    4) fail "Installation cancelled" ;;
     *) fail "Invalid choice" ;;
   esac
 }
@@ -387,6 +399,16 @@ backup_existing() {
     [[ -f "$CONFIG_FILE" ]] && cp -a "$CONFIG_FILE" "${backup_dir}/config.yaml"
     ok "Backup created: ${backup_dir}"
   fi
+}
+
+remove_existing_installation() {
+  if [[ "$ACTION" != "remove" ]]; then
+    return
+  fi
+  section "Removing existing installation"
+  validate_install_dir
+  rm -rf --one-file-system "$INSTALL_DIR"
+  ok "Removed ${INSTALL_DIR}"
 }
 
 ensure_service_user() {
@@ -587,17 +609,17 @@ main() {
   parse_args "$@"
   banner
   require_root
-  validate_port
-  validate_install_dir
+  prompt_install_dir
+  handle_existing_installation
   detect_package_manager
   detect_proxmox_host
   prepare_source
   prompt_configuration
-  handle_existing_installation
   install_dependencies
   backup_existing
   ensure_service_user
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+  remove_existing_installation
   copy_application
   setup_python
   write_config
