@@ -633,6 +633,10 @@ copy_application() {
 }
 
 write_config() {
+  if [[ "$ACTION" == "update" && -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
+    ok "Keeping existing config: ${CONFIG_FILE}"
+    return
+  fi
   section "Writing configuration"
   install -d -m 0755 "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
   install -d -m 1777 "${DATA_DIR}/tmp"
