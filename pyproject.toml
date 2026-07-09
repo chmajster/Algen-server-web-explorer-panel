@@ -36,6 +36,7 @@ ignore = ["B008", "E501"]
 
 [tool.mypy]
 python_version = "3.11"
+platform = "linux"
 mypy_path = "backend"
 packages = ["app"]
 ignore_missing_imports = true

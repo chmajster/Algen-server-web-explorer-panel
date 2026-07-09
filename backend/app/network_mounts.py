@@ -590,7 +590,8 @@ def enqueue(mount_id: str, action: str) -> dict:
             elif action == "unmount":
                 set_status(mount_id, "unmounted")
             elif action == "test":
-                set_status(mount_id, mount.get("status") if mount.get("status") != "testing" else "unmounted")
+                current_status = str(mount.get("status") or "unmounted")
+                set_status(mount_id, current_status if current_status != "testing" else "unmounted")
             else:
                 set_status(mount_id, "mounted")
         except Exception as exc:  # noqa: BLE001

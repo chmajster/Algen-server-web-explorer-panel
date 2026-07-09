@@ -4,6 +4,7 @@ import base64
 import asyncio
 import json
 from pathlib import Path
+from typing import cast
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -224,7 +225,7 @@ def download(path: str, user=Depends(current_user)):
 @app.get("/api/files/preview")
 def preview(path: str, user=Depends(current_user)):
     target = resolve_user_path(user.username, path)
-    result = run_user_op(user.username, "preview", {"path": str(target)})
+    result = cast(dict[str, str], run_user_op(user.username, "preview", {"path": str(target)}))
     content = base64.b64decode(result["content"])
     return {"path": str(target), "mime": mime_for(str(target)), "content_base64": base64.b64encode(content).decode("ascii")}
 

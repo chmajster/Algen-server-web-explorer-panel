@@ -9,6 +9,7 @@ import pwd
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
@@ -23,6 +24,12 @@ from .proxmox_guard import assert_path_allowed
 
 MUTATING_OPS = {"mkdir", "create", "delete", "trash", "chmod", "import_upload"}
 SORT_FIELDS = {"name", "size", "type", "owner", "group", "permissions", "modified", "mtime"}
+
+
+def _worker_items(result: object) -> list[dict[str, Any]]:
+    if not isinstance(result, list):
+        raise HTTPException(500, "Worker returned an invalid item list")
+    return cast(list[dict[str, Any]], result)
 
 
 def ensure_temp_dir() -> Path:
@@ -91,11 +98,11 @@ def list_dir(
         raise HTTPException(400, "Invalid sort direction")
     page = max(1, page)
     page_size = min(max(1, page_size), 20)
-    raw_items = run_user_op(username, "list", {"path": str(target)})  # type: ignore[assignment]
-    items = _filter_items(list(raw_items), filter_text)
+    raw_items = _worker_items(run_user_op(username, "list", {"path": str(target)}))
+    items = _filter_items(raw_items, filter_text)
     reverse = direction == "desc"
     if sort:
-        items.sort(key=lambda item: _item_sort_value(item, sort), reverse=reverse)
+        items.sort(key=lambda item: str(_item_sort_value(item, sort)), reverse=reverse)
     if folders_first:
         items.sort(key=lambda item: not item.get("is_dir", False))
     total_items = len(items)
@@ -123,7 +130,7 @@ def list_dir(
 
 def tree_dir(username: str, path: str | None) -> dict:
     target = resolve_user_path(username, path)
-    raw_items = run_user_op(username, "list", {"path": str(target)})  # type: ignore[assignment]
+    raw_items = _worker_items(run_user_op(username, "list", {"path": str(target)}))
     directories = [item for item in raw_items if item.get("is_dir")]
     directories.sort(key=lambda item: str(item.get("name", "")).lower())
     return {"path": str(target), "items": directories}

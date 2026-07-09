@@ -125,7 +125,8 @@ DEFAULT_CONFIG_PATHS = (
 
 def load_config(path: str | None = None) -> AppConfig:
     env_path = os.environ.get("WEBNAS_CONFIG")
-    candidates = [Path(path or env_path)] if path or env_path else list(DEFAULT_CONFIG_PATHS)
+    selected_path = path or env_path
+    candidates = [Path(selected_path)] if selected_path is not None else list(DEFAULT_CONFIG_PATHS)
     for candidate in candidates:
         if candidate.exists():
             with candidate.open("r", encoding="utf-8") as handle:
