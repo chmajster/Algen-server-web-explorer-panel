@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from .audit import logger
 from .auth import authenticate
+from .config import get_config
 from .path_policy import resolve_user_path
 from .proxmox_guard import safe_mode_active
 from .security import SessionUser, get_session_user, require_csrf
@@ -23,7 +24,7 @@ from .security import SessionUser, get_session_user, require_csrf
 router = APIRouter(prefix="/api/apps")
 
 MODULES_DIR = Path(__file__).resolve().parent / "modules"
-APP_STATE_DIR = Path("/etc/webnas/apps")
+APP_STATE_DIR = Path(get_config().paths.data_dir) / "apps"
 APP_LOG_DIR = Path("/var/log/webnas/apps")
 SAMBA_CONF = Path("/etc/samba/smb.conf")
 SHARE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,63}$")

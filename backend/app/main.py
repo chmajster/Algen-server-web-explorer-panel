@@ -20,7 +20,7 @@ from .file_ops import download_response, list_dir, mime_for, run_user_op, save_u
 from .network_mounts import assert_write_allowed, router as mounts_router
 from .path_policy import resolve_user_path
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
-from .settings import router as settings_router
+from .settings import router as settings_router, start_auto_update_scheduler
 from .tasks import task_store
 
 configure_logging()
@@ -29,6 +29,11 @@ app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, all
 app.include_router(settings_router)
 app.include_router(apps_router)
 app.include_router(mounts_router)
+
+
+@app.on_event("startup")
+def startup() -> None:
+    start_auto_update_scheduler()
 
 
 @app.get("/api/health")

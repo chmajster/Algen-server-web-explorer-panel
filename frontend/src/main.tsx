@@ -16,9 +16,12 @@ import {
   List,
   Lock,
   LogOut,
+  Menu,
   Maximize2,
   Minimize2,
   Moon,
+  MoreVertical,
+  Move,
   Network,
   Pause,
   Play,
@@ -37,6 +40,7 @@ import {
   X
 } from "lucide-react";
 import { AdminGroup, AdminUser, api, downloadUrl, FileItem, login, logout, me, ProxmoxSafety, SettingsMe, SystemdService, SystemLogs, Task, UpdateStatus } from "./api";
+import type { AutoUpdateSettings } from "./api";
 import type { NetworkMount, NetworkMountPayload, ResourceDashboard, SambaConfig, SambaShare, StoreApp as StoreModule } from "./api";
 import { AppIcon } from "./components/AppIcon";
 import { detectLanguage, Language, supportedLanguages, translate } from "./i18n";
@@ -446,6 +450,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
   const [treeVisible, setTreeVisible] = useState(() => localStorage.getItem(`${viewKey}_tree`) !== "hidden");
   const [treeWidth, setTreeWidth] = useState(() => Number(localStorage.getItem(`${viewKey}_tree_width`) || 240));
   const [compact, setCompact] = useState(() => localStorage.getItem(`${viewKey}_density`) === "compact");
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [sort, setSort] = useState<SortField>("name");
   const [direction, setDirection] = useState<SortDirection>("asc");
   const [page, setPage] = useState(1);
@@ -601,7 +606,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
     return (
       <>
         <button
-          className={path === item.path ? "active" : ""}
+          className={`folder-tree-item ${path === item.path ? "active" : ""}`}
           style={{ paddingLeft: 10 + level * 14 }}
           onClick={() => openPath(item.path)}
           onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, item }); }}
@@ -611,7 +616,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
             if (state?.open) setTree((current) => ({ ...current, [item.path]: { ...state, open: false } }));
             else loadTree(item.path);
           }}>{state?.open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
-          <Folder size={15} /> {item.name} {state?.loading && <span>...</span>}
+          <Folder size={15} /> <span className="folder-tree-label">{item.name}</span> {state?.loading && <span className="tree-loading">...</span>}
         </button>
         {state?.error && <small className="tree-error">{state.error}</small>}
         {state?.open && state.items.map((child) => <TreeNode key={child.path} item={child} level={level + 1} />)}
@@ -622,13 +627,32 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
   const rootItems = tree[path]?.items || items.filter((item) => item.is_dir);
   const sortIcon = (field: SortField) => sort === field ? (direction === "asc" ? "^" : "v") : "";
   return (
-    <>
+    <section className="app-shell file-manager-shell">
+      <header className="file-topbar">
+        <div className="file-topbar-title">
+          <HardDrive size={18} />
+          <div>
+            <strong>File Manager</strong>
+            <span>{shortPath(path || "/")}</span>
+          </div>
+        </div>
+        <div className="file-topbar-actions">
+          <button className="action-button" type="button" title={t("action.refresh")} aria-label={t("action.refresh")} onClick={() => { load(); loadTree(path); }}><RefreshCw size={16} /></button>
+          <div className="segmented-control" aria-label="View mode">
+            <button className={viewMode === "list" ? "active" : ""} type="button" title={t("action.listView")} aria-label={t("action.listView")} onClick={() => setViewMode("list")}><List size={15} /></button>
+            <button className={viewMode === "grid" ? "active" : ""} type="button" title={t("action.gridView")} aria-label={t("action.gridView")} onClick={() => setViewMode("grid")}><Grid2X2 size={15} /></button>
+          </div>
+          <button className="action-button" type="button" title="Settings" aria-label="Settings"><Settings size={16} /></button>
+        </div>
+      </header>
       <div className="toolbar">
-        <button title="Toggle tree" onClick={() => setTreeVisible((value) => !value)}><List size={17} /></button>
+        <button title="Toggle tree" onClick={() => setTreeVisible((value) => !value)}><Menu size={17} /></button>
         <button title={t("action.refresh")} onClick={() => { load(); loadTree(path); }}><RefreshCw size={17} /></button>
         <button title={t("action.newFolder")} disabled={!meta.can_upload} onClick={() => { const name = prompt(t("files.folderName")); if (name) named(t("files.folderCreated"), () => api.mkdir(joinPath(path, name))); }}><FolderPlus size={17} /></button>
         <label className="icon-button" title={t("action.upload")}><Upload size={17} /><input type="file" multiple disabled={!meta.can_upload} onChange={(e) => Array.from(e.target.files || []).forEach((file) => named(t("files.uploaded"), () => api.upload(path, file)))} /></label>
+        <button title={t("action.download")} disabled={!selectedItems.length || selectedItems[0]?.is_dir} onClick={() => selectedItems[0] && window.open(downloadUrl(selectedItems[0].path), "_blank")}><Download size={17} /></button>
         <button title={t("action.copy")} disabled={!selected.size} onClick={copySelected}><Copy size={17} /></button>
+        <button title="Move" disabled={!selected.size || !meta.can_upload} onClick={() => { if (selectedItems.length) setClipboard({ mode: "move", paths: selectedItems.map((item) => item.path) }); }}><Move size={17} /></button>
         <button title={t("action.paste")} disabled={!clipboard || !meta.can_upload} onClick={() => paste()}>{t("action.paste")}</button>
         <button title={t("action.delete")} disabled={!selected.size || !meta.can_delete} onClick={deleteSelected}><Trash2 size={17} /></button>
         <label><input type="checkbox" checked={foldersFirst} onChange={(e) => { setFoldersFirst(e.target.checked); setPage(1); }} /> folders first</label>
@@ -659,7 +683,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
           {loading ? <div className="table-skeleton"><span /><span /><span /><span /></div> : (
             <div className="file-table-grid">
               <div className="file-header">
-                <input type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={(e) => setSelected(e.target.checked ? new Set(items.map((item) => item.path)) : new Set())} />
+                <input aria-label="Select all files" type="checkbox" checked={items.length > 0 && selected.size === items.length} onChange={(e) => setSelected(e.target.checked ? new Set(items.map((item) => item.path)) : new Set())} />
                 <span />
                 {(["name", "size", "type", "owner", "group", "permissions", "modified"] as SortField[]).map((field) => <button key={field} onClick={() => sortBy(field)}>{field} {sortIcon(field)}</button>)}
                 <span>actions</span>
@@ -677,16 +701,16 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
                   onContextMenu={(e) => { e.preventDefault(); setSelected(new Set([item.path])); setContext({ x: e.clientX, y: e.clientY, item }); }}
                   onDoubleClick={() => item.is_dir ? openPath(item.path) : setPreview(item)}
                 >
-                  <input type="checkbox" checked={selected.has(item.path)} onChange={(e) => { e.stopPropagation(); toggle(item, true); }} />
-                  {item.is_dir ? <Folder size={20} /> : <File size={20} />}
-                  <span className="name">{item.name}</span>
+                  <input aria-label={`Select ${item.name}`} type="checkbox" checked={selected.has(item.path)} onChange={(e) => { e.stopPropagation(); toggle(item, true); }} />
+                  {item.is_dir ? <Folder className="file-icon folder-icon" size={20} /> : <File className="file-icon" size={20} />}
+                  <span className={`name ${item.is_dir ? "folder-name" : ""}`}>{item.name}</span>
                   <span>{item.is_dir ? "—" : formatSize(item.size)}</span>
                   <span>{item.type}</span>
                   <span>{item.owner}</span>
                   <span>{item.group}</span>
-                  <span>{item.permissions}</span>
-                  <span>{new Date((item.mtime || item.modified) * 1000).toLocaleString()}</span>
-                  <div className="row-actions">{!item.is_dir && <a href={downloadUrl(item.path)}><Download size={15} /></a>}<button onClick={(e) => { e.stopPropagation(); renameItem(item); }}>Rename</button></div>
+                  <span className="permissions">{item.permissions}</span>
+                  <span className="modified">{formatDate(item.mtime || item.modified)}</span>
+                  <div className="row-actions">{!item.is_dir && <a className="action-button" title={t("action.download")} aria-label={t("action.download")} href={downloadUrl(item.path)}><Download size={15} /></a>}<button className="action-button" title={t("action.rename")} aria-label={t("action.rename")} onClick={(e) => { e.stopPropagation(); renameItem(item); }}><MoreVertical size={15} /></button></div>
                 </div>
               ))}
             </div>
@@ -705,7 +729,12 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
         <button onClick={() => { load(); loadTree(context.item?.path || path); setContext(null); }}>Refresh</button>
       </div>}
       <Preview item={preview} onClose={() => setPreview(null)} t={t} />
-    </>
+      <footer className="file-statusbar">
+        <span>{meta.total_items} items</span>
+        <span>{selected.size} selected</span>
+        <span>{loading ? "Loading" : "Ready"}</span>
+      </footer>
+    </section>
   );
 }
 
@@ -871,6 +900,7 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
   const [system, setSystem] = useState<Record<string, unknown> | null>(null);
   const [safety, setSafety] = useState<ProxmoxSafety | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [autoUpdate, setAutoUpdate] = useState<AutoUpdateSettings | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
 
   async function load() {
@@ -883,6 +913,7 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
       api.adminGroups().then(setGroups).catch(() => undefined);
       api.systemStatus().then(setSystem).catch(() => undefined);
       api.proxmoxSafety().then(setSafety).catch(() => undefined);
+      api.autoUpdate().then(setAutoUpdate).catch(() => undefined);
     }
   }
   useEffect(() => { load().catch((err) => toast(message(err, t("error.generic")), "error")); }, []);
@@ -916,18 +947,62 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
       toast(message(err, "Could not start update"), "error");
     }
   }
+  async function saveAutoUpdate() {
+    if (!autoUpdate) return;
+    const admin_password = adminPassword();
+    if (!admin_password) return;
+    try {
+      const saved = await api.saveAutoUpdate({
+        enabled: autoUpdate.enabled,
+        interval_hours: autoUpdate.interval_hours,
+        update_config: autoUpdate.update_config,
+        admin_password,
+      });
+      setAutoUpdate(saved);
+      toast("Auto update settings saved");
+    } catch (err) {
+      toast(message(err, "Could not save auto update settings"), "error");
+    }
+  }
+  async function runAutoUpdateNow() {
+    const admin_password = adminPassword();
+    if (!admin_password) return;
+    try {
+      const result = await api.runAutoUpdate(admin_password, autoUpdate?.update_config || false);
+      await api.autoUpdate().then(setAutoUpdate).catch(() => undefined);
+      toast(result.updated ? `Auto update started, pid ${result.pid}` : "No update available");
+    } catch (err) {
+      toast(message(err, "Could not run auto update"), "error");
+    }
+  }
+
+  const settingsTabs = [
+    { id: "account", icon: <Lock size={16} />, label: "Konto uzytkownika" },
+    { id: "users", icon: <UserPlus size={16} />, label: "Uzytkownicy" },
+    { id: "groups", icon: <Users size={16} />, label: "Grupy" },
+    { id: "permissions", icon: <Shield size={16} />, label: "Uprawnienia" },
+    { id: "system", icon: <Settings size={16} />, label: "System" }
+  ];
 
   return (
-    <>
-      <div className="settings-shell">
-        <nav className="settings-tabs">
-          {["account", "users", "groups", "permissions", "system"].map((item) => (
-            <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{t(`settings.${item}`)}</button>
+    <section className="settings-shell settings-admin-shell">
+      <header className="settings-topbar">
+        <div>
+          <strong>Ustawienia</strong>
+          <span>System administration panel</span>
+        </div>
+      </header>
+      <nav className="settings-sidebar" aria-label="Settings sections">
+        <strong>Ustawienia</strong>
+        <div className="settings-nav">
+          {settingsTabs.map((item) => (
+            <button key={item.id} className={`settings-nav-item ${tab === item.id ? "active" : ""}`} onClick={() => setTab(item.id)} aria-current={tab === item.id ? "page" : undefined}>{item.icon}<span>{item.label}</span></button>
           ))}
-        </nav>
-        <main className="settings-panel">
+        </div>
+      </nav>
+      <main className="settings-content">
           {safety?.is_proxmox && safety.safe_mode_enabled && (
-            <div className="safe-mode-banner">
+            <div className="safe-mode-banner alert-warning">
               <Shield size={18} />
               <div>
                 <strong>Proxmox VE Safe Mode active</strong>
@@ -937,87 +1012,81 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
           )}
           {tab === "account" && settings && (
             <section className="settings-section">
-              <div className="form-grid">
-                <label>{t("settings.language")}<select value={settings.language} onChange={(e) => submit(t("settings.saved"), async () => { const language = e.target.value as Language; await api.updateSettings({ language }); onLanguage(language); })}>{supportedLanguages.map((language) => <option key={language}>{language}</option>)}</select></label>
-                <label>{t("settings.theme")}<select value={settings.theme} onChange={(e) => submit(t("settings.saved"), async () => { const theme = e.target.value as Theme; await api.updateSettings({ theme }); onTheme(theme); })}><option value="light">{t("settings.light")}</option><option value="dark">{t("settings.dark")}</option><option value="system">{t("settings.systemTheme")}</option></select></label>
-                <label>{t("settings.currentPassword")}<input type="password" onChange={(e) => setForm({ ...form, current_password: e.target.value })} /></label>
-                <label>{t("settings.newPassword")}<input type="password" onChange={(e) => setForm({ ...form, new_password: e.target.value })} /></label>
-              </div>
-              <button onClick={() => submit(t("settings.passwordChanged"), () => api.changeMyPassword(form.current_password, form.new_password))}><Lock size={16} />{t("action.changePassword")}</button>
-              <dl className="info-grid">
-                <dt>{t("settings.username")}</dt><dd>{settings.username}</dd>
-                <dt>{t("settings.uid")}</dt><dd>{settings.uid}</dd>
-                <dt>{t("settings.gid")}</dt><dd>{settings.gid}</dd>
-                <dt>{t("settings.groupsLabel")}</dt><dd>{settings.groups.join(", ")}</dd>
-                <dt>{t("settings.home")}</dt><dd>{settings.home}</dd>
-              </dl>
+              <article className="settings-card">
+                <header className="settings-card-header"><div><h2 className="settings-card-title">Konto uzytkownika</h2><p className="settings-card-description">Preferencje interfejsu i zmiana hasla lokalnego konta.</p></div></header>
+                <div className="settings-form form-grid">
+                  <label className="form-field" htmlFor="settings-language"><span className="form-label">{t("settings.language")}</span><select id="settings-language" className="form-input" value={settings.language} onChange={(e) => submit(t("settings.saved"), async () => { const language = e.target.value as Language; await api.updateSettings({ language }); onLanguage(language); })}>{supportedLanguages.map((language) => <option key={language}>{language}</option>)}</select></label>
+                  <label className="form-field" htmlFor="settings-theme"><span className="form-label">{t("settings.theme")}</span><select id="settings-theme" className="form-input" value={settings.theme} onChange={(e) => submit(t("settings.saved"), async () => { const theme = e.target.value as Theme; await api.updateSettings({ theme }); onTheme(theme); })}><option value="light">{t("settings.light")}</option><option value="dark">{t("settings.dark")}</option><option value="system">{t("settings.systemTheme")}</option></select></label>
+                  <label className="form-field" htmlFor="settings-current-password"><span className="form-label">{t("settings.currentPassword")}</span><input id="settings-current-password" className="form-input" type="password" onChange={(e) => setForm({ ...form, current_password: e.target.value })} /></label>
+                  <label className="form-field" htmlFor="settings-new-password"><span className="form-label">{t("settings.newPassword")}</span><input id="settings-new-password" className="form-input" type="password" onChange={(e) => setForm({ ...form, new_password: e.target.value })} /></label>
+                </div>
+                <button className="button button-primary" onClick={() => submit(t("settings.passwordChanged"), () => api.changeMyPassword(form.current_password, form.new_password))}><Lock size={16} />{t("action.changePassword")}</button>
+              </article>
+              <article className="settings-card">
+                <header className="settings-card-header"><div><h2 className="settings-card-title">Profil systemowy</h2><p className="settings-card-description">Dane konta zwracane przez system.</p></div></header>
+                <dl className="info-grid">
+                  <dt>{t("settings.username")}</dt><dd>{settings.username}</dd>
+                  <dt>{t("settings.uid")}</dt><dd>{settings.uid}</dd>
+                  <dt>{t("settings.gid")}</dt><dd>{settings.gid}</dd>
+                  <dt>{t("settings.groupsLabel")}</dt><dd>{settings.groups.map((group) => <span key={group} className="badge">{group}</span>)}</dd>
+                  <dt>{t("settings.home")}</dt><dd>{settings.home}</dd>
+                </dl>
+              </article>
             </section>
           )}
           {tab === "users" && (
             <section className="settings-section">
-              {!settings?.is_admin && <p className="error">{t("settings.adminOnly")}</p>}
+              {!settings?.is_admin && <p className="alert-danger">{t("settings.adminOnly")}</p>}
               {settings?.is_admin && <>
-                <div className="form-grid">
-                  <input placeholder={t("settings.username")} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-                  <input type="password" placeholder={t("auth.password")} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-                  <input placeholder="groups, comma separated" onChange={(e) => setForm({ ...form, groups: e.target.value })} />
-                  <input placeholder={t("settings.shell")} onChange={(e) => setForm({ ...form, shell: e.target.value })} />
-                  <input placeholder={t("settings.gecos")} onChange={(e) => setForm({ ...form, gecos: e.target.value })} />
-                  <input type="password" placeholder={t("settings.adminPassword")} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} />
-                </div>
-                <button onClick={() => submit(t("settings.addUser"), () => api.createUser({ username: form.username, password: form.password, groups: (form.groups || "").split(",").map((item) => item.trim()).filter(Boolean), shell: form.shell || undefined, gecos: form.gecos || undefined, create_home: true, admin_password: adminPassword() }))}><UserPlus size={16} />{t("settings.addUser")}</button>
-                <h2>{t("settings.userList")}</h2>
-                <div className="admin-list">{users.map((item) => <div key={item.username}><strong>{item.username}</strong><span>{item.uid}</span><span>{item.groups.join(", ")}</span><button onClick={() => submit(t("action.lock"), () => api.lockUser(item.username, adminPassword()))}>{t("action.lock")}</button><button onClick={() => submit(t("action.unlock"), () => api.unlockUser(item.username, adminPassword()))}>{t("action.unlock")}</button><button onClick={() => { const password = prompt("New password"); if (password) submit(t("settings.passwordChanged"), () => api.changeUserPassword(item.username, { new_password: password, admin_password: adminPassword() })); }}>Reset</button><button onClick={() => { const group = prompt("Group to add"); if (group) submit(t("action.add"), () => api.patchUser(item.username, { groups_add: [group], admin_password: adminPassword() })); }}>{t("action.add")}</button><button onClick={() => { const group = prompt("Group to remove"); if (group) submit(t("action.remove"), () => api.patchUser(item.username, { groups_remove: [group], admin_password: adminPassword() })); }}>{t("action.remove")}</button><button onClick={() => submit("Home created", () => api.patchUser(item.username, { create_home: true, admin_password: adminPassword() }))}>Home</button><button onClick={() => { const quota = prompt("Soft quota MB"); if (quota) submit("Quota saved", () => api.setUserQuota(item.username, { soft_mb: Number(quota), admin_password: adminPassword() })); }}>Quota</button><button onClick={() => window.confirm(t("settings.confirmDelete")) && submit(t("action.delete"), () => api.deleteUser(item.username, adminPassword()))}>{t("action.delete")}</button></div>)}</div>
+                <article className="settings-card">
+                  <header className="settings-card-header"><div><h2 className="settings-card-title">Dodaj uzytkownika</h2><p className="settings-card-description">Utworz lokalne konto systemowe. Operacja wymaga hasla administratora.</p></div></header>
+                  <div className="settings-form form-grid">
+                    <label className="form-field" htmlFor="new-user-username"><span className="form-label">Nazwa uzytkownika</span><input id="new-user-username" className="form-input" placeholder={t("settings.username")} onChange={(e) => setForm({ ...form, username: e.target.value })} /></label>
+                    <label className="form-field" htmlFor="new-user-password"><span className="form-label">Haslo</span><input id="new-user-password" className="form-input" type="password" placeholder={t("auth.password")} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
+                    <label className="form-field" htmlFor="new-user-groups"><span className="form-label">Grupy</span><input id="new-user-groups" className="form-input" placeholder="sudo, users" onChange={(e) => setForm({ ...form, groups: e.target.value })} /><span className="form-help">Oddziel grupy przecinkami</span></label>
+                    <label className="form-field" htmlFor="new-user-shell"><span className="form-label">Shell</span><input id="new-user-shell" className="form-input" placeholder={t("settings.shell")} onChange={(e) => setForm({ ...form, shell: e.target.value })} /></label>
+                    <label className="form-field" htmlFor="new-user-gecos"><span className="form-label">Opis / GECOS</span><input id="new-user-gecos" className="form-input" placeholder={t("settings.gecos")} onChange={(e) => setForm({ ...form, gecos: e.target.value })} /></label>
+                    <label className="form-field system-required" htmlFor="new-user-admin-password"><span className="form-label">Haslo administratora</span><input id="new-user-admin-password" className="form-input" type="password" placeholder={t("settings.adminPassword")} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} /><span className="form-help">Wymagane do operacji systemowej</span></label>
+                  </div>
+                  <button className="button button-primary" onClick={() => submit(t("settings.addUser"), () => api.createUser({ username: form.username, password: form.password, groups: (form.groups || "").split(",").map((item) => item.trim()).filter(Boolean), shell: form.shell || undefined, gecos: form.gecos || undefined, create_home: true, admin_password: adminPassword() }))}><UserPlus size={16} />{t("settings.addUser")}</button>
+                </article>
+                <article className="settings-card">
+                  <header className="settings-card-header"><div><h2 className="settings-card-title">{t("settings.userList")}</h2><p className="settings-card-description">Lokalne konta uzytkownikow i szybkie akcje administracyjne.</p></div></header>
+                  {users.length === 0 ? <div className="empty-state">Brak lokalnych uzytkownikow do wyswietlenia.</div> : <div className="users-table">
+                    <div className="users-table-header"><span>uzytkownik</span><span>UID</span><span>grupy</span><span>shell</span><span>home</span><span>status</span><span>akcje</span></div>
+                    {users.map((item) => <div className="user-row" key={item.username}><strong>{item.username}</strong><code>{item.uid}</code><span className="badge-list">{item.groups.map((group) => <span key={group} className="badge">{group}</span>)}</span><span>{item.shell || "-"}</span><span>{item.home || "-"}</span><span><span className="badge badge-success">{item.manageable ? "active" : "protected"}</span></span><div className="user-actions"><button className="button button-secondary" title={t("action.lock")} aria-label={`${t("action.lock")} ${item.username}`} onClick={() => submit(t("action.lock"), () => api.lockUser(item.username, adminPassword()))}>{t("action.lock")}</button><button className="button button-secondary" title={t("action.unlock")} aria-label={`${t("action.unlock")} ${item.username}`} onClick={() => submit(t("action.unlock"), () => api.unlockUser(item.username, adminPassword()))}>{t("action.unlock")}</button><button className="button button-warning" title="Reset password" aria-label={`Reset password ${item.username}`} onClick={() => { const password = prompt("New password"); if (password) submit(t("settings.passwordChanged"), () => api.changeUserPassword(item.username, { new_password: password, admin_password: adminPassword() })); }}>Reset</button><button className="button button-secondary" title={t("action.add")} aria-label={`${t("action.add")} group for ${item.username}`} onClick={() => { const group = prompt("Group to add"); if (group) submit(t("action.add"), () => api.patchUser(item.username, { groups_add: [group], admin_password: adminPassword() })); }}>{t("action.add")}</button><button className="button button-secondary" title={t("action.remove")} aria-label={`${t("action.remove")} group from ${item.username}`} onClick={() => { const group = prompt("Group to remove"); if (group) submit(t("action.remove"), () => api.patchUser(item.username, { groups_remove: [group], admin_password: adminPassword() })); }}>{t("action.remove")}</button><button className="button button-secondary" title="Home" aria-label={`Create home for ${item.username}`} onClick={() => submit("Home created", () => api.patchUser(item.username, { create_home: true, admin_password: adminPassword() }))}>Home</button><button className="button button-secondary" title="Quota" aria-label={`Set quota for ${item.username}`} onClick={() => { const quota = prompt("Soft quota MB"); if (quota) submit("Quota saved", () => api.setUserQuota(item.username, { soft_mb: Number(quota), admin_password: adminPassword() })); }}>Quota</button><button className="button button-danger" title={t("action.delete")} aria-label={`${t("action.delete")} ${item.username}`} onClick={() => window.confirm(t("settings.confirmDelete")) && submit(t("action.delete"), () => api.deleteUser(item.username, adminPassword()))}>{t("action.delete")}</button></div></div>)}
+                  </div>}
+                </article>
               </>}
             </section>
           )}
           {tab === "groups" && (
             <section className="settings-section">
-              {!settings?.is_admin && <p className="error">{t("settings.adminOnly")}</p>}
+              {!settings?.is_admin && <p className="alert-danger">{t("settings.adminOnly")}</p>}
               {settings?.is_admin && <>
-                <div className="form-grid"><input placeholder={t("settings.groupName")} onChange={(e) => setForm({ ...form, groupname: e.target.value })} /><input placeholder={t("settings.member")} onChange={(e) => setForm({ ...form, member: e.target.value })} /><input type="password" placeholder={t("settings.adminPassword")} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} /></div>
-                <button onClick={() => submit(t("settings.addGroup"), () => api.createGroup({ groupname: form.groupname, admin_password: adminPassword() }))}><Users size={16} />{t("settings.addGroup")}</button>
-                <h2>{t("settings.groupList")}</h2>
-                <div className="admin-list">{groups.map((item) => <div key={item.name}><strong>{item.name}</strong><span>{item.gid}</span><span>{item.members.join(", ")}</span><button onClick={() => submit(t("action.add"), () => api.addGroupMember(item.name, { username: form.member, admin_password: adminPassword() }))}>{t("action.add")}</button><button onClick={() => submit(t("action.remove"), () => api.removeGroupMember(item.name, form.member, adminPassword()))}>{t("action.remove")}</button><button onClick={() => window.confirm(t("settings.confirmDelete")) && submit(t("action.delete"), () => api.deleteGroup(item.name, adminPassword()))}>{t("action.delete")}</button></div>)}</div>
+                <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Grupy</h2><p className="settings-card-description">Tworzenie grup i zarzadzanie czlonkostwem.</p></div></header><div className="settings-form form-grid"><label className="form-field" htmlFor="group-name"><span className="form-label">{t("settings.groupName")}</span><input id="group-name" className="form-input" placeholder={t("settings.groupName")} onChange={(e) => setForm({ ...form, groupname: e.target.value })} /></label><label className="form-field" htmlFor="group-member"><span className="form-label">{t("settings.member")}</span><input id="group-member" className="form-input" placeholder={t("settings.member")} onChange={(e) => setForm({ ...form, member: e.target.value })} /></label><label className="form-field system-required" htmlFor="group-admin-password"><span className="form-label">{t("settings.adminPassword")}</span><input id="group-admin-password" className="form-input" type="password" placeholder={t("settings.adminPassword")} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} /></label></div><button className="button button-primary" onClick={() => submit(t("settings.addGroup"), () => api.createGroup({ groupname: form.groupname, admin_password: adminPassword() }))}><Users size={16} />{t("settings.addGroup")}</button></article>
+                <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">{t("settings.groupList")}</h2><p className="settings-card-description">Lokalne grupy systemowe i przypisani czlonkowie.</p></div></header><div className="admin-list">{groups.map((item) => <div key={item.name}><strong>{item.name}</strong><code>{item.gid}</code><span className="badge-list">{item.members.map((member) => <span key={member} className="badge">{member}</span>)}</span><button className="button button-secondary" onClick={() => submit(t("action.add"), () => api.addGroupMember(item.name, { username: form.member, admin_password: adminPassword() }))}>{t("action.add")}</button><button className="button button-secondary" onClick={() => submit(t("action.remove"), () => api.removeGroupMember(item.name, form.member, adminPassword()))}>{t("action.remove")}</button><button className="button button-danger" onClick={() => window.confirm(t("settings.confirmDelete")) && submit(t("action.delete"), () => api.deleteGroup(item.name, adminPassword()))}>{t("action.delete")}</button></div>)}</div></article>
               </>}
             </section>
           )}
           {tab === "permissions" && (
             <section className="settings-section">
-              <div className="form-grid"><input placeholder={t("settings.filePath")} onChange={(e) => setForm({ ...form, perm_path: e.target.value })} /><input placeholder={t("settings.mode")} onChange={(e) => setForm({ ...form, mode: e.target.value })} /><input placeholder={t("settings.owner")} onChange={(e) => setForm({ ...form, owner: e.target.value })} /><input placeholder={t("settings.group")} onChange={(e) => setForm({ ...form, group: e.target.value })} /><input type="password" placeholder={t("settings.adminPassword")} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} /></div>
-              <button onClick={() => submit(t("settings.applyChmod"), () => api.chmod(form.perm_path, form.mode))}><Shield size={16} />{t("settings.applyChmod")}</button>
-              <button onClick={() => submit(t("settings.applyOwner"), () => api.chown({ path: form.perm_path, owner: form.owner || undefined, group: form.group || undefined, admin_password: adminPassword() }))}><Shield size={16} />{t("settings.applyOwner")}</button>
+              <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Uprawnienia</h2><p className="settings-card-description">Zmiana trybu i wlasciciela pliku bez zmiany backendowej logiki bezpieczenstwa.</p></div></header><div className="settings-form form-grid"><label className="form-field" htmlFor="perm-path"><span className="form-label">{t("settings.filePath")}</span><input id="perm-path" className="form-input" placeholder={t("settings.filePath")} onChange={(e) => setForm({ ...form, perm_path: e.target.value })} /></label><label className="form-field" htmlFor="perm-mode"><span className="form-label">{t("settings.mode")}</span><input id="perm-mode" className="form-input" placeholder={t("settings.mode")} onChange={(e) => setForm({ ...form, mode: e.target.value })} /></label><label className="form-field" htmlFor="perm-owner"><span className="form-label">{t("settings.owner")}</span><input id="perm-owner" className="form-input" placeholder={t("settings.owner")} onChange={(e) => setForm({ ...form, owner: e.target.value })} /></label><label className="form-field" htmlFor="perm-group"><span className="form-label">{t("settings.group")}</span><input id="perm-group" className="form-input" placeholder={t("settings.group")} onChange={(e) => setForm({ ...form, group: e.target.value })} /></label><label className="form-field system-required" htmlFor="perm-admin-password"><span className="form-label">{t("settings.adminPassword")}</span><input id="perm-admin-password" className="form-input" type="password" placeholder={t("settings.adminPassword")} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} /></label></div><div className="button-row"><button className="button button-primary" onClick={() => submit(t("settings.applyChmod"), () => api.chmod(form.perm_path, form.mode))}><Shield size={16} />{t("settings.applyChmod")}</button><button className="button button-secondary" onClick={() => submit(t("settings.applyOwner"), () => api.chown({ path: form.perm_path, owner: form.owner || undefined, group: form.group || undefined, admin_password: adminPassword() }))}><Shield size={16} />{t("settings.applyOwner")}</button></div></article>
             </section>
           )}
           {tab === "system" && (
             <section className="settings-section">
-              {!settings?.is_admin && <p className="error">{t("settings.adminOnly")}</p>}
+              {!settings?.is_admin && <p className="alert-danger">{t("settings.adminOnly")}</p>}
               {settings?.is_admin && system && <>
-                <dl className="info-grid">{Object.entries(system).map(([key, value]) => <React.Fragment key={key}><dt>{t(`settings.${key}`) || key}</dt><dd>{String(value)}</dd></React.Fragment>)}</dl>
-                {safety && <dl className="info-grid">
-                  <dt>Proxmox</dt><dd>{String(safety.is_proxmox)}</dd>
-                  <dt>Safe Mode</dt><dd>{String(safety.safe_mode_enabled)}</dd>
-                  <dt>Service user</dt><dd>{safety.service_user}</dd>
-                  <dt>Protected paths</dt><dd>{safety.protected_paths.slice(0, 8).join(", ")}{safety.protected_paths.length > 8 ? "..." : ""}</dd>
-                  <dt>Warnings</dt><dd>{safety.warnings.join(" ")}</dd>
-                </dl>}
-                <div className="toolbar">
-                  <button onClick={checkUpdates}><Search size={16} />Check updates</button>
-                  <button onClick={downloadUpdates}><Download size={16} />Download updates</button>
-                  <button onClick={() => submit(t("action.restart"), () => api.restartSystem(adminPassword()))}><RefreshCw size={16} />{t("action.restart")}</button>
-                </div>
-                {updateStatus && <dl className="info-grid">
-                  <dt>Update</dt><dd>{updateStatus.update_available ? "Available" : "Up to date"}</dd>
-                  <dt>Branch</dt><dd>{updateStatus.branch}</dd>
-                  <dt>Local</dt><dd>{updateStatus.local.slice(0, 12)}</dd>
-                  <dt>Remote</dt><dd>{updateStatus.remote.slice(0, 12)}</dd>
-                </dl>}
+                <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">System</h2><p className="settings-card-description">Status instalacji, bezpieczenstwo Proxmox i aktualizacje.</p></div></header><dl className="info-grid">{Object.entries(system).map(([key, value]) => <React.Fragment key={key}><dt>{t(`settings.${key}`) || key}</dt><dd>{String(value)}</dd></React.Fragment>)}</dl></article>
+                {safety && <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Bezpieczenstwo</h2><p className="settings-card-description">Ograniczenia ochronne wykryte dla hosta.</p></div></header><dl className="info-grid"><dt>Proxmox</dt><dd>{String(safety.is_proxmox)}</dd><dt>Safe Mode</dt><dd>{String(safety.safe_mode_enabled)}</dd><dt>Service user</dt><dd>{safety.service_user}</dd><dt>Protected paths</dt><dd>{safety.protected_paths.slice(0, 8).join(", ")}{safety.protected_paths.length > 8 ? "..." : ""}</dd><dt>Warnings</dt><dd>{safety.warnings.join(" ") || "-"}</dd></dl></article>}
+                {autoUpdate && <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Auto update</h2><p className="settings-card-description">Automatycznie sprawdza GitHub i uruchamia istniejacy instalator aktualizacji, gdy pojawi sie nowy commit.</p></div><span className={`badge ${autoUpdate.enabled ? "badge-success" : ""}`}>{autoUpdate.enabled ? "enabled" : "disabled"}</span></header><div className="settings-form form-grid"><label className="form-field switch-field" htmlFor="auto-update-enabled"><span className="form-label">Wlacz auto update</span><label className="switch-control"><input id="auto-update-enabled" type="checkbox" checked={autoUpdate.enabled} onChange={(e) => setAutoUpdate({ ...autoUpdate, enabled: e.target.checked })} /><span /> enabled</label><span className="form-help">Scheduler dziala w procesie WebNAS i zapisuje stan w katalogu danych.</span></label><label className="form-field" htmlFor="auto-update-interval"><span className="form-label">Interwal sprawdzania</span><input id="auto-update-interval" className="form-input" type="number" min={1} max={168} value={autoUpdate.interval_hours} onChange={(e) => setAutoUpdate({ ...autoUpdate, interval_hours: Math.max(1, Math.min(168, Number(e.target.value) || 24)) })} /><span className="form-help">Godziny, zakres 1-168.</span></label><label className="form-field switch-field" htmlFor="auto-update-config"><span className="form-label">Aktualizuj config</span><label className="switch-control"><input id="auto-update-config" type="checkbox" checked={autoUpdate.update_config} onChange={(e) => setAutoUpdate({ ...autoUpdate, update_config: e.target.checked })} /><span /> --update-config</label><span className="form-help">Opcjonalnie regeneruje config podczas aktualizacji.</span></label></div><dl className="info-grid update-grid"><dt>Last checked</dt><dd>{autoUpdate.last_checked ? formatDate(autoUpdate.last_checked) : "-"}</dd><dt>Last run</dt><dd>{autoUpdate.last_run ? formatDate(autoUpdate.last_run) : "-"}</dd><dt>Next check</dt><dd>{autoUpdate.next_check ? formatDate(autoUpdate.next_check) : "-"}</dd><dt>Last PID</dt><dd>{autoUpdate.last_pid || "-"}</dd><dt>Last error</dt><dd>{autoUpdate.last_error || "-"}</dd></dl><div className="button-row"><button className="button button-primary" onClick={saveAutoUpdate}><Settings size={16} />Save auto update</button><button className="button button-secondary" onClick={runAutoUpdateNow}><RefreshCw size={16} />Run now</button></div></article>}
+                <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Aktualizacje i restart</h2><p className="settings-card-description">Operacje systemowe wymagaja hasla administratora.</p></div></header><div className="button-row"><button className="button button-secondary" onClick={checkUpdates}><Search size={16} />Check updates</button><button className="button button-primary" onClick={downloadUpdates}><Download size={16} />Download updates</button><button className="button button-danger" onClick={() => submit(t("action.restart"), () => api.restartSystem(adminPassword()))}><RefreshCw size={16} />{t("action.restart")}</button></div>{updateStatus && <dl className="info-grid update-grid"><dt>Update</dt><dd>{updateStatus.update_available ? "Available" : "Up to date"}</dd><dt>Branch</dt><dd>{updateStatus.branch}</dd><dt>Local</dt><dd>{updateStatus.local.slice(0, 12)}</dd><dt>Remote</dt><dd>{updateStatus.remote.slice(0, 12)}</dd></dl>}</article>
               </>}
             </section>
           )}
-        </main>
-      </div>
-    </>
+      </main>
+    </section>
   );
 }
 
@@ -1415,6 +1484,7 @@ function App() {
     "files-1": defaultLayouts.files
   });
   const eventSources = useRef<Map<string, EventSource>>(new Map());
+  const windowIdCounter = useRef(0);
   const t = (key: string) => translate(language, key);
   const layoutKey = user ? `webnas_window_layout_${user.username}` : "";
   function toast(text: string, type: "ok" | "error" = "ok") {
@@ -1472,7 +1542,8 @@ function App() {
     }
   }, [tasks, user]);
   function openApp(app: AppId) {
-    const id = `${app}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    windowIdCounter.current += 1;
+    const id = `${app}-${windowIdCounter.current}`;
     const sameAppCount = openWindows.filter((item) => item.app === app).length;
     const base = defaultLayouts[app];
     const layout = {

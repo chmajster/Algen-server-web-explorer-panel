@@ -6,6 +6,10 @@ from fastapi import HTTPException
 from app import apps
 
 
+def test_app_state_defaults_to_data_dir():
+    assert apps.APP_STATE_DIR == apps.Path("/var/lib/webnas/apps")
+
+
 def test_samba_install_dry_run_lists_packages(monkeypatch):
     monkeypatch.setattr(apps.shutil, "which", lambda name: "/usr/bin/apt-get" if name == "apt-get" else None)
 

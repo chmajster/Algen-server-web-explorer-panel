@@ -86,6 +86,16 @@ export type AdminGroup = { name: string; gid: number; members: string[] };
 export type SystemStatus = { service: string; version: string; port: number; data_dir: string; log_dir: string; temp_dir: string };
 export type UpdateStatus = { branch: string; local: string; remote: string; update_available: boolean };
 export type UpdateStart = { ok: boolean; pid: number; log: string };
+export type AutoUpdateSettings = {
+  enabled: boolean;
+  interval_hours: number;
+  update_config: boolean;
+  last_checked: number | null;
+  last_run: number | null;
+  last_error: string;
+  last_pid: number | null;
+  next_check: number | null;
+};
 export type SystemLogs = { source: string; lines: string[] };
 export type SystemdService = {
   name: string;
@@ -294,6 +304,9 @@ export const api = {
   restartSystem: (admin_password: string) => request("/api/admin/system/restart", { method: "POST", body: JSON.stringify({ admin_password }) }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
   downloadUpdates: (admin_password: string, update_config = false) => request<UpdateStart>("/api/admin/system/updates/download", { method: "POST", body: JSON.stringify({ admin_password, update_config }) }),
+  autoUpdate: () => request<AutoUpdateSettings>("/api/admin/system/updates/auto"),
+  saveAutoUpdate: (payload: { enabled: boolean; interval_hours: number; update_config: boolean; admin_password: string }) => request<AutoUpdateSettings>("/api/admin/system/updates/auto", { method: "PATCH", body: JSON.stringify(payload) }),
+  runAutoUpdate: (admin_password: string, update_config = false) => request<UpdateStart & { updated?: boolean; skipped?: boolean; reason?: string }>("/api/admin/system/updates/auto/run", { method: "POST", body: JSON.stringify({ admin_password, update_config }) }),
   systemdServices: () => request<SystemdService[]>("/api/admin/system/services"),
   systemdServiceAction: (service: string, action: "start" | "stop" | "restart" | "enable" | "disable", admin_password: string, confirm_restart = false) => request<SystemdService>(`/api/admin/system/services/${encodeURIComponent(service)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm_restart }) }),
   systemdServiceLogs: (service: string, lines = 200) => request<SystemLogs>(`/api/admin/system/services/${encodeURIComponent(service)}/logs?lines=${lines}`),

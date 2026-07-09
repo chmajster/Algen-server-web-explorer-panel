@@ -3,6 +3,441 @@
   color: #17202a;
   background: #d6e1e7;
 }
+
+.file-manager-shell {
+  --bg: #0d1117;
+  --surface: #141b24;
+  --surface-2: #1b2531;
+  --border: #2a3746;
+  --text: #edf4f8;
+  --text-muted: #9fb0bf;
+  --accent: #38bdf8;
+  --danger: #fb7185;
+  --success: #34d399;
+  --warning: #fbbf24;
+  grid-row: 2 / -1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 54px 52px 38px minmax(0, 1fr) 30px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.file-topbar,
+.file-manager-shell > .toolbar,
+.file-statusbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.file-topbar {
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-topbar-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-topbar-title div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.file-topbar-title strong {
+  line-height: 1.1;
+  font-size: 15px;
+}
+
+.file-topbar-title span,
+.file-statusbar,
+.filter-note {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.file-topbar-actions,
+.segmented-control,
+.view-options {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-manager-shell > .toolbar {
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-manager-shell button,
+.file-manager-shell .icon-button,
+.file-manager-shell a.action-button {
+  color: var(--text);
+}
+
+.file-manager-shell .action-button,
+.file-manager-shell > .toolbar > button,
+.file-manager-shell > .toolbar .icon-button,
+.file-manager-shell .row-actions button,
+.file-manager-shell .row-actions a {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.file-manager-shell > .toolbar > button:hover,
+.file-manager-shell > .toolbar .icon-button:hover,
+.file-manager-shell .action-button:hover,
+.segmented-control button:hover,
+.file-manager-shell .breadcrumbs button:hover,
+.folder-tree-item:hover,
+.file-manager-shell .row-actions button:hover,
+.file-manager-shell .row-actions a:hover {
+  border-color: rgba(56,189,248,.55);
+  background: rgba(56,189,248,.13);
+}
+
+.file-manager-shell button:focus-visible,
+.file-manager-shell a:focus-visible,
+.file-manager-shell input:focus-visible,
+.file-manager-shell .icon-button:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.file-manager-shell button:disabled,
+.file-manager-shell .icon-button.disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+.file-manager-shell .toolbar-divider {
+  width: 1px;
+  height: 26px;
+  background: var(--border);
+}
+
+.segmented-control {
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #101722;
+}
+
+.segmented-control button {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.segmented-control button.active {
+  color: var(--text);
+  background: rgba(56,189,248,.22);
+}
+
+.file-manager-shell .search {
+  min-width: min(340px, 100%);
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: #101722;
+}
+
+.file-manager-shell .search input {
+  width: 100%;
+  min-width: 90px;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+.file-manager-shell .search button {
+  width: 22px;
+  min-height: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.switch-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.switch-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-control span {
+  width: 34px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #101722;
+  position: relative;
+}
+
+.switch-control span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform .16s ease, background .16s ease;
+}
+
+.switch-control input:checked + span {
+  border-color: rgba(56,189,248,.55);
+  background: rgba(56,189,248,.24);
+}
+
+.switch-control input:checked + span::after {
+  transform: translateX(16px);
+  background: var(--accent);
+}
+
+.file-manager-shell .breadcrumbs {
+  gap: 6px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: #111821;
+}
+
+.file-manager-shell .breadcrumbs button {
+  min-height: 26px;
+  border-radius: 5px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.file-manager-shell .breadcrumbs button:last-child {
+  color: var(--text);
+  background: rgba(56,189,248,.12);
+}
+
+.file-manager-shell .breadcrumbs button + button::before {
+  content: "›";
+  margin-right: 8px;
+  color: var(--text-muted);
+}
+
+.file-manager-shell .explorer-v2 {
+  min-height: 0;
+  background: var(--bg);
+}
+
+.file-manager-shell .directory-tree {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.file-manager-shell .sidebar-heading {
+  margin: 12px 8px 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.folder-tree-item,
+.file-manager-shell .directory-tree > button {
+  width: 100%;
+  min-height: 30px;
+  justify-content: flex-start;
+  gap: 7px;
+  border-radius: 6px;
+  padding-right: 8px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.folder-tree-item.active,
+.file-manager-shell .directory-tree > button.active {
+  color: var(--text);
+  background: rgba(56,189,248,.17);
+}
+
+.folder-tree-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-resizer {
+  cursor: col-resize;
+  border-right: 1px solid var(--border);
+  background: #101722;
+}
+
+.file-manager-shell .file-table {
+  background: var(--bg);
+}
+
+.file-manager-shell .file-table-grid {
+  padding: 0;
+  overflow: auto;
+}
+
+.file-manager-shell .file-header,
+.file-manager-shell .file-table .file-row {
+  grid-template-columns: 34px 30px minmax(220px, 2fr) 92px 100px 110px 110px 112px 170px 94px;
+  gap: 10px;
+  min-width: 1040px;
+  padding: 0 14px;
+}
+
+.file-manager-shell .file-header {
+  top: 0;
+  border-radius: 0;
+  min-height: 40px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+.file-manager-shell .file-header button {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.file-manager-shell .file-table .file-row {
+  min-height: 46px;
+  border-bottom: 1px solid rgba(42,55,70,.65);
+  border-radius: 0;
+}
+
+.file-manager-shell .file-table.compact .file-row {
+  min-height: 34px;
+}
+
+.file-manager-shell .file-row:hover {
+  background: rgba(56,189,248,.08);
+}
+
+.file-manager-shell .file-row.selected {
+  background: rgba(56,189,248,.18);
+}
+
+.file-icon {
+  color: #b7c4cf;
+}
+
+.folder-icon,
+.folder-name {
+  color: var(--accent);
+}
+
+.permissions {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: #c4d1dc;
+}
+
+.modified {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-manager-shell input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.file-manager-shell .selection-bar,
+.file-manager-shell .pagination,
+.file-manager-shell .filter-note {
+  border-color: var(--border);
+  background: #101722;
+}
+
+.file-manager-shell .selection-bar button,
+.file-manager-shell .pagination button {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.file-statusbar {
+  justify-content: flex-end;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  .file-manager-shell {
+    grid-template-rows: auto auto 36px minmax(0, 1fr) 30px;
+  }
+  .file-topbar,
+  .file-manager-shell > .toolbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 52px;
+  }
+  .file-manager-shell .search {
+    order: 10;
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .file-manager-shell .explorer-v2 {
+    grid-template-columns: 1fr !important;
+  }
+  .file-manager-shell .directory-tree {
+    position: absolute;
+    z-index: 8;
+    inset: 144px auto 30px 0;
+    width: min(84vw, 320px);
+    box-shadow: 18px 0 40px rgba(0,0,0,.34);
+  }
+  .file-manager-shell .tree-hidden .directory-tree,
+  .file-manager-shell .tree-resizer {
+    display: none;
+  }
+}
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 button, input { font: inherit; }
@@ -770,6 +1205,397 @@ aside button span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.settings-admin-shell.settings-shell {
+  --bg: #0d1117;
+  --surface: #141b24;
+  --surface-2: #1b2531;
+  --surface-3: #223041;
+  --border: #2a3746;
+  --text: #edf4f8;
+  --text-muted: #9fb0bf;
+  --accent: #38bdf8;
+  --accent-hover: #0ea5e9;
+  --danger: #fb7185;
+  --success: #34d399;
+  --warning: #fbbf24;
+  grid-row: 2 / -1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: 58px minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.settings-topbar {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.settings-topbar div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.settings-topbar strong {
+  font-size: 17px;
+}
+
+.settings-topbar span,
+.settings-card-description,
+.form-help {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-sidebar {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 14px;
+  padding: 18px 12px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow: auto;
+}
+
+.settings-sidebar > strong {
+  padding: 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.settings-nav {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.settings-nav-item {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.settings-nav-item:hover {
+  border-color: rgba(56,189,248,.28);
+  background: rgba(56,189,248,.09);
+}
+
+.settings-nav-item.active {
+  color: var(--text);
+  border-color: rgba(56,189,248,.42);
+  background: rgba(56,189,248,.16);
+}
+
+.settings-content {
+  min-width: 0;
+  overflow: auto;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.settings-admin-shell .settings-section {
+  max-width: 1280px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.settings-card {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 16px 40px rgba(0,0,0,.16);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-card-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings-card-description {
+  margin: 4px 0 0;
+}
+
+.settings-form.form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-admin-shell .form-field {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.form-label {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-admin-shell .form-input,
+.settings-admin-shell .form-grid input,
+.settings-admin-shell .form-grid select {
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: #101722;
+}
+
+.settings-admin-shell .form-input:focus,
+.settings-admin-shell .form-grid input:focus,
+.settings-admin-shell .form-grid select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.system-required .form-label::after {
+  content: " required";
+  margin-left: 6px;
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.button-row,
+.user-actions,
+.badge-list {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.settings-admin-shell .button {
+  min-height: 32px;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0 11px;
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.settings-admin-shell .button:hover {
+  border-color: rgba(56,189,248,.48);
+  background: var(--surface-3);
+}
+
+.settings-admin-shell .button:focus-visible,
+.settings-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-admin-shell .button-primary {
+  border-color: rgba(56,189,248,.55);
+  background: rgba(56,189,248,.22);
+}
+
+.settings-admin-shell .button-secondary {
+  color: var(--text-muted);
+}
+
+.settings-admin-shell .button-danger {
+  border-color: rgba(251,113,133,.48);
+  color: #fecdd3;
+  background: rgba(251,113,133,.16);
+}
+
+.settings-admin-shell .button-warning {
+  border-color: rgba(251,191,36,.44);
+  color: #fde68a;
+  background: rgba(251,191,36,.14);
+}
+
+.settings-admin-shell .info-grid {
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
+  gap: 10px 16px;
+}
+
+.settings-admin-shell .info-grid dt {
+  color: var(--text-muted);
+}
+
+.settings-admin-shell .info-grid dd {
+  color: var(--text);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  max-width: 160px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--surface-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge-success {
+  border-color: rgba(52,211,153,.42);
+  color: #bbf7d0;
+  background: rgba(52,211,153,.14);
+}
+
+.users-table {
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.users-table-header,
+.user-row {
+  min-width: 1080px;
+  display: grid;
+  grid-template-columns: minmax(140px, 1.1fr) 78px minmax(180px, 1.4fr) minmax(110px, 1fr) minmax(160px, 1.2fr) 96px minmax(420px, 2fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.users-table-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.user-row {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.user-row:hover {
+  background: rgba(56,189,248,.08);
+}
+
+.user-row code,
+.settings-admin-shell .admin-list code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: #c4d1dc;
+}
+
+.settings-admin-shell .admin-list > div {
+  grid-template-columns: minmax(120px, 1fr) 80px minmax(180px, 2fr) repeat(3, auto);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.settings-admin-shell .empty-state {
+  margin: 0;
+  padding: 24px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: #101722;
+}
+
+.settings-admin-shell .safe-mode-banner,
+.settings-admin-shell .alert-warning,
+.settings-admin-shell .alert-danger {
+  margin: 0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.settings-admin-shell .alert-warning {
+  border: 1px solid rgba(251,191,36,.35);
+  color: #fde68a;
+  background: rgba(251,191,36,.12);
+}
+
+.settings-admin-shell .alert-danger {
+  border: 1px solid rgba(251,113,133,.38);
+  color: #fecdd3;
+  background: rgba(251,113,133,.14);
+}
+
+@media (max-width: 1000px) {
+  .settings-form.form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-admin-shell.settings-shell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .settings-admin-shell.settings-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .settings-topbar,
+  .settings-sidebar,
+  .settings-content {
+    grid-column: 1;
+  }
+  .settings-sidebar {
+    grid-row: 2;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 10px;
+  }
+  .settings-nav {
+    display: flex;
+    overflow-x: auto;
+  }
+  .settings-nav-item {
+    flex: 0 0 auto;
+  }
+  .settings-content {
+    padding: 14px;
+  }
+  .settings-form.form-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-admin-shell .info-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .store-app,
 .mounts-app,

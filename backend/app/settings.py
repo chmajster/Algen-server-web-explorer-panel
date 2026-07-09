@@ -7,6 +7,7 @@ import pwd
 import re
 import shutil
 import subprocess
+import threading
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -92,6 +93,8 @@ class AdminRateLimiter:
 
 
 admin_rate_limiter = AdminRateLimiter()
+auto_update_lock = threading.RLock()
+auto_update_scheduler_started = False
 
 
 class MePatch(BaseModel):
@@ -114,6 +117,12 @@ class ServiceAction(AdminPassword):
 
 
 class UpdateAction(AdminPassword):
+    update_config: bool = False
+
+
+class AutoUpdatePatch(AdminPassword):
+    enabled: bool
+    interval_hours: int = Field(default=24, ge=1, le=168)
     update_config: bool = False
 
 
@@ -260,11 +269,138 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _auto_update_path() -> Path:
+    directory = Path(get_config().paths.data_dir) / "settings"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / "auto_update.json"
+
+
+def _default_auto_update_state() -> dict:
+    return {
+        "enabled": False,
+        "interval_hours": 24,
+        "update_config": False,
+        "last_checked": None,
+        "last_run": None,
+        "last_error": "",
+        "last_pid": None,
+        "next_check": None,
+    }
+
+
+def _read_auto_update_state() -> dict:
+    path = _auto_update_path()
+    if not path.exists():
+        return _default_auto_update_state()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return _default_auto_update_state()
+    return {**_default_auto_update_state(), **data}
+
+
+def _write_auto_update_state(data: dict) -> dict:
+    state = {**_default_auto_update_state(), **data}
+    path = _auto_update_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+    os.chmod(path, 0o600)
+    return state
+
+
 def _git_output(args: list[str], *, timeout: int = 20) -> str:
     result = subprocess.run([_tool("git"), *args], cwd=_repo_root(), capture_output=True, text=True, timeout=timeout, check=False)
     if result.returncode != 0:
         raise HTTPException(400, result.stderr.strip() or "Git command failed")
     return result.stdout.strip()
+
+
+def _update_status() -> dict:
+    local = _git_output(["rev-parse", "HEAD"])
+    branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"])
+    remote = _git_output(["ls-remote", "origin", branch]).split()
+    if not remote:
+        raise HTTPException(400, f"Could not find remote branch: origin/{branch}")
+    remote_sha = remote[0]
+    return {
+        "branch": branch,
+        "local": local,
+        "remote": remote_sha,
+        "update_available": local != remote_sha,
+    }
+
+
+def _start_update_process(update_config: bool, *, actor: str) -> dict:
+    installer = _repo_root() / "install.sh"
+    if not installer.exists():
+        raise HTTPException(500, f"Installer not found: {installer}")
+    command = [_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
+    if update_config:
+        command.append("--update-config")
+    log_path = Path(get_config().paths.log_dir) / "update.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write("\n=== WebNAS update started ===\n")
+        process = subprocess.Popen(command, cwd=_repo_root(), stdout=log, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    _audit(actor, "download_update", f"pid={process.pid}")
+    return {"ok": True, "pid": process.pid, "log": str(log_path)}
+
+
+def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_config: bool | None = None) -> dict:
+    with auto_update_lock:
+        state = _read_auto_update_state()
+        now = time.time()
+        if not force:
+            if not state.get("enabled"):
+                return {"ok": True, "skipped": True, "reason": "disabled"}
+            next_check = state.get("next_check")
+            if next_check and float(next_check) > now:
+                return {"ok": True, "skipped": True, "reason": "not_due", "next_check": next_check}
+        state["last_checked"] = now
+        try:
+            status = _update_status()
+            interval = max(1, int(state.get("interval_hours") or 24))
+            if not status["update_available"]:
+                state.update({"last_error": "", "next_check": now + interval * 3600})
+                _write_auto_update_state(state)
+                return {"ok": True, "updated": False, "status": status}
+            result = _start_update_process(bool(state.get("update_config") if update_config is None else update_config), actor=actor)
+            state.update({
+                "last_run": now,
+                "last_error": "",
+                "last_pid": result["pid"],
+                "next_check": now + interval * 3600,
+            })
+            _write_auto_update_state(state)
+            return {"ok": True, "updated": True, "status": status, **result}
+        except HTTPException as exc:
+            state.update({"last_error": str(exc.detail), "next_check": now + 3600})
+            _write_auto_update_state(state)
+            if force:
+                raise
+            return {"ok": False, "error": str(exc.detail)}
+        except Exception as exc:  # noqa: BLE001
+            state.update({"last_error": str(exc), "next_check": now + 3600})
+            _write_auto_update_state(state)
+            if force:
+                raise HTTPException(500, str(exc)) from exc
+            return {"ok": False, "error": str(exc)}
+
+
+def start_auto_update_scheduler() -> None:
+    global auto_update_scheduler_started
+    if auto_update_scheduler_started:
+        return
+    auto_update_scheduler_started = True
+
+    def worker() -> None:
+        time.sleep(5)
+        while True:
+            _run_auto_update_once()
+            time.sleep(60)
+
+    threading.Thread(target=worker, daemon=True, name="webnas-auto-update").start()
 
 
 def _user_info(username: str) -> dict:
@@ -688,36 +824,43 @@ def admin_system_restart(payload: AdminPassword, request: Request, user: Session
 def admin_updates_check(user: SessionUser = Depends(_current_user)):
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
-    local = _git_output(["rev-parse", "HEAD"])
-    branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"])
-    remote = _git_output(["ls-remote", "origin", branch]).split()
-    if not remote:
-        raise HTTPException(400, f"Could not find remote branch: origin/{branch}")
-    remote_sha = remote[0]
-    return {
-        "branch": branch,
-        "local": local,
-        "remote": remote_sha,
-        "update_available": local != remote_sha,
-    }
+    return _update_status()
 
 
 @router.post("/api/admin/system/updates/download")
 def admin_updates_download(payload: UpdateAction, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password, request, "download_update")
-    installer = _repo_root() / "install.sh"
-    if not installer.exists():
-        raise HTTPException(500, f"Installer not found: {installer}")
-    command = [_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
-    if payload.update_config:
-        command.append("--update-config")
-    log_path = Path(get_config().paths.log_dir) / "update.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as log:
-        log.write("\n=== WebNAS update started ===\n")
-        process = subprocess.Popen(command, cwd=_repo_root(), stdout=log, stderr=subprocess.STDOUT, text=True, start_new_session=True)
-    _audit(user.username, "download_update", f"pid={process.pid}")
-    return {"ok": True, "pid": process.pid, "log": str(log_path)}
+    return _start_update_process(payload.update_config, actor=user.username)
+
+
+@router.get("/api/admin/system/updates/auto")
+def admin_auto_update_get(user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    return _read_auto_update_state()
+
+
+@router.patch("/api/admin/system/updates/auto")
+def admin_auto_update_patch(payload: AutoUpdatePatch, request: Request, user: SessionUser = Depends(_current_user)):
+    _require_admin(user, payload.admin_password, request, "configure_auto_update")
+    now = time.time()
+    state = _read_auto_update_state()
+    state.update({
+        "enabled": payload.enabled,
+        "interval_hours": payload.interval_hours,
+        "update_config": payload.update_config,
+        "next_check": now + payload.interval_hours * 3600 if payload.enabled else None,
+        "last_error": "",
+    })
+    _audit(user.username, "configure_auto_update", f"enabled={payload.enabled}")
+    return _write_auto_update_state(state)
+
+
+@router.post("/api/admin/system/updates/auto/run")
+def admin_auto_update_run(payload: UpdateAction, request: Request, user: SessionUser = Depends(_current_user)):
+    _require_admin(user, payload.admin_password, request, "run_auto_update")
+    result = _run_auto_update_once(actor=user.username, force=True, update_config=payload.update_config)
+    return result
 
 
 @router.get("/api/admin/system/logs")
