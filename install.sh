@@ -21,6 +21,7 @@ NON_INTERACTIVE="no"
 ACTION="install"
 EXISTING_ACTION=""
 REMOVE_SCOPE=""
+UPDATE_CONFIG="no"
 ALLOW_PROXMOX_HOST_INSTALL="no"
 IS_PROXMOX="no"
 
@@ -70,6 +71,7 @@ Options:
                           Explicitly allow restricted installation on a Proxmox VE host
   --existing-action ACTION
                           Existing install action: update, backup-update, remove, remove-app, or abort
+  --update-config         Also regenerate config.yaml during update actions
   --help                  Show this help
 EOF
 }
@@ -161,6 +163,11 @@ parse_args() {
         esac
         NON_INTERACTIVE="yes"
         shift 2
+        ;;
+      --update-config)
+        UPDATE_CONFIG="yes"
+        NON_INTERACTIVE="yes"
+        shift
         ;;
       --help|-h)
         usage
@@ -430,6 +437,7 @@ prompt_configuration() {
   printf 'Start now:        %s\n' "$START_SERVICE"
   printf 'Autostart:        %s\n' "$ENABLE_AUTOSTART"
   printf 'Firewall:         %s\n' "$CONFIGURE_FIREWALL"
+  printf 'Update config:    %s\n' "$UPDATE_CONFIG"
   printf 'Build frontend:   %s\n' "$([[ "$SKIP_BUILD" == "yes" ]] && printf 'no' || printf 'yes')"
   if [[ "$ASSUME_YES" != "yes" ]]; then
     confirm "Continue installation?" "yes" || fail "Installation cancelled"
@@ -481,6 +489,24 @@ handle_existing_installation() {
     4) ACTION="remove-app" ;;
     5) fail "Installation cancelled" ;;
     *) fail "Invalid choice" ;;
+  esac
+}
+
+prompt_config_update() {
+  case "$ACTION" in
+    update|backup-update)
+      if [[ "$UPDATE_CONFIG" == "yes" ]]; then
+        return
+      fi
+      if [[ "$ASSUME_YES" == "yes" || "$NON_INTERACTIVE" == "yes" ]]; then
+        UPDATE_CONFIG="no"
+        return
+      fi
+      confirm "Update configuration file ${CONFIG_FILE}?" "no" && UPDATE_CONFIG="yes" || UPDATE_CONFIG="no"
+      ;;
+    install|remove)
+      UPDATE_CONFIG="yes"
+      ;;
   esac
 }
 
@@ -614,9 +640,13 @@ write_config() {
   install -d -m 0755 "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
   install -d -m 1777 "${DATA_DIR}/tmp"
   chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$DATA_DIR" "$LOG_DIR"
+  if [[ -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
+    ok "Keeping existing config: ${CONFIG_FILE}"
+    return
+  fi
   if [[ -f "$CONFIG_FILE" ]]; then
     cp -a "$CONFIG_FILE" "${CONFIG_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
-    warn "Existing config backed up before update"
+    warn "Existing config backed up before config update"
   fi
   local secret
   secret="$("${INSTALL_DIR}/backend/.venv/bin/python" - <<'PY'
@@ -850,6 +880,7 @@ main() {
   detect_package_manager
   detect_proxmox_host
   prepare_source
+  prompt_config_update
   prompt_configuration
   install_dependencies
   setup_node_runtime
