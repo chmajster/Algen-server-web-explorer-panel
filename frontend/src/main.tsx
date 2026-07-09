@@ -47,7 +47,8 @@ type Toast = { id: number; text: string; type: "ok" | "error" };
 type Theme = "light" | "dark" | "system";
 type T = (key: string) => string;
 type AppId = "dashboard" | "files" | "transfers" | "settings" | "mounts" | "services" | "store" | "logs";
-type WindowLayout = { x: number; y: number; width: number; height: number; minimized?: boolean };
+type WindowRect = { x: number; y: number; width: number; height: number };
+type WindowLayout = WindowRect & { minimized?: boolean; restore?: WindowRect };
 type WindowInstance = { id: string; app: AppId };
 type Layouts = Record<string, WindowLayout>;
 
@@ -159,6 +160,21 @@ function DesktopWindow({
 }) {
   const displayTitle = title || appMeta[app].title;
   const drag = useRef<{ startX: number; startY: number; layout: WindowLayout; mode: "move" | "resize" } | null>(null);
+  const isMaximized = Boolean(layout.restore);
+  function toggleMaximize() {
+    if (layout.restore) {
+      onLayout({ ...layout.restore, minimized: false });
+      return;
+    }
+    onLayout({
+      x: 16,
+      y: 52,
+      width: window.innerWidth - 32,
+      height: window.innerHeight - 104,
+      minimized: false,
+      restore: { x: layout.x, y: layout.y, width: layout.width, height: layout.height }
+    });
+  }
   useEffect(() => {
     function move(event: PointerEvent) {
       if (!drag.current) return;
@@ -166,9 +182,9 @@ function DesktopWindow({
       const dy = event.clientY - drag.current.startY;
       const base = drag.current.layout;
       if (drag.current.mode === "move") {
-        onLayout({ ...base, x: Math.max(8, base.x + dx), y: Math.max(50, base.y + dy) });
+        onLayout({ ...base, x: Math.max(8, base.x + dx), y: Math.max(50, base.y + dy), restore: undefined });
       } else {
-        onLayout({ ...base, width: Math.max(360, base.width + dx), height: Math.max(280, base.height + dy) });
+        onLayout({ ...base, width: Math.max(360, base.width + dx), height: Math.max(280, base.height + dy), restore: undefined });
       }
     }
     function up() { drag.current = null; }
@@ -196,7 +212,7 @@ function DesktopWindow({
         <span>{displayTitle}</span>
         <div className="window-controls">
           <button title="Minimize" onClick={(event) => { event.stopPropagation(); onMinimize(); }}><Minimize2 size={13} /></button>
-          <button title="Maximize" onClick={(event) => { event.stopPropagation(); onLayout({ ...layout, x: 16, y: 52, width: window.innerWidth - 32, height: window.innerHeight - 104 }); }}><Maximize2 size={13} /></button>
+          <button title={isMaximized ? "Restore" : "Maximize"} onClick={(event) => { event.stopPropagation(); toggleMaximize(); }}><Maximize2 size={13} /></button>
           <button title="Close" onClick={(event) => { event.stopPropagation(); onClose(); }}><X size={13} /></button>
         </div>
       </header>
