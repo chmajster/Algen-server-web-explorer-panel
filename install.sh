@@ -150,11 +150,15 @@ ask() {
   local default="$2"
   local answer=""
   if [[ "$ASSUME_YES" == "yes" ]]; then
-    printf '%s [%s]: %s\n' "$prompt" "$default" "$default"
+    printf '%s [%s]: %s\n' "$prompt" "$default" "$default" >&2
     printf '%s' "$default"
     return
   fi
-  read -r -p "${prompt} [${default}]: " answer
+  if [[ -r /dev/tty ]]; then
+    read -r -p "${prompt} [${default}]: " answer </dev/tty || answer=""
+  else
+    printf '%s [%s]: %s\n' "$prompt" "$default" "$default" >&2
+  fi
   printf '%s' "${answer:-$default}"
 }
 
@@ -168,7 +172,12 @@ confirm() {
     return
   fi
   local answer=""
-  read -r -p "${prompt} ${suffix} " answer
+  if [[ -r /dev/tty ]]; then
+    read -r -p "${prompt} ${suffix} " answer </dev/tty || answer="$default"
+  else
+    printf '%s %s %s\n' "$prompt" "$suffix" "$default" >&2
+    answer="$default"
+  fi
   answer="${answer:-$default}"
   [[ "$answer" =~ ^[Yy] ]]
 }
@@ -325,7 +334,12 @@ handle_existing_installation() {
   printf '  2) Backup and update\n'
   printf '  3) Abort\n'
   local choice=""
-  read -r -p "Action [2]: " choice
+  if [[ -r /dev/tty ]]; then
+    read -r -p "Action [2]: " choice </dev/tty || choice="2"
+  else
+    printf 'Action [2]: 2\n' >&2
+    choice="2"
+  fi
   case "${choice:-2}" in
     1) ACTION="update" ;;
     2) ACTION="backup-update" ;;
