@@ -32,6 +32,8 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 WORK_DIR=""
 SOURCE_DIR=""
 CURRENT_STEP="startup"
+APP_COPY_STARTED="no"
+INSTALL_COMPLETED="no"
 
 if [[ -t 1 ]]; then
   RED="$(printf '\033[31m')"
@@ -94,6 +96,7 @@ on_error() {
   else
     printf 'Systemd service was not installed yet, so journalctl may have no entries.\n' >&2
   fi
+  cleanup_failed_install
 }
 trap 'on_error "$LINENO" "$?"' ERR
 
@@ -565,6 +568,7 @@ ensure_service_user() {
 
 copy_application() {
   section "Copying application"
+  APP_COPY_STARTED="yes"
   install -d -m 0755 "$INSTALL_DIR"
   rsync -a --delete \
     --exclude ".git" \
@@ -743,6 +747,28 @@ cleanup() {
   [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] && rm -rf "$WORK_DIR"
   return 0
 }
+
+cleanup_failed_install() {
+  trap - EXIT
+  cleanup
+  if [[ "$INSTALL_COMPLETED" == "yes" ]]; then
+    return 0
+  fi
+  case "$ACTION" in
+    install|remove)
+      if [[ "$APP_COPY_STARTED" == "yes" && -d "$INSTALL_DIR" ]]; then
+        warn "Cleaning up partial application files from ${INSTALL_DIR}"
+        validate_install_dir
+        rm -rf --one-file-system "$INSTALL_DIR"
+      fi
+      ;;
+  esac
+  if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
+    rm -f "$SERVICE_FILE"
+    systemctl daemon-reload 2>/dev/null || true
+  fi
+  return 0
+}
 trap cleanup EXIT
 
 main() {
@@ -751,7 +777,10 @@ main() {
   require_root
   prompt_install_dir
   handle_existing_installation
-  remove_app_only && return
+  if remove_app_only; then
+    INSTALL_COMPLETED="yes"
+    return
+  fi
   detect_package_manager
   detect_proxmox_host
   prepare_source
@@ -771,6 +800,7 @@ main() {
   configure_firewall
   start_service
   validate_installation
+  INSTALL_COMPLETED="yes"
   print_finish
 }
 
