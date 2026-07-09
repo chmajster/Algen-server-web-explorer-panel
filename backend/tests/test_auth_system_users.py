@@ -10,11 +10,13 @@ def _pw(uid: int = 1000, shell: str = "/bin/bash", home: str = "/home/alice"):
 
 
 def test_login_allowed_for_interactive_system_user(monkeypatch):
-    monkeypatch.setattr(auth.pwd, "getpwnam", lambda username: _pw())
+    seen = []
+    monkeypatch.setattr(auth.pwd, "getpwnam", lambda username: seen.append(username) or _pw())
 
-    user = auth.assert_login_allowed("alice")
+    user = auth.assert_login_allowed(" alice ")
 
     assert user.pw_dir == "/home/alice"
+    assert seen == ["alice"]
 
 
 def test_login_rejects_service_uid(monkeypatch):

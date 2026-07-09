@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from .audit import configure_logging, logger
 from .apps import router as apps_router
-from .auth import authenticate, user_home
+from .auth import authenticate, normalize_username, user_home
 from .config import get_config
 from .file_ops import download_response, list_dir, mime_for, run_user_op, save_upload, tree_dir
 from .network_mounts import assert_write_allowed, router as mounts_router
@@ -113,12 +113,13 @@ def _reject_destination_conflicts(sources: list[Path], destination: Path) -> Non
 
 @app.post("/api/auth/login")
 def login(payload: LoginRequest, request: Request, response: Response):
-    key = f"{request.client.host if request.client else 'unknown'}:{payload.username}"
+    username = normalize_username(payload.username)
+    key = f"{request.client.host if request.client else 'unknown'}:{username}"
     rate_limiter.check(key)
-    authenticate(payload.username, payload.password)
-    csrf = create_session(response, payload.username)
-    logger.info("login user=%s", payload.username)
-    return {"username": payload.username, "home": user_home(payload.username), "csrf_token": csrf}
+    authenticate(username, payload.password)
+    csrf = create_session(response, username)
+    logger.info("login user=%s", username)
+    return {"username": username, "home": user_home(username), "csrf_token": csrf}
 
 
 @app.post("/api/auth/logout")

@@ -18,7 +18,12 @@ BLOCKED_LOGIN_SHELLS = {
 }
 
 
+def normalize_username(username: str) -> str:
+    return username.strip()
+
+
 def system_user(username: str) -> pwd.struct_passwd:
+    username = normalize_username(username)
     try:
         return pwd.getpwnam(username)
     except KeyError as exc:
@@ -26,6 +31,7 @@ def system_user(username: str) -> pwd.struct_passwd:
 
 
 def assert_login_allowed(username: str) -> pwd.struct_passwd:
+    username = normalize_username(username)
     if not username or "/" in username or "\x00" in username:
         raise HTTPException(400, "Invalid username")
     user = system_user(username)

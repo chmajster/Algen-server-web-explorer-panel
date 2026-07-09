@@ -116,7 +116,7 @@ function Login({ onLogin, t }: { onLogin: (user: User) => void; t: T }) {
     event.preventDefault();
     setError("");
     try {
-      onLogin(await login(username, password));
+      onLogin(await login(username.trim(), password));
     } catch (err) {
       setError(message(err, t("auth.loginFailed")));
     }
