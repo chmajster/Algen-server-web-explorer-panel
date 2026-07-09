@@ -350,6 +350,34 @@ setup_node_runtime() {
   ok "Node.js $(node -v) ready"
 }
 
+print_runtime_diagnostics() {
+  section "Runtime diagnostics"
+  printf 'Expected port: %s\n' "$PORT" >&2
+  printf 'Config file:   %s\n' "$CONFIG_FILE" >&2
+  if [[ -f "$CONFIG_FILE" ]]; then
+    printf '\nConfig server section:\n' >&2
+    awk '
+      /^server:/ {show=1}
+      show {print}
+      show && NR > 1 && /^[^[:space:]][^:]*:/ && !/^server:/ {exit}
+    ' "$CONFIG_FILE" >&2 || true
+  else
+    printf 'Config file does not exist.\n' >&2
+  fi
+  printf '\nService status:\n' >&2
+  systemctl status "$SERVICE_NAME" --no-pager -l >&2 || true
+  printf '\nRecent service logs:\n' >&2
+  journalctl -u "$SERVICE_NAME" -n 120 --no-pager >&2 || true
+  if command -v ss >/dev/null 2>&1; then
+    printf '\nListening TCP sockets:\n' >&2
+    ss -ltnp >&2 || ss -ltn >&2 || true
+  fi
+  if command -v ps >/dev/null 2>&1; then
+    printf '\nWebNAS/Python processes:\n' >&2
+    ps -eo pid,ppid,user,cmd | grep -E 'webnas|uvicorn|python -m app.run' | grep -v grep >&2 || true
+  fi
+}
+
 prepare_source() {
   section "Preparing source"
   local script_dir=""
@@ -712,12 +740,50 @@ validate_installation() {
   command -v rsync >/dev/null 2>&1 && ok "rsync available" || fail "rsync is missing"
   systemctl list-unit-files "${SERVICE_NAME}.service" >/dev/null 2>&1 && ok "systemd sees ${SERVICE_NAME}.service" || fail "systemd service not visible"
   if [[ "$START_SERVICE" == "yes" ]]; then
-    systemctl is-active --quiet "$SERVICE_NAME" && ok "Backend service is active" || fail "Backend service is not active"
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+      ok "Backend service is active"
+    else
+      print_runtime_diagnostics
+      fail "Backend service is not active"
+    fi
     if command -v ss >/dev/null 2>&1; then
-      ss -ltn | awk '{print $4}' | grep -Eq "(:|\\])${PORT}$" && ok "Port ${PORT} is listening" || fail "Port ${PORT} is not listening"
+      local port_ready="no"
+      for _ in {1..20}; do
+        if ss -ltn | awk '{print $4}' | grep -Eq "(:|\\])${PORT}$"; then
+          port_ready="yes"
+          break
+        fi
+        sleep 1
+      done
+      if [[ "$port_ready" == "yes" ]]; then
+        ok "Port ${PORT} is listening"
+      else
+        print_runtime_diagnostics
+        fail "Port ${PORT} is not listening"
+      fi
     fi
     if command -v curl >/dev/null 2>&1; then
-      curl -fsS "http://127.0.0.1:${PORT}/api/health" | grep -q '"status"' && ok "Healthcheck responds" || fail "Healthcheck failed"
+      local scheme="http"
+      grep -Eq '^[[:space:]]*use_https:[[:space:]]*true' "$CONFIG_FILE" 2>/dev/null && scheme="https"
+      local health_ready="no"
+      local health_url="${scheme}://127.0.0.1:${PORT}/api/health"
+      local health_output=""
+      for _ in {1..10}; do
+        health_output="$(curl -kfsS "$health_url" 2>&1 || true)"
+        if printf '%s' "$health_output" | grep -q '"status"'; then
+          health_ready="yes"
+          break
+        fi
+        sleep 1
+      done
+      if [[ "$health_ready" == "yes" ]]; then
+        ok "Healthcheck responds"
+      else
+        printf 'Healthcheck URL: %s\n' "$health_url" >&2
+        printf 'Last healthcheck output:\n%s\n' "${health_output:-<empty>}" >&2
+        print_runtime_diagnostics
+        fail "Healthcheck failed for ${health_url}"
+      fi
     fi
   else
     warn "Runtime validation skipped because service was not started"
