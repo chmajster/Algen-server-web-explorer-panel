@@ -99,6 +99,7 @@
   ,"transfers.title": "Transfers"
   ,"transfers.copy": "Copy"
   ,"transfers.move": "Move"
+  ,"transfers.delete": "Delete"
   ,"transfers.source": "Source"
   ,"transfers.destination": "Destination"
   ,"transfers.currentFile": "Current file"

@@ -1,5 +1,5 @@
-name: Samba
-description: SMB/CIFS file sharing service managed by WebNAS.
+name: Samba / Windows File Sharing
+description: SMB/CIFS file sharing service managed by Algen Web Explorer Panel.
 version: "1.0.0"
 apt_packages:
   - samba

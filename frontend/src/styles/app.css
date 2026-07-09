@@ -1,5 +1,17 @@
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --bg: #0d1117;
+  --surface: #141b24;
+  --surface-2: #1b2531;
+  --surface-3: #223041;
+  --border: #2a3746;
+  --text: #edf4f8;
+  --text-muted: #9fb0bf;
+  --accent: #38bdf8;
+  --accent-hover: #0ea5e9;
+  --danger: #fb7185;
+  --success: #34d399;
+  --warning: #fbbf24;
   color: #17202a;
   background: #d6e1e7;
 }
@@ -567,11 +579,63 @@ button { border: 0; cursor: pointer; }
 }
 .resize-handle {
   position: absolute;
+  z-index: 3;
+  background: transparent;
+}
+.resize-n,
+.resize-s {
+  left: 10px;
+  right: 10px;
+  height: 8px;
+  cursor: ns-resize;
+}
+.resize-n { top: 0; }
+.resize-s { bottom: 0; }
+.resize-e,
+.resize-w {
+  top: 10px;
+  bottom: 10px;
+  width: 8px;
+  cursor: ew-resize;
+}
+.resize-e { right: 0; }
+.resize-w { left: 0; }
+.resize-ne,
+.resize-nw,
+.resize-se,
+.resize-sw {
+  width: 16px;
+  height: 16px;
+}
+.resize-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.resize-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.resize-se {
   right: 0;
   bottom: 0;
-  width: 18px;
-  height: 18px;
   cursor: nwse-resize;
+}
+.resize-sw {
+  left: 0;
+  bottom: 0;
+  cursor: nesw-resize;
+}
+.window.active .resize-se::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid rgba(159,176,191,.65);
+  border-bottom: 2px solid rgba(159,176,191,.65);
 }
 .toolbar {
   display: flex;
@@ -1739,4 +1803,333 @@ aside button span {
     border-bottom: 1px solid rgba(100,119,126,.18);
   }
   .store-list button { min-width: 180px; }
+}
+
+/* Unified admin theme shared by Explorer, Settings, and every desktop app. */
+.app,
+.app.dark {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.topbar,
+.taskbar,
+.app.dark .topbar,
+.app.dark .taskbar {
+  color: var(--text);
+  border-color: var(--border);
+  background: rgba(20, 27, 36, .92);
+}
+
+.topbar button,
+.taskbar button,
+.task {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.taskbar button.active,
+.task.active {
+  border-color: rgba(56,189,248,.48);
+  background: rgba(56,189,248,.18);
+}
+
+.window,
+.app.dark .window {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 30px 100px rgba(0,0,0,.48);
+}
+
+.window-title {
+  border-bottom: 1px solid var(--border);
+  background: #111821;
+}
+
+.window-controls button {
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+
+.window-controls button:hover,
+.topbar button:hover,
+.taskbar button:hover {
+  border-color: rgba(56,189,248,.48);
+  color: var(--text);
+  background: rgba(56,189,248,.14);
+}
+
+.toolbar {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.toolbar button,
+.toolbar .icon-button,
+.row-actions button,
+.settings-section button,
+.store-section > button,
+.store-detail .toolbar button,
+.transfer-main button,
+.pagination button,
+.selection-bar button {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.toolbar button:hover,
+.toolbar .icon-button:hover,
+.row-actions button:hover,
+.settings-section button:hover,
+.store-section > button:hover,
+.store-detail .toolbar button:hover,
+.transfer-main button:hover,
+.pagination button:hover,
+.selection-bar button:hover {
+  border-color: rgba(56,189,248,.5);
+  background: var(--surface-3);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled,
+.toolbar button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+.search,
+.form-grid input,
+.form-grid select {
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: #101722;
+}
+
+.search input {
+  color: var(--text);
+  background: transparent;
+}
+
+.dashboard-app,
+.transfer-panel,
+.logs-app,
+.store-app,
+.mounts-app,
+.services-app,
+.app.dark .transfer-panel,
+.app.dark .store-app,
+.app.dark .mounts-app,
+.app.dark .services-app {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.metric-card,
+.transfer-item,
+.store-section,
+.store-detail > header,
+.notification-center div,
+.notification-center p,
+.disk-list > div,
+.admin-list > div,
+.app.dark .metric-card,
+.app.dark .transfer-item,
+.app.dark .disk-list > div,
+.app.dark .store-list button,
+.app.dark .store-section > button,
+.app.dark .store-detail .toolbar button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.metric-card span,
+.metric-card small,
+.transfer-meta,
+.transfer-paths,
+.store-detail p,
+.store-list span,
+.info-grid dt,
+.task-summary {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.sparkline path,
+.transfer-progress span {
+  stroke: var(--accent);
+  background: var(--accent);
+}
+
+.transfer-progress {
+  background: #101722;
+}
+
+.transfer-log,
+.logs-app pre,
+.store-log {
+  border: 1px solid var(--border);
+  color: #d9f7ff;
+  background: #101722;
+}
+
+.transfer-log.error,
+.toasts .error {
+  color: #ffe4e6;
+  background: rgba(127,29,29,.86);
+}
+
+.store-list {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.store-list button {
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.store-list button.active,
+.store-list button:hover {
+  border-color: rgba(56,189,248,.42);
+  color: var(--text);
+  background: rgba(56,189,248,.14);
+}
+
+.store-detail,
+.settings-panel {
+  background: var(--bg);
+}
+
+.store-detail > header,
+.store-section {
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.safe-mode-banner,
+.dashboard-warnings span {
+  border: 1px solid rgba(251,191,36,.35);
+  color: #fde68a;
+  background: rgba(251,191,36,.12);
+}
+
+.disk-list > div.warn {
+  border-color: rgba(251,113,133,.38);
+  color: #fecdd3;
+  background: rgba(251,113,133,.14);
+}
+
+.context-menu,
+.app.dark .context-menu,
+.notification-center,
+.app.dark .notification-center {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.context-menu button:hover,
+.context-menu a:hover {
+  background: rgba(56,189,248,.14);
+}
+
+.modal {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.modal header {
+  border-color: var(--border);
+  background: #111821;
+}
+
+.empty-state {
+  color: var(--text-muted);
+}
+/* Samba module */
+.smb-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid rgba(52,211,153,.38);
+  border-radius: 6px;
+  color: #86efac;
+  background: rgba(52,211,153,.12);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.samba-app {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+  padding: 16px;
+  overflow: auto;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.samba-status-grid,
+.samba-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, .85fr);
+  gap: 14px;
+}
+
+.samba-tabs {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.samba-tabs .settings-nav-item {
+  width: auto;
+}
+
+.toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.advanced-textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--text);
+  background: #101722;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.badge-danger {
+  border-color: rgba(251,113,133,.42);
+  color: #fda4af;
+  background: rgba(251,113,133,.14);
+}
+
+@media (max-width: 920px) {
+  .samba-status-grid,
+  .samba-grid {
+    grid-template-columns: 1fr;
+  }
 }

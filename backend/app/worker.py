@@ -100,11 +100,14 @@ def main() -> None:
         print(json.dumps({"ok": True}))
     elif op == "delete":
         path = Path(payload["path"])
-        if path.is_dir():
+        if not path.exists() and not path.is_symlink():
+            print(json.dumps({"ok": True, "already_deleted": True}))
+        elif path.is_dir():
             shutil.rmtree(path)
+            print(json.dumps({"ok": True}))
         else:
             path.unlink()
-        print(json.dumps({"ok": True}))
+            print(json.dumps({"ok": True}))
     elif op == "trash":
         path = Path(payload["path"])
         trash = Path.home() / ".local/share/Trash/files"

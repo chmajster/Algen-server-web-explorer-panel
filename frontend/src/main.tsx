@@ -13,6 +13,7 @@ import {
   FolderPlus,
   Grid2X2,
   HardDrive,
+  Home,
   List,
   Lock,
   LogOut,
@@ -41,7 +42,7 @@ import {
 } from "lucide-react";
 import { AdminGroup, AdminUser, api, downloadUrl, FileItem, login, logout, me, ProxmoxSafety, SettingsMe, SystemdService, SystemLogs, Task, UpdateStatus } from "./api";
 import type { AutoUpdateSettings } from "./api";
-import type { NetworkMount, NetworkMountPayload, ResourceDashboard, SambaConfig, SambaShare, StoreApp as StoreModule } from "./api";
+import type { NetworkMount, NetworkMountPayload, ResourceDashboard, SambaConfig, SambaShare, SambaStatus, SambaUser, StoreApp as StoreModule } from "./api";
 import { AppIcon } from "./components/AppIcon";
 import { detectLanguage, Language, supportedLanguages, translate } from "./i18n";
 import "./styles/app.css";
@@ -50,11 +51,12 @@ type User = { username: string; home: string };
 type Toast = { id: number; text: string; type: "ok" | "error" };
 type Theme = "light" | "dark" | "system";
 type T = (key: string) => string;
-type AppId = "dashboard" | "files" | "transfers" | "settings" | "mounts" | "services" | "store" | "logs";
+type AppId = "dashboard" | "files" | "transfers" | "settings" | "mounts" | "services" | "store" | "samba" | "logs";
 type WindowRect = { x: number; y: number; width: number; height: number };
 type WindowLayout = WindowRect & { minimized?: boolean; restore?: WindowRect };
 type WindowInstance = { id: string; app: AppId };
 type Layouts = Record<string, WindowLayout>;
+type SavedWindowState = { windows: WindowInstance[]; layouts: Layouts; activeWindowId?: string; counter?: number };
 
 const defaultLayouts: Layouts = {
   dashboard: { x: 112, y: 78, width: 1040, height: 680 },
@@ -64,6 +66,7 @@ const defaultLayouts: Layouts = {
   mounts: { x: 160, y: 92, width: 1040, height: 680 },
   services: { x: 210, y: 112, width: 940, height: 620 },
   store: { x: 190, y: 96, width: 1040, height: 680 },
+  samba: { x: 190, y: 96, width: 1100, height: 700 },
   logs: { x: 260, y: 140, width: 880, height: 580 }
 };
 
@@ -75,8 +78,13 @@ const appMeta: Record<AppId, { title: string; icon: React.ReactNode; admin?: boo
   mounts: { title: "Network Mounts", icon: <Network size={28} /> },
   services: { title: "Services", icon: <ServerCog size={28} />, admin: true },
   store: { title: "Store", icon: <Package size={28} />, admin: true },
+  samba: { title: "Samba / Windows File Sharing", icon: <Network size={28} />, admin: true },
   logs: { title: "Logs", icon: <Terminal size={28} />, admin: true }
 };
+
+function isAppId(value: string): value is AppId {
+  return value in appMeta;
+}
 
 function joinPath(base: string, name: string) {
   return `${base.replace(/\/$/, "")}/${name}`;
@@ -163,8 +171,15 @@ function DesktopWindow({
   children: React.ReactNode;
 }) {
   const displayTitle = title || appMeta[app].title;
-  const drag = useRef<{ startX: number; startY: number; layout: WindowLayout; mode: "move" | "resize" } | null>(null);
+  type ResizeEdge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
+  const drag = useRef<{ startX: number; startY: number; layout: WindowLayout; mode: "move" | "resize"; edge?: ResizeEdge } | null>(null);
   const isMaximized = Boolean(layout.restore);
+  function startResize(event: React.PointerEvent, edge: ResizeEdge) {
+    event.preventDefault();
+    event.stopPropagation();
+    drag.current = { startX: event.clientX, startY: event.clientY, layout, mode: "resize", edge };
+    onFocus();
+  }
   function toggleMaximize() {
     if (layout.restore) {
       onLayout({ ...layout.restore, minimized: false });
@@ -188,7 +203,24 @@ function DesktopWindow({
       if (drag.current.mode === "move") {
         onLayout({ ...base, x: Math.max(8, base.x + dx), y: Math.max(50, base.y + dy), restore: undefined });
       } else {
-        onLayout({ ...base, width: Math.max(360, base.width + dx), height: Math.max(280, base.height + dy), restore: undefined });
+        const edge = drag.current.edge || "se";
+        const minWidth = 360;
+        const minHeight = 280;
+        let nextX = base.x;
+        let nextY = base.y;
+        let nextWidth = base.width;
+        let nextHeight = base.height;
+        if (edge.includes("e")) nextWidth = Math.max(minWidth, base.width + dx);
+        if (edge.includes("s")) nextHeight = Math.max(minHeight, base.height + dy);
+        if (edge.includes("w")) {
+          nextWidth = Math.max(minWidth, base.width - dx);
+          nextX = base.x + (base.width - nextWidth);
+        }
+        if (edge.includes("n")) {
+          nextHeight = Math.max(minHeight, base.height - dy);
+          nextY = base.y + (base.height - nextHeight);
+        }
+        onLayout({ ...base, x: Math.max(8, nextX), y: Math.max(50, nextY), width: nextWidth, height: nextHeight, restore: undefined });
       }
     }
     function up() { drag.current = null; }
@@ -221,15 +253,9 @@ function DesktopWindow({
         </div>
       </header>
       {children}
-      <span
-        className="resize-handle"
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          drag.current = { startX: event.clientX, startY: event.clientY, layout, mode: "resize" };
-          onFocus();
-        }}
-      />
+      {(["n", "e", "s", "w", "ne", "nw", "se", "sw"] as ResizeEdge[]).map((edge) => (
+        <span key={edge} className={`resize-handle resize-${edge}`} onPointerDown={(event) => startResize(event, edge)} aria-hidden="true" />
+      ))}
     </section>
   );
 }
@@ -436,7 +462,7 @@ type SortField = "name" | "size" | "type" | "owner" | "group" | "permissions" | 
 type SortDirection = "asc" | "desc";
 type TreeState = Record<string, { items: FileItem[]; open: boolean; loading: boolean; error?: string }>;
 
-function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" | "error") => void; t: T; tasks: Task[] }) {
+function FileManagerV2({ toast, t, tasks, homePath, onShareSamba }: { toast: (text: string, type?: "ok" | "error") => void; t: T; tasks: Task[]; homePath: string; onShareSamba: (path: string) => void }) {
   const lastPathKey = "webnas_file_manager_last_path";
   const viewKey = "webnas_file_manager_view";
   const [path, setPath] = useState(() => localStorage.getItem(lastPathKey) || "");
@@ -446,6 +472,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
   const [preview, setPreview] = useState<FileItem | null>(null);
   const [context, setContext] = useState<{ x: number; y: number; item: FileItem | null } | null>(null);
   const [mounts, setMounts] = useState<NetworkMount[]>([]);
+  const [sambaSharedPaths, setSambaSharedPaths] = useState<Set<string>>(new Set());
   const [tree, setTree] = useState<TreeState>({});
   const [treeVisible, setTreeVisible] = useState(() => localStorage.getItem(`${viewKey}_tree`) !== "hidden");
   const [treeWidth, setTreeWidth] = useState(() => Number(localStorage.getItem(`${viewKey}_tree_width`) || 240));
@@ -501,6 +528,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
   useEffect(() => { load(path, page); }, [path, page, sort, direction, debouncedFilter, foldersFirst]);
   useEffect(() => { loadTree(path || ""); }, []);
   useEffect(() => { api.mounts().then(setMounts).catch(() => undefined); }, []);
+  useEffect(() => { api.appConfig("samba").then((data) => setSambaSharedPaths(new Set((data.shares || []).filter((share) => share.enabled).map((share) => share.path)))).catch(() => undefined); }, [path]);
   useEffect(() => { localStorage.setItem(`${viewKey}_tree`, treeVisible ? "visible" : "hidden"); }, [treeVisible]);
   useEffect(() => { localStorage.setItem(`${viewKey}_tree_width`, String(treeWidth)); }, [treeWidth]);
   useEffect(() => { localStorage.setItem(`${viewKey}_density`, compact ? "compact" : "normal"); }, [compact]);
@@ -564,6 +592,10 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
   function deleteSelected() {
     selectedItems.filter((item) => item.can_delete).forEach((item) => named(t("files.deleteQueued"), () => api.delete(item.path)));
   }
+  function moveSelectedToPrompt() {
+    const target = prompt("Move to", path);
+    if (target) named(t("files.taskQueued"), () => api.move([...selected], target));
+  }
   function openSelected() {
     const item = selectedItems[0];
     if (!item) return;
@@ -626,6 +658,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
 
   const rootItems = tree[path]?.items || items.filter((item) => item.is_dir);
   const sortIcon = (field: SortField) => sort === field ? (direction === "asc" ? "^" : "v") : "";
+  const activeFileTasks = tasks.filter((task) => ["copy", "move", "delete"].includes(task.type) && ["queued", "running", "paused"].includes(task.status)).length;
   return (
     <section className="app-shell file-manager-shell">
       <header className="file-topbar">
@@ -647,6 +680,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
       </header>
       <div className="toolbar">
         <button title="Toggle tree" onClick={() => setTreeVisible((value) => !value)}><Menu size={17} /></button>
+        <button title="Home" aria-label="Home" onClick={() => openPath(homePath || "")}><Home size={17} /></button>
         <button title={t("action.refresh")} onClick={() => { load(); loadTree(path); }}><RefreshCw size={17} /></button>
         <button title={t("action.newFolder")} disabled={!meta.can_upload} onClick={() => { const name = prompt(t("files.folderName")); if (name) named(t("files.folderCreated"), () => api.mkdir(joinPath(path, name))); }}><FolderPlus size={17} /></button>
         <label className="icon-button" title={t("action.upload")}><Upload size={17} /><input type="file" multiple disabled={!meta.can_upload} onChange={(e) => Array.from(e.target.files || []).forEach((file) => named(t("files.uploaded"), () => api.upload(path, file)))} /></label>
@@ -677,7 +711,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
           window.addEventListener("pointerup", up);
         }} />}
         <main className={`file-table ${compact ? "compact" : ""}`} onContextMenu={(e) => { e.preventDefault(); setContext({ x: e.clientX, y: e.clientY, item: null }); }}>
-          {selected.size > 0 && <div className="selection-bar"><strong>{selected.size} selected</strong><button onClick={copySelected}>Copy</button><button onClick={() => { const target = prompt("Move to", path); if (target) api.move([...selected], target).then(() => load()); }}>Move</button><button onClick={deleteSelected}>Delete</button><button onClick={() => selectedItems[0] && window.open(downloadUrl(selectedItems[0].path), "_blank")}>Download</button><button onClick={() => { const mode = prompt("Mode", "0644"); if (mode) selectedItems.forEach((item) => named("Permissions changed", () => api.chmod(item.path, mode))); }}>chmod</button><button onClick={() => toast("Archive action is queued for a future backend module")}>Archive</button></div>}
+          {selected.size > 0 && <div className="selection-bar"><strong>{selected.size} selected</strong><button onClick={copySelected}>Copy</button><button onClick={moveSelectedToPrompt}>Move</button><button onClick={deleteSelected}>Delete</button><button onClick={() => selectedItems[0] && window.open(downloadUrl(selectedItems[0].path), "_blank")}>Download</button><button onClick={() => { const mode = prompt("Mode", "0644"); if (mode) selectedItems.forEach((item) => named("Permissions changed", () => api.chmod(item.path, mode))); }}>chmod</button><button onClick={() => toast("Archive action is queued for a future backend module")}>Archive</button></div>}
           {debouncedFilter && <p className="filter-note">Filtered by "{debouncedFilter}"</p>}
           {error && <p className="error">{error}</p>}
           {loading ? <div className="table-skeleton"><span /><span /><span /><span /></div> : (
@@ -703,7 +737,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
                 >
                   <input aria-label={`Select ${item.name}`} type="checkbox" checked={selected.has(item.path)} onChange={(e) => { e.stopPropagation(); toggle(item, true); }} />
                   {item.is_dir ? <Folder className="file-icon folder-icon" size={20} /> : <File className="file-icon" size={20} />}
-                  <span className={`name ${item.is_dir ? "folder-name" : ""}`}>{item.name}</span>
+                  <span className={`name ${item.is_dir ? "folder-name" : ""}`}>{item.name}{item.is_dir && sambaSharedPaths.has(item.path) && <small className="smb-badge">SMB</small>}</span>
                   <span>{item.is_dir ? "—" : formatSize(item.size)}</span>
                   <span>{item.type}</span>
                   <span>{item.owner}</span>
@@ -724,6 +758,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
         <button disabled={!selected.size} onClick={() => { renameItem(); setContext(null); }}>Rename</button>
         <button disabled={!selected.size} onClick={() => { deleteSelected(); setContext(null); }}>Delete</button>
         <button onClick={() => { navigator.clipboard?.writeText(context.item?.path || path); setContext(null); }}>Copy path</button>
+        {(context.item?.is_dir || selectedItems[0]?.is_dir) && <button onClick={() => { const item = context.item || selectedItems[0]; if (item) onShareSamba(item.path); setContext(null); }}>Udostepnij przez Sambe</button>}
         <button onClick={() => { const item = context.item || selectedItems[0]; if (item) alert(`${item.name}\n${item.path}\n${item.permissions}`); setContext(null); }}>Properties</button>
         <button disabled={!clipboard} onClick={() => { paste(context.item?.path || path).catch((err) => toast(message(err, t("files.operationFailed")), "error")); setContext(null); }}>Paste</button>
         <button onClick={() => { load(); loadTree(context.item?.path || path); setContext(null); }}>Refresh</button>
@@ -732,6 +767,7 @@ function FileManagerV2({ toast, t, tasks }: { toast: (text: string, type?: "ok" 
       <footer className="file-statusbar">
         <span>{meta.total_items} items</span>
         <span>{selected.size} selected</span>
+        <span>{activeFileTasks} background tasks</span>
         <span>{loading ? "Loading" : "Ready"}</span>
       </footer>
     </section>
@@ -742,9 +778,10 @@ function TransferPanel({ tasks, t, toast }: { tasks: Task[]; t: T; toast: (text:
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"all" | "active" | "finished" | "failed" | "cancelled">("all");
-  const transferTasks = tasks.filter((task) => ["copy", "move"].includes(task.type) && !hidden.has(task.id));
+  const visibleTaskTypes = ["copy", "move", "delete"];
+  const transferTasks = tasks.filter((task) => visibleTaskTypes.includes(task.type) && !hidden.has(task.id));
   const visible = transferTasks.filter((task) => {
-    if (!["copy", "move"].includes(task.type) || hidden.has(task.id)) return false;
+    if (!visibleTaskTypes.includes(task.type) || hidden.has(task.id)) return false;
     if (filter === "active") return ["queued", "running", "paused"].includes(task.status);
     if (filter === "finished") return task.status === "completed";
     if (filter === "failed") return task.status === "failed";
@@ -779,7 +816,7 @@ function TransferPanel({ tasks, t, toast }: { tasks: Task[]; t: T; toast: (text:
                 <span>{t("transfers.status")}: {task.status}</span>
                 <span>priority: {task.priority}</span>
                 <button onClick={() => setOpen((current) => { const next = new Set(current); if (next.has(task.id)) next.delete(task.id); else next.add(task.id); return next; })}>{t("transfers.details")}</button>
-                {task.status === "running" && <button title="Pause" onClick={() => action(task.id, api.pauseTask)}><Pause size={14} /></button>}
+                {["copy", "move"].includes(task.type) && task.status === "running" && <button title="Pause" onClick={() => action(task.id, api.pauseTask)}><Pause size={14} /></button>}
                 {["paused", "failed"].includes(task.status) && <button title="Resume" onClick={() => action(task.id, api.resumeTask)}><Play size={14} /></button>}
                 {["failed", "cancelled"].includes(task.status) && <button title="Retry" onClick={() => action(task.id, api.retryTask)}><RotateCcw size={14} /></button>}
                 {!done && <button onClick={() => action(task.id, api.cancelTask)}>{t("transfers.cancel")}</button>}
@@ -790,18 +827,18 @@ function TransferPanel({ tasks, t, toast }: { tasks: Task[]; t: T; toast: (text:
                 <span>{progress}%</span>
                 <span>{task.speed_human || "0 B/s"}</span>
                 <span>avg: {task.average_speed_human || "0 B/s"}</span>
-                <span>{t("transfers.transferred")}: {formatSize(task.bytes_transferred || 0)} / {formatSize(task.total_bytes || 0)}</span>
-                <span>{t("transfers.eta")}: {task.eta_human || "-"}</span>
+                {["copy", "move"].includes(task.type) && <span>{t("transfers.transferred")}: {formatSize(task.bytes_transferred || 0)} / {formatSize(task.total_bytes || 0)}</span>}
+                {["copy", "move"].includes(task.type) && <span>{t("transfers.eta")}: {task.eta_human || "-"}</span>}
               </div>
               <div className="transfer-paths">
                 <span>{t("transfers.source")}: {task.source_paths.map(shortPath).join(", ")}</span>
-                <span>{t("transfers.destination")}: {shortPath(task.destination_path)}</span>
+                {task.destination_path && <span>{t("transfers.destination")}: {shortPath(task.destination_path)}</span>}
                 {task.current_file && <span>{t("transfers.currentFile")}: {task.current_file}</span>}
                 {task.error_message && <span className="error">{task.error_message}</span>}
               </div>
               {expanded && <div className="transfer-details">
                 <dl>
-                  <dt>command</dt><dd><code>{(task.command_preview || []).join(" ")}</code></dd>
+                  {!!task.command_preview?.length && <><dt>command</dt><dd><code>{task.command_preview.join(" ")}</code></dd></>}
                   <dt>exit code</dt><dd>{task.rsync_exit_code ?? "-"}</dd>
                   <dt>files</dt><dd>{task.files_done} / {task.files_total}</dd>
                   <dt>started</dt><dd>{formatDate(task.started_at)}</dd>
@@ -901,6 +938,7 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
   const [safety, setSafety] = useState<ProxmoxSafety | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [autoUpdate, setAutoUpdate] = useState<AutoUpdateSettings | null>(null);
+  const [manualUpdateConfig, setManualUpdateConfig] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
 
   async function load() {
@@ -938,10 +976,8 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
     }
   }
   async function downloadUpdates() {
-    const admin_password = adminPassword();
-    if (!admin_password) return;
     try {
-      const result = await api.downloadUpdates(admin_password);
+      const result = await api.downloadUpdates(manualUpdateConfig);
       toast(`Update started, pid ${result.pid}`);
     } catch (err) {
       toast(message(err, "Could not start update"), "error");
@@ -949,14 +985,11 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
   }
   async function saveAutoUpdate() {
     if (!autoUpdate) return;
-    const admin_password = adminPassword();
-    if (!admin_password) return;
     try {
       const saved = await api.saveAutoUpdate({
         enabled: autoUpdate.enabled,
         interval_hours: autoUpdate.interval_hours,
         update_config: autoUpdate.update_config,
-        admin_password,
       });
       setAutoUpdate(saved);
       toast("Auto update settings saved");
@@ -965,10 +998,8 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
     }
   }
   async function runAutoUpdateNow() {
-    const admin_password = adminPassword();
-    if (!admin_password) return;
     try {
-      const result = await api.runAutoUpdate(admin_password, autoUpdate?.update_config || false);
+      const result = await api.runAutoUpdate(autoUpdate?.update_config || false);
       await api.autoUpdate().then(setAutoUpdate).catch(() => undefined);
       toast(result.updated ? `Auto update started, pid ${result.pid}` : "No update available");
     } catch (err) {
@@ -1017,6 +1048,7 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
                 <div className="settings-form form-grid">
                   <label className="form-field" htmlFor="settings-language"><span className="form-label">{t("settings.language")}</span><select id="settings-language" className="form-input" value={settings.language} onChange={(e) => submit(t("settings.saved"), async () => { const language = e.target.value as Language; await api.updateSettings({ language }); onLanguage(language); })}>{supportedLanguages.map((language) => <option key={language}>{language}</option>)}</select></label>
                   <label className="form-field" htmlFor="settings-theme"><span className="form-label">{t("settings.theme")}</span><select id="settings-theme" className="form-input" value={settings.theme} onChange={(e) => submit(t("settings.saved"), async () => { const theme = e.target.value as Theme; await api.updateSettings({ theme }); onTheme(theme); })}><option value="light">{t("settings.light")}</option><option value="dark">{t("settings.dark")}</option><option value="system">{t("settings.systemTheme")}</option></select></label>
+                  <label className="form-field" htmlFor="settings-startup-windows"><span className="form-label">Okna po zalogowaniu</span><select id="settings-startup-windows" className="form-input" value={settings.startup_windows} onChange={(e) => submit(t("settings.saved"), async () => { const startup_windows = e.target.value as SettingsMe["startup_windows"]; await api.updateSettings({ startup_windows }); setSettings({ ...settings, startup_windows }); })}><option value="last">Otworz ostatnio otwarte okna</option><option value="none">Nie otwieraj nic</option></select><span className="form-help">Dotyczy kolejnego logowania na tym urzadzeniu.</span></label>
                   <label className="form-field" htmlFor="settings-current-password"><span className="form-label">{t("settings.currentPassword")}</span><input id="settings-current-password" className="form-input" type="password" onChange={(e) => setForm({ ...form, current_password: e.target.value })} /></label>
                   <label className="form-field" htmlFor="settings-new-password"><span className="form-label">{t("settings.newPassword")}</span><input id="settings-new-password" className="form-input" type="password" onChange={(e) => setForm({ ...form, new_password: e.target.value })} /></label>
                 </div>
@@ -1081,7 +1113,7 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
                 <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">System</h2><p className="settings-card-description">Status instalacji, bezpieczenstwo Proxmox i aktualizacje.</p></div></header><dl className="info-grid">{Object.entries(system).map(([key, value]) => <React.Fragment key={key}><dt>{t(`settings.${key}`) || key}</dt><dd>{String(value)}</dd></React.Fragment>)}</dl></article>
                 {safety && <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Bezpieczenstwo</h2><p className="settings-card-description">Ograniczenia ochronne wykryte dla hosta.</p></div></header><dl className="info-grid"><dt>Proxmox</dt><dd>{String(safety.is_proxmox)}</dd><dt>Safe Mode</dt><dd>{String(safety.safe_mode_enabled)}</dd><dt>Service user</dt><dd>{safety.service_user}</dd><dt>Protected paths</dt><dd>{safety.protected_paths.slice(0, 8).join(", ")}{safety.protected_paths.length > 8 ? "..." : ""}</dd><dt>Warnings</dt><dd>{safety.warnings.join(" ") || "-"}</dd></dl></article>}
                 {autoUpdate && <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Auto update</h2><p className="settings-card-description">Automatycznie sprawdza GitHub i uruchamia istniejacy instalator aktualizacji, gdy pojawi sie nowy commit.</p></div><span className={`badge ${autoUpdate.enabled ? "badge-success" : ""}`}>{autoUpdate.enabled ? "enabled" : "disabled"}</span></header><div className="settings-form form-grid"><label className="form-field switch-field" htmlFor="auto-update-enabled"><span className="form-label">Wlacz auto update</span><label className="switch-control"><input id="auto-update-enabled" type="checkbox" checked={autoUpdate.enabled} onChange={(e) => setAutoUpdate({ ...autoUpdate, enabled: e.target.checked })} /><span /> enabled</label><span className="form-help">Scheduler dziala w procesie WebNAS i zapisuje stan w katalogu danych.</span></label><label className="form-field" htmlFor="auto-update-interval"><span className="form-label">Interwal sprawdzania</span><input id="auto-update-interval" className="form-input" type="number" min={1} max={168} value={autoUpdate.interval_hours} onChange={(e) => setAutoUpdate({ ...autoUpdate, interval_hours: Math.max(1, Math.min(168, Number(e.target.value) || 24)) })} /><span className="form-help">Godziny, zakres 1-168.</span></label><label className="form-field switch-field" htmlFor="auto-update-config"><span className="form-label">Aktualizuj config</span><label className="switch-control"><input id="auto-update-config" type="checkbox" checked={autoUpdate.update_config} onChange={(e) => setAutoUpdate({ ...autoUpdate, update_config: e.target.checked })} /><span /> --update-config</label><span className="form-help">Opcjonalnie regeneruje config podczas aktualizacji.</span></label></div><dl className="info-grid update-grid"><dt>Last checked</dt><dd>{autoUpdate.last_checked ? formatDate(autoUpdate.last_checked) : "-"}</dd><dt>Last run</dt><dd>{autoUpdate.last_run ? formatDate(autoUpdate.last_run) : "-"}</dd><dt>Next check</dt><dd>{autoUpdate.next_check ? formatDate(autoUpdate.next_check) : "-"}</dd><dt>Last PID</dt><dd>{autoUpdate.last_pid || "-"}</dd><dt>Last error</dt><dd>{autoUpdate.last_error || "-"}</dd></dl><div className="button-row"><button className="button button-primary" onClick={saveAutoUpdate}><Settings size={16} />Save auto update</button><button className="button button-secondary" onClick={runAutoUpdateNow}><RefreshCw size={16} />Run now</button></div></article>}
-                <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Aktualizacje i restart</h2><p className="settings-card-description">Operacje systemowe wymagaja hasla administratora.</p></div></header><div className="button-row"><button className="button button-secondary" onClick={checkUpdates}><Search size={16} />Check updates</button><button className="button button-primary" onClick={downloadUpdates}><Download size={16} />Download updates</button><button className="button button-danger" onClick={() => submit(t("action.restart"), () => api.restartSystem(adminPassword()))}><RefreshCw size={16} />{t("action.restart")}</button></div>{updateStatus && <dl className="info-grid update-grid"><dt>Update</dt><dd>{updateStatus.update_available ? "Available" : "Up to date"}</dd><dt>Branch</dt><dd>{updateStatus.branch}</dd><dt>Local</dt><dd>{updateStatus.local.slice(0, 12)}</dd><dt>Remote</dt><dd>{updateStatus.remote.slice(0, 12)}</dd></dl>}</article>
+                <article className="settings-card"><header className="settings-card-header"><div><h2 className="settings-card-title">Aktualizacje i restart</h2><p className="settings-card-description">Dostepne dla aktywnej sesji administratora. Haslo nie jest wymagane ponownie.</p></div><span className="badge badge-success">admin session</span></header><div className="settings-form form-grid"><label className="form-field switch-field" htmlFor="manual-update-config"><span className="form-label">Aktualizuj config przy recznym update</span><label className="switch-control"><input id="manual-update-config" type="checkbox" checked={manualUpdateConfig} onChange={(e) => setManualUpdateConfig(e.target.checked)} /><span /> --update-config</label><span className="form-help">Uzywa tej samej opcji instalatora co auto-update.</span></label></div><div className="button-row"><button className="button button-secondary" onClick={checkUpdates}><Search size={16} />Check updates</button><button className="button button-primary" onClick={downloadUpdates}><Download size={16} />Download updates</button><button className="button button-danger" onClick={() => submit(t("action.restart"), () => api.restartSystem())}><RefreshCw size={16} />{t("action.restart")}</button></div>{updateStatus && <dl className="info-grid update-grid"><dt>Update</dt><dd>{updateStatus.update_available ? "Available" : "Up to date"}</dd><dt>Branch</dt><dd>{updateStatus.branch}</dd><dt>Local</dt><dd>{updateStatus.local.slice(0, 12)}</dd><dt>Remote</dt><dd>{updateStatus.remote.slice(0, 12)}</dd></dl>}</article>
               </>}
             </section>
           )}
@@ -1349,13 +1381,159 @@ const emptyShare: SambaShare = {
   comment: "",
   enabled: true,
   browseable: true,
+  hidden: false,
   read_only: true,
   guest_ok: false,
   valid_users: [],
+  write_list: [],
+  read_list: [],
+  admin_users: [],
   force_user: "",
+  force_group: "",
+  veto_files: "",
+  recycle_bin: false,
+  create_directory: true,
+  directory_owner: "",
+  directory_group: "",
+  directory_mode: "",
+  advanced_options: {},
   create_mask: "0664",
-  directory_mask: "0775"
+  directory_mask: "0775",
+  allow_proxmox_storage: false
 };
+
+function parseTokens(value: string) {
+  return value.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function tokenText(value?: string[]) {
+  return (value || []).join(", ");
+}
+
+function SambaApp({ toast, initialPath }: { toast: (text: string, type?: "ok" | "error") => void; initialPath?: string }) {
+  const [status, setStatus] = useState<SambaStatus | null>(null);
+  const [users, setUsers] = useState<SambaUser[]>([]);
+  const [config, setConfig] = useState<SambaConfig>({ shares: [], global_options: {} });
+  const [draft, setDraft] = useState<SambaShare>({ ...emptyShare, path: initialPath || "" });
+  const [preview, setPreview] = useState("");
+  const [validation, setValidation] = useState("");
+  const [tab, setTab] = useState<"shares" | "users" | "advanced">("shares");
+  async function load() {
+    try {
+      const [nextStatus, nextUsers, nextConfig] = await Promise.all([api.sambaStatus(), api.sambaUsers(), api.appConfig("samba")]);
+      setStatus(nextStatus);
+      setUsers(nextUsers);
+      setConfig({ shares: nextConfig.shares || [], global_options: nextConfig.global_options || {} });
+    } catch (err) {
+      toast(message(err, "Nie mozna wczytac modulu Samba"), "error");
+    }
+  }
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if (initialPath) setDraft((current) => ({ ...current, path: initialPath })); }, [initialPath]);
+  async function refreshPreview(next = config) {
+    try {
+      const result = await api.sambaPreview(next);
+      setPreview(result.config);
+      setValidation(`${result.validation.ok ? "OK" : "Blad"}\n${result.validation.stderr || result.validation.stdout || ""}`);
+    } catch (err) {
+      toast(message(err, "Konfiguracja Samby jest niepoprawna"), "error");
+    }
+  }
+  async function applyConfig(next = config) {
+    try {
+      const nextStatus = await api.sambaApply(next);
+      setStatus(nextStatus);
+      toast("Konfiguracja Samby zastosowana");
+      await load();
+    } catch (err) {
+      toast(message(err, "Nie mozna zastosowac konfiguracji Samby"), "error");
+    }
+  }
+  function upsertShare() {
+    const share = { ...draft, valid_users: draft.valid_users || [], write_list: draft.write_list || [], read_list: draft.read_list || [], admin_users: draft.admin_users || [], advanced_options: draft.advanced_options || {} };
+    const next = { ...config, shares: [...config.shares.filter((item) => item.name !== share.name), share] };
+    setConfig(next);
+    setDraft({ ...emptyShare });
+    refreshPreview(next);
+  }
+  async function service(action: "start" | "stop" | "restart" | "reload") {
+    const admin_password = prompt("Haslo administratora") || "";
+    if (!admin_password) return;
+    try {
+      const result = await api.sambaService(action, admin_password);
+      setStatus(result.status);
+      toast(`Samba: ${action}`);
+    } catch (err) {
+      toast(message(err, "Operacja uslugi Samba nie powiodla sie"), "error");
+    }
+  }
+  async function enableUser(username: string) {
+    const password = prompt(`Nowe haslo SMB dla ${username}`) || "";
+    const admin_password = prompt("Haslo administratora") || "";
+    if (!password || !admin_password) return;
+    try {
+      await api.enableSambaUser(username, password, admin_password);
+      toast("Uzytkownik SMB wlaczony");
+      await load();
+    } catch (err) {
+      toast(message(err, "Nie mozna wlaczyc uzytkownika SMB"), "error");
+    }
+  }
+  async function disableUser(username: string) {
+    const admin_password = prompt("Haslo administratora") || "";
+    if (!admin_password) return;
+    try {
+      await api.disableSambaUser(username, admin_password);
+      toast("Uzytkownik SMB wylaczony");
+      await load();
+    } catch (err) {
+      toast(message(err, "Nie mozna wylaczyc uzytkownika SMB"), "error");
+    }
+  }
+  const sharedPaths = new Set(config.shares.filter((share) => share.enabled).map((share) => share.path));
+  return (
+    <section className="samba-app settings-admin-shell">
+      <header className="settings-topbar">
+        <div><Network size={22} /><div><strong>Samba / Windows File Sharing</strong><span>Udzialy SMB zarzadzane przez Algen</span></div></div>
+        <div className="button-row"><button className="button button-secondary" onClick={load}><RefreshCw size={16} />Odswiez</button><button className="button button-primary" onClick={() => applyConfig()}><Shield size={16} />Zastosuj</button></div>
+      </header>
+      {status?.proxmox_safe_mode && <p className="alert-warning">Wykryto tryb ochrony Proxmox. Katalogi klastra i konfiguracji PVE sa blokowane.</p>}
+      <div className="samba-status-grid">
+        <article className="settings-card"><h3>Status uslug</h3><dl className="info-grid">{Object.entries(status?.services || {}).map(([name, value]) => <React.Fragment key={name}><dt>{name}</dt><dd>{value}</dd></React.Fragment>)}<dt>Port 445</dt><dd>{status?.ports["445"] ? "dostepny" : "zamkniety"}</dd><dt>Port 139</dt><dd>{status?.ports["139"] ? "dostepny" : "zamkniety"}</dd></dl><div className="button-row">{(["start", "stop", "restart", "reload"] as const).map((action) => <button className="button button-secondary" key={action} onClick={() => service(action)}>{action}</button>)}</div></article>
+        <article className="settings-card"><h3>Walidacja</h3><p className={status?.validation.ok ? "badge badge-success" : "badge badge-danger"}>{status?.validation.ok ? "Konfiguracja poprawna" : "Wymaga poprawy"}</p><pre className="store-log">{status?.validation.stderr || status?.validation.stdout || "Brak wyniku testparm"}</pre></article>
+      </div>
+      <div className="settings-nav samba-tabs">{(["shares", "users", "advanced"] as const).map((item) => <button key={item} className={`settings-nav-item ${tab === item ? "active" : ""}`} onClick={() => setTab(item)}>{item}</button>)}</div>
+      {tab === "shares" && <section className="settings-section samba-grid">
+        <article className="settings-card">
+          <header className="settings-card-header"><div><h2 className="settings-card-title">Kreator udzialu</h2><p className="settings-card-description">Bez recznej edycji smb.conf.</p></div></header>
+          <div className="settings-form form-grid">
+            <label className="form-field"><span className="form-label">Nazwa</span><input className="form-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
+            <label className="form-field"><span className="form-label">Sciezka</span><input className="form-input" value={draft.path} onChange={(e) => setDraft({ ...draft, path: e.target.value })} /></label>
+            <label className="form-field"><span className="form-label">Opis</span><input className="form-input" value={draft.comment} onChange={(e) => setDraft({ ...draft, comment: e.target.value })} /></label>
+            <label className="form-field"><span className="form-label">create mask</span><input className="form-input" value={draft.create_mask} onChange={(e) => setDraft({ ...draft, create_mask: e.target.value })} /></label>
+            <label className="form-field"><span className="form-label">directory mask</span><input className="form-input" value={draft.directory_mask} onChange={(e) => setDraft({ ...draft, directory_mask: e.target.value })} /></label>
+            <label className="form-field"><span className="form-label">valid users</span><input className="form-input" value={tokenText(draft.valid_users)} onChange={(e) => setDraft({ ...draft, valid_users: parseTokens(e.target.value) })} /></label>
+            <label className="form-field"><span className="form-label">write list</span><input className="form-input" value={tokenText(draft.write_list)} onChange={(e) => setDraft({ ...draft, write_list: parseTokens(e.target.value), read_only: false })} /></label>
+            <label className="form-field"><span className="form-label">read list</span><input className="form-input" value={tokenText(draft.read_list)} onChange={(e) => setDraft({ ...draft, read_list: parseTokens(e.target.value) })} /></label>
+            <label className="form-field"><span className="form-label">admin users</span><input className="form-input" value={tokenText(draft.admin_users)} onChange={(e) => setDraft({ ...draft, admin_users: parseTokens(e.target.value) })} /></label>
+            <label className="form-field"><span className="form-label">force user</span><input className="form-input" value={draft.force_user || ""} onChange={(e) => setDraft({ ...draft, force_user: e.target.value })} /></label>
+            <label className="form-field"><span className="form-label">force group</span><input className="form-input" value={draft.force_group || ""} onChange={(e) => setDraft({ ...draft, force_group: e.target.value })} /></label>
+            <label className="form-field"><span className="form-label">veto files</span><input className="form-input" value={draft.veto_files || ""} onChange={(e) => setDraft({ ...draft, veto_files: e.target.value })} /></label>
+          </div>
+          <div className="toggle-grid">
+            {[
+              ["enabled", "Wlaczony"], ["read_only", "Tylko odczyt"], ["browseable", "Browsable"], ["hidden", "Ukryty"], ["guest_ok", "Guest access"], ["recycle_bin", "Recycle bin"], ["create_directory", "Utworz katalog"], ["allow_proxmox_storage", "Zezwol na Proxmox storage"]
+            ].map(([key, label]) => <label key={key} className="switch-control"><input type="checkbox" checked={Boolean(draft[key as keyof SambaShare])} onChange={(e) => setDraft({ ...draft, [key]: e.target.checked })} /><span />{label}</label>)}
+          </div>
+          <div className="button-row"><button className="button button-primary" onClick={upsertShare}>Dodaj / aktualizuj</button><button className="button button-secondary" onClick={() => refreshPreview()}>Podglad configu</button></div>
+        </article>
+        <article className="settings-card"><h3>Aktywne udzialy</h3><div className="admin-list">{config.shares.map((share) => <div key={share.name}><strong>{share.name}</strong><span>{share.path}</span><span className={sharedPaths.has(share.path) ? "badge badge-success" : "badge"}>{share.enabled ? "enabled" : "disabled"}</span><button className="button button-secondary" onClick={() => setDraft(share)}>Edytuj</button><button className="button button-secondary" onClick={() => applyConfig({ ...config, shares: config.shares.map((item) => item.name === share.name ? { ...item, enabled: !item.enabled } : item) })}>{share.enabled ? "Wylacz" : "Wlacz"}</button><button className="button button-danger" onClick={() => applyConfig({ ...config, shares: config.shares.filter((item) => item.name !== share.name) })}>Usun</button></div>)}</div></article>
+      </section>}
+      {tab === "users" && <section className="settings-card"><h3>Uzytkownicy Samby</h3><div className="admin-list">{users.map((item) => <div key={item.username}><strong>{item.username}</strong><span>{item.system ? "systemowy" : "lokalny"}</span><span>{item.samba_enabled ? "SMB enabled" : "not in Samba"}</span><button className="button button-secondary" onClick={() => enableUser(item.username)}>{item.samba_enabled ? "Zmien haslo" : "Dodaj do Samby"}</button>{item.samba_enabled && <button className="button button-warning" onClick={() => disableUser(item.username)}>Wylacz</button>}</div>)}</div></section>}
+      {tab === "advanced" && <section className="settings-section samba-grid"><article className="settings-card"><h3>Opcje globalne</h3><textarea className="advanced-textarea" value={Object.entries(config.global_options || {}).map(([k, v]) => `${k}=${v}`).join("\n")} onChange={(e) => setConfig({ ...config, global_options: Object.fromEntries(e.target.value.split("\n").map((line) => line.split("=").map((part) => part.trim())).filter((parts) => parts[0] && parts.length >= 2).map((parts) => [parts[0], parts.slice(1).join("=")])) })} /><p className="form-help">Niebezpieczne opcje typu include, preexec, wide links sa blokowane przez backend.</p><div className="button-row"><button className="button button-secondary" onClick={() => refreshPreview()}>Waliduj</button><button className="button button-warning" onClick={() => api.sambaRollback().then(() => { toast("Rollback wykonany"); load(); })}>Rollback</button></div></article><article className="settings-card"><h3>Podglad wygenerowanego configu</h3><pre className="store-log">{preview || "Kliknij Podglad configu albo Waliduj."}</pre><pre className="store-log">{validation}</pre></article></section>}
+    </section>
+  );
+}
 
 function StoreApp({ toast }: { toast: (text: string, type?: "ok" | "error") => void }) {
   const [apps, setApps] = useState<StoreModule[]>([]);
@@ -1474,19 +1652,15 @@ function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [openWindows, setOpenWindows] = useState<WindowInstance[]>([
-    { id: "dashboard-1", app: "dashboard" },
-    { id: "files-1", app: "files" }
-  ]);
-  const [activeWindowId, setActiveWindowId] = useState("dashboard-1");
-  const [layouts, setLayouts] = useState<Layouts>({
-    "dashboard-1": defaultLayouts.dashboard,
-    "files-1": defaultLayouts.files
-  });
+  const [sambaInitialPath, setSambaInitialPath] = useState("");
+  const [openWindows, setOpenWindows] = useState<WindowInstance[]>([]);
+  const [activeWindowId, setActiveWindowId] = useState("");
+  const [layouts, setLayouts] = useState<Layouts>({});
   const eventSources = useRef<Map<string, EventSource>>(new Map());
   const windowIdCounter = useRef(0);
+  const windowsRestored = useRef(false);
   const t = (key: string) => translate(language, key);
-  const layoutKey = user ? `webnas_window_layout_${user.username}` : "";
+  const windowsKey = user ? `webnas_open_windows_${user.username}` : "";
   function toast(text: string, type: "ok" | "error" = "ok") {
     const id = Date.now();
     setToasts((items) => [...items, { id, text, type }]);
@@ -1496,21 +1670,61 @@ function App() {
     setLanguage(next);
     localStorage.setItem("webnas_language", next);
   }
+  function restoreWindowState(username: string, startup: SettingsMe["startup_windows"]) {
+    windowsRestored.current = false;
+    if (startup === "none") {
+      setOpenWindows([]);
+      setLayouts({});
+      setActiveWindowId("");
+      windowIdCounter.current = 0;
+      windowsRestored.current = true;
+      return;
+    }
+    const saved = localStorage.getItem(`webnas_open_windows_${username}`);
+    if (!saved) {
+      setOpenWindows([]);
+      setLayouts({});
+      setActiveWindowId("");
+      windowIdCounter.current = 0;
+      windowsRestored.current = true;
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved) as SavedWindowState;
+      const restoredWindows = (parsed.windows || []).filter((item) => item.id && isAppId(item.app));
+      const restoredLayouts = restoredWindows.reduce<Layouts>((result, item) => {
+        const layout = parsed.layouts?.[item.id] || defaultLayouts[item.app];
+        result[item.id] = layout;
+        return result;
+      }, {});
+      setOpenWindows(restoredWindows);
+      setLayouts(restoredLayouts);
+      setActiveWindowId(restoredWindows.some((item) => item.id === parsed.activeWindowId) ? parsed.activeWindowId || "" : restoredWindows[0]?.id || "");
+      windowIdCounter.current = Math.max(parsed.counter || 0, restoredWindows.length);
+    } catch {
+      setOpenWindows([]);
+      setLayouts({});
+      setActiveWindowId("");
+      windowIdCounter.current = 0;
+    } finally {
+      windowsRestored.current = true;
+    }
+  }
   useEffect(() => { me().then(setUser).catch(() => undefined); }, []);
   useEffect(() => {
-    if (!user) return;
-    const saved = localStorage.getItem(layoutKey);
-    if (saved) {
-      try { setLayouts((current) => ({ ...current, ...JSON.parse(saved) })); } catch { setLayouts({ "dashboard-1": defaultLayouts.dashboard, "files-1": defaultLayouts.files }); }
-    }
+    windowsRestored.current = false;
+    setOpenWindows([]);
+    setLayouts({});
+    setActiveWindowId("");
   }, [user?.username]);
   useEffect(() => {
-    if (!user) return;
-    localStorage.setItem(layoutKey, JSON.stringify(layouts));
-  }, [layouts, user?.username]);
+    if (!user || !windowsRestored.current) return;
+    const payload: SavedWindowState = { windows: openWindows, layouts, activeWindowId, counter: windowIdCounter.current };
+    localStorage.setItem(windowsKey, JSON.stringify(payload));
+  }, [openWindows, layouts, activeWindowId, user?.username]);
   useEffect(() => {
     if (!user) return;
-    api.settingsMe().then((data) => { setProfile(data); changeLanguage(data.language); setTheme(data.theme); }).catch(() => undefined);
+    api.settingsMe().then((data) => { setProfile(data); changeLanguage(data.language); setTheme(data.theme); restoreWindowState(user.username, data.startup_windows); }).catch(() => undefined);
     const timer = setInterval(() => api.tasks().then(setTasks).catch(() => undefined), 1500);
     return () => clearInterval(timer);
   }, [user]);
@@ -1556,6 +1770,10 @@ function App() {
     setLayouts((current) => ({ ...current, [id]: layout }));
     setActiveWindowId(id);
   }
+  function shareViaSamba(pathToShare: string) {
+    setSambaInitialPath(pathToShare);
+    openApp("samba");
+  }
   function closeWindow(id: string) {
     setOpenWindows((current) => {
       const next = current.filter((item) => item.id !== id);
@@ -1575,12 +1793,13 @@ function App() {
   }
   function renderApp(app: AppId) {
     if (app === "dashboard") return <DashboardApp toast={toast} />;
-    if (app === "files") return <FileManagerV2 toast={toast} t={t} tasks={tasks} />;
+    if (app === "files") return <FileManagerV2 toast={toast} t={t} tasks={tasks} homePath={user?.home || ""} onShareSamba={shareViaSamba} />;
     if (app === "transfers") return <TransferPanel tasks={tasks} t={t} toast={toast} />;
     if (app === "settings") return <SettingsApp t={t} toast={toast} onLanguage={changeLanguage} onTheme={setTheme} />;
     if (app === "mounts") return <NetworkMountsApp toast={toast} />;
     if (app === "services") return <ServicesApp toast={toast} />;
     if (app === "store") return <StoreApp toast={toast} />;
+    if (app === "samba") return <SambaApp toast={toast} initialPath={sambaInitialPath} />;
     return <LogsApp toast={toast} />;
   }
   const resolvedTheme = theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : theme === "system" ? "dark" : theme;

@@ -57,11 +57,11 @@ def test_sort_by_name(monkeypatch, tmp_path):
 
 
 def test_sort_by_size(monkeypatch, tmp_path):
-    patch_listing(monkeypatch, tmp_path, [item("small", size=1), item("big", size=99)])
+    patch_listing(monkeypatch, tmp_path, [item("2-kb", size=2_048), item("10-mb", size=10_485_760), item("900-b", size=900)])
 
     result = file_ops.list_dir("alice", "/", sort="size", direction="desc")
 
-    assert [entry["name"] for entry in result["items"]] == ["big", "small"]
+    assert [entry["name"] for entry in result["items"]] == ["10-mb", "2-kb", "900-b"]
 
 
 def test_sort_by_modified(monkeypatch, tmp_path):

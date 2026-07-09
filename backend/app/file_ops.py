@@ -102,7 +102,7 @@ def list_dir(
     items = _filter_items(raw_items, filter_text)
     reverse = direction == "desc"
     if sort:
-        items.sort(key=lambda item: str(_item_sort_value(item, sort)), reverse=reverse)
+        items.sort(key=lambda item: _item_sort_value(item, sort), reverse=reverse)
     if folders_first:
         items.sort(key=lambda item: not item.get("is_dir", False))
     total_items = len(items)

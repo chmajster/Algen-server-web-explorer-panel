@@ -99,6 +99,7 @@
   ,"transfers.title": "Transfery"
   ,"transfers.copy": "Kopiowanie"
   ,"transfers.move": "Przenoszenie"
+  ,"transfers.delete": "Usuwanie"
   ,"transfers.source": "Zrodlo"
   ,"transfers.destination": "Cel"
   ,"transfers.currentFile": "Aktualny plik"

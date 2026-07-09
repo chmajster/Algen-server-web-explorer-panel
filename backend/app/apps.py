@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -27,15 +29,20 @@ MODULES_DIR = Path(__file__).resolve().parent / "modules"
 APP_STATE_DIR = Path(get_config().paths.data_dir) / "apps"
 APP_LOG_DIR = Path("/var/log/webnas/apps")
 SAMBA_CONF = Path("/etc/samba/smb.conf")
+SAMBA_ALGEN_CONF = Path("/etc/samba/algen-shares.conf")
 SHARE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,63}$")
 SAFE_TEXT_RE = re.compile(r"^[^\r\n\[\]]{0,200}$")
 USER_TOKEN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,31}\$?$")
+GROUP_TOKEN_RE = re.compile(r"^@?[A-Za-z_][A-Za-z0-9_.-]{0,31}\$?$")
 MASK_RE = re.compile(r"^0?[0-7]{3,4}$")
+ADVANCED_OPTION_RE = re.compile(r"^[A-Za-z0-9 _.-]{2,64}$")
+ADVANCED_VALUE_RE = re.compile(r"^[^\r\n\[\]]{0,300}$")
 BLOCKED_SHARE_PATHS = (
     "/",
     "/etc",
     "/boot",
     "/usr",
+    "/var/lib/pve",
     "/var/lib/pve-cluster",
     "/etc/pve",
     "/proc",
@@ -43,6 +50,22 @@ BLOCKED_SHARE_PATHS = (
     "/dev",
     "/run",
 )
+BLOCKED_SAMBA_OPTIONS = {
+    "include",
+    "config file",
+    "private dir",
+    "lock directory",
+    "state directory",
+    "cache directory",
+    "root directory",
+    "root preexec",
+    "preexec",
+    "postexec",
+    "wide links",
+    "allow insecure wide links",
+    "follow symlinks",
+    "unix extensions",
+}
 
 
 class AdminAction(BaseModel):
@@ -61,10 +84,22 @@ class SambaShare(BaseModel):
     comment: str = ""
     enabled: bool = True
     browseable: bool = True
+    hidden: bool = False
     read_only: bool = True
     guest_ok: bool = False
     valid_users: list[str] = Field(default_factory=list)
+    write_list: list[str] = Field(default_factory=list)
+    read_list: list[str] = Field(default_factory=list)
+    admin_users: list[str] = Field(default_factory=list)
     force_user: str | None = None
+    force_group: str | None = None
+    veto_files: str = ""
+    recycle_bin: bool = False
+    create_directory: bool = False
+    directory_owner: str = ""
+    directory_group: str = ""
+    directory_mode: str = ""
+    advanced_options: dict[str, str] = Field(default_factory=dict)
     create_mask: str = "0664"
     directory_mask: str = "0775"
     allow_proxmox_storage: bool = False
@@ -72,6 +107,20 @@ class SambaShare(BaseModel):
 
 class SambaConfig(BaseModel):
     shares: list[SambaShare] = Field(default_factory=list)
+    global_options: dict[str, str] = Field(default_factory=dict)
+
+
+class SambaApplyRequest(BaseModel):
+    config: SambaConfig | None = None
+
+
+class SambaServiceAction(BaseModel):
+    action: str
+    admin_password: str
+
+
+class SambaUserAction(AdminAction):
+    username: str
 
 
 @dataclass
@@ -257,13 +306,92 @@ def backup_smb_conf(now: str | None = None) -> Path | None:
     return backup
 
 
+def backup_algen_smb_conf(now: str | None = None) -> Path | None:
+    if not SAMBA_ALGEN_CONF.exists():
+        return None
+    stamp = now or time.strftime("%Y%m%d-%H%M%S")
+    backup = SAMBA_ALGEN_CONF.with_name(f"algen-shares.conf.backup-{stamp}")
+    shutil.copy2(SAMBA_ALGEN_CONF, backup)
+    return backup
+
+
+def _token_list(tokens: list[str], *, allow_group: bool = True) -> list[str]:
+    result = []
+    for token in tokens:
+        cleaned = token.strip()
+        if not cleaned:
+            continue
+        pattern = GROUP_TOKEN_RE if allow_group else USER_TOKEN_RE
+        if not pattern.fullmatch(cleaned):
+            raise HTTPException(400, f"Invalid SMB account token: {cleaned}")
+        result.append(cleaned)
+    return sorted(dict.fromkeys(result))
+
+
+def _validate_advanced_options(options: dict[str, str]) -> dict[str, str]:
+    cleaned: dict[str, str] = {}
+    for key, value in options.items():
+        option = key.strip().lower()
+        text = str(value).strip()
+        if not option:
+            continue
+        if option in BLOCKED_SAMBA_OPTIONS:
+            raise HTTPException(400, f"Samba option is blocked for safety: {option}")
+        if not ADVANCED_OPTION_RE.fullmatch(option) or not ADVANCED_VALUE_RE.fullmatch(text):
+            raise HTTPException(400, f"Invalid Samba option: {option}")
+        cleaned[option] = text
+    return cleaned
+
+
+def _ensure_smb_conf_include() -> None:
+    include_line = f"include = {SAMBA_ALGEN_CONF}"
+    SAMBA_CONF.parent.mkdir(parents=True, exist_ok=True)
+    if not SAMBA_CONF.exists():
+        SAMBA_CONF.write_text("[global]\n   server role = standalone server\n", encoding="utf-8")
+    text = SAMBA_CONF.read_text(encoding="utf-8", errors="replace")
+    if str(SAMBA_ALGEN_CONF) in text:
+        return
+    backup_smb_conf()
+    if "[global]" not in text.lower():
+        text = "[global]\n" + text
+    text = text.rstrip() + f"\n\n# Managed by Algen Web Explorer Panel\n{include_line}\n"
+    SAMBA_CONF.write_text(text, encoding="utf-8")
+
+
+def _prepare_share_directory(share: SambaShare, resolved: Path) -> None:
+    if share.create_directory:
+        resolved.mkdir(parents=True, exist_ok=True)
+    if not resolved.exists():
+        raise HTTPException(400, "Share path does not exist")
+    if not resolved.is_dir():
+        raise HTTPException(400, "Share path must be a directory")
+    owner = share.directory_owner.strip()
+    group = share.directory_group.strip()
+    if owner or group:
+        uid = -1
+        gid = -1
+        if owner:
+            import pwd
+
+            uid = pwd.getpwnam(owner).pw_uid
+        if group:
+            import grp
+
+            gid = grp.getgrnam(group).gr_gid
+        os.chown(resolved, uid, gid)
+    if share.directory_mode:
+        if not MASK_RE.fullmatch(share.directory_mode):
+            raise HTTPException(400, "Invalid directory permission mode")
+        os.chmod(resolved, int(share.directory_mode, 8))
+
+
 def validate_share_path(username: str, share: SambaShare) -> Path:
     candidate = Path(share.path).resolve(strict=False)
     for blocked in BLOCKED_SHARE_PATHS:
         blocked_path = Path(blocked)
         if candidate == blocked_path or (blocked != "/" and candidate.is_relative_to(blocked_path)):
             raise HTTPException(403, "Share path is protected")
-    if safe_mode_active() and share.path.startswith("/var/lib/vz") and not share.allow_proxmox_storage:
+    if safe_mode_active() and (share.path.startswith("/var/lib/vz") or share.path.startswith("/etc/pve")) and not share.allow_proxmox_storage:
         raise HTTPException(403, "Sharing Proxmox storage requires explicit advanced confirmation")
     return resolve_user_path(username, share.path)
 
@@ -277,25 +405,50 @@ def validate_share_model(share: SambaShare) -> None:
         raise HTTPException(400, "Invalid SMB permission mask")
     if share.force_user and not USER_TOKEN_RE.fullmatch(share.force_user):
         raise HTTPException(400, "Invalid SMB force user")
-    for username in share.valid_users:
-        if not USER_TOKEN_RE.fullmatch(username):
-            raise HTTPException(400, "Invalid SMB user name")
+    if share.force_group and not GROUP_TOKEN_RE.fullmatch(share.force_group):
+        raise HTTPException(400, "Invalid SMB force group")
+    share.valid_users = _token_list(share.valid_users)
+    share.write_list = _token_list(share.write_list)
+    share.read_list = _token_list(share.read_list)
+    share.admin_users = _token_list(share.admin_users)
+    if set(share.read_list) & set(share.write_list):
+        raise HTTPException(400, "A user or group cannot be both read-only and write-enabled for the same share")
+    if share.guest_ok and share.valid_users:
+        raise HTTPException(400, "Guest access conflicts with explicit valid users")
+    if share.veto_files and not SAFE_TEXT_RE.fullmatch(share.veto_files):
+        raise HTTPException(400, "Invalid veto files pattern")
+    share.advanced_options = _validate_advanced_options(share.advanced_options)
+
+
+def validate_samba_config(config: SambaConfig) -> None:
+    names: set[str] = set()
+    for share in config.shares:
+        validate_share_model(share)
+        normalized = share.name.lower()
+        if normalized in names:
+            raise HTTPException(400, f"Duplicate SMB share name: {share.name}")
+        names.add(normalized)
+    config.global_options = _validate_advanced_options(config.global_options)
 
 
 def render_smb_conf(config: SambaConfig) -> str:
+    validate_samba_config(config)
     lines = [
-        "[global]",
-        "   server role = standalone server",
-        "   map to guest = Bad User",
-        "   usershare allow guests = no",
+        "# Generated by Algen Web Explorer Panel. Do not edit this file manually.",
+        "# Source of truth: Algen application state.",
         "",
     ]
+    if config.global_options:
+        lines.append("[global]")
+        for key, value in sorted(config.global_options.items()):
+            lines.append(f"   {key} = {value}")
+        lines.append("")
     for share in config.shares:
         if not share.enabled:
             continue
-        validate_share_model(share)
+        share_name = f"{share.name}$" if share.hidden and not share.name.endswith("$") else share.name
         lines.extend([
-            f"[{share.name}]",
+            f"[{share_name}]",
             f"   path = {share.path}",
             f"   comment = {share.comment}",
             f"   browseable = {'yes' if share.browseable else 'no'}",
@@ -306,31 +459,69 @@ def render_smb_conf(config: SambaConfig) -> str:
         ])
         if share.valid_users:
             lines.append(f"   valid users = {' '.join(share.valid_users)}")
+        if share.read_list:
+            lines.append(f"   read list = {' '.join(share.read_list)}")
+        if share.write_list:
+            lines.append(f"   write list = {' '.join(share.write_list)}")
+        if share.admin_users:
+            lines.append(f"   admin users = {' '.join(share.admin_users)}")
         if share.force_user:
             lines.append(f"   force user = {share.force_user}")
+        if share.force_group:
+            lines.append(f"   force group = {share.force_group}")
+        if share.veto_files:
+            lines.append(f"   veto files = {share.veto_files}")
+        if share.recycle_bin:
+            lines.extend([
+                "   vfs objects = recycle",
+                "   recycle:repository = .recycle",
+                "   recycle:keeptree = yes",
+                "   recycle:versions = yes",
+            ])
+        for key, value in sorted(share.advanced_options.items()):
+            lines.append(f"   {key} = {value}")
         lines.append("")
     return "\n".join(lines)
 
 
-def write_samba_config(username: str, config: SambaConfig) -> None:
+def testparm_config(config_text: str) -> dict:
+    APP_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    candidate = APP_STATE_DIR / "algen-shares.conf.candidate"
+    candidate.write_text(config_text, encoding="utf-8")
+    if not shutil.which("testparm"):
+        return {"ok": True, "stdout": "testparm is not installed; syntax validation skipped", "stderr": ""}
+    result = subprocess.run(["testparm", "-s", str(candidate)], capture_output=True, text=True, timeout=15, check=False, shell=False)
+    return {"ok": result.returncode == 0, "stdout": result.stdout, "stderr": result.stderr, "exit_code": result.returncode}
+
+
+def preview_samba_config(username: str, config: SambaConfig) -> dict:
     for share in config.shares:
         validate_share_model(share)
         resolved = validate_share_path(username, share)
         share.path = str(resolved)
     rendered = render_smb_conf(config)
-    APP_STATE_DIR.mkdir(parents=True, exist_ok=True)
-    candidate = APP_STATE_DIR / "smb.conf.candidate"
-    candidate.write_text(rendered, encoding="utf-8")
-    if shutil.which("testparm"):
-        result = subprocess.run(["testparm", "-s", str(candidate)], capture_output=True, text=True, timeout=15, check=False, shell=False)
-        if result.returncode != 0:
-            raise HTTPException(400, result.stderr.strip() or result.stdout.strip() or "testparm rejected Samba config")
-    backup_smb_conf()
-    SAMBA_CONF.write_text(rendered, encoding="utf-8")
+    validation = testparm_config(rendered)
+    return {"config": rendered, "validation": validation}
+
+
+def write_samba_config(username: str, config: SambaConfig) -> None:
+    preview = preview_samba_config(username, config)
+    validation = preview["validation"]
+    if not validation["ok"]:
+        raise HTTPException(400, validation["stderr"].strip() or validation["stdout"].strip() or "testparm rejected Samba config")
+    for share in config.shares:
+        _prepare_share_directory(share, Path(share.path))
+    backup = backup_algen_smb_conf()
+    _ensure_smb_conf_include()
+    SAMBA_ALGEN_CONF.write_text(preview["config"], encoding="utf-8")
     state = read_state("samba")
     state["installed"] = state.get("installed", False)
     state["configured"] = True
     state["config"] = config.model_dump()
+    state["last_validation"] = validation
+    state["last_backup"] = str(backup) if backup else state.get("last_backup")
+    state.setdefault("changes", []).append({"ts": time.time(), "actor": username, "action": "apply_config"})
+    state["changes"] = state["changes"][-100:]
     write_state("samba", state)
 
 
@@ -348,6 +539,82 @@ def app_payload(app_id: str) -> dict:
     if any(job.app_id == app_id and job.status == "failed" for job in jobs.values()):
         status = "error"
     return {"id": app_id, "manifest": manifest, "state": state, "services": services, "status": status, "jobs": [job.to_dict() for job in jobs.values() if job.app_id == app_id]}
+
+
+def samba_service_names() -> list[str]:
+    return load_manifest("samba").get("systemd_services", ["smbd", "nmbd"])
+
+
+def samba_port_status() -> dict[str, bool]:
+    result: dict[str, bool] = {}
+    for port in (445, 139):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.5)
+        try:
+            result[str(port)] = sock.connect_ex(("127.0.0.1", port)) == 0
+        finally:
+            sock.close()
+    return result
+
+
+def samba_users_payload() -> list[dict]:
+    import pwd
+
+    smb_users: set[str] = set()
+    if shutil.which("pdbedit"):
+        result = subprocess.run(["pdbedit", "-L"], capture_output=True, text=True, timeout=10, check=False, shell=False)
+        if result.returncode == 0:
+            smb_users = {line.split(":", 1)[0] for line in result.stdout.splitlines() if ":" in line}
+    users = []
+    for item in pwd.getpwall():
+        system = item.pw_uid < 1000 and item.pw_name not in {"root"}
+        users.append({
+            "username": item.pw_name,
+            "uid": item.pw_uid,
+            "home": item.pw_dir,
+            "shell": item.pw_shell,
+            "system": system,
+            "samba_enabled": item.pw_name in smb_users,
+        })
+    return users
+
+
+def samba_status_payload() -> dict:
+    state = read_state("samba")
+    config = read_samba_config()
+    rendered = render_smb_conf(config)
+    validation = testparm_config(rendered)
+    return {
+        "installed": shutil.which("smbd") is not None or bool(state.get("installed")),
+        "managed_config": SAMBA_ALGEN_CONF.exists(),
+        "include_configured": SAMBA_CONF.exists() and str(SAMBA_ALGEN_CONF) in SAMBA_CONF.read_text(encoding="utf-8", errors="replace"),
+        "external_config": SAMBA_CONF.exists(),
+        "services": {service: service_status(service) for service in samba_service_names()},
+        "ports": samba_port_status(),
+        "validation": validation,
+        "shares": config.model_dump()["shares"],
+        "history": state.get("changes", [])[-20:],
+        "last_backup": state.get("last_backup"),
+        "proxmox_safe_mode": safe_mode_active(),
+    }
+
+
+def rollback_samba_config(username: str) -> dict:
+    state = read_state("samba")
+    backup = Path(state.get("last_backup") or "")
+    if not backup.exists():
+        raise HTTPException(404, "No Samba backup is available for rollback")
+    validation = testparm_config(backup.read_text(encoding="utf-8", errors="replace"))
+    if not validation["ok"]:
+        raise HTTPException(400, "Backup config failed Samba validation")
+    current_backup = backup_algen_smb_conf()
+    shutil.copy2(backup, SAMBA_ALGEN_CONF)
+    state["last_validation"] = validation
+    state["last_backup"] = str(current_backup) if current_backup else state.get("last_backup")
+    state.setdefault("changes", []).append({"ts": time.time(), "actor": username, "action": "rollback_config"})
+    write_state("samba", state)
+    logger.info("app_store_config actor=%s app=samba action=rollback", username)
+    return {"ok": True, "validation": validation}
 
 
 @router.get("")
@@ -441,6 +708,77 @@ def app_logs(app_id: str, user: SessionUser = Depends(_current_user)):
         if result.returncode == 0:
             lines += result.stdout.splitlines()
     return {"lines": lines[-300:]}
+
+
+@router.get("/samba/status")
+def samba_status(user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    return samba_status_payload()
+
+
+@router.get("/samba/users")
+def samba_users(user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    return samba_users_payload()
+
+
+@router.post("/samba/preview")
+def samba_preview(payload: SambaApplyRequest, user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    config = payload.config or read_samba_config()
+    return preview_samba_config(user.username, config)
+
+
+@router.post("/samba/apply")
+def samba_apply(payload: SambaApplyRequest, user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    config = payload.config or read_samba_config()
+    write_samba_config(user.username, config)
+    logger.info("app_store_config actor=%s app=samba action=apply_config", user.username)
+    return {"ok": True, **samba_status_payload()}
+
+
+@router.post("/samba/rollback")
+def samba_rollback(user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    return rollback_samba_config(user.username)
+
+
+@router.post("/samba/service")
+def samba_service(payload: SambaServiceAction, user: SessionUser = Depends(_current_user)):
+    _require_admin(user, payload.admin_password)
+    if payload.action not in {"start", "stop", "restart", "reload"}:
+        raise HTTPException(400, "Unsupported Samba service action")
+    logger.info("app_store_action actor=%s app=samba action=%s", user.username, payload.action)
+    for service in samba_service_names():
+        _run(["systemctl", payload.action, service])
+    return {"ok": True, "status": samba_status_payload()}
+
+
+@router.post("/samba/users/enable")
+def samba_user_enable(payload: SambaPassword, user: SessionUser = Depends(_current_user)):
+    _require_admin(user, payload.admin_password)
+    if not shutil.which("smbpasswd"):
+        raise HTTPException(503, "smbpasswd is not installed")
+    _run(["smbpasswd", "-s", "-a", payload.username], input_text=f"{payload.password}\n{payload.password}\n")
+    _run(["smbpasswd", "-e", payload.username])
+    logger.info("app_store_config actor=%s app=samba action=enable_samba_user target=%s", user.username, payload.username)
+    return {"ok": True}
+
+
+@router.post("/samba/users/disable")
+def samba_user_disable(payload: SambaUserAction, user: SessionUser = Depends(_current_user)):
+    _require_admin(user, payload.admin_password)
+    if not shutil.which("smbpasswd"):
+        raise HTTPException(503, "smbpasswd is not installed")
+    _run(["smbpasswd", "-d", payload.username])
+    logger.info("app_store_config actor=%s app=samba action=disable_samba_user target=%s", user.username, payload.username)
+    return {"ok": True}
 
 
 @router.get("/{app_id}/config")

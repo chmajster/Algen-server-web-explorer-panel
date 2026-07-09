@@ -79,6 +79,7 @@ export type SettingsMe = {
   is_admin: boolean;
   language: "pl-PL" | "en-US";
   theme: "light" | "dark" | "system";
+  startup_windows: "last" | "none";
 };
 
 export type AdminUser = SettingsMe & { is_system: boolean; manageable: boolean };
@@ -144,15 +145,42 @@ export type SambaShare = {
   comment: string;
   enabled: boolean;
   browseable: boolean;
+  hidden?: boolean;
   read_only: boolean;
   guest_ok: boolean;
   valid_users: string[];
+  write_list?: string[];
+  read_list?: string[];
+  admin_users?: string[];
   force_user?: string | null;
+  force_group?: string | null;
+  veto_files?: string;
+  recycle_bin?: boolean;
+  create_directory?: boolean;
+  directory_owner?: string;
+  directory_group?: string;
+  directory_mode?: string;
+  advanced_options?: Record<string, string>;
   create_mask: string;
   directory_mask: string;
   allow_proxmox_storage?: boolean;
 };
-export type SambaConfig = { shares: SambaShare[] };
+export type SambaConfig = { shares: SambaShare[]; global_options?: Record<string, string> };
+export type SambaValidation = { ok: boolean; stdout: string; stderr: string; exit_code?: number };
+export type SambaStatus = {
+  installed: boolean;
+  managed_config: boolean;
+  include_configured: boolean;
+  external_config: boolean;
+  services: Record<string, string>;
+  ports: Record<string, boolean>;
+  validation: SambaValidation;
+  shares: SambaShare[];
+  history: Array<Record<string, unknown>>;
+  last_backup?: string | null;
+  proxmox_safe_mode: boolean;
+};
+export type SambaUser = { username: string; uid: number; home: string; shell: string; system: boolean; samba_enabled: boolean };
 export type NetworkMount = {
   id: string;
   name: string;
@@ -280,7 +308,7 @@ export const api = {
     return request("/api/files/upload", { method: "POST", body });
   },
   settingsMe: () => request<SettingsMe>("/api/settings/me"),
-  updateSettings: (payload: Partial<Pick<SettingsMe, "language" | "theme">>) => request("/api/settings/me", { method: "PATCH", body: JSON.stringify(payload) }),
+  updateSettings: (payload: Partial<Pick<SettingsMe, "language" | "theme" | "startup_windows">>) => request("/api/settings/me", { method: "PATCH", body: JSON.stringify(payload) }),
   changeMyPassword: (current_password: string, new_password: string) => request("/api/settings/change-password", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
   adminUsers: () => request<AdminUser[]>("/api/admin/users"),
   createUser: (payload: Record<string, unknown>) => request<AdminUser>("/api/admin/users", { method: "POST", body: JSON.stringify(payload) }),
@@ -301,12 +329,12 @@ export const api = {
   resources: () => request<ResourceDashboard>("/api/system/resources"),
   systemLogs: (lines = 160) => request<SystemLogs>(`/api/admin/system/logs?lines=${lines}`),
   proxmoxSafety: () => request<ProxmoxSafety>("/api/admin/system/proxmox-safety"),
-  restartSystem: (admin_password: string) => request("/api/admin/system/restart", { method: "POST", body: JSON.stringify({ admin_password }) }),
+  restartSystem: () => request("/api/admin/system/restart", { method: "POST", body: "{}" }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
-  downloadUpdates: (admin_password: string, update_config = false) => request<UpdateStart>("/api/admin/system/updates/download", { method: "POST", body: JSON.stringify({ admin_password, update_config }) }),
+  downloadUpdates: (update_config = false) => request<UpdateStart>("/api/admin/system/updates/download", { method: "POST", body: JSON.stringify({ update_config }) }),
   autoUpdate: () => request<AutoUpdateSettings>("/api/admin/system/updates/auto"),
-  saveAutoUpdate: (payload: { enabled: boolean; interval_hours: number; update_config: boolean; admin_password: string }) => request<AutoUpdateSettings>("/api/admin/system/updates/auto", { method: "PATCH", body: JSON.stringify(payload) }),
-  runAutoUpdate: (admin_password: string, update_config = false) => request<UpdateStart & { updated?: boolean; skipped?: boolean; reason?: string }>("/api/admin/system/updates/auto/run", { method: "POST", body: JSON.stringify({ admin_password, update_config }) }),
+  saveAutoUpdate: (payload: { enabled: boolean; interval_hours: number; update_config: boolean }) => request<AutoUpdateSettings>("/api/admin/system/updates/auto", { method: "PATCH", body: JSON.stringify(payload) }),
+  runAutoUpdate: (update_config = false) => request<UpdateStart & { updated?: boolean; skipped?: boolean; reason?: string }>("/api/admin/system/updates/auto/run", { method: "POST", body: JSON.stringify({ update_config }) }),
   systemdServices: () => request<SystemdService[]>("/api/admin/system/services"),
   systemdServiceAction: (service: string, action: "start" | "stop" | "restart" | "enable" | "disable", admin_password: string, confirm_restart = false) => request<SystemdService>(`/api/admin/system/services/${encodeURIComponent(service)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm_restart }) }),
   systemdServiceLogs: (service: string, lines = 200) => request<SystemLogs>(`/api/admin/system/services/${encodeURIComponent(service)}/logs?lines=${lines}`),
@@ -317,6 +345,14 @@ export const api = {
   appConfig: (id: string) => request<SambaConfig>(`/api/apps/${encodeURIComponent(id)}/config`),
   saveSambaConfig: (config: SambaConfig) => request("/api/apps/samba/config", { method: "PUT", body: JSON.stringify(config) }),
   setSambaPassword: (username: string, password: string, admin_password: string) => request("/api/apps/samba/smbpasswd", { method: "POST", body: JSON.stringify({ username, password, admin_password }) }),
+  sambaStatus: () => request<SambaStatus>("/api/apps/samba/status"),
+  sambaUsers: () => request<SambaUser[]>("/api/apps/samba/users"),
+  sambaPreview: (config: SambaConfig) => request<{ config: string; validation: SambaValidation }>("/api/apps/samba/preview", { method: "POST", body: JSON.stringify({ config }) }),
+  sambaApply: (config: SambaConfig) => request<SambaStatus>("/api/apps/samba/apply", { method: "POST", body: JSON.stringify({ config }) }),
+  sambaRollback: () => request("/api/apps/samba/rollback", { method: "POST", body: "{}" }),
+  sambaService: (action: "start" | "stop" | "restart" | "reload", admin_password: string) => request<{ ok: boolean; status: SambaStatus }>("/api/apps/samba/service", { method: "POST", body: JSON.stringify({ action, admin_password }) }),
+  enableSambaUser: (username: string, password: string, admin_password: string) => request("/api/apps/samba/users/enable", { method: "POST", body: JSON.stringify({ username, password, admin_password }) }),
+  disableSambaUser: (username: string, admin_password: string) => request("/api/apps/samba/users/disable", { method: "POST", body: JSON.stringify({ username, admin_password }) }),
   mounts: () => request<NetworkMount[]>("/api/mounts"),
   mount: (id: string) => request<NetworkMount>(`/api/mounts/${encodeURIComponent(id)}`),
   createMount: (payload: NetworkMountPayload) => request<NetworkMount>("/api/mounts", { method: "POST", body: JSON.stringify(payload) }),

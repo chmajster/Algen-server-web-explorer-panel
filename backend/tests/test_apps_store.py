@@ -43,7 +43,7 @@ def test_blocked_share_path_rejected(monkeypatch):
 
 def test_samba_config_generation_validates_and_renders():
     config = apps.SambaConfig(shares=[
-        apps.SambaShare(name="media", path="/srv/media", comment="Media", read_only=False, valid_users=["alice"])
+        apps.SambaShare(name="media", path="/srv/media", comment="Media", read_only=False, valid_users=["alice"], write_list=["alice"], admin_users=["@admins"], recycle_bin=True)
     ])
 
     rendered = apps.render_smb_conf(config)
@@ -51,6 +51,9 @@ def test_samba_config_generation_validates_and_renders():
     assert "[media]" in rendered
     assert "path = /srv/media" in rendered
     assert "valid users = alice" in rendered
+    assert "write list = alice" in rendered
+    assert "admin users = @admins" in rendered
+    assert "vfs objects = recycle" in rendered
 
 
 def test_samba_config_rejects_injected_comment():
@@ -66,9 +69,11 @@ def test_samba_config_rejects_injected_comment():
 
 def test_bad_testparm_blocks_config_write(monkeypatch, tmp_path):
     conf = tmp_path / "smb.conf"
+    algen_conf = tmp_path / "algen-shares.conf"
     state_dir = tmp_path / "state"
-    candidate = state_dir / "smb.conf.candidate"
+    candidate = state_dir / "algen-shares.conf.candidate"
     monkeypatch.setattr(apps, "SAMBA_CONF", conf)
+    monkeypatch.setattr(apps, "SAMBA_ALGEN_CONF", algen_conf)
     monkeypatch.setattr(apps, "APP_STATE_DIR", state_dir)
     monkeypatch.setattr(apps.shutil, "which", lambda name: "/usr/bin/testparm" if name == "testparm" else None)
     monkeypatch.setattr(apps, "validate_share_path", lambda username, share: tmp_path / "media")
@@ -82,6 +87,7 @@ def test_bad_testparm_blocks_config_write(monkeypatch, tmp_path):
     assert exc.value.status_code == 400
     assert candidate.exists()
     assert not conf.exists()
+    assert not algen_conf.exists()
 
 
 def test_proxmox_safe_mode_blocks_unsafe_module(monkeypatch):

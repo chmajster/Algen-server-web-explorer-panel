@@ -84,6 +84,25 @@ def test_persists_transfer_history(monkeypatch, tmp_path: Path):
     assert loaded.get("alice", task.id).priority == 4
 
 
+def test_running_task_is_queued_after_restart(monkeypatch, tmp_path: Path):
+    cfg = SimpleNamespace(paths=SimpleNamespace(data_dir=str(tmp_path)), file_tasks=SimpleNamespace(max_parallel=2, max_parallel_per_user=1, log_tail_lines=80))
+    monkeypatch.setattr(file_task_manager, "get_config", lambda: cfg)
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    manager = FileTaskManager()
+    task = manager.create_transfer("alice", "copy", [str(tmp_path / "a")], str(tmp_path / "b"), priority=4)
+    task.status = TaskStatus.running
+    task.started_at = 123.0
+    manager._persist(task)
+
+    loaded = FileTaskManager()
+    restored = loaded.get("alice", task.id)
+
+    assert restored is not None
+    assert restored.status == TaskStatus.queued
+    assert restored.started_at is None
+    assert restored.finished_at is None
+
+
 def test_retry_creates_new_queued_task(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
     manager = FileTaskManager()

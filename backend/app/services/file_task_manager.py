@@ -181,10 +181,13 @@ class FileTaskManager:
                 payload = json.loads(row["payload"])
                 task = self._task_from_payload(payload)
                 if task.status == TaskStatus.running:
-                    task.status = TaskStatus.failed
-                    task.finished_at = now()
-                    task.error_message = "Transfer interrupted by service restart"
-                    task.append_log(task.error_message)
+                    task.status = TaskStatus.queued
+                    task.started_at = None
+                    task.finished_at = None
+                    task.error_message = ""
+                    task.cancel_requested = False
+                    task.pause_requested = False
+                    task.append_log("Task was interrupted by service restart and queued again")
                 self._tasks[task.id] = task
             self._persist_all()
 
@@ -440,7 +443,8 @@ class FileTaskManager:
             return False
         task.cancel_requested = True
         if task.status in {TaskStatus.queued, TaskStatus.paused, TaskStatus.failed}:
-            cleanup_partial_files(task.username, Path(task.destination_path), task.append_log)
+            if task.type in {"copy", "move"}:
+                cleanup_partial_files(task.username, Path(task.destination_path), task.append_log)
             task.status = TaskStatus.cancelled
             task.finished_at = now()
             task.error_message = "Transfer cancelled by user"

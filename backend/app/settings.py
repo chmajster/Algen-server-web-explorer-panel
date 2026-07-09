@@ -34,6 +34,7 @@ router = APIRouter()
 
 SUPPORTED_LANGUAGES = {"pl-PL", "en-US"}
 SUPPORTED_THEMES = {"light", "dark", "system"}
+SUPPORTED_STARTUP_WINDOWS = {"last", "none"}
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
 SERVICE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+(?:\.service)?$")
 CRITICAL_SYSTEMD_SERVICES = {
@@ -100,6 +101,7 @@ auto_update_scheduler_started = False
 class MePatch(BaseModel):
     language: Literal["pl-PL", "en-US"] | None = None
     theme: Literal["light", "dark", "system"] | None = None
+    startup_windows: Literal["last", "none"] | None = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -112,15 +114,20 @@ class AdminPassword(BaseModel):
     confirm: bool = True
 
 
+class AdminSessionAction(BaseModel):
+    admin_password: str | None = None
+    confirm: bool = True
+
+
 class ServiceAction(AdminPassword):
     confirm_restart: bool = False
 
 
-class UpdateAction(AdminPassword):
+class UpdateAction(AdminSessionAction):
     update_config: bool = False
 
 
-class AutoUpdatePatch(AdminPassword):
+class AutoUpdatePatch(AdminSessionAction):
     enabled: bool
     interval_hours: int = Field(default=24, ge=1, le=168)
     update_config: bool = False
@@ -440,6 +447,14 @@ def _require_admin(user: SessionUser, password: str, request: Request, action: s
     logger.info("admin_authorized actor=%s action=%s", user.username, action)
 
 
+def _require_admin_session(user: SessionUser, request: Request, action: str) -> None:
+    key = f"{request.client.host if request.client else 'unknown'}:{user.username}:admin-session"
+    admin_rate_limiter.check(key)
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    logger.info("admin_session_authorized actor=%s action=%s", user.username, action)
+
+
 def _audit(actor: str, action: str, target: str) -> None:
     logger.info("admin_action actor=%s action=%s target=%s", actor, action, target)
 
@@ -547,7 +562,8 @@ def settings_me(request: Request, user: SessionUser = Depends(_current_user)):
     settings = _read_settings(user.username)
     language = settings.get("language") if settings.get("language") in SUPPORTED_LANGUAGES else _browser_language(request.headers.get("accept-language"))
     theme = settings.get("theme") if settings.get("theme") in SUPPORTED_THEMES else "system"
-    return {**_user_info(user.username), "language": language, "theme": theme}
+    startup_windows = settings.get("startup_windows") if settings.get("startup_windows") in SUPPORTED_STARTUP_WINDOWS else "last"
+    return {**_user_info(user.username), "language": language, "theme": theme, "startup_windows": startup_windows}
 
 
 @router.patch("/api/settings/me")
@@ -557,6 +573,8 @@ def settings_patch(payload: MePatch, user: SessionUser = Depends(_current_user))
         settings["language"] = payload.language
     if payload.theme:
         settings["theme"] = payload.theme
+    if payload.startup_windows:
+        settings["startup_windows"] = payload.startup_windows
     _write_settings(user.username, settings)
     logger.info("settings_updated user=%s fields=%s", user.username, list(payload.model_dump(exclude_none=True).keys()))
     return {"ok": True, **settings}
@@ -812,8 +830,8 @@ def system_resources(user: SessionUser = Depends(_current_user)):
 
 
 @router.post("/api/admin/system/restart")
-def admin_system_restart(payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "restart_system")
+def admin_system_restart(payload: AdminSessionAction, request: Request, user: SessionUser = Depends(_current_user)):
+    _require_admin_session(user, request, "restart_system")
     assert_service_allowed("webnas.service")
     _run([_tool("systemctl"), "restart", "webnas.service"])
     _audit(user.username, "restart_system", "webnas.service")
@@ -829,7 +847,7 @@ def admin_updates_check(user: SessionUser = Depends(_current_user)):
 
 @router.post("/api/admin/system/updates/download")
 def admin_updates_download(payload: UpdateAction, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "download_update")
+    _require_admin_session(user, request, "download_update")
     return _start_update_process(payload.update_config, actor=user.username)
 
 
@@ -842,7 +860,7 @@ def admin_auto_update_get(user: SessionUser = Depends(_current_user)):
 
 @router.patch("/api/admin/system/updates/auto")
 def admin_auto_update_patch(payload: AutoUpdatePatch, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "configure_auto_update")
+    _require_admin_session(user, request, "configure_auto_update")
     now = time.time()
     state = _read_auto_update_state()
     state.update({
@@ -858,7 +876,7 @@ def admin_auto_update_patch(payload: AutoUpdatePatch, request: Request, user: Se
 
 @router.post("/api/admin/system/updates/auto/run")
 def admin_auto_update_run(payload: UpdateAction, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "run_auto_update")
+    _require_admin_session(user, request, "run_auto_update")
     result = _run_auto_update_once(actor=user.username, force=True, update_config=payload.update_config)
     return result
 
