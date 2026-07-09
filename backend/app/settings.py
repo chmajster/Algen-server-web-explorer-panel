@@ -35,7 +35,9 @@ router = APIRouter()
 SUPPORTED_LANGUAGES = {"pl-PL", "en-US"}
 SUPPORTED_THEMES = {"light", "dark", "system"}
 SUPPORTED_STARTUP_WINDOWS = {"last", "none"}
+MAX_WALLPAPER_LENGTH = 2_000_000
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
+WALLPAPER_RE = re.compile(r"^(https?://[^\s\"'<>]{1,1800}|data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+)$")
 SERVICE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+(?:\.service)?$")
 CRITICAL_SYSTEMD_SERVICES = {
     "pveproxy",
@@ -102,6 +104,7 @@ class MePatch(BaseModel):
     language: Literal["pl-PL", "en-US"] | None = None
     theme: Literal["light", "dark", "system"] | None = None
     startup_windows: Literal["last", "none"] | None = None
+    wallpaper: str | None = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -212,6 +215,17 @@ def _write_settings(username: str, data: dict) -> None:
         json.dump(data, handle, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
     os.chmod(path, 0o600)
+
+
+def _validate_wallpaper(value: str | None) -> str:
+    if not value:
+        return ""
+    wallpaper = value.strip()
+    if len(wallpaper) > MAX_WALLPAPER_LENGTH:
+        raise HTTPException(400, "Wallpaper is too large")
+    if not WALLPAPER_RE.fullmatch(wallpaper):
+        raise HTTPException(400, "Wallpaper must be an http(s) image URL or a supported image data URL")
+    return wallpaper
 
 
 def _validate_name(value: str, kind: str) -> str:
@@ -563,7 +577,8 @@ def settings_me(request: Request, user: SessionUser = Depends(_current_user)):
     language = settings.get("language") if settings.get("language") in SUPPORTED_LANGUAGES else _browser_language(request.headers.get("accept-language"))
     theme = settings.get("theme") if settings.get("theme") in SUPPORTED_THEMES else "system"
     startup_windows = settings.get("startup_windows") if settings.get("startup_windows") in SUPPORTED_STARTUP_WINDOWS else "last"
-    return {**_user_info(user.username), "language": language, "theme": theme, "startup_windows": startup_windows}
+    wallpaper = _validate_wallpaper(settings.get("wallpaper") or "")
+    return {**_user_info(user.username), "language": language, "theme": theme, "startup_windows": startup_windows, "wallpaper": wallpaper}
 
 
 @router.patch("/api/settings/me")
@@ -575,6 +590,8 @@ def settings_patch(payload: MePatch, user: SessionUser = Depends(_current_user))
         settings["theme"] = payload.theme
     if payload.startup_windows:
         settings["startup_windows"] = payload.startup_windows
+    if payload.wallpaper is not None:
+        settings["wallpaper"] = _validate_wallpaper(payload.wallpaper)
     _write_settings(user.username, settings)
     logger.info("settings_updated user=%s fields=%s", user.username, list(payload.model_dump(exclude_none=True).keys()))
     return {"ok": True, **settings}

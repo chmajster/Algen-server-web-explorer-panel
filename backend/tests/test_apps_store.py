@@ -120,3 +120,30 @@ def test_install_action_is_audited(monkeypatch):
 
     assert result == {"job": {"id": "job-1"}}
     assert any("app_store_action" in item[0] for item in messages)
+
+
+def test_store_plugin_requires_github_url():
+    plugin = apps.StorePlugin(
+        name="Demo plugin",
+        github_url="https://example.com/not-github/plugin",
+        codex_instructions="Inspect repository",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        apps._validate_plugin(plugin)
+
+    assert exc.value.status_code == 400
+
+
+def test_store_plugin_generates_codex_instructions():
+    plugin = apps.StorePlugin(
+        name="Demo plugin",
+        github_url="https://github.com/example/algen-demo-plugin",
+        branch="main",
+        codex_instructions="",
+    )
+
+    validated = apps._validate_plugin(plugin)
+
+    assert "Codex task" in validated.codex_instructions
+    assert "https://github.com/example/algen-demo-plugin" in validated.codex_instructions

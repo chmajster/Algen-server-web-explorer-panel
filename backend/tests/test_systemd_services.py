@@ -56,3 +56,12 @@ def test_service_action_is_audited(monkeypatch):
 
     assert result == {"name": "webnas.service"}
     assert ["systemd_start", "webnas.service"] in calls
+
+
+def test_wallpaper_validation_accepts_https_url():
+    assert settings._validate_wallpaper("https://example.com/wallpaper.jpg") == "https://example.com/wallpaper.jpg"
+
+
+def test_wallpaper_validation_rejects_script_url():
+    with pytest.raises(HTTPException):
+        settings._validate_wallpaper("javascript:alert(1)")

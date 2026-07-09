@@ -80,6 +80,7 @@ export type SettingsMe = {
   language: "pl-PL" | "en-US";
   theme: "light" | "dark" | "system";
   startup_windows: "last" | "none";
+  wallpaper: string;
 };
 
 export type AdminUser = SettingsMe & { is_system: boolean; manageable: boolean };
@@ -138,6 +139,16 @@ export type StoreApp = {
   services: Record<string, string>;
   status: string;
   jobs: Array<{ id: string; action: string; status: string; progress: number; log_tail: string[]; error: string }>;
+};
+export type StorePlugin = {
+  id: string;
+  name: string;
+  github_url: string;
+  branch: string;
+  enabled: boolean;
+  codex_instructions: string;
+  created_at: number;
+  updated_at: number;
 };
 export type SambaShare = {
   name: string;
@@ -308,7 +319,7 @@ export const api = {
     return request("/api/files/upload", { method: "POST", body });
   },
   settingsMe: () => request<SettingsMe>("/api/settings/me"),
-  updateSettings: (payload: Partial<Pick<SettingsMe, "language" | "theme" | "startup_windows">>) => request("/api/settings/me", { method: "PATCH", body: JSON.stringify(payload) }),
+  updateSettings: (payload: Partial<Pick<SettingsMe, "language" | "theme" | "startup_windows" | "wallpaper">>) => request("/api/settings/me", { method: "PATCH", body: JSON.stringify(payload) }),
   changeMyPassword: (current_password: string, new_password: string) => request("/api/settings/change-password", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
   adminUsers: () => request<AdminUser[]>("/api/admin/users"),
   createUser: (payload: Record<string, unknown>) => request<AdminUser>("/api/admin/users", { method: "POST", body: JSON.stringify(payload) }),
@@ -343,6 +354,10 @@ export const api = {
   appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", admin_password: string, dry_run = false) => request(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, dry_run }) }),
   appLogs: (id: string) => request<{ lines: string[] }>(`/api/apps/${encodeURIComponent(id)}/logs`),
   appConfig: (id: string) => request<SambaConfig>(`/api/apps/${encodeURIComponent(id)}/config`),
+  storePlugins: () => request<{ plugins: StorePlugin[]; codex_template: string }>("/api/apps/plugins"),
+  createStorePlugin: (plugin: Partial<StorePlugin>) => request<StorePlugin>("/api/apps/plugins", { method: "POST", body: JSON.stringify(plugin) }),
+  updateStorePlugin: (id: string, plugin: Partial<StorePlugin>) => request<StorePlugin>(`/api/apps/plugins/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(plugin) }),
+  deleteStorePlugin: (id: string) => request(`/api/apps/plugins/${encodeURIComponent(id)}`, { method: "DELETE" }),
   saveSambaConfig: (config: SambaConfig) => request("/api/apps/samba/config", { method: "PUT", body: JSON.stringify(config) }),
   setSambaPassword: (username: string, password: string, admin_password: string) => request("/api/apps/samba/smbpasswd", { method: "POST", body: JSON.stringify({ username, password, admin_password }) }),
   sambaStatus: () => request<SambaStatus>("/api/apps/samba/status"),

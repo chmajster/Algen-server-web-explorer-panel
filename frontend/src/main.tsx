@@ -42,7 +42,7 @@ import {
 } from "lucide-react";
 import { AdminGroup, AdminUser, api, downloadUrl, FileItem, login, logout, me, ProxmoxSafety, SettingsMe, SystemdService, SystemLogs, Task, UpdateStatus } from "./api";
 import type { AutoUpdateSettings } from "./api";
-import type { NetworkMount, NetworkMountPayload, ResourceDashboard, SambaConfig, SambaShare, SambaStatus, SambaUser, StoreApp as StoreModule } from "./api";
+import type { NetworkMount, NetworkMountPayload, ResourceDashboard, SambaConfig, SambaShare, SambaStatus, SambaUser, StoreApp as StoreModule, StorePlugin } from "./api";
 import { AppIcon } from "./components/AppIcon";
 import { detectLanguage, Language, supportedLanguages, translate } from "./i18n";
 import "./styles/app.css";
@@ -57,6 +57,61 @@ type WindowLayout = WindowRect & { minimized?: boolean; restore?: WindowRect };
 type WindowInstance = { id: string; app: AppId };
 type Layouts = Record<string, WindowLayout>;
 type SavedWindowState = { windows: WindowInstance[]; layouts: Layouts; activeWindowId?: string; counter?: number };
+type ResizeEdge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
+
+const MIN_WINDOW_WIDTH = 360;
+const MIN_WINDOW_HEIGHT = 280;
+const DESKTOP_MARGIN_X = 16;
+const DESKTOP_TOP = 52;
+const DESKTOP_BOTTOM = 52;
+
+function getMaximizedRect(): WindowRect {
+  return {
+    x: DESKTOP_MARGIN_X,
+    y: DESKTOP_TOP,
+    width: Math.max(MIN_WINDOW_WIDTH, window.innerWidth - DESKTOP_MARGIN_X * 2),
+    height: Math.max(MIN_WINDOW_HEIGHT, window.innerHeight - DESKTOP_TOP - DESKTOP_BOTTOM)
+  };
+}
+
+function isValidRestoreRect(rect?: WindowRect | null): rect is WindowRect {
+  if (!rect) return false;
+  return [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)
+    && rect.width >= MIN_WINDOW_WIDTH
+    && rect.height >= MIN_WINDOW_HEIGHT
+    && rect.x > -rect.width
+    && rect.y > -rect.height;
+}
+
+function clampWindowRect(rect: WindowRect): WindowRect {
+  const max = getMaximizedRect();
+  const width = Math.min(Math.max(MIN_WINDOW_WIDTH, rect.width), max.width);
+  const height = Math.min(Math.max(MIN_WINDOW_HEIGHT, rect.height), max.height);
+  const minX = 8;
+  const minY = DESKTOP_TOP;
+  const maxX = Math.max(minX, window.innerWidth - 16 - width);
+  const maxY = Math.max(minY, window.innerHeight - DESKTOP_BOTTOM - height);
+  return {
+    x: Math.min(Math.max(rect.x, minX), maxX),
+    y: Math.min(Math.max(rect.y, minY), maxY),
+    width,
+    height
+  };
+}
+
+function restoreForDrag(layout: WindowLayout, pointerX: number, pointerY: number): { rect: WindowRect; offsetX: number; offsetY: number } {
+  const fallback = { x: 120, y: DESKTOP_TOP + 24, width: 900, height: 620 };
+  const restore = clampWindowRect(isValidRestoreRect(layout.restore) ? layout.restore : fallback);
+  const currentWidth = Math.max(1, layout.width || getMaximizedRect().width);
+  const ratioX = Math.min(.9, Math.max(.1, (pointerX - layout.x) / currentWidth));
+  const titleOffsetY = 19;
+  const rect = clampWindowRect({
+    ...restore,
+    x: pointerX - restore.width * ratioX,
+    y: pointerY - titleOffsetY
+  });
+  return { rect, offsetX: pointerX - rect.x, offsetY: pointerY - rect.y };
+}
 
 const defaultLayouts: Layouts = {
   dashboard: { x: 112, y: 78, width: 1040, height: 680 },
@@ -171,27 +226,27 @@ function DesktopWindow({
   children: React.ReactNode;
 }) {
   const displayTitle = title || appMeta[app].title;
-  type ResizeEdge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
-  const drag = useRef<{ startX: number; startY: number; layout: WindowLayout; mode: "move" | "resize"; edge?: ResizeEdge } | null>(null);
+  const drag = useRef<{
+    startX: number;
+    startY: number;
+    layout: WindowLayout;
+    mode: "move" | "resize";
+    offsetX: number;
+    offsetY: number;
+    edge?: ResizeEdge;
+  } | null>(null);
   const isMaximized = Boolean(layout.restore);
-  function startResize(event: React.PointerEvent, edge: ResizeEdge) {
-    event.preventDefault();
-    event.stopPropagation();
-    drag.current = { startX: event.clientX, startY: event.clientY, layout, mode: "resize", edge };
-    onFocus();
-  }
   function toggleMaximize() {
     if (layout.restore) {
-      onLayout({ ...layout.restore, minimized: false });
+      const restored = isValidRestoreRect(layout.restore) ? layout.restore : { x: 120, y: DESKTOP_TOP + 24, width: 900, height: 620 };
+      onLayout({ ...clampWindowRect(restored), minimized: false, restore: undefined });
       return;
     }
+    const restore = clampWindowRect(layout);
     onLayout({
-      x: 16,
-      y: 52,
-      width: window.innerWidth - 32,
-      height: window.innerHeight - 104,
+      ...getMaximizedRect(),
       minimized: false,
-      restore: { x: layout.x, y: layout.y, width: layout.width, height: layout.height }
+      restore
     });
   }
   useEffect(() => {
@@ -201,26 +256,29 @@ function DesktopWindow({
       const dy = event.clientY - drag.current.startY;
       const base = drag.current.layout;
       if (drag.current.mode === "move") {
-        onLayout({ ...base, x: Math.max(8, base.x + dx), y: Math.max(50, base.y + dy), restore: undefined });
+        onLayout({
+          ...base,
+          ...clampWindowRect({ ...base, x: event.clientX - drag.current.offsetX, y: event.clientY - drag.current.offsetY }),
+          restore: undefined,
+          minimized: false
+        });
       } else {
         const edge = drag.current.edge || "se";
-        const minWidth = 360;
-        const minHeight = 280;
         let nextX = base.x;
         let nextY = base.y;
         let nextWidth = base.width;
         let nextHeight = base.height;
-        if (edge.includes("e")) nextWidth = Math.max(minWidth, base.width + dx);
-        if (edge.includes("s")) nextHeight = Math.max(minHeight, base.height + dy);
+        if (edge.includes("e")) nextWidth = Math.max(MIN_WINDOW_WIDTH, base.width + dx);
+        if (edge.includes("s")) nextHeight = Math.max(MIN_WINDOW_HEIGHT, base.height + dy);
         if (edge.includes("w")) {
-          nextWidth = Math.max(minWidth, base.width - dx);
+          nextWidth = Math.max(MIN_WINDOW_WIDTH, base.width - dx);
           nextX = base.x + (base.width - nextWidth);
         }
         if (edge.includes("n")) {
-          nextHeight = Math.max(minHeight, base.height - dy);
+          nextHeight = Math.max(MIN_WINDOW_HEIGHT, base.height - dy);
           nextY = base.y + (base.height - nextHeight);
         }
-        onLayout({ ...base, x: Math.max(8, nextX), y: Math.max(50, nextY), width: nextWidth, height: nextHeight, restore: undefined });
+        onLayout({ ...base, ...clampWindowRect({ x: nextX, y: nextY, width: nextWidth, height: nextHeight }), restore: undefined, minimized: false });
       }
     }
     function up() { drag.current = null; }
@@ -231,30 +289,60 @@ function DesktopWindow({
       window.removeEventListener("pointerup", up);
     };
   }, [onLayout]);
+  const displayRect = isMaximized ? getMaximizedRect() : clampWindowRect(layout);
   return (
     <section
       className={`window ${active ? "active" : ""}`}
-      style={{ left: layout.x, top: layout.y, width: layout.width, height: layout.height, zIndex: active ? 9 : 5 }}
+      style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: active ? 9 : 5 }}
       onPointerDown={onFocus}
     >
       <header
         className="window-title"
         onPointerDown={(event) => {
           event.preventDefault();
-          drag.current = { startX: event.clientX, startY: event.clientY, layout, mode: "move" };
+          if (event.detail > 1) {
+            drag.current = null;
+            return;
+          }
+          if (isMaximized) {
+            const restored = restoreForDrag({ ...layout, ...displayRect }, event.clientX, event.clientY);
+            const nextLayout = { ...restored.rect, minimized: false, restore: undefined };
+            onLayout(nextLayout);
+            drag.current = { startX: event.clientX, startY: event.clientY, layout: nextLayout, mode: "move", offsetX: restored.offsetX, offsetY: restored.offsetY };
+          } else {
+            const base = { ...layout, ...displayRect, restore: undefined };
+            drag.current = { startX: event.clientX, startY: event.clientY, layout: base, mode: "move", offsetX: event.clientX - displayRect.x, offsetY: event.clientY - displayRect.y };
+          }
           onFocus();
+        }}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          drag.current = null;
+          toggleMaximize();
         }}
       >
         <span>{displayTitle}</span>
-        <div className="window-controls">
-          <button title="Minimize" onClick={(event) => { event.stopPropagation(); onMinimize(); }}><Minimize2 size={13} /></button>
-          <button title={isMaximized ? "Restore" : "Maximize"} onClick={(event) => { event.stopPropagation(); toggleMaximize(); }}><Maximize2 size={13} /></button>
-          <button title="Close" onClick={(event) => { event.stopPropagation(); onClose(); }}><X size={13} /></button>
+        <div className="window-controls" onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
+          <button title="Minimize" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMinimize(); }}><Minimize2 size={13} /></button>
+          <button title={isMaximized ? "Restore" : "Maximize"} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); toggleMaximize(); }}><Maximize2 size={13} /></button>
+          <button title="Close" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose(); }}><X size={13} /></button>
         </div>
       </header>
       {children}
-      {(["n", "e", "s", "w", "ne", "nw", "se", "sw"] as ResizeEdge[]).map((edge) => (
-        <span key={edge} className={`resize-handle resize-${edge}`} onPointerDown={(event) => startResize(event, edge)} aria-hidden="true" />
+      {!isMaximized && (["n", "e", "s", "w", "ne", "nw", "se", "sw"] as ResizeEdge[]).map((edge) => (
+        <span
+          key={edge}
+          className={`resize-handle resize-${edge}`}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            // eslint-disable-next-line react-hooks/refs -- pointer handlers are allowed to update transient drag refs.
+            drag.current = { startX: event.clientX, startY: event.clientY, layout: { ...layout, ...clampWindowRect(layout) }, mode: "resize", edge, offsetX: 0, offsetY: 0 };
+            onFocus();
+          }}
+          aria-hidden="true"
+        />
       ))}
     </section>
   );
@@ -929,7 +1017,7 @@ function DashboardApp({ toast }: { toast: (text: string, type?: "ok" | "error") 
   );
 }
 
-function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (language: Language) => void; onTheme: (theme: Theme) => void; toast: (text: string, type?: "ok" | "error") => void }) {
+function SettingsApp({ t, onLanguage, onTheme, onWallpaper, toast }: { t: T; onLanguage: (language: Language) => void; onTheme: (theme: Theme) => void; onWallpaper: (wallpaper: string) => void; toast: (text: string, type?: "ok" | "error") => void }) {
   const [tab, setTab] = useState("account");
   const [settings, setSettings] = useState<SettingsMe | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -946,6 +1034,7 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
     setSettings(meData);
     onLanguage(meData.language);
     onTheme(meData.theme);
+    onWallpaper(meData.wallpaper || "");
     if (meData.is_admin) {
       api.adminUsers().then(setUsers).catch(() => undefined);
       api.adminGroups().then(setGroups).catch(() => undefined);
@@ -1006,6 +1095,35 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
       toast(message(err, "Could not run auto update"), "error");
     }
   }
+  async function saveWallpaper(wallpaper: string) {
+    try {
+      await api.updateSettings({ wallpaper });
+      setSettings((current) => current ? { ...current, wallpaper } : current);
+      onWallpaper(wallpaper);
+      toast(t("settings.saved"));
+    } catch (err) {
+      toast(message(err, "Nie mozna zapisac tapety"), "error");
+    }
+  }
+  function importWallpaper(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast("Wybierz plik obrazu", "error");
+      return;
+    }
+    if (file.size > 1_400_000) {
+      toast("Tapeta jest za duza. Uzyj obrazu do 1.4 MB albo URL.", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const wallpaper = String(reader.result || "");
+      setForm((current) => ({ ...current, wallpaper }));
+      saveWallpaper(wallpaper);
+    };
+    reader.onerror = () => toast("Nie mozna wczytac obrazu", "error");
+    reader.readAsDataURL(file);
+  }
 
   const settingsTabs = [
     { id: "account", icon: <Lock size={16} />, label: "Konto uzytkownika" },
@@ -1049,10 +1167,12 @@ function SettingsApp({ t, onLanguage, onTheme, toast }: { t: T; onLanguage: (lan
                   <label className="form-field" htmlFor="settings-language"><span className="form-label">{t("settings.language")}</span><select id="settings-language" className="form-input" value={settings.language} onChange={(e) => submit(t("settings.saved"), async () => { const language = e.target.value as Language; await api.updateSettings({ language }); onLanguage(language); })}>{supportedLanguages.map((language) => <option key={language}>{language}</option>)}</select></label>
                   <label className="form-field" htmlFor="settings-theme"><span className="form-label">{t("settings.theme")}</span><select id="settings-theme" className="form-input" value={settings.theme} onChange={(e) => submit(t("settings.saved"), async () => { const theme = e.target.value as Theme; await api.updateSettings({ theme }); onTheme(theme); })}><option value="light">{t("settings.light")}</option><option value="dark">{t("settings.dark")}</option><option value="system">{t("settings.systemTheme")}</option></select></label>
                   <label className="form-field" htmlFor="settings-startup-windows"><span className="form-label">Okna po zalogowaniu</span><select id="settings-startup-windows" className="form-input" value={settings.startup_windows} onChange={(e) => submit(t("settings.saved"), async () => { const startup_windows = e.target.value as SettingsMe["startup_windows"]; await api.updateSettings({ startup_windows }); setSettings({ ...settings, startup_windows }); })}><option value="last">Otworz ostatnio otwarte okna</option><option value="none">Nie otwieraj nic</option></select><span className="form-help">Dotyczy kolejnego logowania na tym urzadzeniu.</span></label>
+                  <label className="form-field" htmlFor="settings-wallpaper"><span className="form-label">Tapeta pulpitu</span><input id="settings-wallpaper" className="form-input" placeholder="https://... albo data:image/..." value={form.wallpaper ?? settings.wallpaper ?? ""} onChange={(e) => setForm({ ...form, wallpaper: e.target.value })} /><span className="form-help">URL obrazu albo plik ponizej. Zapisuje sie w profilu i wczytuje po kazdym logowaniu.</span></label>
+                  <label className="form-field" htmlFor="settings-wallpaper-file"><span className="form-label">Plik tapety</span><input id="settings-wallpaper-file" className="form-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => importWallpaper(e.target.files?.[0])} /><span className="form-help">Dla lokalnego obrazu uzyj pliku do 1.4 MB.</span></label>
                   <label className="form-field" htmlFor="settings-current-password"><span className="form-label">{t("settings.currentPassword")}</span><input id="settings-current-password" className="form-input" type="password" onChange={(e) => setForm({ ...form, current_password: e.target.value })} /></label>
                   <label className="form-field" htmlFor="settings-new-password"><span className="form-label">{t("settings.newPassword")}</span><input id="settings-new-password" className="form-input" type="password" onChange={(e) => setForm({ ...form, new_password: e.target.value })} /></label>
                 </div>
-                <button className="button button-primary" onClick={() => submit(t("settings.passwordChanged"), () => api.changeMyPassword(form.current_password, form.new_password))}><Lock size={16} />{t("action.changePassword")}</button>
+                <div className="button-row"><button className="button button-primary" onClick={() => submit(t("settings.passwordChanged"), () => api.changeMyPassword(form.current_password, form.new_password))}><Lock size={16} />{t("action.changePassword")}</button><button className="button button-secondary" onClick={() => saveWallpaper(form.wallpaper ?? settings.wallpaper ?? "")}>Zapisz tapete</button><button className="button button-secondary" onClick={() => { setForm({ ...form, wallpaper: "" }); saveWallpaper(""); }}>Usun tapete</button></div>
               </article>
               <article className="settings-card">
                 <header className="settings-card-header"><div><h2 className="settings-card-title">Profil systemowy</h2><p className="settings-card-description">Dane konta zwracane przez system.</p></div></header>
@@ -1541,13 +1661,23 @@ function StoreApp({ toast }: { toast: (text: string, type?: "ok" | "error") => v
   const [logs, setLogs] = useState<string[]>([]);
   const [config, setConfig] = useState<SambaConfig>({ shares: [] });
   const [draft, setDraft] = useState<SambaShare>(emptyShare);
+  const [plugins, setPlugins] = useState<StorePlugin[]>([]);
+  const [pluginTemplate, setPluginTemplate] = useState("");
+  const [pluginDraft, setPluginDraft] = useState<Partial<StorePlugin>>({ name: "", github_url: "", branch: "main", enabled: true, codex_instructions: "" });
   const [dryRun, setDryRun] = useState<string[]>([]);
   const app = apps.find((item) => item.id === selected);
+  function codexPluginInstructions(url = pluginDraft.github_url || "", branch = pluginDraft.branch || "main") {
+    return (pluginTemplate || "").replace("{github_url}", url).replace("{branch}", branch);
+  }
   async function load() {
     try {
       const next = await api.apps();
       setApps(next);
       if (next.some((item) => item.id === "samba")) setConfig(await api.appConfig("samba"));
+      const pluginData = await api.storePlugins();
+      setPlugins(pluginData.plugins);
+      setPluginTemplate(pluginData.codex_template);
+      if (!pluginDraft.codex_instructions && pluginDraft.github_url) setPluginDraft((current) => ({ ...current, codex_instructions: codexPluginInstructions(current.github_url, current.branch) }));
       const logData = await api.appLogs(selected);
       setLogs(logData.lines);
     } catch (err) {
@@ -1581,6 +1711,32 @@ function StoreApp({ toast }: { toast: (text: string, type?: "ok" | "error") => v
     const next = { shares: [...config.shares.filter((item) => item.name !== share.name), share] };
     setConfig(next);
     setDraft(emptyShare);
+  }
+  async function savePlugin() {
+    const payload = {
+      ...pluginDraft,
+      branch: pluginDraft.branch || "main",
+      enabled: pluginDraft.enabled ?? true,
+      codex_instructions: pluginDraft.codex_instructions || codexPluginInstructions(pluginDraft.github_url || "", pluginDraft.branch || "main")
+    };
+    try {
+      if (pluginDraft.id) await api.updateStorePlugin(pluginDraft.id, payload);
+      else await api.createStorePlugin(payload);
+      toast("Plugin GitHub zapisany");
+      setPluginDraft({ name: "", github_url: "", branch: "main", enabled: true, codex_instructions: "" });
+      await load();
+    } catch (err) {
+      toast(message(err, "Nie mozna zapisac pluginu"), "error");
+    }
+  }
+  async function removePlugin(id: string) {
+    try {
+      await api.deleteStorePlugin(id);
+      toast("Plugin usuniety");
+      await load();
+    } catch (err) {
+      toast(message(err, "Nie mozna usunac pluginu"), "error");
+    }
   }
   async function setSambaPassword() {
     const username = prompt("Local username");
@@ -1618,6 +1774,37 @@ function StoreApp({ toast }: { toast: (text: string, type?: "ok" | "error") => v
             <h3>Jobs</h3>
             <div className="admin-list">{app.jobs.slice(-6).reverse().map((job) => <div key={job.id}><strong>{job.action}</strong><span>{job.status}</span><span>{job.progress}% {job.error}</span></div>)}</div>
           </section>}
+          <section className="store-section plugin-store-section">
+            <h3>Pluginy GitHub dla Store</h3>
+            <p className="form-help">Dodaj repozytorium pluginu jako instrukcje dla Codex. Codex powinien pobrac/obejrzec repo, przeczytac README i manifest, a potem dopiero dopasowac pliki do konwencji tego projektu.</p>
+            <div className="settings-form form-grid">
+              <label className="form-field"><span className="form-label">Nazwa pluginu</span><input className="form-input" value={pluginDraft.name || ""} onChange={(e) => setPluginDraft({ ...pluginDraft, name: e.target.value })} /></label>
+              <label className="form-field"><span className="form-label">GitHub URL</span><input className="form-input" placeholder="https://github.com/owner/repo" value={pluginDraft.github_url || ""} onChange={(e) => { const github_url = e.target.value; setPluginDraft({ ...pluginDraft, github_url, codex_instructions: codexPluginInstructions(github_url, pluginDraft.branch || "main") }); }} /></label>
+              <label className="form-field"><span className="form-label">Branch/ref</span><input className="form-input" value={pluginDraft.branch || "main"} onChange={(e) => { const branch = e.target.value; setPluginDraft({ ...pluginDraft, branch, codex_instructions: codexPluginInstructions(pluginDraft.github_url || "", branch) }); }} /></label>
+              <label className="form-field switch-field"><span className="form-label">Aktywny</span><label className="switch-control"><input type="checkbox" checked={pluginDraft.enabled ?? true} onChange={(e) => setPluginDraft({ ...pluginDraft, enabled: e.target.checked })} /><span />enabled</label></label>
+            </div>
+            <label className="form-field"><span className="form-label">Instrukcja dla Codex</span><textarea className="advanced-textarea" value={pluginDraft.codex_instructions || ""} onChange={(e) => setPluginDraft({ ...pluginDraft, codex_instructions: e.target.value })} /></label>
+            <div className="button-row"><button className="button button-primary" onClick={savePlugin}>{pluginDraft.id ? "Zapisz plugin" : "Dodaj plugin"}</button><button className="button button-secondary" onClick={() => setPluginDraft({ name: "", github_url: "", branch: "main", enabled: true, codex_instructions: "" })}>Wyczysc</button></div>
+            <details className="plugin-guide">
+              <summary>Instrukcja tworzenia pluginow dla Codex</summary>
+              <pre className="store-log">{`Minimalna struktura repo pluginu:
+- README.md z opisem celu i instrukcja instalacji.
+- manifest.yaml albo plugin.json z nazwa, wersja, wymaganiami i lista plikow.
+- backend/ jezeli plugin dodaje API lub uslugi.
+- frontend/ jezeli plugin dodaje widok, komponent albo wpis w Store.
+- tests/ dla generatorow, walidacji i endpointow.
+
+Zasady dla Codex:
+1. Najpierw przeczytaj README i manifest pluginu.
+2. Sprawdz, czy plugin pasuje do aktualnej architektury Algen.
+3. Nie wykonuj skryptow instalacyjnych bez inspekcji.
+4. Nie zapisuj sekretow ani hasel w repo.
+5. Wprowadz zmiany minimalnie, zgodnie ze stylem projektu.
+6. Uruchom typecheck, lint, testy i build dla dotknietych czesci.
+7. W odpowiedzi podaj pliki, walidacje i ewentualne ryzyka.`}</pre>
+            </details>
+            <div className="admin-list">{plugins.map((plugin) => <div key={plugin.id}><strong>{plugin.name}</strong><span>{plugin.github_url}</span><span>{plugin.branch}</span><span className={plugin.enabled ? "badge badge-success" : "badge"}>{plugin.enabled ? "active" : "disabled"}</span><button className="button button-secondary" onClick={() => setPluginDraft(plugin)}>Edytuj</button><button className="button button-danger" onClick={() => removePlugin(plugin.id)}>Usun</button></div>)}</div>
+          </section>
           {selected === "samba" && <section className="store-section">
             <h3>Samba shares</h3>
             <div className="form-grid">
@@ -1649,6 +1836,7 @@ function App() {
   const [profile, setProfile] = useState<SettingsMe | null>(null);
   const [language, setLanguage] = useState<Language>(() => detectLanguage(localStorage.getItem("webnas_language")));
   const [theme, setTheme] = useState<Theme>("system");
+  const [wallpaper, setWallpaper] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -1724,7 +1912,7 @@ function App() {
   }, [openWindows, layouts, activeWindowId, user?.username]);
   useEffect(() => {
     if (!user) return;
-    api.settingsMe().then((data) => { setProfile(data); changeLanguage(data.language); setTheme(data.theme); restoreWindowState(user.username, data.startup_windows); }).catch(() => undefined);
+    api.settingsMe().then((data) => { setProfile(data); changeLanguage(data.language); setTheme(data.theme); setWallpaper(data.wallpaper || ""); restoreWindowState(user.username, data.startup_windows); }).catch(() => undefined);
     const timer = setInterval(() => api.tasks().then(setTasks).catch(() => undefined), 1500);
     return () => clearInterval(timer);
   }, [user]);
@@ -1795,7 +1983,7 @@ function App() {
     if (app === "dashboard") return <DashboardApp toast={toast} />;
     if (app === "files") return <FileManagerV2 toast={toast} t={t} tasks={tasks} homePath={user?.home || ""} onShareSamba={shareViaSamba} />;
     if (app === "transfers") return <TransferPanel tasks={tasks} t={t} toast={toast} />;
-    if (app === "settings") return <SettingsApp t={t} toast={toast} onLanguage={changeLanguage} onTheme={setTheme} />;
+    if (app === "settings") return <SettingsApp t={t} toast={toast} onLanguage={changeLanguage} onTheme={setTheme} onWallpaper={setWallpaper} />;
     if (app === "mounts") return <NetworkMountsApp toast={toast} />;
     if (app === "services") return <ServicesApp toast={toast} />;
     if (app === "store") return <StoreApp toast={toast} />;
@@ -1805,8 +1993,14 @@ function App() {
   const resolvedTheme = theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : theme === "system" ? "dark" : theme;
   if (!user) return <Login onLogin={setUser} t={t} />;
   const desktopApps = (Object.keys(appMeta) as AppId[]).filter((app) => !appMeta[app].admin || profile?.is_admin);
+  const wallpaperStyle = wallpaper ? {
+    backgroundImage: `linear-gradient(130deg, rgba(8,13,20,.42), rgba(8,13,20,.08) 42%, rgba(8,13,20,.48)), url(${JSON.stringify(wallpaper)})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundAttachment: "fixed"
+  } as React.CSSProperties : undefined;
   return (
-    <div className={`app ${resolvedTheme}`}>
+    <div className={`app ${resolvedTheme}`} style={wallpaperStyle}>
       <header className="topbar">
         <strong>WebNAS</strong>
         <span>{user.username}</span>

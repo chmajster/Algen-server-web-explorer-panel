@@ -37,6 +37,8 @@ GROUP_TOKEN_RE = re.compile(r"^@?[A-Za-z_][A-Za-z0-9_.-]{0,31}\$?$")
 MASK_RE = re.compile(r"^0?[0-7]{3,4}$")
 ADVANCED_OPTION_RE = re.compile(r"^[A-Za-z0-9 _.-]{2,64}$")
 ADVANCED_VALUE_RE = re.compile(r"^[^\r\n\[\]]{0,300}$")
+PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{1,63}$")
+GITHUB_URL_RE = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?(?:\.git)?$")
 BLOCKED_SHARE_PATHS = (
     "/",
     "/etc",
@@ -121,6 +123,17 @@ class SambaServiceAction(BaseModel):
 
 class SambaUserAction(AdminAction):
     username: str
+
+
+class StorePlugin(BaseModel):
+    id: str = ""
+    name: str
+    github_url: str
+    branch: str = "main"
+    enabled: bool = True
+    codex_instructions: str
+    created_at: float = 0
+    updated_at: float = 0
 
 
 @dataclass
@@ -219,6 +232,63 @@ def write_state(app_id: str, state: dict) -> None:
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
     tmp.replace(path)
+
+
+PLUGIN_CODEX_TEMPLATE = """Codex task: install or update an Algen Web Explorer Panel plugin from GitHub.
+
+Repository:
+{github_url}
+
+Branch/ref:
+{branch}
+
+Rules:
+- Inspect the repository before changing files.
+- Read its README and manifest first.
+- Do not run destructive commands.
+- Verify the plugin fits the current Algen plugin/module conventions.
+- Copy or generate only the files required by the plugin.
+- Add or update tests when the plugin changes backend or frontend behavior.
+- Run the relevant validation commands and report results.
+"""
+
+
+def _plugin_id(name: str, existing: set[str]) -> str:
+    base = re.sub(r"[^a-z0-9_.-]+", "-", name.lower()).strip("-.") or "plugin"
+    base = base[:50]
+    candidate = base
+    counter = 2
+    while candidate in existing:
+        candidate = f"{base}-{counter}"
+        counter += 1
+    return candidate
+
+
+def _validate_plugin(plugin: StorePlugin) -> StorePlugin:
+    plugin.name = plugin.name.strip()
+    if not plugin.name or not SAFE_TEXT_RE.fullmatch(plugin.name):
+        raise HTTPException(400, "Invalid plugin name")
+    if not GITHUB_URL_RE.fullmatch(plugin.github_url.strip()):
+        raise HTTPException(400, "Plugin URL must be an https://github.com/owner/repo link")
+    if plugin.id and not PLUGIN_ID_RE.fullmatch(plugin.id):
+        raise HTTPException(400, "Invalid plugin id")
+    if not re.fullmatch(r"^[A-Za-z0-9_.\-/]{1,120}$", plugin.branch):
+        raise HTTPException(400, "Invalid plugin branch/ref")
+    if len(plugin.codex_instructions) > 8000:
+        raise HTTPException(400, "Codex instructions are too long")
+    plugin.github_url = plugin.github_url.rstrip("/")
+    plugin.branch = plugin.branch.strip() or "main"
+    plugin.codex_instructions = plugin.codex_instructions.strip() or PLUGIN_CODEX_TEMPLATE.format(github_url=plugin.github_url, branch=plugin.branch)
+    return plugin
+
+
+def read_store_plugins() -> list[StorePlugin]:
+    state = read_state("store_plugins")
+    return [StorePlugin.model_validate(item) for item in state.get("plugins", [])]
+
+
+def write_store_plugins(plugins: list[StorePlugin]) -> None:
+    write_state("store_plugins", {"plugins": [plugin.model_dump() for plugin in plugins]})
 
 
 def service_status(service: str) -> str:
@@ -622,6 +692,66 @@ def list_apps(user: SessionUser = Depends(_current_user)):
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
     return [app_payload(manifest["id"]) for manifest in all_manifests()]
+
+
+@router.get("/plugins")
+def list_store_plugins(user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    return {
+        "plugins": [plugin.model_dump() for plugin in read_store_plugins()],
+        "codex_template": PLUGIN_CODEX_TEMPLATE,
+    }
+
+
+@router.post("/plugins")
+def create_store_plugin(payload: StorePlugin, user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    plugins = read_store_plugins()
+    existing = {plugin.id for plugin in plugins}
+    payload.id = payload.id or _plugin_id(payload.name, existing)
+    payload.created_at = payload.created_at or time.time()
+    payload.updated_at = time.time()
+    payload = _validate_plugin(payload)
+    if payload.id in existing:
+        raise HTTPException(409, "Plugin id already exists")
+    plugins.append(payload)
+    write_store_plugins(plugins)
+    logger.info("app_store_plugin actor=%s action=create id=%s repo=%s", user.username, payload.id, payload.github_url)
+    return payload.model_dump()
+
+
+@router.put("/plugins/{plugin_id}")
+def update_store_plugin(plugin_id: str, payload: StorePlugin, user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    plugins = read_store_plugins()
+    for index, plugin in enumerate(plugins):
+        if plugin.id != plugin_id:
+            continue
+        payload.id = plugin_id
+        payload.created_at = plugin.created_at
+        payload.updated_at = time.time()
+        payload = _validate_plugin(payload)
+        plugins[index] = payload
+        write_store_plugins(plugins)
+        logger.info("app_store_plugin actor=%s action=update id=%s repo=%s", user.username, payload.id, payload.github_url)
+        return payload.model_dump()
+    raise HTTPException(404, "Plugin entry not found")
+
+
+@router.delete("/plugins/{plugin_id}")
+def delete_store_plugin(plugin_id: str, user: SessionUser = Depends(_current_user)):
+    if not _is_admin(user.username):
+        raise HTTPException(403, "Administrator privileges required")
+    plugins = read_store_plugins()
+    next_plugins = [plugin for plugin in plugins if plugin.id != plugin_id]
+    if len(next_plugins) == len(plugins):
+        raise HTTPException(404, "Plugin entry not found")
+    write_store_plugins(next_plugins)
+    logger.info("app_store_plugin actor=%s action=delete id=%s", user.username, plugin_id)
+    return {"ok": True}
 
 
 @router.get("/{app_id}")
