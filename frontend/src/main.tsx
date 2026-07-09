@@ -48,7 +48,8 @@ type Theme = "light" | "dark" | "system";
 type T = (key: string) => string;
 type AppId = "dashboard" | "files" | "transfers" | "settings" | "mounts" | "services" | "store" | "logs";
 type WindowLayout = { x: number; y: number; width: number; height: number; minimized?: boolean };
-type Layouts = Record<AppId, WindowLayout>;
+type WindowInstance = { id: string; app: AppId };
+type Layouts = Record<string, WindowLayout>;
 
 const defaultLayouts: Layouts = {
   dashboard: { x: 112, y: 78, width: 1040, height: 680 },
@@ -137,6 +138,7 @@ function Login({ onLogin, t }: { onLogin: (user: User) => void; t: T }) {
 
 function DesktopWindow({
   app,
+  title,
   layout,
   active,
   onFocus,
@@ -146,6 +148,7 @@ function DesktopWindow({
   children
 }: {
   app: AppId;
+  title?: string;
   layout: WindowLayout;
   active: boolean;
   onFocus: () => void;
@@ -154,7 +157,7 @@ function DesktopWindow({
   onLayout: (layout: WindowLayout) => void;
   children: React.ReactNode;
 }) {
-  const title = appMeta[app].title;
+  const displayTitle = title || appMeta[app].title;
   const drag = useRef<{ startX: number; startY: number; layout: WindowLayout; mode: "move" | "resize" } | null>(null);
   useEffect(() => {
     function move(event: PointerEvent) {
@@ -190,7 +193,7 @@ function DesktopWindow({
           onFocus();
         }}
       >
-        <span>{title}</span>
+        <span>{displayTitle}</span>
         <div className="window-controls">
           <button title="Minimize" onClick={(event) => { event.stopPropagation(); onMinimize(); }}><Minimize2 size={13} /></button>
           <button title="Maximize" onClick={(event) => { event.stopPropagation(); onLayout({ ...layout, x: 16, y: 52, width: window.innerWidth - 32, height: window.innerHeight - 104 }); }}><Maximize2 size={13} /></button>
@@ -1356,9 +1359,15 @@ function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [openApps, setOpenApps] = useState<AppId[]>(["dashboard", "files"]);
-  const [activeApp, setActiveApp] = useState<AppId>("dashboard");
-  const [layouts, setLayouts] = useState<Layouts>(defaultLayouts);
+  const [openWindows, setOpenWindows] = useState<WindowInstance[]>([
+    { id: "dashboard-1", app: "dashboard" },
+    { id: "files-1", app: "files" }
+  ]);
+  const [activeWindowId, setActiveWindowId] = useState("dashboard-1");
+  const [layouts, setLayouts] = useState<Layouts>({
+    "dashboard-1": defaultLayouts.dashboard,
+    "files-1": defaultLayouts.files
+  });
   const eventSources = useRef<Map<string, EventSource>>(new Map());
   const t = (key: string) => translate(language, key);
   const layoutKey = user ? `webnas_window_layout_${user.username}` : "";
@@ -1376,7 +1385,7 @@ function App() {
     if (!user) return;
     const saved = localStorage.getItem(layoutKey);
     if (saved) {
-      try { setLayouts({ ...defaultLayouts, ...JSON.parse(saved) }); } catch { setLayouts(defaultLayouts); }
+      try { setLayouts((current) => ({ ...current, ...JSON.parse(saved) })); } catch { setLayouts({ "dashboard-1": defaultLayouts.dashboard, "files-1": defaultLayouts.files }); }
     }
   }, [user?.username]);
   useEffect(() => {
@@ -1417,13 +1426,35 @@ function App() {
     }
   }, [tasks, user]);
   function openApp(app: AppId) {
-    setOpenApps((current) => current.includes(app) ? current : [...current, app]);
-    setLayouts((current) => ({ ...current, [app]: { ...current[app], minimized: false } }));
-    setActiveApp(app);
+    const id = `${app}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const sameAppCount = openWindows.filter((item) => item.app === app).length;
+    const base = defaultLayouts[app];
+    const layout = {
+      ...base,
+      x: base.x + ((sameAppCount * 28) % 180),
+      y: base.y + ((sameAppCount * 24) % 160),
+      minimized: false
+    };
+    setOpenWindows((current) => [...current, { id, app }]);
+    setLayouts((current) => ({ ...current, [id]: layout }));
+    setActiveWindowId(id);
   }
-  function closeApp(app: AppId) {
-    setOpenApps((current) => current.filter((item) => item !== app));
-    setActiveApp((current) => current === app ? (openApps.find((item) => item !== app) || "files") : current);
+  function closeWindow(id: string) {
+    setOpenWindows((current) => {
+      const next = current.filter((item) => item.id !== id);
+      setActiveWindowId((active) => active === id ? (next[next.length - 1]?.id || "") : active);
+      return next;
+    });
+    setLayouts((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }
+  function windowTitle(window: WindowInstance) {
+    const sameApp = openWindows.filter((item) => item.app === window.app);
+    const index = sameApp.findIndex((item) => item.id === window.id);
+    return sameApp.length > 1 ? `${appMeta[window.app].title} ${index + 1}` : appMeta[window.app].title;
   }
   function renderApp(app: AppId) {
     if (app === "dashboard") return <DashboardApp toast={toast} />;
@@ -1450,18 +1481,19 @@ function App() {
       <div className="desktop-icons">
         {desktopApps.map((app) => <AppIcon key={app} label={appMeta[app].title} icon={appMeta[app].icon} onOpen={() => openApp(app)} />)}
       </div>
-      {openApps.map((app) => !layouts[app].minimized && (
+      {openWindows.map((window) => layouts[window.id] && !layouts[window.id].minimized && (
         <DesktopWindow
-          key={app}
-          app={app}
-          layout={layouts[app]}
-          active={activeApp === app}
-          onFocus={() => setActiveApp(app)}
-          onClose={() => closeApp(app)}
-          onMinimize={() => setLayouts((current) => ({ ...current, [app]: { ...current[app], minimized: true } }))}
-          onLayout={(layout) => setLayouts((current) => ({ ...current, [app]: layout }))}
+          key={window.id}
+          app={window.app}
+          title={windowTitle(window)}
+          layout={layouts[window.id]}
+          active={activeWindowId === window.id}
+          onFocus={() => setActiveWindowId(window.id)}
+          onClose={() => closeWindow(window.id)}
+          onMinimize={() => setLayouts((current) => ({ ...current, [window.id]: { ...current[window.id], minimized: true } }))}
+          onLayout={(layout) => setLayouts((current) => ({ ...current, [window.id]: layout }))}
         >
-          {renderApp(app)}
+          {renderApp(window.app)}
         </DesktopWindow>
       ))}
       {notificationsOpen && <aside className="notification-center">
@@ -1470,7 +1502,7 @@ function App() {
         {tasks.slice(-6).reverse().map((task) => <div key={task.id}>{task.type}: {task.status} {task.progress}%</div>)}
       </aside>}
       <footer className="taskbar">
-        {openApps.map((app) => <button key={app} className={activeApp === app ? "active" : ""} onClick={() => { setLayouts((current) => ({ ...current, [app]: { ...current[app], minimized: false } })); setActiveApp(app); }}>{appMeta[app].title}</button>)}
+        {openWindows.map((window) => <button key={window.id} className={activeWindowId === window.id ? "active" : ""} onClick={() => { setLayouts((current) => ({ ...current, [window.id]: { ...current[window.id], minimized: false } })); setActiveWindowId(window.id); }}>{windowTitle(window)}</button>)}
         <span className="task-summary">{tasks.slice(-2).map((task) => `${task.op}: ${task.status} ${task.progress}%`).join(" | ")}</span>
       </footer>
       <div className="toasts">{toasts.map((item) => <div className={item.type} key={item.id}>{item.text}</div>)}</div>
