@@ -11,6 +11,7 @@ PORT="5000"
 INSTALL_DIR="/opt/webnas"
 SERVICE_USER="webnas"
 SERVICE_GROUP="webnas"
+NODE_MAJOR="22"
 START_SERVICE="yes"
 ENABLE_AUTOSTART="yes"
 CONFIGURE_FIREWALL="yes"
@@ -277,22 +278,62 @@ install_dependencies() {
       DEBIAN_FRONTEND=noninteractive apt-get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpam0g-dev rsync sudo curl ca-certificates tar gzip \
-        passwd procps iproute2 nodejs npm
+        passwd procps iproute2
       ;;
     dnf)
       dnf install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl ca-certificates tar gzip \
-        shadow-utils procps-ng iproute nodejs npm
+        shadow-utils procps-ng iproute
       ;;
     yum)
       yum install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl ca-certificates tar gzip \
-        shadow-utils procps-ng iproute nodejs npm
+        shadow-utils procps-ng iproute
       ;;
   esac
   ok "Dependencies installed"
+}
+
+node_version_ok() {
+  command -v node >/dev/null 2>&1 || return 1
+  local version major minor
+  version="$(node -p 'process.versions.node' 2>/dev/null || true)"
+  major="${version%%.*}"
+  minor="${version#*.}"
+  minor="${minor%%.*}"
+  [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || return 1
+  (( major > 22 || (major == 22 && minor >= 12) || (major == 20 && minor >= 19) ))
+}
+
+setup_node_runtime() {
+  if [[ "$SKIP_BUILD" == "yes" ]]; then
+    return
+  fi
+  section "Preparing Node.js runtime"
+  if node_version_ok && command -v npm >/dev/null 2>&1; then
+    ok "Node.js $(node -v) is compatible"
+    return
+  fi
+  warn "Node.js 20.19+ or 22.12+ is required for the frontend build"
+  case "$PKG_MANAGER" in
+    apt)
+      curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+      DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+      ;;
+    dnf)
+      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+      dnf install -y nodejs
+      ;;
+    yum)
+      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+      yum install -y nodejs
+      ;;
+  esac
+  node_version_ok || fail "Node.js installation is still incompatible: $(node -v 2>/dev/null || printf 'not found')"
+  command -v npm >/dev/null 2>&1 || fail "npm was not installed with Node.js"
+  ok "Node.js $(node -v) ready"
 }
 
 prepare_source() {
@@ -705,6 +746,7 @@ main() {
   prepare_source
   prompt_configuration
   install_dependencies
+  setup_node_runtime
   backup_existing
   ensure_service_user
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
