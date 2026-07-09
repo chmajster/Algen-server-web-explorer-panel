@@ -692,7 +692,9 @@ EOF
     fail "Could not find a supported PAM base policy in /etc/pam.d"
   fi
   chmod 0644 "$PAM_SERVICE_FILE"
+  [[ -f "$PAM_SERVICE_FILE" ]] || fail "PAM service file was not created: ${PAM_SERVICE_FILE}"
   ok "PAM service installed: ${PAM_SERVICE_FILE}"
+  info "Panel login uses local Linux users authenticated through PAM service '${SERVICE_NAME}'"
 }
 
 setup_python() {

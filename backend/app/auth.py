@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 import pwd
+from pathlib import Path
 
 import pam
 from fastapi import HTTPException
 
+from .audit import logger
 from .config import get_config
 
 
@@ -50,8 +52,14 @@ def authenticate(username: str, password: str) -> None:
     if not password:
         raise HTTPException(401, "Invalid username or password")
     cfg = get_config()
+    service = cfg.auth.pam_service
+    if not Path(f"/etc/pam.d/{service}").exists():
+        logger.warning("pam_service_missing service=%s fallback=login", service)
+        service = "login"
     authenticator = pam.pam()
-    if not authenticator.authenticate(username, password, service=cfg.auth.pam_service):
+    if not authenticator.authenticate(username, password, service=service):
+        reason = getattr(authenticator, "reason", "")
+        logger.warning("pam_auth_failed user=%s service=%s reason=%s", username, service, reason or "unknown")
         raise HTTPException(401, "Invalid username or password")
 
 
