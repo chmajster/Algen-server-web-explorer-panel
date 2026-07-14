@@ -118,6 +118,26 @@ def test_empty_directory(monkeypatch, tmp_path):
     assert result["parent_path"] is None
 
 
+def test_directory_write_capability_comes_from_user_worker(monkeypatch, tmp_path):
+    root = tmp_path / "home"
+    root.mkdir()
+    monkeypatch.setattr(file_ops, "resolve_user_path", lambda username, path: root)
+    monkeypatch.setattr(file_ops, "allowed_roots", lambda username: [root])
+    monkeypatch.setattr(file_ops, "run_user_op", lambda username, op, payload: {"items": [], "directory": {"can_write": False}})
+
+    result = file_ops.list_dir("alice", "/")
+
+    assert result["can_write"] is False
+    assert result["can_upload"] is False
+
+
+def test_systemd_profile_keeps_allowed_home_directories_writable():
+    repository = Path(__file__).resolve().parents[2]
+
+    assert "ProtectHome=false" in (repository / "packaging" / "webnas.service").read_text(encoding="utf-8")
+    assert "ProtectHome=false" in (repository / "install.sh").read_text(encoding="utf-8")
+
+
 def test_child_directory_has_parent_within_allowed_root(monkeypatch, tmp_path):
     root = tmp_path / "home"
     child = root / "documents"

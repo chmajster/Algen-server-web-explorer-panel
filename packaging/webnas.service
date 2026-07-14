@@ -18,7 +18,8 @@ NoNewPrivileges=false
 PrivateTmp=true
 # Package managers require writes below /etc, /usr and /var.
 ProtectSystem=false
-ProtectHome=read-only
+# Path policy and per-user workers restrict access; the selected home must stay writable.
+ProtectHome=false
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

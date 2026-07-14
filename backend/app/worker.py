@@ -16,6 +16,9 @@ from pathlib import Path
 
 def drop_privileges(username: str) -> None:
     pw = pwd.getpwnam(username)
+    os.environ["HOME"] = pw.pw_dir
+    os.environ["USER"] = pw.pw_name
+    os.environ["LOGNAME"] = pw.pw_name
     os.setgid(pw.pw_gid)
     os.initgroups(username, pw.pw_gid)
     os.setuid(pw.pw_uid)
@@ -97,7 +100,10 @@ def main() -> None:
     op = args.op
     if op == "list":
         path = Path(payload["path"])
-        print(json.dumps([info(child) for child in sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))]))
+        print(json.dumps({
+            "items": [info(child) for child in sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))],
+            "directory": info(path),
+        }))
     elif op == "stat":
         print(json.dumps(info(Path(payload["path"]))))
     elif op == "mkdir":

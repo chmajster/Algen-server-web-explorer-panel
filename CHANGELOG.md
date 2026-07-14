@@ -71,6 +71,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - Allowed roots can include user-visible WebNAS network mount points.
 - Installer, update, uninstall, packaging, and service files were expanded for safer install/update flows and systemd operation.
 - The systemd service now explicitly runs as root with a writable system tree so validated package-manager operations can complete; other process hardening remains enabled.
+- Authenticated file workers now retain writable access to allowed home directories; directory capability flags are calculated after dropping to the logged-in user's UID instead of from the root service process.
 - README, install, security, and example configuration documentation were expanded for the new operational surface.
 
 ### Security

@@ -27,6 +27,8 @@ SORT_FIELDS = {"name", "size", "type", "owner", "group", "permissions", "modifie
 
 
 def _worker_items(result: object) -> list[dict[str, Any]]:
+    if isinstance(result, dict):
+        result = result.get("items")
     if not isinstance(result, list):
         raise HTTPException(500, "Worker returned an invalid item list")
     return cast(list[dict[str, Any]], result)
@@ -122,7 +124,8 @@ def list_dir(
         raise HTTPException(400, "Invalid sort direction")
     page = max(1, page)
     page_size = min(max(1, page_size), 20)
-    raw_items = _worker_items(run_user_op(username, "list", {"path": str(target)}))
+    worker_result = run_user_op(username, "list", {"path": str(target)})
+    raw_items = _worker_items(worker_result)
     items = _filter_items(raw_items, filter_text)
     reverse = direction == "desc"
     if sort:
@@ -143,7 +146,8 @@ def list_dir(
             break
         except ValueError:
             continue
-    can_write = os.access(target, os.W_OK)
+    directory = worker_result.get("directory", {}) if isinstance(worker_result, dict) else {}
+    can_write = bool(directory.get("can_write", os.access(target, os.W_OK)))
     return {
         "items": items[start : start + page_size],
         "page": page,

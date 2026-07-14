@@ -743,7 +743,9 @@ PrivateTmp=true
 # A read-only system tree would prevent the package manager from writing its
 # database and installing files. Package Center never accepts commands from UI.
 ProtectSystem=false
-ProtectHome=read-only
+# File workers drop privileges to the authenticated account and must retain
+# normal Unix write access to that account's allowed home directory.
+ProtectHome=false
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
