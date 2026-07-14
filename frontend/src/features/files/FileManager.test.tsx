@@ -7,7 +7,7 @@ vi.mock("../../api", () => ({
   ApiError: class ApiError extends Error {},
   downloadUrl: (path: string) => `/download?path=${path}`,
   api: {
-    list: vi.fn(), tree: vi.fn(), mounts: vi.fn(), mountRoots: vi.fn(), appConfig: vi.fn(), stat: vi.fn(),
+    list: vi.fn(), tree: vi.fn(), mounts: vi.fn(), mountRoots: vi.fn(), localDisks: vi.fn(), appConfig: vi.fn(), stat: vi.fn(),
     copy: vi.fn(), move: vi.fn(), mkdir: vi.fn(), create: vi.fn(), rename: vi.fn(), delete: vi.fn(), upload: vi.fn(), preview: vi.fn(), chmod: vi.fn(), chown: vi.fn()
   }
 }));
@@ -28,6 +28,7 @@ describe("file manager behavior", () => {
     vi.mocked(api.tree).mockResolvedValue({ path: "/home/test", items: [files[0]] });
     vi.mocked(api.mounts).mockResolvedValue([]);
     vi.mocked(api.mountRoots).mockResolvedValue([]);
+    vi.mocked(api.localDisks).mockResolvedValue([]);
     vi.mocked(api.appConfig).mockResolvedValue({ shares: [] });
   });
 
@@ -106,5 +107,27 @@ describe("file manager behavior", () => {
     expect(screen.getByRole("menuitem", { name: "action.newFolder" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "action.newFile" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "action.upload" })).toBeDisabled();
+  });
+
+  it("loads local disks without blocking the explorer when the API fails", async () => {
+    vi.mocked(api.localDisks).mockRejectedValue(new Error("disks unavailable"));
+
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+
+    await screen.findByText("alpha.txt");
+    expect(api.localDisks).toHaveBeenCalledWith();
+    expect(screen.queryByText("disks unavailable")).not.toBeInTheDocument();
+  });
+
+  it("uses a local disk as the breadcrumb root", async () => {
+    vi.mocked(api.localDisks).mockResolvedValue([
+      { device: "/dev/sdb1", mount_point: "/mnt/storage", name: "storage", fs_type: "ext4", read_only: false, total: 100, used: 50, free: 50 },
+    ]);
+    vi.mocked(api.list).mockResolvedValue({ path: "/mnt/storage/Films", current_path: "/mnt/storage/Films", parent_path: "/mnt/storage", items: [], page: 1, page_size: 100, total_items: 0, total_pages: 1, sort: "name", direction: "asc", can_write: true, can_upload: true, can_delete: true });
+
+    const { container } = render(<FileManager homePath="/home/test" initialPath="/mnt/storage/Films" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector(".breadcrumbs")?.textContent).toContain("storageFilms"));
+    expect(container.querySelector(".breadcrumbs")?.textContent).not.toContain("files.home");
   });
 });

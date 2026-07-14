@@ -5,7 +5,7 @@ import {
   Search, SlidersHorizontal, Trash2, Upload, X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, downloadUrl, type FileItem, type Task } from "../../api";
+import { api, ApiError, downloadUrl, type FileItem, type LocalDisk, type Task } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { ConfirmDialog, InputDialog, Modal } from "../../components/Modal";
@@ -65,7 +65,8 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   const [loadError, setLoadError] = useState("");
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
-  const { roots: mounts, loading: mountsLoading, initialized: mountsInitialized } = useNetworkMounts();
+  const { roots: mounts, loading: mountsLoading, initialized: mountsInitialized, refresh: refreshMounts } = useNetworkMounts();
+  const [localDisks, setLocalDisks] = useState<LocalDisk[]>([]);
   const [sharedPaths, setSharedPaths] = useState<Set<string>>(new Set());
   const [treeVisible, setTreeVisible] = useState(() => localStorage.getItem(`${storagePrefix}_tree`) !== "hidden");
   const [treeWidth, setTreeWidth] = useState(() => Number(localStorage.getItem(`${storagePrefix}_tree_width`) || 238));
@@ -105,6 +106,8 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   }, [direction, filter, page, path, sort, t]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { api.appConfig("samba").then((data) => setSharedPaths(new Set(data.shares.filter((share) => share.enabled).map((share) => share.path)))).catch(() => undefined); }, []);
+  const loadLocalDisks = useCallback(() => api.localDisks().then(setLocalDisks).catch(() => setLocalDisks([])), []);
+  useEffect(() => { void loadLocalDisks(); }, [loadLocalDisks]);
   useEffect(() => {
     if (!mountsInitialized || mountsLoading || !path.startsWith("/mnt/webnas/mnt/")) return;
     const stillVisible = mounts.some((mount) => path === mount.mount_point || path.startsWith(`${mount.mount_point}/`));
@@ -130,6 +133,11 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   const selectedItems = useMemo(() => items.filter((item) => selection.has(item.path)), [items, selection]);
   const selectedSize = useMemo(() => selectedItems.reduce((sum, item) => sum + (item.is_dir ? 0 : item.size), 0), [selectedItems]);
   const activeTasks = tasks.filter((task) => ["copy", "move", "delete"].includes(task.type) && ["queued", "running", "paused"].includes(task.status)).length;
+  const refreshExplorer = useCallback(() => {
+    void load();
+    void loadLocalDisks();
+    void refreshMounts();
+  }, [load, loadLocalDisks, refreshMounts]);
 
   const openPath = useCallback((next: string, record = true) => {
     const destination = !next.trim() || next.trim() === "/" || next.trim() === "~" ? homePath : next.trim();
@@ -234,7 +242,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     const pasteAllowed = item?.is_dir ? item.can_write : meta.canWrite;
     menu.push({ label: t("action.paste"), separator: true, disabled: !clipboard || !pasteAllowed, action: () => void paste(item?.is_dir ? item.path : path) }, { label: t("files.copyPath"), action: () => void navigator.clipboard?.writeText(item?.path || path) });
     if (item?.is_dir) menu.push({ label: t("files.shareSamba"), action: () => onShareSamba(item.path) });
-    menu.push({ label: item ? t("files.properties") : t("files.directoryProperties"), action: () => item ? setProperties(item) : api.stat(path).then(setProperties).catch(() => undefined) }, { label: t("action.refresh"), action: () => void load() });
+    menu.push({ label: item ? t("files.properties") : t("files.directoryProperties"), action: () => item ? setProperties(item) : api.stat(path).then(setProperties).catch(() => undefined) }, { label: t("action.refresh"), action: refreshExplorer });
     return menu;
   }
 
@@ -246,7 +254,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
       <button title={t("action.forward")} disabled={history.index >= history.entries.length - 1} onClick={() => navigateHistory(history.index + 1)}><ArrowRight /></button>
       <button title={t("action.parentFolder")} disabled={!meta.parent} onClick={() => meta.parent && openPath(meta.parent)}><ArrowUp /></button>
       <button title={t("files.goHome")} disabled={path === homePath} onClick={() => openPath(homePath)}><House /></button>
-      <button title={t("action.refresh")} onClick={() => void load()}><RefreshCw className={loading ? "spin" : ""} /></button><span className="toolbar-divider" />
+      <button title={t("action.refresh")} onClick={refreshExplorer}><RefreshCw className={loading ? "spin" : ""} /></button><span className="toolbar-divider" />
       <button title={t("action.newFolder")} disabled={!meta.canWrite} onClick={() => setDialog({ type: "newFolder" })}><FolderPlus /></button>
       <button title={t("action.newFile")} disabled={!meta.canWrite} onClick={() => setDialog({ type: "newFile" })}><FilePlus2 /></button>
       <button title={t("action.upload")} disabled={!meta.canWrite} onClick={() => uploadInput.current?.click()}><Upload /></button><input id="file-manager-upload" ref={uploadInput} className="visually-hidden" type="file" multiple onChange={(event) => void upload(event.target.files)} />
@@ -261,10 +269,13 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
       <div className="toolbar-menu-wrap"><button title={t("files.viewOptions")} onClick={() => setOptionsOpen((value) => !value)}><SlidersHorizontal /></button>{optionsOpen && <div className="toolbar-popover"><label><input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} />{t("files.compact")}</label><strong><Columns3 />{t("files.columns")}</strong>{columns.slice(1).map((column) => <label key={column.id}><input type="checkbox" checked={!hiddenColumns.has(column.id)} onChange={() => setHiddenColumns((current) => { const next = new Set(current); if (next.has(column.id)) next.delete(column.id); else next.add(column.id); return next; })} />{t(column.key)}</label>)}</div>}</div>
       <div className="file-search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("files.search")} aria-label={t("files.search")} />{query && <button onClick={() => setQuery("")}><X /></button>}</div>
     </div>
-    <Breadcrumbs path={path} homePath={homePath} roots={mounts.map((mount) => ({ path: mount.mount_point, label: mount.name }))} t={t} onOpen={openPath} />
+    <Breadcrumbs path={path} homePath={homePath} roots={[
+      ...localDisks.map((disk) => ({ path: disk.mount_point, label: disk.name })),
+      ...mounts.map((mount) => ({ path: mount.mount_point, label: mount.name })),
+    ]} t={t} onOpen={openPath} />
     <div className="file-workspace" style={{ gridTemplateColumns: treeVisible ? `${treeWidth}px 5px minmax(0, 1fr)` : "0 0 minmax(0, 1fr)" }}>
       <button className="tree-mobile-toggle" title={t("files.directoryTree")} onClick={() => setTreeVisible((value) => !value)}><Menu /></button>
-      {treeVisible && <DirectoryTree currentPath={path} homePath={homePath} mounts={mounts} t={t} onOpen={openPath} onDropItems={confirmDrop} />}
+      {treeVisible && <DirectoryTree currentPath={path} homePath={homePath} localDisks={localDisks} mounts={mounts} t={t} onOpen={openPath} onDropItems={confirmDrop} />}
       {treeVisible && <div className="tree-resizer" onPointerDown={(event) => { const startX = event.clientX; const start = treeWidth; let finalWidth = start; const move = (next: PointerEvent) => { finalWidth = Math.max(180, Math.min(420, start + next.clientX - startX)); setTreeWidth(finalWidth); }; const up = () => { localStorage.setItem(`${storagePrefix}_tree_width`, String(finalWidth)); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} />}
       <main className={`file-content ${compact ? "compact" : ""}`} tabIndex={0} onContextMenu={(event) => { if ((event.target as HTMLElement).closest(".file-entry")) return; event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, item: null }); }} onDragOver={(event) => event.preventDefault()}>
         {loadError ? <div className="error-state"><strong>{t("status.error")}</strong><span>{loadError}</span><div className="error-actions"><button onClick={() => openPath(homePath)}><House />{t("files.goHome")}</button><button onClick={() => void load()}>{t("action.retry")}</button></div></div>

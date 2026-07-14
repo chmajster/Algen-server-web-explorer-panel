@@ -326,6 +326,16 @@ export type NetworkMountRoot = {
   status: "mounted";
   filesystem: { total: number; used: number; free: number; fs_type: string } | null;
 };
+export type LocalDisk = {
+  device: string;
+  mount_point: string;
+  name: string;
+  fs_type: string;
+  read_only: boolean;
+  total: number;
+  used: number;
+  free: number;
+};
 export type MountActionResult = {
   job?: { id: string; mount_id: string; action: string; status: string; exit_code: number | null; error: string; log_tail: string[] };
   dry_run?: boolean;
@@ -498,6 +508,7 @@ export const api = {
   disableSambaUser: (username: string, admin_password: string) => request("/api/apps/samba/users/disable", { method: "POST", body: JSON.stringify({ username, admin_password }) }),
   mounts: () => request<NetworkMount[]>("/api/mounts"),
   mountRoots: () => request<NetworkMountRoot[]>("/api/mounts/roots"),
+  localDisks: () => request<LocalDisk[]>("/api/files/local-disks"),
   mount: (id: string) => request<NetworkMount>(`/api/mounts/${encodeURIComponent(id)}`),
   createMount: (payload: NetworkMountPayload) => request<NetworkMount>("/api/mounts", { method: "POST", body: JSON.stringify(payload) }),
   updateMount: (id: string, payload: NetworkMountPayload) => request<NetworkMount>(`/api/mounts/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) }),

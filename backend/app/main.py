@@ -17,13 +17,15 @@ from .apps import router as apps_router
 from .auth import authenticate, normalize_username, user_home
 from .config import get_config
 from .file_ops import download_response, list_dir, mime_for, run_user_op, save_upload, tree_dir
-from .network_mounts import assert_write_allowed, router as mounts_router
+from .local_disks import router as local_disks_router
+from .network_mounts import router as mounts_router
 from .package_center.router import router as package_center_router
 from .path_policy import resolve_user_path
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
 from .settings import router as settings_router, start_auto_update_scheduler
 from .tasks import task_store
 from .uploads import append_upload, cancel_upload, start_upload
+from .write_policy import assert_write_allowed
 
 configure_logging()
 app = FastAPI(title="WebNAS", version="0.1.0")
@@ -32,6 +34,7 @@ app.include_router(settings_router)
 app.include_router(apps_router)
 app.include_router(package_center_router)
 app.include_router(mounts_router)
+app.include_router(local_disks_router)
 
 
 @app.on_event("startup")
@@ -201,6 +204,8 @@ def copy(payload: CopyMoveRequest, user=Depends(csrf_user)):
 @app.post("/api/files/move")
 def move(payload: CopyMoveRequest, user=Depends(csrf_user)):
     srcs = _resolve_sources(user.username, payload)
+    for source in srcs:
+        assert_write_allowed(source)
     dst = _resolve_destination(user.username, payload)
     _reject_destination_conflicts(srcs, dst)
     task = task_store.create(user.username, "move", {"srcs": [str(src) for src in srcs], "dst": str(dst), "priority": payload.priority})
