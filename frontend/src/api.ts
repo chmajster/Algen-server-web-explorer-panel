@@ -33,6 +33,13 @@ export type FileListResponse = {
   can_upload: boolean;
   can_delete: boolean;
 };
+export type TextFileResponse = {
+  path: string;
+  content: string;
+  encoding: "utf-8";
+  size: number;
+  mtime_ns: string;
+};
 
 export type Task = {
   id: string;
@@ -424,6 +431,11 @@ export const api = {
   delete: (path: string | string[]) => request<{ task_id: string; task_ids?: string[] }>("/api/files/delete", { method: "POST", body: JSON.stringify(Array.isArray(path) ? { paths: path } : { path }) }),
   trash: (path: string) => request("/api/files/trash", { method: "POST", body: JSON.stringify({ path }) }),
   preview: (path: string) => request<{ path: string; mime: string; content_base64: string }>(`/api/files/preview?path=${encodeURIComponent(path)}`),
+  readText: (path: string) => request<TextFileResponse>(`/api/files/text?path=${encodeURIComponent(path)}`),
+  writeText: (path: string, content: string, expected_mtime_ns: string) => request<Omit<TextFileResponse, "content"> & { ok: boolean }>("/api/files/text", {
+    method: "PUT",
+    body: JSON.stringify({ path, content, expected_mtime_ns }),
+  }),
   stat: (path: string) => request<FileItem>(`/api/files/stat?path=${encodeURIComponent(path)}`),
   search: (path: string, query: string) => request<{ items: FileItem[] }>(`/api/files/search?path=${encodeURIComponent(path)}&query=${encodeURIComponent(query)}`),
   tasks: (status?: string) => request<Task[]>(`/api/files/tasks${status ? `?status=${encodeURIComponent(status)}` : ""}`),

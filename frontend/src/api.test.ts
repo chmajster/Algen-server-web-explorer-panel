@@ -51,4 +51,21 @@ describe("API errors", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("/api/files/local-disks", expect.objectContaining({ credentials: "include" }));
   });
+
+  it("loads and saves a text file through the editor API", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ content: "hello", mtime_ns: "100" }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true, mtime_ns: "200" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.readText("/home/alice/notes.txt");
+    await api.writeText("/home/alice/notes.txt", "updated", "100");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/files/text?path=%2Fhome%2Falice%2Fnotes.txt", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/files/text", expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({ path: "/home/alice/notes.txt", content: "updated", expected_mtime_ns: "100" }),
+      credentials: "include",
+    }));
+  });
 });
