@@ -32,7 +32,13 @@ def allowed_roots(username: str) -> list[Path]:
         roots.extend(visible_mount_roots(username))
     except Exception as exc:
         logger.warning("network_mount_roots_unavailable user=%s error=%s", username, type(exc).__name__)
-    return roots
+    try:
+        from .local_disks import visible_local_disk_roots
+
+        roots.extend(visible_local_disk_roots(username))
+    except Exception as exc:
+        logger.warning("local_disk_roots_unavailable user=%s error=%s", username, type(exc).__name__)
+    return list(dict.fromkeys(roots))
 
 
 def resolve_user_path(username: str, requested: str | None) -> Path:

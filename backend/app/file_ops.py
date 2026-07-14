@@ -71,7 +71,7 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
         if key in payload and key != "tmp":
             assert_path_allowed(payload[key], op, include_parent=op in MUTATING_OPS)
             if op in MUTATING_OPS or op in {"rename"} or key == "dst":
-                from .network_mounts import assert_write_allowed
+                from .write_policy import assert_write_allowed
 
                 assert_write_allowed(payload[key])
     if not current_process_can_impersonate():
@@ -180,7 +180,7 @@ async def save_upload(username: str, dest_dir: str, upload: UploadFile) -> dict:
     filename = Path(upload.filename or "upload.bin").name
     dest = resolve_user_path(username, str(directory / filename))
     assert_path_allowed(dest, "upload", include_parent=True)
-    from .network_mounts import assert_write_allowed
+    from .write_policy import assert_write_allowed
 
     assert_write_allowed(dest)
     tmp_dir = ensure_temp_dir()

@@ -42,4 +42,13 @@ describe("API errors", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("/api/mounts/roots", expect.objectContaining({ credentials: "include" }));
   });
+
+  it("loads local disks for File Explorer", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.localDisks();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/files/local-disks", expect.objectContaining({ credentials: "include" }));
+  });
 });

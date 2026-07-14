@@ -12,9 +12,9 @@ from fastapi import HTTPException
 
 from .config import get_config
 from .file_ops import ensure_temp_dir, run_user_op
-from .network_mounts import assert_write_allowed
 from .path_policy import resolve_user_path
 from .proxmox_guard import assert_path_allowed
+from .write_policy import assert_write_allowed
 
 
 MAX_CHUNK_SIZE = 4 * 1024 * 1024
