@@ -61,7 +61,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   }
   function renderApp(item: WindowInstance) {
     switch (item.app) {
-      case "files": return <FileManager homePath={user.home} initialPath={item.initialPath} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={() => openApp("samba")} />;
+      case "files": return <FileManager homePath={user.home} initialPath={item.initialPath} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onUploadCancel={uploadControls.cancel} onUploadRetry={uploadControls.retry} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={() => openApp("samba")} />;
       case "transfers": return <TransferCenter tasks={tasks} t={t} toast={toast} uploadControls={uploadControls} />;
       case "users": return <UsersApp t={t} toast={toast} />;
       case "groups": return <GroupsApp t={t} toast={toast} />;

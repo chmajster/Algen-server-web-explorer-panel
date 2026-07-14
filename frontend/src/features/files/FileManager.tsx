@@ -9,6 +9,7 @@ import { api, ApiError, downloadUrl, type FileItem, type NetworkMount, type Task
 import type { ToastFn, Translate } from "../../app/types";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { ConfirmDialog, InputDialog, Modal } from "../../components/Modal";
+import { UploadProgressDialog } from "../transfers/UploadProgressDialog";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { DirectoryTree } from "./DirectoryTree";
 import { FilePreview } from "./FilePreview";
@@ -34,7 +35,7 @@ const columns: Array<{ id: SortField; key: string; defaultWidth: number }> = [
   { id: "modified", key: "column.modified", defaultWidth: 180 }
 ];
 
-export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, onOpenFolderWindow, onShareSamba, onUpload }: {
+export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, onOpenFolderWindow, onShareSamba, onUpload, onUploadCancel, onUploadRetry }: {
   homePath: string;
   initialPath?: string;
   tasks: Task[];
@@ -43,7 +44,9 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   toast: ToastFn;
   onOpenFolderWindow: (path: string) => void;
   onShareSamba: (path: string) => void;
-  onUpload: (files: File[], path: string) => void;
+  onUpload: (files: File[], path: string) => string[];
+  onUploadCancel?: (id: string) => void;
+  onUploadRetry?: (id: string) => void;
 }) {
   const storagePrefix = "webnas_file_explorer";
   const requestedFirstPath = initialPath || localStorage.getItem(`${storagePrefix}_path`) || homePath || "";
@@ -78,6 +81,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   const [moreOpen, setMoreOpen] = useState(false);
   const [dropTarget, setDropTarget] = useState("");
   const [dragPaths, setDragPaths] = useState<string[]>([]);
+  const [uploadDialogIds, setUploadDialogIds] = useState<string[] | null>(null);
   const lastSelectedIndex = useRef<number | null>(null);
   const requestId = useRef(0);
   const uploadInput = useRef<HTMLInputElement>(null);
@@ -166,7 +170,9 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   }
   async function upload(files: FileList | null) {
     if (!files?.length) return;
-    onUpload([...files], path);
+    const ids = onUpload([...files], path);
+    if (ids.length) setUploadDialogIds(ids);
+    if (uploadInput.current) uploadInput.current.value = "";
     toast(t("files.uploadQueued"));
   }
   function confirmDrop(target: string) { if (dragPaths.length) setDialog({ type: "drop", target, copy: false }); }
@@ -263,6 +269,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     {dialog?.type === "delete" && <ConfirmDialog title={t("files.confirmDeleteTitle")} message={t("files.confirmDelete").replace("{count}", String(dialog.items.length))} confirmLabel={t("action.delete")} cancelLabel={t("action.cancel")} danger onClose={() => setDialog(null)} onConfirm={() => { const list = dialog.items; setDialog(null); void remove(list); }} />}
     {dialog?.type === "drop" && <ConfirmDialog title={dialog.copy ? t("files.confirmCopy") : t("files.confirmMove")} message={t("files.confirmDrop").replace("{count}", String(dragPaths.length)).replace("{target}", dialog.target)} confirmLabel={dialog.copy ? t("action.copy") : t("action.move")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={() => { const source = { mode: dialog.copy ? "copy" as const : "move" as const, paths: dragPaths }; const target = dialog.target; setDialog(null); setDragPaths([]); void paste(target, source); }} />}
     {preview && <FilePreview item={preview} t={t} onClose={() => setPreview(null)} />}
+    {uploadDialogIds && <UploadProgressDialog tasks={tasks.filter((task) => uploadDialogIds.includes(task.id))} t={t} onClose={() => setUploadDialogIds(null)} onCancel={(id) => onUploadCancel?.(id)} onRetry={(id) => onUploadRetry?.(id)} />}
     {properties && <FileProperties item={properties} currentPath={path} isAdmin={isAdmin} sambaShared={sharedPaths.has(properties.path)} t={t} toast={toast} onClose={() => setProperties(null)} onChanged={() => void load()} />}
     {operationErrors.length > 0 && <Modal title={t("files.operationErrors")} onClose={() => setOperationErrors([])} footer={<button onClick={() => setOperationErrors([])}>{t("action.close")}</button>}><ul className="error-list">{operationErrors.map((error) => <li key={error}>{error}</li>)}</ul></Modal>}
   </section>;

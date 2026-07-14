@@ -17,7 +17,9 @@ describe("upload manager", () => {
       return { upload_id: "session-1", offset: offset + chunk.size, size: 2 * 1024 * 1024, path: "/home/a.bin", completed: offset + chunk.size === 2 * 1024 * 1024 };
     });
     const { result } = renderHook(() => useUploadManager());
-    act(() => result.current.controls.add([new File([new Uint8Array(2 * 1024 * 1024)], "a.bin")], "/home"));
+    let ids: string[] = [];
+    act(() => { ids = result.current.controls.add([new File([new Uint8Array(2 * 1024 * 1024)], "a.bin")], "/home"); });
+    expect(ids).toHaveLength(1);
     await waitFor(() => expect(api.uploadChunk).toHaveBeenCalledOnce());
     const id = result.current.tasks[0].id;
     act(() => result.current.controls.pause(id));

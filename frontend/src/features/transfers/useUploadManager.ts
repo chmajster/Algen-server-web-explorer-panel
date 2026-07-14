@@ -13,7 +13,7 @@ type RuntimeUpload = {
 };
 
 export type UploadControls = {
-  add: (files: File[], path: string) => void;
+  add: (files: File[], path: string) => string[];
   pause: (id: string) => void;
   resume: (id: string) => void;
   cancel: (id: string) => void;
@@ -89,12 +89,14 @@ export function useUploadManager(): { tasks: Task[]; controls: UploadControls } 
   }, [patchTask]);
 
   const add = useCallback((files: File[], path: string) => {
-    files.forEach((file, index) => {
+    const additions = files.map((file, index) => {
       const id = `upload-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`;
       runtime.current.set(id, { file, path, offset: 0, startedAt: Date.now() });
-      setTasks((current) => [...current, taskFor(id, file, path)]);
-      setTimeout(() => void run(id), 0);
+      return taskFor(id, file, path);
     });
+    setTasks((current) => [...current, ...additions]);
+    additions.forEach((task) => setTimeout(() => void run(task.id), 0));
+    return additions.map((task) => task.id);
   }, [run]);
   const pause = useCallback((id: string) => { const active = runtime.current.get(id); if (!active) return; active.pauseRequested = true; active.controller?.abort(); }, []);
   const resume = useCallback((id: string) => { if (runtime.current.has(id)) void run(id); }, [run]);
