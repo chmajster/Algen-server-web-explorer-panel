@@ -70,6 +70,17 @@ def test_detects_rocky_and_falls_back_to_yum(monkeypatch, tmp_path):
     assert result.architecture == "aarch64"
 
 
+def test_detects_fedora_and_prefers_dnf(monkeypatch, tmp_path):
+    release = tmp_path / "os-release"
+    release.write_text("ID=fedora\nID_LIKE=fedora\n", encoding="utf-8")
+    monkeypatch.setattr(distro.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"dnf", "yum"} else None)
+
+    result = distro.detect_distribution(release)
+
+    assert result.id == "fedora"
+    assert result.package_manager == "dnf"
+
+
 def test_dry_run_contains_packages_services_and_safe_commands(monkeypatch, tmp_path):
     repository = PackageRepository(tmp_path / "packages.sqlite3")
     monkeypatch.setattr(service, "repository", lambda: repository)
@@ -82,6 +93,21 @@ def test_dry_run_contains_packages_services_and_safe_commands(monkeypatch, tmp_p
     assert result.services == ["nginx"]
     assert any(step.startswith("apt-get install") for step in result.steps)
     assert not any("upgrade" in step or "autoremove" in step for step in result.steps)
+
+
+@pytest.mark.parametrize("module_id", ["samba", "squid", "nginx", "syncthing"])
+def test_every_production_module_builds_an_apt_plan(module_id, monkeypatch, tmp_path):
+    repository = PackageRepository(tmp_path / f"{module_id}.sqlite3")
+    monkeypatch.setattr(service, "repository", lambda: repository)
+    monkeypatch.setattr(service, "detect_distribution", lambda: DistributionInfo(id="debian", name="Debian", architecture="x86_64", package_manager="apt-get"))
+    monkeypatch.setattr(service, "safe_mode_active", lambda: False)
+
+    result = service.plan_operation(module_id, PackageAction.install)
+
+    assert result.compatible is True
+    assert result.packages
+    assert result.steps
+    assert all("upgrade" not in step and "autoremove" not in step for step in result.steps)
 
 
 def test_plan_blocks_unsafe_module_in_proxmox_mode(monkeypatch, tmp_path):
@@ -158,6 +184,22 @@ def test_generic_job_marks_module_installed(monkeypatch, tmp_path):
     assert repository.installed()["nginx"]["version"] == "1.0.0"
 
 
+def test_install_hook_runs_after_package_install_and_before_service_start(monkeypatch):
+    calls: list[list[str]] = []
+    package_plan = plan("syncthing")
+    manifest = manifests.load_manifest("syncthing")
+    monkeypatch.setattr(executor.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(executor, "_run", lambda args, timeout, log: calls.append(args))
+    monkeypatch.setattr(executor, "_run_hook", lambda module, action, log: calls.append(["hook", action]))
+
+    executor.execute(package_plan, manifest, lambda stream, line: None, lambda percent, step: None, lambda: False)
+
+    install_index = next(index for index, args in enumerate(calls) if args[:2] == ["apt-get", "install"])
+    hook_index = calls.index(["hook", "install"])
+    start_index = next(index for index, args in enumerate(calls) if args[:2] == ["systemctl", "start"])
+    assert install_index < hook_index < start_index
+
+
 def test_redacts_secrets_and_executor_never_uses_shell_true():
     assert "secret=[REDACTED]" in executor.redact("secret=hunter2")
     assert "password: [REDACTED]" in executor.redact("password: admin")
@@ -208,10 +250,24 @@ def test_samba_manifest_and_existing_renderer_remain_available():
     assert "[media]" in rendered
 
 
-def test_package_center_router_exposes_required_contract():
-    from app.main import app
+def test_samba_can_report_that_configuration_is_required(monkeypatch):
+    from app import apps
 
-    routes = {(method, route.path) for route in app.routes for method in getattr(route, "methods", set())}
+    monkeypatch.setattr(apps, "read_state", lambda app_id: {"installed": True, "configured": False})
+
+    assert service.needs_configuration(manifests.load_manifest("samba"), {"version": "1.0.0"}) is True
+
+
+def test_package_center_router_exposes_required_contract():
+    from fastapi import FastAPI
+
+    from app.package_center.router import router
+
+    app = FastAPI()
+    app.include_router(router)
+
+    schema = app.openapi()
+    routes = {(method.upper(), path) for path, operations in schema["paths"].items() for method in operations}
     required = {
         ("GET", "/api/apps"),
         ("GET", "/api/apps/categories"),

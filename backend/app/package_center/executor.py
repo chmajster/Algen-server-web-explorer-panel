@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[st
             steps.append(("Install packages", ["apt-get", "install", "-y", "--no-install-recommends", *packages], 1800))
         elif manager in {"dnf", "yum"}:
             steps.append(("Install packages", [manager, "install", "-y", *packages], 1800))
+        steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
         for service in manifest.systemd_services:
             steps.append((f"Enable {service}", ["systemctl", "enable", service], 120))
             steps.append((f"Start {service}", ["systemctl", "start", service], 180))
@@ -50,6 +52,7 @@ def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[st
             steps.append(("Remove packages", ["apt-get", "remove", "-y", *packages], 1800))
         elif manager in {"dnf", "yum"}:
             steps.append(("Remove packages", [manager, "remove", "-y", *packages], 1800))
+        steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
     elif plan.action in {PackageAction.start, PackageAction.stop, PackageAction.restart}:
         for service in manifest.systemd_services:
             steps.append((f"{plan.action.value.title()} {service}", ["systemctl", plan.action.value, service], 180))
@@ -67,17 +70,27 @@ def _run(args: list[str], timeout: int, log: LogCallback) -> None:
     process = subprocess.Popen(
         args,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
         shell=False,
         env=SAFE_ENV,
         start_new_session=True,
     )
+
+    def drain(stream, name: str) -> None:
+        if stream is None:
+            return
+        for line in stream:
+            log(name, redact(line.rstrip()))
+
+    readers = [
+        threading.Thread(target=drain, args=(process.stdout, "stdout"), daemon=True),
+        threading.Thread(target=drain, args=(process.stderr, "stderr"), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
     try:
-        assert process.stdout is not None
-        for line in process.stdout:
-            log("stdout", redact(line.rstrip()))
         code = process.wait(timeout=timeout)
     except subprocess.TimeoutExpired as error:
         process.terminate()
@@ -86,6 +99,9 @@ def _run(args: list[str], timeout: int, log: LogCallback) -> None:
         except subprocess.TimeoutExpired:
             process.kill()
         raise RuntimeError(f"{Path(args[0]).name} timed out after {timeout} seconds") from error
+    finally:
+        for reader in readers:
+            reader.join(timeout=2)
     if code != 0:
         raise RuntimeError(f"{Path(args[0]).name} failed with exit code {code}")
 
@@ -117,12 +133,17 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
         raise PermissionError("Package operations require the WebNAS service to run as root")
     steps = _command_steps(plan, manifest)
     total = max(1, len(steps) + 1)
+    hook_complete = False
     for index, (label, args, timeout) in enumerate(steps):
         if cancelled():
             raise InterruptedError("Package operation cancelled before the next safe step")
         progress(max(1, int(index / total * 90)), label)
         _run(args, timeout, log)
-    if plan.action in {PackageAction.install, PackageAction.update, PackageAction.uninstall}:
+        if label in {"Install packages", "Remove packages"} and plan.action in {PackageAction.install, PackageAction.update, PackageAction.uninstall}:
+            progress(max(1, int((index + 0.5) / total * 90)), f"Run trusted {plan.action.value} hook")
+            _run_hook(manifest, plan.action.value, log)
+            hook_complete = True
+    if plan.action in {PackageAction.install, PackageAction.update, PackageAction.uninstall} and not hook_complete:
         progress(92, f"Run trusted {plan.action.value} hook")
         _run_hook(manifest, plan.action.value, log)
     if plan.action == PackageAction.uninstall and plan.remove_data:

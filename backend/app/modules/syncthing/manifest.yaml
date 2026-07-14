@@ -8,18 +8,18 @@ maintainer: WebNAS
 homepage: https://syncthing.net/
 icon: refresh-cw
 license: MPL-2.0
-supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_distributions: [debian, ubuntu, raspbian, fedora]
 supported_architectures: [x86_64, aarch64, armv7l]
 apt_packages: [syncthing]
 dnf_packages: [syncthing]
-systemd_services: [syncthing@root]
+systemd_services: [webnas-syncthing]
 ports: [8384/tcp, 22000/tcp, 22000/udp, 21027/udp]
 dependencies: []
 conflicts: []
 permissions: [package_management, systemd, network_listen, data_access]
-config_paths: [/root/.local/state/syncthing/config.xml]
-data_paths: [/root/Sync]
-backup_paths: [/root/.local/state/syncthing]
+config_paths: [/var/lib/webnas/syncthing/config.xml]
+data_paths: [/var/lib/webnas/syncthing]
+backup_paths: [/var/lib/webnas/syncthing]
 proxmox_safe: false
 requires_reboot: false
 requires_root: true

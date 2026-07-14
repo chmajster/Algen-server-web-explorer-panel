@@ -202,7 +202,7 @@ export type PackagePlan = {
 export type PackageModule = {
   id: string;
   manifest: PackageManifest;
-  state: { installed: boolean; installed_version?: string | null; available_version: string; update_available: boolean; requires_reboot: boolean };
+  state: { installed: boolean; installed_version?: string | null; available_version: string; update_available: boolean; requires_reboot: boolean; needs_configuration?: boolean };
   services: Record<string, string>;
   status: string;
   compatible: boolean;

@@ -137,7 +137,8 @@ def sync_source(source_id: str, user: SessionUser = Depends(mutating_admin)):
     owner, repo_name = parsed.path.strip("/").split("/")
     request = urllib.request.Request(f"https://api.github.com/repos/{owner}/{repo_name}", headers={"Accept": "application/vnd.github+json", "User-Agent": "WebNAS-Package-Center"})
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 -- fixed GitHub API host from a validated URL
+        # The request URL always uses the fixed api.github.com HTTPS host.
+        with urllib.request.urlopen(request, timeout=10) as response:  # nosec B310
             data = json.loads(response.read(1_000_000).decode("utf-8"))
         metadata = {key: data.get(key) for key in ("full_name", "description", "default_branch", "updated_at", "stargazers_count")}
         result = repository().sync_source(source_id, metadata=metadata)

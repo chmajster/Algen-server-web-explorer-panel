@@ -81,6 +81,8 @@ Installation, update, removal, and service actions require an authenticated admi
 
 The executor uses `subprocess` argument arrays with `shell=False`, a restricted environment, timeouts, exit-code checks, and redacted output. It never runs `upgrade`, `dist-upgrade`, or implicit `autoremove`. Removal preserves configuration and user data unless the administrator explicitly selects **also remove data** in the confirmation dialog. SQLite transactions provide atomic state updates, and every completed, failed, or cancelled operation is written to history and the audit log.
 
+Network-facing daemons should use a dedicated unprivileged service account. For example, the bundled Syncthing hook creates a hardened `webnas-syncthing.service` running as `webnas`, with its writable area limited to `/var/lib/webnas/syncthing`; it never runs Syncthing as root.
+
 The production service runs as root because PAM impersonation and package managers need it. `ProtectSystem=false` is therefore required in the systemd unit for package database and filesystem writes. The risk is constrained by admin/PAM/CSRF gates, validated manifests, fixed action allowlists, no frontend commands, no `shell=True`, and no execution of external source code.
 
 Configuration changes remain module-specific. The Samba configuration API creates a backup before writing, validates the candidate with `testparm`, writes atomically, and restores the backup if validation or apply fails. New configurable modules must follow the same backup/validate/atomic-replace/rollback pattern and use their declared `backup_paths`.
@@ -152,4 +154,3 @@ POST   /api/apps/sources/{source_id}/sync
 8. Restart `webnas` during a disposable job and verify it appears as failed/interrupted in history.
 9. Add a GitHub source, edit its branch, refresh metadata, copy its Codex instruction, disable it, and remove it. Confirm no repository code is executed.
 10. On a Proxmox host with Safe Mode enabled, verify unsafe modules show as blocked and cannot be planned or queued.
-

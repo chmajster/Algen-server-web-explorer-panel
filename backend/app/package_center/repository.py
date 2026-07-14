@@ -89,7 +89,8 @@ class PackageRepository:
             updates["cancellation_requested"] = int(bool(updates["cancellation_requested"]))
         columns = ", ".join(f"{key}=?" for key in updates)
         with self._lock, self.connect() as connection:
-            connection.execute(f"UPDATE package_jobs SET {columns} WHERE id=?", [*updates.values(), job_id])
+            # Dynamic column names come exclusively from the fixed allowlist above.
+            connection.execute(f"UPDATE package_jobs SET {columns} WHERE id=?", [*updates.values(), job_id])  # nosec B608
 
     def append_log(self, job_id: str, line: str, stream: str = "stdout") -> None:
         cleaned = line.replace("\x00", "")[-4000:]
@@ -117,7 +118,8 @@ class PackageRepository:
             params.append(module_id)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self.connect() as connection:
-            rows = connection.execute(f"SELECT * FROM package_jobs {where} ORDER BY created_at DESC LIMIT ?", [*params, min(max(limit, 1), 500)]).fetchall()
+            # WHERE clauses are fixed literals; all external values remain parameterized.
+            rows = connection.execute(f"SELECT * FROM package_jobs {where} ORDER BY created_at DESC LIMIT ?", [*params, min(max(limit, 1), 500)]).fetchall()  # nosec B608
         return [self._job(row, self.logs(row["id"], 80)) for row in rows]
 
     def active_jobs(self, module_id: str | None = None) -> list[dict]:

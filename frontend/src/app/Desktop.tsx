@@ -68,7 +68,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       case "mounts": return <MountsApp t={t} toast={toast} />;
       case "samba": return <SambaAppView t={t} toast={toast} />;
       case "services": return <ServicesApp t={t} toast={toast} />;
-      case "store": return <PackageCenterApp t={t} toast={toast} />;
+      case "store": return <PackageCenterApp t={t} toast={toast} onConfigure={(moduleId) => { if (moduleId === "samba") openApp("samba"); }} />;
       case "logs": return <LogsAppView t={t} />;
       case "settings": return <SettingsAppView language={language} theme={theme} t={t} toast={toast} onLanguage={onLanguage} onTheme={onTheme} />;
       case "monitor": return <MonitorApp t={t} />;

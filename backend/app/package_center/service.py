@@ -5,6 +5,7 @@ import subprocess
 import threading
 from pathlib import Path
 
+from ..audit import logger
 from ..config import get_config
 from ..proxmox_guard import safe_mode_active
 from .distro import compatible, detect_distribution, packages_for
@@ -27,8 +28,8 @@ def repository() -> PackageRepository:
                 from ..apps import read_store_plugins
 
                 _repository.import_legacy_sources([item.model_dump(mode="json") for item in read_store_plugins()])
-            except Exception:
-                pass
+            except Exception as error:  # legacy data must not prevent Package Center startup
+                logger.warning("package_source_migration_failed error=%s", error)
         return _repository
 
 
@@ -41,15 +42,33 @@ def _migrate_samba_state(repo: PackageRepository) -> None:
         state = read_state("samba")
         if state.get("installed") or shutil.which("smbd"):
             repo.mark_installed("samba", str(state.get("version") or "1.0.0"), "migration", False)
-    except Exception:
-        pass
+    except Exception as error:  # legacy state is optional and may be malformed
+        logger.warning("package_samba_migration_failed error=%s", error)
 
 
 def service_status(service: str) -> str:
-    if not shutil.which("systemctl"):
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
         return "unsupported"
-    result = subprocess.run(["systemctl", "is-active", service], capture_output=True, text=True, timeout=5, check=False, shell=False)
+    result = subprocess.run([systemctl, "is-active", service], capture_output=True, text=True, timeout=5, check=False, shell=False)
     return result.stdout.strip() or "inactive"
+
+
+def needs_configuration(manifest: ModuleManifest, installed_record: dict | None) -> bool:
+    if not manifest.configurable or not installed_record:
+        return False
+    if manifest.id == "samba":
+        try:
+            from ..apps import read_samba_config, read_state
+
+            state = read_state("samba")
+            if "configured" in state:
+                return not bool(state["configured"])
+            return not bool(read_samba_config().shares)
+        except Exception as error:
+            logger.warning("package_config_status_failed module=samba error=%s", error)
+            return True
+    return False
 
 
 def module_payload(manifest: ModuleManifest, installed: dict[str, dict], jobs: list[dict] | None = None) -> dict:
@@ -62,6 +81,7 @@ def module_payload(manifest: ModuleManifest, installed: dict[str, dict], jobs: l
     services = {name: service_status(name) for name in manifest.systemd_services}
     installed_version = record["version"] if record else None
     update_available = bool(installed_version and installed_version != manifest.version)
+    configuration_required = needs_configuration(manifest, record)
     if blocked:
         status = "blocked"
     elif not is_compatible:
@@ -74,6 +94,8 @@ def module_payload(manifest: ModuleManifest, installed: dict[str, dict], jobs: l
         status = "reboot_required"
     elif update_available:
         status = "update_available"
+    elif configuration_required:
+        status = "needs_config"
     elif record and any(value == "active" for value in services.values()):
         status = "running"
     elif record and services:
@@ -85,7 +107,7 @@ def module_payload(manifest: ModuleManifest, installed: dict[str, dict], jobs: l
     return {
         "id": manifest.id,
         "manifest": manifest.model_dump(mode="json"),
-        "state": {"installed": bool(record), "installed_version": installed_version, "available_version": manifest.version, "update_available": update_available, "requires_reboot": bool(record and record.get("requires_reboot"))},
+        "state": {"installed": bool(record), "installed_version": installed_version, "available_version": manifest.version, "update_available": update_available, "requires_reboot": bool(record and record.get("requires_reboot")), "needs_configuration": configuration_required},
         "services": services,
         "status": status,
         "compatible": is_compatible,
@@ -144,6 +166,8 @@ def plan_operation(module_id: str, action: PackageAction, *, remove_data: bool =
         api_error(409, "MODULE_NOT_REMOVABLE", "Module cannot be removed")
     record = installed.get(module_id)
     packages = packages_for(manifest, distro)
+    if action in {PackageAction.install, PackageAction.update, PackageAction.uninstall} and not packages:
+        api_error(409, "MODULE_INCOMPATIBLE", "Module has no package mapping for the selected package manager")
     conflicts = [item for item in manifest.conflicts if item in installed]
     warnings: list[str] = []
     if conflicts:

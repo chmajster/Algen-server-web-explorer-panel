@@ -4,7 +4,7 @@ All notable changes to WebNAS are documented in this file.
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses date-based unreleased entries until tagged releases are introduced.
 
-## [Unreleased] - 2026-07-08
+## [Unreleased] - 2026-07-14
 
 ### Added
 
@@ -27,6 +27,16 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - Server resource dashboard with CPU, RAM, swap, disk, allowed root usage, uptime, load average, service status, warnings, and admin/user scoping.
 - Safe local user management panel for admins, including user creation, lock/unlock, password reset, group membership, home directory creation, quota support, and audit logging.
 - App Store/module system with manifests, admin-only actions, background jobs, dry-run support, logs, configuration API, and persistent state.
+- Complete modular Package Center replacing Samba-only package actions:
+  - Pydantic-validated YAML manifests and safe module-local hooks;
+  - Debian/Ubuntu/Raspberry Pi OS/Fedora/RHEL/Rocky/Alma detection with `apt-get`, `dnf`, and `yum` fallback;
+  - dry-run plans covering packages, services, ports, paths, permissions, conflicts, reboot needs, and Proxmox compatibility;
+  - durable SQLite jobs, log streaming over SSE, polling fallback, cancellation, retry, interruption recovery, history, and a global execution limit;
+  - administrator, CSRF, PAM reauthentication, audit, secret redaction, timeout, and argument-array execution controls;
+  - package catalog, detail view, filters, installed/updates/jobs/history/source tabs, progress UI, responsive light/dark styling, and Polish/English translations;
+  - GitHub source metadata management without downloading or executing untrusted repository code.
+- Initial validated Package Center modules for Samba, Squid Proxy, Nginx, and Syncthing, plus a hidden authoring template.
+- Package Center architecture and authoring guide in `PACKAGE_CENTER.md`.
 - Samba module for the App Store:
   - `samba` and `smbclient` installation without `apt upgrade`;
   - `smb.conf` backup before changes;
@@ -60,6 +70,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - File operations now check read-only network mounts before write operations.
 - Allowed roots can include user-visible WebNAS network mount points.
 - Installer, update, uninstall, packaging, and service files were expanded for safer install/update flows and systemd operation.
+- The systemd service now explicitly runs as root with a writable system tree so validated package-manager operations can complete; other process hardening remains enabled.
 - README, install, security, and example configuration documentation were expanded for the new operational surface.
 
 ### Security
@@ -69,6 +80,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - Added validation for Samba share names, users, comments, masks, mount options, mount names, hosts, and remote paths.
 - Blocked unsafe mount options such as `suid`, `dev`, `exec`, `allow_other`, and inline credentials.
 - Avoided `shell=True` for mount/app-management command execution.
+- Package Center accepts no command strings from the frontend, validates package/service/path identifiers, confines hooks to module directories, restricts subprocess environments, uses timeouts, and redacts secrets from persisted output.
 - Prevented plaintext mount secrets from being stored in SQLite, logs, dry-run previews, or command-line arguments.
 
 ### Notes

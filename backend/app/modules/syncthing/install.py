@@ -1,1 +1,3 @@
-print("Syncthing post-install hook completed")
+from service_setup import install_service
+
+install_service()

@@ -99,11 +99,12 @@ Environment=WEBNAS_CONFIG=/etc/webnas/config.yaml
 ExecStart=/opt/webnas/backend/.venv/bin/python -m app.run
 Restart=on-failure
 RestartSec=3
-User=webnas
-Group=webnas
+User=root
+Group=root
 NoNewPrivileges=false
 PrivateTmp=true
-ProtectSystem=full
+# Package Center needs package-manager writes below /etc, /usr and /var.
+ProtectSystem=false
 ReadWritePaths=/var/lib/webnas /var/log/webnas /home /opt/webnas
 
 [Install]
@@ -116,6 +117,33 @@ Then enable and start:
 sudo systemctl daemon-reload
 sudo systemctl enable --now webnas
 ```
+
+The root service context is intentional: WebNAS uses PAM and authenticated user contexts for file operations, while Package Center performs validated package-manager and systemd actions. Do not expose WebNAS directly to the public internet. Keep the session secret private, restrict network access, and use TLS through a trusted reverse proxy. Package Center never accepts command strings from the browser and still requires an administrator session, CSRF token, confirmed plan, and fresh PAM password.
+
+## Package Center installation notes
+
+No separate package-center daemon is required. Its SQLite database is created automatically at:
+
+```text
+/var/lib/webnas/package-center.sqlite3
+```
+
+Supported hosts are Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux with systemd. Modules select `apt-get`, `dnf`, or `yum` from `/etc/os-release` and their validated manifest. A module is rejected before execution when its distribution, architecture, package manager, or Proxmox safety declaration is incompatible.
+
+The package catalog ships with Samba, Squid Proxy, Nginx, and Syncthing. Before the first real operation, use a disposable VM/container and review the dry-run plan in the UI. The production systemd profile must retain `User=root`, `Group=root`, `NoNewPrivileges=false`, and `ProtectSystem=false`; changing those values makes package installation fail with a clear permission or read-only-filesystem error.
+
+Back up package metadata and module configuration before an OS migration:
+
+```bash
+sudo systemctl stop webnas
+sudo cp -a /var/lib/webnas/package-center.sqlite3 /var/lib/webnas/package-center.sqlite3.backup
+sudo tar -czf /root/webnas-package-configs.tgz /etc/samba /etc/squid /etc/nginx 2>/dev/null || true
+sudo systemctl start webnas
+```
+
+The bundled Syncthing module runs as the unprivileged `webnas` account through `webnas-syncthing.service` and stores its configuration/data in `/var/lib/webnas/syncthing`; include that path in backups. Uninstall preserves declared configuration and data by default. The **also remove data** option is deliberately separate and irreversible.
+
+For module creation, manifest validation rules, endpoints, job recovery, GitHub source handling, and the complete security model, see [PACKAGE_CENTER.md](PACKAGE_CENTER.md).
 
 ## Update
 
@@ -154,6 +182,8 @@ Recent logs:
 ```bash
 sudo journalctl -u webnas -n 100 --no-pager
 ```
+
+Package job output is also available in **Centrum pakietów → Zadania**, `GET /api/apps/jobs/{job_id}`, and the SSE stream at `GET /api/apps/jobs/{job_id}/events`. Failed jobs expose the current step, exit code, error, and redacted log tail. Common package-center codes include `MODULE_INCOMPATIBLE`, `MODULE_BLOCKED_BY_PROXMOX`, `PACKAGE_MANAGER_UNAVAILABLE`, `JOB_ALREADY_RUNNING`, `INVALID_MANIFEST`, and `AUTHENTICATION_FAILED`.
 
 Healthcheck:
 

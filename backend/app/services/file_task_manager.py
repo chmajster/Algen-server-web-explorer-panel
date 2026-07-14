@@ -102,6 +102,7 @@ class FileTask:
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "username": self.username,
             "type": self.type,
             "op": self.type,
             "status": self.status.value,
@@ -175,10 +176,19 @@ class FileTaskManager:
 
     def _load_tasks(self) -> None:
         with self._connect() as conn:
-            rows = conn.execute("SELECT payload FROM file_tasks").fetchall()
+            rows = conn.execute("SELECT payload,username,type,source_paths,destination_path,status,priority FROM file_tasks").fetchall()
         with self._lock:
             for row in rows:
                 payload = json.loads(row["payload"])
+                # Older WebNAS versions omitted these required fields from the
+                # JSON payload. The normalized table columns are the migration
+                # source of truth and let upgrades start without losing history.
+                payload.setdefault("username", row["username"])
+                payload.setdefault("type", row["type"])
+                payload.setdefault("source_paths", json.loads(row["source_paths"]))
+                payload.setdefault("destination_path", row["destination_path"])
+                payload.setdefault("status", row["status"])
+                payload.setdefault("priority", row["priority"])
                 task = self._task_from_payload(payload)
                 if task.status == TaskStatus.running:
                     task.status = TaskStatus.queued

@@ -30,7 +30,8 @@ describe("Package Center", () => {
   });
 
   it("renders, searches, filters and opens package details", async () => {
-    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    const configure = vi.fn();
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onConfigure={configure} />);
     expect(await screen.findByText("Samba")).toBeInTheDocument();
     expect(screen.getByText("Nginx")).toBeInTheDocument();
 
@@ -43,6 +44,9 @@ describe("Package Center", () => {
     fireEvent.click(screen.getByRole("button", { name: /Samba/ }));
     expect(screen.getByText("samba long description")).toBeInTheDocument();
     expect(screen.getByText("package.changelog")).toBeInTheDocument();
+    expect(screen.getByText("package.logs")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "package.configure" }));
+    expect(configure).toHaveBeenCalledWith("samba");
   });
 
   it("shows and confirms a dry-run plan before installation", async () => {

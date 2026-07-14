@@ -1,1 +1,3 @@
-print("Syncthing packages removed; synchronized data and configuration were preserved unless explicitly requested")
+from service_setup import uninstall_service
+
+uninstall_service()
