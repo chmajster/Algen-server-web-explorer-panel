@@ -17,4 +17,20 @@ describe("API errors", () => {
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ message: "Already exists", status: 409, code: "already_exists" });
   });
+
+  it("requests a package operation plan with POST", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ module_id: "samba", action: "uninstall" })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.appPlan("samba", "uninstall", true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/apps/samba/plan?action=uninstall&remove_data=true",
+      expect.objectContaining({ method: "POST", body: "{}", credentials: "include" })
+    );
+  });
 });
