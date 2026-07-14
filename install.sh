@@ -735,10 +735,14 @@ ExecStart=${INSTALL_DIR}/backend/.venv/bin/python -m app.run
 Restart=on-failure
 RestartSec=3
 # WebNAS uses PAM and drops file-operation workers into authenticated Linux
-# user contexts. Root is required when that impersonation model is enabled.
+# user contexts. Package Center also performs validated apt/dnf/systemd actions.
+User=root
+Group=root
 NoNewPrivileges=false
 PrivateTmp=true
-ProtectSystem=full
+# A read-only system tree would prevent the package manager from writing its
+# database and installing files. Package Center never accepts commands from UI.
+ProtectSystem=false
 ProtectHome=read-only
 ProtectKernelTunables=true
 ProtectKernelModules=true

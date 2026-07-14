@@ -1,0 +1,155 @@
+# WebNAS Package Center
+
+Package Center is the administrator-only package and service manager built into WebNAS. It discovers trusted modules from `backend/app/modules`, validates their YAML manifests, creates a dry-run plan, and executes approved operations as durable SQLite jobs. The browser receives live progress through Server-Sent Events and falls back to polling.
+
+## Architecture
+
+The backend is split into small components under `backend/app/package_center`:
+
+- `router.py` exposes the API and enforces session, administrator, CSRF, and reauthentication rules.
+- `models.py` defines Pydantic manifest, plan, action, source, and status models.
+- `manifests.py` discovers modules and safely resolves module-local files.
+- `distro.py` reads `/etc/os-release` and selects `apt-get`, `dnf`, or the `yum` compatibility fallback.
+- `service.py` builds filtered package views and operation plans.
+- `repository.py` stores jobs, logs, installed state, history, and sources in SQLite.
+- `jobs.py` serializes execution, cancellation, retry, recovery, and audit results.
+- `executor.py` builds argument arrays and runs only trusted package, systemd, and module-local actions.
+- `security.py` checks Linux `sudo`/`wheel` membership (or UID 0), CSRF, and PAM reauthentication.
+
+Only one package job runs at a time. A second operation for the same module cannot be queued. A running command completes before cancellation takes effect at the next safe step. Jobs left in `running` state by a WebNAS restart are marked failed with an interruption message.
+
+## Module layout
+
+Each production module lives in `backend/app/modules/<module_id>/`:
+
+```text
+manifest.yaml
+install.py or install.sh
+update.py or update.sh
+uninstall.py or uninstall.sh
+health.py or health.sh       # optional
+config.py                    # optional, module-owned configuration logic
+```
+
+The hidden template in `backend/app/modules/example` is the recommended starting point. Copy it, change the directory and manifest `id`, and remove `ui.hidden: true` only when the module is ready. A module is trusted repository code: review it, test it, and ship it with WebNAS. GitHub sources shown in the UI are metadata only and are never downloaded or executed automatically.
+
+## Manifest format
+
+Example:
+
+```yaml
+id: example_service
+name: Example Service
+description: Short card description.
+long_description: Full package detail description.
+category: system_tools
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://example.org/
+icon: package
+screenshots: []
+license: MIT
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+apt_packages: [example-service]
+dnf_packages: [example-service]
+systemd_services: [example-service]
+ports: [8080/tcp]
+dependencies: []
+conflicts: []
+permissions: [package_management, systemd, network_listen]
+config_paths: [/etc/example-service/config.yaml]
+data_paths: [/var/lib/example-service]
+backup_paths: [/etc/example-service]
+proxmox_safe: false
+requires_reboot: false
+requires_root: true
+configurable: false
+removable: true
+healthcheck: health.py
+ui:
+  hidden: true
+changelog:
+  - Initial module.
+```
+
+Identifiers, package names, service names, ports, architectures, paths, healthcheck names, and GitHub refs are validated. Manifest paths must be absolute and traversal-free. Hook filenames are fixed and resolved inside the module directory; a manifest cannot point to an arbitrary script. Do not add shell commands, secrets, or user-provided values to a manifest.
+
+## Execution and security
+
+Installation, update, removal, and service actions require an authenticated administrator, a valid CSRF token, explicit plan confirmation, and a fresh PAM password check. The password is sent only for reauthentication and is never placed in the plan, job database, command line, or logs. The UI can remember it only in browser session memory when the administrator explicitly selects that option.
+
+The executor uses `subprocess` argument arrays with `shell=False`, a restricted environment, timeouts, exit-code checks, and redacted output. It never runs `upgrade`, `dist-upgrade`, or implicit `autoremove`. Removal preserves configuration and user data unless the administrator explicitly selects **also remove data** in the confirmation dialog. SQLite transactions provide atomic state updates, and every completed, failed, or cancelled operation is written to history and the audit log.
+
+The production service runs as root because PAM impersonation and package managers need it. `ProtectSystem=false` is therefore required in the systemd unit for package database and filesystem writes. The risk is constrained by admin/PAM/CSRF gates, validated manifests, fixed action allowlists, no frontend commands, no `shell=True`, and no execution of external source code.
+
+Configuration changes remain module-specific. The Samba configuration API creates a backup before writing, validates the candidate with `testparm`, writes atomically, and restores the backup if validation or apply fails. New configurable modules must follow the same backup/validate/atomic-replace/rollback pattern and use their declared `backup_paths`.
+
+## Supported systems and Proxmox
+
+WebNAS recognizes Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux using `/etc/os-release`. The module must list the detected distribution or a matching `ID_LIKE`, the current architecture, and packages for the selected manager. An unsupported system or missing manager is rejected before queueing.
+
+On Proxmox VE hosts, Safe Mode blocks every module whose manifest has `proxmox_safe: false`. This decision is included in list results and the plan. A module may be marked safe only after proving that its packages, services, ports, configuration, and data paths cannot affect the hypervisor, cluster, storage, guests, or host networking.
+
+## Storage, logs, and backup
+
+The default package database is:
+
+```text
+/var/lib/webnas/package-center.sqlite3
+```
+
+It contains `package_jobs`, `package_job_logs`, `installed_packages`, `package_history`, and `package_sources`. Back up this file while WebNAS is stopped or by using the SQLite online backup mechanism. Job output is available through the jobs/logs API and the Package Center UI. Service-level logs remain in `journalctl -u webnas`.
+
+Module configuration is not stored in the package database. Back up each manifest's `config_paths`, `data_paths`, and `backup_paths` before system migration. Samba backups are created alongside its managed configuration with timestamped backup names.
+
+## API
+
+Read operations require an administrator session. System mutations also require CSRF, plan confirmation, and PAM reauthentication.
+
+```text
+GET    /api/apps
+GET    /api/apps/categories
+GET    /api/apps/installed
+GET    /api/apps/updates
+GET    /api/apps/{module_id}
+GET    /api/apps/{module_id}/logs
+GET    /api/apps/{module_id}/config
+PUT    /api/apps/{module_id}/config
+POST   /api/apps/{module_id}/plan?action=install|update|uninstall|start|stop|restart
+POST   /api/apps/{module_id}/install
+POST   /api/apps/{module_id}/update
+POST   /api/apps/{module_id}/uninstall
+POST   /api/apps/{module_id}/start
+POST   /api/apps/{module_id}/stop
+POST   /api/apps/{module_id}/restart
+
+GET    /api/apps/jobs
+GET    /api/apps/jobs/{job_id}
+GET    /api/apps/jobs/{job_id}/events
+POST   /api/apps/jobs/{job_id}/cancel
+POST   /api/apps/jobs/{job_id}/retry
+GET    /api/apps/history
+
+GET    /api/apps/sources
+POST   /api/apps/sources
+PUT    /api/apps/sources/{source_id}
+DELETE /api/apps/sources/{source_id}
+POST   /api/apps/sources/{source_id}/sync
+```
+
+`GET /api/apps` accepts `search`, `category`, `status`, `compatible_only`, `installed_only`, and `updates_only`. Existing Samba configuration and legacy StorePlugin endpoints remain available.
+
+## Manual verification
+
+1. Install WebNAS on a supported disposable VM or container, then log in with a local `sudo`/`wheel` administrator.
+2. Open **Centrum pakietów**, search for Nginx, filter by category and open its details.
+3. Select **Install**, review packages, services, ports, permissions, and warnings, then enter the administrator password and confirm.
+4. Watch progress and logs in **Jobs**, reload the browser, and verify the job remains visible.
+5. Stop, start, and restart the service from the module card. Verify the systemd status shown by WebNAS.
+6. Cancel a queued job and retry a failed/cancelled job.
+7. Uninstall without data removal and verify configuration/data remain. Test explicit data removal only on disposable data.
+8. Restart `webnas` during a disposable job and verify it appears as failed/interrupted in history.
+9. Add a GitHub source, edit its branch, refresh metadata, copy its Codex instruction, disable it, and remove it. Confirm no repository code is executed.
+10. On a Proxmox host with Safe Mode enabled, verify unsafe modules show as blocked and cannot be planned or queued.
+

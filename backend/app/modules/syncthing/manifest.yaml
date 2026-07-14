@@ -1,0 +1,29 @@
+id: syncthing
+name: Syncthing
+description: Continuous peer-to-peer file synchronization.
+long_description: Synchronize selected folders between trusted devices without a central cloud provider.
+category: backup
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://syncthing.net/
+icon: refresh-cw
+license: MPL-2.0
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+apt_packages: [syncthing]
+dnf_packages: [syncthing]
+systemd_services: [syncthing@root]
+ports: [8384/tcp, 22000/tcp, 22000/udp, 21027/udp]
+dependencies: []
+conflicts: []
+permissions: [package_management, systemd, network_listen, data_access]
+config_paths: [/root/.local/state/syncthing/config.xml]
+data_paths: [/root/Sync]
+backup_paths: [/root/.local/state/syncthing]
+proxmox_safe: false
+requires_reboot: false
+requires_root: true
+configurable: false
+removable: true
+healthcheck: health.py
+changelog: [Initial WebNAS module.]

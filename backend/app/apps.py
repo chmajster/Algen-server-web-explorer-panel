@@ -473,7 +473,7 @@ def _prepare_share_directory(share: SambaShare, resolved: Path) -> None:
 def validate_share_path(username: str, share: SambaShare) -> Path:
     candidate = Path(share.path).resolve(strict=False)
     for blocked in BLOCKED_SHARE_PATHS:
-        blocked_path = Path(blocked)
+        blocked_path = Path(blocked).resolve(strict=False)
         if candidate == blocked_path or (blocked != "/" and candidate.is_relative_to(blocked_path)):
             raise HTTPException(403, "Share path is protected")
     if safe_mode_active() and (share.path.startswith("/var/lib/vz") or share.path.startswith("/etc/pve")) and not share.allow_proxmox_storage:
@@ -703,11 +703,12 @@ def rollback_samba_config(username: str) -> dict:
     return {"ok": True, "validation": validation}
 
 
-@router.get("")
 def list_apps(user: SessionUser = Depends(_current_user)):
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
-    return [app_payload(manifest["id"]) for manifest in all_manifests()]
+    from .package_center.service import list_modules
+
+    return list_modules()
 
 
 @router.get("/plugins")
@@ -770,53 +771,51 @@ def delete_store_plugin(plugin_id: str, user: SessionUser = Depends(_current_use
     return {"ok": True}
 
 
-@router.get("/{app_id}")
 def get_app(app_id: str, user: SessionUser = Depends(_current_user)):
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
-    return app_payload(app_id)
+    from .package_center.service import get_module
+
+    return get_module(app_id)
 
 
-@router.post("/{app_id}/install")
 def install_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password)
-    assert_app_allowed_on_host(app_id)
+    from .package_center.jobs import manager as package_manager
+    from .package_center.models import PackageAction
+    from .package_center.service import plan_operation, repository
+
+    plan = plan_operation(app_id, PackageAction.install)
     if payload.dry_run:
-        return {"dry_run": True, "steps": plan_install(app_id)}
+        return {"dry_run": True, "plan": plan.model_dump()}
     logger.info("app_store_action actor=%s app=%s action=install", user.username, app_id)
-    if app_id != "samba":
-        raise HTTPException(404, "Unsupported app module")
-    return {"job": enqueue(app_id, "install", install_samba).to_dict()}
+    return {"job": package_manager(repository()).enqueue(plan, user.username)}
 
 
-@router.post("/{app_id}/uninstall")
 def uninstall_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password)
+    from .package_center.jobs import manager as package_manager
+    from .package_center.models import PackageAction
+    from .package_center.service import plan_operation, repository
+
+    plan = plan_operation(app_id, PackageAction.uninstall)
     if payload.dry_run:
-        return {"dry_run": True, "steps": ["Stop app services", "Mark module as uninstalled; keep configuration backups"]}
+        return {"dry_run": True, "plan": plan.model_dump()}
     logger.info("app_store_action actor=%s app=%s action=uninstall", user.username, app_id)
-
-    def worker(job: AppJob) -> None:
-        job.progress = 40
-        run_service(app_id, "stop")
-        state = read_state(app_id)
-        state["installed"] = False
-        write_state(app_id, state)
-        job.progress = 90
-        job.log("Module marked as uninstalled; packages/configuration kept")
-
-    return {"job": enqueue(app_id, "uninstall", worker).to_dict()}
+    return {"job": package_manager(repository()).enqueue(plan, user.username)}
 
 
-@router.post("/{app_id}/update")
 def update_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
     _require_admin(user, payload.admin_password)
+    from .package_center.jobs import manager as package_manager
+    from .package_center.models import PackageAction
+    from .package_center.service import plan_operation, repository
+
+    plan = plan_operation(app_id, PackageAction.update)
     if payload.dry_run:
-        return {"dry_run": True, "steps": plan_install(app_id)}
+        return {"dry_run": True, "plan": plan.model_dump()}
     logger.info("app_store_action actor=%s app=%s action=update", user.username, app_id)
-    if app_id != "samba":
-        raise HTTPException(404, "Unsupported app module")
-    return {"job": enqueue(app_id, "update", install_samba).to_dict()}
+    return {"job": package_manager(repository()).enqueue(plan, user.username)}
 
 
 def service_action(app_id: str, action: str, payload: AdminAction, user: SessionUser) -> dict:
@@ -828,22 +827,18 @@ def service_action(app_id: str, action: str, payload: AdminAction, user: Session
     return {"ok": True}
 
 
-@router.post("/{app_id}/start")
 def start_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
     return service_action(app_id, "start", payload, user)
 
 
-@router.post("/{app_id}/stop")
 def stop_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
     return service_action(app_id, "stop", payload, user)
 
 
-@router.post("/{app_id}/restart")
 def restart_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
     return service_action(app_id, "restart", payload, user)
 
 
-@router.get("/{app_id}/logs")
 def app_logs(app_id: str, user: SessionUser = Depends(_current_user)):
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")

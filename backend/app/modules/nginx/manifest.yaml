@@ -1,0 +1,29 @@
+id: nginx
+name: Nginx
+description: High-performance web server and reverse proxy.
+long_description: Host static sites or place a hardened reverse proxy in front of services running on the NAS.
+category: web_server
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://nginx.org/
+icon: server
+license: BSD-2-Clause
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+apt_packages: [nginx]
+dnf_packages: [nginx]
+systemd_services: [nginx]
+ports: [80/tcp, 443/tcp]
+dependencies: []
+conflicts: []
+permissions: [package_management, systemd, network_listen, config_write]
+config_paths: [/etc/nginx/nginx.conf]
+data_paths: [/var/lib/nginx, /var/log/nginx]
+backup_paths: [/etc/nginx]
+proxmox_safe: false
+requires_reboot: false
+requires_root: true
+configurable: false
+removable: true
+healthcheck: health.py
+changelog: [Initial WebNAS module.]

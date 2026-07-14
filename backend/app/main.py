@@ -18,6 +18,7 @@ from .auth import authenticate, normalize_username, user_home
 from .config import get_config
 from .file_ops import download_response, list_dir, mime_for, run_user_op, save_upload, tree_dir
 from .network_mounts import assert_write_allowed, router as mounts_router
+from .package_center.router import router as package_center_router
 from .path_policy import resolve_user_path
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
 from .settings import router as settings_router, start_auto_update_scheduler
@@ -29,6 +30,7 @@ app = FastAPI(title="WebNAS", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(settings_router)
 app.include_router(apps_router)
+app.include_router(package_center_router)
 app.include_router(mounts_router)
 
 

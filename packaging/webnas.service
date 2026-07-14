@@ -11,13 +11,13 @@ Environment=WEBNAS_CONFIG=/etc/webnas/config.yaml
 ExecStart=/opt/webnas/backend/.venv/bin/python -m app.run
 Restart=on-failure
 RestartSec=3
-# WebNAS uses PAM and drops file-operation workers into the authenticated
-# Linux user context. Root is required for that impersonation model.
+# WebNAS uses PAM, user-context file workers and validated package operations.
 User=root
 Group=root
 NoNewPrivileges=false
 PrivateTmp=true
-ProtectSystem=full
+# Package managers require writes below /etc, /usr and /var.
+ProtectSystem=false
 ProtectHome=read-only
 ProtectKernelTunables=true
 ProtectKernelModules=true

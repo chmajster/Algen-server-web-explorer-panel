@@ -4,10 +4,14 @@ import pytest
 from fastapi import HTTPException
 
 from app import apps
+from app.config import get_config
+from app.package_center import jobs as package_jobs
+from app.package_center import service as package_service
+from app.package_center.models import PackageAction
 
 
 def test_app_state_defaults_to_data_dir():
-    assert apps.APP_STATE_DIR == apps.Path("/var/lib/webnas/apps")
+    assert apps.APP_STATE_DIR == apps.Path(get_config().paths.data_dir) / "apps"
 
 
 def test_samba_install_dry_run_lists_packages(monkeypatch):
@@ -112,8 +116,10 @@ def test_non_admin_cannot_list_apps(monkeypatch):
 def test_install_action_is_audited(monkeypatch):
     messages = []
     monkeypatch.setattr(apps, "_require_admin", lambda *args, **kwargs: None)
-    monkeypatch.setattr(apps, "assert_app_allowed_on_host", lambda app_id: None)
-    monkeypatch.setattr(apps, "enqueue", lambda app_id, action, worker: SimpleNamespace(to_dict=lambda: {"id": "job-1"}))
+    package_plan = SimpleNamespace(action=PackageAction.install)
+    monkeypatch.setattr(package_service, "plan_operation", lambda app_id, action: package_plan)
+    monkeypatch.setattr(package_service, "repository", lambda: SimpleNamespace())
+    monkeypatch.setattr(package_jobs, "manager", lambda repository: SimpleNamespace(enqueue=lambda plan, actor: {"id": "job-1"}))
     monkeypatch.setattr(apps.logger, "info", lambda *args, **kwargs: messages.append(args))
 
     result = apps.install_app("samba", apps.AdminAction(admin_password="secret"), SimpleNamespace(username="admin"))

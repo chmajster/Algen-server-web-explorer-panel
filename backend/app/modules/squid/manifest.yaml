@@ -1,0 +1,29 @@
+id: squid
+name: Squid Proxy
+description: Caching HTTP proxy with access-control support.
+long_description: Install and manage the Squid forwarding and caching proxy service for controlled network access.
+category: network
+version: "1.0.0"
+maintainer: WebNAS
+homepage: http://www.squid-cache.org/
+icon: network
+license: GPL-2.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+apt_packages: [squid]
+dnf_packages: [squid]
+systemd_services: [squid]
+ports: [3128/tcp]
+dependencies: []
+conflicts: []
+permissions: [package_management, systemd, network_listen, config_write]
+config_paths: [/etc/squid/squid.conf]
+data_paths: [/var/spool/squid, /var/log/squid]
+backup_paths: [/etc/squid]
+proxmox_safe: false
+requires_reboot: false
+requires_root: true
+configurable: false
+removable: true
+healthcheck: health.py
+changelog: [Initial WebNAS module.]

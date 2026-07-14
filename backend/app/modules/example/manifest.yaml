@@ -1,0 +1,10 @@
+id: example
+name: Example module template
+description: Development-only package-center module template.
+version: "0.0.0"
+apt_packages: []
+dnf_packages: []
+ui:
+  hidden: true
+proxmox_safe: false
+removable: false

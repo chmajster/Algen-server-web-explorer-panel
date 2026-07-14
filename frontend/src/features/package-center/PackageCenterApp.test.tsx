@@ -1,0 +1,76 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { api, type PackageModule, type PackagePlan } from "../../api";
+import en from "../../locales/en-US.json";
+import pl from "../../locales/pl-PL.json";
+import { PackageCenterApp } from "./PackageCenterApp";
+
+vi.mock("../../api", () => ({ api: { apps: vi.fn(), appCategories: vi.fn(), appJobs: vi.fn(), appHistory: vi.fn(), packageSources: vi.fn(), appPlan: vi.fn(), appAction: vi.fn(), cancelAppJob: vi.fn(), retryAppJob: vi.fn() } }));
+
+function module(id: string, overrides: Partial<PackageModule> = {}): PackageModule {
+  return {
+    id,
+    manifest: { id, name: id === "samba" ? "Samba" : "Nginx", description: `${id} description`, long_description: `${id} long description`, category: id === "samba" ? "file_sharing" : "web_server", version: "1.0.0", maintainer: "WebNAS", homepage: null, icon: "package", screenshots: [], license: "GPL", supported_distributions: ["debian"], supported_architectures: ["x86_64"], apt_packages: [id], dnf_packages: [id], systemd_services: [id], ports: ["80/tcp"], dependencies: [], conflicts: [], permissions: ["systemd"], config_paths: [`/etc/${id}`], data_paths: [`/var/lib/${id}`], backup_paths: [`/etc/${id}`], proxmox_safe: true, requires_reboot: false, requires_root: true, configurable: true, removable: true, changelog: ["Initial release"] },
+    state: { installed: false, installed_version: null, available_version: "1.0.0", update_available: false, requires_reboot: false }, services: { [id]: "inactive" }, status: "available", compatible: true, blocked_by_proxmox: false, distribution: { id: "debian", name: "Debian", architecture: "x86_64", package_manager: "apt-get" }, jobs: [], ...overrides
+  };
+}
+
+const packagePlan: PackagePlan = { module_id: "samba", action: "install", distribution: { id: "debian", name: "Debian", version_id: "12", architecture: "x86_64", package_manager: "apt-get" }, compatible: true, blocked_by_proxmox: false, packages: ["samba", "smbclient"], services: ["smbd"], ports: ["445/tcp"], config_paths: ["/etc/samba/smb.conf"], data_paths: ["/var/lib/samba"], permissions: ["systemd"], dependencies: [], conflicts: [], warnings: [], requires_reboot: false, remove_data: false, target_version: "1.0.0", steps: ["apt-get install -y samba smbclient"] };
+
+describe("Package Center", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.apps).mockResolvedValue([module("samba"), module("nginx")]);
+    vi.mocked(api.appCategories).mockResolvedValue(["file_sharing", "web_server"]);
+    vi.mocked(api.appJobs).mockResolvedValue([]);
+    vi.mocked(api.appHistory).mockResolvedValue([]);
+    vi.mocked(api.packageSources).mockResolvedValue([]);
+    vi.mocked(api.appPlan).mockResolvedValue(packagePlan);
+    vi.mocked(api.appAction).mockResolvedValue({ job: undefined });
+  });
+
+  it("renders, searches, filters and opens package details", async () => {
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    expect(await screen.findByText("Samba")).toBeInTheDocument();
+    expect(screen.getByText("Nginx")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("package.search"), { target: { value: "nginx" } });
+    expect(screen.queryByText("Samba")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("package.search"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("package.category"), { target: { value: "file_sharing" } });
+    expect(screen.queryByText("Nginx")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Samba/ }));
+    expect(screen.getByText("samba long description")).toBeInTheDocument();
+    expect(screen.getByText("package.changelog")).toBeInTheDocument();
+  });
+
+  it("shows and confirms a dry-run plan before installation", async () => {
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    await screen.findByText("Samba");
+    fireEvent.click(screen.getAllByRole("button", { name: "store.install" })[0]);
+
+    expect(await screen.findByText("apt-get install -y samba smbclient")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "package.confirmOperation" }));
+    await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("samba", "install", "secret", false, false));
+  });
+
+  it("renders job progress, errors and incompatible modules", async () => {
+    const failed = { id: "job-1", module_id: "samba", action: "install", status: "failed" as const, progress: 45, created_at: 1, error: "APT failed", current_step: "Install packages", log_tail: [{ id: 1, created_at: 1, stream: "stderr", line: "Repository unavailable" }] };
+    vi.mocked(api.appJobs).mockResolvedValue([failed]);
+    vi.mocked(api.apps).mockResolvedValue([module("samba", { status: "error", jobs: [failed] }), module("nginx", { status: "incompatible", compatible: false })]);
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    expect(await screen.findByText("package.status.incompatible")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /package.tab.jobs/ }));
+    expect(screen.getByText("APT failed")).toBeInTheDocument();
+    expect(screen.getByText(/Repository unavailable/)).toBeInTheDocument();
+  });
+
+  it("keeps all package-center translation keys in Polish and English", () => {
+    const keys = Object.keys(pl).filter((key) => key.startsWith("package."));
+    expect(keys.length).toBeGreaterThan(50);
+    expect(keys.every((key) => key in en)).toBe(true);
+    expect(Object.keys(en).filter((key) => key.startsWith("package.")).every((key) => key in pl)).toBe(true);
+  });
+});

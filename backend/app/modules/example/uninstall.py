@@ -1,0 +1,1 @@
+print("Example uninstall hook")

@@ -133,31 +133,86 @@ export type ResourceDashboard = {
 };
 export type AppJob = {
   id: string;
-  app_id: string;
+  app_id?: string;
+  module_id: string;
   action: string;
   status: "queued" | "running" | "completed" | "failed";
   progress: number;
   created_at: number;
   finished_at?: number | null;
-  log_tail: string[];
+  log_tail: Array<{ id: number; created_at: number; stream: string; line: string }>;
   error: string;
+  current_step?: string;
+  cancellation_requested?: boolean;
+  requires_reboot?: boolean;
+  plan?: PackagePlan;
 };
-export type StoreApp = {
+export type PackageManifest = {
   id: string;
-  manifest: {
-    name: string;
-    description: string;
-    version: string;
-    apt_packages?: string[];
-    systemd_services?: string[];
-    ports?: string[];
-    proxmox_safe?: boolean;
-  };
-  state: { installed?: boolean; configured?: boolean; history?: unknown[]; config?: SambaConfig };
+  name: string;
+  description: string;
+  long_description: string;
+  category: string;
+  version: string;
+  maintainer: string;
+  homepage?: string | null;
+  icon: string;
+  screenshots: string[];
+  license: string;
+  supported_distributions: string[];
+  supported_architectures: string[];
+  apt_packages: string[];
+  dnf_packages: string[];
+  systemd_services: string[];
+  ports: string[];
+  dependencies: string[];
+  conflicts: string[];
+  permissions: string[];
+  config_paths: string[];
+  data_paths: string[];
+  backup_paths: string[];
+  proxmox_safe: boolean;
+  requires_reboot: boolean;
+  requires_root: boolean;
+  configurable: boolean;
+  removable: boolean;
+  changelog: string[];
+};
+export type PackagePlan = {
+  module_id: string;
+  action: "install" | "update" | "uninstall" | "start" | "stop" | "restart";
+  distribution: { id: string; name: string; version_id: string; architecture: string; package_manager?: string | null };
+  compatible: boolean;
+  blocked_by_proxmox: boolean;
+  packages: string[];
+  services: string[];
+  ports: string[];
+  config_paths: string[];
+  data_paths: string[];
+  permissions: string[];
+  dependencies: string[];
+  conflicts: string[];
+  warnings: string[];
+  requires_reboot: boolean;
+  remove_data: boolean;
+  previous_version?: string | null;
+  target_version?: string | null;
+  steps: string[];
+};
+export type PackageModule = {
+  id: string;
+  manifest: PackageManifest;
+  state: { installed: boolean; installed_version?: string | null; available_version: string; update_available: boolean; requires_reboot: boolean };
   services: Record<string, string>;
   status: string;
+  compatible: boolean;
+  blocked_by_proxmox: boolean;
+  distribution: { id: string; name: string; architecture: string; package_manager?: string | null };
   jobs: AppJob[];
 };
+export type StoreApp = PackageModule;
+export type PackageHistoryItem = { id: number; job_id: string; module_id: string; action: string; status: string; actor: string; created_at: number; finished_at?: number | null; message: string };
+export type PackageSource = { id: string; name: string; github_url: string; branch: string; enabled: boolean; created_at: number; updated_at: number; last_sync_at?: number | null; validation_error: string; metadata: Record<string, unknown> };
 export type StorePlugin = {
   id: string;
   name: string;
@@ -383,9 +438,23 @@ export const api = {
   systemdServices: () => request<SystemdService[]>("/api/admin/system/services"),
   systemdServiceAction: (service: string, action: "start" | "stop" | "restart" | "enable" | "disable", admin_password: string, confirm_restart = false) => request<SystemdService>(`/api/admin/system/services/${encodeURIComponent(service)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm_restart }) }),
   systemdServiceLogs: (service: string, lines = 200) => request<SystemLogs>(`/api/admin/system/services/${encodeURIComponent(service)}/logs?lines=${lines}`),
-  apps: () => request<StoreApp[]>("/api/apps"),
-  app: (id: string) => request<StoreApp>(`/api/apps/${encodeURIComponent(id)}`),
-  appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", admin_password: string, dry_run = false) => request<{ job?: AppJob; ok?: boolean }>(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, dry_run }) }),
+  apps: (params: Record<string, string | boolean> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => value !== "" && query.set(key, String(value))); return request<PackageModule[]>(`/api/apps${query.size ? `?${query}` : ""}`); },
+  app: (id: string) => request<PackageModule>(`/api/apps/${encodeURIComponent(id)}`),
+  appCategories: () => request<string[]>("/api/apps/categories"),
+  appInstalled: () => request<PackageModule[]>("/api/apps/installed"),
+  appUpdates: () => request<PackageModule[]>("/api/apps/updates"),
+  appPlan: (id: string, action: PackagePlan["action"], remove_data = false) => request<PackagePlan>(`/api/apps/${encodeURIComponent(id)}/plan?action=${encodeURIComponent(action)}&remove_data=${remove_data}`),
+  appJobs: (status = "", moduleId = "") => { const query = new URLSearchParams(); if (status) query.set("status", status); if (moduleId) query.set("module_id", moduleId); return request<AppJob[]>(`/api/apps/jobs${query.size ? `?${query}` : ""}`); },
+  appJob: (id: string) => request<AppJob>(`/api/apps/jobs/${encodeURIComponent(id)}`),
+  cancelAppJob: (id: string, admin_password: string) => request<AppJob>(`/api/apps/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: JSON.stringify({ admin_password, confirm_plan: true }) }),
+  retryAppJob: (id: string, admin_password: string) => request<AppJob>(`/api/apps/jobs/${encodeURIComponent(id)}/retry`, { method: "POST", body: JSON.stringify({ admin_password, confirm_plan: true }) }),
+  appHistory: () => request<PackageHistoryItem[]>("/api/apps/history"),
+  packageSources: () => request<PackageSource[]>("/api/apps/sources"),
+  createPackageSource: (payload: Omit<PackageSource, "id" | "created_at" | "updated_at" | "last_sync_at" | "validation_error" | "metadata">) => request<PackageSource>("/api/apps/sources", { method: "POST", body: JSON.stringify(payload) }),
+  updatePackageSource: (id: string, payload: Omit<PackageSource, "id" | "created_at" | "updated_at" | "last_sync_at" | "validation_error" | "metadata">) => request<PackageSource>(`/api/apps/sources/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deletePackageSource: (id: string) => request(`/api/apps/sources/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
+  syncPackageSource: (id: string) => request<PackageSource>(`/api/apps/sources/${encodeURIComponent(id)}/sync`, { method: "POST", body: "{}" }),
+  appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", admin_password: string, _dry_run = false, remove_data = false) => request<{ job?: AppJob; ok?: boolean }>(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm_plan: true, remove_data }) }),
   appLogs: (id: string) => request<{ lines: string[] }>(`/api/apps/${encodeURIComponent(id)}/logs`),
   appConfig: (id: string) => request<SambaConfig>(`/api/apps/${encodeURIComponent(id)}/config`),
   storePlugins: () => request<{ plugins: StorePlugin[]; codex_template: string }>("/api/apps/plugins"),

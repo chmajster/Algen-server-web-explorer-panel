@@ -15,6 +15,15 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - Default port `5000`.
 - One-command installer with systemd/autostart support.
 - Optional firewall setup for `ufw` or `firewalld`.
+- Modular NAS-style Package Center with validated YAML manifests, dry-run plans, durable jobs, live logs, service control, history, and GitHub source metadata.
+
+## Package Center
+
+**Centrum pakietów** manages trusted WebNAS modules through an administrator-only UI with search, categories, status filters, installed/updates views, jobs, history, and sources. The initial catalog contains Samba, Squid Proxy, Nginx, and Syncthing. Install, update, uninstall, and systemd actions require plan confirmation and PAM reauthentication; progress and redacted logs survive browser and service restarts in SQLite.
+
+Modules support Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux when their manifest provides packages for the detected `apt-get`, `dnf`, or `yum` manager. Proxmox Safe Mode rejects modules not explicitly marked safe. External GitHub repositories are stored and refreshed only as untrusted metadata—they are never downloaded or executed automatically.
+
+See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for architecture, manifest fields, module authoring, security, API endpoints, storage, backups, and a manual test checklist.
 
 ## Szybki start
 

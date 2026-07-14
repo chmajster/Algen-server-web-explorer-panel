@@ -36,8 +36,8 @@ describe("administrative forms", () => {
       id: "samba",
       manifest: { name: "Samba", description: "SMB server", version: "1.0" },
       state: { installed: false }, services: {}, status: "error",
-      jobs: [{ id: "job-1", app_id: "samba", action: "install", status: "failed", progress: 45, created_at: 1, finished_at: 2, error: "APT repository is unavailable", log_tail: ["Refreshing APT package metadata", "Connection timed out"] }]
-    }]);
+      jobs: [{ id: "job-1", module_id: "samba", action: "install", status: "failed", progress: 45, created_at: 1, finished_at: 2, error: "APT repository is unavailable", log_tail: [{ id: 1, created_at: 1, stream: "stderr", line: "Connection timed out" }] }]
+    }] as never);
 
     render(<StoreAppView t={(key) => key} toast={vi.fn()} />);
 

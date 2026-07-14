@@ -1,21 +1,30 @@
+id: samba
 name: Samba / Windows File Sharing
-description: SMB/CIFS file sharing service managed by Algen Web Explorer Panel.
+description: SMB/CIFS file sharing for Windows, macOS and Linux clients.
+long_description: Manage secure SMB shares, local Samba users and the smbd/nmbd services from WebNAS.
+category: file_sharing
 version: "1.0.0"
-apt_packages:
-  - samba
-  - smbclient
-systemd_services:
-  - smbd
-  - nmbd
-ports:
-  - 137/udp
-  - 138/udp
-  - 139/tcp
-  - 445/tcp
-config_paths:
-  - /etc/samba/smb.conf
-data_paths:
-  - /var/lib/samba
-permissions:
-  - root required for package install, systemd service control, and smbpasswd
+maintainer: WebNAS
+homepage: https://www.samba.org/
+icon: share-2
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+apt_packages: [samba, smbclient]
+dnf_packages: [samba, samba-client]
+systemd_services: [smbd, nmbd]
+ports: [137/udp, 138/udp, 139/tcp, 445/tcp]
+dependencies: []
+conflicts: []
+permissions: [package_management, systemd, network_listen, config_write]
+config_paths: [/etc/samba/smb.conf, /etc/samba/algen-shares.conf]
+data_paths: [/var/lib/samba]
+backup_paths: [/etc/samba]
 proxmox_safe: true
+requires_reboot: false
+requires_root: true
+configurable: true
+removable: true
+healthcheck: health.py
+changelog:
+  - Initial manifest-driven package-center release.
