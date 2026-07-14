@@ -3,7 +3,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { logout, type SettingsMe, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
 import { FileManager } from "../features/files/FileManager";
-import { GroupsApp, LogsAppView, MonitorApp, MountsApp, SambaAppView, ServicesApp, SettingsAppView, UsersApp } from "../features/admin/SystemApps";
+import { GroupsApp, LogsAppView, MonitorApp, SambaAppView, ServicesApp, SettingsAppView, UsersApp } from "../features/admin/SystemApps";
 import { forgetAdminPassword } from "../features/admin/adminCredentials";
 import { PackageCenterApp } from "../features/package-center/PackageCenterApp";
 import { TransferCenter } from "../features/transfers/TransferCenter";
@@ -37,7 +37,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [pinned, setPinned] = useState<Set<AppId>>(() => new Set(JSON.parse(localStorage.getItem("webnas_pinned_apps") || '["files","transfers","monitor","settings"]')));
   const [clock, setClock] = useState(new Date());
   const restored = useRef(false);
-  const availableApps = useMemo(() => apps.filter((app) => !app.admin || profile.is_admin), [profile.is_admin]);
+  const availableApps = useMemo(() => apps.filter((app) => !app.hidden && (!app.admin || profile.is_admin)), [profile.is_admin]);
   const resolvedTheme = theme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : theme;
   const activeTransfers = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status)).length;
 
@@ -65,12 +65,12 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       case "transfers": return <TransferCenter tasks={tasks} t={t} toast={toast} uploadControls={uploadControls} />;
       case "users": return <UsersApp t={t} toast={toast} />;
       case "groups": return <GroupsApp t={t} toast={toast} />;
-      case "mounts": return <MountsApp t={t} toast={toast} />;
+      case "mounts": return <SettingsAppView language={language} theme={theme} isAdmin={profile.is_admin} initialSection="network" t={t} toast={toast} onLanguage={onLanguage} onTheme={onTheme} />;
       case "samba": return <SambaAppView t={t} toast={toast} />;
       case "services": return <ServicesApp t={t} toast={toast} />;
       case "store": return <PackageCenterApp t={t} toast={toast} onConfigure={(moduleId) => { if (moduleId === "samba") openApp("samba"); }} />;
       case "logs": return <LogsAppView t={t} />;
-      case "settings": return <SettingsAppView language={language} theme={theme} t={t} toast={toast} onLanguage={onLanguage} onTheme={onTheme} />;
+      case "settings": return <SettingsAppView language={language} theme={theme} isAdmin={profile.is_admin} t={t} toast={toast} onLanguage={onLanguage} onTheme={onTheme} />;
       case "monitor": return <MonitorApp t={t} />;
     }
   }

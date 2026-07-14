@@ -7,7 +7,7 @@ vi.mock("../../api", () => ({
   ApiError: class ApiError extends Error {},
   downloadUrl: (path: string) => `/download?path=${path}`,
   api: {
-    list: vi.fn(), tree: vi.fn(), mounts: vi.fn(), appConfig: vi.fn(), stat: vi.fn(),
+    list: vi.fn(), tree: vi.fn(), mounts: vi.fn(), mountRoots: vi.fn(), appConfig: vi.fn(), stat: vi.fn(),
     copy: vi.fn(), move: vi.fn(), mkdir: vi.fn(), create: vi.fn(), rename: vi.fn(), delete: vi.fn(), upload: vi.fn(), preview: vi.fn(), chmod: vi.fn(), chown: vi.fn()
   }
 }));
@@ -27,6 +27,7 @@ describe("file manager behavior", () => {
     vi.mocked(api.list).mockResolvedValue({ path: "/home/test", current_path: "/home/test", parent_path: "/home", items: files, page: 1, page_size: 100, total_items: 2, total_pages: 1, sort: "name", direction: "asc", can_write: true, can_upload: true, can_delete: true });
     vi.mocked(api.tree).mockResolvedValue({ path: "/home/test", items: [files[0]] });
     vi.mocked(api.mounts).mockResolvedValue([]);
+    vi.mocked(api.mountRoots).mockResolvedValue([]);
     vi.mocked(api.appConfig).mockResolvedValue({ shares: [] });
   });
 
@@ -93,5 +94,17 @@ describe("file manager behavior", () => {
 
     expect(api.mkdir).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith("files.alreadyExists", "error");
+  });
+
+  it("disables write actions in a read-only destination", async () => {
+    vi.mocked(api.list).mockResolvedValue({ path: "/home/test", current_path: "/home/test", parent_path: "/home", items: [], page: 1, page_size: 100, total_items: 0, total_pages: 1, sort: "name", direction: "asc", can_write: false, can_upload: false, can_delete: false });
+    const { container } = render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await waitFor(() => expect(api.list).toHaveBeenCalled());
+
+    fireEvent.contextMenu(container.querySelector(".file-content")!);
+
+    expect(screen.getByRole("menuitem", { name: "action.newFolder" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "action.newFile" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "action.upload" })).toBeDisabled();
   });
 });

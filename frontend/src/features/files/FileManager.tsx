@@ -5,11 +5,12 @@ import {
   Search, SlidersHorizontal, Trash2, Upload, X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, downloadUrl, type FileItem, type NetworkMount, type Task } from "../../api";
+import { api, ApiError, downloadUrl, type FileItem, type Task } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { ConfirmDialog, InputDialog, Modal } from "../../components/Modal";
 import { UploadProgressDialog } from "../transfers/UploadProgressDialog";
+import { useNetworkMounts } from "../mounts/useNetworkMounts";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { DirectoryTree } from "./DirectoryTree";
 import { FilePreview } from "./FilePreview";
@@ -64,7 +65,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   const [loadError, setLoadError] = useState("");
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
-  const [mounts, setMounts] = useState<NetworkMount[]>([]);
+  const { roots: mounts, loading: mountsLoading, initialized: mountsInitialized } = useNetworkMounts();
   const [sharedPaths, setSharedPaths] = useState<Set<string>>(new Set());
   const [treeVisible, setTreeVisible] = useState(() => localStorage.getItem(`${storagePrefix}_tree`) !== "hidden");
   const [treeWidth, setTreeWidth] = useState(() => Number(localStorage.getItem(`${storagePrefix}_tree_width`) || 238));
@@ -103,7 +104,20 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     } finally { if (id === requestId.current) setLoading(false); }
   }, [direction, filter, page, path, sort, t]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { api.mounts().then(setMounts).catch(() => setMounts([])); api.appConfig("samba").then((data) => setSharedPaths(new Set(data.shares.filter((share) => share.enabled).map((share) => share.path)))).catch(() => undefined); }, []);
+  useEffect(() => { api.appConfig("samba").then((data) => setSharedPaths(new Set(data.shares.filter((share) => share.enabled).map((share) => share.path)))).catch(() => undefined); }, []);
+  useEffect(() => {
+    if (!mountsInitialized || mountsLoading || !path.startsWith("/mnt/webnas/mnt/")) return;
+    const stillVisible = mounts.some((mount) => path === mount.mount_point || path.startsWith(`${mount.mount_point}/`));
+    if (stillVisible) return;
+    setHistory({ entries: [homePath], index: 0 });
+    setSelection(new Set());
+    setClipboard(null);
+    toast(t("files.networkResourceUnavailable"), "error");
+  }, [homePath, mounts, mountsInitialized, mountsLoading, path, t, toast]);
+  const mountAccessVersion = mounts.map((mount) => `${mount.id}:${mount.mount_point}:${mount.read_only}`).join("|");
+  useEffect(() => {
+    if (mountsInitialized && mounts.some((mount) => path === mount.mount_point || path.startsWith(`${mount.mount_point}/`))) void load();
+  }, [load, mountAccessVersion, mounts, mountsInitialized, path]);
   useEffect(() => {
     const completed = tasks.some((task) => ["copy", "move", "delete", "upload"].includes(task.type) && ["completed", "failed"].includes(task.status) && (task.finished_at || 0) * 1000 > Date.now() - 2500);
     if (completed) void load();
@@ -216,8 +230,9 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     if (item && !item.is_dir) menu.push({ label: t("action.preview"), action: () => setPreview(item) }, { label: t("action.download"), action: () => window.open(downloadUrl(item.path), "_blank") });
     if (item?.is_dir) menu.push({ label: t("files.openNewWindow"), action: () => onOpenFolderWindow(item.path) });
     if (item) menu.push({ label: t("action.copy"), separator: true, action: () => setClipboard({ mode: "copy", paths: targetItems.map((entry) => entry.path) }) }, { label: t("action.cut"), action: () => setClipboard({ mode: "move", paths: targetItems.map((entry) => entry.path) }) }, { label: t("action.rename"), disabled: !item.can_rename, action: () => setDialog({ type: "rename", item }) }, { label: t("action.delete"), danger: true, disabled: !item.can_delete, action: () => setDialog({ type: "delete", items: targetItems }) });
-    else menu.push({ label: t("action.newFolder"), action: () => setDialog({ type: "newFolder" }) }, { label: t("action.newFile"), action: () => setDialog({ type: "newFile" }) }, { label: t("action.upload"), action: () => document.getElementById("file-manager-upload")?.click() });
-    menu.push({ label: t("action.paste"), separator: true, disabled: !clipboard, action: () => void paste(item?.is_dir ? item.path : path) }, { label: t("files.copyPath"), action: () => void navigator.clipboard?.writeText(item?.path || path) });
+    else menu.push({ label: t("action.newFolder"), disabled: !meta.canWrite, action: () => setDialog({ type: "newFolder" }) }, { label: t("action.newFile"), disabled: !meta.canWrite, action: () => setDialog({ type: "newFile" }) }, { label: t("action.upload"), disabled: !meta.canWrite, action: () => document.getElementById("file-manager-upload")?.click() });
+    const pasteAllowed = item?.is_dir ? item.can_write : meta.canWrite;
+    menu.push({ label: t("action.paste"), separator: true, disabled: !clipboard || !pasteAllowed, action: () => void paste(item?.is_dir ? item.path : path) }, { label: t("files.copyPath"), action: () => void navigator.clipboard?.writeText(item?.path || path) });
     if (item?.is_dir) menu.push({ label: t("files.shareSamba"), action: () => onShareSamba(item.path) });
     menu.push({ label: item ? t("files.properties") : t("files.directoryProperties"), action: () => item ? setProperties(item) : api.stat(path).then(setProperties).catch(() => undefined) }, { label: t("action.refresh"), action: () => void load() });
     return menu;

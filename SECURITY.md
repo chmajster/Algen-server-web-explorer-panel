@@ -9,8 +9,14 @@
 - Path traversal outside the configured roots is rejected.
 - User input is not interpolated into shell commands.
 - File operations run in a worker process that drops privileges to the authenticated user.
+- Network resources are confined to direct, non-symlink children of `/mnt/webnas/mnt`, and actual mount state is reconciled from `/proc/self/mountinfo`/`mountpoint` before publication.
+- Mount options use an allowlist; `suid`, `dev`, `exec`, `allow_other`, inline credentials, authentication fields, and argument-injection syntax are rejected.
+- SMB/WebDAV secrets are atomically stored in backend-generated `0600` files inside a `0700` directory. Passwords and credentials are redacted from API responses, logs, previews, process arguments, and systemd units.
+- Administrative mount APIs require an administrator session; mutations additionally require CSRF and PAM reauthentication. The user-facing `/api/mounts/roots` response contains only verified roots and basic filesystem data.
 
 For production, set a strong `security.session_secret`, enable HTTPS at a reverse proxy or through configured TLS, and review whether `/home` is the correct `ReadWritePaths` boundary for your server.
+
+Network mount definitions with empty access lists follow the documented compatibility policy and are visible to every authenticated local user. Configure `allowed_users` or `allowed_groups` when a resource must be restricted. Proxmox Safe Mode additionally rejects managed paths colliding with configured Proxmox storage; WebNAS never registers a mount as Proxmox storage.
 
 ## Proxmox VE Host Safety
 

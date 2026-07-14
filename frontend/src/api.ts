@@ -84,7 +84,7 @@ export type SettingsMe = {
 };
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number, public code?: string) {
+  constructor(message: string, public status: number, public code?: string, public field?: string, public details?: Record<string, unknown>) {
     super(message);
     this.name = "ApiError";
   }
@@ -275,11 +275,17 @@ export type NetworkMount = {
   owner: string;
   read_only: boolean;
   persistent: boolean;
-  status: "mounted" | "unmounted" | "error" | "testing" | "mounting" | "unmounting";
+  status: "mounted" | "unmounted" | "error" | "testing" | "mounting" | "unmounting" | "remounting" | "missing_packages" | "host_unavailable" | "migration_required" | "migrating" | "manual_intervention_required";
+  actual_mounted: boolean;
   last_error: string;
+  last_operation: string;
+  last_operation_at: number | null;
+  missing_packages: string[];
+  migration_status: "ready" | "required" | "migrating" | "failed";
+  manual_intervention: boolean;
   allowed_users: string[];
   allowed_groups: string[];
-  config: Record<string, unknown>;
+  config: Record<string, unknown> & { has_secret?: boolean; automount?: boolean };
   fs: { total: number; used: number; free: number; fs_type: string } | null;
   jobs: Array<{ id: string; action: string; status: string; exit_code: number | null; error: string; log_tail: string[] }>;
 };
@@ -291,7 +297,6 @@ export type NetworkMountPayload = {
   share?: string;
   export_path?: string;
   remote_path?: string;
-  mount_point?: string;
   username?: string;
   password?: string;
   domain?: string;
@@ -301,6 +306,7 @@ export type NetworkMountPayload = {
   ssh_auth?: "key" | "password";
   read_only?: boolean;
   persistent?: boolean;
+  automount?: boolean;
   uid?: string;
   gid?: string;
   file_mode?: string;
@@ -310,6 +316,21 @@ export type NetworkMountPayload = {
   allowed_users?: string[];
   allowed_groups?: string[];
   force_empty_mountpoint?: boolean;
+  remove_secret?: boolean;
+};
+export type NetworkMountRoot = {
+  id: string;
+  name: string;
+  mount_point: string;
+  read_only: boolean;
+  status: "mounted";
+  filesystem: { total: number; used: number; free: number; fs_type: string } | null;
+};
+export type MountActionResult = {
+  job?: { id: string; mount_id: string; action: string; status: string; exit_code: number | null; error: string; log_tail: string[] };
+  dry_run?: boolean;
+  dependencies?: string[];
+  command?: string[];
 };
 export type ProxmoxSafety = {
   is_proxmox: boolean;
@@ -333,17 +354,21 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     const body = await res.text();
     let message = body || res.statusText;
     let code: string | undefined;
+    let field: string | undefined;
+    let details: Record<string, unknown> | undefined;
     try {
-      const payload = JSON.parse(body) as { detail?: string | { code?: string; message?: string } };
+      const payload = JSON.parse(body) as { detail?: string | ({ code?: string; message?: string; field?: string } & Record<string, unknown>) };
       if (typeof payload.detail === "string") message = payload.detail;
       else if (payload.detail) {
         message = payload.detail.message || message;
         code = payload.detail.code;
+        field = payload.detail.field;
+        details = payload.detail;
       }
     } catch {
       // Non-JSON responses use the original response text.
     }
-    throw new ApiError(message, res.status, code);
+    throw new ApiError(message, res.status, code, field, details);
   }
   return res.json() as Promise<T>;
 }
@@ -472,11 +497,12 @@ export const api = {
   enableSambaUser: (username: string, password: string, admin_password: string) => request("/api/apps/samba/users/enable", { method: "POST", body: JSON.stringify({ username, password, admin_password }) }),
   disableSambaUser: (username: string, admin_password: string) => request("/api/apps/samba/users/disable", { method: "POST", body: JSON.stringify({ username, admin_password }) }),
   mounts: () => request<NetworkMount[]>("/api/mounts"),
+  mountRoots: () => request<NetworkMountRoot[]>("/api/mounts/roots"),
   mount: (id: string) => request<NetworkMount>(`/api/mounts/${encodeURIComponent(id)}`),
   createMount: (payload: NetworkMountPayload) => request<NetworkMount>("/api/mounts", { method: "POST", body: JSON.stringify(payload) }),
   updateMount: (id: string, payload: NetworkMountPayload) => request<NetworkMount>(`/api/mounts/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) }),
-  deleteMount: (id: string, admin_password: string) => request(`/api/mounts/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ admin_password }) }),
-  mountAction: (id: string, action: "mount" | "unmount" | "remount" | "test", admin_password: string, dry_run = false, force_empty_mountpoint = false) => request(`/api/mounts/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, dry_run, force_empty_mountpoint }) }),
+  deleteMount: (id: string, admin_password: string, confirm_destructive = true) => request(`/api/mounts/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm_destructive }) }),
+  mountAction: (id: string, action: "mount" | "unmount" | "remount" | "test" | "migrate", admin_password: string, dry_run = false, force_empty_mountpoint = false) => request<MountActionResult>(`/api/mounts/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, dry_run, force_empty_mountpoint, confirm_destructive: ["unmount", "remount", "migrate"].includes(action) }) }),
   mountLogs: (id: string) => request<{ lines: string[] }>(`/api/mounts/${encodeURIComponent(id)}/logs`)
 };
 

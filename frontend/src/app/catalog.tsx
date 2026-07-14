@@ -9,7 +9,9 @@ export const apps: AppDefinition[] = [
   { id: "transfers", labelKey: "app.transfers", icon: <RefreshCw /> },
   { id: "users", labelKey: "app.users", icon: <Users />, admin: true },
   { id: "groups", labelKey: "app.groups", icon: <Boxes />, admin: true },
-  { id: "mounts", labelKey: "app.networkMounts", icon: <Network /> },
+  // Kept in the registry so saved windows/localStorage using the legacy AppId
+  // restore safely. It is no longer shown as a separate launcher app.
+  { id: "mounts", labelKey: "app.networkMounts", icon: <Network />, admin: true, hidden: true },
   { id: "samba", labelKey: "app.samba", icon: <Share2 />, admin: true },
   { id: "services", labelKey: "app.services", icon: <ServerCog />, admin: true },
   { id: "store", labelKey: "app.store", icon: <Package />, admin: true },

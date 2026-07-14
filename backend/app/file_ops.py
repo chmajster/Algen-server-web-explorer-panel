@@ -37,7 +37,8 @@ def _worker_items(result: object) -> list[dict[str, Any]]:
 def ensure_temp_dir() -> Path:
     tmp_dir = Path(get_config().paths.temp_dir)
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    os.chmod(tmp_dir, 0o1777)
+    # Sticky bit prevents users from deleting one another's temporary files.
+    os.chmod(tmp_dir, 0o1777)  # nosec B103
     return tmp_dir
 
 

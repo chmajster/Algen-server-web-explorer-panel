@@ -13,6 +13,8 @@ auth:
 paths:
   default_root: "home"
   allowed_roots: []
+  # Network resources are not configured here. The backend always mounts them
+  # as direct children of /mnt/webnas/mnt and publishes only verified mounts.
   data_dir: "/var/lib/webnas"
   log_dir: "/var/log/webnas"
   temp_dir: "/var/lib/webnas/tmp"

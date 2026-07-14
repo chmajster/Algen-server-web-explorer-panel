@@ -53,6 +53,12 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
   - safe dry-run previews;
   - File Manager integration;
   - read-only mount write protection.
+  - a single administrator-only **Settings → Network resources** interface with dynamic SMB/NFS/SSHFS/WebDAV create and edit forms;
+  - fixed mount locations under `/mnt/webnas/mnt/<name>`, normalized-name uniqueness, traversal/symlink protection, and client `mount_point` rejection;
+  - real operating-system status reconciliation, filesystem capacity only for active mounts, and a minimal user-filtered `/api/mounts/roots` endpoint;
+  - user, owner, primary-group, and supplementary-group access checks plus automatic shared Explorer refresh;
+  - path-derived systemd mount/automount unit names, legacy definition migration, rename rollback, per-definition operation locks, and safe uninstall cleanup;
+  - atomic secret updates, blank-password preservation, explicit secret removal, stricter option allowlisting, missing-package reporting, and disabled unsafe SSHFS password mode.
 - Full GitHub Actions pipeline for backend, frontend, security scans, shell scripts, and packaging checks.
 - Proxmox Safe Mode guards for protected paths, services, users/groups, storage paths, and admin operations.
 - Additional backend and frontend tests covering transfers, path policy, security/session/CSRF, file operations, resource dashboard, Proxmox guards, app store, network mounts, and file listing.
@@ -69,6 +75,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - File listing responses now include pagination metadata, current/parent paths, directory permissions, item capability flags, symlink metadata, MIME/type fields, and modification timestamps.
 - File operations now check read-only network mounts before write operations.
 - Allowed roots can include user-visible WebNAS network mount points.
+- The legacy Network Mounts `AppId` is retained only for saved-window compatibility and redirects to Settings; its separate launcher shortcut was removed.
 - Installer, update, uninstall, packaging, and service files were expanded for safer install/update flows and systemd operation.
 - The systemd service now explicitly runs as root with a writable system tree so validated package-manager operations can complete; other process hardening remains enabled.
 - Authenticated file workers now retain writable access to allowed home directories; directory capability flags are calculated after dropping to the logged-in user's UID instead of from the root service process.

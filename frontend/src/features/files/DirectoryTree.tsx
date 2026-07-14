@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Folder, HardDrive, LoaderCircle, Network } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type FileItem, type NetworkMount } from "../../api";
+import { api, type FileItem, type NetworkMountRoot } from "../../api";
 import type { Translate } from "../../app/types";
 
 type NodeState = { children: FileItem[]; open: boolean; loading: boolean; error?: string };
@@ -9,7 +9,7 @@ type TreeState = Record<string, NodeState>;
 export function DirectoryTree({ currentPath, homePath, mounts, t, onOpen, onDropItems }: {
   currentPath: string;
   homePath: string;
-  mounts: NetworkMount[];
+  mounts: NetworkMountRoot[];
   t: Translate;
   onOpen: (path: string) => void;
   onDropItems: (path: string) => void;
@@ -43,10 +43,11 @@ export function DirectoryTree({ currentPath, homePath, mounts, t, onOpen, onDrop
     localStorage.setItem(storageKey, JSON.stringify(expanded));
   }, [tree]);
 
+  const pathIsReadOnly = (path: string) => mounts.some((mount) => mount.read_only && (path === mount.mount_point || path.startsWith(`${mount.mount_point}/`)));
   function row(path: string, label: string, icon: React.ReactNode, level: number, canExpand = true) {
     const state = tree[path];
     return <div key={path}>
-      <button type="button" className={`tree-row ${currentPath === path ? "active" : ""} ${dropTarget === path ? "drop-target" : ""}`} style={{ paddingLeft: 10 + level * 16 }} onClick={() => onOpen(path)} onDragEnter={(event) => { event.preventDefault(); const paths = event.dataTransfer.getData("text/plain").split("\n").filter(Boolean); setDragCount(paths.length); setDropTarget(path); if (canExpand && !state?.open) { if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = window.setTimeout(() => void load(path), 650); } }} onDragOver={(event) => { event.preventDefault(); setDropTarget(path); }} onDragLeave={(event) => { if (event.currentTarget.contains(event.relatedTarget as Node | null)) return; if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = null; setDropTarget(""); setDragCount(0); }} onDrop={(event) => { event.preventDefault(); if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = null; setDropTarget(""); setDragCount(0); onDropItems(path); }}>
+      <button type="button" className={`tree-row ${currentPath === path ? "active" : ""} ${dropTarget === path ? "drop-target" : ""}`} style={{ paddingLeft: 10 + level * 16 }} onClick={() => onOpen(path)} onDragEnter={(event) => { if (pathIsReadOnly(path)) return; event.preventDefault(); const paths = event.dataTransfer.getData("text/plain").split("\n").filter(Boolean); setDragCount(paths.length); setDropTarget(path); if (canExpand && !state?.open) { if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = window.setTimeout(() => void load(path), 650); } }} onDragOver={(event) => { if (pathIsReadOnly(path)) return; event.preventDefault(); setDropTarget(path); }} onDragLeave={(event) => { if (event.currentTarget.contains(event.relatedTarget as Node | null)) return; if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = null; setDropTarget(""); setDragCount(0); }} onDrop={(event) => { event.preventDefault(); if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = null; setDropTarget(""); setDragCount(0); if (!pathIsReadOnly(path)) onDropItems(path); }}>
         {canExpand ? <span className="tree-toggle" onClick={(event) => { event.stopPropagation(); void load(path); }}>{state?.loading ? <LoaderCircle className="spin" /> : state?.open ? <ChevronDown /> : <ChevronRight />}</span> : <span className="tree-toggle" />}
         {icon}<span>{label}</span>{dropTarget === path && dragCount > 0 && <small className="drag-count">{dragCount}</small>}
       </button>

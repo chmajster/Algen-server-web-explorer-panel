@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field
 
 
 class ServerConfig(BaseModel):
-    host: str = "0.0.0.0"
+    # The NAS panel intentionally listens on the configured LAN interfaces;
+    # production exposure is controlled by firewall/TLS configuration.
+    host: str = "0.0.0.0"  # nosec B104
     port: int = 5000
     use_https: bool = False
     tls_cert: str | None = None

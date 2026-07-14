@@ -8,6 +8,15 @@ from app.services import file_task_manager, rsync_tasks
 from app.services.file_task_manager import FileTask, FileTaskManager, TaskStatus
 
 
+@pytest.fixture(autouse=True)
+def isolated_transfer_database(monkeypatch, tmp_path: Path):
+    """Prevent persisted queued tasks from another test starting in new managers."""
+    original = file_task_manager.get_config()
+    isolated = original.model_copy(deep=True)
+    isolated.paths.data_dir = str(tmp_path / "state")
+    monkeypatch.setattr(file_task_manager, "get_config", lambda: isolated)
+
+
 def test_parse_progress2_line():
     parsed = rsync_tasks.parse_progress_line("      1,024  50%    1.00MB/s    0:00:02 (xfr#1, to-chk=1/2)")
 

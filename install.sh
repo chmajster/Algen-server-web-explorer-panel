@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_NAME="webnas"
 SERVICE_NAME="webnas"
 REPO_URL="https://github.com/chmajster/Algen-server-web-explorer-panel"
 ARCHIVE_URL="${REPO_URL}/archive/refs/heads/main.tar.gz"
@@ -380,9 +379,9 @@ print_runtime_diagnostics() {
     printf '\nListening TCP sockets:\n' >&2
     ss -ltnp >&2 || ss -ltn >&2 || true
   fi
-  if command -v ps >/dev/null 2>&1; then
+  if command -v pgrep >/dev/null 2>&1; then
     printf '\nWebNAS/Python processes:\n' >&2
-    ps -eo pid,ppid,user,cmd | grep -E 'webnas|uvicorn|python -m app.run' | grep -v grep >&2 || true
+    pgrep -af 'webnas|uvicorn|python -m app.run' >&2 || true
   fi
 }
 
@@ -633,6 +632,8 @@ copy_application() {
 }
 
 write_config() {
+  # This also runs during updates that preserve config.
+  install -d -o root -g root -m 0711 /mnt/webnas /mnt/webnas/mnt
   if [[ "$ACTION" == "update" && -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
     ok "Keeping existing config: ${CONFIG_FILE}"
     return
@@ -640,6 +641,8 @@ write_config() {
   section "Writing configuration"
   install -d -m 0755 "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
   install -d -m 1777 "${DATA_DIR}/tmp"
+  # Users may traverse verified mounted resources, but only the privileged
+  # backend can create or replace mount-point directories.
   chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$DATA_DIR" "$LOG_DIR"
   if [[ -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
     ok "Keeping existing config: ${CONFIG_FILE}"
@@ -753,7 +756,7 @@ RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
-ReadWritePaths=${DATA_DIR} ${LOG_DIR} /home ${INSTALL_DIR}
+ReadWritePaths=${DATA_DIR} ${LOG_DIR} /home /mnt/webnas ${INSTALL_DIR}
 
 [Install]
 WantedBy=multi-user.target
@@ -799,8 +802,8 @@ start_service() {
 
 validate_installation() {
   section "Validation"
-  command -v rsync >/dev/null 2>&1 && ok "rsync available" || fail "rsync is missing"
-  systemctl list-unit-files "${SERVICE_NAME}.service" >/dev/null 2>&1 && ok "systemd sees ${SERVICE_NAME}.service" || fail "systemd service not visible"
+  if command -v rsync >/dev/null 2>&1; then ok "rsync available"; else fail "rsync is missing"; fi
+  if systemctl list-unit-files "${SERVICE_NAME}.service" >/dev/null 2>&1; then ok "systemd sees ${SERVICE_NAME}.service"; else fail "systemd service not visible"; fi
   if [[ "$START_SERVICE" == "yes" ]]; then
     if systemctl is-active --quiet "$SERVICE_NAME"; then
       ok "Backend service is active"

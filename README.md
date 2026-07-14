@@ -16,6 +16,19 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - One-command installer with systemd/autostart support.
 - Optional firewall setup for `ufw` or `firewalld`.
 - Modular NAS-style Package Center with validated YAML manifests, dry-run plans, durable jobs, live logs, service control, history, and GitHub source metadata.
+- Administrator-managed SMB/CIFS, NFS, SSHFS, and WebDAV network resources integrated with Settings and File Explorer.
+
+## Network resources
+
+Administrators manage network resources in **Settings → Network resources**. The previous `mounts` application id is still restored from saved window state, but redirects to this single settings section. Each definition can be created, edited, tested, mounted, unmounted, remounted, migrated, inspected through redacted logs, and removed. Mutating operations require an administrator session, CSRF, and fresh PAM reauthentication.
+
+WebNAS always calculates the local path as `/mnt/webnas/mnt/<name>`; neither the UI nor the API accepts an arbitrary `mount_point`. Names are single 1–63 character path components made from letters, numbers, dots, dashes, and underscores. Separators, `..`, control characters, trailing dots/spaces, duplicates after Unicode normalization, nested paths, and symlinks escaping the base are rejected.
+
+Only resources verified as mounted by the operating system and allowed for the current user are published under **Network resources** in File Explorer. Visibility can be granted to users or real primary/supplementary groups. To preserve the existing WebNAS policy, empty user and group lists grant access to every authenticated local user; the owner and administrators retain access. Read-only definitions are enforced in both the UI and every backend write path. Explorer refreshes automatically after mount state changes and returns to the home directory if its active resource disappears.
+
+Protocol dependencies are `cifs-utils` (SMB), `nfs-common` (NFS), `sshfs` plus `fuse3` (SSHFS), and `davfs2` (WebDAV). HTTPS is strongly preferred for WebDAV. SSHFS password authentication is intentionally disabled because it cannot be passed safely without exposing the secret; configure key authentication instead. An empty SMB/WebDAV password during editing preserves the current managed secret, while deletion requires the explicit **remove stored secret** option.
+
+Persistent definitions use path-escaped `.mount`/`.automount` unit names matching `Where=`. Existing definitions outside the managed base are marked for migration and are never published until the administrator completes a conflict-free migration. Local directory contents are not moved or overwritten automatically.
 
 ## Package Center
 

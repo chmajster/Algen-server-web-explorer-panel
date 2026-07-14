@@ -81,8 +81,32 @@ assert_safe_path() {
 
 [[ "${EUID}" -eq 0 ]] || { echo "Run as root, for example: sudo ./uninstall.sh" >&2; exit 1; }
 
+cleanup_managed_mounts() {
+  local python_bin="${INSTALL_DIR}/backend/.venv/bin/python"
+  [[ -x "$python_bin" && -f "${INSTALL_DIR}/backend/app/network_mounts.py" ]] || {
+    echo "WebNAS mount cleanup helper is unavailable; leaving /mnt/webnas/mnt untouched." >&2
+    return 0
+  }
+  echo "Unmounting network resources managed by WebNAS..."
+  PYTHONPATH="${INSTALL_DIR}/backend" WEBNAS_CONFIG="${CONFIG_DIR}/config.yaml" "$python_bin" - <<'PY'
+from app.network_mounts import actual_mount, connect, execute_mount, remove_systemd_units, row_to_mount
+
+with connect() as connection:
+    rows = connection.execute("SELECT * FROM mounts").fetchall()
+for row in rows:
+    mount = row_to_mount(row, reconcile=False)
+    if actual_mount(mount["mount_point"]):
+        result = execute_mount(mount, "unmount")
+        if result.returncode:
+            print(f"WARNING: could not unmount {mount['name']}: {result.stderr or result.stdout}")
+            continue
+    remove_systemd_units(mount)
+PY
+}
+
 echo "Stopping WebNAS service..."
 systemctl disable --now "${SERVICE_NAME}.service" 2>/dev/null || true
+cleanup_managed_mounts
 rm -f "$SERVICE_FILE"
 systemctl daemon-reload
 
@@ -104,6 +128,14 @@ if [[ "$REMOVE_DATA" == "yes" ]] || confirm "Remove config, data, and logs from 
   echo "Removed WebNAS config/data/log directories"
 else
   echo "Kept WebNAS config/data/log directories"
+fi
+
+if [[ -d /mnt/webnas/mnt ]]; then
+  if find /mnt/webnas/mnt -mindepth 1 -print -quit | grep -q .; then
+    echo "Kept non-empty mount directory /mnt/webnas/mnt; no local data was deleted."
+  elif confirm "Remove empty base directory /mnt/webnas/mnt?" "no"; then
+    rmdir /mnt/webnas/mnt 2>/dev/null || true
+  fi
 fi
 
 echo "WebNAS uninstalled."

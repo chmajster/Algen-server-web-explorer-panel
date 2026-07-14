@@ -162,7 +162,21 @@ If `/opt/webnas` already exists, the installer asks whether to update, create a 
 sudo /opt/webnas/uninstall.sh
 ```
 
-The uninstaller stops and disables systemd, removes `/etc/systemd/system/webnas.service`, validates every deletion path, and asks for the text confirmation `REMOVE WEBNAS`. Config, data, and logs are not removed without confirmation.
+The uninstaller first checks and unmounts WebNAS-managed network resources, disables/removes their path-derived systemd units, and runs `daemon-reload`. It then stops WebNAS, removes `/etc/systemd/system/webnas.service`, validates every deletion path, and asks for the text confirmation `REMOVE WEBNAS`. Config, data, and logs are not removed without confirmation. `/mnt/webnas/mnt` is never deleted recursively: non-empty mount-point directories are retained, and removal of an empty base directory requires a separate confirmation.
+
+## Network mount prerequisites
+
+The installer creates `/mnt/webnas/mnt` as a root-owned traversal-only base so ordinary users cannot create arbitrary mount points. Updates preserve this directory, the SQLite definitions, managed credential files, and any local directory contents.
+
+Install the tools required by the protocols you use:
+
+```bash
+sudo apt-get install cifs-utils nfs-common sshfs fuse3 davfs2
+```
+
+On RPM-based systems, use the distribution equivalents. Missing tools are shown in **Settings → Network resources** and block mounting instead of recording a false success. Persistent mounts require systemd. WebDAV should use HTTPS. SSHFS supports key authentication only; password mode is rejected because exposing it through arguments, environment, logs, or units is unsafe.
+
+Old definitions using paths outside `/mnt/webnas/mnt/<name>` appear as requiring migration. Migration never overwrites a destination, moves local data, or publishes a stale directory in File Explorer. Resolve directory/name conflicts manually before retrying.
 
 ## Logs and Debugging
 

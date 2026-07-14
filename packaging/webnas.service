@@ -27,7 +27,7 @@ RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
-ReadWritePaths=/var/lib/webnas /var/log/webnas /home
+ReadWritePaths=/var/lib/webnas /var/log/webnas /home /mnt/webnas
 
 [Install]
 WantedBy=multi-user.target

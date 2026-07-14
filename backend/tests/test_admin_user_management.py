@@ -52,7 +52,9 @@ def test_rejects_protected_group(monkeypatch):
 def test_admin_users_filters_system_accounts(monkeypatch):
     monkeypatch.setattr(settings, "get_config", lambda: cfg())
     monkeypatch.setattr(settings, "_is_admin", lambda username: True)
-    monkeypatch.setattr(settings.pwd, "getpwall", lambda: [pw("root", 0), pw("alice", 1001), pw("www-data", 33)])
+    accounts = [pw("root", 0), pw("alice", 1001), pw("www-data", 33)]
+    monkeypatch.setattr(settings.pwd, "getpwall", lambda: accounts)
+    monkeypatch.setattr(settings.pwd, "getpwnam", lambda username: next(account for account in accounts if account.pw_name == username))
     monkeypatch.setattr(settings, "_groups_for", lambda username: [])
 
     result = settings.admin_users(SimpleNamespace(username="admin"))

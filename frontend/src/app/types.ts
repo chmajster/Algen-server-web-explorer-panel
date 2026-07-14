@@ -33,6 +33,7 @@ export type AppDefinition = {
   labelKey: string;
   icon: ReactNode;
   admin?: boolean;
+  hidden?: boolean;
   minWidth?: number;
   minHeight?: number;
 };

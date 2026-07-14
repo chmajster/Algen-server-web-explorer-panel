@@ -21,13 +21,18 @@ def allowed_roots(username: str) -> list[Path]:
         roots = [_real(root.replace("{username}", username)) for root in cfg.paths.allowed_roots]
     else:
         roots = [_real(user_home(username))]
+    # Configured roots keep the generic Proxmox policy. Network mount roots are
+    # separately constrained to verified direct children of /mnt/webnas/mnt by
+    # network_mounts.visible_mount_roots(); feeding them back through the generic
+    # /mnt guard would reject even those managed roots.
+    roots = validate_allowed_roots(username, roots, cfg)
     try:
         from .network_mounts import visible_mount_roots
 
         roots.extend(visible_mount_roots(username))
-    except Exception:
-        pass
-    return validate_allowed_roots(username, roots, cfg)
+    except Exception as exc:
+        logger.warning("network_mount_roots_unavailable user=%s error=%s", username, type(exc).__name__)
+    return roots
 
 
 def resolve_user_path(username: str, requested: str | None) -> Path:

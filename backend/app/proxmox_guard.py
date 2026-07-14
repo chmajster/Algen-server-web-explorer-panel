@@ -92,12 +92,13 @@ def detect_proxmox() -> ProxmoxStatus:
     if shutil.which("pveversion"):
         reasons.append("pveversion command exists")
     for service in ("pvedaemon", "pveproxy", "pvestatd", "pve-cluster"):
+        result = None
         try:
             result = subprocess.run(["systemctl", "list-unit-files", f"{service}.service"], capture_output=True, text=True, timeout=2, check=False)
-            if result.returncode == 0 and service in result.stdout:
-                reasons.append(f"{service}.service exists")
-        except Exception:
-            continue
+        except (OSError, subprocess.SubprocessError):
+            result = None
+        if result is not None and result.returncode == 0 and service in result.stdout:
+            reasons.append(f"{service}.service exists")
     return ProxmoxStatus(is_proxmox=bool(reasons), reasons=reasons)
 
 

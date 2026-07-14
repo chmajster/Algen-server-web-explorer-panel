@@ -13,7 +13,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 
-if sys.platform == "win32":
+if sys.platform == "win32" or not os.environ.get("WEBNAS_CONFIG"):
     test_root = Path(tempfile.gettempdir()) / "webnas-pytest"
     test_root.mkdir(parents=True, exist_ok=True)
     config_path = test_root / "config.yaml"
