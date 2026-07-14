@@ -83,6 +83,13 @@ export type SettingsMe = {
   wallpaper: string;
 };
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public code?: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export type AdminUser = SettingsMe & { is_system: boolean; manageable: boolean };
 export type AdminGroup = { name: string; gid: number; members: string[] };
 export type SystemStatus = { service: string; version: string; port: number; data_dir: string; log_dir: string; temp_dir: string };
@@ -258,7 +265,19 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(url, { ...options, headers, credentials: "include" });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(body || res.statusText);
+    let message = body || res.statusText;
+    let code: string | undefined;
+    try {
+      const payload = JSON.parse(body) as { detail?: string | { code?: string; message?: string } };
+      if (typeof payload.detail === "string") message = payload.detail;
+      else if (payload.detail) {
+        message = payload.detail.message || message;
+        code = payload.detail.code;
+      }
+    } catch {
+      // Non-JSON responses use the original response text.
+    }
+    throw new ApiError(message, res.status, code);
   }
   return res.json() as Promise<T>;
 }

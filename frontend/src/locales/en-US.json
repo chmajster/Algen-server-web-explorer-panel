@@ -83,6 +83,7 @@
   "files.directoryTree": "Directory tree",
   "files.dragItems": "{count} item(s)",
   "files.deleteQueued": "Deletion queued",
+  "files.alreadyExists": "A file or folder with this name already exists",
   "files.editPath": "Edit path",
   "files.empty": "This folder is empty",
   "files.emptyHint": "Upload a file or create a new folder.",

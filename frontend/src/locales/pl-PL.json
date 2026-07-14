@@ -83,6 +83,7 @@
   "files.directoryTree": "Drzewo katalogów",
   "files.dragItems": "Elementy: {count}",
   "files.deleteQueued": "Dodano usuwanie do kolejki",
+  "files.alreadyExists": "Plik lub folder o tej nazwie już istnieje",
   "files.editPath": "Edytuj ścieżkę",
   "files.empty": "Ten folder jest pusty",
   "files.emptyHint": "Prześlij plik lub utwórz nowy folder.",

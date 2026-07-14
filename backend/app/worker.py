@@ -81,7 +81,7 @@ def fail_with_os_error(error: OSError) -> None:
         errno.EISDIR: "is_directory",
         errno.ENOTDIR: "not_directory",
     }
-    print(json.dumps({"error": error_codes.get(error.errno, "operation_failed")}), file=sys.stderr)
+    print(json.dumps({"error": error_codes.get(error.errno or 0, "operation_failed")}), file=sys.stderr)
     raise SystemExit(1)
 
 

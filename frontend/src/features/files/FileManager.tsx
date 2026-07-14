@@ -5,7 +5,7 @@ import {
   Search, SlidersHorizontal, Trash2, Upload, X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, downloadUrl, type FileItem, type NetworkMount, type Task } from "../../api";
+import { api, ApiError, downloadUrl, type FileItem, type NetworkMount, type Task } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { ConfirmDialog, InputDialog, Modal } from "../../components/Modal";
@@ -143,8 +143,9 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     } catch (error) { toast(error instanceof Error ? error.message : t("files.operationFailed"), "error"); }
   }
   async function create(kind: "folder" | "file", name: string) {
+    if (items.some((item) => item.name === name)) { toast(t("files.alreadyExists"), "error"); return; }
     try { await (kind === "folder" ? api.mkdir(joinPath(path, name)) : api.create(joinPath(path, name))); toast(kind === "folder" ? t("files.folderCreated") : t("files.fileCreated")); await load(); }
-    catch (error) { toast(error instanceof Error ? error.message : t("files.operationFailed"), "error"); }
+    catch (error) { toast(error instanceof ApiError && error.code === "already_exists" ? t("files.alreadyExists") : error instanceof Error ? error.message : t("files.operationFailed"), "error"); }
   }
   async function rename(item: FileItem, name: string) {
     try { await api.rename(item.path, joinPath(path, name)); toast(t("files.renamed")); await load(); }

@@ -4,6 +4,7 @@ import { api } from "../../api";
 import { FileManager } from "./FileManager";
 
 vi.mock("../../api", () => ({
+  ApiError: class ApiError extends Error {},
   downloadUrl: (path: string) => `/download?path=${path}`,
   api: {
     list: vi.fn(), tree: vi.fn(), mounts: vi.fn(), appConfig: vi.fn(), stat: vi.fn(),
@@ -21,6 +22,7 @@ const t = (key: string) => labels[key] || key;
 
 describe("file manager behavior", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     localStorage.clear();
     vi.mocked(api.list).mockResolvedValue({ path: "/home/test", current_path: "/home/test", parent_path: "/home", items: files, page: 1, page_size: 100, total_items: 2, total_pages: 1, sort: "name", direction: "asc", can_write: true, can_upload: true, can_delete: true });
     vi.mocked(api.tree).mockResolvedValue({ path: "/home/test", items: [files[0]] });
@@ -78,5 +80,18 @@ describe("file manager behavior", () => {
 
     fireEvent.click(screen.getAllByTitle("files.goHome")[0]);
     await waitFor(() => expect(api.list).toHaveBeenLastCalledWith("/home/test", expect.any(Object)));
+  });
+
+  it("does not send a create request when the name already exists", async () => {
+    const toast = vi.fn();
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={toast} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await screen.findByText("alpha.txt");
+
+    fireEvent.click(screen.getByTitle("action.newFolder"));
+    fireEvent.change(screen.getByLabelText("files.folderName"), { target: { value: "Documents" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.create" }));
+
+    expect(api.mkdir).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith("files.alreadyExists", "error");
   });
 });
