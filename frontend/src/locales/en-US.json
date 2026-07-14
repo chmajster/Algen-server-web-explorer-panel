@@ -92,6 +92,7 @@
   "files.folderCreated": "Folder created",
   "files.folderName": "Folder name",
   "files.fullPath": "Full path",
+  "files.goHome": "Go to home folder",
   "files.home": "Home",
   "files.loadError": "Cannot load directory",
   "files.locations": "Locations",

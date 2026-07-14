@@ -63,4 +63,20 @@ describe("file manager behavior", () => {
     fireEvent.dragEnter(treeRow!, { dataTransfer: { getData: () => "/home/test/alpha.txt" } });
     await waitFor(() => expect(api.tree).toHaveBeenCalledWith("/home/test/Documents"), { timeout: 1200 });
   });
+
+  it("uses the home folder instead of an inaccessible filesystem root", async () => {
+    localStorage.setItem("webnas_file_explorer_path", "/");
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+
+    await waitFor(() => expect(api.list).toHaveBeenCalledWith("/home/test", expect.any(Object)));
+    expect(screen.getAllByTitle("files.goHome").length).toBeGreaterThan(0);
+  });
+
+  it("navigates to home from a nested directory", async () => {
+    render(<FileManager homePath="/home/test" initialPath="/home/test/Documents" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await waitFor(() => expect(api.list).toHaveBeenCalledWith("/home/test/Documents", expect.any(Object)));
+
+    fireEvent.click(screen.getAllByTitle("files.goHome")[0]);
+    await waitFor(() => expect(api.list).toHaveBeenLastCalledWith("/home/test", expect.any(Object)));
+  });
 });

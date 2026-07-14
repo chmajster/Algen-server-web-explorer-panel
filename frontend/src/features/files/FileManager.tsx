@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/refs -- request and gesture refs are read only by async or DOM event handlers */
 import {
   ArrowLeft, ArrowRight, ArrowUp, Columns3, Copy, Download, File, FilePlus2, Folder, FolderPlus,
-  Grid2X2, Info, LayoutGrid, List, Menu, MoreHorizontal, Move, Pencil, RefreshCw, Scissors,
+  Grid2X2, House, Info, LayoutGrid, List, Menu, MoreHorizontal, Move, Pencil, RefreshCw, Scissors,
   Search, SlidersHorizontal, Trash2, Upload, X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -46,7 +46,8 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   onUpload: (files: File[], path: string) => void;
 }) {
   const storagePrefix = "webnas_file_explorer";
-  const firstPath = initialPath || localStorage.getItem(`${storagePrefix}_path`) || homePath || "";
+  const requestedFirstPath = initialPath || localStorage.getItem(`${storagePrefix}_path`) || homePath || "";
+  const firstPath = !requestedFirstPath || requestedFirstPath === "/" || requestedFirstPath === "~" ? homePath : requestedFirstPath;
   const [history, setHistory] = useState({ entries: [firstPath], index: 0 });
   const path = history.entries[history.index] || "";
   const [items, setItems] = useState<FileItem[]>([]);
@@ -113,12 +114,13 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   const activeTasks = tasks.filter((task) => ["copy", "move", "delete"].includes(task.type) && ["queued", "running", "paused"].includes(task.status)).length;
 
   const openPath = useCallback((next: string, record = true) => {
+    const destination = !next.trim() || next.trim() === "/" || next.trim() === "~" ? homePath : next.trim();
     setPage(1);
     setHistory((current) => {
       if (!record) return current;
-      return pushPath(current, next);
+      return pushPath(current, destination);
     });
-  }, []);
+  }, [homePath]);
   function navigateHistory(index: number) { setPage(1); setHistory((current) => moveInHistory(current, index - current.index)); }
   function selectItem(item: FileItem, event: React.MouseEvent, index: number) {
     setSelection((current) => {
@@ -221,6 +223,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
       <button title={t("action.back")} disabled={history.index === 0} onClick={() => navigateHistory(history.index - 1)}><ArrowLeft /></button>
       <button title={t("action.forward")} disabled={history.index >= history.entries.length - 1} onClick={() => navigateHistory(history.index + 1)}><ArrowRight /></button>
       <button title={t("action.parentFolder")} disabled={!meta.parent} onClick={() => meta.parent && openPath(meta.parent)}><ArrowUp /></button>
+      <button title={t("files.goHome")} disabled={path === homePath} onClick={() => openPath(homePath)}><House /></button>
       <button title={t("action.refresh")} onClick={() => void load()}><RefreshCw className={loading ? "spin" : ""} /></button><span className="toolbar-divider" />
       <button title={t("action.newFolder")} disabled={!meta.canWrite} onClick={() => setDialog({ type: "newFolder" })}><FolderPlus /></button>
       <button title={t("action.newFile")} disabled={!meta.canWrite} onClick={() => setDialog({ type: "newFile" })}><FilePlus2 /></button>
@@ -236,14 +239,14 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
       <div className="toolbar-menu-wrap"><button title={t("files.viewOptions")} onClick={() => setOptionsOpen((value) => !value)}><SlidersHorizontal /></button>{optionsOpen && <div className="toolbar-popover"><label><input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} />{t("files.compact")}</label><strong><Columns3 />{t("files.columns")}</strong>{columns.slice(1).map((column) => <label key={column.id}><input type="checkbox" checked={!hiddenColumns.has(column.id)} onChange={() => setHiddenColumns((current) => { const next = new Set(current); if (next.has(column.id)) next.delete(column.id); else next.add(column.id); return next; })} />{t(column.key)}</label>)}</div>}</div>
       <div className="file-search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("files.search")} aria-label={t("files.search")} />{query && <button onClick={() => setQuery("")}><X /></button>}</div>
     </div>
-    <Breadcrumbs path={path} t={t} onOpen={openPath} />
+    <Breadcrumbs path={path} homePath={homePath} roots={mounts.map((mount) => ({ path: mount.mount_point, label: mount.name }))} t={t} onOpen={openPath} />
     <div className="file-workspace" style={{ gridTemplateColumns: treeVisible ? `${treeWidth}px 5px minmax(0, 1fr)` : "0 0 minmax(0, 1fr)" }}>
       <button className="tree-mobile-toggle" title={t("files.directoryTree")} onClick={() => setTreeVisible((value) => !value)}><Menu /></button>
       {treeVisible && <DirectoryTree currentPath={path} homePath={homePath} mounts={mounts} t={t} onOpen={openPath} onDropItems={confirmDrop} />}
       {treeVisible && <div className="tree-resizer" onPointerDown={(event) => { const startX = event.clientX; const start = treeWidth; let finalWidth = start; const move = (next: PointerEvent) => { finalWidth = Math.max(180, Math.min(420, start + next.clientX - startX)); setTreeWidth(finalWidth); }; const up = () => { localStorage.setItem(`${storagePrefix}_tree_width`, String(finalWidth)); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} />}
       <main className={`file-content ${compact ? "compact" : ""}`} tabIndex={0} onContextMenu={(event) => { if ((event.target as HTMLElement).closest(".file-entry")) return; event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, item: null }); }} onDragOver={(event) => event.preventDefault()}>
-        {loadError && <div className="error-state"><strong>{t("status.error")}</strong><span>{loadError}</span><button onClick={() => void load()}>{t("action.retry")}</button></div>}
-        {loading ? <div className="file-skeleton">{Array.from({ length: 8 }, (_, index) => <span key={index} />)}</div> : items.length === 0 ? <div className="empty-state"><Folder /><strong>{t("files.empty")}</strong><span>{t("files.emptyHint")}</span></div> : view === "list" ? <div className="file-list" role="grid">
+        {loadError ? <div className="error-state"><strong>{t("status.error")}</strong><span>{loadError}</span><div className="error-actions"><button onClick={() => openPath(homePath)}><House />{t("files.goHome")}</button><button onClick={() => void load()}>{t("action.retry")}</button></div></div>
+        : loading ? <div className="file-skeleton">{Array.from({ length: 8 }, (_, index) => <span key={index} />)}</div> : items.length === 0 ? <div className="empty-state"><Folder /><strong>{t("files.empty")}</strong><span>{t("files.emptyHint")}</span></div> : view === "list" ? <div className="file-list" role="grid">
           <div className="file-list-header" role="row"><span><input type="checkbox" aria-label={t("files.selectAll")} checked={items.length > 0 && selection.size === items.length} onChange={(event) => setSelection(event.target.checked ? new Set(items.map((item) => item.path)) : new Set())} /></span><span />{visibleColumns.map((column) => <button className={column.id} role="columnheader" key={column.id} style={{ width: widths[column.id] }} onClick={() => { if (sort === column.id) setDirection((value) => value === "asc" ? "desc" : "asc"); else { setSort(column.id); setDirection("asc"); } }}>{t(column.key)}{sort === column.id && <i>{direction === "asc" ? "↑" : "↓"}</i>}<b onPointerDown={(event) => { event.stopPropagation(); const startX = event.clientX; const start = widths[column.id]; const move = (next: PointerEvent) => setWidths((current) => ({ ...current, [column.id]: Math.max(70, start + next.clientX - startX) })); const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} /></button>)}<span>{t("column.actions")}</span></div>
           {items.map((item, index) => <div role="row" key={item.path} className={`file-entry file-row ${selection.has(item.path) ? "selected" : ""} ${dropTarget === item.path ? "drop-target" : ""}`} draggable onDragStart={(event) => dragPreview(event, selection.has(item.path) ? selectedItems.map((entry) => entry.path) : [item.path])} onDragEnd={() => { setDropTarget(""); }} onDragOver={(event) => { if (item.is_dir) { event.preventDefault(); event.dataTransfer.dropEffect = event.ctrlKey ? "copy" : "move"; setDropTarget(item.path); } }} onDragLeave={() => setDropTarget("")} onDrop={(event) => { event.preventDefault(); setDropTarget(""); if (item.is_dir) setDialog({ type: "drop", target: item.path, copy: event.ctrlKey }); }} onClick={(event) => selectItem(item, event, index)} onDoubleClick={() => openItem(item)} onContextMenu={(event) => { event.preventDefault(); if (!selection.has(item.path)) setSelection(new Set([item.path])); setContext({ x: event.clientX, y: event.clientY, item }); }}>
             <span><input type="checkbox" aria-label={`${t("action.select")} ${item.name}`} checked={selection.has(item.path)} onClick={(event) => event.stopPropagation()} onChange={() => setSelection((current) => { const next = new Set(current); if (next.has(item.path)) next.delete(item.path); else next.add(item.path); return next; })} /></span><span className="file-type-icon">{item.is_dir ? <Folder /> : <File />}</span>{visibleColumns.map((column) => <span key={column.id} style={{ width: widths[column.id] }} className={column.id}>{column.id === "name" ? <>{item.name}{item.is_dir && sharedPaths.has(item.path) && <small>SMB</small>}</> : column.id === "size" ? item.is_dir ? "—" : formatSize(item.size) : column.id === "modified" ? formatDate(item.mtime || item.modified) : item[column.id]}</span>)}<span className="row-actions"><button title={t("files.properties")} onClick={(event) => { event.stopPropagation(); setProperties(item); }}><MoreHorizontal /></button></span>

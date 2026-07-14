@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 
 from .auth import current_process_can_impersonate
 from .config import get_config
-from .path_policy import resolve_user_path
+from .path_policy import allowed_roots, resolve_user_path
 from .proxmox_guard import assert_path_allowed
 
 
@@ -114,7 +114,15 @@ def list_dir(
     if page > total_pages:
         page = total_pages
     start = (page - 1) * page_size
-    parent = str(target.parent) if target.parent != target else None
+    parent = None
+    for root in allowed_roots(username):
+        try:
+            target.relative_to(root)
+            if target != root:
+                parent = str(target.parent)
+            break
+        except ValueError:
+            continue
     can_write = os.access(target, os.W_OK)
     return {
         "items": items[start : start + page_size],

@@ -92,6 +92,7 @@
   "files.folderCreated": "Utworzono folder",
   "files.folderName": "Nazwa folderu",
   "files.fullPath": "Pełna ścieżka",
+  "files.goHome": "Przejdź do katalogu domowego",
   "files.home": "Katalog domowy",
   "files.loadError": "Nie można wczytać katalogu",
   "files.locations": "Lokalizacje",

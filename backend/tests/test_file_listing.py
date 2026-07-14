@@ -25,6 +25,7 @@ def patch_listing(monkeypatch, tmp_path: Path, items: list[dict]) -> Path:
     root = tmp_path / "home"
     root.mkdir()
     monkeypatch.setattr(file_ops, "resolve_user_path", lambda username, path: root)
+    monkeypatch.setattr(file_ops, "allowed_roots", lambda username: [root])
     monkeypatch.setattr(file_ops, "run_user_op", lambda username, op, payload: items)
     return root
 
@@ -106,10 +107,25 @@ def test_tree_endpoint_returns_only_directories(monkeypatch, tmp_path):
 
 
 def test_empty_directory(monkeypatch, tmp_path):
-    patch_listing(monkeypatch, tmp_path, [])
+    root = patch_listing(monkeypatch, tmp_path, [])
 
     result = file_ops.list_dir("alice", "/")
 
     assert result["items"] == []
     assert result["total_items"] == 0
     assert result["total_pages"] == 1
+    assert result["current_path"] == str(root)
+    assert result["parent_path"] is None
+
+
+def test_child_directory_has_parent_within_allowed_root(monkeypatch, tmp_path):
+    root = tmp_path / "home"
+    child = root / "documents"
+    child.mkdir(parents=True)
+    monkeypatch.setattr(file_ops, "resolve_user_path", lambda username, path: child)
+    monkeypatch.setattr(file_ops, "allowed_roots", lambda username: [root])
+    monkeypatch.setattr(file_ops, "run_user_op", lambda username, op, payload: [])
+
+    result = file_ops.list_dir("alice", str(child))
+
+    assert result["parent_path"] == str(root)
