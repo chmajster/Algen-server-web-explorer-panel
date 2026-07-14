@@ -43,6 +43,26 @@ def _encode(payload: dict) -> str:
     return base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
 
 
+def _worker_http_error(stderr: str) -> HTTPException:
+    responses = {
+        "already_exists": (409, "A file or folder with this name already exists"),
+        "not_found": (404, "The selected file or folder no longer exists"),
+        "permission_denied": (403, "Permission denied"),
+        "no_space": (507, "There is not enough free space"),
+        "read_only": (403, "The destination is read-only"),
+        "is_directory": (400, "A folder cannot be used for this operation"),
+        "not_directory": (400, "A path component is not a folder"),
+        "operation_failed": (400, "File operation failed"),
+    }
+    try:
+        payload = json.loads(stderr.strip().splitlines()[-1])
+        code = payload.get("error", "operation_failed") if isinstance(payload, dict) else "operation_failed"
+    except (json.JSONDecodeError, IndexError):
+        code = "operation_failed"
+    status, message = responses.get(code, responses["operation_failed"])
+    return HTTPException(status, {"code": code, "message": message})
+
+
 def run_user_op(username: str, op: str, payload: dict) -> object:
     for key in ("path", "src", "dst", "tmp"):
         if key in payload and key != "tmp":
@@ -56,7 +76,7 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
     cmd = [sys.executable, "-m", "app.worker", "--user", username, "--op", op, "--payload", _encode(payload)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=False)
     if result.returncode != 0:
-        raise HTTPException(400, result.stderr.strip() or "File operation failed")
+        raise _worker_http_error(result.stderr)
     return json.loads(result.stdout or "{}")
 
 

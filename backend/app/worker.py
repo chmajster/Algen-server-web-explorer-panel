@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import grp
 import json
 import os
@@ -9,6 +10,7 @@ import pwd
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -66,6 +68,21 @@ def move_any(src: Path, dst: Path) -> None:
         shutil.rmtree(src)
     else:
         src.unlink()
+
+
+def fail_with_os_error(error: OSError) -> None:
+    error_codes = {
+        errno.EEXIST: "already_exists",
+        errno.ENOENT: "not_found",
+        errno.EACCES: "permission_denied",
+        errno.EPERM: "permission_denied",
+        errno.ENOSPC: "no_space",
+        errno.EROFS: "read_only",
+        errno.EISDIR: "is_directory",
+        errno.ENOTDIR: "not_directory",
+    }
+    print(json.dumps({"error": error_codes.get(error.errno, "operation_failed")}), file=sys.stderr)
+    raise SystemExit(1)
 
 
 def main() -> None:
@@ -154,4 +171,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except OSError as error:
+        fail_with_os_error(error)
