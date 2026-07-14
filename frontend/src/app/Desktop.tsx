@@ -4,6 +4,7 @@ import { logout, type SettingsMe, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
 import { FileManager } from "../features/files/FileManager";
 import { GroupsApp, LogsAppView, MonitorApp, MountsApp, SambaAppView, ServicesApp, SettingsAppView, StoreAppView, UsersApp } from "../features/admin/SystemApps";
+import { forgetAdminPassword } from "../features/admin/adminCredentials";
 import { TransferCenter } from "../features/transfers/TransferCenter";
 import type { UploadControls } from "../features/transfers/useUploadManager";
 import type { Language } from "../i18n";
@@ -83,7 +84,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
         <button title={t("notify.theme")} onClick={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</button>
         <span className="system-clock">{clock.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" })}<small>{clock.toLocaleDateString(language, { day: "2-digit", month: "short" })}</small></span>
         <span className="current-user"><UserRound /><span>{user.username}</span></span>
-        <button title={t("notify.logout")} onClick={() => logout().finally(onLoggedOut)}><LogOut /></button>
+        <button title={t("notify.logout")} onClick={() => logout().finally(() => { forgetAdminPassword(); onLoggedOut(); })}><LogOut /></button>
       </div>
     </header>
     {launcherOpen && <AppLauncher apps={availableApps} pinned={pinned} t={t} onOpen={openApp} onTogglePin={togglePin} onClose={() => setLauncherOpen(false)} />}

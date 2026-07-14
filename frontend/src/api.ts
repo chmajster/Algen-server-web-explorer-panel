@@ -131,6 +131,17 @@ export type ResourceDashboard = {
   webnas_service: string | null;
   warnings: string[];
 };
+export type AppJob = {
+  id: string;
+  app_id: string;
+  action: string;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: number;
+  created_at: number;
+  finished_at?: number | null;
+  log_tail: string[];
+  error: string;
+};
 export type StoreApp = {
   id: string;
   manifest: {
@@ -145,7 +156,7 @@ export type StoreApp = {
   state: { installed?: boolean; configured?: boolean; history?: unknown[]; config?: SambaConfig };
   services: Record<string, string>;
   status: string;
-  jobs: Array<{ id: string; action: string; status: string; progress: number; log_tail: string[]; error: string }>;
+  jobs: AppJob[];
 };
 export type StorePlugin = {
   id: string;
@@ -374,7 +385,7 @@ export const api = {
   systemdServiceLogs: (service: string, lines = 200) => request<SystemLogs>(`/api/admin/system/services/${encodeURIComponent(service)}/logs?lines=${lines}`),
   apps: () => request<StoreApp[]>("/api/apps"),
   app: (id: string) => request<StoreApp>(`/api/apps/${encodeURIComponent(id)}`),
-  appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", admin_password: string, dry_run = false) => request(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, dry_run }) }),
+  appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", admin_password: string, dry_run = false) => request<{ job?: AppJob; ok?: boolean }>(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, dry_run }) }),
   appLogs: (id: string) => request<{ lines: string[] }>(`/api/apps/${encodeURIComponent(id)}/logs`),
   appConfig: (id: string) => request<SambaConfig>(`/api/apps/${encodeURIComponent(id)}/config`),
   storePlugins: () => request<{ plugins: StorePlugin[]; codex_template: string }>("/api/apps/plugins"),

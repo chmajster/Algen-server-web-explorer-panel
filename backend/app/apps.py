@@ -195,8 +195,21 @@ def _require_admin(user: SessionUser, password: str) -> None:
 def _run(args: list[str], *, input_text: str | None = None, timeout: int = 600) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=timeout, check=False, shell=False)
     if result.returncode != 0:
-        raise HTTPException(400, result.stderr.strip() or result.stdout.strip() or "Command failed")
+        output = result.stderr.strip() or result.stdout.strip()
+        raise HTTPException(400, output or f"{Path(args[0]).name} failed with exit code {result.returncode}")
     return result
+
+
+def _job_error_message(error: Exception) -> str:
+    if isinstance(error, HTTPException):
+        if isinstance(error.detail, str):
+            return error.detail
+        if isinstance(error.detail, dict):
+            return str(error.detail.get("message") or error.detail.get("detail") or "Administrative operation failed")
+    if isinstance(error, subprocess.TimeoutExpired):
+        command = error.cmd[0] if isinstance(error.cmd, list) and error.cmd else "Command"
+        return f"{Path(str(command)).name} timed out after {error.timeout} seconds"
+    return str(error) or "Administrative operation failed"
 
 
 def load_manifest(app_id: str) -> dict:
@@ -326,7 +339,7 @@ def enqueue(app_id: str, action: str, worker) -> AppJob:
             job.status = "completed"
         except Exception as exc:  # noqa: BLE001
             job.status = "failed"
-            job.error = str(exc)
+            job.error = _job_error_message(exc)
             job.log(job.error)
         finally:
             job.finished_at = time.time()
@@ -345,8 +358,10 @@ def install_samba(job: AppJob) -> None:
         raise HTTPException(400, "Samba module is supported only on apt-based Debian/Ubuntu systems")
     job.log("Installing samba packages without full system upgrade")
     job.progress = 15
+    job.log("Refreshing APT package metadata")
     _run(["apt-get", "update"], timeout=900)
     job.progress = 45
+    job.log("Installing samba and smbclient packages")
     _run(["apt-get", "install", "-y", "samba", "smbclient"], timeout=1800)
     job.progress = 85
     state = read_state("samba")
@@ -606,9 +621,10 @@ def app_payload(app_id: str) -> dict:
         status = "running"
     elif services and state.get("installed"):
         status = "stopped"
-    if any(job.app_id == app_id and job.status == "failed" for job in jobs.values()):
+    app_jobs = [job for job in jobs.values() if job.app_id == app_id]
+    if app_jobs and app_jobs[-1].status == "failed":
         status = "error"
-    return {"id": app_id, "manifest": manifest, "state": state, "services": services, "status": status, "jobs": [job.to_dict() for job in jobs.values() if job.app_id == app_id]}
+    return {"id": app_id, "manifest": manifest, "state": state, "services": services, "status": status, "jobs": [job.to_dict() for job in app_jobs]}
 
 
 def samba_service_names() -> list[str]:

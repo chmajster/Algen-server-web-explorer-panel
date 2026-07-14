@@ -122,6 +122,18 @@ def test_install_action_is_audited(monkeypatch):
     assert any("app_store_action" in item[0] for item in messages)
 
 
+def test_background_job_uses_http_error_detail_as_failure_reason():
+    error = HTTPException(400, "APT repository is unavailable")
+
+    assert apps._job_error_message(error) == "APT repository is unavailable"
+
+
+def test_background_job_reports_command_timeout():
+    error = apps.subprocess.TimeoutExpired(["apt-get", "update"], 900)
+
+    assert apps._job_error_message(error) == "apt-get timed out after 900 seconds"
+
+
 def test_store_plugin_requires_github_url():
     plugin = apps.StorePlugin(
         name="Demo plugin",

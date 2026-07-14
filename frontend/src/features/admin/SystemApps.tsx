@@ -1,5 +1,5 @@
 import { Lock, PackagePlus, Play, Plus, Power, RefreshCw, RotateCcw, Square, Trash2, Unlock } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type AdminGroup, type AdminUser, type NetworkMount, type NetworkMountPayload, type ResourceDashboard, type SambaConfig, type SambaShare, type SambaStatus, type StoreApp, type SystemdService, type SystemLogs } from "../../api";
 import type { Theme, ToastFn, Translate } from "../../app/types";
 import type { Language } from "../../i18n";
@@ -52,8 +52,28 @@ export function ServicesApp({ t, toast }: { t: Translate; toast: ToastFn }) {
 
 export function StoreAppView({ t, toast }: { t: Translate; toast: ToastFn }) {
   const state = useLoader<StoreApp[]>(api.apps); const [dialog, setDialog] = useState<Dialog>(null);
-  const action = (app: StoreApp, name: "install" | "uninstall" | "update" | "start" | "stop" | "restart") => setDialog({ title: `${t(`store.${name}`)}: ${app.manifest.name}`, fields: [passwordField(t)], danger: ["uninstall", "stop", "restart"].includes(name), submit: (values) => perform(() => api.appAction(app.id, name, values.admin_password), state.refresh, toast, t) });
-  return <Shell title={t("app.store")} subtitle={t("store.subtitle")} loading={state.loading} t={t} onRefresh={state.refresh}><DataState state={state} t={t}><div className="card-grid">{state.data?.map((app) => <article className="data-card" key={app.id}><header><strong>{app.manifest.name}</strong><span className="status-badge">{app.manifest.version}</span></header><p>{app.manifest.description}</p><span>{app.status}</span><div className="data-actions"><button onClick={() => action(app, app.state.installed ? "update" : "install")}><PackagePlus />{t(app.state.installed ? "store.update" : "store.install")}</button>{app.state.installed && <><button onClick={() => action(app, "start")}>{t("store.start")}</button><button onClick={() => action(app, "stop")}>{t("store.stop")}</button><button className="danger" onClick={() => action(app, "uninstall")}>{t("store.uninstall")}</button></>}</div></article>)}</div></DataState>{dialog && <AdminActionDialog {...dialog} t={t} onClose={() => setDialog(null)} onSubmit={dialog.submit} />}</Shell>;
+  const trackedJobs = useRef(new Set<string>()); const notifiedJobs = useRef(new Set<string>());
+  const activeJobKey = state.data?.flatMap((app) => app.jobs).filter((job) => ["queued", "running"].includes(job.status)).map((job) => `${job.id}:${job.status}`).join("|") || "";
+  useEffect(() => {
+    if (!activeJobKey) return;
+    const timer = window.setInterval(() => void state.refresh(), 1200);
+    return () => window.clearInterval(timer);
+    // Polling intentionally uses the loader owned by this app window.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJobKey]);
+  useEffect(() => {
+    state.data?.flatMap((app) => app.jobs).filter((job) => job.status === "failed" && trackedJobs.current.has(job.id) && !notifiedJobs.current.has(job.id)).forEach((job) => {
+      notifiedJobs.current.add(job.id);
+      toast(`${t("store.installationFailed")}: ${job.error || job.log_tail[job.log_tail.length - 1] || t("error.generic")}`, "error");
+    });
+  }, [state.data, t, toast]);
+  const action = (app: StoreApp, name: "install" | "uninstall" | "update" | "start" | "stop" | "restart") => setDialog({ title: `${t(`store.${name}`)}: ${app.manifest.name}`, fields: [passwordField(t)], danger: ["uninstall", "stop", "restart"].includes(name), submit: async (values) => {
+    const result = await api.appAction(app.id, name, values.admin_password);
+    if (result.job) trackedJobs.current.add(result.job.id);
+    toast(result.job ? t("store.actionQueued") : t("admin.actionCompleted"));
+    await state.refresh();
+  } });
+  return <Shell title={t("app.store")} subtitle={t("store.subtitle")} loading={state.loading} t={t} onRefresh={state.refresh}><DataState state={state} t={t}><div className="card-grid">{state.data?.map((app) => { const job = app.jobs[app.jobs.length - 1]; const showJob = job && (["queued", "running", "failed"].includes(job.status)); return <article className="data-card" key={app.id}><header><strong>{app.manifest.name}</strong><span className={`status-badge ${app.status}`}>{app.manifest.version} · {app.status}</span></header><p>{app.manifest.description}</p>{showJob && <div className={`app-job-state ${job.status}`} role={job.status === "failed" ? "alert" : "status"}><header><strong>{job.status === "failed" ? t("store.installationFailed") : t("store.operationInProgress")}</strong><span>{t(`task.${job.status}`)} · {job.progress}%</span></header><div className="progress-track"><span style={{ width: `${job.progress}%` }} /></div>{job.error && <p>{job.error}</p>}{job.log_tail.length > 0 && <pre>{job.log_tail.slice(-8).join("\n")}</pre>}</div>}<div className="data-actions"><button disabled={Boolean(job && ["queued", "running"].includes(job.status))} onClick={() => action(app, app.state.installed ? "update" : "install")}><PackagePlus />{t(app.state.installed ? "store.update" : "store.install")}</button>{app.state.installed && <><button onClick={() => action(app, "start")}>{t("store.start")}</button><button onClick={() => action(app, "stop")}>{t("store.stop")}</button><button className="danger" onClick={() => action(app, "uninstall")}>{t("store.uninstall")}</button></>}</div></article>; })}</div></DataState>{dialog && <AdminActionDialog {...dialog} t={t} onClose={() => setDialog(null)} onSubmit={dialog.submit} />}</Shell>;
 }
 
 export function SambaAppView({ t, toast }: { t: Translate; toast: ToastFn }) {

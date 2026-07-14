@@ -15,7 +15,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
 
   useEffect(() => {
     previousFocus.current = document.activeElement as HTMLElement | null;
-    const focusable = panel.current?.querySelector<HTMLElement>("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])");
+    const focusable = panel.current?.querySelector<HTMLElement>("[autofocus], input, select, textarea, button, a[href], [tabindex]:not([tabindex='-1'])");
     focusable?.focus();
     function keydown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -36,7 +36,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={panel} className={`modal-panel ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div ref={panel} className={`modal-panel ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onPointerDown={(event) => event.stopPropagation()}>
         <header className="modal-header"><h2 id={titleId}>{title}</h2><button className="icon-button" type="button" aria-label={closeLabel} onClick={onClose}><X size={18} /></button></header>
         <div className="modal-body">{children}</div>
         {footer && <footer className="modal-footer">{footer}</footer>}
