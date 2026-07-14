@@ -22,7 +22,7 @@ from .path_policy import allowed_roots, resolve_user_path
 from .proxmox_guard import assert_path_allowed
 
 
-MUTATING_OPS = {"mkdir", "create", "delete", "trash", "chmod", "import_upload"}
+MUTATING_OPS = {"mkdir", "create", "delete", "trash", "chmod", "import_upload", "write_text"}
 SORT_FIELDS = {"name", "size", "type", "owner", "group", "permissions", "modified", "mtime"}
 
 
@@ -55,6 +55,10 @@ def _worker_http_error(stderr: str) -> HTTPException:
         "read_only": (403, "The destination is read-only"),
         "is_directory": (400, "A folder cannot be used for this operation"),
         "not_directory": (400, "A path component is not a folder"),
+        "not_regular_file": (400, "Only regular files can be edited"),
+        "binary_file": (415, "This file is not UTF-8 text"),
+        "file_too_large": (413, "This file is too large for the text editor"),
+        "changed_on_disk": (409, "The file changed on disk; reload it before saving"),
         "operation_failed": (400, "File operation failed"),
     }
     try:
@@ -77,7 +81,13 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
     if not current_process_can_impersonate():
         raise HTTPException(503, "File operations require the service to run as root for per-user impersonation")
     cmd = [sys.executable, "-m", "app.worker", "--user", username, "--op", op, "--payload", _encode(payload)]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=False)
+    # Editor content is sent through stdin so file data is never exposed in the
+    # worker process command line. Other small metadata payloads keep the
+    # backwards-compatible argument transport.
+    stdin_payload = _encode(payload) if op == "write_text" else None
+    if stdin_payload is not None:
+        cmd[-1] = "-"
+    result = subprocess.run(cmd, input=stdin_payload, capture_output=True, text=True, timeout=3600, check=False)
     if result.returncode != 0:
         raise _worker_http_error(result.stderr)
     return json.loads(result.stdout or "{}")

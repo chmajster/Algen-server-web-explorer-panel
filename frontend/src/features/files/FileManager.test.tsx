@@ -8,7 +8,8 @@ vi.mock("../../api", () => ({
   downloadUrl: (path: string) => `/download?path=${path}`,
   api: {
     list: vi.fn(), tree: vi.fn(), mounts: vi.fn(), mountRoots: vi.fn(), localDisks: vi.fn(), appConfig: vi.fn(), stat: vi.fn(),
-    copy: vi.fn(), move: vi.fn(), mkdir: vi.fn(), create: vi.fn(), rename: vi.fn(), delete: vi.fn(), upload: vi.fn(), preview: vi.fn(), chmod: vi.fn(), chown: vi.fn()
+    copy: vi.fn(), move: vi.fn(), mkdir: vi.fn(), create: vi.fn(), rename: vi.fn(), delete: vi.fn(), upload: vi.fn(), preview: vi.fn(),
+    readText: vi.fn(), writeText: vi.fn(), chmod: vi.fn(), chown: vi.fn()
   }
 }));
 
@@ -30,6 +31,8 @@ describe("file manager behavior", () => {
     vi.mocked(api.mountRoots).mockResolvedValue([]);
     vi.mocked(api.localDisks).mockResolvedValue([]);
     vi.mocked(api.appConfig).mockResolvedValue({ shares: [] });
+    vi.mocked(api.readText).mockResolvedValue({ path: "/home/test/alpha.txt", content: "alpha", encoding: "utf-8", size: 5, mtime_ns: "100" });
+    vi.mocked(api.writeText).mockResolvedValue({ path: "/home/test/alpha.txt", encoding: "utf-8", size: 5, mtime_ns: "200", ok: true });
   });
 
   it("selects multiple items and changes the persisted view", async () => {
@@ -129,5 +132,17 @@ describe("file manager behavior", () => {
 
     await waitFor(() => expect(container.querySelector(".breadcrumbs")?.textContent).toContain("storageFilms"));
     expect(container.querySelector(".breadcrumbs")?.textContent).not.toContain("files.home");
+  });
+
+  it("opens a file in the text editor from its context menu", async () => {
+    const { container } = render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await screen.findByText("alpha.txt");
+    const row = [...container.querySelectorAll<HTMLElement>(".file-row")].find((entry) => entry.textContent?.includes("alpha.txt"));
+    fireEvent.contextMenu(row!);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "files.editText" }));
+
+    await waitFor(() => expect(api.readText).toHaveBeenCalledWith("/home/test/alpha.txt"));
+    expect(screen.getByRole("dialog", { name: /files.textEditor/ })).toBeInTheDocument();
   });
 });

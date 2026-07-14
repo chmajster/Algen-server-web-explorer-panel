@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .audit import configure_logging, logger
 from .apps import router as apps_router
@@ -91,6 +91,14 @@ class ChmodRequest(BaseModel):
 class SearchRequest(BaseModel):
     path: str
     query: str
+
+
+class TextFileWriteRequest(BaseModel):
+    path: str
+    content: str = Field(max_length=1024 * 1024)
+    # Nanosecond timestamps exceed JavaScript's safe integer range, so the API
+    # carries the optimistic-lock version as a decimal string.
+    expected_mtime_ns: str | None = Field(default=None, pattern=r"^\d+$")
 
 
 def current_user(request: Request):
@@ -274,6 +282,36 @@ def preview(path: str, user=Depends(current_user)):
     result = cast(dict[str, str], run_user_op(user.username, "preview", {"path": str(target)}))
     content = base64.b64decode(result["content"])
     return {"path": str(target), "mime": mime_for(str(target)), "content_base64": base64.b64encode(content).decode("ascii")}
+
+
+@app.get("/api/files/text")
+def read_text_file(path: str, user=Depends(current_user)):
+    target = resolve_user_path(user.username, path)
+    result = cast(dict[str, object], run_user_op(user.username, "read_text", {"path": str(target)}))
+    result["mtime_ns"] = str(result["mtime_ns"])
+    return {"path": str(target), **result}
+
+
+@app.put("/api/files/text")
+def write_text_file(payload: TextFileWriteRequest, user=Depends(csrf_user)):
+    if len(payload.content.encode("utf-8")) > 1024 * 1024:
+        raise HTTPException(413, {"code": "file_too_large", "message": "This file is too large for the text editor"})
+    target = resolve_user_path(user.username, payload.path)
+    assert_write_allowed(target)
+    result = cast(
+        dict[str, object],
+        run_user_op(
+            user.username,
+            "write_text",
+            {
+                "path": str(target),
+                "content": payload.content,
+                "expected_mtime_ns": int(payload.expected_mtime_ns) if payload.expected_mtime_ns is not None else None,
+            },
+        ),
+    )
+    result["mtime_ns"] = str(result["mtime_ns"])
+    return {"path": str(target), **result}
 
 
 @app.get("/api/files/search")

@@ -14,6 +14,15 @@ import sys
 from pathlib import Path
 
 
+MAX_TEXT_FILE_BYTES = 1024 * 1024
+
+
+class WorkerError(Exception):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
 def drop_privileges(username: str) -> None:
     pw = pwd.getpwnam(username)
     os.environ["HOME"] = pw.pw_dir
@@ -88,13 +97,60 @@ def fail_with_os_error(error: OSError) -> None:
     raise SystemExit(1)
 
 
+def read_text_file(path: Path, max_bytes: int = MAX_TEXT_FILE_BYTES) -> dict:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "rb") as handle:
+        details = os.fstat(handle.fileno())
+        if not stat.S_ISREG(details.st_mode):
+            raise WorkerError("not_regular_file")
+        if details.st_size > max_bytes:
+            raise WorkerError("file_too_large")
+        content = handle.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise WorkerError("file_too_large")
+    if b"\x00" in content:
+        raise WorkerError("binary_file")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise WorkerError("binary_file") from exc
+    return {
+        "content": text,
+        "encoding": "utf-8",
+        "size": len(content),
+        "mtime_ns": details.st_mtime_ns,
+    }
+
+
+def write_text_file(path: Path, content: str, expected_mtime_ns: int | None, max_bytes: int = MAX_TEXT_FILE_BYTES) -> dict:
+    encoded = content.encode("utf-8")
+    if len(encoded) > max_bytes:
+        raise WorkerError("file_too_large")
+    flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "wb", buffering=0) as handle:
+        details = os.fstat(handle.fileno())
+        if not stat.S_ISREG(details.st_mode):
+            raise WorkerError("not_regular_file")
+        if expected_mtime_ns is not None and details.st_mtime_ns != expected_mtime_ns:
+            raise WorkerError("changed_on_disk")
+        handle.seek(0)
+        handle.write(encoded)
+        handle.truncate()
+        os.fsync(handle.fileno())
+        updated = os.fstat(handle.fileno())
+    return {"ok": True, "encoding": "utf-8", "size": len(encoded), "mtime_ns": updated.st_mtime_ns}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--user", required=True)
     parser.add_argument("--op", required=True)
     parser.add_argument("--payload", required=True)
     args = parser.parse_args()
-    payload = json.loads(base64.b64decode(args.payload).decode("utf-8"))
+    encoded_payload = sys.stdin.read() if args.payload == "-" else args.payload
+    payload = json.loads(base64.b64decode(encoded_payload).decode("utf-8"))
     drop_privileges(args.user)
 
     op = args.op
@@ -162,6 +218,10 @@ def main() -> None:
         limit = int(payload.get("limit", 1_048_576))
         data = path.read_bytes()[:limit]
         print(json.dumps({"content": base64.b64encode(data).decode("ascii")}))
+    elif op == "read_text":
+        print(json.dumps(read_text_file(Path(payload["path"]))))
+    elif op == "write_text":
+        print(json.dumps(write_text_file(Path(payload["path"]), payload["content"], payload.get("expected_mtime_ns"))))
     elif op == "search":
         root = Path(payload["path"])
         query = payload["query"].lower()
@@ -179,5 +239,8 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except WorkerError as error:
+        print(json.dumps({"error": error.code}), file=sys.stderr)
+        raise SystemExit(1) from None
     except OSError as error:
         fail_with_os_error(error)

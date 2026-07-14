@@ -15,6 +15,7 @@ import { Breadcrumbs } from "./Breadcrumbs";
 import { DirectoryTree } from "./DirectoryTree";
 import { FilePreview } from "./FilePreview";
 import { FileProperties } from "./FileProperties";
+import { TextEditor } from "./TextEditor";
 import { moveInHistory, pushPath } from "./navigation";
 import { formatDate, formatSize, joinPath } from "./utils";
 
@@ -35,6 +36,13 @@ const columns: Array<{ id: SortField; key: string; defaultWidth: number }> = [
   { id: "group", key: "column.group", defaultWidth: 110 }, { id: "permissions", key: "column.permissions", defaultWidth: 120 },
   { id: "modified", key: "column.modified", defaultWidth: 180 }
 ];
+const TEXT_FILE_PATTERN = /\.(?:txt|md|markdown|log|csv|tsv|json|jsonc|ya?ml|toml|ini|conf|cfg|xml|html?|css|scss|less|js|jsx|ts|tsx|py|sh|bash|zsh|fish|sql|env|gitignore|dockerfile)$/i;
+
+function isLikelyTextFile(item: FileItem) {
+  return !item.is_dir && item.size <= 1024 * 1024 && (
+    item.mime?.startsWith("text/") || item.mime?.includes("json") || TEXT_FILE_PATTERN.test(item.name) || !item.name.includes(".")
+  );
+}
 
 export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, onOpenFolderWindow, onShareSamba, onUpload, onUploadCancel, onUploadRetry }: {
   homePath: string;
@@ -77,6 +85,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   const [context, setContext] = useState<ContextState | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [preview, setPreview] = useState<FileItem | null>(null);
+  const [editor, setEditor] = useState<FileItem | null>(null);
   const [properties, setProperties] = useState<FileItem | null>(null);
   const [operationErrors, setOperationErrors] = useState<string[]>([]);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -159,7 +168,12 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     });
     lastSelectedIndex.current = index;
   }
-  function openItem(item = selectedItems[0]) { if (!item) return; if (item.is_dir) openPath(item.path); else setPreview(item); }
+  function openItem(item = selectedItems[0]) {
+    if (!item) return;
+    if (item.is_dir) openPath(item.path);
+    else if (isLikelyTextFile(item)) setEditor(item);
+    else setPreview(item);
+  }
   function setClipboardFromSelection(mode: "copy" | "move") { if (selectedItems.length) setClipboard({ mode, paths: selectedItems.map((item) => item.path) }); }
   async function paste(target = path, source = clipboard) {
     if (!source?.paths.length) return;
@@ -235,7 +249,11 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     const targetItems = item ? [item] : selectedItems;
     const menu: ContextMenuItem[] = [];
     if (item) menu.push({ label: t("action.open"), action: () => openItem(item) });
-    if (item && !item.is_dir) menu.push({ label: t("action.preview"), action: () => setPreview(item) }, { label: t("action.download"), action: () => window.open(downloadUrl(item.path), "_blank") });
+    if (item && !item.is_dir) menu.push(
+      { label: t("files.editText"), disabled: item.size > 1024 * 1024, action: () => setEditor(item) },
+      { label: t("action.preview"), action: () => setPreview(item) },
+      { label: t("action.download"), action: () => window.open(downloadUrl(item.path), "_blank") },
+    );
     if (item?.is_dir) menu.push({ label: t("files.openNewWindow"), action: () => onOpenFolderWindow(item.path) });
     if (item) menu.push({ label: t("action.copy"), separator: true, action: () => setClipboard({ mode: "copy", paths: targetItems.map((entry) => entry.path) }) }, { label: t("action.cut"), action: () => setClipboard({ mode: "move", paths: targetItems.map((entry) => entry.path) }) }, { label: t("action.rename"), disabled: !item.can_rename, action: () => setDialog({ type: "rename", item }) }, { label: t("action.delete"), danger: true, disabled: !item.can_delete, action: () => setDialog({ type: "delete", items: targetItems }) });
     else menu.push({ label: t("action.newFolder"), disabled: !meta.canWrite, action: () => setDialog({ type: "newFolder" }) }, { label: t("action.newFile"), disabled: !meta.canWrite, action: () => setDialog({ type: "newFile" }) }, { label: t("action.upload"), disabled: !meta.canWrite, action: () => document.getElementById("file-manager-upload")?.click() });
@@ -295,6 +313,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     {dialog?.type === "delete" && <ConfirmDialog title={t("files.confirmDeleteTitle")} message={t("files.confirmDelete").replace("{count}", String(dialog.items.length))} confirmLabel={t("action.delete")} cancelLabel={t("action.cancel")} danger onClose={() => setDialog(null)} onConfirm={() => { const list = dialog.items; setDialog(null); void remove(list); }} />}
     {dialog?.type === "drop" && <ConfirmDialog title={dialog.copy ? t("files.confirmCopy") : t("files.confirmMove")} message={t("files.confirmDrop").replace("{count}", String(dragPaths.length)).replace("{target}", dialog.target)} confirmLabel={dialog.copy ? t("action.copy") : t("action.move")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={() => { const source = { mode: dialog.copy ? "copy" as const : "move" as const, paths: dragPaths }; const target = dialog.target; setDialog(null); setDragPaths([]); void paste(target, source); }} />}
     {preview && <FilePreview item={preview} t={t} onClose={() => setPreview(null)} />}
+    {editor && <TextEditor item={editor} t={t} onClose={() => setEditor(null)} onSaved={() => { toast(t("editor.saved")); void load(); }} />}
     {uploadDialogIds && <UploadProgressDialog tasks={tasks.filter((task) => uploadDialogIds.includes(task.id))} t={t} onClose={() => setUploadDialogIds(null)} onCancel={(id) => onUploadCancel?.(id)} onRetry={(id) => onUploadRetry?.(id)} />}
     {properties && <FileProperties item={properties} currentPath={path} isAdmin={isAdmin} sambaShared={sharedPaths.has(properties.path)} t={t} toast={toast} onClose={() => setProperties(null)} onChanged={() => void load()} />}
     {operationErrors.length > 0 && <Modal title={t("files.operationErrors")} onClose={() => setOperationErrors([])} footer={<button onClick={() => setOperationErrors([])}>{t("action.close")}</button>}><ul className="error-list">{operationErrors.map((error) => <li key={error}>{error}</li>)}</ul></Modal>}
