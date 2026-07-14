@@ -252,7 +252,8 @@ let csrfToken = localStorage.getItem("webnas_csrf") || "";
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  if (options.body instanceof Blob) headers.set("Content-Type", "application/octet-stream");
+  else if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (csrfToken && options.method && options.method !== "GET") headers.set("x-csrf-token", csrfToken);
   const res = await fetch(url, { ...options, headers, credentials: "include" });
   if (!res.ok) {
@@ -300,7 +301,7 @@ export const api = {
   copy: (src: string | string[], dst: string, priority = 0) => request<{ task_id: string }>("/api/files/copy", { method: "POST", body: JSON.stringify(Array.isArray(src) ? { srcs: src, dst, priority } : { src, dst, priority }) }),
   move: (src: string | string[], dst: string, priority = 0) => request<{ task_id: string }>("/api/files/move", { method: "POST", body: JSON.stringify(Array.isArray(src) ? { srcs: src, dst, priority } : { src, dst, priority }) }),
   rename: (src: string, dst: string) => request("/api/files/rename", { method: "POST", body: JSON.stringify({ src, dst }) }),
-  delete: (path: string) => request<{ task_id: string }>("/api/files/delete", { method: "POST", body: JSON.stringify({ path }) }),
+  delete: (path: string | string[]) => request<{ task_id: string; task_ids?: string[] }>("/api/files/delete", { method: "POST", body: JSON.stringify(Array.isArray(path) ? { paths: path } : { path }) }),
   trash: (path: string) => request("/api/files/trash", { method: "POST", body: JSON.stringify({ path }) }),
   preview: (path: string) => request<{ path: string; mime: string; content_base64: string }>(`/api/files/preview?path=${encodeURIComponent(path)}`),
   stat: (path: string) => request<FileItem>(`/api/files/stat?path=${encodeURIComponent(path)}`),
@@ -318,6 +319,9 @@ export const api = {
     body.set("file", file);
     return request("/api/files/upload", { method: "POST", body });
   },
+  startUpload: (path: string, file: File) => request<{ upload_id: string; offset: number; size: number; path: string; completed: boolean }>("/api/files/uploads", { method: "POST", body: JSON.stringify({ path, filename: file.name, size: file.size }) }),
+  uploadChunk: (uploadId: string, offset: number, chunk: Blob, signal?: AbortSignal) => request<{ upload_id: string; offset: number; size: number; path: string; completed: boolean }>(`/api/files/uploads/${encodeURIComponent(uploadId)}`, { method: "PATCH", body: chunk, headers: { "Upload-Offset": String(offset) }, signal }),
+  cancelUpload: (uploadId: string) => request(`/api/files/uploads/${encodeURIComponent(uploadId)}`, { method: "DELETE", body: "{}" }),
   settingsMe: () => request<SettingsMe>("/api/settings/me"),
   updateSettings: (payload: Partial<Pick<SettingsMe, "language" | "theme" | "startup_windows" | "wallpaper">>) => request("/api/settings/me", { method: "PATCH", body: JSON.stringify(payload) }),
   changeMyPassword: (current_password: string, new_password: string) => request("/api/settings/change-password", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),

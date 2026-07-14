@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import cast
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +22,7 @@ from .path_policy import resolve_user_path
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
 from .settings import router as settings_router, start_auto_update_scheduler
 from .tasks import task_store
+from .uploads import append_upload, cancel_upload, start_upload
 
 configure_logging()
 app = FastAPI(title="WebNAS", version="0.1.0")
@@ -48,6 +49,17 @@ class LoginRequest(BaseModel):
 
 class PathRequest(BaseModel):
     path: str
+
+
+class DeleteRequest(BaseModel):
+    path: str | None = None
+    paths: list[str] | None = None
+
+
+class UploadStartRequest(BaseModel):
+    path: str
+    filename: str
+    size: int
 
 
 class CopyMoveRequest(BaseModel):
@@ -203,11 +215,17 @@ def rename(payload: RenameRequest, user=Depends(csrf_user)):
 
 
 @app.post("/api/files/delete")
-def delete(payload: PathRequest, user=Depends(csrf_user)):
-    target = resolve_user_path(user.username, payload.path)
-    assert_write_allowed(target)
-    task = task_store.create(user.username, "delete", {"path": str(target)})
-    return {"task_id": task.id}
+def delete(payload: DeleteRequest, user=Depends(csrf_user)):
+    raw_paths = payload.paths or ([payload.path] if payload.path else [])
+    if not raw_paths:
+        raise HTTPException(400, "At least one path is required")
+    if len(raw_paths) > 500:
+        raise HTTPException(400, "A maximum of 500 paths can be deleted at once")
+    targets = [resolve_user_path(user.username, path) for path in raw_paths]
+    for target in targets:
+        assert_write_allowed(target)
+    tasks = [task_store.create(user.username, "delete", {"path": str(target)}) for target in targets]
+    return {"task_id": tasks[0].id, "task_ids": [task.id for task in tasks]}
 
 
 @app.post("/api/files/trash")
@@ -220,6 +238,22 @@ def trash(payload: PathRequest, user=Depends(csrf_user)):
 @app.post("/api/files/upload")
 async def upload(path: str = Form(...), file: UploadFile = File(...), user=Depends(csrf_user)):
     return await save_upload(user.username, path, file)
+
+
+@app.post("/api/files/uploads")
+def upload_start(payload: UploadStartRequest, user=Depends(csrf_user)):
+    return start_upload(user.username, payload.path, payload.filename, payload.size)
+
+
+@app.patch("/api/files/uploads/{upload_id}")
+async def upload_chunk(upload_id: str, request: Request, offset: int = Header(..., alias="Upload-Offset"), user=Depends(csrf_user)):
+    return append_upload(user.username, upload_id, offset, await request.body())
+
+
+@app.delete("/api/files/uploads/{upload_id}")
+def upload_cancel(upload_id: str, user=Depends(csrf_user)):
+    cancel_upload(user.username, upload_id)
+    return {"ok": True}
 
 
 @app.get("/api/files/download")

@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Folder, HardDrive, LoaderCircle, Network } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type FileItem, type NetworkMount } from "../../api";
 import type { Translate } from "../../app/types";
 
@@ -17,6 +17,8 @@ export function DirectoryTree({ currentPath, homePath, mounts, t, onOpen, onDrop
   const storageKey = "webnas_explorer_expanded";
   const [tree, setTree] = useState<TreeState>({});
   const [dropTarget, setDropTarget] = useState("");
+  const [dragCount, setDragCount] = useState(0);
+  const expandTimer = useRef<number | null>(null);
   const load = useCallback(async (path: string, force = false) => {
     const existing = tree[path];
     if (existing?.children.length && !force) { setTree((state) => ({ ...state, [path]: { ...state[path], open: !state[path].open } })); return; }
@@ -44,9 +46,9 @@ export function DirectoryTree({ currentPath, homePath, mounts, t, onOpen, onDrop
   function row(path: string, label: string, icon: React.ReactNode, level: number, canExpand = true) {
     const state = tree[path];
     return <div key={path}>
-      <button type="button" className={`tree-row ${currentPath === path ? "active" : ""} ${dropTarget === path ? "drop-target" : ""}`} style={{ paddingLeft: 10 + level * 16 }} onClick={() => onOpen(path)} onDragOver={(event) => { event.preventDefault(); setDropTarget(path); }} onDragLeave={() => setDropTarget("")} onDrop={(event) => { event.preventDefault(); setDropTarget(""); onDropItems(path); }}>
+      <button type="button" className={`tree-row ${currentPath === path ? "active" : ""} ${dropTarget === path ? "drop-target" : ""}`} style={{ paddingLeft: 10 + level * 16 }} onClick={() => onOpen(path)} onDragEnter={(event) => { event.preventDefault(); const paths = event.dataTransfer.getData("text/plain").split("\n").filter(Boolean); setDragCount(paths.length); setDropTarget(path); if (canExpand && !state?.open) { if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = window.setTimeout(() => void load(path), 650); } }} onDragOver={(event) => { event.preventDefault(); setDropTarget(path); }} onDragLeave={(event) => { if (event.currentTarget.contains(event.relatedTarget as Node | null)) return; if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = null; setDropTarget(""); setDragCount(0); }} onDrop={(event) => { event.preventDefault(); if (expandTimer.current !== null) window.clearTimeout(expandTimer.current); expandTimer.current = null; setDropTarget(""); setDragCount(0); onDropItems(path); }}>
         {canExpand ? <span className="tree-toggle" onClick={(event) => { event.stopPropagation(); void load(path); }}>{state?.loading ? <LoaderCircle className="spin" /> : state?.open ? <ChevronDown /> : <ChevronRight />}</span> : <span className="tree-toggle" />}
-        {icon}<span>{label}</span>
+        {icon}<span>{label}</span>{dropTarget === path && dragCount > 0 && <small className="drag-count">{dragCount}</small>}
       </button>
       {state?.error && <button className="tree-error" onClick={() => void load(path, true)}>{state.error} · {t("action.retry")}</button>}
       {state?.open && state.children.map((child) => <div key={child.path}>{row(child.path, child.name, <Folder />, level + 1)}</div>)}

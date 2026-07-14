@@ -5,6 +5,7 @@ import { AppIcon } from "../components/AppIcon";
 import { FileManager } from "../features/files/FileManager";
 import { GroupsApp, LogsAppView, MonitorApp, MountsApp, SambaAppView, ServicesApp, SettingsAppView, StoreAppView, UsersApp } from "../features/admin/SystemApps";
 import { TransferCenter } from "../features/transfers/TransferCenter";
+import type { UploadControls } from "../features/transfers/useUploadManager";
 import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
 import { apps } from "./catalog";
@@ -13,12 +14,13 @@ import { Taskbar } from "./Taskbar";
 import type { AppId, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
 import { initialWindowState, restoreWindowState, windowReducer } from "./windowState";
 
-export function Desktop({ user, profile, language, theme, tasks, toasts, t, toast, onLanguage, onTheme, onLoggedOut }: {
+export function Desktop({ user, profile, language, theme, tasks, uploadControls, toasts, t, toast, onLanguage, onTheme, onLoggedOut }: {
   user: User;
   profile: SettingsMe;
   language: Language;
   theme: Theme;
   tasks: Task[];
+  uploadControls: UploadControls;
   toasts: Toast[];
   t: Translate;
   toast: ToastFn;
@@ -57,14 +59,14 @@ export function Desktop({ user, profile, language, theme, tasks, toasts, t, toas
   }
   function renderApp(item: WindowInstance) {
     switch (item.app) {
-      case "files": return <FileManager homePath={user.home} initialPath={item.initialPath} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={() => openApp("samba")} />;
-      case "transfers": return <TransferCenter tasks={tasks} t={t} toast={toast} />;
-      case "users": return <UsersApp t={t} />;
-      case "groups": return <GroupsApp t={t} />;
-      case "mounts": return <MountsApp t={t} />;
-      case "samba": return <SambaAppView t={t} />;
-      case "services": return <ServicesApp t={t} />;
-      case "store": return <StoreAppView t={t} />;
+      case "files": return <FileManager homePath={user.home} initialPath={item.initialPath} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={() => openApp("samba")} />;
+      case "transfers": return <TransferCenter tasks={tasks} t={t} toast={toast} uploadControls={uploadControls} />;
+      case "users": return <UsersApp t={t} toast={toast} />;
+      case "groups": return <GroupsApp t={t} toast={toast} />;
+      case "mounts": return <MountsApp t={t} toast={toast} />;
+      case "samba": return <SambaAppView t={t} toast={toast} />;
+      case "services": return <ServicesApp t={t} toast={toast} />;
+      case "store": return <StoreAppView t={t} toast={toast} />;
       case "logs": return <LogsAppView t={t} />;
       case "settings": return <SettingsAppView language={language} theme={theme} t={t} toast={toast} onLanguage={onLanguage} onTheme={onTheme} />;
       case "monitor": return <MonitorApp t={t} />;

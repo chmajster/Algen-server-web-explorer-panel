@@ -60,11 +60,15 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
     return json.loads(result.stdout or "{}")
 
 
-def _item_sort_value(item: dict, sort: str) -> object:
+def _item_sort_value(item: dict, sort: str) -> tuple[int, float, str]:
     if sort in {"modified", "mtime"}:
-        return float(item.get("mtime") or item.get("modified") or 0)
+        return (0, float(item.get("mtime") or item.get("modified") or 0), "")
     value = item.get(sort) or ""
-    return value.lower() if isinstance(value, str) else value
+    if isinstance(value, str):
+        return (1, 0, value.lower())
+    if isinstance(value, (int, float)):
+        return (0, float(value), "")
+    return (1, 0, str(value))
 
 
 def _filter_items(items: list[dict], query: str | None) -> list[dict]:

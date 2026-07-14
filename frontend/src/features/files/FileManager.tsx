@@ -34,7 +34,7 @@ const columns: Array<{ id: SortField; key: string; defaultWidth: number }> = [
   { id: "modified", key: "column.modified", defaultWidth: 180 }
 ];
 
-export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, onOpenFolderWindow, onShareSamba }: {
+export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, onOpenFolderWindow, onShareSamba, onUpload }: {
   homePath: string;
   initialPath?: string;
   tasks: Task[];
@@ -43,6 +43,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   toast: ToastFn;
   onOpenFolderWindow: (path: string) => void;
   onShareSamba: (path: string) => void;
+  onUpload: (files: File[], path: string) => void;
 }) {
   const storagePrefix = "webnas_file_explorer";
   const firstPath = initialPath || localStorage.getItem(`${storagePrefix}_path`) || homePath || "";
@@ -99,7 +100,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { api.mounts().then(setMounts).catch(() => setMounts([])); api.appConfig("samba").then((data) => setSharedPaths(new Set(data.shares.filter((share) => share.enabled).map((share) => share.path)))).catch(() => undefined); }, []);
   useEffect(() => {
-    const completed = tasks.some((task) => ["copy", "move", "delete"].includes(task.type) && ["completed", "failed"].includes(task.status) && (task.finished_at || 0) * 1000 > Date.now() - 2500);
+    const completed = tasks.some((task) => ["copy", "move", "delete", "upload"].includes(task.type) && ["completed", "failed"].includes(task.status) && (task.finished_at || 0) * 1000 > Date.now() - 2500);
     if (completed) void load();
   }, [load, tasks]);
   useEffect(() => { localStorage.setItem(`${storagePrefix}_view`, view); }, [view]);
@@ -148,21 +149,35 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     catch (error) { toast(error instanceof Error ? error.message : t("files.operationFailed"), "error"); }
   }
   async function remove(itemsToDelete: FileItem[]) {
-    const results = await Promise.allSettled(itemsToDelete.filter((item) => item.can_delete).map((item) => api.delete(item.path)));
-    const errors = results.flatMap((result, index) => result.status === "rejected" ? [`${itemsToDelete[index].name}: ${result.reason instanceof Error ? result.reason.message : t("files.operationFailed")}`] : []);
-    const succeeded = results.length - errors.length;
-    toast(errors.length ? t("files.partialSuccess").replace("{success}", String(succeeded)).replace("{failed}", String(errors.length)) : t("files.deleteQueued"), errors.length ? "error" : "ok");
-    setOperationErrors(errors); setSelection(new Set());
+    const deletable = itemsToDelete.filter((item) => item.can_delete);
+    try {
+      await api.delete(deletable.map((item) => item.path));
+      toast(t("files.deleteQueued"));
+      setOperationErrors([]);
+      setSelection(new Set());
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : t("files.operationFailed");
+      setOperationErrors([detail]);
+      toast(detail, "error");
+    }
   }
   async function upload(files: FileList | null) {
     if (!files?.length) return;
-    const list = [...files];
-    const results = await Promise.allSettled(list.map((file) => api.upload(path, file)));
-    const errors = results.flatMap((result, index) => result.status === "rejected" ? [`${list[index].name}: ${result.reason instanceof Error ? result.reason.message : t("files.operationFailed")}`] : []);
-    toast(errors.length ? t("files.partialSuccess").replace("{success}", String(results.length - errors.length)).replace("{failed}", String(errors.length)) : t("files.uploaded"), errors.length ? "error" : "ok");
-    setOperationErrors(errors); await load();
+    onUpload([...files], path);
+    toast(t("files.uploadQueued"));
   }
   function confirmDrop(target: string) { if (dragPaths.length) setDialog({ type: "drop", target, copy: false }); }
+  function dragPreview(event: React.DragEvent, paths: string[]) {
+    setDragPaths(paths);
+    event.dataTransfer.effectAllowed = "copyMove";
+    event.dataTransfer.setData("text/plain", paths.join("\n"));
+    const preview = document.createElement("div");
+    preview.className = "drag-preview";
+    preview.textContent = t("files.dragItems").replace("{count}", String(paths.length));
+    document.body.appendChild(preview);
+    event.dataTransfer.setDragImage(preview, 18, 18);
+    window.setTimeout(() => preview.remove(), 0);
+  }
 
   useEffect(() => {
     function keydown(event: KeyboardEvent) {
@@ -230,9 +245,9 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
         {loadError && <div className="error-state"><strong>{t("status.error")}</strong><span>{loadError}</span><button onClick={() => void load()}>{t("action.retry")}</button></div>}
         {loading ? <div className="file-skeleton">{Array.from({ length: 8 }, (_, index) => <span key={index} />)}</div> : items.length === 0 ? <div className="empty-state"><Folder /><strong>{t("files.empty")}</strong><span>{t("files.emptyHint")}</span></div> : view === "list" ? <div className="file-list" role="grid">
           <div className="file-list-header" role="row"><span><input type="checkbox" aria-label={t("files.selectAll")} checked={items.length > 0 && selection.size === items.length} onChange={(event) => setSelection(event.target.checked ? new Set(items.map((item) => item.path)) : new Set())} /></span><span />{visibleColumns.map((column) => <button className={column.id} role="columnheader" key={column.id} style={{ width: widths[column.id] }} onClick={() => { if (sort === column.id) setDirection((value) => value === "asc" ? "desc" : "asc"); else { setSort(column.id); setDirection("asc"); } }}>{t(column.key)}{sort === column.id && <i>{direction === "asc" ? "↑" : "↓"}</i>}<b onPointerDown={(event) => { event.stopPropagation(); const startX = event.clientX; const start = widths[column.id]; const move = (next: PointerEvent) => setWidths((current) => ({ ...current, [column.id]: Math.max(70, start + next.clientX - startX) })); const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} /></button>)}<span>{t("column.actions")}</span></div>
-          {items.map((item, index) => <div role="row" key={item.path} className={`file-entry file-row ${selection.has(item.path) ? "selected" : ""} ${dropTarget === item.path ? "drop-target" : ""}`} draggable onDragStart={(event) => { const paths = selection.has(item.path) ? selectedItems.map((entry) => entry.path) : [item.path]; setDragPaths(paths); event.dataTransfer.effectAllowed = "copyMove"; event.dataTransfer.setData("text/plain", paths.join("\n")); }} onDragEnd={() => { setDropTarget(""); }} onDragOver={(event) => { if (item.is_dir) { event.preventDefault(); event.dataTransfer.dropEffect = event.ctrlKey ? "copy" : "move"; setDropTarget(item.path); } }} onDragLeave={() => setDropTarget("")} onDrop={(event) => { event.preventDefault(); setDropTarget(""); if (item.is_dir) setDialog({ type: "drop", target: item.path, copy: event.ctrlKey }); }} onClick={(event) => selectItem(item, event, index)} onDoubleClick={() => openItem(item)} onContextMenu={(event) => { event.preventDefault(); if (!selection.has(item.path)) setSelection(new Set([item.path])); setContext({ x: event.clientX, y: event.clientY, item }); }}>
+          {items.map((item, index) => <div role="row" key={item.path} className={`file-entry file-row ${selection.has(item.path) ? "selected" : ""} ${dropTarget === item.path ? "drop-target" : ""}`} draggable onDragStart={(event) => dragPreview(event, selection.has(item.path) ? selectedItems.map((entry) => entry.path) : [item.path])} onDragEnd={() => { setDropTarget(""); }} onDragOver={(event) => { if (item.is_dir) { event.preventDefault(); event.dataTransfer.dropEffect = event.ctrlKey ? "copy" : "move"; setDropTarget(item.path); } }} onDragLeave={() => setDropTarget("")} onDrop={(event) => { event.preventDefault(); setDropTarget(""); if (item.is_dir) setDialog({ type: "drop", target: item.path, copy: event.ctrlKey }); }} onClick={(event) => selectItem(item, event, index)} onDoubleClick={() => openItem(item)} onContextMenu={(event) => { event.preventDefault(); if (!selection.has(item.path)) setSelection(new Set([item.path])); setContext({ x: event.clientX, y: event.clientY, item }); }}>
             <span><input type="checkbox" aria-label={`${t("action.select")} ${item.name}`} checked={selection.has(item.path)} onClick={(event) => event.stopPropagation()} onChange={() => setSelection((current) => { const next = new Set(current); if (next.has(item.path)) next.delete(item.path); else next.add(item.path); return next; })} /></span><span className="file-type-icon">{item.is_dir ? <Folder /> : <File />}</span>{visibleColumns.map((column) => <span key={column.id} style={{ width: widths[column.id] }} className={column.id}>{column.id === "name" ? <>{item.name}{item.is_dir && sharedPaths.has(item.path) && <small>SMB</small>}</> : column.id === "size" ? item.is_dir ? "—" : formatSize(item.size) : column.id === "modified" ? formatDate(item.mtime || item.modified) : item[column.id]}</span>)}<span className="row-actions"><button title={t("files.properties")} onClick={(event) => { event.stopPropagation(); setProperties(item); }}><MoreHorizontal /></button></span>
-          </div>)}</div> : <div className={`file-grid ${view}`}>{items.map((item, index) => <button key={item.path} className={`file-entry ${selection.has(item.path) ? "selected" : ""}`} draggable onDragStart={() => setDragPaths(selection.has(item.path) ? selectedItems.map((entry) => entry.path) : [item.path])} onClick={(event) => selectItem(item, event, index)} onDoubleClick={() => openItem(item)} onContextMenu={(event) => { event.preventDefault(); setSelection(new Set([item.path])); setContext({ x: event.clientX, y: event.clientY, item }); }} onDragOver={(event) => { if (item.is_dir) event.preventDefault(); }} onDrop={(event) => { if (item.is_dir) setDialog({ type: "drop", target: item.path, copy: event.ctrlKey }); }}>{item.is_dir ? <Folder /> : <File />}<span>{item.name}</span><small>{item.is_dir ? t("files.folder") : formatSize(item.size)}</small></button>)}</div>}
+          </div>)}</div> : <div className={`file-grid ${view}`}>{items.map((item, index) => <button key={item.path} className={`file-entry ${selection.has(item.path) ? "selected" : ""}`} draggable onDragStart={(event) => dragPreview(event, selection.has(item.path) ? selectedItems.map((entry) => entry.path) : [item.path])} onClick={(event) => selectItem(item, event, index)} onDoubleClick={() => openItem(item)} onContextMenu={(event) => { event.preventDefault(); setSelection(new Set([item.path])); setContext({ x: event.clientX, y: event.clientY, item }); }} onDragOver={(event) => { if (item.is_dir) event.preventDefault(); }} onDrop={(event) => { if (item.is_dir) setDialog({ type: "drop", target: item.path, copy: event.ctrlKey }); }}>{item.is_dir ? <Folder /> : <File />}<span>{item.name}</span><small>{item.is_dir ? t("files.folder") : formatSize(item.size)}</small></button>)}</div>}
         {meta.pages > 1 && <nav className="pagination" aria-label={t("files.pagination")}><button disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t("action.previous")}</button><span>{meta.page} / {meta.pages}</span><button disabled={page >= meta.pages} onClick={() => setPage((value) => Math.min(meta.pages, value + 1))}>{t("action.next")}</button></nav>}
       </main>
     </div>

@@ -29,7 +29,7 @@ describe("file manager behavior", () => {
   });
 
   it("selects multiple items and changes the persisted view", async () => {
-    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
     await screen.findByText("alpha.txt");
     fireEvent.click(screen.getByLabelText("action.select Documents"));
     fireEvent.click(screen.getByLabelText("action.select alpha.txt"));
@@ -39,7 +39,7 @@ describe("file manager behavior", () => {
   });
 
   it("sorts from a column header and opens the context menu", async () => {
-    const { container } = render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    const { container } = render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
     await screen.findByText("alpha.txt");
     fireEvent.click(screen.getByRole("columnheader", { name: /column.size/ }));
     await waitFor(() => expect(api.list).toHaveBeenLastCalledWith("/home/test", expect.objectContaining({ sort: "size" })));
@@ -49,8 +49,18 @@ describe("file manager behavior", () => {
   });
 
   it("loads child directories lazily", async () => {
-    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
     await waitFor(() => expect(api.tree).toHaveBeenCalledWith("/home/test"));
     expect(await screen.findAllByText("Documents")).not.toHaveLength(0);
+  });
+
+  it("expands a tree folder after a drag hover delay", async () => {
+    vi.mocked(api.tree).mockImplementation(async (path?: string) => ({ path: path || "/home/test", items: path === "/home/test" ? [files[0]] : [] }));
+    const { container } = render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await screen.findByText("alpha.txt");
+    const treeRow = [...container.querySelectorAll<HTMLButtonElement>(".tree-row")].find((element) => element.textContent?.includes("Documents"));
+    expect(treeRow).toBeDefined();
+    fireEvent.dragEnter(treeRow!, { dataTransfer: { getData: () => "/home/test/alpha.txt" } });
+    await waitFor(() => expect(api.tree).toHaveBeenCalledWith("/home/test/Documents"), { timeout: 1200 });
   });
 });

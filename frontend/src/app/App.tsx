@@ -4,6 +4,7 @@ import { api, login, me, type SettingsMe, type Task } from "../api";
 import { detectLanguage, type Language, translate } from "../i18n";
 import type { Theme, Toast, User } from "./types";
 import { Desktop } from "./Desktop";
+import { useUploadManager } from "../features/transfers/useUploadManager";
 
 function Login({ language, onLogin }: { language: Language; onLogin: (user: User) => void }) {
   const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
@@ -19,6 +20,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem("webnas_theme") as Theme) || "system");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const uploads = useUploadManager();
   const t = useCallback((key: string) => translate(language, key), [language]);
   const toast = useCallback((text: string, type: "ok" | "error" = "ok") => { const id = Date.now() + Math.random(); setToasts((current) => [...current, { id, text, type }]); setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 4200); }, []);
 
@@ -33,5 +35,5 @@ export function App() {
   function changeTheme(value: Theme) { setTheme(value); localStorage.setItem("webnas_theme", value); api.updateSettings({ theme: value }).catch(() => undefined); }
   if (!user) return <Login language={language} onLogin={setUser} />;
   if (!profile) return <div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div>;
-  return <Desktop user={user} profile={profile} language={language} theme={theme} tasks={tasks} toasts={toasts} t={t} toast={toast} onLanguage={changeLanguage} onTheme={changeTheme} onLoggedOut={() => { setUser(null); setProfile(null); setTasks([]); }} />;
+  return <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onLanguage={changeLanguage} onTheme={changeTheme} onLoggedOut={() => { setUser(null); setProfile(null); setTasks([]); }} />;
 }
