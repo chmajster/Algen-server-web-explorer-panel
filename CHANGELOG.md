@@ -24,7 +24,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
   - history;
   - filters;
   - detailed status, command preview, exit code, stderr tail, average speed, file counts, and timestamps.
-- Server resource dashboard with CPU, RAM, swap, disk, allowed root usage, uptime, load average, service status, warnings, and admin/user scoping.
+- Near-real-time Linux resource monitor with lock-protected `/proc` deltas, per-core CPU, RAM/swap, filesystem and disk I/O, network interfaces, temperature, alerts, 60-sample SVG histories, configurable polling, and admin-only mount/process details. Filesystems are grouped by device identity and regular users only receive metrics for allowed roots.
 - Safe local user management panel for admins, including user creation, lock/unlock, password reset, group membership, home directory creation, quota support, and audit logging.
 - App Store/module system with manifests, admin-only actions, background jobs, dry-run support, logs, configuration API, and persistent state.
 - Complete modular Package Center replacing Samba-only package actions:

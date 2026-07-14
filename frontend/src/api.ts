@@ -116,11 +116,43 @@ export type SystemdService = {
   managed_by_webnas: boolean;
 };
 export type UsageMetric = { total: number; used: number; free: number; percent: number };
-export type DiskMetric = UsageMetric & { path: string; device?: string; mountpoint?: string; fs_type?: string };
+export type DiskMetric = UsageMetric & {
+  path: string;
+  paths?: string[];
+  filesystem_id?: string;
+  device?: string | null;
+  mountpoint?: string | null;
+  fs_type?: string | null;
+  read_bytes_per_sec?: number | null;
+  write_bytes_per_sec?: number | null;
+  read_bytes?: number;
+  write_bytes?: number;
+};
+export type NetworkMetric = {
+  name: string;
+  state: "up" | "down" | "unknown";
+  rx_bytes: number;
+  tx_bytes: number;
+  rx_bytes_per_sec: number | null;
+  tx_bytes_per_sec: number | null;
+  system: boolean;
+};
+export type DiskIoMetric = {
+  device: string;
+  read_bytes: number;
+  write_bytes: number;
+  read_bytes_per_sec: number | null;
+  write_bytes_per_sec: number | null;
+};
+export type ResourceAlert = { code: string; severity: "info" | "warning" | "critical"; target: string; value: number | string };
+export type ProcessMetric = { pid: number; user: string; name: string; cpu_percent: number; memory_percent: number; rss: number; state: string };
 export type ResourceDashboard = {
   scope: "admin" | "user";
   timestamp: number;
   cpu_percent: number | null;
+  cpu_cores: Array<number | null>;
+  cpu_logical_cores: number;
+  cpu_frequency_mhz: number | null;
   ram: UsageMetric;
   swap: UsageMetric;
   allowed_roots: DiskMetric[];
@@ -129,6 +161,14 @@ export type ResourceDashboard = {
   load_average: number[] | null;
   temperature_c: number | null;
   webnas_service: string | null;
+  hostname: string;
+  os_name: string;
+  kernel_version: string;
+  boot_time: number | null;
+  network_interfaces: NetworkMetric[];
+  disk_io: DiskIoMetric[];
+  alerts: ResourceAlert[];
+  processes: ProcessMetric[];
   warnings: string[];
 };
 export type AppJob = {

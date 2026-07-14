@@ -1,9 +1,8 @@
 import { Lock, PackagePlus, Play, Plus, Power, RefreshCw, RotateCcw, Square, Trash2, Unlock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api, type AdminGroup, type AdminUser, type ResourceDashboard, type SambaConfig, type SambaShare, type SambaStatus, type StoreApp, type SystemdService, type SystemLogs } from "../../api";
+import { api, type AdminGroup, type AdminUser, type SambaConfig, type SambaShare, type SambaStatus, type StoreApp, type SystemdService, type SystemLogs } from "../../api";
 import type { Theme, ToastFn, Translate } from "../../app/types";
 import type { Language } from "../../i18n";
-import { formatSize } from "../files/utils";
 import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSection";
 import { AdminActionDialog, type AdminField } from "./AdminActionDialog";
 
@@ -83,8 +82,7 @@ export function SambaAppView({ t, toast }: { t: Translate; toast: ToastFn }) {
 }
 
 export function LogsAppView({ t }: { t: Translate }) { const state = useLoader<SystemLogs>(() => api.systemLogs(250)); return <Shell title={t("app.logs")} subtitle={t("logs.subtitle")} loading={state.loading} t={t} onRefresh={state.refresh}><DataState state={state} t={t}><pre className="log-view">{state.data?.lines.join("\n")}</pre></DataState></Shell>; }
-export function MonitorApp({ t }: { t: Translate }) { const state = useLoader<ResourceDashboard>(api.resources); return <Shell title={t("app.monitor")} subtitle={t("monitor.subtitle")} loading={state.loading} t={t} onRefresh={state.refresh}><DataState state={state} t={t}>{state.data && <><div className="summary-grid"><Metric label={t("monitor.cpu")} value={`${state.data.cpu_percent ?? 0}%`} percent={state.data.cpu_percent || 0} /><Metric label={t("monitor.memory")} value={`${formatSize(state.data.ram.used)} / ${formatSize(state.data.ram.total)}`} percent={state.data.ram.percent} /><Metric label={t("monitor.swap")} value={`${formatSize(state.data.swap.used)} / ${formatSize(state.data.swap.total)}`} percent={state.data.swap.percent} /></div><div className="card-grid">{state.data.allowed_roots.map((disk) => <Metric key={disk.path} label={disk.path} value={`${formatSize(disk.used)} / ${formatSize(disk.total)}`} percent={disk.percent} />)}</div></>}</DataState></Shell>; }
-function Metric({ label, value, percent }: { label: string; value: string; percent: number }) { return <article className="metric"><span>{label}</span><strong>{value}</strong><div className="usage-bar"><span style={{ width: `${Math.min(100, percent)}%` }} /></div></article>; }
+export { MonitorApp } from "./MonitorApp";
 function DataState<T>({ state, t, children }: { state: { data: T | null; loading: boolean; error: string }; t: Translate; children: React.ReactNode }) { if (state.loading && !state.data) return <div className="loading-state">{t("status.loading")}</div>; if (state.error) return <div className="error-state">{state.error}</div>; return <div className="data-list">{children}</div>; }
 export function SettingsAppView({ language, theme, isAdmin, initialSection = "general", t, toast, onLanguage, onTheme }: { language: Language; theme: Theme; isAdmin: boolean; initialSection?: "general" | "network"; t: Translate; toast: ToastFn; onLanguage: (value: Language) => void; onTheme: (value: Theme) => void }) {
   const [section, setSection] = useState<"general" | "network">(initialSection);
