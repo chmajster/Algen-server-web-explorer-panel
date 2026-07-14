@@ -8,7 +8,11 @@ from app import file_ops
 
 @pytest.mark.parametrize(
     ("code", "status"),
-    [("already_exists", 409), ("not_found", 404), ("permission_denied", 403), ("read_only", 403), ("no_space", 507)],
+    [
+        ("already_exists", 409), ("not_found", 404), ("permission_denied", 403),
+        ("read_only", 403), ("no_space", 507), ("binary_file", 415),
+        ("file_too_large", 413), ("changed_on_disk", 409),
+    ],
 )
 def test_worker_errors_are_mapped_to_safe_api_responses(monkeypatch, code, status):
     monkeypatch.setattr(file_ops, "current_process_can_impersonate", lambda: True)
