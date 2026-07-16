@@ -5,22 +5,23 @@ import {
 import type { AppDefinition, AppId } from "./types";
 
 export const apps: AppDefinition[] = [
-  { id: "files", labelKey: "app.fileManager", icon: <HardDrive />, minWidth: 680, minHeight: 440 },
-  { id: "transfers", labelKey: "app.transfers", icon: <RefreshCw /> },
-  { id: "activity", labelKey: "app.activity", icon: <History />, minWidth: 720, minHeight: 480 },
-  { id: "users", labelKey: "app.users", icon: <Users />, permission: "rbac.manage" },
-  { id: "groups", labelKey: "app.groups", icon: <Boxes />, permission: "rbac.manage" },
+  { id: "files", labelKey: "app.fileManager", icon: <HardDrive />, permission: "files.view", minWidth: 680, minHeight: 440 },
+  { id: "transfers", labelKey: "app.transfers", icon: <RefreshCw />, permission: "transfers.view_own" },
+  { id: "activity", labelKey: "app.activity", icon: <History />, permission: "audit.view_own", minWidth: 720, minHeight: 480 },
+  { id: "identity", labelKey: "app.identity", icon: <Users />, permission: "users.view", minWidth: 800, minHeight: 520 },
+  { id: "users", labelKey: "app.users", icon: <Users />, permission: "users.view", hidden: true },
+  { id: "groups", labelKey: "app.groups", icon: <Boxes />, permission: "groups.view", hidden: true },
   // Kept in the registry so saved windows/localStorage using the legacy AppId
   // restore safely. It is no longer shown as a separate launcher app.
-  { id: "mounts", labelKey: "app.networkMounts", icon: <Network />, admin: true, hidden: true },
+  { id: "mounts", labelKey: "app.networkMounts", icon: <Network />, permission: "network_resources.view", hidden: true },
   { id: "samba", labelKey: "app.samba", icon: <Share2 />, permission: "modules.view" },
   { id: "modules", labelKey: "app.modules", icon: <Boxes />, permission: "modules.view", minWidth: 760, minHeight: 500 },
-  { id: "access", labelKey: "app.access", icon: <ShieldCheck />, permission: "rbac.manage", minWidth: 760, minHeight: 500 },
-  { id: "services", labelKey: "app.services", icon: <ServerCog />, admin: true },
+  { id: "access", labelKey: "app.access", icon: <ShieldCheck />, permission: "access.view", hidden: true, minWidth: 760, minHeight: 500 },
+  { id: "services", labelKey: "app.services", icon: <ServerCog />, permission: "services.view" },
   { id: "store", labelKey: "app.store", icon: <Package />, permission: "modules.install" },
-  { id: "logs", labelKey: "app.logs", icon: <Terminal />, permission: "audit.view" },
-  { id: "settings", labelKey: "app.settings", icon: <Settings /> },
-  { id: "monitor", labelKey: "app.monitor", icon: <Activity /> },
+  { id: "logs", labelKey: "app.logs", icon: <Terminal />, permission: "system.logs" },
+  { id: "settings", labelKey: "app.settings", icon: <Settings />, permission: "settings.view_own" },
+  { id: "monitor", labelKey: "app.monitor", icon: <Activity />, permission: "system.status" },
   { id: "module", labelKey: "app.module", icon: <Package />, permission: "modules.view", hidden: true, minWidth: 760, minHeight: 500 }
 ];
 

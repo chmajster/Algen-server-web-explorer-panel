@@ -43,13 +43,30 @@ describe("personalized desktop", () => {
     fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
     expect(screen.queryByRole("button", { name: "app.samba" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "app.store" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "app.identity" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "app.fileManager" }).length).toBeGreaterThan(0);
+  });
+
+  it("shows one identity application only with users.view permission", () => {
+    renderDesktop({ permissions: [...settingsFixture().permissions, "users.view", "groups.view", "access.view"] });
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    expect(screen.getByRole("button", { name: "app.identity" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "app.users" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "app.groups" })).not.toBeInTheDocument();
+  });
+
+  it("does not restore an identity window after permission is removed", () => {
+    localStorage.setItem("webnas_windows_test", JSON.stringify({ windows: [{ id: "identity-1", app: "identity", rect: { x: 20, y: 20, width: 900, height: 600 }, minimized: false, zIndex: 11 }], activeId: "identity-1", counter: 1, topZ: 11 }));
+    renderDesktop({ startup_windows: "last", permissions: settingsFixture().permissions });
+    expect(screen.queryByRole("dialog", { name: "app.identity" })).not.toBeInTheDocument();
+    localStorage.removeItem("webnas_windows_test");
   });
 
   it("confirms before closing a module with unapplied changes", async () => {
     localStorage.setItem("webnas_windows_test", JSON.stringify({ windows: [{ id: "samba-1", app: "samba", rect: { x: 20, y: 20, width: 900, height: 600 }, minimized: false, zIndex: 11 }], activeId: "samba-1", counter: 1, topZ: 11 }));
     const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
-    renderDesktop({ is_admin: true, startup_windows: "last" });
+    renderDesktop({ is_admin: true, startup_windows: "last", permissions: [...settingsFixture().permissions, "modules.view", "modules.configure"] });
     fireEvent.click(await screen.findByRole("button", { name: "mark-module-dirty" }));
     fireEvent.click(screen.getByRole("button", { name: "action.close" }));
     expect(screen.getByRole("dialog", { name: "app.samba" })).toBeInTheDocument();

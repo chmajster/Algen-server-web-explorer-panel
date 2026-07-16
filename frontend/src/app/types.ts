@@ -4,6 +4,7 @@ export type AppId =
   | "files"
   | "transfers"
   | "activity"
+  | "identity"
   | "users"
   | "groups"
   | "mounts"

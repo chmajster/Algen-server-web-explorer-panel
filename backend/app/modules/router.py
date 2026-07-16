@@ -112,7 +112,7 @@ class ComposeSaveRequest(ModuleAdminRequest):
     content: str = Field(max_length=512 * 1024)
 
 
-def _authorize(user: SessionUser, module_id: str, operation: Literal["view", "operate", "configure", "install", "backup", "restore"]) -> None:
+def _authorize(user: SessionUser, module_id: str, operation: Literal["view", "operate", "configure", "install", "update", "uninstall", "backup", "restore", "backup_delete", "logs", "diagnostics"]) -> None:
     authorize(user, module_permission(module_id, operation))
 
 
@@ -269,7 +269,7 @@ def module_apply(module_id: str, payload: ModuleApplyRequest, user: SessionUser 
 
 @router.get("/{module_id}/logs")
 def module_logs(module_id: str, source: str = "", lines: int = Query(200, ge=1, le=1000), search: str = "", level: str = "", user: SessionUser = Depends(current_admin)):
-    _authorize(user, module_id, "view")
+    _authorize(user, module_id, "logs")
     provider = get_provider(module_id, user.username)
     sources = provider.get_log_sources()
     selected = source or (sources[0]["id"] if sources else "")
@@ -286,7 +286,7 @@ def module_diagnostics(module_id: str, user: SessionUser = Depends(current_admin
 
 @router.post("/{module_id}/diagnostics")
 def run_module_diagnostics(module_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
-    _authorize(user, module_id, "operate")
+    _authorize(user, module_id, "diagnostics")
     return _enqueue(_provider_plan(module_id, PackageAction.diagnostics, {}), payload, user)
 
 
@@ -315,7 +315,7 @@ def restore_module_backup(module_id: str, backup_id: str, payload: ModuleAdminRe
 
 @router.delete("/{module_id}/backups/{backup_id}")
 def delete_module_backup(module_id: str, backup_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
-    _authorize(user, module_id, "backup")
+    _authorize(user, module_id, "backup_delete")
     _assert_proxmox_allowed(module_id)
     reauthenticate(user, payload.admin_password)
     get_provider(module_id, user.username).delete_backup(backup_id)
@@ -332,7 +332,12 @@ def module_service_action(module_id: str, action: Literal["start", "stop", "rest
 
 @router.post("/{module_id}/actions/{operation}")
 def module_management_action(module_id: str, operation: str, payload: ModuleActionRequest, user: SessionUser = Depends(mutating_admin)):
-    _authorize(user, module_id, "configure" if operation.startswith("compose_") else "operate")
+    if module_id == "docker" and operation.startswith("compose_"):
+        authorize(user, "docker.manage_compose")
+    elif module_id == "docker" and operation.startswith("image_"):
+        authorize(user, "docker.manage_images")
+    else:
+        _authorize(user, module_id, "operate")
     if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", operation):
         api_error(400, "INVALID_MODULE_ACTION", "Invalid module action")
     provider = get_provider(module_id, user.username)
@@ -367,13 +372,13 @@ def module_install(module_id: str, payload: ModuleAdminRequest, user: SessionUse
 
 @router.post("/{module_id}/update")
 def module_update(module_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
-    _authorize(user, module_id, "install")
+    _authorize(user, module_id, "update")
     return _package_action(module_id, PackageAction.update, payload, user)
 
 
 @router.post("/{module_id}/uninstall")
 def module_uninstall(module_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
-    _authorize(user, module_id, "install")
+    _authorize(user, module_id, "uninstall")
     return _package_action(module_id, PackageAction.uninstall, payload, user)
 
 

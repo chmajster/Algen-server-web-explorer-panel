@@ -20,6 +20,8 @@ from .auth import authenticate, normalize_username, user_home
 from .config import get_config
 from .file_ops import download_response, list_dir, mime_for, run_user_op, save_upload, tree_dir
 from .local_disks import router as local_disks_router
+from .identity.router import router as identity_router
+from .identity.permissions import authorize
 from .network_mounts import router as mounts_router
 from .modules.router import router as modules_router
 from .package_center.router import router as package_center_router
@@ -36,6 +38,7 @@ from .write_policy import assert_write_allowed
 configure_logging()
 app = FastAPI(title="WebNAS", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(identity_router)
 app.include_router(settings_router)
 app.include_router(apps_router)
 app.include_router(package_center_router)
@@ -201,6 +204,7 @@ def files_list(
     show_hidden: bool = False,
     user=Depends(current_user),
 ):
+    authorize(user, "files.view")
     payload = list_dir(
         user.username,
         path,
@@ -218,11 +222,13 @@ def files_list(
 
 @app.get("/api/files/tree")
 def files_tree(path: str | None = None, user=Depends(current_user)):
+    authorize(user, "files.view")
     return tree_dir(user.username, path)
 
 
 @app.post("/api/files/mkdir")
 def mkdir(payload: PathRequest, user=Depends(csrf_user)):
+    authorize(user, "files.create")
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
     result = run_user_op(user.username, "mkdir", {"path": str(target)})
@@ -232,6 +238,7 @@ def mkdir(payload: PathRequest, user=Depends(csrf_user)):
 
 @app.post("/api/files/create")
 def create(payload: PathRequest, user=Depends(csrf_user)):
+    authorize(user, "files.create")
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
     result = run_user_op(user.username, "create", {"path": str(target)})
@@ -241,6 +248,8 @@ def create(payload: PathRequest, user=Depends(csrf_user)):
 
 @app.post("/api/files/copy")
 def copy(payload: CopyMoveRequest, user=Depends(csrf_user)):
+    authorize(user, "files.copy")
+    authorize(user, "transfers.create")
     srcs = _resolve_sources(user.username, payload)
     dst = _resolve_destination(user.username, payload)
     _reject_destination_conflicts(srcs, dst)
@@ -251,6 +260,8 @@ def copy(payload: CopyMoveRequest, user=Depends(csrf_user)):
 
 @app.post("/api/files/move")
 def move(payload: CopyMoveRequest, user=Depends(csrf_user)):
+    authorize(user, "files.move")
+    authorize(user, "transfers.create")
     srcs = _resolve_sources(user.username, payload)
     for source in srcs:
         assert_write_allowed(source)
@@ -263,6 +274,7 @@ def move(payload: CopyMoveRequest, user=Depends(csrf_user)):
 
 @app.post("/api/files/rename")
 def rename(payload: RenameRequest, user=Depends(csrf_user)):
+    authorize(user, "files.rename")
     src = resolve_user_path(user.username, payload.src)
     dst = resolve_user_path(user.username, payload.dst)
     assert_write_allowed(src)
@@ -274,6 +286,7 @@ def rename(payload: RenameRequest, user=Depends(csrf_user)):
 
 @app.post("/api/files/delete")
 def delete(payload: DeleteRequest, user=Depends(csrf_user)):
+    authorize(user, "files.delete")
     raw_paths = payload.paths or ([payload.path] if payload.path else [])
     if not raw_paths:
         raise HTTPException(400, "At least one path is required")
@@ -289,6 +302,7 @@ def delete(payload: DeleteRequest, user=Depends(csrf_user)):
 
 @app.post("/api/files/trash")
 def trash(payload: PathRequest, user=Depends(csrf_user)):
+    authorize(user, "files.delete")
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
     result = run_user_op(user.username, "trash", {"path": str(target)})
@@ -298,6 +312,7 @@ def trash(payload: PathRequest, user=Depends(csrf_user)):
 
 @app.post("/api/files/upload")
 async def upload(path: str = Form(...), file: UploadFile = File(...), user=Depends(csrf_user)):
+    authorize(user, "files.upload")
     result = await save_upload(user.username, path, file)
     record_activity(ActivityCategory.file, "upload", user.username, target=str(result.get("path", path)), details={"filename": file.filename or ""}, source="files")
     return result
@@ -305,6 +320,7 @@ async def upload(path: str = Form(...), file: UploadFile = File(...), user=Depen
 
 @app.post("/api/files/uploads")
 def upload_start(payload: UploadStartRequest, user=Depends(csrf_user)):
+    authorize(user, "files.upload")
     result = start_upload(user.username, payload.path, payload.filename, payload.size)
     record_activity(ActivityCategory.file, "upload", user.username, target=str(result.get("path", payload.path)), status=ActivityStatus.queued, details={"upload_id": result.get("upload_id"), "size": payload.size}, source="files")
     return result
@@ -312,6 +328,7 @@ def upload_start(payload: UploadStartRequest, user=Depends(csrf_user)):
 
 @app.patch("/api/files/uploads/{upload_id}")
 async def upload_chunk(upload_id: str, request: Request, offset: int = Header(..., alias="Upload-Offset"), user=Depends(csrf_user)):
+    authorize(user, "files.upload")
     result = append_upload(user.username, upload_id, offset, await request.body())
     if result.get("completed"):
         record_activity(ActivityCategory.file, "upload", user.username, target=str(result.get("path", "")), details={"upload_id": upload_id, "size": result.get("size")}, source="files")
@@ -320,6 +337,7 @@ async def upload_chunk(upload_id: str, request: Request, offset: int = Header(..
 
 @app.delete("/api/files/uploads/{upload_id}")
 def upload_cancel(upload_id: str, user=Depends(csrf_user)):
+    authorize(user, "files.upload")
     cancel_upload(user.username, upload_id)
     record_activity(ActivityCategory.file, "upload_cancel", user.username, status=ActivityStatus.cancelled, details={"upload_id": upload_id}, source="files")
     return {"ok": True}
@@ -327,6 +345,7 @@ def upload_cancel(upload_id: str, user=Depends(csrf_user)):
 
 @app.get("/api/files/download")
 def download(path: str, user=Depends(current_user)):
+    authorize(user, "files.download")
     response = download_response(user.username, path)
     record_activity(ActivityCategory.file, "download", user.username, target=path, source="files")
     return response
@@ -334,6 +353,7 @@ def download(path: str, user=Depends(current_user)):
 
 @app.get("/api/files/preview")
 def preview(path: str, user=Depends(current_user)):
+    authorize(user, "files.read")
     target = resolve_user_path(user.username, path)
     result = cast(dict[str, str], run_user_op(user.username, "preview", {"path": str(target)}))
     content = base64.b64decode(result["content"])
@@ -342,6 +362,7 @@ def preview(path: str, user=Depends(current_user)):
 
 @app.get("/api/files/text")
 def read_text_file(path: str, user=Depends(current_user)):
+    authorize(user, "files.read")
     target = resolve_user_path(user.username, path)
     result = cast(dict[str, object], run_user_op(user.username, "read_text", {"path": str(target)}))
     result["mtime_ns"] = str(result["mtime_ns"])
@@ -350,6 +371,7 @@ def read_text_file(path: str, user=Depends(current_user)):
 
 @app.put("/api/files/text")
 def write_text_file(payload: TextFileWriteRequest, user=Depends(csrf_user)):
+    authorize(user, "files.edit")
     if len(payload.content.encode("utf-8")) > 1024 * 1024:
         raise HTTPException(413, {"code": "file_too_large", "message": "This file is too large for the text editor"})
     target = resolve_user_path(user.username, payload.path)
@@ -373,18 +395,21 @@ def write_text_file(payload: TextFileWriteRequest, user=Depends(csrf_user)):
 
 @app.get("/api/files/search")
 def search(path: str, query: str, user=Depends(current_user)):
+    authorize(user, "files.read")
     target = resolve_user_path(user.username, path)
     return {"items": run_user_op(user.username, "search", {"path": str(target), "query": query})}
 
 
 @app.get("/api/files/stat")
 def stat(path: str, user=Depends(current_user)):
+    authorize(user, "files.view")
     target = resolve_user_path(user.username, path)
     return run_user_op(user.username, "stat", {"path": str(target)})
 
 
 @app.post("/api/files/chmod")
 def chmod(payload: ChmodRequest, user=Depends(csrf_user)):
+    authorize(user, "files.chmod")
     if not get_config().security.allow_chmod:
         raise HTTPException(403, "chmod is disabled")
     target = resolve_user_path(user.username, payload.path)
@@ -396,11 +421,13 @@ def chmod(payload: ChmodRequest, user=Depends(csrf_user)):
 
 @app.get("/api/tasks")
 def tasks(status: str | None = None, user=Depends(current_user)):
+    authorize(user, "transfers.view_own")
     return [_task_payload(task) for task in task_store.list_for(user.username, status)]
 
 
 @app.get("/api/tasks/{task_id}")
 def task(task_id: str, user=Depends(current_user)):
+    authorize(user, "transfers.view_own")
     found = task_store.get(user.username, task_id)
     if not found:
         raise HTTPException(404, "Task not found")
@@ -409,6 +436,7 @@ def task(task_id: str, user=Depends(current_user)):
 
 @app.delete("/api/tasks/{task_id}")
 def cancel_task(task_id: str, user=Depends(csrf_user)):
+    authorize(user, "transfers.cancel")
     if not task_store.cancel(user.username, task_id):
         raise HTTPException(404, "Task not found")
     return {"ok": True}
@@ -416,11 +444,13 @@ def cancel_task(task_id: str, user=Depends(csrf_user)):
 
 @app.get("/api/files/tasks")
 def file_tasks(status: str | None = None, user=Depends(current_user)):
+    authorize(user, "transfers.view_own")
     return [_task_payload(task) for task in task_store.list_for(user.username, status)]
 
 
 @app.get("/api/files/tasks/{task_id}")
 def file_task(task_id: str, user=Depends(current_user)):
+    authorize(user, "transfers.view_own")
     found = task_store.get(user.username, task_id)
     if not found:
         raise HTTPException(404, "Task not found")
@@ -429,6 +459,7 @@ def file_task(task_id: str, user=Depends(current_user)):
 
 @app.post("/api/files/tasks/{task_id}/cancel")
 def file_task_cancel(task_id: str, user=Depends(csrf_user)):
+    authorize(user, "transfers.cancel")
     if not task_store.cancel(user.username, task_id):
         raise HTTPException(404, "Task not found")
     record_activity(ActivityCategory.file, "task_cancel", user.username, status=ActivityStatus.cancelled, details={"task_id": task_id}, source="files")
@@ -437,6 +468,7 @@ def file_task_cancel(task_id: str, user=Depends(csrf_user)):
 
 @app.post("/api/files/tasks/{task_id}/pause")
 def file_task_pause(task_id: str, user=Depends(csrf_user)):
+    authorize(user, "transfers.pause")
     if not task_store.pause(user.username, task_id):
         raise HTTPException(404, "Task not found or cannot be paused")
     record_activity(ActivityCategory.file, "task_pause", user.username, status=ActivityStatus.info, details={"task_id": task_id}, source="files")
@@ -445,6 +477,7 @@ def file_task_pause(task_id: str, user=Depends(csrf_user)):
 
 @app.post("/api/files/tasks/{task_id}/resume")
 def file_task_resume(task_id: str, user=Depends(csrf_user)):
+    authorize(user, "transfers.resume")
     if not task_store.resume(user.username, task_id):
         raise HTTPException(404, "Task not found or cannot be resumed")
     record_activity(ActivityCategory.file, "task_resume", user.username, status=ActivityStatus.queued, details={"task_id": task_id}, source="files")
@@ -453,6 +486,7 @@ def file_task_resume(task_id: str, user=Depends(csrf_user)):
 
 @app.post("/api/files/tasks/{task_id}/retry")
 def file_task_retry(task_id: str, user=Depends(csrf_user)):
+    authorize(user, "transfers.retry")
     task = task_store.retry(user.username, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
@@ -462,6 +496,7 @@ def file_task_retry(task_id: str, user=Depends(csrf_user)):
 
 @app.patch("/api/files/tasks/{task_id}/priority")
 def file_task_priority(task_id: str, payload: PriorityRequest, user=Depends(csrf_user)):
+    authorize(user, "transfers.change_priority")
     if not task_store.set_priority(user.username, task_id, payload.priority):
         raise HTTPException(404, "Task not found")
     record_activity(ActivityCategory.file, "task_priority", user.username, status=ActivityStatus.info, details={"task_id": task_id, "priority": payload.priority}, source="files")
@@ -470,6 +505,7 @@ def file_task_priority(task_id: str, payload: PriorityRequest, user=Depends(csrf
 
 @app.get("/api/files/tasks/{task_id}/events")
 async def file_task_events(task_id: str, user=Depends(current_user)):
+    authorize(user, "transfers.view_own")
     if not get_config().file_tasks.enable_sse:
         raise HTTPException(404, "Task event streaming is disabled")
 

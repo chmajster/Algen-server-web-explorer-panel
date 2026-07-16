@@ -22,6 +22,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - Per-user personalization synchronized by the backend: theme, accent, wallpaper, taskbar alignment, accessibility, notifications, transfer behavior, and File Manager defaults.
 - Role-based authorization for local Linux users with administrator, operator, auditor, and user roles plus closed per-operation grants/denials; existing root/sudo/wheel administrators retain full access.
 - Infrastructure modules for Linux security/system updates, Docker and safe Compose projects, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant Container.
+- One permission-aware **Users and groups** application for local Linux account/group management, built-in roles, per-user and Linux-group allow/deny policy, effective-access sources, and an audited SQLite policy store. PAM and Linux accounts remain the source of truth.
 - Per-user CPU, RAM, disk, transfer, service, and alert widgets that can be pinned, hidden, moved, and resized on the desktop.
 - Persistent Activity Center for sign-ins, file operations, configuration changes, administrative tasks, and module events, with private per-user history and permission-controlled global audit access.
 
@@ -67,7 +68,7 @@ Samba is the complete reference provider. Its application adds Shares, SMB users
 
 All mutations require administrator membership, an active session, CSRF, rate-limited PAM reauthentication, a structured plan, and audit logging. Admin passwords may be remembered only by the existing in-memory credential helper. SMB passwords never enter settings, local storage, plans, jobs, command lines, or logs.
 
-See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for the package layer, [MODULES.md](MODULES.md) for provider architecture and Samba, and [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) for RBAC, Linux updates, Docker/Compose, DNS, databases, Home Assistant, widgets, backups, and deployment limitations.
+See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for the package layer, [MODULES.md](MODULES.md) for provider architecture and Samba, [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) for infrastructure modules, and [IDENTITY.md](IDENTITY.md) for roles, granular permissions, Linux account safety, migration, API, and access recovery.
 
 ## Szybki start
 

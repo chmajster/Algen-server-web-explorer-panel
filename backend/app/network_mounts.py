@@ -26,6 +26,7 @@ from .config import get_config
 from .proxmox_guard import safe_mode_active
 from .security import SessionUser, get_session_user, require_csrf
 from .settings import _is_admin
+from .identity.permissions import authorize
 
 router = APIRouter(prefix="/api/mounts")
 
@@ -197,14 +198,16 @@ def current_user(request: Request) -> SessionUser:
     return user
 
 
-def require_admin_session(user: SessionUser, action: str) -> None:
-    if not _is_admin(user.username):
-        logger.info("network_mount_denied actor=%s action=%s reason=not_admin", user.username, action)
-        raise HTTPException(403, "Administrator privileges required")
+def require_admin_session(user: SessionUser, action: str, permission: str = "network_resources.view") -> None:
+    try:
+        authorize(user, permission)
+    except HTTPException:
+        logger.info("network_mount_denied actor=%s action=%s permission=%s", user.username, action, permission)
+        raise
 
 
-def require_admin(user: SessionUser, password: str, action: str) -> None:
-    require_admin_session(user, action)
+def require_admin(user: SessionUser, password: str, action: str, permission: str) -> None:
+    require_admin_session(user, action, permission)
     authenticate(user.username, password)
 
 
@@ -923,7 +926,7 @@ def list_mounts(user: SessionUser = Depends(current_user)):
 
 @router.post("")
 def create_mount(payload: MountPayload, user: SessionUser = Depends(current_user)):
-    require_admin(user, payload.admin_password, "create_mount")
+    require_admin(user, payload.admin_password, "create_mount", "network_resources.create")
     mount_id = uuid4().hex[:16]
     mount_point, remote, options = validate_payload(payload, user.username)
     write_credentials(mount_id, payload)
@@ -954,7 +957,7 @@ def get_mount(mount_id: str, user: SessionUser = Depends(current_user)):
 
 @router.put("/{mount_id}")
 def update_mount(mount_id: str, payload: MountPayload, user: SessionUser = Depends(current_user)):
-    require_admin(user, payload.admin_password, "update_mount")
+    require_admin(user, payload.admin_password, "update_mount", "network_resources.update")
     with _mount_lock(mount_id):
         old = get_mount_or_404(mount_id)
         mount_point, remote, options = validate_payload(payload, user.username, mount_id)
@@ -1028,7 +1031,7 @@ def update_mount(mount_id: str, payload: MountPayload, user: SessionUser = Depen
 
 @router.delete("/{mount_id}")
 def delete_mount(mount_id: str, payload: AdminMountAction, user: SessionUser = Depends(current_user)):
-    require_admin(user, payload.admin_password, "delete_mount")
+    require_admin(user, payload.admin_password, "delete_mount", "network_resources.delete")
     with _mount_lock(mount_id):
         mount = get_mount_or_404(mount_id)
         if mount["actual_mounted"]:
@@ -1052,7 +1055,8 @@ def delete_mount(mount_id: str, payload: AdminMountAction, user: SessionUser = D
 
 
 def action_response(mount_id: str, action: str, payload: AdminMountAction, user: SessionUser):
-    require_admin(user, payload.admin_password, f"{action}_mount")
+    permission = "network_resources.unmount" if action == "unmount" else "network_resources.mount" if action in {"mount", "remount"} else "network_resources.update"
+    require_admin(user, payload.admin_password, f"{action}_mount", permission)
     mount = get_mount_or_404(mount_id)
     if payload.dry_run:
         return {"dry_run": True, "dependencies": dependency_plan(mount["type"]), "command": command_preview(mount, "unmount" if action == "unmount" else "mount")}

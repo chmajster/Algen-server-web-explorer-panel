@@ -299,19 +299,19 @@ install_dependencies() {
       DEBIAN_FRONTEND=noninteractive apt-get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpam0g-dev rsync sudo curl ca-certificates tar gzip \
-        passwd procps iproute2 screen
+        passwd procps iproute2 screen quota
       ;;
     dnf)
       dnf install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl ca-certificates tar gzip \
-        shadow-utils procps-ng iproute screen
+        shadow-utils procps-ng iproute screen quota
       ;;
     yum)
       yum install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl ca-certificates tar gzip \
-        shadow-utils procps-ng iproute screen
+        shadow-utils procps-ng iproute screen quota
       ;;
   esac
   ok "Dependencies installed"

@@ -37,7 +37,7 @@ describe("ManagedModuleApp", () => {
   });
 
   it("opens PAM confirmation for an operator container action", async () => {
-    render(<ManagedModuleApp moduleId="docker" permissions={["modules.view", "docker.view", "docker.operate"]} t={(key) => key} toast={vi.fn()} />);
+    render(<ManagedModuleApp moduleId="docker" permissions={["modules.view", "docker.view", "docker.manage_containers"]} t={(key) => key} toast={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: /managed.containers/ }));
     await screen.findByText("web");
     fireEvent.click(screen.getByTitle("module.start"));

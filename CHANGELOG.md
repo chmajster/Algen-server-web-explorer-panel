@@ -8,6 +8,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ### Added
 
+- Production Users and groups identity module with a closed granular permission registry, Linux-group and user allow/deny policy, effective permission sources, Linux administrator/last-administrator protection, versioned `identity.sqlite3`, idempotent `rbac.json` migration, compatible legacy APIs, PAM/CSRF/rate-limited mutations, unified responsive UI, and audited policy history.
 - Activity Center with a durable structured timeline for sign-ins, file operations, user configuration changes, administrative tasks, network-resource changes, RBAC assignments, and queued/completed/failed module jobs. Regular users are restricted to their own events, while `audit.view` grants global user/category/status/search filters; stored metadata is bounded and recursively redacted for credentials and tokens.
 - Granular RBAC layered over PAM/local Linux users, with `administrator`, `operator`, `auditor`, and `user` roles, closed application/operation permissions, atomic private assignments, administrator compatibility for root/sudo/wheel, backend enforcement, and a role-management application.
 - Linux Updates module with apt/dnf/yum package and security-update discovery, operation history, restart-required detection, durable metadata/security/full update jobs, PAM/CSRF enforcement, and Proxmox Safe Mode blocking.

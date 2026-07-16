@@ -39,7 +39,7 @@ export function clampRect(rect: WindowRect, minWidth = 360, minHeight = 280, vie
 }
 
 function defaultRect(app: AppId, count: number, viewport?: { width: number; height: number }): WindowRect {
-  const large = app === "files" || app === "settings" || app === "samba" || app === "store" || app === "module";
+  const large = app === "files" || app === "settings" || app === "samba" || app === "store" || app === "module" || app === "identity";
   return clampRect({
     x: 84 + (count * 28) % 190,
     y: 78 + (count * 24) % 150,

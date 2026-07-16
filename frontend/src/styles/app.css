@@ -8,6 +8,7 @@
 @import "./modules.css";
 @import "./widgets.css";
 @import "./activity.css";
+@import "./identity.css";
 @import "./responsive.css";
 
 :root {

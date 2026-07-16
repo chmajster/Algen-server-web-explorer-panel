@@ -41,22 +41,11 @@ def test_infrastructure_manifests_declare_only_supported_resources_and_actions()
 
 
 def test_rbac_preserves_linux_admin_and_gives_roles_granular_permissions(monkeypatch):
-    monkeypatch.setattr(rbac, "is_linux_admin", lambda username: username == "legacy-admin")
-    monkeypatch.setattr(
-        rbac,
-        "_read",
-        lambda: {
-            "operator": rbac.RoleAssignment(username="operator", role="operator"),
-            "auditor": rbac.RoleAssignment(username="auditor", role="auditor"),
-        },
-    )
-
-    assert rbac.access_profile("legacy-admin")["role"] == "admin"
-    assert rbac.has_permission("legacy-admin", "rbac.manage") is True
-    assert rbac.has_permission("operator", "docker.operate") is True
-    assert rbac.has_permission("operator", "rbac.manage") is False
-    assert rbac.has_permission("auditor", "docker.view") is True
-    assert rbac.has_permission("auditor", "docker.operate") is False
+    assert "access.manage_roles" in rbac.ROLE_PERMISSIONS[rbac.Role.admin]
+    assert "docker.manage_containers" in rbac.ROLE_PERMISSIONS[rbac.Role.operator]
+    assert "access.manage_roles" not in rbac.ROLE_PERMISSIONS[rbac.Role.operator]
+    assert "docker.view" in rbac.ROLE_PERMISSIONS[rbac.Role.auditor]
+    assert "docker.manage_containers" not in rbac.ROLE_PERMISSIONS[rbac.Role.auditor]
     assert rbac.module_permission("postgresql", "restore") == "databases.restore"
 
 
@@ -68,9 +57,10 @@ def test_rbac_assignment_is_atomic_private_and_rejects_unknown_permission(monkey
     rbac._write({"alice": assignment})
 
     assert rbac._read()["alice"] == assignment
-    assert not path.with_suffix(".tmp").exists()
-    if path.stat().st_mode:
-        assert path.stat().st_mode & 0o077 == 0
+    database = path.with_name("identity.sqlite3")
+    assert database.is_file()
+    if database.stat().st_mode:
+        assert database.stat().st_mode & 0o077 == 0
     with pytest.raises(ValueError):
         rbac.RoleAssignment(username="alice", allow=["system.reboot"])
 

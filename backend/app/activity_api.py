@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 
 from .activity import ActivityCategory, ActivityStatus, repository
-from .rbac import has_permission
+from .rbac import authorize, has_permission
 from .security import SessionUser, get_session_user
 
 
@@ -26,7 +26,8 @@ def activity_events(
     page_size: int = Query(default=50, ge=10, le=100),
     user: SessionUser = Depends(current_user),
 ):
-    global_scope = has_permission(user.username, "audit.view")
+    authorize(user, "audit.view_own")
+    global_scope = has_permission(user.username, "audit.view_all")
     effective_actor = actor.strip() if global_scope and actor.strip() else None if global_scope else user.username
     items, total = repository().list(
         actor=effective_actor,
@@ -50,5 +51,13 @@ def activity_events(
 
 @router.get("/summary")
 def activity_summary(user: SessionUser = Depends(current_user)):
-    global_scope = has_permission(user.username, "audit.view")
+    authorize(user, "audit.view_own")
+    global_scope = has_permission(user.username, "audit.view_all")
     return {**repository().summary(actor=None if global_scope else user.username), "scope": "global" if global_scope else "own"}
+
+
+@router.get("/export")
+def activity_export(user: SessionUser = Depends(current_user)):
+    authorize(user, "audit.export")
+    items, total = repository().list(page=1, page_size=1000)
+    return {"items": [item.model_dump(mode="json") for item in items], "total": total, "truncated": total > 1000}

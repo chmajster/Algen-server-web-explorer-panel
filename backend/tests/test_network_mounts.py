@@ -105,6 +105,7 @@ def test_create_mount_is_audited(monkeypatch, tmp_path):
     creds = tmp_path / "creds"
     creds.mkdir()
     monkeypatch.setattr(network_mounts, "_is_admin", lambda username: True)
+    monkeypatch.setattr(network_mounts, "authorize", lambda user, permission: None)
     monkeypatch.setattr(network_mounts, "authenticate", lambda username, password: True)
     monkeypatch.setattr(network_mounts, "db_path", lambda: tmp_path / "mounts.sqlite3")
     monkeypatch.setattr(network_mounts, "credentials_dir", lambda: creds)
