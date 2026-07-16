@@ -226,9 +226,12 @@ def test_operator_cannot_modify_an_application_administrator(monkeypatch, tmp_pa
 
 
 def test_new_and_legacy_identity_routes_are_registered():
-    from app.main import app
+    from app.identity.router import router as identity_router
+    from app.rbac import router as rbac_router
 
-    routes = {(route.path, method) for route in app.routes for method in getattr(route, "methods", set())}
+    # FastAPI 0.139 keeps included routers as lazy wrappers on the application,
+    # so route registration is asserted on the source routers themselves.
+    routes = {(route.path, method) for router in (identity_router, rbac_router) for route in router.routes for method in getattr(route, "methods", set())}
     assert ("/api/identity/users", "GET") in routes
     assert ("/api/identity/groups/{groupname}/policy", "PUT") in routes
     assert ("/api/admin/users", "GET") in routes

@@ -33,7 +33,7 @@ class Permission(StrEnum):
     TRANSFERS_CHANGE_PRIORITY = "transfers.change_priority"
     SETTINGS_VIEW_OWN = "settings.view_own"
     SETTINGS_EDIT_OWN = "settings.edit_own"
-    SETTINGS_CHANGE_OWN_PASSWORD = "settings.change_own_password"
+    SETTINGS_CHANGE_OWN_PASSWORD = "settings.change_own_password"  # nosec B105 - permission identifier, never a credential
     SETTINGS_VIEW_SYSTEM = "settings.view_system"
     SETTINGS_EDIT_SYSTEM = "settings.edit_system"
     USERS_VIEW = "users.view"
@@ -42,7 +42,7 @@ class Permission(StrEnum):
     USERS_RENAME = "users.rename"
     USERS_LOCK = "users.lock"
     USERS_UNLOCK = "users.unlock"
-    USERS_CHANGE_PASSWORD = "users.change_password"
+    USERS_CHANGE_PASSWORD = "users.change_password"  # nosec B105 - permission identifier, never a credential
     USERS_MANAGE_GROUPS = "users.manage_groups"
     USERS_MANAGE_QUOTA = "users.manage_quota"
     USERS_DELETE = "users.delete"

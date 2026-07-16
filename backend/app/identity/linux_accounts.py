@@ -9,6 +9,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from ..audit import logger
 from ..config import get_config
 from ..package_center.executor import redact
 from ..proxmox_guard import assert_admin_group_allowed, assert_admin_user_allowed
@@ -263,8 +264,8 @@ def create_user(payload: UserCreateRequest) -> None:
         except Exception:
             try:
                 _run([_tool("userdel"), "--remove", username])
-            except Exception:
-                pass
+            except Exception as cleanup_error:
+                logger.error("identity_user_create_rollback_failed user=%s error=%s", username, type(cleanup_error).__name__)
             raise
 
 

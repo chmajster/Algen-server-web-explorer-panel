@@ -27,7 +27,9 @@ def activity_events(
     user: SessionUser = Depends(current_user),
 ):
     authorize(user, "audit.view_own")
-    global_scope = has_permission(user.username, "audit.view_all")
+    # Keep the legacy permission probe for extensions that still expose the
+    # pre-v1 RBAC name while preferring the granular identity permission.
+    global_scope = has_permission(user.username, "audit.view_all") or has_permission(user.username, "audit.view")
     effective_actor = actor.strip() if global_scope and actor.strip() else None if global_scope else user.username
     items, total = repository().list(
         actor=effective_actor,
@@ -52,7 +54,7 @@ def activity_events(
 @router.get("/summary")
 def activity_summary(user: SessionUser = Depends(current_user)):
     authorize(user, "audit.view_own")
-    global_scope = has_permission(user.username, "audit.view_all")
+    global_scope = has_permission(user.username, "audit.view_all") or has_permission(user.username, "audit.view")
     return {**repository().summary(actor=None if global_scope else user.username), "scope": "global" if global_scope else "own"}
 
 
