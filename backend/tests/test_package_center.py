@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -288,6 +289,62 @@ def test_reinstall_uses_the_trusted_install_hook_and_healthcheck(monkeypatch):
     install_hook_index = calls.index(["hook", "install"])
     health_hook_index = calls.index(["hook", "health"])
     assert reinstall_index < install_hook_index < health_hook_index
+
+
+def test_proxmox_enterprise_source_is_removed_only_from_temporary_apt_view(tmp_path):
+    source_root = tmp_path / "apt"
+    parts = source_root / "sources.list.d"
+    parts.mkdir(parents=True)
+    (source_root / "sources.list").write_text("deb http://deb.debian.org/debian bookworm main\n", encoding="utf-8")
+    enterprise = "Types: deb\nURIs: https://enterprise.proxmox.com/debian/pve\nSuites: bookworm\nComponents: pve-enterprise\n"
+    community = "Types: deb\nURIs: http://download.proxmox.com/debian/pve\nSuites: bookworm\nComponents: pve-no-subscription\n"
+    (parts / "proxmox.sources").write_text(f"{enterprise}\n{community}", encoding="utf-8")
+
+    with executor.apt_update_without_proxmox_enterprise(source_root) as (command, removed):
+        source_list = Path(command[2].split("=", 1)[1])
+        source_parts = Path(command[4].split("=", 1)[1])
+        combined = source_list.read_text(encoding="utf-8") + (source_parts / "proxmox.sources").read_text(encoding="utf-8")
+        assert removed == 1
+        assert "enterprise.proxmox.com" not in combined
+        assert "deb.debian.org" in combined
+        assert "download.proxmox.com" in combined
+        assert "enterprise.proxmox.com" in (parts / "proxmox.sources").read_text(encoding="utf-8")
+
+    assert not source_list.exists()
+
+
+def test_apt_update_retries_only_for_the_unavailable_proxmox_enterprise_repository(monkeypatch, tmp_path):
+    source_root = tmp_path / "apt"
+    parts = source_root / "sources.list.d"
+    parts.mkdir(parents=True)
+    (parts / "pve-enterprise.list").write_text("deb https://enterprise.proxmox.com/debian/pve bookworm pve-enterprise\n", encoding="utf-8")
+    (source_root / "sources.list").write_text("deb http://deb.debian.org/debian bookworm main\n", encoding="utf-8")
+    monkeypatch.setattr(executor, "APT_SOURCES_ROOT", source_root)
+    calls: list[list[str]] = []
+    retry_sources: list[str] = []
+
+    def run(args, timeout, log):
+        calls.append(args)
+        if args == ["apt-get", "update"]:
+            raise executor.CommandExecutionError("apt-get", 100, "E: Failed to fetch https://enterprise.proxmox.com/debian/pve 401 Unauthorized")
+        source_list = Path(args[2].split("=", 1)[1])
+        source_parts = Path(args[4].split("=", 1)[1])
+        retry_sources.append(source_list.read_text(encoding="utf-8") + "\n".join(path.read_text(encoding="utf-8") for path in source_parts.iterdir()))
+
+    monkeypatch.setattr(executor, "_run", run)
+    messages: list[str] = []
+
+    executor._run_apt_update(900, lambda stream, line: messages.append(line))
+
+    assert calls[0] == ["apt-get", "update"]
+    assert calls[1][0:2] == ["apt-get", "-o"]
+    assert "enterprise.proxmox.com" not in retry_sources[0]
+    assert "deb.debian.org" in retry_sources[0]
+    assert any("temporarily omitted" in message for message in messages)
+
+    monkeypatch.setattr(executor, "_run", lambda args, timeout, log: (_ for _ in ()).throw(executor.CommandExecutionError("apt-get", 100, "E: Failed to fetch http://deb.debian.org 503 Service Unavailable")))
+    with pytest.raises(executor.CommandExecutionError):
+        executor._run_apt_update(900, lambda *_: None)
 
 
 def test_redacts_secrets_and_executor_never_uses_shell_true():

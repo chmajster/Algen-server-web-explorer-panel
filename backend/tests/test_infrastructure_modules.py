@@ -19,6 +19,7 @@ from app.modules import linux_update_worker
 from app.package_center.detached_updates import read_update_state, update_session_directory, write_update_state
 from app.modules.providers.databases import RedisProvider
 from app.package_center.manifests import discover_manifests
+from app.package_center import executor as package_executor
 from app.package_center.executor import redact
 from app.package_center.models import PackageAction
 from app.package_center.models import DistributionInfo, PackagePlan
@@ -113,6 +114,36 @@ def test_linux_updates_marks_security_packages_and_uses_closed_upgrade_command(m
     assert detached == [["apt-get", "install", "--only-upgrade", "-y", "openssl"]]
     assert result["detached"] is True
     assert result["reboot_required"] is True
+
+
+def test_linux_update_refresh_retries_without_unsubscribed_proxmox_enterprise(monkeypatch, tmp_path: Path):
+    source_root = tmp_path / "apt"
+    parts = source_root / "sources.list.d"
+    parts.mkdir(parents=True)
+    (source_root / "sources.list").write_text("deb http://deb.debian.org/debian bookworm main\n", encoding="utf-8")
+    (parts / "pve-enterprise.list").write_text("deb https://enterprise.proxmox.com/debian/pve bookworm pve-enterprise\n", encoding="utf-8")
+    monkeypatch.setattr(package_executor, "APT_SOURCES_ROOT", source_root)
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
+    monkeypatch.setattr(provider, "_packages", lambda: [])
+    monkeypatch.setattr(provider, "_reboot_required", lambda: False)
+    calls: list[list[str]] = []
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if args == ["apt-get", "update"]:
+            return subprocess.CompletedProcess(args, 100, "", "E: https://enterprise.proxmox.com/debian/pve 401 Unauthorized")
+        return subprocess.CompletedProcess(args, 0, "Metadata refreshed", "")
+
+    monkeypatch.setattr(provider, "_run", run)
+    logs: list[str] = []
+
+    result = provider.manage("refresh", {}, "operator", lambda stream, line: logs.append(line), lambda *_: None, lambda: False)
+
+    assert result["operation"] == "refresh"
+    assert len(calls) == 2
+    assert calls[1][0:2] == ["apt-get", "-o"]
+    assert any("temporarily omitted" in line for line in logs)
 
 
 def test_linux_update_launches_a_fixed_worker_in_detached_screen(monkeypatch, tmp_path: Path):

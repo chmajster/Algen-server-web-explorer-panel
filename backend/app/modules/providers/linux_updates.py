@@ -13,7 +13,7 @@ from typing import Any
 from ...config import get_config
 from ...package_center.detached_updates import SESSION_ID_RE, read_update_state, update_session_directory, write_update_state
 from ...package_center.distro import detect_distribution
-from ...package_center.executor import redact
+from ...package_center.executor import apt_update_without_proxmox_enterprise, proxmox_enterprise_repository_failure, redact
 from ...package_center.models import ModuleDiagnostic, ModuleHealth, ModuleStatus
 from .base import CancelCallback, LogCallback, ProgressCallback
 from .infrastructure import CommandProvider
@@ -253,6 +253,11 @@ class LinuxUpdatesProvider(CommandProvider):
             detached = self._run_detached_update(command, requested_session or secrets.token_hex(12), log, progress)
         else:
             result = self._run(command, timeout=3600, env={"DEBIAN_FRONTEND": "noninteractive"})
+            if manager == "apt-get" and operation == "refresh" and result.returncode != 0 and proxmox_enterprise_repository_failure(result.stdout + "\n" + result.stderr):
+                with apt_update_without_proxmox_enterprise() as (retry_command, removed):
+                    if removed:
+                        log("warning", "Proxmox Enterprise repository is unavailable without a subscription; retrying APT metadata refresh with that repository temporarily omitted")
+                        result = self._run(retry_command, timeout=3600, env={"DEBIAN_FRONTEND": "noninteractive"})
             for line in (result.stdout + "\n" + result.stderr).splitlines()[-500:]:
                 log("stdout" if result.returncode == 0 else "stderr", line)
             self._result(result, "System update failed")

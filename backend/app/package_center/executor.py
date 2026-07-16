@@ -5,9 +5,12 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
+from contextlib import contextmanager
 from collections.abc import Callable
 from pathlib import Path
+from typing import Iterator
 
 from .manifests import module_script
 from .models import ModuleManifest, PackageAction, PackagePlan
@@ -27,6 +30,16 @@ SECRET_RE = re.compile(r"(?i)(password|passwd|token|secret|authorization)(\s*[:=
 URL_SECRET_RE = re.compile(r"(?i)(https?://[^:/\s]+:)[^@\s]+@")
 BEARER_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
 SQL_SECRET_RE = re.compile(r"(?i)((?:identified\s+by|password)\s+')[^']*'")
+PROXMOX_ENTERPRISE_HOST = "enterprise.proxmox.com"
+APT_SOURCES_ROOT = Path("/etc/apt")
+
+
+class CommandExecutionError(RuntimeError):
+    def __init__(self, executable: str, exit_code: int, output: str) -> None:
+        super().__init__(f"{executable} failed with exit code {exit_code}")
+        self.executable = executable
+        self.exit_code = exit_code
+        self.output = output
 
 
 def redact(line: str) -> str:
@@ -35,6 +48,57 @@ def redact(line: str) -> str:
     cleaned = BEARER_RE.sub(r"\1[REDACTED]", cleaned)
     cleaned = SQL_SECRET_RE.sub(r"\1[REDACTED]'", cleaned)
     return SECRET_RE.sub(r"\1\2[REDACTED]", cleaned)[-4000:]
+
+
+def proxmox_enterprise_repository_failure(output: str) -> bool:
+    normalized = output.lower()
+    return PROXMOX_ENTERPRISE_HOST in normalized and any(marker in normalized for marker in ("401", "unauthorized", "does not have a release file", "is not signed"))
+
+
+def _filter_apt_source(path: Path, content: str) -> tuple[str, int]:
+    if path.suffix == ".sources":
+        stanzas = re.split(r"\n\s*\n", content.strip()) if content.strip() else []
+        kept = [stanza for stanza in stanzas if PROXMOX_ENTERPRISE_HOST not in stanza.lower()]
+        removed = len(stanzas) - len(kept)
+        return ("\n\n".join(kept) + ("\n" if kept else ""), removed)
+    lines = content.splitlines(keepends=True)
+    kept_lines = [line for line in lines if PROXMOX_ENTERPRISE_HOST not in line.lower()]
+    return "".join(kept_lines), len(lines) - len(kept_lines)
+
+
+@contextmanager
+def apt_update_without_proxmox_enterprise(source_root: Path | None = None) -> Iterator[tuple[list[str], int]]:
+    """Build an ephemeral APT source view without changing host configuration."""
+
+    root = source_root or APT_SOURCES_ROOT
+    with tempfile.TemporaryDirectory(prefix="webnas-apt-") as temporary:
+        temporary_root = Path(temporary)
+        source_list = temporary_root / "sources.list"
+        source_parts = temporary_root / "sources.list.d"
+        source_parts.mkdir(mode=0o700)
+        removed = 0
+
+        main_source = root / "sources.list"
+        main_content = main_source.read_text(encoding="utf-8", errors="replace") if main_source.is_file() else ""
+        filtered_main, count = _filter_apt_source(main_source, main_content)
+        removed += count
+        source_list.write_text(filtered_main, encoding="utf-8")
+
+        parts = root / "sources.list.d"
+        candidates = sorted([*parts.glob("*.list"), *parts.glob("*.sources")]) if parts.is_dir() else []
+        for candidate in candidates:
+            filtered, count = _filter_apt_source(candidate, candidate.read_text(encoding="utf-8", errors="replace"))
+            removed += count
+            if filtered.strip():
+                (source_parts / candidate.name).write_text(filtered, encoding="utf-8")
+
+        command = [
+            "apt-get",
+            "-o", f"Dir::Etc::sourcelist={source_list}",
+            "-o", f"Dir::Etc::sourceparts={source_parts}",
+            "update",
+        ]
+        yield command, removed
 
 
 def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[str, list[str], int]]:
@@ -96,11 +160,15 @@ def _run(args: list[str], timeout: int, log: LogCallback) -> None:
         start_new_session=True,
     )
 
+    output: list[str] = []
+
     def drain(stream, name: str) -> None:
         if stream is None:
             return
         for line in stream:
-            log(name, redact(line.rstrip()))
+            cleaned = redact(line.rstrip())
+            output.append(cleaned)
+            log(name, cleaned)
 
     readers = [
         threading.Thread(target=drain, args=(process.stdout, "stdout"), daemon=True),
@@ -121,7 +189,20 @@ def _run(args: list[str], timeout: int, log: LogCallback) -> None:
         for reader in readers:
             reader.join(timeout=2)
     if code != 0:
-        raise RuntimeError(f"{Path(args[0]).name} failed with exit code {code}")
+        raise CommandExecutionError(Path(args[0]).name, code, "\n".join(output))
+
+
+def _run_apt_update(timeout: int, log: LogCallback) -> None:
+    try:
+        _run(["apt-get", "update"], timeout, log)
+    except CommandExecutionError as error:
+        if not proxmox_enterprise_repository_failure(error.output):
+            raise
+        with apt_update_without_proxmox_enterprise() as (command, removed):
+            if removed == 0:
+                raise
+            log("warning", "Proxmox Enterprise repository is unavailable without a subscription; retrying APT metadata refresh with that repository temporarily omitted")
+            _run(command, timeout, log)
 
 
 def _run_hook(manifest: ModuleManifest, action: str, log: LogCallback) -> None:
@@ -156,7 +237,10 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
         if cancelled():
             raise InterruptedError("Package operation cancelled before the next safe step")
         progress(max(1, int(index / total * 90)), label)
-        _run(args, timeout, log)
+        if label == "Refresh package metadata" and args == ["apt-get", "update"]:
+            _run_apt_update(timeout, log)
+        else:
+            _run(args, timeout, log)
         if label in {"Install packages", "Reinstall packages", "Remove packages"} and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
             hook_action = "install" if plan.action == PackageAction.reinstall else plan.action.value
             progress(max(1, int((index + 0.5) / total * 90)), f"Run trusted {hook_action} hook")
