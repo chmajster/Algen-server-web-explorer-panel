@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type AppJob, type PackageHistoryItem, type PackageModule, type PackageSource } from "../../../api";
+import { api, type AppJob, type ModuleSummary, type PackageHistoryItem, type PackageSource } from "../../../api";
 import type { PackageTab } from "../types";
 
 export function usePackageCenter() {
-  const [modules, setModules] = useState<PackageModule[]>([]);
+  const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [jobs, setJobs] = useState<AppJob[]>([]);
   const [history, setHistory] = useState<PackageHistoryItem[]>([]);
@@ -19,7 +19,7 @@ export function usePackageCenter() {
     if (!quiet) setLoading(true);
     setError("");
     try {
-      const [nextModules, nextCategories, nextJobs, nextHistory, nextSources] = await Promise.all([api.apps(), api.appCategories(), api.appJobs(), api.appHistory(), api.packageSources()]);
+      const [nextModules, nextCategories, nextJobs, nextHistory, nextSources] = await Promise.all([api.modules(), api.appCategories(), api.appJobs(), api.appHistory(), api.packageSources()]);
       setModules(nextModules); setCategories(nextCategories); setJobs(nextJobs); setHistory(nextHistory); setSources(nextSources);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Package Center request failed"); }
     finally { if (!quiet) setLoading(false); }

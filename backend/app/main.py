@@ -12,6 +12,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .activity import ActivityCategory, ActivityStatus, record_activity
+from .activity_api import router as activity_router
 from .audit import configure_logging, logger
 from .apps import router as apps_router
 from .auth import authenticate, normalize_username, user_home
@@ -19,8 +21,10 @@ from .config import get_config
 from .file_ops import download_response, list_dir, mime_for, run_user_op, save_upload, tree_dir
 from .local_disks import router as local_disks_router
 from .network_mounts import router as mounts_router
+from .modules.router import router as modules_router
 from .package_center.router import router as package_center_router
 from .path_policy import resolve_user_path
+from .rbac import router as rbac_router
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
 from .settings import router as settings_router, start_auto_update_scheduler
 from .tasks import task_store
@@ -35,6 +39,9 @@ app.include_router(apps_router)
 app.include_router(package_center_router)
 app.include_router(mounts_router)
 app.include_router(local_disks_router)
+app.include_router(modules_router)
+app.include_router(rbac_router)
+app.include_router(activity_router)
 
 
 @app.on_event("startup")
@@ -145,17 +152,31 @@ def _reject_destination_conflicts(sources: list[Path], destination: Path) -> Non
 @app.post("/api/auth/login")
 def login(payload: LoginRequest, request: Request, response: Response):
     username = normalize_username(payload.username)
-    key = f"{request.client.host if request.client else 'unknown'}:{username}"
-    rate_limiter.check(key)
-    authenticate(username, payload.password)
+    client = request.client.host if request.client else "unknown"
+    key = f"{client}:{username}"
+    try:
+        rate_limiter.check(key)
+        authenticate(username, payload.password)
+    except HTTPException as error:
+        record_activity(
+            ActivityCategory.login,
+            "login",
+            username or "unknown",
+            status=ActivityStatus.failure,
+            details={"client": client, "status_code": error.status_code},
+            source="auth",
+        )
+        raise
     csrf = create_session(response, username)
     logger.info("login user=%s", username)
+    record_activity(ActivityCategory.login, "login", username, details={"client": client}, source="auth")
     return {"username": username, "home": user_home(username), "csrf_token": csrf}
 
 
 @app.post("/api/auth/logout")
 def logout(response: Response, user=Depends(csrf_user)):
     logger.info("logout user=%s", user.username)
+    record_activity(ActivityCategory.login, "logout", user.username, source="auth")
     clear_session(response)
     return {"ok": True}
 
@@ -174,9 +195,20 @@ def files_list(
     page_size: int = 20,
     folders_first: bool = True,
     filter: str | None = None,
+    show_hidden: bool = False,
     user=Depends(current_user),
 ):
-    payload = list_dir(user.username, path, sort=sort, direction=direction, page=page, page_size=page_size, folders_first=folders_first, filter_text=filter)
+    payload = list_dir(
+        user.username,
+        path,
+        sort=sort,
+        direction=direction,
+        page=page,
+        page_size=page_size,
+        folders_first=folders_first,
+        filter_text=filter,
+        show_hidden=show_hidden,
+    )
     payload["path"] = payload["current_path"]
     return payload
 
@@ -190,14 +222,18 @@ def files_tree(path: str | None = None, user=Depends(current_user)):
 def mkdir(payload: PathRequest, user=Depends(csrf_user)):
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    return run_user_op(user.username, "mkdir", {"path": str(target)})
+    result = run_user_op(user.username, "mkdir", {"path": str(target)})
+    record_activity(ActivityCategory.file, "mkdir", user.username, target=str(target), source="files")
+    return result
 
 
 @app.post("/api/files/create")
 def create(payload: PathRequest, user=Depends(csrf_user)):
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    return run_user_op(user.username, "create", {"path": str(target)})
+    result = run_user_op(user.username, "create", {"path": str(target)})
+    record_activity(ActivityCategory.file, "create", user.username, target=str(target), source="files")
+    return result
 
 
 @app.post("/api/files/copy")
@@ -206,6 +242,7 @@ def copy(payload: CopyMoveRequest, user=Depends(csrf_user)):
     dst = _resolve_destination(user.username, payload)
     _reject_destination_conflicts(srcs, dst)
     task = task_store.create(user.username, "copy", {"srcs": [str(src) for src in srcs], "dst": str(dst), "priority": payload.priority})
+    record_activity(ActivityCategory.file, "copy", user.username, target=str(dst), status=ActivityStatus.queued, details={"sources": len(srcs), "task_id": task.id}, source="files")
     return {"task_id": task.id}
 
 
@@ -217,6 +254,7 @@ def move(payload: CopyMoveRequest, user=Depends(csrf_user)):
     dst = _resolve_destination(user.username, payload)
     _reject_destination_conflicts(srcs, dst)
     task = task_store.create(user.username, "move", {"srcs": [str(src) for src in srcs], "dst": str(dst), "priority": payload.priority})
+    record_activity(ActivityCategory.file, "move", user.username, target=str(dst), status=ActivityStatus.queued, details={"sources": len(srcs), "task_id": task.id}, source="files")
     return {"task_id": task.id}
 
 
@@ -226,7 +264,9 @@ def rename(payload: RenameRequest, user=Depends(csrf_user)):
     dst = resolve_user_path(user.username, payload.dst)
     assert_write_allowed(src)
     assert_write_allowed(dst)
-    return run_user_op(user.username, "rename", {"src": str(src), "dst": str(dst)})
+    result = run_user_op(user.username, "rename", {"src": str(src), "dst": str(dst)})
+    record_activity(ActivityCategory.file, "rename", user.username, target=str(dst), details={"source": str(src)}, source="files")
+    return result
 
 
 @app.post("/api/files/delete")
@@ -240,6 +280,7 @@ def delete(payload: DeleteRequest, user=Depends(csrf_user)):
     for target in targets:
         assert_write_allowed(target)
     tasks = [task_store.create(user.username, "delete", {"path": str(target)}) for target in targets]
+    record_activity(ActivityCategory.file, "delete", user.username, target=str(targets[0]), status=ActivityStatus.queued, details={"items": len(targets), "task_ids": [task.id for task in tasks]}, source="files")
     return {"task_id": tasks[0].id, "task_ids": [task.id for task in tasks]}
 
 
@@ -247,33 +288,45 @@ def delete(payload: DeleteRequest, user=Depends(csrf_user)):
 def trash(payload: PathRequest, user=Depends(csrf_user)):
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    return run_user_op(user.username, "trash", {"path": str(target)})
+    result = run_user_op(user.username, "trash", {"path": str(target)})
+    record_activity(ActivityCategory.file, "trash", user.username, target=str(target), source="files")
+    return result
 
 
 @app.post("/api/files/upload")
 async def upload(path: str = Form(...), file: UploadFile = File(...), user=Depends(csrf_user)):
-    return await save_upload(user.username, path, file)
+    result = await save_upload(user.username, path, file)
+    record_activity(ActivityCategory.file, "upload", user.username, target=str(result.get("path", path)), details={"filename": file.filename or ""}, source="files")
+    return result
 
 
 @app.post("/api/files/uploads")
 def upload_start(payload: UploadStartRequest, user=Depends(csrf_user)):
-    return start_upload(user.username, payload.path, payload.filename, payload.size)
+    result = start_upload(user.username, payload.path, payload.filename, payload.size)
+    record_activity(ActivityCategory.file, "upload", user.username, target=str(result.get("path", payload.path)), status=ActivityStatus.queued, details={"upload_id": result.get("upload_id"), "size": payload.size}, source="files")
+    return result
 
 
 @app.patch("/api/files/uploads/{upload_id}")
 async def upload_chunk(upload_id: str, request: Request, offset: int = Header(..., alias="Upload-Offset"), user=Depends(csrf_user)):
-    return append_upload(user.username, upload_id, offset, await request.body())
+    result = append_upload(user.username, upload_id, offset, await request.body())
+    if result.get("completed"):
+        record_activity(ActivityCategory.file, "upload", user.username, target=str(result.get("path", "")), details={"upload_id": upload_id, "size": result.get("size")}, source="files")
+    return result
 
 
 @app.delete("/api/files/uploads/{upload_id}")
 def upload_cancel(upload_id: str, user=Depends(csrf_user)):
     cancel_upload(user.username, upload_id)
+    record_activity(ActivityCategory.file, "upload_cancel", user.username, status=ActivityStatus.cancelled, details={"upload_id": upload_id}, source="files")
     return {"ok": True}
 
 
 @app.get("/api/files/download")
 def download(path: str, user=Depends(current_user)):
-    return download_response(user.username, path)
+    response = download_response(user.username, path)
+    record_activity(ActivityCategory.file, "download", user.username, target=path, source="files")
+    return response
 
 
 @app.get("/api/files/preview")
@@ -311,6 +364,7 @@ def write_text_file(payload: TextFileWriteRequest, user=Depends(csrf_user)):
         ),
     )
     result["mtime_ns"] = str(result["mtime_ns"])
+    record_activity(ActivityCategory.file, "write_text", user.username, target=str(target), details={"size": len(payload.content.encode("utf-8"))}, source="files")
     return {"path": str(target), **result}
 
 
@@ -332,7 +386,9 @@ def chmod(payload: ChmodRequest, user=Depends(csrf_user)):
         raise HTTPException(403, "chmod is disabled")
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    return run_user_op(user.username, "chmod", {"path": str(target), "mode": payload.mode})
+    result = run_user_op(user.username, "chmod", {"path": str(target), "mode": payload.mode})
+    record_activity(ActivityCategory.file, "chmod", user.username, target=str(target), details={"mode": payload.mode}, source="files")
+    return result
 
 
 @app.get("/api/tasks")
@@ -372,6 +428,7 @@ def file_task(task_id: str, user=Depends(current_user)):
 def file_task_cancel(task_id: str, user=Depends(csrf_user)):
     if not task_store.cancel(user.username, task_id):
         raise HTTPException(404, "Task not found")
+    record_activity(ActivityCategory.file, "task_cancel", user.username, status=ActivityStatus.cancelled, details={"task_id": task_id}, source="files")
     return {"ok": True}
 
 
@@ -379,6 +436,7 @@ def file_task_cancel(task_id: str, user=Depends(csrf_user)):
 def file_task_pause(task_id: str, user=Depends(csrf_user)):
     if not task_store.pause(user.username, task_id):
         raise HTTPException(404, "Task not found or cannot be paused")
+    record_activity(ActivityCategory.file, "task_pause", user.username, status=ActivityStatus.info, details={"task_id": task_id}, source="files")
     return {"ok": True}
 
 
@@ -386,6 +444,7 @@ def file_task_pause(task_id: str, user=Depends(csrf_user)):
 def file_task_resume(task_id: str, user=Depends(csrf_user)):
     if not task_store.resume(user.username, task_id):
         raise HTTPException(404, "Task not found or cannot be resumed")
+    record_activity(ActivityCategory.file, "task_resume", user.username, status=ActivityStatus.queued, details={"task_id": task_id}, source="files")
     return {"ok": True}
 
 
@@ -394,6 +453,7 @@ def file_task_retry(task_id: str, user=Depends(csrf_user)):
     task = task_store.retry(user.username, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
+    record_activity(ActivityCategory.file, "task_retry", user.username, status=ActivityStatus.queued, details={"task_id": task.id, "retry_of": task_id}, source="files")
     return {"task_id": task.id}
 
 
@@ -401,6 +461,7 @@ def file_task_retry(task_id: str, user=Depends(csrf_user)):
 def file_task_priority(task_id: str, payload: PriorityRequest, user=Depends(csrf_user)):
     if not task_store.set_priority(user.username, task_id, payload.priority):
         raise HTTPException(404, "Task not found")
+    record_activity(ActivityCategory.file, "task_priority", user.username, status=ActivityStatus.info, details={"task_id": task_id, "priority": payload.priority}, source="files")
     return {"ok": True}
 
 

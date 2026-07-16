@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..config import get_config
 from ..file_ops import run_user_op
 from ..proxmox_guard import assert_path_allowed
@@ -339,6 +340,22 @@ class FileTaskManager:
             task.process = None
             self._update_average_speed(task)
             self._persist(task)
+            if task.status in TERMINAL_STATUSES:
+                activity_status = {
+                    TaskStatus.completed: ActivityStatus.success,
+                    TaskStatus.failed: ActivityStatus.failure,
+                    TaskStatus.cancelled: ActivityStatus.cancelled,
+                }[task.status]
+                record_activity(
+                    ActivityCategory.file,
+                    task.type,
+                    task.username,
+                    target=task.destination_path or (task.source_paths[0] if task.source_paths else ""),
+                    status=activity_status,
+                    summary=task.error_message,
+                    details={"task_id": task.id, "items": len(task.source_paths), "bytes": task.bytes_transferred},
+                    source="file-tasks",
+                )
             self._schedule()
 
     def _run_rsync(self, task: FileTask) -> None:

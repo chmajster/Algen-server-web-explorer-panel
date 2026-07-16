@@ -1,0 +1,38 @@
+id: docker
+name: Docker
+description: Containers, images, networks, volumes, logs, statistics and Compose projects.
+category: containers
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://docs.docker.com/engine/
+icon: boxes
+license: Apache-2.0
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [docker.io, docker-compose-v2]
+  dnf: [docker, docker-compose-plugin]
+  yum: [docker, docker-compose-plugin]
+services:
+  - name: docker
+    required: true
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: true
+  reload: true
+  logs: true
+  diagnostics: true
+  backups: false
+  healthcheck: true
+  resources: [containers, images, networks, volumes, stats, logs, compose]
+  actions: [container_start, container_stop, container_restart, image_update, compose_up, compose_down, compose_pull, compose_restart]
+ports: []
+permissions: [package_management, systemd, docker_socket, config_write]
+config_paths: [/etc/docker/daemon.json]
+data_paths: [/var/lib/docker]
+proxmox_safe: false
+requires_root: true
+removable: true

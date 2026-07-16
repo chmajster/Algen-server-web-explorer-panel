@@ -49,6 +49,10 @@ def discover_manifests(modules_dir: Path = MODULES_DIR) -> list[ModuleManifest]:
     for directory in sorted(modules_dir.iterdir()):
         if not directory.is_dir() or not MODULE_ID_RE.fullmatch(directory.name):
             continue
+        # The modules package also contains provider infrastructure. A directory
+        # becomes a user-visible module only by explicitly declaring a manifest.
+        if not (directory / "manifest.yaml").is_file():
+            continue
         manifest = load_manifest(directory.name, modules_dir)
         if not manifest.ui.hidden:
             manifests.append(manifest)

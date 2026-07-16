@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { api, type AppJob, type PackageModule } from "../../api";
+import { api, type AppJob, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { PackageActionDialog } from "./PackageActionDialog";
@@ -16,10 +16,10 @@ import "./package-center.css";
 
 type CredentialAction = { job: AppJob; operation: "cancel" | "retry" } | null;
 
-export function PackageCenterApp({ t, toast, onConfigure }: { t: Translate; toast: ToastFn; onConfigure?: (moduleId: string) => void }) {
+export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void }) {
   const state = usePackageCenter();
-  const [selected, setSelected] = useState<PackageModule | null>(null);
-  const [action, setAction] = useState<{ item: PackageModule; action: PackageAction } | null>(null);
+  const [selected, setSelected] = useState<ModuleSummary | null>(null);
+  const [action, setAction] = useState<{ item: ModuleSummary; action: PackageAction } | null>(null);
   const [credential, setCredential] = useState<CredentialAction>(null);
   const counts = useMemo(() => ({
     all: state.modules.length,
@@ -30,7 +30,7 @@ export function PackageCenterApp({ t, toast, onConfigure }: { t: Translate; toas
     sources: state.sources.length,
   }), [state.history.length, state.jobs, state.modules, state.sources.length]);
 
-  function begin(item: PackageModule, nextAction: PackageAction) {
+  function begin(item: ModuleSummary, nextAction: PackageAction) {
     setSelected(null);
     setAction({ item, action: nextAction });
   }
@@ -39,7 +39,7 @@ export function PackageCenterApp({ t, toast, onConfigure }: { t: Translate; toas
     if (!credential) return;
     if (credential.operation === "cancel") await api.cancelAppJob(credential.job.id, values.admin_password);
     else await api.retryAppJob(credential.job.id, values.admin_password);
-    toast(t("admin.actionCompleted"));
+    toast(t("admin.actionCompleted"), "ok", "admin");
     setCredential(null);
     await state.refresh(true);
   }
@@ -51,12 +51,12 @@ export function PackageCenterApp({ t, toast, onConfigure }: { t: Translate; toas
     {state.error
       ? <div className="error-state"><strong>{t("status.error")}</strong><span>{state.error}</span><button type="button" onClick={() => void state.refresh()}>{t("action.retry")}</button></div>
       : <main>
-        {["all", "installed", "updates"].includes(state.tab) && <PackageGrid modules={state.visibleModules} loading={state.loading} t={t} onDetails={setSelected} onAction={begin} />}
+        {["all", "installed", "updates"].includes(state.tab) && <PackageGrid modules={state.visibleModules} loading={state.loading} t={t} onDetails={setSelected} onOpen={(item) => onOpenModule?.(item.id)} onAction={begin} />}
         {state.tab === "jobs" && <PackageJobs jobs={state.jobs} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
         {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
         {state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
       </main>}
-    {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onConfigure ? () => onConfigure(selected.id) : undefined} />}
+    {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => onOpenModule(selected.id) : undefined} />}
     {action && <PackageActionDialog item={action.item} action={action.action} t={t} toast={toast} onClose={() => setAction(null)} onStarted={() => void state.refresh(true)} />}
     {credential && <AdminActionDialog title={t(credential.operation === "cancel" ? "package.cancelJob" : "action.retry")} fields={[{ name: "admin_password", label: t("settings.adminPassword"), type: "password", required: true }]} danger={credential.operation === "cancel"} t={t} onClose={() => setCredential(null)} onSubmit={jobOperation} />}
   </section>;

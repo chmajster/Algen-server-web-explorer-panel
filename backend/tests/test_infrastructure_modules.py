@@ -1,0 +1,217 @@
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+
+from app import rbac
+from app.modules import router as module_router
+from app.modules.providers.dns import PiHoleProvider
+from app.modules.providers.docker import DockerProvider
+from app.modules.providers.home_assistant import HomeAssistantProvider
+from app.modules.providers.infrastructure import ApiConnectionProvider
+from app.modules.providers.linux_updates import LinuxUpdatesProvider
+from app.modules.providers.databases import RedisProvider
+from app.package_center.manifests import discover_manifests
+from app.package_center.executor import redact
+from app.package_center.models import PackageAction
+from app.package_center.models import DistributionInfo, PackagePlan
+from app.package_center.repository import PackageRepository
+from app.security import SessionUser
+from app.settings import DesktopWidget, UserSettings
+
+
+NEW_MODULES = {"linux-updates", "docker", "pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"}
+
+
+def test_infrastructure_manifests_declare_only_supported_resources_and_actions():
+    manifests = {manifest.id: manifest for manifest in discover_manifests()}
+
+    assert NEW_MODULES <= manifests.keys()
+    assert manifests["linux-updates"].capabilities.actions == ["refresh", "upgrade_all", "upgrade_security"]
+    assert {"containers", "images", "networks", "volumes", "stats", "compose"} <= set(manifests["docker"].capabilities.resources)
+    assert manifests["postgresql"].capabilities.backups is True
+    assert manifests["home-assistant"].proxmox_safe is False
+
+
+def test_rbac_preserves_linux_admin_and_gives_roles_granular_permissions(monkeypatch):
+    monkeypatch.setattr(rbac, "is_linux_admin", lambda username: username == "legacy-admin")
+    monkeypatch.setattr(
+        rbac,
+        "_read",
+        lambda: {
+            "operator": rbac.RoleAssignment(username="operator", role="operator"),
+            "auditor": rbac.RoleAssignment(username="auditor", role="auditor"),
+        },
+    )
+
+    assert rbac.access_profile("legacy-admin")["role"] == "admin"
+    assert rbac.has_permission("legacy-admin", "rbac.manage") is True
+    assert rbac.has_permission("operator", "docker.operate") is True
+    assert rbac.has_permission("operator", "rbac.manage") is False
+    assert rbac.has_permission("auditor", "docker.view") is True
+    assert rbac.has_permission("auditor", "docker.operate") is False
+    assert rbac.module_permission("postgresql", "restore") == "databases.restore"
+
+
+def test_rbac_assignment_is_atomic_private_and_rejects_unknown_permission(monkeypatch, tmp_path: Path):
+    path = tmp_path / "rbac.json"
+    monkeypatch.setattr(rbac, "_path", lambda: path)
+    assignment = rbac.RoleAssignment(username="alice", role="operator", allow=["audit.view"])
+
+    rbac._write({"alice": assignment})
+
+    assert rbac._read()["alice"] == assignment
+    assert not path.with_suffix(".tmp").exists()
+    if path.stat().st_mode:
+        assert path.stat().st_mode & 0o077 == 0
+    with pytest.raises(ValueError):
+        rbac.RoleAssignment(username="alice", allow=["system.reboot"])
+
+
+def test_proxmox_safe_mode_blocks_provider_management(monkeypatch):
+    monkeypatch.setattr(module_router, "get_module", lambda module_id: {"id": module_id, "blocked_by_proxmox": True})
+    monkeypatch.setattr(module_router, "get_provider", lambda module_id, actor="root": SimpleNamespace(manifest=SimpleNamespace()))
+
+    with pytest.raises(HTTPException) as error:
+        module_router._provider_plan("docker", PackageAction.manage, {"operation": "container_start"})
+
+    assert error.value.status_code == 403
+    assert error.value.detail["code"] == "MODULE_BLOCKED_BY_PROXMOX"
+
+
+def test_linux_updates_marks_security_packages_and_uses_closed_upgrade_command(monkeypatch):
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
+    monkeypatch.setattr(provider, "_reboot_required", lambda: True)
+    calls: list[list[str]] = []
+    simulation = "Inst openssl [3.0.1] (3.0.2 Debian-Security:12/stable-security [amd64])\nInst curl [8.0] (8.1 Debian:12/stable [amd64])\n"
+
+    def run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, simulation if "-s" in args else "updated", "")
+
+    monkeypatch.setattr(provider, "_run", run)
+    packages = provider.list_resources("packages")["items"]
+    result = provider.manage("upgrade_security", {}, "operator", lambda *_: None, lambda *_: None, lambda: False)
+
+    assert packages[0]["security"] is True
+    assert packages[1]["security"] is False
+    assert ["apt-get", "install", "--only-upgrade", "-y", "openssl"] in calls
+    assert result["reboot_required"] is True
+
+
+def test_docker_resources_and_compose_validation_never_accept_host_control(monkeypatch):
+    provider = DockerProvider("docker")
+    output = json.dumps({"ID": "abc", "Names": "web", "State": "running"}) + "\n"
+    monkeypatch.setattr(provider, "_docker", lambda args, timeout=60: output)
+
+    assert provider.list_resources("containers")["items"][0]["Names"] == "web"
+    valid = provider.validate_compose("services:\n  web:\n    image: nginx:stable\n    restart: unless-stopped\n")
+    assert valid["services"]["web"]["image"] == "nginx:stable"
+    with pytest.raises(HTTPException) as error:
+        provider.validate_compose("services:\n  web:\n    image: nginx:stable\n    privileged: true\n")
+    assert error.value.detail["code"] == "UNSAFE_COMPOSE"
+    with pytest.raises(HTTPException):
+        provider.validate_compose("services:\n  web:\n    image: nginx:stable\n    volumes: [/var/run/docker.sock:/var/run/docker.sock]\n")
+
+
+def test_pihole_session_authentication_keeps_secret_out_of_public_configuration(monkeypatch):
+    provider = PiHoleProvider("pihole")
+    monkeypatch.setattr(provider, "connection", lambda: {"base_url": "http://127.0.0.1", "username": "", "secret": "application-password"})
+    requests: list[tuple[str, str, dict | None, dict | None]] = []
+
+    def request(path, *, method="GET", payload=None, headers=None, timeout=10):
+        requests.append((path, method, payload, headers))
+        if path == "/api/auth" and method == "POST":
+            return {"session": {"valid": True, "sid": "session-id"}}
+        return {"blocking": True}
+
+    monkeypatch.setattr(provider, "_request", request)
+    result = provider._api("/api/dns/blocking")
+
+    assert result == {"blocking": True}
+    assert requests[1][3] == {"X-FTL-SID": "session-id"}
+    assert "application-password" not in json.dumps(provider.public_connection())
+
+
+def test_redis_security_view_never_returns_password(monkeypatch):
+    provider = RedisProvider("redis")
+    values = {"maxmemory": "0", "maxmemory-policy": "noeviction", "protected-mode": "yes", "bind": "127.0.0.1", "aclfile": "", "requirepass": "top-secret"}
+    monkeypatch.setattr(provider, "_config", lambda name: values[name])
+
+    security = provider.list_resources("security")["items"][0]
+
+    assert security["password_configured"] is True
+    assert "top-secret" not in json.dumps(security)
+    assert "requirepass" not in security
+
+
+def test_home_assistant_backup_skips_symlinks(monkeypatch, tmp_path: Path):
+    provider = HomeAssistantProvider("home-assistant")
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "configuration.yaml").write_text("homeassistant:\n", encoding="utf-8")
+    (config / "external").symlink_to(tmp_path / "outside", target_is_directory=True)
+    monkeypatch.setattr(HomeAssistantProvider, "config_dir", property(lambda self: config))
+    monkeypatch.setattr(HomeAssistantProvider, "backup_dir", property(lambda self: tmp_path / "backups"))
+    (tmp_path / "backups").mkdir()
+    monkeypatch.setattr(provider, "get_status", lambda: SimpleNamespace(package_version="stable"))
+
+    backup = provider.create_backup("admin", "configuration")
+    archive, _ = provider._backup_metadata(backup["id"])
+    import tarfile
+
+    with tarfile.open(archive, "r:gz") as handle:
+        names = handle.getnames()
+    assert "configuration.yaml" in names
+    assert "external" not in names
+
+
+def test_widget_layout_has_closed_identifiers_ranges_and_unique_entries():
+    settings = UserSettings()
+    assert {item.id for item in settings.desktop_widgets} == {"cpu", "ram", "disks", "transfers", "services", "alerts"}
+    with pytest.raises(ValueError):
+        DesktopWidget(id="cpu", x=12, width=3)
+    with pytest.raises(ValueError):
+        UserSettings(desktop_widgets=[DesktopWidget(id="cpu"), DesktopWidget(id="cpu")])
+
+
+def test_module_permission_dependency_rejects_auditor_mutation(monkeypatch):
+    user = SessionUser(username="auditor", csrf_token="csrf")
+    monkeypatch.setattr(rbac, "has_permission", lambda username, permission: permission.endswith(".view"))
+    with pytest.raises(HTTPException) as error:
+        rbac.authorize(user, rbac.module_permission("docker", "operate"))
+    assert error.value.status_code == 403
+
+
+def test_durable_module_actions_reject_secret_fields():
+    with pytest.raises(ValueError):
+        module_router.ModuleActionRequest(admin_password="pam-only", payload={"api_token": "must-not-enter-job"})
+
+
+def test_module_api_connections_reject_public_ssrf_targets(monkeypatch):
+    monkeypatch.setattr("app.modules.providers.infrastructure.socket.getaddrinfo", lambda *args, **kwargs: [(2, 1, 6, "", ("8.8.8.8", 443))])
+    with pytest.raises(HTTPException) as error:
+        ApiConnectionProvider._validate_base_url("https://public.example")
+    assert error.value.detail["code"] == "API_HOST_NOT_PRIVATE"
+
+
+def test_module_operation_name_is_preserved_in_shared_history(tmp_path: Path):
+    repository = PackageRepository(tmp_path / "jobs.sqlite3")
+    plan = PackagePlan(module_id="docker", action="manage", distribution=DistributionInfo(id="debian", name="Debian", architecture="x86_64", package_manager="apt-get"), compatible=True, payload={"operation": "container_restart", "target": "web"})
+    job = repository.create_job(plan, "operator")
+    repository.finish_history(job)
+    assert repository.history()[0]["action"] == "container_restart"
+
+
+def test_redaction_covers_database_and_registry_credentials():
+    text = "postgres PASSWORD 'hunter2' registry=https://user:secret@example.test Authorization: Bearer abc.def"
+    cleaned = redact(text)
+    assert "hunter2" not in cleaned
+    assert "user:secret" not in cleaned
+    assert "abc.def" not in cleaned

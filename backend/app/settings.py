@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from .activity import ActivityCategory, record_activity
 from .audit import logger
 from .auth import authenticate
 from .config import get_config
@@ -29,6 +30,7 @@ from .proxmox_guard import (
 )
 from .resource_dashboard import collect_dashboard
 from .security import SessionUser, get_session_user, require_csrf
+from .rbac import access_profile, authorize
 
 router = APIRouter()
 
@@ -98,13 +100,153 @@ class AdminRateLimiter:
 admin_rate_limiter = AdminRateLimiter()
 auto_update_lock = threading.RLock()
 auto_update_scheduler_started = False
+user_settings_locks: defaultdict[str, threading.RLock] = defaultdict(threading.RLock)
+
+
+class DesktopWidget(BaseModel):
+    id: Literal["cpu", "ram", "disks", "transfers", "services", "alerts"]
+    visible: bool = True
+    x: int = Field(default=0, ge=0, le=11)
+    y: int = Field(default=0, ge=0, le=20)
+    width: int = Field(default=3, ge=2, le=12)
+    height: int = Field(default=2, ge=1, le=6)
+
+
+DEFAULT_DESKTOP_WIDGETS = [
+    DesktopWidget(id="cpu", x=0, y=0, width=3, height=2),
+    DesktopWidget(id="ram", x=3, y=0, width=3, height=2),
+    DesktopWidget(id="disks", x=6, y=0, width=4, height=2),
+    DesktopWidget(id="transfers", x=0, y=2, width=4, height=2),
+    DesktopWidget(id="services", x=4, y=2, width=3, height=2),
+    DesktopWidget(id="alerts", x=7, y=2, width=3, height=2),
+]
+
+
+class UserSettings(BaseModel):
+    language: Literal["pl-PL", "en-US"] = "pl-PL"
+    theme: Literal["light", "dark", "system"] = "system"
+    startup_windows: Literal["last", "none"] = "last"
+    wallpaper: str = Field(default="", max_length=MAX_WALLPAPER_LENGTH)
+    accent_color: Literal["blue", "teal", "green", "violet", "rose", "orange"] = "blue"
+    wallpaper_fit: Literal["cover", "contain", "stretch", "center"] = "cover"
+    taskbar_alignment: Literal["left", "center"] = "center"
+    show_desktop_shortcuts: bool = True
+    desktop_shortcut_size: Literal["small", "medium", "large"] = "medium"
+    show_welcome_widget: bool = True
+    show_notifications: bool = True
+    show_transfer_indicator: bool = True
+    window_transparency: bool = True
+    animations_enabled: bool = True
+    clock_show_seconds: bool = False
+    date_format: Literal["locale", "short", "long", "iso"] = "short"
+    time_format: Literal["12", "24"] = "24"
+    interface_scale: Literal[90, 100, 110, 125] = 100
+    larger_text: bool = False
+    high_contrast: bool = False
+    reduced_motion: bool = False
+    strong_active_borders: bool = False
+    always_show_focus: bool = False
+    file_default_view: Literal["list", "grid", "large"] = "list"
+    file_compact_rows: bool = False
+    file_show_hidden: bool = False
+    file_confirm_delete: bool = True
+    file_confirm_overwrite: bool = True
+    file_page_size: Literal[25, 50, 100, 200] = 50
+    file_default_sort: Literal["name", "size", "type", "modified"] = "name"
+    file_sort_direction: Literal["asc", "desc"] = "asc"
+    file_remember_last_path: bool = True
+    transfer_success_notifications: bool = True
+    transfer_error_notifications: bool = True
+    transfer_open_failed_details: bool = False
+    transfer_remember_filter: bool = True
+    notification_transfer: bool = True
+    notification_errors: bool = True
+    notification_admin: bool = True
+    notification_auto_hide: bool = True
+    notification_limit: int = Field(default=5, ge=1, le=10)
+    first_day_of_week: Literal["monday", "sunday", "locale"] = "locale"
+    widgets_enabled: bool = True
+    desktop_widgets: list[DesktopWidget] = Field(default_factory=lambda: [item.model_copy() for item in DEFAULT_DESKTOP_WIDGETS], max_length=6)
+
+    @field_validator("desktop_widgets")
+    @classmethod
+    def unique_widgets(cls, values: list[DesktopWidget]) -> list[DesktopWidget]:
+        identifiers = [item.id for item in values]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("desktop widget identifiers must be unique")
+        return values
+
+    @field_validator("wallpaper")
+    @classmethod
+    def validate_wallpaper(cls, value: str) -> str:
+        try:
+            return _validate_wallpaper(value)
+        except HTTPException as exc:
+            raise ValueError(str(exc.detail)) from exc
 
 
 class MePatch(BaseModel):
     language: Literal["pl-PL", "en-US"] | None = None
     theme: Literal["light", "dark", "system"] | None = None
     startup_windows: Literal["last", "none"] | None = None
-    wallpaper: str | None = None
+    wallpaper: str | None = Field(default=None, max_length=MAX_WALLPAPER_LENGTH)
+    accent_color: Literal["blue", "teal", "green", "violet", "rose", "orange"] | None = None
+    wallpaper_fit: Literal["cover", "contain", "stretch", "center"] | None = None
+    taskbar_alignment: Literal["left", "center"] | None = None
+    show_desktop_shortcuts: bool | None = None
+    desktop_shortcut_size: Literal["small", "medium", "large"] | None = None
+    show_welcome_widget: bool | None = None
+    show_notifications: bool | None = None
+    show_transfer_indicator: bool | None = None
+    window_transparency: bool | None = None
+    animations_enabled: bool | None = None
+    clock_show_seconds: bool | None = None
+    date_format: Literal["locale", "short", "long", "iso"] | None = None
+    time_format: Literal["12", "24"] | None = None
+    interface_scale: Literal[90, 100, 110, 125] | None = None
+    larger_text: bool | None = None
+    high_contrast: bool | None = None
+    reduced_motion: bool | None = None
+    strong_active_borders: bool | None = None
+    always_show_focus: bool | None = None
+    file_default_view: Literal["list", "grid", "large"] | None = None
+    file_compact_rows: bool | None = None
+    file_show_hidden: bool | None = None
+    file_confirm_delete: bool | None = None
+    file_confirm_overwrite: bool | None = None
+    file_page_size: Literal[25, 50, 100, 200] | None = None
+    file_default_sort: Literal["name", "size", "type", "modified"] | None = None
+    file_sort_direction: Literal["asc", "desc"] | None = None
+    file_remember_last_path: bool | None = None
+    transfer_success_notifications: bool | None = None
+    transfer_error_notifications: bool | None = None
+    transfer_open_failed_details: bool | None = None
+    transfer_remember_filter: bool | None = None
+    notification_transfer: bool | None = None
+    notification_errors: bool | None = None
+    notification_admin: bool | None = None
+    notification_auto_hide: bool | None = None
+    notification_limit: int | None = Field(default=None, ge=1, le=10)
+    first_day_of_week: Literal["monday", "sunday", "locale"] | None = None
+    widgets_enabled: bool | None = None
+    desktop_widgets: list[DesktopWidget] | None = Field(default=None, max_length=6)
+
+    @field_validator("desktop_widgets")
+    @classmethod
+    def unique_widgets(cls, values: list[DesktopWidget] | None) -> list[DesktopWidget] | None:
+        if values is not None and len({item.id for item in values}) != len(values):
+            raise ValueError("desktop widget identifiers must be unique")
+        return values
+
+    @field_validator("wallpaper")
+    @classmethod
+    def validate_wallpaper(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return _validate_wallpaper(value)
+        except HTTPException as exc:
+            raise ValueError(str(exc.detail)) from exc
 
 
 class ChangePasswordRequest(BaseModel):
@@ -215,6 +357,21 @@ def _write_settings(username: str, data: dict) -> None:
         json.dump(data, handle, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
     os.chmod(path, 0o600)
+
+
+def _normalize_user_settings(data: dict, *, default_language: Literal["pl-PL", "en-US"] = "pl-PL") -> dict:
+    """Keep valid legacy values while replacing malformed or unknown values safely."""
+    defaults = UserSettings(language=default_language).model_dump()
+    normalized = defaults.copy()
+    for key, value in data.items():
+        if key not in defaults:
+            continue
+        try:
+            candidate = UserSettings.model_validate({**defaults, key: value})
+        except ValidationError:
+            continue
+        normalized[key] = getattr(candidate, key)
+    return normalized
 
 
 def _validate_wallpaper(value: str | None) -> str:
@@ -426,6 +583,7 @@ def start_auto_update_scheduler() -> None:
 
 def _user_info(username: str) -> dict:
     pw = pwd.getpwnam(username)
+    access = access_profile(username)
     return {
         "username": pw.pw_name,
         "uid": pw.pw_uid,
@@ -435,42 +593,43 @@ def _user_info(username: str) -> dict:
         "shell": pw.pw_shell,
         "gecos": pw.pw_gecos,
         "is_system": pw.pw_uid < get_config().security.system_uid_threshold,
-        "is_admin": _is_admin(username),
+        **access,
         "manageable": _is_manageable_uid(pw.pw_uid) and pw.pw_name not in PROTECTED_LOCAL_USERS and not pw.pw_name.startswith("pve"),
     }
 
 
 def _is_admin(username: str) -> bool:
-    try:
-        groups = _groups_for(username)
-    except KeyError:
-        return False
-    return "sudo" in groups or "wheel" in groups
+    return bool(access_profile(username)["is_admin"])
 
 
 def _admin_count(excluding: str | None = None) -> int:
     return sum(1 for entry in pwd.getpwall() if entry.pw_name != excluding and _is_admin(entry.pw_name))
 
 
-def _require_admin(user: SessionUser, password: str, request: Request, action: str) -> None:
+def _require_admin(user: SessionUser, password: str, request: Request, action: str, permission: str = "rbac.manage") -> None:
     key = f"{request.client.host if request.client else 'unknown'}:{user.username}:admin"
     admin_rate_limiter.check(key)
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, permission)
     authenticate(user.username, password)
     logger.info("admin_authorized actor=%s action=%s", user.username, action)
 
 
-def _require_admin_session(user: SessionUser, request: Request, action: str) -> None:
+def _require_admin_session(user: SessionUser, request: Request, action: str, permission: str = "rbac.manage") -> None:
     key = f"{request.client.host if request.client else 'unknown'}:{user.username}:admin-session"
     admin_rate_limiter.check(key)
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, permission)
     logger.info("admin_session_authorized actor=%s action=%s", user.username, action)
+
+
+def _authorize_legacy_admin_or(user: SessionUser, permission: str) -> None:
+    if _is_admin(user.username):
+        return
+    authorize(user, permission)
 
 
 def _audit(actor: str, action: str, target: str) -> None:
     logger.info("admin_action actor=%s action=%s target=%s", actor, action, target)
+    record_activity(ActivityCategory.administration, action, actor, target=target, source="administration")
 
 
 def _normalize_service(service: str) -> str:
@@ -560,7 +719,7 @@ def _service_payload(service: str) -> dict:
     }
 
 
-def _browser_language(header: str | None) -> str:
+def _browser_language(header: str | None) -> Literal["pl-PL", "en-US"]:
     if not header:
         return "pl-PL"
     lower = header.lower()
@@ -573,28 +732,24 @@ def _browser_language(header: str | None) -> str:
 
 @router.get("/api/settings/me")
 def settings_me(request: Request, user: SessionUser = Depends(_current_user)):
-    settings = _read_settings(user.username)
-    language = settings.get("language") if settings.get("language") in SUPPORTED_LANGUAGES else _browser_language(request.headers.get("accept-language"))
-    theme = settings.get("theme") if settings.get("theme") in SUPPORTED_THEMES else "system"
-    startup_windows = settings.get("startup_windows") if settings.get("startup_windows") in SUPPORTED_STARTUP_WINDOWS else "last"
-    wallpaper = _validate_wallpaper(settings.get("wallpaper") or "")
-    return {**_user_info(user.username), "language": language, "theme": theme, "startup_windows": startup_windows, "wallpaper": wallpaper}
+    settings = _normalize_user_settings(
+        _read_settings(user.username),
+        default_language=_browser_language(request.headers.get("accept-language")),
+    )
+    return {**_user_info(user.username), **access_profile(user.username), **settings}
 
 
 @router.patch("/api/settings/me")
 def settings_patch(payload: MePatch, user: SessionUser = Depends(_current_user)):
-    settings = _read_settings(user.username)
-    if payload.language:
-        settings["language"] = payload.language
-    if payload.theme:
-        settings["theme"] = payload.theme
-    if payload.startup_windows:
-        settings["startup_windows"] = payload.startup_windows
-    if payload.wallpaper is not None:
-        settings["wallpaper"] = _validate_wallpaper(payload.wallpaper)
-    _write_settings(user.username, settings)
-    logger.info("settings_updated user=%s fields=%s", user.username, list(payload.model_dump(exclude_none=True).keys()))
-    return {"ok": True, **settings}
+    changes = payload.model_dump(exclude_none=True)
+    with user_settings_locks[user.username]:
+        settings = _normalize_user_settings(_read_settings(user.username))
+        settings.update(changes)
+        settings = UserSettings.model_validate(settings).model_dump()
+        _write_settings(user.username, settings)
+    logger.info("settings_updated user=%s fields=%s", user.username, list(changes.keys()))
+    record_activity(ActivityCategory.configuration, "settings_update", user.username, details={"fields": sorted(changes)}, source="settings")
+    return {**_user_info(user.username), **access_profile(user.username), **settings}
 
 
 @router.post("/api/settings/change-password")
@@ -603,13 +758,13 @@ def settings_change_password(payload: ChangePasswordRequest, user: SessionUser =
     authenticate(user.username, payload.current_password)
     _run([_tool("chpasswd")], input_text=f"{user.username}:{_validate_password_text(payload.new_password)}\n")
     logger.info("password_changed user=%s target=%s", user.username, user.username)
+    record_activity(ActivityCategory.configuration, "password_change", user.username, target=user.username, source="settings")
     return {"ok": True}
 
 
 @router.get("/api/admin/users")
 def admin_users(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    _authorize_legacy_admin_or(user, "rbac.manage")
     return [_user_info(entry.pw_name) for entry in pwd.getpwall() if _is_manageable_uid(entry.pw_uid) and entry.pw_name not in PROTECTED_LOCAL_USERS and not entry.pw_name.startswith("pve")]
 
 
@@ -641,8 +796,7 @@ def admin_user_create(payload: UserCreate, request: Request, user: SessionUser =
 
 @router.get("/api/admin/users/{username}")
 def admin_user_get(username: str, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "rbac.manage")
     _assert_manageable_user(username, action="read")
     return _user_info(_validate_name(username, "user"))
 
@@ -745,8 +899,7 @@ def admin_user_quota(username: str, payload: UserQuota, request: Request, user: 
 
 @router.get("/api/admin/groups")
 def admin_groups(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "rbac.manage")
     return [{"name": group.gr_name, "gid": group.gr_gid, "members": sorted(group.gr_mem)} for group in grp.getgrall()]
 
 
@@ -828,8 +981,7 @@ def admin_file_ownership(payload: ChownRequest, request: Request, user: SessionU
 
 @router.get("/api/admin/system/status")
 def admin_system_status(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "rbac.manage")
     cfg = get_config()
     return {
         "service": "webnas",
@@ -857,8 +1009,7 @@ def admin_system_restart(payload: AdminSessionAction, request: Request, user: Se
 
 @router.get("/api/admin/system/updates/check")
 def admin_updates_check(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "rbac.manage")
     return _update_status()
 
 
@@ -870,8 +1021,7 @@ def admin_updates_download(payload: UpdateAction, request: Request, user: Sessio
 
 @router.get("/api/admin/system/updates/auto")
 def admin_auto_update_get(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "rbac.manage")
     return _read_auto_update_state()
 
 
@@ -900,8 +1050,7 @@ def admin_auto_update_run(payload: UpdateAction, request: Request, user: Session
 
 @router.get("/api/admin/system/logs")
 def admin_system_logs(lines: int = 120, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "audit.view")
     limit = max(20, min(lines, 500))
     if shutil.which("journalctl"):
         result = subprocess.run(
@@ -922,16 +1071,14 @@ def admin_system_logs(lines: int = 120, user: SessionUser = Depends(_current_use
 
 @router.get("/api/admin/system/services")
 def admin_systemd_services(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "modules.view")
     services = sorted(_configured_allowed_services())
     return [_service_payload(service) for service in services]
 
 
 @router.get("/api/admin/system/services/{service}")
 def admin_systemd_service(service: str, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "modules.view")
     return _service_payload(service)
 
 
@@ -942,7 +1089,7 @@ def admin_systemd_service_action(service: str, action: str, payload: ServiceActi
     normalized = _assert_systemd_service_allowed(service)
     if action == "restart" and not payload.confirm_restart:
         raise HTTPException(400, "Restart requires explicit confirmation")
-    _require_admin(user, payload.admin_password, request, f"systemd_{action}")
+    _require_admin(user, payload.admin_password, request, f"systemd_{action}", "modules.operate")
     _run([_tool("systemctl"), action, normalized])
     _audit(user.username, f"systemd_{action}", normalized)
     return _service_payload(normalized)
@@ -950,8 +1097,7 @@ def admin_systemd_service_action(service: str, action: str, payload: ServiceActi
 
 @router.get("/api/admin/system/services/{service}/logs")
 def admin_systemd_service_logs(service: str, lines: int = 160, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "modules.view")
     normalized = _assert_systemd_service_allowed(service)
     limit = max(20, min(lines, 500))
     if not shutil.which("journalctl"):
@@ -964,6 +1110,5 @@ def admin_systemd_service_logs(service: str, lines: int = 160, user: SessionUser
 
 @router.get("/api/admin/system/proxmox-safety")
 def admin_proxmox_safety(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, "modules.view")
     return proxmox_diagnostic(user.username)

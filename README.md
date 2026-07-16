@@ -16,7 +16,32 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - One-command installer with systemd/autostart support.
 - Optional firewall setup for `ufw` or `firewalld`.
 - Modular NAS-style Package Center with validated YAML manifests, dry-run plans, durable jobs, live logs, service control, history, and GitHub source metadata.
+- Shared module-management applications with health, service controls, configuration plans, diagnostics, bounded/redacted logs, private backups, verified restore, and safe uninstall workflows.
 - Administrator-managed SMB/CIFS, NFS, SSHFS, and WebDAV network resources integrated with Settings and File Explorer.
+- Windows 11-inspired (but independently branded) WebNAS desktop with one bottom taskbar, Start menu search, pinned/running app indicators, notification and transfer flyouts, and responsive application windows.
+- Per-user personalization synchronized by the backend: theme, accent, wallpaper, taskbar alignment, accessibility, notifications, transfer behavior, and File Manager defaults.
+- Role-based authorization for local Linux users with administrator, operator, auditor, and user roles plus closed per-operation grants/denials; existing root/sudo/wheel administrators retain full access.
+- Infrastructure modules for Linux security/system updates, Docker and safe Compose projects, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant Container.
+- Per-user CPU, RAM, disk, transfer, service, and alert widgets that can be pinned, hidden, moved, and resized on the desktop.
+- Persistent Activity Center for sign-ins, file operations, configuration changes, administrative tasks, and module events, with private per-user history and permission-controlled global audit access.
+
+## Desktop and personalization
+
+The WebNAS workspace uses one bottom taskbar for the Start menu, pinned and running applications, active-window state, transfers, notifications, theme, session identity, clock/date, and sign-out. The Start menu opens above the taskbar, searches all apps, distinguishes administrator tools, and closes after launching an app, clicking outside, or pressing `Escape`. Saved window state remains compatible with previous releases and can be restored after sign-in or disabled in **Settings → System**.
+
+Desktop shortcuts flow down from the upper-left corner and can be hidden or resized. A user can configure an HTTP(S) or supported image data URL as wallpaper and choose `cover`, `contain`, stretch, or centered display. Window transparency and short animations can be disabled. The responsive layout maximizes app windows on narrow screens, keeps taskbar flyouts inside the viewport, converts Settings to mobile navigation, and preserves controlled scrolling for file tables.
+
+**Settings** is organized into System, Personalization, File Manager, Transfers, Notifications, Accessibility, Language & region, Account, and About. Administrators additionally receive Network resources and Administration. Settings search opens the category containing a matching control. Changes are applied optimistically and saved automatically; text input uses a short debounce and exposes saving, saved, and error states.
+
+File Manager preferences are active rather than cosmetic. They control list/grid/large-icon view, compact rows, hidden files, delete/overwrite confirmation, 25/50/100/200 item pages, initial sorting and direction, and whether the last directory is remembered. The explorer keeps the existing path validation and operation security model.
+
+## Activity Center
+
+**Activity Center** presents a searchable, paginated timeline of sign-ins, file operations, user configuration changes, administrative actions, and module jobs. Every user can inspect their own activity. Administrators and auditors with `audit.view` can inspect the global timeline and filter it by user, category, status, and text. Status labels and icons distinguish queued, completed, failed, informational, and cancelled operations without relying on color alone.
+
+Events are stored in `paths.data_dir/activity.sqlite3` with a bounded history and private data-directory permissions. Only structured operation metadata is retained: file contents, passwords, cookies, authorization headers, tokens, credentials, and private keys are never intentionally stored. Nested details and free-form error text pass through the same secret-redaction layer used by module logs. Activity recording is failure-isolated, so an unavailable activity database cannot weaken or interrupt PAM authentication, CSRF validation, path policy, Proxmox Safe Mode, or the operation being audited.
+
+User preferences are stored by the backend in `paths.data_dir/settings/<username>.json`. Every value is validated against an enum, length limit, or numeric range, files are replaced atomically with owner-only permissions, and missing fields from older files receive safe defaults automatically. Passwords and other secrets are never part of this settings store; password changes continue to require the current password through the dedicated authenticated endpoint.
 
 ## Network resources
 
@@ -32,11 +57,17 @@ Persistent definitions use path-escaped `.mount`/`.automount` unit names matchin
 
 ## Package Center
 
-**Centrum pakietów** manages trusted WebNAS modules through an administrator-only UI with search, categories, status filters, installed/updates views, jobs, history, and sources. The initial catalog contains Samba, Squid Proxy, Nginx, and Syncthing. Install, update, uninstall, and systemd actions require plan confirmation and PAM reauthentication; progress and redacted logs survive browser and service restarts in SQLite.
+**Package Center** manages trusted WebNAS modules through a permission-controlled UI with search, categories, status filters, installed/updates views, jobs, history, and sources. The catalog includes Samba, Squid Proxy, Nginx, Syncthing, Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant. Install, update, uninstall, and systemd actions require plan confirmation and PAM reauthentication; progress and redacted logs survive browser and service restarts in SQLite.
 
 Modules support Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux when their manifest provides packages for the detected `apt-get`, `dnf`, or `yum` manager. Proxmox Safe Mode rejects modules not explicitly marked safe. External GitHub repositories are stored and refreshed only as untrusted metadata—they are never downloaded or executed automatically.
 
-See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for architecture, manifest fields, module authoring, security, API endpoints, storage, backups, and a manual test checklist.
+Installed modules open as regular WebNAS windows from Package Center. A shared shell provides Overview, Configuration (when supported), Service, Logs, Diagnostics, Backups, and Information; providers expose only manifest-declared capabilities. Module jobs extend the existing SQLite queue with durable stages, warnings, results, SSE updates, interruption recovery, and real post-operation status checks.
+
+Samba is the complete reference provider. Its application adds Shares, SMB users, and Sessions; typed global/share configuration; controlled VFS options; `smbstatus` parsing; UFW/firewalld status; fixed-source redacted logs; comprehensive diagnostics; checksummed `0600` backups; and transactional `testparm`/atomic-write/reload/verify/rollback behavior. File Manager labels shared directories with their Samba name/read-only state and can open, create, or remove the share definition without deleting the directory.
+
+All mutations require administrator membership, an active session, CSRF, rate-limited PAM reauthentication, a structured plan, and audit logging. Admin passwords may be remembered only by the existing in-memory credential helper. SMB passwords never enter settings, local storage, plans, jobs, command lines, or logs.
+
+See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for the package layer, [MODULES.md](MODULES.md) for provider architecture and Samba, and [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) for RBAC, Linux updates, Docker/Compose, DNS, databases, Home Assistant, widgets, backups, and deployment limitations.
 
 ## Szybki start
 

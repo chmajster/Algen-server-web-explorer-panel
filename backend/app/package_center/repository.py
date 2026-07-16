@@ -35,7 +35,8 @@ class PackageRepository:
                     progress INTEGER NOT NULL DEFAULT 0, current_step TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL,
                     created_at REAL NOT NULL, started_at REAL, finished_at REAL, exit_code INTEGER, error TEXT NOT NULL DEFAULT '',
                     cancellation_requested INTEGER NOT NULL DEFAULT 0, requires_reboot INTEGER NOT NULL DEFAULT 0,
-                    previous_version TEXT, target_version TEXT, plan_json TEXT NOT NULL, retry_of TEXT
+                    previous_version TEXT, target_version TEXT, plan_json TEXT NOT NULL, retry_of TEXT,
+                    warnings_json TEXT NOT NULL DEFAULT '[]', result_json TEXT NOT NULL DEFAULT '{}'
                 );
                 CREATE INDEX IF NOT EXISTS idx_package_jobs_status ON package_jobs(status, created_at);
                 CREATE INDEX IF NOT EXISTS idx_package_jobs_module ON package_jobs(module_id, created_at);
@@ -58,6 +59,11 @@ class PackageRepository:
                 );
                 """
             )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(package_jobs)").fetchall()}
+            if "warnings_json" not in columns:
+                connection.execute("ALTER TABLE package_jobs ADD COLUMN warnings_json TEXT NOT NULL DEFAULT '[]'")
+            if "result_json" not in columns:
+                connection.execute("ALTER TABLE package_jobs ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'")
 
     @staticmethod
     def _job(row: sqlite3.Row, logs: list[dict] | None = None) -> dict[str, Any]:
@@ -65,7 +71,12 @@ class PackageRepository:
         result["cancellation_requested"] = bool(result["cancellation_requested"])
         result["requires_reboot"] = bool(result["requires_reboot"])
         result["plan"] = json.loads(result.pop("plan_json") or "{}")
+        result["warnings"] = json.loads(result.pop("warnings_json", "[]") or "[]")
+        result["result"] = json.loads(result.pop("result_json", "{}") or "{}")
         result["log_tail"] = logs or []
+        result["operation"] = result["action"]
+        result["stage"] = result["current_step"]
+        result["requested_by"] = result["created_by"]
         return result
 
     def create_job(self, plan: PackagePlan, actor: str, *, previous_version: str | None = None, retry_of: str | None = None) -> dict:
@@ -81,12 +92,16 @@ class PackageRepository:
         return self.get_job(job_id) or {}
 
     def update_job(self, job_id: str, **values: Any) -> None:
-        allowed = {"status", "progress", "current_step", "started_at", "finished_at", "exit_code", "error", "cancellation_requested"}
+        allowed = {"status", "progress", "current_step", "started_at", "finished_at", "exit_code", "error", "cancellation_requested", "warnings", "result"}
         updates = {key: value for key, value in values.items() if key in allowed}
         if not updates:
             return
         if "cancellation_requested" in updates:
             updates["cancellation_requested"] = int(bool(updates["cancellation_requested"]))
+        if "warnings" in updates:
+            updates["warnings_json"] = json.dumps(updates.pop("warnings"), ensure_ascii=False)
+        if "result" in updates:
+            updates["result_json"] = json.dumps(updates.pop("result"), ensure_ascii=False)
         columns = ", ".join(f"{key}=?" for key in updates)
         with self._lock, self.connect() as connection:
             # Dynamic column names come exclusively from the fixed allowlist above.
@@ -146,10 +161,15 @@ class PackageRepository:
         return len(rows)
 
     def finish_history(self, job: dict) -> None:
+        action = job["action"]
+        if action == "manage":
+            operation = job.get("plan", {}).get("payload", {}).get("operation")
+            if isinstance(operation, str) and operation:
+                action = operation
         with self._lock, self.connect() as connection:
             connection.execute(
                 "INSERT INTO package_history(job_id,module_id,action,status,actor,created_at,finished_at,message) VALUES (?,?,?,?,?,?,?,?)",
-                (job["id"], job["module_id"], job["action"], job["status"], job["created_by"], job["created_at"], job.get("finished_at"), job.get("error") or job.get("current_step") or ""),
+                (job["id"], job["module_id"], action, job["status"], job["created_by"], job["created_at"], job.get("finished_at"), job.get("error") or job.get("current_step") or ""),
             )
 
     def history(self, limit: int = 300) -> list[dict]:

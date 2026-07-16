@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
-from typing import Any, NoReturn
+from typing import Any, Literal, NoReturn
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
@@ -20,6 +20,14 @@ class PackageAction(StrEnum):
     start = "start"
     stop = "stop"
     restart = "restart"
+    reload = "reload"
+    enable = "enable"
+    disable = "disable"
+    apply = "apply"
+    diagnostics = "diagnostics"
+    restore = "restore"
+    firewall = "firewall"
+    manage = "manage"
 
 
 class PackageJobStatus(StrEnum):
@@ -34,6 +42,87 @@ class PackageJobStatus(StrEnum):
 class ModuleUi(BaseModel):
     hidden: bool = False
     configurable: bool | None = None
+
+
+class ModulePackages(BaseModel):
+    apt: list[str] = Field(default_factory=list)
+    dnf: list[str] = Field(default_factory=list)
+    yum: list[str] = Field(default_factory=list)
+
+    @field_validator("apt", "dnf", "yum")
+    @classmethod
+    def valid_packages(cls, values: list[str]) -> list[str]:
+        if any(not PACKAGE_RE.fullmatch(value) for value in values):
+            raise ValueError("invalid package name")
+        return list(dict.fromkeys(values))
+
+
+class ModuleService(BaseModel):
+    name: str
+    required: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def valid_name(cls, value: str) -> str:
+        if not SERVICE_RE.fullmatch(value):
+            raise ValueError("invalid systemd service")
+        return value.removesuffix(".service")
+
+
+class ModuleConfigDefinition(BaseModel):
+    primary_file: str | None = None
+    backup_paths: list[str] = Field(default_factory=list)
+    validation_command: list[str] = Field(default_factory=list)
+
+    @field_validator("primary_file")
+    @classmethod
+    def valid_primary_file(cls, value: str | None) -> str | None:
+        if value is not None and (not value.startswith("/") or "\x00" in value or ".." in value.split("/")):
+            raise ValueError("primary config path must be absolute and traversal-free")
+        return value
+
+    @field_validator("backup_paths")
+    @classmethod
+    def valid_backup_paths(cls, values: list[str]) -> list[str]:
+        if any(not value.startswith("/") or "\x00" in value or ".." in value.split("/") for value in values):
+            raise ValueError("backup paths must be absolute and traversal-free")
+        return list(dict.fromkeys(values))
+
+    @field_validator("validation_command")
+    @classmethod
+    def controlled_validation_command(cls, value: list[str]) -> list[str]:
+        approved = {
+            ("testparm", "-s"),
+            ("nginx", "-t"),
+            ("squid", "-k", "parse"),
+            ("syncthing", "--version"),
+        }
+        if value and tuple(value) not in approved:
+            raise ValueError("validation command is not a supported backend adapter")
+        return value
+
+
+class ModuleCapabilities(BaseModel):
+    install: bool = True
+    update: bool = True
+    uninstall: bool = True
+    configure: bool = False
+    service_control: bool = True
+    reload: bool = False
+    logs: bool = True
+    diagnostics: bool = True
+    backups: bool = False
+    import_export: bool = False
+    healthcheck: bool = True
+    resources: list[str] = Field(default_factory=list)
+    actions: list[str] = Field(default_factory=list)
+
+    @field_validator("resources", "actions")
+    @classmethod
+    def valid_feature_names(cls, values: list[str]) -> list[str]:
+        if any(not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", value) for value in values):
+            raise ValueError("invalid module feature name")
+        return list(dict.fromkeys(values))
 
 
 class ModuleManifest(BaseModel):
@@ -52,7 +141,12 @@ class ModuleManifest(BaseModel):
     supported_architectures: list[str] = Field(default_factory=lambda: ["x86_64", "aarch64", "armv7l"])
     apt_packages: list[str] = Field(default_factory=list)
     dnf_packages: list[str] = Field(default_factory=list)
+    yum_packages: list[str] = Field(default_factory=list)
     systemd_services: list[str] = Field(default_factory=list)
+    packages: ModulePackages = Field(default_factory=ModulePackages)
+    services: list[ModuleService] = Field(default_factory=list)
+    config: ModuleConfigDefinition = Field(default_factory=ModuleConfigDefinition)
+    capabilities: ModuleCapabilities = Field(default_factory=ModuleCapabilities)
     ports: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
@@ -76,7 +170,7 @@ class ModuleManifest(BaseModel):
             raise ValueError("invalid module id")
         return value
 
-    @field_validator("apt_packages", "dnf_packages")
+    @field_validator("apt_packages", "dnf_packages", "yum_packages")
     @classmethod
     def valid_packages(cls, values: list[str]) -> list[str]:
         if any(not PACKAGE_RE.fullmatch(value) for value in values):
@@ -127,9 +221,88 @@ class ModuleManifest(BaseModel):
 
     @model_validator(mode="after")
     def has_package_definition(self) -> "ModuleManifest":
+        if self.packages.apt and not self.apt_packages:
+            self.apt_packages = self.packages.apt
+        if self.packages.dnf and not self.dnf_packages:
+            self.dnf_packages = self.packages.dnf
+        if self.packages.yum and not self.yum_packages:
+            self.yum_packages = self.packages.yum
+        if not self.packages.apt:
+            self.packages.apt = self.apt_packages
+        if not self.packages.dnf:
+            self.packages.dnf = self.dnf_packages
+        if not self.packages.yum:
+            self.packages.yum = self.yum_packages or self.dnf_packages
+        if self.services and not self.systemd_services:
+            self.systemd_services = [item.name for item in self.services]
+        if not self.services:
+            self.services = [ModuleService(name=name) for name in self.systemd_services]
+        if self.config.primary_file and self.config.primary_file not in self.config_paths:
+            self.config_paths.insert(0, self.config.primary_file)
+        self.backup_paths = list(dict.fromkeys([*self.backup_paths, *self.config.backup_paths]))
+        if self.configurable:
+            self.capabilities.configure = True
         if not self.apt_packages and not self.dnf_packages and not self.ui.hidden:
             raise ValueError("installable module has no packages")
         return self
+
+
+class ModuleHealth(StrEnum):
+    healthy = "healthy"
+    degraded = "degraded"
+    failed = "failed"
+    unknown = "unknown"
+    not_installed = "not_installed"
+
+
+class ModuleStatus(BaseModel):
+    installed: bool
+    package_version: str | None = None
+    available_version: str | None = None
+    update_available: bool = False
+    service_state: str = "unknown"
+    service_enabled: bool = False
+    services: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    configuration_valid: bool | None = None
+    health: ModuleHealth = ModuleHealth.unknown
+    health_message: str = ""
+    last_action: str = ""
+    last_action_status: str = ""
+    last_action_time: float | None = None
+    last_error: str = ""
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModuleValidationResult(BaseModel):
+    ok: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    changes: list[dict[str, Any]] = Field(default_factory=list)
+    generated_config: str = ""
+    validator_output: str = ""
+    confirmations_required: list[str] = Field(default_factory=list)
+
+
+class ModuleDiagnostic(BaseModel):
+    status: Literal["ok", "info", "warning", "critical"]
+    title: str
+    description: str
+    details: str = ""
+    severity: Literal["ok", "info", "warning", "critical"]
+    recommended_action: str = ""
+
+
+class ModuleBackup(BaseModel):
+    id: str
+    module_id: str
+    created_at: float
+    created_by: str
+    description: str = ""
+    automatic: bool = False
+    checksum: str
+    package_version: str = ""
+    size: int = 0
+    files: list[str] = Field(default_factory=list)
 
 
 class DistributionInfo(BaseModel):
@@ -161,6 +334,8 @@ class PackagePlan(BaseModel):
     previous_version: str | None = None
     target_version: str | None = None
     steps: list[str] = Field(default_factory=list)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    create_backup: bool = False
 
 
 class AdminPackageAction(BaseModel):

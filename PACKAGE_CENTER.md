@@ -2,6 +2,8 @@
 
 Package Center is the administrator-only package and service manager built into WebNAS. It discovers trusted modules from `backend/app/modules`, validates their YAML manifests, creates a dry-run plan, and executes approved operations as durable SQLite jobs. The browser receives live progress through Server-Sent Events and falls back to polling.
 
+Installed modules now open in the shared module-management framework documented in [MODULES.md](MODULES.md). Package Center remains the catalog/install layer and keeps its original `/api/apps` compatibility routes; `/api/modules` adds provider status, configuration, logs, diagnostics, backups, and transactional module operations.
+
 ## Architecture
 
 The backend is split into small components under `backend/app/package_center`:
@@ -14,7 +16,7 @@ The backend is split into small components under `backend/app/package_center`:
 - `repository.py` stores jobs, logs, installed state, history, and sources in SQLite.
 - `jobs.py` serializes execution, cancellation, retry, recovery, and audit results.
 - `executor.py` builds argument arrays and runs only trusted package, systemd, and module-local actions.
-- `security.py` checks Linux `sudo`/`wheel` membership (or UID 0), CSRF, and PAM reauthentication.
+- `security.py` checks the RBAC administrator role (with automatic UID 0/`sudo`/`wheel` compatibility), CSRF, and PAM reauthentication.
 
 Only one package job runs at a time. A second operation for the same module cannot be queued. A running command completes before cancellation takes effect at the next safe step. Jobs left in `running` state by a WebNAS restart are marked failed with an interruption message.
 
@@ -53,7 +55,31 @@ supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalin
 supported_architectures: [x86_64, aarch64, armv7l]
 apt_packages: [example-service]
 dnf_packages: [example-service]
+yum_packages: [example-service]
 systemd_services: [example-service]
+packages:
+  apt: [example-service]
+  dnf: [example-service]
+  yum: [example-service]
+services:
+  - name: example-service
+    required: true
+config:
+  primary_file: /etc/example-service/config.yaml
+  backup_paths: [/etc/example-service]
+  validation_command: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: true
+  reload: false
+  logs: true
+  diagnostics: true
+  backups: false
+  import_export: false
+  healthcheck: true
 ports: [8080/tcp]
 dependencies: []
 conflicts: []
@@ -77,7 +103,7 @@ Identifiers, package names, service names, ports, architectures, paths, healthch
 
 ## Execution and security
 
-Installation, update, removal, and service actions require an authenticated administrator, a valid CSRF token, explicit plan confirmation, and a fresh PAM password check. The password is sent only for reauthentication and is never placed in the plan, job database, command line, or logs. The UI can remember it only in browser session memory when the administrator explicitly selects that option.
+Installation, update, and removal require `modules.install`, a valid CSRF token, explicit plan confirmation, and a fresh PAM password check. Provider resource/operation routes use their narrower RBAC permissions. The password is sent only for reauthentication and is never placed in the plan, job database, command line, or logs. The UI can remember it only in browser session memory when the administrator explicitly selects that option.
 
 The executor uses `subprocess` argument arrays with `shell=False`, a restricted environment, timeouts, exit-code checks, and redacted output. It never runs `upgrade`, `dist-upgrade`, or implicit `autoremove`. Removal preserves configuration and user data unless the administrator explicitly selects **also remove data** in the confirmation dialog. SQLite transactions provide atomic state updates, and every completed, failed, or cancelled operation is written to history and the audit log.
 
@@ -85,7 +111,7 @@ Network-facing daemons should use a dedicated unprivileged service account. For 
 
 The production service runs as root because PAM impersonation and package managers need it. `ProtectSystem=false` is therefore required in the systemd unit for package database and filesystem writes. The risk is constrained by admin/PAM/CSRF gates, validated manifests, fixed action allowlists, no frontend commands, no `shell=True`, and no execution of external source code.
 
-Configuration changes remain module-specific. The Samba configuration API creates a backup before writing, validates the candidate with `testparm`, writes atomically, and restores the backup if validation or apply fails. New configurable modules must follow the same backup/validate/atomic-replace/rollback pattern and use their declared `backup_paths`.
+Configuration changes remain module-specific. The Samba provider creates a private checksummed backup, validates with `testparm`, writes with `fsync` and atomic replacement, reloads and checks the real service/config state, and restores both config files when any later stage fails. New configurable modules must follow the same backup/validate/atomic-replace/verify/rollback pattern. Manifest validation commands select a fixed backend adapter and cannot contain arbitrary shell commands.
 
 ## Supported systems and Proxmox
 
@@ -103,7 +129,7 @@ The default package database is:
 
 It contains `package_jobs`, `package_job_logs`, `installed_packages`, `package_history`, and `package_sources`. Back up this file while WebNAS is stopped or by using the SQLite online backup mechanism. Job output is available through the jobs/logs API and the Package Center UI. Service-level logs remain in `journalctl -u webnas`.
 
-Module configuration is not stored in the package database. Back up each manifest's `config_paths`, `data_paths`, and `backup_paths` before system migration. Samba backups are created alongside its managed configuration with timestamped backup names.
+Module configuration is not stored in the package database. Back up each manifest's `config_paths`, `data_paths`, and `backup_paths` before system migration. Samba module backups are stored under `paths.data_dir/module-backups/samba` with a `0700` directory and `0600` files. They include `smb.conf`, the WebNAS-managed share config, metadata, and a combined checksum, but deliberately exclude Samba password databases. Automatic backup retention is 20.
 
 ## API
 
@@ -141,6 +167,8 @@ POST   /api/apps/sources/{source_id}/sync
 ```
 
 `GET /api/apps` accepts `search`, `category`, `status`, `compatible_only`, `installed_only`, and `updates_only`. Existing Samba configuration and legacy StorePlugin endpoints remain available.
+
+The module-management endpoints are listed in [MODULES.md](MODULES.md). Legacy Samba mutation endpoints now require the same PAM gate and delegate writes/service actions to durable module jobs; they can no longer bypass the provider transaction.
 
 ## Manual verification
 

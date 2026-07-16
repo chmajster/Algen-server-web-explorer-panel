@@ -1,0 +1,39 @@
+id: mariadb
+name: MariaDB
+description: Databases, users, privileges, backups, restore, replication state and diagnostics.
+category: databases
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://mariadb.org/
+icon: database
+license: GPL-2.0-only
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [mariadb-server, mariadb-client]
+  dnf: [mariadb-server, mariadb]
+  yum: [mariadb-server, mariadb]
+services:
+  - name: mariadb
+    required: true
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: true
+  reload: true
+  logs: true
+  diagnostics: true
+  backups: true
+  healthcheck: true
+  resources: [databases, users, permissions, replication]
+  actions: []
+ports: [3306/tcp]
+permissions: [package_management, systemd, database_socket, backup_write]
+config_paths: [/etc/mysql]
+data_paths: [/var/lib/mysql]
+backup_paths: [/var/lib/mysql]
+proxmox_safe: false
+requires_root: true
+removable: true

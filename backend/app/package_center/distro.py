@@ -40,4 +40,8 @@ def compatible(manifest: ModuleManifest, distro: DistributionInfo) -> bool:
 
 
 def packages_for(manifest: ModuleManifest, distro: DistributionInfo) -> list[str]:
-    return list(manifest.apt_packages if distro.package_manager == "apt-get" else manifest.dnf_packages)
+    if distro.package_manager == "apt-get":
+        return list(manifest.apt_packages)
+    if distro.package_manager == "yum":
+        return list(manifest.yum_packages or manifest.dnf_packages)
+    return list(manifest.dnf_packages)

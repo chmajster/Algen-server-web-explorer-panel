@@ -1,0 +1,39 @@
+id: adguard-home
+name: AdGuard Home
+description: DNS dashboard, clients, filtering rules, upstream servers, query log and configuration backups.
+category: dns
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://adguard.com/adguard-home/overview.html
+icon: shield
+license: GPL-3.0-only
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [adguardhome]
+  dnf: [adguardhome]
+  yum: [adguardhome]
+services:
+  - name: AdGuardHome
+    required: true
+capabilities:
+  install: false
+  update: true
+  uninstall: false
+  configure: true
+  service_control: true
+  reload: true
+  logs: true
+  diagnostics: true
+  backups: true
+  healthcheck: true
+  resources: [statistics, clients, filters, upstreams, querylog]
+  actions: [protection_enable, protection_disable, refresh_filters, set_rules, set_upstreams, update_application]
+ports: [53/tcp, 53/udp, 3000/tcp]
+permissions: [systemd, network_api, config_write]
+config_paths: [/opt/AdGuardHome/AdGuardHome.yaml]
+data_paths: [/opt/AdGuardHome]
+backup_paths: [/opt/AdGuardHome/AdGuardHome.yaml]
+proxmox_safe: false
+requires_root: true
+removable: false

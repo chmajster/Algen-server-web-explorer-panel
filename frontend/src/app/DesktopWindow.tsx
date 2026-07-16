@@ -8,7 +8,7 @@ import type { Translate, WindowInstance, WindowRect } from "./types";
 type Edge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 type Gesture = { mode: "move" | "resize"; edge?: Edge; startX: number; startY: number; rect: WindowRect; offsetX: number; offsetY: number };
 
-export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMinimize, onCommit, onToggleMaximize, children }: {
+export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMinimize, onCommit, onToggleMaximize, children, animationsEnabled = false }: {
   window: WindowInstance;
   active: boolean;
   t: Translate;
@@ -18,9 +18,11 @@ export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMin
   onCommit: (rect: WindowRect, restoreRect?: WindowRect) => void;
   onToggleMaximize: () => void;
   children: React.ReactNode;
+  animationsEnabled?: boolean;
 }) {
   const definition = appById[item.app];
   const [displayRect, setDisplayRect] = useState(item.rect);
+  const [minimizing, setMinimizing] = useState(false);
   const gesture = useRef<Gesture | null>(null);
   const maximized = Boolean(item.restoreRect);
 
@@ -86,11 +88,17 @@ export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMin
     gesture.current = { mode: "resize", edge, startX: event.clientX, startY: event.clientY, rect: displayRect, offsetX: 0, offsetY: 0 };
   }
 
-  return <section className={`desktop-window ${active ? "active" : ""} ${maximized ? "maximized" : ""}`} style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: item.zIndex }} onPointerDown={onFocus} aria-label={t(definition.labelKey)}>
+  function minimize() {
+    if (!animationsEnabled || window.matchMedia("(prefers-reduced-motion: reduce)").matches) { onMinimize(); return; }
+    setMinimizing(true);
+    window.setTimeout(onMinimize, 120);
+  }
+
+  return <section role="dialog" aria-modal="false" className={`desktop-window ${active ? "active" : "inactive"} ${maximized ? "maximized" : ""} ${minimizing ? "minimizing" : ""}`} style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: item.zIndex }} onPointerDown={onFocus} aria-label={t(definition.labelKey)}>
     <header className="window-titlebar" onPointerDown={startMove} onDoubleClick={() => { gesture.current = null; onToggleMaximize(); }}>
       <span className="window-app-icon">{definition.icon}</span><strong>{t(definition.labelKey)}</strong>
       <div className="window-controls">
-        <button type="button" title={t("window.minimize")} aria-label={t("window.minimize")} onClick={onMinimize}><Minimize2 /></button>
+        <button type="button" title={t("window.minimize")} aria-label={t("window.minimize")} onClick={minimize}><Minimize2 /></button>
         <button type="button" title={maximized ? t("window.restore") : t("window.maximize")} aria-label={maximized ? t("window.restore") : t("window.maximize")} onClick={onToggleMaximize}><Maximize2 /></button>
         <button className="window-close" type="button" title={t("action.close")} aria-label={t("action.close")} onClick={onClose}><X /></button>
       </div>

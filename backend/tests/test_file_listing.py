@@ -30,13 +30,13 @@ def patch_listing(monkeypatch, tmp_path: Path, items: list[dict]) -> Path:
     return root
 
 
-def test_page_size_is_capped_at_20(monkeypatch, tmp_path):
-    patch_listing(monkeypatch, tmp_path, [item(f"file-{index}") for index in range(30)])
+def test_page_size_is_capped_at_200(monkeypatch, tmp_path):
+    patch_listing(monkeypatch, tmp_path, [item(f"file-{index}") for index in range(220)])
 
-    result = file_ops.list_dir("alice", "/", page_size=100)
+    result = file_ops.list_dir("alice", "/", page_size=500)
 
-    assert result["page_size"] == 20
-    assert len(result["items"]) == 20
+    assert result["page_size"] == 200
+    assert len(result["items"]) == 200
 
 
 def test_paginates_large_directory(monkeypatch, tmp_path):
@@ -96,6 +96,16 @@ def test_invalid_sort_parameter(monkeypatch, tmp_path):
         file_ops.list_dir("alice", "/", sort="not_allowed")
 
     assert exc.value.status_code == 400
+
+
+def test_hidden_files_are_filtered_unless_requested(monkeypatch, tmp_path):
+    patch_listing(monkeypatch, tmp_path, [item("visible.txt"), item(".secret")])
+
+    hidden = file_ops.list_dir("alice", "/")
+    shown = file_ops.list_dir("alice", "/", show_hidden=True)
+
+    assert [entry["name"] for entry in hidden["items"]] == ["visible.txt"]
+    assert {entry["name"] for entry in shown["items"]} == {"visible.txt", ".secret"}
 
 
 def test_tree_endpoint_returns_only_directories(monkeypatch, tmp_path):

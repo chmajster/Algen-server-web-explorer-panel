@@ -1,0 +1,26 @@
+.desktop-widget-layer { position: absolute; inset: 12px 12px calc(var(--taskbar-height) + 12px) 112px; z-index: 1; pointer-events: none; }
+.desktop-widget-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 78px; gap: 8px; height: 100%; }
+.desktop-widget { position: relative; min-width: 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--border) 78%, transparent); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--surface) 82%, transparent); box-shadow: var(--shadow-sm); backdrop-filter: blur(18px); pointer-events: auto; }
+.desktop-widget > header { height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 9px; color: var(--text-muted); font-size: .78rem; }
+.desktop-widget > header span { display: flex; align-items: center; gap: 6px; font-weight: 650; color: var(--text); }
+.desktop-widget svg { width: 15px; height: 15px; }
+.widget-content { display: flex; flex-direction: column; gap: 6px; padding: 5px 11px 10px; }
+.widget-content > strong { font-size: 1.5rem; line-height: 1; }
+.widget-content > span { color: var(--text-muted); font-size: .78rem; }
+.widget-meter { height: 5px; overflow: hidden; border-radius: 8px; background: var(--surface-muted); }
+.widget-meter span { display: block; height: 100%; background: var(--accent); }
+.widget-list { display: grid; gap: 4px; min-height: 0; overflow: auto; font-size: .76rem; }
+.widget-list div { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.widget-list div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.widget-list b { font-weight: 600; color: var(--text-muted); }
+.widget-list b.healthy { color: var(--success); }.widget-list b.degraded,.widget-list b.warning { color: var(--warning); }.widget-list b.failed,.widget-list b.critical { color: var(--danger); }
+.widget-edit-toggle { position: absolute; right: 0; top: 0; z-index: 3; display: flex; align-items: center; gap: 6px; pointer-events: auto; }
+.widget-picker { position: absolute; right: 0; top: 42px; z-index: 4; width: 190px; padding: 8px; display: grid; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-lg); pointer-events: auto; }
+.widget-picker button { justify-content: flex-start; }
+.desktop-widget-layer:not(.editing) .desktop-widget > header { cursor: default; }
+.desktop-widget-layer.editing .desktop-widget { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.desktop-widget-layer.editing .desktop-widget > header { cursor: grab; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.widget-resize-handle { position: absolute; right: 2px; bottom: 2px; width: 28px; height: 28px; padding: 4px; cursor: nwse-resize; }
+.widget-keyboard-controls { position: absolute; left: 4px; bottom: 4px; display: flex; gap: 2px; }
+.widget-keyboard-controls button { width: 24px; height: 24px; padding: 4px; }
+@media (max-width: 900px) { .desktop-widget-layer { inset: 8px 8px calc(var(--taskbar-height) + 8px); }.desktop-widget-grid { grid-template-columns: repeat(6,minmax(0,1fr)); grid-auto-flow: row; }.desktop-widget { grid-column: 1 / -1 !important; grid-row: auto / span 2 !important; position: relative; }.desktop-widget-layer:not(.editing) .desktop-widget:nth-child(n+4) { display: none; } }

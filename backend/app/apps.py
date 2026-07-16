@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .audit import logger
-from .auth import authenticate
 from .config import get_config
 from .path_policy import resolve_user_path
 from .proxmox_guard import safe_mode_active
@@ -68,6 +67,13 @@ BLOCKED_SAMBA_OPTIONS = {
     "follow symlinks",
     "unix extensions",
 }
+SAFE_SAMBA_GLOBAL_OPTIONS = {
+    "workgroup", "server string", "netbios name", "security", "map to guest", "server min protocol", "server max protocol",
+    "interfaces", "bind interfaces only", "log level", "max log size", "deadtime", "load printers", "printing", "disable spoolss",
+    "unix extensions", "wide links", "follow symlinks",
+}
+SAMBA_BOOLEAN_OPTIONS = {"bind interfaces only", "load printers", "disable spoolss", "unix extensions", "wide links", "follow symlinks"}
+SAFE_SAMBA_VFS_OBJECTS = {"acl_xattr", "catia", "fruit", "streams_xattr", "recycle"}
 
 
 class AdminAction(BaseModel):
@@ -90,13 +96,19 @@ class SambaShare(BaseModel):
     read_only: bool = True
     guest_ok: bool = False
     valid_users: list[str] = Field(default_factory=list)
+    valid_groups: list[str] = Field(default_factory=list)
     write_list: list[str] = Field(default_factory=list)
     read_list: list[str] = Field(default_factory=list)
     admin_users: list[str] = Field(default_factory=list)
     force_user: str | None = None
     force_group: str | None = None
+    force_create_mode: str = ""
+    force_directory_mode: str = ""
+    inherit_permissions: bool = False
     veto_files: str = ""
     recycle_bin: bool = False
+    recycle_versions: bool = True
+    vfs_objects: list[str] = Field(default_factory=list)
     create_directory: bool = False
     directory_owner: str = ""
     directory_group: str = ""
@@ -114,6 +126,11 @@ class SambaConfig(BaseModel):
 
 class SambaApplyRequest(BaseModel):
     config: SambaConfig | None = None
+
+
+class SambaSecuredApplyRequest(AdminAction):
+    config: SambaConfig
+    confirm_smb1: bool = False
 
 
 class SambaServiceAction(BaseModel):
@@ -189,7 +206,9 @@ def _is_admin(username: str) -> bool:
 def _require_admin(user: SessionUser, password: str) -> None:
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
-    authenticate(user.username, password)
+    from .package_center.security import reauthenticate
+
+    reauthenticate(user, password)
 
 
 def _run(args: list[str], *, input_text: str | None = None, timeout: int = 600) -> subprocess.CompletedProcess[str]:
@@ -428,19 +447,84 @@ def _validate_advanced_options(options: dict[str, str]) -> dict[str, str]:
     return cleaned
 
 
+def _validate_global_options(options: dict[str, str]) -> dict[str, str]:
+    cleaned: dict[str, str] = {}
+    for key, value in options.items():
+        option = key.strip().lower()
+        text = str(value).strip()
+        if option not in SAFE_SAMBA_GLOBAL_OPTIONS:
+            raise HTTPException(400, f"Unsupported global Samba option: {option}")
+        if not text or len(text) > 300 or any(char in text for char in "\r\n\x00[]"):
+            raise HTTPException(400, f"Invalid global Samba value: {option}")
+        lowered = text.lower()
+        if option in SAMBA_BOOLEAN_OPTIONS and lowered not in {"yes", "no"}:
+            raise HTTPException(400, f"Samba option {option} must be yes or no")
+        if option == "security" and lowered != "user":
+            raise HTTPException(400, "Only Samba security = user is supported")
+        if option == "map to guest" and lowered not in {"never", "bad user"}:
+            raise HTTPException(400, "Unsupported map to guest mode")
+        if option in {"server min protocol", "server max protocol"} and text.upper() not in {"NT1", "SMB2", "SMB3"}:
+            raise HTTPException(400, f"Unsupported Samba protocol: {text}")
+        if option in {"workgroup", "netbios name"} and not re.fullmatch(r"[A-Za-z0-9_.-]{1,50}", text):
+            raise HTTPException(400, f"Invalid Samba name: {option}")
+        if option == "log level" and (not text.isdigit() or not 0 <= int(text) <= 10):
+            raise HTTPException(400, "Samba log level must be between 0 and 10")
+        if option == "max log size" and (not text.isdigit() or not 50 <= int(text) <= 100000):
+            raise HTTPException(400, "Samba max log size must be between 50 and 100000 KiB")
+        if option == "deadtime" and (not text.isdigit() or not 0 <= int(text) <= 1440):
+            raise HTTPException(400, "Samba deadtime must be between 0 and 1440 minutes")
+        if option == "printing" and lowered not in {"bsd", "cups"}:
+            raise HTTPException(400, "Unsupported Samba printing backend")
+        if option == "interfaces" and not re.fullmatch(r"[A-Za-z0-9_.*:/ -]{1,300}", text):
+            raise HTTPException(400, "Invalid Samba interface list")
+        cleaned[option] = text
+    return cleaned
+
+
 def _ensure_smb_conf_include() -> None:
     include_line = f"include = {SAMBA_ALGEN_CONF}"
     SAMBA_CONF.parent.mkdir(parents=True, exist_ok=True)
-    if not SAMBA_CONF.exists():
-        SAMBA_CONF.write_text("[global]\n   server role = standalone server\n", encoding="utf-8")
-    text = SAMBA_CONF.read_text(encoding="utf-8", errors="replace")
+    existed = SAMBA_CONF.exists()
+    text = SAMBA_CONF.read_text(encoding="utf-8", errors="replace") if existed else "[global]\n   server role = standalone server\n"
     if str(SAMBA_ALGEN_CONF) in text:
         return
     backup_smb_conf()
     if "[global]" not in text.lower():
         text = "[global]\n" + text
     text = text.rstrip() + f"\n\n# Managed by Algen Web Explorer Panel\n{include_line}\n"
-    SAMBA_CONF.write_text(text, encoding="utf-8")
+    temporary = SAMBA_CONF.with_name(f".{SAMBA_CONF.name}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if existed:
+            os.chmod(temporary, SAMBA_CONF.stat().st_mode & 0o777)
+        else:
+            os.chmod(temporary, 0o600)
+        os.replace(temporary, SAMBA_CONF)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def remove_smb_conf_include() -> None:
+    if not SAMBA_CONF.exists():
+        return
+    original = SAMBA_CONF.read_text(encoding="utf-8", errors="replace")
+    lines = [line for line in original.splitlines() if str(SAMBA_ALGEN_CONF) not in line and line.strip() != "# Managed by Algen Web Explorer Panel"]
+    updated = "\n".join(lines).rstrip() + "\n"
+    temporary = SAMBA_CONF.with_name(f".{SAMBA_CONF.name}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(updated)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, SAMBA_CONF.stat().st_mode & 0o777)
+        os.replace(temporary, SAMBA_CONF)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def _prepare_share_directory(share: SambaShare, resolved: Path) -> None:
@@ -488,20 +572,28 @@ def validate_share_model(share: SambaShare) -> None:
         raise HTTPException(400, "Invalid SMB share comment")
     if not MASK_RE.fullmatch(share.create_mask) or not MASK_RE.fullmatch(share.directory_mask):
         raise HTTPException(400, "Invalid SMB permission mask")
+    if share.force_create_mode and not MASK_RE.fullmatch(share.force_create_mode):
+        raise HTTPException(400, "Invalid force create mode")
+    if share.force_directory_mode and not MASK_RE.fullmatch(share.force_directory_mode):
+        raise HTTPException(400, "Invalid force directory mode")
     if share.force_user and not USER_TOKEN_RE.fullmatch(share.force_user):
         raise HTTPException(400, "Invalid SMB force user")
     if share.force_group and not GROUP_TOKEN_RE.fullmatch(share.force_group):
         raise HTTPException(400, "Invalid SMB force group")
     share.valid_users = _token_list(share.valid_users)
+    share.valid_groups = [item.removeprefix("@") for item in _token_list([f"@{value.removeprefix('@')}" for value in share.valid_groups])]
     share.write_list = _token_list(share.write_list)
     share.read_list = _token_list(share.read_list)
     share.admin_users = _token_list(share.admin_users)
     if set(share.read_list) & set(share.write_list):
         raise HTTPException(400, "A user or group cannot be both read-only and write-enabled for the same share")
-    if share.guest_ok and share.valid_users:
+    if share.guest_ok and (share.valid_users or share.valid_groups):
         raise HTTPException(400, "Guest access conflicts with explicit valid users")
     if share.veto_files and not SAFE_TEXT_RE.fullmatch(share.veto_files):
         raise HTTPException(400, "Invalid veto files pattern")
+    if any(value not in SAFE_SAMBA_VFS_OBJECTS for value in share.vfs_objects):
+        raise HTTPException(400, "Unsupported Samba VFS object")
+    share.vfs_objects = list(dict.fromkeys(share.vfs_objects))
     share.advanced_options = _validate_advanced_options(share.advanced_options)
 
 
@@ -513,7 +605,7 @@ def validate_samba_config(config: SambaConfig) -> None:
         if normalized in names:
             raise HTTPException(400, f"Duplicate SMB share name: {share.name}")
         names.add(normalized)
-    config.global_options = _validate_advanced_options(config.global_options)
+    config.global_options = _validate_global_options(config.global_options)
 
 
 def render_smb_conf(config: SambaConfig) -> str:
@@ -542,8 +634,9 @@ def render_smb_conf(config: SambaConfig) -> str:
             f"   create mask = {share.create_mask}",
             f"   directory mask = {share.directory_mask}",
         ])
-        if share.valid_users:
-            lines.append(f"   valid users = {' '.join(share.valid_users)}")
+        valid_accounts = [*share.valid_users, *(f"@{group}" for group in share.valid_groups)]
+        if valid_accounts:
+            lines.append(f"   valid users = {' '.join(valid_accounts)}")
         if share.read_list:
             lines.append(f"   read list = {' '.join(share.read_list)}")
         if share.write_list:
@@ -554,14 +647,22 @@ def render_smb_conf(config: SambaConfig) -> str:
             lines.append(f"   force user = {share.force_user}")
         if share.force_group:
             lines.append(f"   force group = {share.force_group}")
+        if share.force_create_mode:
+            lines.append(f"   force create mode = {share.force_create_mode}")
+        if share.force_directory_mode:
+            lines.append(f"   force directory mode = {share.force_directory_mode}")
+        if share.inherit_permissions:
+            lines.append("   inherit permissions = yes")
         if share.veto_files:
             lines.append(f"   veto files = {share.veto_files}")
+        vfs_objects = list(dict.fromkeys([*share.vfs_objects, *(["recycle"] if share.recycle_bin else [])]))
+        if vfs_objects:
+            lines.append(f"   vfs objects = {' '.join(vfs_objects)}")
         if share.recycle_bin:
             lines.extend([
-                "   vfs objects = recycle",
                 "   recycle:repository = .recycle",
                 "   recycle:keeptree = yes",
-                "   recycle:versions = yes",
+                f"   recycle:versions = {'yes' if share.recycle_versions else 'no'}",
             ])
         for key, value in sorted(share.advanced_options.items()):
             lines.append(f"   {key} = {value}")
@@ -873,32 +974,49 @@ def samba_preview(payload: SambaApplyRequest, user: SessionUser = Depends(_curre
     return preview_samba_config(user.username, config)
 
 
-@router.post("/samba/apply")
-def samba_apply(payload: SambaApplyRequest, user: SessionUser = Depends(_current_user)):
+def _enqueue_samba_config(config: SambaConfig, password: str, confirm_smb1: bool, user: SessionUser) -> dict:
+    from .modules.providers.samba import SambaProvider
+    from .modules.router import _provider_plan
+    from .package_center.jobs import manager
+    from .package_center.models import PackageAction
+    from .package_center.security import reauthenticate
+    from .package_center.service import repository
+
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
-    config = payload.config or read_samba_config()
-    write_samba_config(user.username, config)
-    logger.info("app_store_config actor=%s app=samba action=apply_config", user.username)
-    return {"ok": True, **samba_status_payload()}
+    validation = SambaProvider(user.username).validate_config(config.model_dump())
+    if not validation.ok:
+        raise HTTPException(422, {"code": "CONFIG_VALIDATION_FAILED", "message": "Samba configuration is invalid", "validation": validation.model_dump(mode="json")})
+    if "smb1" in validation.confirmations_required and not confirm_smb1:
+        raise HTTPException(400, {"code": "SECURITY_CONFIRMATION_REQUIRED", "message": "Enabling SMB1 requires explicit confirmation", "confirmation": "smb1"})
+    reauthenticate(user, password)
+    plan = _provider_plan("samba", PackageAction.apply, {"config": config.model_dump()}, backup=True)
+    job = manager(repository()).enqueue(plan, user.username)
+    logger.info("app_store_config actor=%s app=samba action=apply_config job=%s", user.username, job["id"])
+    return {"job": job}
+
+
+@router.post("/samba/apply")
+def samba_apply(payload: SambaSecuredApplyRequest, user: SessionUser = Depends(_current_user)):
+    return _enqueue_samba_config(payload.config, payload.admin_password, payload.confirm_smb1, user)
 
 
 @router.post("/samba/rollback")
-def samba_rollback(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
-    return rollback_samba_config(user.username)
+def samba_rollback(payload: AdminAction, user: SessionUser = Depends(_current_user)):
+    _require_admin(user, payload.admin_password)
+    raise HTTPException(409, {"code": "MODULE_BACKUP_REQUIRED", "message": "Use the verified module backup restore endpoint"})
 
 
 @router.post("/samba/service")
 def samba_service(payload: SambaServiceAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password)
     if payload.action not in {"start", "stop", "restart", "reload"}:
         raise HTTPException(400, "Unsupported Samba service action")
-    logger.info("app_store_action actor=%s app=samba action=%s", user.username, payload.action)
-    for service in samba_service_names():
-        _run(["systemctl", payload.action, service])
-    return {"ok": True, "status": samba_status_payload()}
+    from .modules.router import ModuleAdminRequest, _enqueue, _provider_plan
+    from .package_center.models import PackageAction
+
+    result = _enqueue(_provider_plan("samba", PackageAction(payload.action), {}), ModuleAdminRequest(admin_password=payload.admin_password), user)
+    logger.info("app_store_action actor=%s app=samba action=%s job=%s", user.username, payload.action, result["job"]["id"])
+    return result
 
 
 @router.post("/samba/users/enable")
@@ -932,14 +1050,12 @@ def get_config_app(app_id: str, user: SessionUser = Depends(_current_user)):
 
 
 @router.put("/{app_id}/config")
-def put_config_app(app_id: str, payload: SambaConfig, user: SessionUser = Depends(_current_user)):
+def put_config_app(app_id: str, payload: SambaSecuredApplyRequest, user: SessionUser = Depends(_current_user)):
     if not _is_admin(user.username):
         raise HTTPException(403, "Administrator privileges required")
     if app_id != "samba":
         raise HTTPException(404, "Unsupported app module")
-    write_samba_config(user.username, payload)
-    logger.info("app_store_config actor=%s app=%s action=update_samba_shares", user.username, app_id)
-    return {"ok": True}
+    return _enqueue_samba_config(payload.config, payload.admin_password, payload.confirm_smb1, user)
 
 
 @router.post("/samba/smbpasswd")

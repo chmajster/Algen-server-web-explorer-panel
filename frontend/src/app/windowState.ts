@@ -1,27 +1,28 @@
 import type { AppId, WindowInstance, WindowRect } from "./types";
 
-export const DESKTOP_TOP = 56;
-export const DESKTOP_BOTTOM = 58;
+export const DESKTOP_TOP = 10;
+export const DESKTOP_BOTTOM = 64;
 const MARGIN = 10;
 
 export type WindowState = { windows: WindowInstance[]; activeId: string; counter: number; topZ: number };
 export type WindowAction =
   | { type: "hydrate"; state: WindowState }
-  | { type: "open"; app: AppId; initialPath?: string; viewport?: { width: number; height: number } }
+  | { type: "open"; app: AppId; initialPath?: string; moduleId?: string; viewport?: { width: number; height: number } }
   | { type: "close"; id: string }
   | { type: "focus"; id: string }
   | { type: "minimize"; id: string }
   | { type: "commit"; id: string; rect: WindowRect; restoreRect?: WindowRect }
-  | { type: "toggleMaximize"; id: string; viewport: { width: number; height: number } };
+  | { type: "toggleMaximize"; id: string; viewport: { width: number; height: number } }
+  | { type: "viewport"; viewport: { width: number; height: number } };
 
 export const initialWindowState: WindowState = { windows: [], activeId: "", counter: 0, topZ: 10 };
 
 export function workspaceRect(viewport = { width: window.innerWidth, height: window.innerHeight }): WindowRect {
   return {
     x: MARGIN,
-    y: DESKTOP_TOP,
+    y: MARGIN,
     width: Math.max(360, viewport.width - MARGIN * 2),
-    height: Math.max(280, viewport.height - DESKTOP_TOP - DESKTOP_BOTTOM)
+    height: Math.max(280, viewport.height - DESKTOP_BOTTOM - MARGIN * 2)
   };
 }
 
@@ -31,14 +32,14 @@ export function clampRect(rect: WindowRect, minWidth = 360, minHeight = 280, vie
   const height = Math.min(workspace.height, Math.max(minHeight, rect.height));
   return {
     x: Math.min(Math.max(MARGIN, rect.x), Math.max(MARGIN, viewport.width - MARGIN - width)),
-    y: Math.min(Math.max(DESKTOP_TOP, rect.y), Math.max(DESKTOP_TOP, viewport.height - DESKTOP_BOTTOM - height)),
+    y: Math.min(Math.max(MARGIN, rect.y), Math.max(MARGIN, viewport.height - DESKTOP_BOTTOM - MARGIN - height)),
     width,
     height
   };
 }
 
 function defaultRect(app: AppId, count: number, viewport?: { width: number; height: number }): WindowRect {
-  const large = app === "files" || app === "settings" || app === "samba" || app === "store";
+  const large = app === "files" || app === "settings" || app === "samba" || app === "store" || app === "module";
   return clampRect({
     x: 84 + (count * 28) % 190,
     y: 78 + (count * 24) % 150,
@@ -59,6 +60,16 @@ function focus(state: WindowState, id: string): WindowState {
 
 export function windowReducer(state: WindowState, action: WindowAction): WindowState {
   if (action.type === "hydrate") return action.state;
+  if (action.type === "viewport") {
+    return {
+      ...state,
+      windows: state.windows.map((item) => ({
+        ...item,
+        rect: item.restoreRect ? workspaceRect(action.viewport) : clampRect(item.rect, item.app === "files" ? 680 : 360, item.app === "files" ? 440 : 280, action.viewport),
+        restoreRect: item.restoreRect ? clampRect(item.restoreRect, item.app === "files" ? 680 : 360, item.app === "files" ? 440 : 280, action.viewport) : undefined,
+      })),
+    };
+  }
   if (action.type === "open") {
     const counter = state.counter + 1;
     const id = `${action.app}-${counter}`;
@@ -71,7 +82,8 @@ export function windowReducer(state: WindowState, action: WindowAction): WindowS
         rect: defaultRect(action.app, sameAppCount, action.viewport),
         minimized: false,
         zIndex: topZ,
-        initialPath: action.initialPath
+        initialPath: action.initialPath,
+        moduleId: action.moduleId
       }],
       activeId: id,
       counter,

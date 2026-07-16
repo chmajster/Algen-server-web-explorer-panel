@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api";
 import { FileManager } from "./FileManager";
+import { settingsFixture } from "../../test/settings";
 
 vi.mock("../../api", () => ({
   ApiError: class ApiError extends Error {},
@@ -132,6 +133,14 @@ describe("file manager behavior", () => {
 
     await waitFor(() => expect(container.querySelector(".breadcrumbs")?.textContent).toContain("storageFilms"));
     expect(container.querySelector(".breadcrumbs")?.textContent).not.toContain("files.home");
+  });
+
+  it("applies server-backed file manager preferences", async () => {
+    const { container } = render(<FileManager homePath="/home/test" settings={settingsFixture({ file_default_view: "large", file_compact_rows: true, file_show_hidden: true, file_page_size: 25, file_default_sort: "modified", file_sort_direction: "desc" })} tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+
+    await waitFor(() => expect(api.list).toHaveBeenCalledWith("/home/test", expect.objectContaining({ page_size: 25, show_hidden: true, sort: "modified", direction: "desc" })));
+    expect(container.querySelector(".file-grid.large")).toBeInTheDocument();
+    expect(container.querySelector(".file-content")).toHaveClass("compact");
   });
 
   it("opens a file in the text editor from its context menu", async () => {

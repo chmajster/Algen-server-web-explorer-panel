@@ -1,0 +1,39 @@
+id: postgresql
+name: PostgreSQL
+description: Databases, roles, active connections, private backups, restore, logs and service control.
+category: databases
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://www.postgresql.org/
+icon: database
+license: PostgreSQL
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [postgresql, postgresql-client]
+  dnf: [postgresql-server, postgresql]
+  yum: [postgresql-server, postgresql]
+services:
+  - name: postgresql
+    required: true
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: true
+  reload: true
+  logs: true
+  diagnostics: true
+  backups: true
+  healthcheck: true
+  resources: [databases, users, connections]
+  actions: []
+ports: [5432/tcp]
+permissions: [package_management, systemd, database_socket, backup_write]
+config_paths: [/etc/postgresql]
+data_paths: [/var/lib/postgresql]
+backup_paths: [/var/lib/postgresql]
+proxmox_safe: false
+requires_root: true
+removable: true

@@ -1,12 +1,17 @@
-import { Bell, Clock3, LogOut, Menu, Moon, Sun, UserRound, X } from "lucide-react";
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { logout, type SettingsMe, type Task } from "../api";
+import { Bell, ShieldCheck, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
-import { FileManager } from "../features/files/FileManager";
-import { GroupsApp, LogsAppView, MonitorApp, SambaAppView, ServicesApp, SettingsAppView, UsersApp } from "../features/admin/SystemApps";
+import { GroupsApp, LogsAppView, MonitorApp, ServicesApp, SettingsAppView, UsersApp } from "../features/admin/SystemApps";
+import { AccessControlApp } from "../features/admin/AccessControlApp";
 import { forgetAdminPassword } from "../features/admin/adminCredentials";
+import { ActivityCenter } from "../features/activity/ActivityCenter";
+import { FileManager } from "../features/files/FileManager";
 import { PackageCenterApp } from "../features/package-center/PackageCenterApp";
+import { ModuleApp } from "../features/modules/ModuleApp";
+import { ModuleHub } from "../features/modules/ModuleHub";
 import { TransferCenter } from "../features/transfers/TransferCenter";
+import { DesktopWidgets } from "../features/widgets/DesktopWidgets";
 import type { UploadControls } from "../features/transfers/useUploadManager";
 import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
@@ -16,7 +21,19 @@ import { Taskbar } from "./Taskbar";
 import type { AppId, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
 import { initialWindowState, restoreWindowState, windowReducer } from "./windowState";
 
-export function Desktop({ user, profile, language, theme, tasks, uploadControls, toasts, t, toast, onLanguage, onTheme, onLoggedOut }: {
+function wallpaperStyle(profile: SettingsMe): CSSProperties {
+  if (!profile.wallpaper) return {};
+  const size = profile.wallpaper_fit === "stretch" ? "100% 100%" : profile.wallpaper_fit === "center" ? "auto" : profile.wallpaper_fit;
+  return { backgroundImage: `url(${JSON.stringify(profile.wallpaper)})`, backgroundSize: size, backgroundPosition: "center", backgroundRepeat: "no-repeat" };
+}
+
+function dateText(date: Date, profile: SettingsMe) {
+  if (profile.date_format === "iso") return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const options: Intl.DateTimeFormatOptions = profile.date_format === "long" ? { weekday: "short", day: "numeric", month: "long" } : profile.date_format === "locale" ? {} : { day: "2-digit", month: "2-digit", year: "numeric" };
+  return date.toLocaleDateString(profile.language, options);
+}
+
+export function Desktop({ user, profile, language, theme, tasks, uploadControls, toasts, t, toast, onSettingsChange, onTheme, onLoggedOut }: {
   user: User;
   profile: SettingsMe;
   language: Language;
@@ -26,7 +43,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   toasts: Toast[];
   t: Translate;
   toast: ToastFn;
-  onLanguage: (language: Language) => void;
+  onSettingsChange: (patch: SettingsPatch) => Promise<void>;
   onTheme: (theme: Theme) => void;
   onLoggedOut: () => void;
 }) {
@@ -34,11 +51,22 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [state, dispatch] = useReducer(windowReducer, initialWindowState);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [pinned, setPinned] = useState<Set<AppId>>(() => new Set(JSON.parse(localStorage.getItem("webnas_pinned_apps") || '["files","transfers","monitor","settings"]')));
+  const [selectedShortcut, setSelectedShortcut] = useState<AppId | null>(null);
+  const [dirtyWindows, setDirtyWindows] = useState<Set<string>>(new Set());
+  const [pinned, setPinned] = useState<Set<AppId>>(() => new Set(JSON.parse(localStorage.getItem(`webnas_pinned_apps_${user.username}`) || '["files","transfers","monitor","settings"]')));
   const [clock, setClock] = useState(new Date());
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const restored = useRef(false);
-  const availableApps = useMemo(() => apps.filter((app) => !app.hidden && (!app.admin || profile.is_admin)), [profile.is_admin]);
-  const resolvedTheme = theme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : theme;
+  const previousTaskStatus = useRef<Map<string, Task["status"]>>(new Map());
+  const tasksInitialized = useRef(false);
+  const previousModuleJobs = useRef<Map<string, AppJob["status"]>>(new Map());
+  const previousModuleHealth = useRef<Map<string, string>>(new Map());
+  const moduleNotificationsInitialized = useRef(false);
+  const notifiedModuleEvents = useRef<Set<string>>(new Set());
+  const notificationRef = useRef<HTMLElement>(null);
+  const availableApps = useMemo(() => apps.filter((app) => !app.hidden && (!app.admin || profile.is_admin) && (!app.permission || profile.permissions.includes(app.permission))), [profile.is_admin, profile.permissions]);
+  const taskbarApps = useMemo(() => apps.filter((app) => (!app.admin || profile.is_admin) && (!app.permission || profile.permissions.includes(app.permission))), [profile.is_admin, profile.permissions]);
+  const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const activeTransfers = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status)).length;
 
   useEffect(() => {
@@ -47,55 +75,152 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   }, [profile.startup_windows, storageKey]);
   useEffect(() => {
     if (!restored.current) return;
-    const timer = setTimeout(() => localStorage.setItem(storageKey, JSON.stringify(state)), 240);
-    return () => clearTimeout(timer);
+    const timer = window.setTimeout(() => localStorage.setItem(storageKey, JSON.stringify(state)), 240);
+    return () => window.clearTimeout(timer);
   }, [state, storageKey]);
-  useEffect(() => { const timer = setInterval(() => setClock(new Date()), 30000); return () => clearInterval(timer); }, []);
-  function openApp(app: AppId, initialPath?: string) { dispatch({ type: "open", app, initialPath, viewport: { width: window.innerWidth, height: window.innerHeight } }); }
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), profile.clock_show_seconds ? 1000 : 30000);
+    return () => window.clearInterval(timer);
+  }, [profile.clock_show_seconds]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const change = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  useEffect(() => {
+    const resize = () => dispatch({ type: "viewport", viewport: { width: window.innerWidth, height: window.innerHeight } });
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  useEffect(() => {
+    if (profile.show_notifications) return;
+    setNotificationsOpen(false);
+  }, [profile.show_notifications]);
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    function click(event: MouseEvent) { if (!notificationRef.current?.contains(event.target as Node) && !(event.target as HTMLElement).closest(".system-tray")) setNotificationsOpen(false); }
+    function key(event: KeyboardEvent) { if (event.key === "Escape") setNotificationsOpen(false); }
+    document.addEventListener("mousedown", click); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", click); document.removeEventListener("keydown", key); };
+  }, [notificationsOpen]);
+
+  const openApp = useCallback((app: AppId, initialPath?: string, moduleId?: string) => {
+    dispatch({ type: "open", app, initialPath, moduleId, viewport: { width: window.innerWidth, height: window.innerHeight } });
+    setLauncherOpen(false);
+  }, []);
+  useEffect(() => {
+    if (!tasksInitialized.current) {
+      tasks.forEach((task) => previousTaskStatus.current.set(task.id, task.status));
+      tasksInitialized.current = true;
+      return;
+    }
+    tasks.forEach((task) => {
+      const previous = previousTaskStatus.current.get(task.id);
+      if (previous && previous !== task.status && task.status === "completed" && profile.show_notifications && profile.notification_transfer && profile.transfer_success_notifications) toast(t("transfers.completedNotification"), "ok", "transfer");
+      if (previous && previous !== task.status && task.status === "failed") {
+        if (profile.show_notifications && profile.notification_transfer && profile.transfer_error_notifications) toast(t("transfers.failedNotification"), "error", "transfer");
+        if (profile.transfer_open_failed_details) openApp("transfers");
+      }
+      previousTaskStatus.current.set(task.id, task.status);
+    });
+  }, [openApp, profile.notification_transfer, profile.show_notifications, profile.transfer_error_notifications, profile.transfer_open_failed_details, profile.transfer_success_notifications, t, tasks, toast]);
+  useEffect(() => {
+    if (!profile.permissions.includes("modules.view")) return;
+    async function refreshModules() {
+      try {
+        const modules = await api.modules();
+        const jobs = modules.flatMap((item) => item.jobs);
+        if (!moduleNotificationsInitialized.current) {
+          jobs.forEach((job) => previousModuleJobs.current.set(job.id, job.status));
+          modules.forEach((item) => previousModuleHealth.current.set(item.id, item.module_status.health));
+          moduleNotificationsInitialized.current = true;
+          modules.filter((item) => item.state.update_available).forEach((item) => notifyOnce(`update:${item.id}:${item.state.available_version}`, t("module.notification.updateAvailable").replace("{name}", item.manifest.name), "ok", item.id));
+          return;
+        }
+        jobs.forEach((job) => {
+          const previous = previousModuleJobs.current.get(job.id);
+          if (previous && previous !== job.status && ["completed", "failed"].includes(job.status)) {
+            const module = modules.find((item) => item.id === job.module_id);
+            const name = module?.manifest.name || job.module_id;
+            const key = `job:${job.id}:${job.status}`;
+            const template = job.status === "failed" ? t("module.notification.operationFailed") : job.action === "diagnostics" ? t("module.notification.diagnosticsCompleted") : t("module.notification.operationCompleted");
+            notifyOnce(key, template.replace("{name}", name), job.status === "failed" ? "error" : "ok", job.module_id);
+            if (job.action === "restore" && job.status === "failed") notifyOnce(`restore:${job.id}`, t("module.notification.restoreFailed").replace("{name}", name), "error", job.module_id);
+            if (job.log_tail.some((line) => line.line.toLowerCase().includes("rolled back"))) notifyOnce(`rollback:${job.id}`, t("module.notification.rollback").replace("{name}", name), "error", job.module_id);
+          }
+          previousModuleJobs.current.set(job.id, job.status);
+        });
+        modules.forEach((item) => {
+          const previous = previousModuleHealth.current.get(item.id);
+          if (previous && previous !== item.module_status.health && item.module_status.health === "failed") notifyOnce(`health:${item.id}:${item.module_status.last_action_time || item.module_status.health_message}`, t("module.notification.serviceFailed").replace("{name}", item.manifest.name), "error", item.id);
+          if (item.module_status.configuration_valid === false) notifyOnce(`config:${item.id}:${item.module_status.last_action_time || item.module_status.last_error}`, t("module.notification.invalidConfiguration").replace("{name}", item.manifest.name), "error", item.id);
+          if (item.state.update_available) notifyOnce(`update:${item.id}:${item.state.available_version}`, t("module.notification.updateAvailable").replace("{name}", item.manifest.name), "ok", item.id);
+          previousModuleHealth.current.set(item.id, item.module_status.health);
+        });
+      } catch {
+        // Package Center and module apps surface request failures directly.
+      }
+    }
+    function notifyOnce(key: string, message: string, type: "ok" | "error", moduleId: string) {
+      if (notifiedModuleEvents.current.has(key)) return;
+      notifiedModuleEvents.current.add(key);
+      if (profile.show_notifications && profile.notification_admin) toast(message, type, "admin", moduleId);
+    }
+    void refreshModules();
+    const timer = window.setInterval(() => { if (!document.hidden) void refreshModules(); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [profile.notification_admin, profile.permissions, profile.show_notifications, t, toast]);
+
   function selectTask(item: WindowInstance) {
     if (state.activeId === item.id && !item.minimized) dispatch({ type: "minimize", id: item.id });
     else dispatch({ type: "focus", id: item.id });
   }
-  function togglePin(app: AppId) {
-    setPinned((current) => { const next = new Set(current); if (next.has(app)) next.delete(app); else next.add(app); localStorage.setItem("webnas_pinned_apps", JSON.stringify([...next])); return next; });
+  function selectApp(app: AppId) {
+    const existing = state.windows.filter((item) => item.app === app).sort((a, b) => b.zIndex - a.zIndex)[0];
+    if (existing) selectTask(existing); else openApp(app);
   }
+  function togglePin(app: AppId) {
+    setPinned((current) => { const next = new Set(current); if (next.has(app)) next.delete(app); else next.add(app); localStorage.setItem(`webnas_pinned_apps_${user.username}`, JSON.stringify([...next])); return next; });
+  }
+  function signOut() { void logout().finally(() => { forgetAdminPassword(); onLoggedOut(); }); }
+  function moduleDirty(item: WindowInstance, dirty: boolean) { setDirtyWindows((current) => { const next = new Set(current); if (dirty) next.add(item.id); else next.delete(item.id); return next; }); }
+  function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !window.confirm(t("module.unsavedClose"))) return; setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
   function renderApp(item: WindowInstance) {
     switch (item.app) {
-      case "files": return <FileManager homePath={user.home} initialPath={item.initialPath} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onUploadCancel={uploadControls.cancel} onUploadRetry={uploadControls.retry} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={() => openApp("samba")} />;
-      case "transfers": return <TransferCenter tasks={tasks} t={t} toast={toast} uploadControls={uploadControls} />;
+      case "files": return <FileManager homePath={user.home} initialPath={item.initialPath} settings={profile} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onUploadCancel={uploadControls.cancel} onUploadRetry={uploadControls.retry} onSettingsChange={onSettingsChange} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={(path) => openApp("samba", path)} />;
+      case "transfers": return <TransferCenter tasks={tasks} settings={profile} t={t} toast={toast} uploadControls={uploadControls} />;
+      case "activity": return <ActivityCenter locale={profile.language} t={t} />;
       case "users": return <UsersApp t={t} toast={toast} />;
       case "groups": return <GroupsApp t={t} toast={toast} />;
-      case "mounts": return <SettingsAppView language={language} theme={theme} isAdmin={profile.is_admin} initialSection="network" t={t} toast={toast} onLanguage={onLanguage} onTheme={onTheme} />;
-      case "samba": return <SambaAppView t={t} toast={toast} />;
+      case "mounts": return <SettingsAppView settings={profile} initialSection="network" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} />;
+      case "samba": return <ModuleApp moduleId="samba" initialPath={item.initialPath} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} />;
+      case "modules": return <ModuleHub t={t} toast={toast} onOpen={(moduleId) => openApp(moduleId === "samba" ? "samba" : "module", undefined, moduleId)} />;
+      case "access": return <AccessControlApp t={t} toast={toast} />;
       case "services": return <ServicesApp t={t} toast={toast} />;
-      case "store": return <PackageCenterApp t={t} toast={toast} onConfigure={(moduleId) => { if (moduleId === "samba") openApp("samba"); }} />;
+      case "store": return <PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => { if (moduleId === "samba") openApp("samba"); else openApp("module", undefined, moduleId); }} />;
       case "logs": return <LogsAppView t={t} />;
-      case "settings": return <SettingsAppView language={language} theme={theme} isAdmin={profile.is_admin} t={t} toast={toast} onLanguage={onLanguage} onTheme={onTheme} />;
+      case "settings": return <SettingsAppView settings={profile} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} />;
       case "monitor": return <MonitorApp t={t} />;
+      case "module": return <ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} />;
     }
   }
 
-  return <div className={`desktop ${resolvedTheme}`}>
-    <header className="system-bar">
-      <button className={`main-menu-button ${launcherOpen ? "active" : ""}`} type="button" aria-label={t("desktop.mainMenu")} aria-expanded={launcherOpen} onClick={() => setLauncherOpen((value) => !value)}><Menu /><strong>WebNAS</strong></button>
-      <div className="system-bar-center"><span>{t("desktop.workspace")}</span></div>
-      <div className="system-tray">
-        <button className="transfer-indicator" title={t("transfers.title")} onClick={() => openApp("transfers")}><Clock3 />{activeTransfers > 0 && <b>{activeTransfers}</b>}</button>
-        <button title={t("desktop.notifications")} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((value) => !value)}><Bell />{toasts.length > 0 && <i />}</button>
-        <button title={t("notify.theme")} onClick={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</button>
-        <span className="system-clock">{clock.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" })}<small>{clock.toLocaleDateString(language, { day: "2-digit", month: "short" })}</small></span>
-        <span className="current-user"><UserRound /><span>{user.username}</span></span>
-        <button title={t("notify.logout")} onClick={() => logout().finally(() => { forgetAdminPassword(); onLoggedOut(); })}><LogOut /></button>
-      </div>
-    </header>
-    {launcherOpen && <AppLauncher apps={availableApps} pinned={pinned} t={t} onOpen={openApp} onTogglePin={togglePin} onClose={() => setLauncherOpen(false)} />}
-    <main className="desktop-surface">
-      <div className="desktop-shortcuts" aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => pinned.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} onOpen={() => openApp(app.id)} />)}</div>
-      <div className="desktop-welcome"><span>WebNAS</span><strong>{t("desktop.welcome")}, {user.username}</strong><small>{t("desktop.welcomeHint")}</small></div>
-      {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => dispatch({ type: "close", id: item.id })} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } })}>{renderApp(item)}</DesktopWindow>)}
+  const rootStyle = { "--ui-scale": profile.interface_scale / 100 } as CSSProperties;
+  const rootClasses = ["desktop", resolvedTheme, `accent-${profile.accent_color}`, `taskbar-align-${profile.taskbar_alignment}`, profile.window_transparency ? "" : "no-transparency", profile.animations_enabled && !profile.reduced_motion ? "" : "no-animations", profile.high_contrast ? "high-contrast" : "", profile.larger_text ? "larger-text" : "", profile.strong_active_borders ? "strong-active-borders" : "", profile.always_show_focus ? "always-show-focus" : ""].filter(Boolean).join(" ");
+  const visibleToasts = profile.show_notifications ? toasts.filter((item) => (item.type !== "error" || profile.notification_errors) && (item.category !== "admin" || profile.notification_admin) && (item.category !== "transfer" || profile.notification_transfer)).slice(-profile.notification_limit) : [];
+  const clockText = clock.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", second: profile.clock_show_seconds ? "2-digit" : undefined, hour12: profile.time_format === "12" });
+
+  return <div className={rootClasses} style={rootStyle}>
+    <main className="desktop-surface" style={wallpaperStyle(profile)} onPointerDown={(event) => { if (event.target === event.currentTarget) setSelectedShortcut(null); }}>
+      {profile.show_desktop_shortcuts && <div className={`desktop-shortcuts shortcuts-${profile.desktop_shortcut_size}`} aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => pinned.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} selected={selectedShortcut === app.id} onSelect={() => setSelectedShortcut(app.id)} onOpen={() => openApp(app.id)} />)}</div>}
+      {profile.show_welcome_widget && <div className="desktop-welcome"><span>WebNAS</span><strong>{t("desktop.welcome")}, {user.username}</strong><small>{t("desktop.welcomeHint")}</small></div>}
+      <DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} />
+      {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } })}>{renderApp(item)}</DesktopWindow>)}
     </main>
-    <Taskbar windows={state.windows} activeId={state.activeId} t={t} onSelect={selectTask} />
-    {notificationsOpen && <aside className="notification-center"><header><strong>{t("desktop.notifications")}</strong><button onClick={() => setNotificationsOpen(false)}><X /></button></header>{toasts.length === 0 && tasks.length === 0 ? <div className="empty-state">{t("desktop.noNotifications")}</div> : <>{toasts.slice().reverse().map((item) => <article className={item.type} key={item.id}>{item.text}</article>)}{tasks.slice(-5).reverse().map((task) => <article key={task.id}><strong>{t(`transfers.${task.type}`)}</strong><span>{t(`task.${task.status}`)} · {Math.round(task.progress_percent ?? task.progress ?? 0)}%</span></article>)}</>}</aside>}
-    <div className="toasts" role="status" aria-live="polite">{toasts.map((item) => <div className={item.type} key={item.id}>{item.text}</div>)}</div>
+    {launcherOpen && <AppLauncher apps={availableApps} pinned={pinned} profile={profile} t={t} onOpen={openApp} onTogglePin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
+    <Taskbar apps={taskbarApps} pinned={pinned} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setNotificationsOpen((value) => !value); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onLogout={signOut} />
+    {notificationsOpen && <aside ref={notificationRef} className="notification-center" aria-label={t("desktop.notifications")}><header><div><Bell /><strong>{t("desktop.notifications")}</strong></div><button type="button" aria-label={t("action.close")} onClick={() => setNotificationsOpen(false)}><X /></button></header>{visibleToasts.length === 0 && (!profile.notification_transfer || tasks.length === 0) ? <div className="empty-state">{t("desktop.noNotifications")}</div> : <>{visibleToasts.slice().reverse().map((item) => <article className={item.type} key={item.id} role={item.moduleId ? "button" : undefined} tabIndex={item.moduleId ? 0 : undefined} onClick={() => { if (!item.moduleId) return; openApp(item.moduleId === "samba" ? "samba" : "module", undefined, item.moduleId); setNotificationsOpen(false); }} onKeyDown={(event) => { if (item.moduleId && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openApp(item.moduleId === "samba" ? "samba" : "module", undefined, item.moduleId); setNotificationsOpen(false); } }}><strong>{item.type === "error" ? t("status.error") : "WebNAS"}</strong><span>{item.text}</span></article>)}{profile.notification_transfer && tasks.slice(-profile.notification_limit).reverse().map((task) => <article key={task.id}><strong>{t(`transfers.${task.type}`)}</strong><span>{t(`task.${task.status}`)} · {Math.round(task.progress_percent ?? task.progress ?? 0)}%</span></article>)}</>}</aside>}
+    <div className="toasts" role="status" aria-live="polite">{visibleToasts.map((item) => <div className={item.type} key={item.id}>{item.type === "error" && <ShieldCheck />}{item.text}</div>)}</div>
   </div>;
 }

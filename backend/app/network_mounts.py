@@ -19,6 +19,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from .activity import ActivityCategory, record_activity
 from .audit import logger
 from .auth import authenticate
 from .config import get_config
@@ -209,6 +210,7 @@ def require_admin(user: SessionUser, password: str, action: str) -> None:
 
 def audit(actor: str, action: str, target: str) -> None:
     logger.info("network_mount_action actor=%s action=%s target=%s", actor, action, target)
+    record_activity(ActivityCategory.administration, action, actor, target=target, source="network-mounts")
 
 
 def normalize_mount_name(name: str, *, validate: bool = True) -> str:

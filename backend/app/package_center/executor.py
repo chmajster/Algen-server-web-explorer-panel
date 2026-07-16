@@ -24,16 +24,24 @@ SAFE_ENV = {
     "HOME": "/root",
 }
 SECRET_RE = re.compile(r"(?i)(password|passwd|token|secret|authorization)(\s*[:=]\s*)(\S+)")
+URL_SECRET_RE = re.compile(r"(?i)(https?://[^:/\s]+:)[^@\s]+@")
+BEARER_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
+SQL_SECRET_RE = re.compile(r"(?i)((?:identified\s+by|password)\s+')[^']*'")
 
 
 def redact(line: str) -> str:
-    return SECRET_RE.sub(r"\1\2[REDACTED]", line.replace("\x00", ""))[-4000:]
+    cleaned = line.replace("\x00", "")
+    cleaned = URL_SECRET_RE.sub(r"\1[REDACTED]@", cleaned)
+    cleaned = BEARER_RE.sub(r"\1[REDACTED]", cleaned)
+    cleaned = SQL_SECRET_RE.sub(r"\1[REDACTED]'", cleaned)
+    return SECRET_RE.sub(r"\1\2[REDACTED]", cleaned)[-4000:]
 
 
 def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[str, list[str], int]]:
     manager = plan.distribution.package_manager
     packages = plan.packages
     steps: list[tuple[str, list[str], int]] = []
+    required_services = [service.name for service in manifest.services if service.required]
     if plan.action in {PackageAction.install, PackageAction.update}:
         if manager == "apt-get":
             steps.append(("Refresh package metadata", ["apt-get", "update"], 900))
@@ -41,11 +49,11 @@ def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[st
         elif manager in {"dnf", "yum"}:
             steps.append(("Install packages", [manager, "install", "-y", *packages], 1800))
         steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
-        for service in manifest.systemd_services:
+        for service in required_services:
             steps.append((f"Enable {service}", ["systemctl", "enable", service], 120))
             steps.append((f"Start {service}", ["systemctl", "start", service], 180))
     elif plan.action == PackageAction.uninstall:
-        for service in reversed(manifest.systemd_services):
+        for service in reversed(required_services):
             steps.append((f"Stop {service}", ["systemctl", "stop", service], 180))
             steps.append((f"Disable {service}", ["systemctl", "disable", service], 120))
         if manager == "apt-get":
@@ -54,7 +62,7 @@ def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[st
             steps.append(("Remove packages", [manager, "remove", "-y", *packages], 1800))
         steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
     elif plan.action in {PackageAction.start, PackageAction.stop, PackageAction.restart}:
-        for service in manifest.systemd_services:
+        for service in required_services:
             steps.append((f"{plan.action.value.title()} {service}", ["systemctl", plan.action.value, service], 180))
     return steps
 
@@ -152,4 +160,17 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
     if plan.action in {PackageAction.install, PackageAction.update} and manifest.healthcheck:
         progress(97, "Run health check")
         _run_hook(manifest, "health", log)
+    if plan.action == PackageAction.uninstall:
+        progress(98, "Verify packages were removed")
+        manager = plan.distribution.package_manager
+        if manager == "apt-get" and shutil.which("dpkg-query"):
+            for package in plan.packages:
+                result = subprocess.run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}", package], capture_output=True, text=True, timeout=20, check=False, shell=False)
+                if result.returncode == 0 and result.stdout.strip().startswith("ii"):
+                    raise RuntimeError(f"Package is still installed after removal: {package}")
+        elif manager in {"dnf", "yum"} and shutil.which("rpm"):
+            for package in plan.packages:
+                result = subprocess.run(["rpm", "-q", package], capture_output=True, text=True, timeout=20, check=False, shell=False)
+                if result.returncode == 0:
+                    raise RuntimeError(f"Package is still installed after removal: {package}")
     progress(100, "Completed")

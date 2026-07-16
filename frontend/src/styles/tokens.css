@@ -1,0 +1,58 @@
+:root {
+  --taskbar-height: 58px;
+  --control-height: 36px;
+  --window-opacity: .88;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --radius-flyout: 16px;
+}
+
+.desktop.desktop {
+  --surface-primary: #f7f8fa;
+  --surface-secondary: #eef1f5;
+  --surface-elevated: #ffffff;
+  --surface-glass: rgba(252, 253, 255, .84);
+  --surface-hover: rgba(34, 116, 170, .09);
+  --surface-selected: rgba(26, 111, 177, .15);
+  --border-subtle: rgba(76, 93, 108, .18);
+  --border-strong: rgba(51, 71, 89, .42);
+  --text-primary: #18222c;
+  --text-secondary: #52616f;
+  --text-muted: #778593;
+  --danger: #c42b3a;
+  --warning: #a96500;
+  --success: #137a4b;
+  --shadow-window: 0 24px 70px rgba(17, 34, 49, .26), 0 3px 12px rgba(17, 34, 49, .14);
+  --shadow-menu: 0 18px 54px rgba(17, 34, 49, .24), 0 2px 9px rgba(17, 34, 49, .12);
+  --radius-small: var(--radius-control);
+  --radius-medium: var(--radius-panel);
+  --radius-large: var(--radius-flyout);
+  --taskbar-height-scaled: calc(var(--taskbar-height) * var(--ui-scale, 1));
+  font-size: calc(16px * var(--ui-scale, 1));
+}
+
+.desktop.desktop.dark {
+  --surface-primary: #17191d;
+  --surface-secondary: #20242a;
+  --surface-elevated: #292d34;
+  --surface-glass: rgba(35, 38, 44, .86);
+  --surface-hover: rgba(109, 183, 235, .12);
+  --surface-selected: rgba(80, 166, 226, .2);
+  --border-subtle: rgba(238, 244, 250, .12);
+  --border-strong: rgba(238, 244, 250, .32);
+  --text-primary: #f3f5f7;
+  --text-secondary: #c0c6ce;
+  --text-muted: #929ba5;
+  --danger: #ff6673;
+  --warning: #f3b14b;
+  --success: #57c58a;
+  --shadow-window: 0 26px 78px rgba(0, 0, 0, .58), 0 3px 14px rgba(0, 0, 0, .38);
+  --shadow-menu: 0 20px 58px rgba(0, 0, 0, .52);
+}
+
+.desktop.desktop.accent-blue { --accent: #1878d1; --accent-hover: #1268b8; }
+.desktop.desktop.accent-teal { --accent: #008c95; --accent-hover: #00747b; }
+.desktop.desktop.accent-green { --accent: #17864e; --accent-hover: #107140; }
+.desktop.desktop.accent-violet { --accent: #7651c9; --accent-hover: #6240b3; }
+.desktop.desktop.accent-rose { --accent: #c34873; --accent-hover: #aa365f; }
+.desktop.desktop.accent-orange { --accent: #c56517; --accent-hover: #a95310; }

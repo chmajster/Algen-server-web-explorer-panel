@@ -1,11 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type PackageModule, type PackagePlan } from "../../api";
+import { api, type ModuleSummary, type PackageModule, type PackagePlan } from "../../api";
 import en from "../../locales/en-US.json";
 import pl from "../../locales/pl-PL.json";
 import { PackageCenterApp } from "./PackageCenterApp";
 
-vi.mock("../../api", () => ({ api: { apps: vi.fn(), appCategories: vi.fn(), appJobs: vi.fn(), appHistory: vi.fn(), packageSources: vi.fn(), appPlan: vi.fn(), appAction: vi.fn(), cancelAppJob: vi.fn(), retryAppJob: vi.fn() } }));
+vi.mock("../../api", () => ({ api: { apps: vi.fn(), modules: vi.fn(), appCategories: vi.fn(), appJobs: vi.fn(), appHistory: vi.fn(), packageSources: vi.fn(), appPlan: vi.fn(), appAction: vi.fn(), cancelAppJob: vi.fn(), retryAppJob: vi.fn() } }));
 
 function module(id: string, overrides: Partial<PackageModule> = {}): PackageModule {
   return {
@@ -15,12 +15,38 @@ function module(id: string, overrides: Partial<PackageModule> = {}): PackageModu
   };
 }
 
+function summary(id: string, overrides: Partial<PackageModule> = {}): ModuleSummary {
+  const item = module(id, overrides);
+  const activeJob = item.jobs.find((job) => ["queued", "running"].includes(job.status)) || null;
+  return {
+    ...item,
+    module_status: {
+      installed: item.state.installed,
+      package_version: item.state.installed_version,
+      available_version: item.state.available_version,
+      update_available: item.state.update_available,
+      service_state: Object.values(item.services)[0] || "inactive",
+      service_enabled: false,
+      services: Object.fromEntries(Object.entries(item.services).map(([name, state]) => [name, { state, enabled: false, required: true }])),
+      health: item.status === "error" ? "failed" : item.state.installed ? "healthy" : "not_installed",
+      health_message: item.status,
+      last_action: "",
+      last_action_status: "",
+      last_error: item.jobs.find((job) => job.status === "failed")?.error || "",
+      metrics: {},
+    },
+    capabilities: { install: true, update: true, uninstall: true, configure: true, service_control: true, reload: true, logs: true, diagnostics: true, backups: true, import_export: true, healthcheck: true, resources: [], actions: [] },
+    active_job: activeJob,
+  };
+}
+
 const packagePlan: PackagePlan = { module_id: "samba", action: "install", distribution: { id: "debian", name: "Debian", version_id: "12", architecture: "x86_64", package_manager: "apt-get" }, compatible: true, blocked_by_proxmox: false, packages: ["samba", "smbclient"], services: ["smbd"], ports: ["445/tcp"], config_paths: ["/etc/samba/smb.conf"], data_paths: ["/var/lib/samba"], permissions: ["systemd"], dependencies: [], conflicts: [], warnings: [], requires_reboot: false, remove_data: false, target_version: "1.0.0", steps: ["apt-get install -y samba smbclient"] };
 
 describe("Package Center", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.apps).mockResolvedValue([module("samba"), module("nginx")]);
+    vi.mocked(api.modules).mockResolvedValue([summary("samba"), summary("nginx")]);
     vi.mocked(api.appCategories).mockResolvedValue(["file_sharing", "web_server"]);
     vi.mocked(api.appJobs).mockResolvedValue([]);
     vi.mocked(api.appHistory).mockResolvedValue([]);
@@ -31,7 +57,7 @@ describe("Package Center", () => {
 
   it("renders, searches, filters and opens package details", async () => {
     const configure = vi.fn();
-    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onConfigure={configure} />);
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onOpenModule={configure} />);
     expect(await screen.findByText("Samba")).toBeInTheDocument();
     expect(screen.getByText("Nginx")).toBeInTheDocument();
 
@@ -60,10 +86,21 @@ describe("Package Center", () => {
     await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("samba", "install", "secret", false, false));
   });
 
+  it("offers opening and service control for an installed module", async () => {
+    const installed = summary("samba", { state: { installed: true, installed_version: "1.0.0", available_version: "1.0.0", update_available: false, requires_reboot: false }, services: { smbd: "active" }, status: "running" });
+    vi.mocked(api.modules).mockResolvedValue([installed]);
+    const open = vi.fn();
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onOpenModule={open} />);
+    await screen.findByText("Samba");
+    fireEvent.click(screen.getByRole("button", { name: "action.open" }));
+    expect(open).toHaveBeenCalledWith("samba");
+    expect(screen.getByRole("button", { name: "store.stop" })).toBeInTheDocument();
+  });
+
   it("renders job progress, errors and incompatible modules", async () => {
     const failed = { id: "job-1", module_id: "samba", action: "install", status: "failed" as const, progress: 45, created_at: 1, error: "APT failed", current_step: "Install packages", log_tail: [{ id: 1, created_at: 1, stream: "stderr", line: "Repository unavailable" }] };
     vi.mocked(api.appJobs).mockResolvedValue([failed]);
-    vi.mocked(api.apps).mockResolvedValue([module("samba", { status: "error", jobs: [failed] }), module("nginx", { status: "incompatible", compatible: false })]);
+    vi.mocked(api.modules).mockResolvedValue([summary("samba", { status: "error", jobs: [failed] }), summary("nginx", { status: "incompatible", compatible: false })]);
     render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
     expect(await screen.findByText("package.status.incompatible")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /package.tab.jobs/ }));

@@ -1,0 +1,37 @@
+id: home-assistant
+name: Home Assistant
+description: Controlled container installation, status, logs, backups, updates and panel access.
+category: home_automation
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://www.home-assistant.io/
+icon: house
+license: Apache-2.0
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [docker.io]
+  dnf: [docker]
+  yum: [docker]
+services: []
+capabilities:
+  install: false
+  update: false
+  uninstall: false
+  configure: true
+  service_control: false
+  reload: false
+  logs: false
+  diagnostics: true
+  backups: true
+  healthcheck: true
+  resources: [container, logs, panel, updates]
+  actions: [install_container, container_start, container_stop, container_restart, update_container]
+dependencies: [docker]
+ports: [8123/tcp]
+permissions: [docker_socket, config_write, backup_write]
+data_paths: [/var/lib/webnas/home-assistant]
+backup_paths: [/var/lib/webnas/home-assistant/config]
+proxmox_safe: false
+requires_root: true
+removable: false

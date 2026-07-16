@@ -127,6 +127,7 @@ def list_dir(
     page_size: int = 20,
     folders_first: bool = True,
     filter_text: str | None = None,
+    show_hidden: bool = False,
 ) -> dict:
     target = resolve_user_path(username, path)
     if sort and sort not in SORT_FIELDS:
@@ -134,9 +135,11 @@ def list_dir(
     if direction not in {"asc", "desc"}:
         raise HTTPException(400, "Invalid sort direction")
     page = max(1, page)
-    page_size = min(max(1, page_size), 20)
+    page_size = min(max(1, page_size), 200)
     worker_result = run_user_op(username, "list", {"path": str(target)})
     raw_items = _worker_items(worker_result)
+    if not show_hidden:
+        raw_items = [item for item in raw_items if not str(item.get("name", "")).startswith(".")]
     items = _filter_items(raw_items, filter_text)
     reverse = direction == "desc"
     if sort:

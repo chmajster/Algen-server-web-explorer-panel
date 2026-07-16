@@ -1,6 +1,6 @@
 import { HardDrive } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { api, login, me, type SettingsMe, type Task } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, login, me, type SettingsMe, type SettingsPatch, type Task, type UserPreferences } from "../api";
 import { detectLanguage, type Language, translate } from "../i18n";
 import type { Theme, Toast, User } from "./types";
 import { Desktop } from "./Desktop";
@@ -20,20 +20,67 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem("webnas_theme") as Theme) || "system");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const profileRef = useRef<SettingsMe | null>(null);
+  const settingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const settingsRevision = useRef(0);
+  const settingRevisions = useRef<Partial<Record<keyof UserPreferences, number>>>({});
   const uploads = useUploadManager();
   const t = useCallback((key: string) => translate(language, key), [language]);
-  const toast = useCallback((text: string, type: "ok" | "error" = "ok") => { const id = Date.now() + Math.random(); setToasts((current) => [...current, { id, text, type }]); setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 4200); }, []);
+  const toast = useCallback((text: string, type: "ok" | "error" = "ok", category: "general" | "admin" | "transfer" = "general", moduleId?: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((current) => [...current, { id, text, type, category, moduleId }]);
+    if (profileRef.current?.notification_auto_hide !== false) setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 4200);
+  }, []);
 
   useEffect(() => { me().then(setUser).catch(() => undefined); }, []);
   useEffect(() => {
     if (!user) { setProfile(null); return; }
-    api.settingsMe().then((data) => { setProfile(data); setLanguage(data.language); setTheme(data.theme); }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
+    api.settingsMe().then((data) => { profileRef.current = data; setProfile(data); setLanguage(data.language); setTheme(data.theme); }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
     const refresh = () => api.tasks().then(setTasks).catch(() => undefined);
     void refresh(); const timer = setInterval(refresh, 1500); return () => clearInterval(timer);
   }, [t, toast, user]);
-  function changeLanguage(value: Language) { setLanguage(value); localStorage.setItem("webnas_language", value); api.updateSettings({ language: value }).catch(() => undefined); }
-  function changeTheme(value: Theme) { setTheme(value); localStorage.setItem("webnas_theme", value); api.updateSettings({ theme: value }).catch(() => undefined); }
+  async function updateSettings(patch: SettingsPatch) {
+    const currentProfile = profileRef.current || profile;
+    if (!currentProfile) return;
+    const previous = currentProfile;
+    const revision = ++settingsRevision.current;
+    const keys = Object.keys(patch) as Array<keyof UserPreferences>;
+    keys.forEach((key) => { settingRevisions.current[key] = revision; });
+    const optimistic = { ...currentProfile, ...patch };
+    profileRef.current = optimistic;
+    setProfile(optimistic);
+    if (patch.language) setLanguage(patch.language);
+    if (patch.theme) setTheme(patch.theme);
+    try {
+      const request = settingsSaveQueue.current.then(() => api.updateSettings(patch));
+      settingsSaveQueue.current = request.then(() => undefined, () => undefined);
+      const saved = await request;
+      setProfile((current) => {
+        if (!current) return current;
+        const next = { ...current };
+        keys.forEach((key) => { if (settingRevisions.current[key] === revision) Object.assign(next, { [key]: saved[key] }); });
+        profileRef.current = next;
+        return next;
+      });
+      if (patch.language && settingRevisions.current.language === revision) { setLanguage(saved.language); localStorage.setItem("webnas_language", saved.language); }
+      if (patch.theme && settingRevisions.current.theme === revision) { setTheme(saved.theme); localStorage.setItem("webnas_theme", saved.theme); }
+    } catch (error) {
+      setProfile((current) => {
+        if (!current) return current;
+        const reverted = { ...current };
+        keys.forEach((key) => {
+          if (settingRevisions.current[key] === revision && current[key] === patch[key]) Object.assign(reverted, { [key]: previous[key] });
+        });
+        profileRef.current = reverted;
+        return reverted;
+      });
+      if (patch.language && settingRevisions.current.language === revision) setLanguage(previous.language);
+      if (patch.theme && settingRevisions.current.theme === revision) setTheme(previous.theme);
+      throw error;
+    }
+  }
+  function changeTheme(value: Theme) { void updateSettings({ theme: value }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error")); }
   if (!user) return <Login language={language} onLogin={setUser} />;
   if (!profile) return <div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div>;
-  return <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onLanguage={changeLanguage} onTheme={changeTheme} onLoggedOut={() => { setUser(null); setProfile(null); setTasks([]); }} />;
+  return <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={() => { profileRef.current = null; setUser(null); setProfile(null); setTasks([]); }} />;
 }

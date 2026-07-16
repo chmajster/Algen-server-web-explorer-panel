@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api";
 import { SettingsAppView } from "../admin/SystemApps";
 import { NetworkMountsSettingsSection } from "./NetworkMountsSettingsSection";
+import { settingsFixture } from "../../test/settings";
 
 vi.mock("../../api", () => ({
   api: {
@@ -22,11 +23,12 @@ describe("network mount settings", () => {
   });
 
   it("shows the Settings section only to administrators", async () => {
-    const { rerender } = render(<SettingsAppView language="en-US" theme="dark" isAdmin={false} t={t} toast={vi.fn()} onLanguage={vi.fn()} onTheme={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: "settings.networkResources" })).not.toBeInTheDocument();
+    const common = { t, toast: vi.fn(), onSettingsChange: vi.fn().mockResolvedValue(undefined), onOpenApp: vi.fn() };
+    const { rerender } = render(<SettingsAppView settings={settingsFixture()} {...common} />);
+    expect(screen.queryByRole("button", { name: "settings.category.network" })).not.toBeInTheDocument();
 
-    rerender(<SettingsAppView language="en-US" theme="dark" isAdmin t={t} toast={vi.fn()} onLanguage={vi.fn()} onTheme={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "settings.networkResources" })).toBeInTheDocument();
+    rerender(<SettingsAppView settings={settingsFixture({ is_admin: true })} {...common} />);
+    expect(screen.getByRole("button", { name: "settings.category.network" })).toBeInTheDocument();
   });
 
   it("uses protocol-dependent fields and never submits mount_point", async () => {

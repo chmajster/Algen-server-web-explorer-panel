@@ -1,0 +1,32 @@
+id: linux-updates
+name: Linux system updates
+description: Package updates, security advisories, operation history and restart status.
+category: system_tools
+version: "1.0.0"
+maintainer: WebNAS
+icon: refresh-cw
+license: MIT
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [apt]
+  dnf: [dnf]
+  yum: [yum]
+services: []
+capabilities:
+  install: false
+  update: false
+  uninstall: false
+  configure: false
+  service_control: false
+  reload: false
+  logs: false
+  diagnostics: true
+  backups: false
+  healthcheck: true
+  resources: [packages, security, history, reboot]
+  actions: [refresh, upgrade_all, upgrade_security]
+permissions: [package_management]
+proxmox_safe: false
+requires_root: true
+removable: false

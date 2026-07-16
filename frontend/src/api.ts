@@ -75,7 +75,57 @@ export type Task = {
   errors: string[];
 };
 
-export type SettingsMe = {
+export type UserPreferences = {
+  language: "pl-PL" | "en-US";
+  theme: "light" | "dark" | "system";
+  startup_windows: "last" | "none";
+  wallpaper: string;
+  accent_color: "blue" | "teal" | "green" | "violet" | "rose" | "orange";
+  wallpaper_fit: "cover" | "contain" | "stretch" | "center";
+  taskbar_alignment: "left" | "center";
+  show_desktop_shortcuts: boolean;
+  desktop_shortcut_size: "small" | "medium" | "large";
+  show_welcome_widget: boolean;
+  show_notifications: boolean;
+  show_transfer_indicator: boolean;
+  window_transparency: boolean;
+  animations_enabled: boolean;
+  clock_show_seconds: boolean;
+  date_format: "locale" | "short" | "long" | "iso";
+  time_format: "12" | "24";
+  interface_scale: 90 | 100 | 110 | 125;
+  larger_text: boolean;
+  high_contrast: boolean;
+  reduced_motion: boolean;
+  strong_active_borders: boolean;
+  always_show_focus: boolean;
+  file_default_view: "list" | "grid" | "large";
+  file_compact_rows: boolean;
+  file_show_hidden: boolean;
+  file_confirm_delete: boolean;
+  file_confirm_overwrite: boolean;
+  file_page_size: 25 | 50 | 100 | 200;
+  file_default_sort: "name" | "size" | "type" | "modified";
+  file_sort_direction: "asc" | "desc";
+  file_remember_last_path: boolean;
+  transfer_success_notifications: boolean;
+  transfer_error_notifications: boolean;
+  transfer_open_failed_details: boolean;
+  transfer_remember_filter: boolean;
+  notification_transfer: boolean;
+  notification_errors: boolean;
+  notification_admin: boolean;
+  notification_auto_hide: boolean;
+  notification_limit: number;
+  first_day_of_week: "monday" | "sunday" | "locale";
+  widgets_enabled: boolean;
+  desktop_widgets: DesktopWidget[];
+};
+
+export type DesktopWidgetId = "cpu" | "ram" | "disks" | "transfers" | "services" | "alerts";
+export type DesktopWidget = { id: DesktopWidgetId; visible: boolean; x: number; y: number; width: number; height: number };
+
+export type SettingsMe = UserPreferences & {
   username: string;
   uid: number;
   gid: number;
@@ -84,11 +134,12 @@ export type SettingsMe = {
   shell: string;
   gecos: string;
   is_admin: boolean;
-  language: "pl-PL" | "en-US";
-  theme: "light" | "dark" | "system";
-  startup_windows: "last" | "none";
-  wallpaper: string;
+  role: "admin" | "operator" | "auditor" | "user";
+  role_source: string;
+  permissions: string[];
 };
+
+export type SettingsPatch = Partial<UserPreferences>;
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string, public field?: string, public details?: Record<string, unknown>) {
@@ -113,6 +164,35 @@ export type AutoUpdateSettings = {
   next_check: number | null;
 };
 export type SystemLogs = { source: string; lines: string[] };
+export type ActivityCategory = "login" | "file" | "configuration" | "administration" | "module";
+export type ActivityStatus = "success" | "failure" | "info" | "queued" | "cancelled";
+export type ActivityEvent = {
+  id: number;
+  created_at: number;
+  actor: string;
+  category: ActivityCategory;
+  action: string;
+  target: string;
+  status: ActivityStatus;
+  summary: string;
+  details: Record<string, unknown>;
+  source: string;
+};
+export type ActivityResponse = {
+  items: ActivityEvent[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  scope: "own" | "global";
+};
+export type ActivitySummary = {
+  total: number;
+  categories: Record<ActivityCategory, number>;
+  statuses: Record<ActivityStatus, number>;
+  latest_at: number | null;
+  scope: "own" | "global";
+};
 export type SystemdService = {
   name: string;
   status: string;
@@ -183,13 +263,18 @@ export type AppJob = {
   app_id?: string;
   module_id: string;
   action: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   progress: number;
   created_at: number;
   finished_at?: number | null;
   log_tail: Array<{ id: number; created_at: number; stream: string; line: string }>;
   error: string;
   current_step?: string;
+  stage?: string;
+  requested_by?: string;
+  operation?: string;
+  warnings?: string[];
+  result?: Record<string, unknown>;
   cancellation_requested?: boolean;
   requires_reboot?: boolean;
   plan?: PackagePlan;
@@ -224,10 +309,53 @@ export type PackageManifest = {
   configurable: boolean;
   removable: boolean;
   changelog: string[];
+  packages?: { apt: string[]; dnf: string[]; yum: string[] };
+  services?: Array<{ name: string; required: boolean }>;
+  config?: { primary_file?: string | null; backup_paths: string[]; validation_command: string[] };
+  capabilities?: ModuleCapability;
 };
+
+export type ModuleCapability = {
+  install: boolean; update: boolean; uninstall: boolean; configure: boolean; service_control: boolean; reload: boolean;
+  logs: boolean; diagnostics: boolean; backups: boolean; import_export: boolean; healthcheck: boolean;
+  resources: string[]; actions: string[];
+};
+export type ModuleResource = { resource: string; items: Array<Record<string, unknown>>; total: number; [key: string]: unknown };
+export type ModuleConnection = { base_url: string; username: string; secret_configured: boolean };
+export type RbacRole = "admin" | "operator" | "auditor" | "user";
+export type RbacAssignment = { username: string; uid?: number; role: RbacRole; allow: string[]; deny: string[]; permissions: string[]; role_source: string; is_admin: boolean };
+export type RbacRoles = { roles: Record<RbacRole, string[]>; permissions: string[] };
+export type ModuleManifest = PackageManifest;
+export type ModuleHealth = "healthy" | "degraded" | "failed" | "unknown" | "not_installed";
+export type ModuleStatus = {
+  installed: boolean;
+  package_version?: string | null;
+  available_version?: string | null;
+  update_available: boolean;
+  service_state: string;
+  service_enabled: boolean;
+  services: Record<string, { state: string; enabled: boolean; required: boolean; uptime_seconds?: number | null }>;
+  configuration_valid?: boolean | null;
+  health: ModuleHealth;
+  health_message: string;
+  last_action: string;
+  last_action_status: string;
+  last_action_time?: number | null;
+  last_error: string;
+  metrics: Record<string, unknown>;
+};
+export type ModuleJob = AppJob;
+export type ModuleJobStage = string;
+export type ModuleConfig = Record<string, unknown>;
+export type ModuleValidationResult = { ok: boolean; errors: string[]; warnings: string[]; changes: Array<{ kind: string; name: string; before?: unknown; after?: unknown }>; generated_config: string; validator_output: string; confirmations_required: string[] };
+export type ModuleApplyPlan = { validation: ModuleValidationResult; steps: string[]; services: string[]; config_paths: string[]; warnings: string[] };
+export type ModuleDiagnostic = { status: "ok" | "info" | "warning" | "critical"; title: string; description: string; details: string; severity: "ok" | "info" | "warning" | "critical"; recommended_action: string };
+export type ModuleBackup = { id: string; module_id: string; created_at: number; created_by: string; description: string; automatic: boolean; checksum: string; package_version: string; size: number; files: string[] };
+export type ModuleLogSource = { id: string; label: string };
+export type ModuleSummary = PackageModule & { module_status: ModuleStatus; capabilities: ModuleCapability; active_job?: ModuleJob | null };
 export type PackagePlan = {
   module_id: string;
-  action: "install" | "update" | "uninstall" | "start" | "stop" | "restart";
+  action: "install" | "update" | "uninstall" | "start" | "stop" | "restart" | "reload" | "enable" | "disable" | "apply" | "diagnostics" | "restore" | "firewall" | "manage";
   distribution: { id: string; name: string; version_id: string; architecture: string; package_manager?: string | null };
   compatible: boolean;
   blocked_by_proxmox: boolean;
@@ -280,13 +408,19 @@ export type SambaShare = {
   read_only: boolean;
   guest_ok: boolean;
   valid_users: string[];
+  valid_groups?: string[];
   write_list?: string[];
   read_list?: string[];
   admin_users?: string[];
   force_user?: string | null;
   force_group?: string | null;
+  force_create_mode?: string;
+  force_directory_mode?: string;
+  inherit_permissions?: boolean;
   veto_files?: string;
   recycle_bin?: boolean;
+  recycle_versions?: boolean;
+  vfs_objects?: string[];
   create_directory?: boolean;
   directory_owner?: string;
   directory_group?: string;
@@ -312,6 +446,9 @@ export type SambaStatus = {
   proxmox_safe_mode: boolean;
 };
 export type SambaUser = { username: string; uid: number; home: string; shell: string; system: boolean; samba_enabled: boolean };
+export type SambaModuleUser = SambaUser & { status: string; groups: string[]; last_changed?: number | null };
+export type SambaSession = { id: string; username: string; client: string; ip: string; protocol: string; share: string; open_files: number; connected_at?: number | string | null; pid?: number | null };
+export type SambaShareAccess = { share: string; path: string; resolved_path: string; exists: boolean; is_directory: boolean; read_only: boolean; mode: string | null; ok: boolean; warnings: string[]; errors: string[] };
 export type NetworkMount = {
   id: string;
   name: string;
@@ -494,8 +631,16 @@ export const api = {
   startUpload: (path: string, file: File) => request<{ upload_id: string; offset: number; size: number; path: string; completed: boolean }>("/api/files/uploads", { method: "POST", body: JSON.stringify({ path, filename: file.name, size: file.size }) }),
   uploadChunk: (uploadId: string, offset: number, chunk: Blob, signal?: AbortSignal) => request<{ upload_id: string; offset: number; size: number; path: string; completed: boolean }>(`/api/files/uploads/${encodeURIComponent(uploadId)}`, { method: "PATCH", body: chunk, headers: { "Upload-Offset": String(offset) }, signal }),
   cancelUpload: (uploadId: string) => request(`/api/files/uploads/${encodeURIComponent(uploadId)}`, { method: "DELETE", body: "{}" }),
+  activity: (params: { category?: ActivityCategory | ""; status?: ActivityStatus | ""; actor?: string; search?: string; page?: number; page_size?: number } = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    });
+    return request<ActivityResponse>(`/api/activity${query.size ? `?${query}` : ""}`);
+  },
+  activitySummary: () => request<ActivitySummary>("/api/activity/summary"),
   settingsMe: () => request<SettingsMe>("/api/settings/me"),
-  updateSettings: (payload: Partial<Pick<SettingsMe, "language" | "theme" | "startup_windows" | "wallpaper">>) => request("/api/settings/me", { method: "PATCH", body: JSON.stringify(payload) }),
+  updateSettings: (payload: SettingsPatch) => request<SettingsMe>("/api/settings/me", { method: "PATCH", body: JSON.stringify(payload) }),
   changeMyPassword: (current_password: string, new_password: string) => request("/api/settings/change-password", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
   adminUsers: () => request<AdminUser[]>("/api/admin/users"),
   createUser: (payload: Record<string, unknown>) => request<AdminUser>("/api/admin/users", { method: "POST", body: JSON.stringify(payload) }),
@@ -542,19 +687,52 @@ export const api = {
   deletePackageSource: (id: string) => request(`/api/apps/sources/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
   syncPackageSource: (id: string) => request<PackageSource>(`/api/apps/sources/${encodeURIComponent(id)}/sync`, { method: "POST", body: "{}" }),
   appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", admin_password: string, _dry_run = false, remove_data = false) => request<{ job?: AppJob; ok?: boolean }>(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm_plan: true, remove_data }) }),
+  modules: () => request<ModuleSummary[]>("/api/modules"),
+  module: (id: string) => request<ModuleSummary>(`/api/modules/${encodeURIComponent(id)}`),
+  moduleStatus: (id: string) => request<ModuleStatus>(`/api/modules/${encodeURIComponent(id)}/status`),
+  moduleResource: (id: string, resource: string, limit = 200, search = "") => request<ModuleResource>(`/api/modules/${encodeURIComponent(id)}/resources/${encodeURIComponent(resource)}?limit=${limit}&search=${encodeURIComponent(search)}`),
+  moduleAction: (id: string, action: string, admin_password: string, payload: Record<string, unknown> = {}) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true, payload }) }),
+  moduleConnection: (id: string) => request<ModuleConnection>(`/api/modules/${encodeURIComponent(id)}/connection`),
+  saveModuleConnection: (id: string, connection: Omit<ModuleConnection, "secret_configured"> & { secret?: string }, admin_password: string) => request<ModuleConnection>(`/api/modules/${encodeURIComponent(id)}/connection`, { method: "PUT", body: JSON.stringify({ ...connection, admin_password, confirm: true }) }),
+  saveDockerCompose: (project: string, content: string, admin_password: string) => request<{ name: string; updated_at: number; size: number }>(`/api/modules/docker/compose/${encodeURIComponent(project)}`, { method: "PUT", body: JSON.stringify({ content, admin_password, confirm: true }) }),
+  dockerCompose: (project: string) => request<{ name: string; content: string; updated_at: number; size: number }>(`/api/modules/docker/compose/${encodeURIComponent(project)}`),
+  moduleConfig: (id: string) => request<ModuleConfig>(`/api/modules/${encodeURIComponent(id)}/config`),
+  validateModuleConfig: (id: string, config: ModuleConfig) => request<ModuleValidationResult>(`/api/modules/${encodeURIComponent(id)}/validate`, { method: "POST", body: JSON.stringify({ config }) }),
+  applyModuleConfig: (id: string, config: ModuleConfig, admin_password: string, confirmations: string[] = []) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/apply`, { method: "POST", body: JSON.stringify({ config, admin_password, confirm: true, create_backup: true, confirm_smb1: confirmations.includes("smb1") }) }),
+  moduleLogs: (id: string, source = "", lines = 200, search = "", level = "") => { const query = new URLSearchParams({ source, lines: String(lines), search, level }); return request<{ sources: ModuleLogSource[]; source: string; lines: string[]; truncated: boolean }>(`/api/modules/${encodeURIComponent(id)}/logs?${query}`); },
+  moduleDiagnostics: (id: string) => request<{ diagnostics: ModuleDiagnostic[]; job?: ModuleJob | null }>(`/api/modules/${encodeURIComponent(id)}/diagnostics`),
+  runModuleDiagnostics: (id: string, admin_password: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/diagnostics`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true }) }),
+  moduleBackups: (id: string) => request<ModuleBackup[]>(`/api/modules/${encodeURIComponent(id)}/backups`),
+  createModuleBackup: (id: string, admin_password: string, description = "") => request<ModuleBackup>(`/api/modules/${encodeURIComponent(id)}/backups`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true, description }) }),
+  restoreModuleBackup: (id: string, backupId: string, admin_password: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}/restore`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true }) }),
+  deleteModuleBackup: (id: string, backupId: string, admin_password: string) => request(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm: true }) }),
+  moduleService: (id: string, action: "start" | "stop" | "restart" | "reload" | "enable" | "disable", admin_password: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/service/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true }) }),
+  sambaModuleUsers: () => request<SambaModuleUser[]>("/api/modules/samba/users"),
+  sambaModuleUserAction: (username: string, action: "add" | "password" | "enable" | "disable" | "remove", admin_password: string, password = "") => request("/api/modules/samba/users/" + encodeURIComponent(username) + "/" + action, { method: "POST", body: JSON.stringify({ admin_password, password, confirm: true }) }),
+  sambaSessions: () => request<SambaSession[]>("/api/modules/samba/sessions"),
+  testSambaShare: (name: string) => request<SambaShareAccess>(`/api/modules/samba/shares/${encodeURIComponent(name)}/test`),
+  removeSambaShare: (name: string, admin_password: string) => request<{ job: ModuleJob }>(`/api/modules/samba/shares/${encodeURIComponent(name)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm: true, create_backup: true }) }),
+  uninstallModule: (id: string, admin_password: string, options: { remove_config: boolean; remove_data: boolean; create_backup: boolean; confirm_name?: string }) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/uninstall`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true, ...options }) }),
+  validateSambaImport: (content: string) => request<{ config: SambaConfig; validation: ModuleValidationResult }>("/api/modules/samba/import/validate", { method: "POST", body: JSON.stringify({ content }) }),
+  sambaFirewall: () => request<{ adapter: string; ports: string[]; can_manage: boolean; plan: string[][] }>("/api/modules/samba/firewall"),
+  openSambaFirewall: (admin_password: string, confirm = true) => request<{ ok?: boolean; plan: string[][]; requires_confirmation?: boolean }>("/api/modules/samba/firewall/open", { method: "POST", body: JSON.stringify({ admin_password, confirm }) }),
+  rbacMe: () => request<{ role: RbacRole; permissions: string[]; role_source: string; is_admin: boolean }>("/api/rbac/me"),
+  rbacRoles: () => request<RbacRoles>("/api/rbac/roles"),
+  rbacAssignments: () => request<RbacAssignment[]>("/api/rbac/assignments"),
+  saveRbacAssignment: (assignment: Pick<RbacAssignment, "username" | "role" | "allow" | "deny">, admin_password: string) => request<RbacAssignment>(`/api/rbac/assignments/${encodeURIComponent(assignment.username)}`, { method: "PUT", body: JSON.stringify({ ...assignment, admin_password }) }),
   appLogs: (id: string) => request<{ lines: string[] }>(`/api/apps/${encodeURIComponent(id)}/logs`),
   appConfig: (id: string) => request<SambaConfig>(`/api/apps/${encodeURIComponent(id)}/config`),
   storePlugins: () => request<{ plugins: StorePlugin[]; codex_template: string }>("/api/apps/plugins"),
   createStorePlugin: (plugin: Partial<StorePlugin>) => request<StorePlugin>("/api/apps/plugins", { method: "POST", body: JSON.stringify(plugin) }),
   updateStorePlugin: (id: string, plugin: Partial<StorePlugin>) => request<StorePlugin>(`/api/apps/plugins/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(plugin) }),
   deleteStorePlugin: (id: string) => request(`/api/apps/plugins/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  saveSambaConfig: (config: SambaConfig) => request("/api/apps/samba/config", { method: "PUT", body: JSON.stringify(config) }),
+  saveSambaConfig: (config: SambaConfig, admin_password: string, confirm_smb1 = false) => request<{ job: ModuleJob }>("/api/apps/samba/config", { method: "PUT", body: JSON.stringify({ config, admin_password, confirm_smb1 }) }),
   setSambaPassword: (username: string, password: string, admin_password: string) => request("/api/apps/samba/smbpasswd", { method: "POST", body: JSON.stringify({ username, password, admin_password }) }),
   sambaStatus: () => request<SambaStatus>("/api/apps/samba/status"),
   sambaUsers: () => request<SambaUser[]>("/api/apps/samba/users"),
   sambaPreview: (config: SambaConfig) => request<{ config: string; validation: SambaValidation }>("/api/apps/samba/preview", { method: "POST", body: JSON.stringify({ config }) }),
-  sambaApply: (config: SambaConfig) => request<SambaStatus>("/api/apps/samba/apply", { method: "POST", body: JSON.stringify({ config }) }),
-  sambaRollback: () => request("/api/apps/samba/rollback", { method: "POST", body: "{}" }),
+  sambaApply: (config: SambaConfig, admin_password: string, confirm_smb1 = false) => request<{ job: ModuleJob }>("/api/apps/samba/apply", { method: "POST", body: JSON.stringify({ config, admin_password, confirm_smb1 }) }),
+  sambaRollback: (admin_password: string) => request("/api/apps/samba/rollback", { method: "POST", body: JSON.stringify({ admin_password }) }),
   sambaService: (action: "start" | "stop" | "restart" | "reload", admin_password: string) => request<{ ok: boolean; status: SambaStatus }>("/api/apps/samba/service", { method: "POST", body: JSON.stringify({ action, admin_password }) }),
   enableSambaUser: (username: string, password: string, admin_password: string) => request("/api/apps/samba/users/enable", { method: "POST", body: JSON.stringify({ username, password, admin_password }) }),
   disableSambaUser: (username: string, admin_password: string) => request("/api/apps/samba/users/disable", { method: "POST", body: JSON.stringify({ username, admin_password }) }),

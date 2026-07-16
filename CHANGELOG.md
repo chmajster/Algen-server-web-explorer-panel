@@ -4,16 +4,56 @@ All notable changes to WebNAS are documented in this file.
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses date-based unreleased entries until tagged releases are introduced.
 
-## [Unreleased] - 2026-07-14
+## [Unreleased] - 2026-07-16
 
 ### Added
+
+- Activity Center with a durable structured timeline for sign-ins, file operations, user configuration changes, administrative tasks, network-resource changes, RBAC assignments, and queued/completed/failed module jobs. Regular users are restricted to their own events, while `audit.view` grants global user/category/status/search filters; stored metadata is bounded and recursively redacted for credentials and tokens.
+- Granular RBAC layered over PAM/local Linux users, with `administrator`, `operator`, `auditor`, and `user` roles, closed application/operation permissions, atomic private assignments, administrator compatibility for root/sudo/wheel, backend enforcement, and a role-management application.
+- Linux Updates module with apt/dnf/yum package and security-update discovery, operation history, restart-required detection, durable metadata/security/full update jobs, PAM/CSRF enforcement, and Proxmox Safe Mode blocking.
+- Docker module with containers, images, networks, volumes, logs, one-shot statistics, lifecycle actions, image updates, and a restricted private Docker Compose store/editor that rejects privileged/host-control configuration.
+- Pi-hole v6 API module with session authentication, statistics, domains, clients, lists, version data and blocking control; and AdGuard Home with DNS dashboard, clients, filters, upstreams, query log, API operations, updates and transactional configuration backups.
+- PostgreSQL and MariaDB modules with database/user/connection-or-privilege views, streamed private backups/restores, logs, service controls, replication summary and diagnostics without credential logging.
+- Redis module with memory, persistence, limits, clients, statistics, RDB backups/restores, bounded configuration controls and secret-free security diagnostics.
+- Home Assistant Container module with controlled non-privileged installation, lifecycle, logs, stable-image update rollback, safe configuration archives and direct authenticated panel access.
+- Per-user desktop widgets for CPU, RAM, disks, active transfers, module services and recent alerts, including pin/hide, pointer and keyboard movement, resizing, responsive display, and server-synchronized validated layouts.
+- Backend/frontend coverage and `INFRASTRUCTURE_MODULES.md` for the new providers, RBAC, secret handling, safe Compose schema, backup/restore behavior, widgets, Proxmox policy and distribution limitations.
+
+- Shared provider-based module-management framework extending the existing Package Center:
+  - structured `packages`, required/optional `services`, controlled `config`, and `capabilities` manifest sections with automatic mapping of legacy manifests;
+  - unified module status/health contracts and administrator-only `/api/modules` routes for lifecycle, service actions, config validation/apply, logs, diagnostics, backups, restore, and SSE job events;
+  - durable job warnings/results and idempotent SQLite column migration without replacing existing jobs/history;
+  - common module application shell, headers, health cards, service controls, job progress, structured apply plans, logs, diagnostics, backups, danger zone, and uninstall wizard;
+  - installed-module windows and enhanced Package Center cards showing versions, service/health/update state, active jobs, and last errors.
+- Complete Samba reference provider and application:
+  - overview, shares, SMB users, active sessions, global configuration, services, fixed-source logs, diagnostics, private backups, firewall adapter, and module information;
+  - safe share editor with access/permission groups, users/groups, masks, force modes, controlled VFS objects, recycle/versioning, path tests, duplication, enable/disable, and File Manager opening;
+  - JSON and text `smbstatus` parsers, controlled `smbpasswd` account actions, closed global option validation, SMB1 acknowledgement, and UFW/firewalld plans;
+  - combined checksummed backups for main and managed config, `0600` storage, retention of 20 automatic copies, verified restore, and automatic safety backup;
+  - transactional candidate validation, atomic writes, reload/state/post-validation checks, and automatic rollback of both config files;
+  - File Manager share name/read-only badges plus create/open/remove-share actions that never delete the local directory;
+  - deduplicated actionable module notifications for jobs, updates, invalid config, service failure, diagnostics, restore failure, and rollback.
+- `MODULES.md` provider/API/Samba architecture guide with a minimal provider and author security checklist.
+- Backend and frontend coverage for manifest compatibility/command rejection, auth rate limiting, parsers, validation, log redaction, backup checksum/retention, rollback, repository migration, real post-state checks, common module UI, share editing, plan confirmation, jobs, diagnostics, backups, admin visibility, and dirty-window close confirmation.
+
+- Complete WebNAS desktop modernization with an independently branded Windows 11-inspired visual language:
+  - one bottom taskbar replacing the separate top system bar and old taskbar;
+  - searchable Start menu with pinned/all-app sections, administrator badges, user identity, and sign-out;
+  - pinned/running/active app states, transfer and notification indicators, theme control, session menu, and localized clock/date;
+  - column-flow desktop shortcuts, optional welcome widget, per-user wallpaper and four fit modes;
+  - active/inactive window styling, title-bar controls, optional transparency/animations, viewport clamping, resize handling, and narrow-screen fullscreen behavior.
+- Full Settings application with category sidebar, mobile category selector, settings search, optimistic automatic saves, debounced wallpaper input, save status, and rollback on errors.
+- Server-validated per-user preferences for system startup, personalization, File Manager, transfers, notifications, accessibility, language/region, and desktop behavior. Legacy partial JSON files receive safe defaults without manual migration and writes remain atomic.
+- Account details and current-password-protected password change in Settings, plus administrator-only Network resources, service/update/Proxmox information, automatic update control, and links to dedicated administration apps.
+- Modular frontend style system under `frontend/src/styles/` for tokens, base/accessibility, desktop, windows, taskbar, Settings, File Manager, and responsive rules.
+- Tests for user-setting defaults, legacy file compatibility, validation, atomic per-user persistence, hidden-file listing, Settings search, theme/taskbar changes, wallpaper rendering, File Manager preferences, hidden shortcuts, disabled animations, Start menu behavior, and administrator-only sections.
 
 - Modern NAS-style desktop UI with app icons, draggable/resizable windows, taskbar, notification center, light/dark mode, responsive layout, keyboard shortcuts, and context menus.
 - File Manager window with an expanded explorer experience:
   - lazy-loaded directory tree;
   - resizable tree panel;
   - backend-driven table sorting;
-  - backend-driven pagination capped at 20 items per page;
+  - backend-driven pagination configurable at 25, 50, 100, or 200 items per page;
   - backend-driven quick filtering;
   - breadcrumbs, selection bar, skeleton loading, empty states, and persisted view settings.
 - Persistent rsync transfer manager backed by SQLite:
@@ -72,6 +112,8 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
   - `page_size`;
   - `folders_first`;
   - `filter`.
+- File listing now supports validated `show_hidden` filtering and page sizes up to 200 so per-user File Manager preferences are enforced by the backend.
+- File Manager command bar, navigation/path/search areas, location sidebar, detail/icon views, selection, context menu, and status bar now share the desktop visual system.
 - File listing responses now include pagination metadata, current/parent paths, directory permissions, item capability flags, symlink metadata, MIME/type fields, and modification timestamps.
 - File operations now check read-only network mounts before write operations.
 - Allowed roots can include user-visible WebNAS network mount points.
@@ -82,6 +124,11 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - README, install, security, and example configuration documentation were expanded for the new operational surface.
 
 ### Security
+
+- Closed the legacy Samba configuration/service paths so they use rate-limited PAM and durable provider jobs rather than bypassing the module transaction.
+- Module operations accept only provider-owned services, commands, log sources, config paths, firewall adapters, Samba options, and VFS objects; subprocesses continue to use argument arrays with `shell=False`.
+- Samba log responses are redacted, limited to 1,000 lines and 512 KiB, and never accept a client path. Backups are private metadata-only resources and exclude password databases.
+- Destructive Samba uninstall distinguishes package/config/internal-state removal, creates an optional backup, requires typing `Samba` for internal data removal, verifies package removal, and excludes every share path.
 
 - Added stricter mount path validation and blocked critical system paths such as `/`, `/etc`, `/boot`, `/usr`, `/var/lib/vz`, `/etc/pve`, `/proc`, `/sys`, `/dev`, `/run`, and `/tmp`.
 - Added audit logging for denied path-policy attempts outside `allowed_roots`.

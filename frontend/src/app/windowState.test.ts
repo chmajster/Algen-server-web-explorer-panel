@@ -43,6 +43,18 @@ describe("window manager reducer", () => {
     const state = restoreWindowState(raw);
     expect(state.activeId).toBe("logs-3");
     expect(state.windows[0].rect.x).toBeLessThan(window.innerWidth);
-    expect(state.windows[0].rect.y).toBeGreaterThanOrEqual(56);
+    expect(state.windows[0].rect.y).toBeGreaterThanOrEqual(10);
+  });
+
+  it.each([
+    [1920, 1080], [1440, 900], [1280, 720], [1024, 768], [390, 844],
+  ])("keeps application windows inside a %sx%s viewport", (width, height) => {
+    const state = windowReducer(initialWindowState, { type: "open", app: "files", viewport: { width, height } });
+    const rect = state.windows[0].rect;
+
+    expect(rect.x).toBeGreaterThanOrEqual(10);
+    expect(rect.y).toBeGreaterThanOrEqual(10);
+    expect(rect.x + rect.width).toBeLessThanOrEqual(width - 10);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(height - 74);
   });
 });

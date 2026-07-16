@@ -12,7 +12,35 @@ supported_distributions: [debian, ubuntu, raspbian]
 supported_architectures: [x86_64, aarch64, armv7l]
 apt_packages: [samba, smbclient]
 dnf_packages: [samba, samba-client]
+yum_packages: [samba, samba-client]
 systemd_services: [smbd, nmbd]
+packages:
+  apt: [samba, smbclient]
+  dnf: [samba, samba-client]
+  yum: [samba, samba-client]
+services:
+  - name: smbd
+    required: true
+  - name: nmbd
+    required: false
+  - name: winbind
+    required: false
+config:
+  primary_file: /etc/samba/smb.conf
+  backup_paths: [/etc/samba/smb.conf, /etc/samba/algen-shares.conf]
+  validation_command: [testparm, -s]
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: true
+  reload: true
+  logs: true
+  diagnostics: true
+  backups: true
+  import_export: true
+  healthcheck: true
 ports: [137/udp, 138/udp, 139/tcp, 445/tcp]
 dependencies: []
 conflicts: []

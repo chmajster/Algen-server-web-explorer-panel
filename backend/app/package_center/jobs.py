@@ -3,10 +3,11 @@ from __future__ import annotations
 import threading
 import time
 
+from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..audit import logger
 from .executor import execute
 from .manifests import load_manifest
-from .models import PackageJobStatus, PackagePlan, api_error
+from .models import PackageAction, PackageJobStatus, PackagePlan, api_error
 from .repository import PackageRepository
 
 
@@ -20,6 +21,15 @@ class PackageJobManager:
             api_error(409, "JOB_ALREADY_RUNNING", "An operation for this module is already queued or running")
         job = self.repository.create_job(plan, actor, previous_version=plan.previous_version, retry_of=retry_of)
         logger.info("package_action actor=%s module=%s action=%s job=%s result=queued", actor, plan.module_id, plan.action.value, job["id"])
+        record_activity(
+            ActivityCategory.module,
+            str(plan.payload.get("operation") or plan.action.value),
+            actor,
+            target=plan.module_id,
+            status=ActivityStatus.queued,
+            details={"job_id": job["id"], "package_action": plan.action.value},
+            source="modules",
+        )
         self._schedule()
         return self.repository.get_job(job["id"]) or job
 
@@ -53,24 +63,67 @@ class PackageJobManager:
             return bool(current and current["cancellation_requested"])
 
         try:
-            execute(plan, manifest, log, progress, cancelled)
+            if plan.action in {PackageAction.install, PackageAction.update, PackageAction.uninstall}:
+                result: dict = {}
+                if plan.create_backup:
+                    from ..modules.providers import get_provider
+
+                    backup = get_provider(plan.module_id, job["created_by"]).create_backup(job["created_by"], f"Automatic backup before {plan.action.value}", True)
+                    result["backup"] = backup
+                execute(plan, manifest, log, progress, cancelled)
+                if plan.action == PackageAction.uninstall:
+                    from ..modules.providers import get_provider
+
+                    result.update(get_provider(plan.module_id, job["created_by"]).cleanup_after_uninstall(job["created_by"], bool(plan.payload.get("remove_config"))))
+            else:
+                from ..modules.providers import get_provider
+
+                result = get_provider(plan.module_id, job["created_by"]).execute_operation(plan.action, plan.payload, job["created_by"], log, progress, cancelled)
             if cancelled():
                 raise InterruptedError("Package operation cancelled")
             if plan.action.value in {"install", "update"}:
                 self.repository.mark_installed(plan.module_id, manifest.version, job["created_by"], manifest.requires_reboot)
             elif plan.action.value == "uninstall":
                 self.repository.mark_uninstalled(plan.module_id)
-            self.repository.update_job(job_id, status=PackageJobStatus.completed.value, progress=100, current_step="Completed", finished_at=time.time(), exit_code=0)
+            self.repository.update_job(job_id, status=PackageJobStatus.completed.value, progress=100, current_step="Completed", finished_at=time.time(), exit_code=0, warnings=plan.warnings, result=result)
             logger.info("package_action actor=%s module=%s action=%s job=%s result=completed", job["created_by"], plan.module_id, plan.action.value, job_id)
+            record_activity(
+                ActivityCategory.module,
+                str(plan.payload.get("operation") or plan.action.value),
+                job["created_by"],
+                target=plan.module_id,
+                details={"job_id": job_id, "package_action": plan.action.value},
+                source="modules",
+            )
         except InterruptedError as error:
             self.repository.append_log(job_id, str(error), "stderr")
             self.repository.update_job(job_id, status=PackageJobStatus.cancelled.value, current_step="Cancelled", finished_at=time.time(), error=str(error))
             logger.info("package_action actor=%s module=%s action=%s job=%s result=cancelled", job["created_by"], plan.module_id, plan.action.value, job_id)
+            record_activity(
+                ActivityCategory.module,
+                str(plan.payload.get("operation") or plan.action.value),
+                job["created_by"],
+                target=plan.module_id,
+                status=ActivityStatus.cancelled,
+                summary=str(error),
+                details={"job_id": job_id, "package_action": plan.action.value},
+                source="modules",
+            )
         except Exception as error:  # noqa: BLE001
             message = str(error) or "Package operation failed"
             self.repository.append_log(job_id, message, "stderr")
             self.repository.update_job(job_id, status=PackageJobStatus.failed.value, current_step="Failed", finished_at=time.time(), exit_code=1, error=message)
             logger.error("package_action actor=%s module=%s action=%s job=%s result=failed error=%s", job["created_by"], plan.module_id, plan.action.value, job_id, message)
+            record_activity(
+                ActivityCategory.module,
+                str(plan.payload.get("operation") or plan.action.value),
+                job["created_by"],
+                target=plan.module_id,
+                status=ActivityStatus.failure,
+                summary=message,
+                details={"job_id": job_id, "package_action": plan.action.value},
+                source="modules",
+            )
         finally:
             finished = self.repository.get_job(job_id)
             if finished:

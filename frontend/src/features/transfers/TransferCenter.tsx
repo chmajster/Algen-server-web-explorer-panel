@@ -1,20 +1,28 @@
 import { ChevronDown, ChevronUp, Pause, Play, RotateCcw, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { api, type Task } from "../../api";
+import { api, type SettingsMe, type Task } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { formatDate, formatSize } from "../files/utils";
 import type { UploadControls } from "./useUploadManager";
 
-export function TransferCenter({ tasks, t, toast, uploadControls }: { tasks: Task[]; t: Translate; toast: ToastFn; uploadControls: UploadControls }) {
-  const [filter, setFilter] = useState<"all" | "active" | "completed" | "failed">("all");
+type TransferFilter = "all" | "active" | "completed" | "failed";
+
+export function TransferCenter({ tasks, settings, t, toast, uploadControls }: { tasks: Task[]; settings: SettingsMe; t: Translate; toast: ToastFn; uploadControls: UploadControls }) {
+  const filterKey = `webnas_transfer_filter_${settings.username}`;
+  const [filter, setFilter] = useState<TransferFilter>(() => settings.transfer_remember_filter ? (localStorage.getItem(filterKey) as TransferFilter) || "all" : "all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const visible = useMemo(() => tasks.filter((task) => !hidden.has(task.id) && (filter === "all" || filter === "active" && ["queued", "running", "paused"].includes(task.status) || task.status === filter)), [filter, hidden, tasks]);
   async function run(action: () => Promise<unknown>) { try { await action(); } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error"); } }
   const completed = tasks.filter((task) => ["completed", "cancelled", "failed"].includes(task.status)).map((task) => task.id);
+  function changeFilter(value: TransferFilter) {
+    setFilter(value);
+    if (settings.transfer_remember_filter) localStorage.setItem(filterKey, value);
+    else localStorage.removeItem(filterKey);
+  }
   return <section className="transfer-center">
     <header className="feature-header"><div><h2>{t("transfers.title")}</h2><p>{t("transfers.subtitle")}</p></div><button disabled={!completed.length} onClick={() => setHidden(new Set(completed))}><Trash2 />{t("transfers.clearCompleted")}</button></header>
-    <div className="filter-tabs">{(["all", "active", "completed", "failed"] as const).map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => setFilter(value)}>{t(`filter.${value}`)}</button>)}</div>
+    <div className="filter-tabs">{(["all", "active", "completed", "failed"] as const).map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => changeFilter(value)}>{t(`filter.${value}`)}</button>)}</div>
     <div className="transfer-list">{visible.length === 0 ? <div className="empty-state"><strong>{t("transfers.empty")}</strong><span>{t("transfers.emptyHint")}</span></div> : visible.map((task) => {
       const progress = task.progress_percent ?? task.progress ?? 0;
       const done = ["completed", "failed", "cancelled"].includes(task.status);

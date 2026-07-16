@@ -5,11 +5,13 @@ import {
   Search, SlidersHorizontal, Trash2, Upload, X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, downloadUrl, type FileItem, type LocalDisk, type Task } from "../../api";
+import { api, ApiError, downloadUrl, type FileItem, type LocalDisk, type SambaConfig, type SambaShare, type SettingsMe, type SettingsPatch, type Task } from "../../api";
+import { defaultUserPreferences } from "../../app/defaultSettings";
 import type { ToastFn, Translate } from "../../app/types";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { ConfirmDialog, InputDialog, Modal } from "../../components/Modal";
 import { UploadProgressDialog } from "../transfers/UploadProgressDialog";
+import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { useNetworkMounts } from "../mounts/useNetworkMounts";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { DirectoryTree } from "./DirectoryTree";
@@ -28,6 +30,7 @@ type DialogState =
   | { type: "rename"; item: FileItem }
   | { type: "delete"; items: FileItem[] }
   | { type: "drop"; target: string; copy: boolean }
+  | { type: "overwriteUpload"; files: File[] }
   | null;
 
 const columns: Array<{ id: SortField; key: string; defaultWidth: number }> = [
@@ -44,9 +47,10 @@ function isLikelyTextFile(item: FileItem) {
   );
 }
 
-export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, onOpenFolderWindow, onShareSamba, onUpload, onUploadCancel, onUploadRetry }: {
+export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t, toast, onOpenFolderWindow, onShareSamba, onUpload, onUploadCancel, onUploadRetry, onSettingsChange }: {
   homePath: string;
   initialPath?: string;
+  settings?: SettingsMe;
   tasks: Task[];
   isAdmin: boolean;
   t: Translate;
@@ -56,17 +60,19 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   onUpload: (files: File[], path: string) => string[];
   onUploadCancel?: (id: string) => void;
   onUploadRetry?: (id: string) => void;
+  onSettingsChange?: (patch: SettingsPatch) => Promise<void>;
 }) {
-  const storagePrefix = "webnas_file_explorer";
-  const requestedFirstPath = initialPath || localStorage.getItem(`${storagePrefix}_path`) || homePath || "";
+  const preferences = settings || ({ ...defaultUserPreferences, username: "", uid: 0, gid: 0, groups: [], home: homePath, shell: "", gecos: "", is_admin: isAdmin, role: isAdmin ? "admin" : "user", role_source: "fallback", permissions: isAdmin ? ["modules.view", "modules.operate"] : ["apps.files"] } satisfies SettingsMe);
+  const storagePrefix = settings ? `webnas_file_explorer_${settings.username}` : "webnas_file_explorer";
+  const requestedFirstPath = initialPath || (preferences.file_remember_last_path ? localStorage.getItem(`${storagePrefix}_path`) : "") || homePath || "";
   const firstPath = !requestedFirstPath || requestedFirstPath === "/" || requestedFirstPath === "~" ? homePath : requestedFirstPath;
   const [history, setHistory] = useState({ entries: [firstPath], index: 0 });
   const path = history.entries[history.index] || "";
   const [items, setItems] = useState<FileItem[]>([]);
   const [meta, setMeta] = useState({ total: 0, pages: 1, page: 1, parent: null as string | null, canWrite: true, canDelete: true });
   const [page, setPage] = useState(1);
-  const [sort, setSort] = useState<SortField>("name");
-  const [direction, setDirection] = useState<"asc" | "desc">("asc");
+  const [sort, setSort] = useState<SortField>(preferences.file_default_sort);
+  const [direction, setDirection] = useState<"asc" | "desc">(preferences.file_sort_direction);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -75,11 +81,12 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const { roots: mounts, loading: mountsLoading, initialized: mountsInitialized, refresh: refreshMounts } = useNetworkMounts();
   const [localDisks, setLocalDisks] = useState<LocalDisk[]>([]);
-  const [sharedPaths, setSharedPaths] = useState<Set<string>>(new Set());
+  const [sharedPaths, setSharedPaths] = useState<Map<string, SambaShare>>(new Map());
+  const [sambaRemoval, setSambaRemoval] = useState<SambaShare | null>(null);
   const [treeVisible, setTreeVisible] = useState(() => localStorage.getItem(`${storagePrefix}_tree`) !== "hidden");
   const [treeWidth, setTreeWidth] = useState(() => Number(localStorage.getItem(`${storagePrefix}_tree_width`) || 238));
-  const [compact, setCompact] = useState(() => localStorage.getItem(`${storagePrefix}_compact`) === "true");
-  const [view, setView] = useState<ViewMode>(() => (localStorage.getItem(`${storagePrefix}_view`) as ViewMode) || "list");
+  const [compact, setCompact] = useState(() => settings ? preferences.file_compact_rows : localStorage.getItem(`${storagePrefix}_compact`) === "true");
+  const [view, setView] = useState<ViewMode>(() => settings ? (preferences.file_default_view === "grid" ? "medium" : preferences.file_default_view) : (localStorage.getItem(`${storagePrefix}_view`) as ViewMode) || "list");
   const [hiddenColumns, setHiddenColumns] = useState<Set<SortField>>(() => new Set(JSON.parse(localStorage.getItem(`${storagePrefix}_hidden_columns`) || "[]")));
   const [widths, setWidths] = useState<Record<SortField, number>>(() => ({ name: 300, size: 100, type: 110, owner: 110, group: 110, permissions: 120, modified: 180 }));
   const [context, setContext] = useState<ContextState | null>(null);
@@ -102,19 +109,20 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     const id = ++requestId.current;
     setLoading(true); setLoadError("");
     try {
-      const data = await api.list(path, { page, page_size: 100, sort, direction, folders_first: true, filter });
+      const data = await api.list(path, { page, page_size: preferences.file_page_size, sort, direction, folders_first: true, filter, show_hidden: preferences.file_show_hidden });
       if (id !== requestId.current) return;
       setItems(data.items);
       setMeta({ total: data.total_items, pages: data.total_pages, page: data.page, parent: data.parent_path, canWrite: data.can_write, canDelete: data.can_delete });
       setSelection(new Set());
-      localStorage.setItem(`${storagePrefix}_path`, data.current_path);
+      if (preferences.file_remember_last_path) localStorage.setItem(`${storagePrefix}_path`, data.current_path);
+      else localStorage.removeItem(`${storagePrefix}_path`);
     } catch (error) {
       if (id !== requestId.current) return;
       setLoadError(error instanceof Error ? error.message : t("files.loadError"));
     } finally { if (id === requestId.current) setLoading(false); }
-  }, [direction, filter, page, path, sort, t]);
+  }, [direction, filter, page, path, preferences.file_page_size, preferences.file_remember_last_path, preferences.file_show_hidden, sort, storagePrefix, t]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { api.appConfig("samba").then((data) => setSharedPaths(new Set(data.shares.filter((share) => share.enabled).map((share) => share.path)))).catch(() => undefined); }, []);
+  useEffect(() => { if (!isAdmin) return; api.moduleConfig("samba").then((data) => { const config = data as unknown as SambaConfig; setSharedPaths(new Map(config.shares.filter((share) => share.enabled).map((share) => [share.path, share]))); }).catch(() => undefined); }, [isAdmin]);
   const loadLocalDisks = useCallback(() => api.localDisks().then(setLocalDisks).catch(() => setLocalDisks([])), []);
   useEffect(() => { void loadLocalDisks(); }, [loadLocalDisks]);
   useEffect(() => {
@@ -134,10 +142,21 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     const completed = tasks.some((task) => ["copy", "move", "delete", "upload"].includes(task.type) && ["completed", "failed"].includes(task.status) && (task.finished_at || 0) * 1000 > Date.now() - 2500);
     if (completed) void load();
   }, [load, tasks]);
-  useEffect(() => { localStorage.setItem(`${storagePrefix}_view`, view); }, [view]);
-  useEffect(() => { localStorage.setItem(`${storagePrefix}_compact`, String(compact)); }, [compact]);
-  useEffect(() => { localStorage.setItem(`${storagePrefix}_tree`, treeVisible ? "visible" : "hidden"); }, [treeVisible]);
-  useEffect(() => { localStorage.setItem(`${storagePrefix}_hidden_columns`, JSON.stringify([...hiddenColumns])); }, [hiddenColumns]);
+  useEffect(() => { localStorage.setItem(`${storagePrefix}_view`, view); }, [storagePrefix, view]);
+  useEffect(() => { localStorage.setItem(`${storagePrefix}_compact`, String(compact)); }, [compact, storagePrefix]);
+  useEffect(() => { localStorage.setItem(`${storagePrefix}_tree`, treeVisible ? "visible" : "hidden"); }, [storagePrefix, treeVisible]);
+  useEffect(() => { localStorage.setItem(`${storagePrefix}_hidden_columns`, JSON.stringify([...hiddenColumns])); }, [hiddenColumns, storagePrefix]);
+
+  function changeView(next: ViewMode) {
+    setView(next);
+    localStorage.setItem(`${storagePrefix}_view`, next);
+    if (onSettingsChange) void onSettingsChange({ file_default_view: next === "medium" ? "grid" : next });
+  }
+  function changeCompact(next: boolean) {
+    setCompact(next);
+    localStorage.setItem(`${storagePrefix}_compact`, String(next));
+    if (onSettingsChange) void onSettingsChange({ file_compact_rows: next });
+  }
 
   const selectedItems = useMemo(() => items.filter((item) => selection.has(item.path)), [items, selection]);
   const selectedSize = useMemo(() => selectedItems.reduce((sum, item) => sum + (item.is_dir ? 0 : item.size), 0), [selectedItems]);
@@ -204,12 +223,22 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
       toast(detail, "error");
     }
   }
+  function queueUpload(files: File[]) {
+    const ids = onUpload(files, path);
+    if (ids.length) setUploadDialogIds(ids);
+    toast(t("files.uploadQueued"));
+  }
   async function upload(files: FileList | null) {
     if (!files?.length) return;
-    const ids = onUpload([...files], path);
-    if (ids.length) setUploadDialogIds(ids);
+    const list = [...files];
     if (uploadInput.current) uploadInput.current.value = "";
-    toast(t("files.uploadQueued"));
+    if (preferences.file_confirm_overwrite && list.some((file) => items.some((item) => item.name === file.name))) { setDialog({ type: "overwriteUpload", files: list }); return; }
+    queueUpload(list);
+  }
+
+  function requestDelete(itemsToDelete: FileItem[]) {
+    if (preferences.file_confirm_delete) setDialog({ type: "delete", items: itemsToDelete });
+    else void remove(itemsToDelete);
   }
   function confirmDrop(target: string) { if (dragPaths.length) setDialog({ type: "drop", target, copy: false }); }
   function dragPreview(event: React.DragEvent, paths: string[]) {
@@ -234,7 +263,7 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
       else if (modifier && event.key.toLowerCase() === "x") { event.preventDefault(); setClipboardFromSelection("move"); }
       else if (modifier && event.key.toLowerCase() === "v") { event.preventDefault(); void paste(); }
       else if (event.key === "F2" && selectedItems[0]?.can_rename) { event.preventDefault(); setDialog({ type: "rename", item: selectedItems[0] }); }
-      else if (event.key === "Delete" && selectedItems.length) { event.preventDefault(); setDialog({ type: "delete", items: selectedItems }); }
+      else if (event.key === "Delete" && selectedItems.length) { event.preventDefault(); requestDelete(selectedItems); }
       else if (event.key === "Enter") { event.preventDefault(); openItem(); }
       else if (event.key === "Backspace" && meta.parent) { event.preventDefault(); openPath(meta.parent); }
       else if (event.key === "Escape") { setDragPaths([]); setDropTarget(""); setContext(null); }
@@ -255,11 +284,15 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
       { label: t("action.download"), action: () => window.open(downloadUrl(item.path), "_blank") },
     );
     if (item?.is_dir) menu.push({ label: t("files.openNewWindow"), action: () => onOpenFolderWindow(item.path) });
-    if (item) menu.push({ label: t("action.copy"), separator: true, action: () => setClipboard({ mode: "copy", paths: targetItems.map((entry) => entry.path) }) }, { label: t("action.cut"), action: () => setClipboard({ mode: "move", paths: targetItems.map((entry) => entry.path) }) }, { label: t("action.rename"), disabled: !item.can_rename, action: () => setDialog({ type: "rename", item }) }, { label: t("action.delete"), danger: true, disabled: !item.can_delete, action: () => setDialog({ type: "delete", items: targetItems }) });
+    if (item) menu.push({ label: t("action.copy"), separator: true, action: () => setClipboard({ mode: "copy", paths: targetItems.map((entry) => entry.path) }) }, { label: t("action.cut"), action: () => setClipboard({ mode: "move", paths: targetItems.map((entry) => entry.path) }) }, { label: t("action.rename"), disabled: !item.can_rename, action: () => setDialog({ type: "rename", item }) }, { label: t("action.delete"), danger: true, disabled: !item.can_delete, action: () => requestDelete(targetItems) });
     else menu.push({ label: t("action.newFolder"), disabled: !meta.canWrite, action: () => setDialog({ type: "newFolder" }) }, { label: t("action.newFile"), disabled: !meta.canWrite, action: () => setDialog({ type: "newFile" }) }, { label: t("action.upload"), disabled: !meta.canWrite, action: () => document.getElementById("file-manager-upload")?.click() });
     const pasteAllowed = item?.is_dir ? item.can_write : meta.canWrite;
     menu.push({ label: t("action.paste"), separator: true, disabled: !clipboard || !pasteAllowed, action: () => void paste(item?.is_dir ? item.path : path) }, { label: t("files.copyPath"), action: () => void navigator.clipboard?.writeText(item?.path || path) });
-    if (item?.is_dir) menu.push({ label: t("files.shareSamba"), action: () => onShareSamba(item.path) });
+    if (item?.is_dir && isAdmin) {
+      const share = sharedPaths.get(item.path);
+      if (share) menu.push({ label: t("files.openSambaShareSettings"), action: () => onShareSamba(item.path) }, { label: t("files.removeSambaShare"), danger: true, action: () => setSambaRemoval(share) });
+      else menu.push({ label: t("files.shareSamba"), action: () => onShareSamba(item.path) });
+    }
     menu.push({ label: item ? t("files.properties") : t("files.directoryProperties"), action: () => item ? setProperties(item) : api.stat(path).then(setProperties).catch(() => undefined) }, { label: t("action.refresh"), action: refreshExplorer });
     return menu;
   }
@@ -281,10 +314,10 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
       <button className="toolbar-wide" title={t("action.cut")} disabled={!selection.size} onClick={() => setClipboardFromSelection("move")}><Scissors /></button>
       <button className="toolbar-wide" title={t("action.paste")} disabled={!clipboard || !meta.canWrite} onClick={() => void paste()}><Move /></button>
       <button className="toolbar-wide" title={t("action.rename")} disabled={selectedItems.length !== 1 || !selectedItems[0].can_rename} onClick={() => setDialog({ type: "rename", item: selectedItems[0] })}><Pencil /></button>
-      <button className="toolbar-wide" title={t("action.delete")} disabled={!selection.size || !meta.canDelete} onClick={() => setDialog({ type: "delete", items: selectedItems })}><Trash2 /></button>
-      <div className="toolbar-menu-wrap"><button title={t("action.more")} onClick={() => setMoreOpen((value) => !value)}><MoreHorizontal /></button>{moreOpen && <div className="toolbar-popover more-menu"><button disabled={!selectedItems.length} onClick={() => selectedItems[0] && setProperties(selectedItems[0])}><Info />{t("files.properties")}</button><button disabled={!selection.size} onClick={() => setClipboardFromSelection("copy")}><Copy />{t("action.copy")}</button><button disabled={!selection.size} onClick={() => setDialog({ type: "delete", items: selectedItems })}><Trash2 />{t("action.delete")}</button></div>}</div>
-      <div className="view-switcher"><button className={view === "list" ? "active" : ""} title={t("view.list")} onClick={() => setView("list")}><List /></button><button className={view === "medium" ? "active" : ""} title={t("view.medium")} onClick={() => setView("medium")}><Grid2X2 /></button><button className={view === "large" ? "active" : ""} title={t("view.large")} onClick={() => setView("large")}><LayoutGrid /></button></div>
-      <div className="toolbar-menu-wrap"><button title={t("files.viewOptions")} onClick={() => setOptionsOpen((value) => !value)}><SlidersHorizontal /></button>{optionsOpen && <div className="toolbar-popover"><label><input type="checkbox" checked={compact} onChange={(event) => setCompact(event.target.checked)} />{t("files.compact")}</label><strong><Columns3 />{t("files.columns")}</strong>{columns.slice(1).map((column) => <label key={column.id}><input type="checkbox" checked={!hiddenColumns.has(column.id)} onChange={() => setHiddenColumns((current) => { const next = new Set(current); if (next.has(column.id)) next.delete(column.id); else next.add(column.id); return next; })} />{t(column.key)}</label>)}</div>}</div>
+      <button className="toolbar-wide" title={t("action.delete")} disabled={!selection.size || !meta.canDelete} onClick={() => requestDelete(selectedItems)}><Trash2 /></button>
+      <div className="toolbar-menu-wrap"><button title={t("action.more")} onClick={() => setMoreOpen((value) => !value)}><MoreHorizontal /></button>{moreOpen && <div className="toolbar-popover more-menu"><button disabled={!selectedItems.length} onClick={() => selectedItems[0] && setProperties(selectedItems[0])}><Info />{t("files.properties")}</button><button disabled={!selection.size} onClick={() => setClipboardFromSelection("copy")}><Copy />{t("action.copy")}</button><button disabled={!selection.size} onClick={() => requestDelete(selectedItems)}><Trash2 />{t("action.delete")}</button></div>}</div>
+      <div className="view-switcher"><button className={view === "list" ? "active" : ""} title={t("view.list")} onClick={() => changeView("list")}><List /></button><button className={view === "medium" ? "active" : ""} title={t("view.medium")} onClick={() => changeView("medium")}><Grid2X2 /></button><button className={view === "large" ? "active" : ""} title={t("view.large")} onClick={() => changeView("large")}><LayoutGrid /></button></div>
+      <div className="toolbar-menu-wrap"><button title={t("files.viewOptions")} onClick={() => setOptionsOpen((value) => !value)}><SlidersHorizontal /></button>{optionsOpen && <div className="toolbar-popover"><label><input type="checkbox" checked={compact} onChange={(event) => changeCompact(event.target.checked)} />{t("files.compact")}</label><strong><Columns3 />{t("files.columns")}</strong>{columns.slice(1).map((column) => <label key={column.id}><input type="checkbox" checked={!hiddenColumns.has(column.id)} onChange={() => setHiddenColumns((current) => { const next = new Set(current); if (next.has(column.id)) next.delete(column.id); else next.add(column.id); return next; })} />{t(column.key)}</label>)}</div>}</div>
       <div className="file-search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("files.search")} aria-label={t("files.search")} />{query && <button onClick={() => setQuery("")}><X /></button>}</div>
     </div>
     <Breadcrumbs path={path} homePath={homePath} roots={[
@@ -300,8 +333,8 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
         : loading ? <div className="file-skeleton">{Array.from({ length: 8 }, (_, index) => <span key={index} />)}</div> : items.length === 0 ? <div className="empty-state"><Folder /><strong>{t("files.empty")}</strong><span>{t("files.emptyHint")}</span></div> : view === "list" ? <div className="file-list" role="grid">
           <div className="file-list-header" role="row"><span><input type="checkbox" aria-label={t("files.selectAll")} checked={items.length > 0 && selection.size === items.length} onChange={(event) => setSelection(event.target.checked ? new Set(items.map((item) => item.path)) : new Set())} /></span><span />{visibleColumns.map((column) => <button className={column.id} role="columnheader" key={column.id} style={{ width: widths[column.id] }} onClick={() => { if (sort === column.id) setDirection((value) => value === "asc" ? "desc" : "asc"); else { setSort(column.id); setDirection("asc"); } }}>{t(column.key)}{sort === column.id && <i>{direction === "asc" ? "↑" : "↓"}</i>}<b onPointerDown={(event) => { event.stopPropagation(); const startX = event.clientX; const start = widths[column.id]; const move = (next: PointerEvent) => setWidths((current) => ({ ...current, [column.id]: Math.max(70, start + next.clientX - startX) })); const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} /></button>)}<span>{t("column.actions")}</span></div>
           {items.map((item, index) => <div role="row" key={item.path} className={`file-entry file-row ${selection.has(item.path) ? "selected" : ""} ${dropTarget === item.path ? "drop-target" : ""}`} draggable onDragStart={(event) => dragPreview(event, selection.has(item.path) ? selectedItems.map((entry) => entry.path) : [item.path])} onDragEnd={() => { setDropTarget(""); }} onDragOver={(event) => { if (item.is_dir) { event.preventDefault(); event.dataTransfer.dropEffect = event.ctrlKey ? "copy" : "move"; setDropTarget(item.path); } }} onDragLeave={() => setDropTarget("")} onDrop={(event) => { event.preventDefault(); setDropTarget(""); if (item.is_dir) setDialog({ type: "drop", target: item.path, copy: event.ctrlKey }); }} onClick={(event) => selectItem(item, event, index)} onDoubleClick={() => openItem(item)} onContextMenu={(event) => { event.preventDefault(); if (!selection.has(item.path)) setSelection(new Set([item.path])); setContext({ x: event.clientX, y: event.clientY, item }); }}>
-            <span><input type="checkbox" aria-label={`${t("action.select")} ${item.name}`} checked={selection.has(item.path)} onClick={(event) => event.stopPropagation()} onChange={() => setSelection((current) => { const next = new Set(current); if (next.has(item.path)) next.delete(item.path); else next.add(item.path); return next; })} /></span><span className="file-type-icon">{item.is_dir ? <Folder /> : <File />}</span>{visibleColumns.map((column) => <span key={column.id} style={{ width: widths[column.id] }} className={column.id}>{column.id === "name" ? <>{item.name}{item.is_dir && sharedPaths.has(item.path) && <small>SMB</small>}</> : column.id === "size" ? item.is_dir ? "—" : formatSize(item.size) : column.id === "modified" ? formatDate(item.mtime || item.modified) : item[column.id]}</span>)}<span className="row-actions"><button title={t("files.properties")} onClick={(event) => { event.stopPropagation(); setProperties(item); }}><MoreHorizontal /></button></span>
-          </div>)}</div> : <div className={`file-grid ${view}`}>{items.map((item, index) => <button key={item.path} className={`file-entry ${selection.has(item.path) ? "selected" : ""}`} draggable onDragStart={(event) => dragPreview(event, selection.has(item.path) ? selectedItems.map((entry) => entry.path) : [item.path])} onClick={(event) => selectItem(item, event, index)} onDoubleClick={() => openItem(item)} onContextMenu={(event) => { event.preventDefault(); setSelection(new Set([item.path])); setContext({ x: event.clientX, y: event.clientY, item }); }} onDragOver={(event) => { if (item.is_dir) event.preventDefault(); }} onDrop={(event) => { if (item.is_dir) setDialog({ type: "drop", target: item.path, copy: event.ctrlKey }); }}>{item.is_dir ? <Folder /> : <File />}<span>{item.name}</span><small>{item.is_dir ? t("files.folder") : formatSize(item.size)}</small></button>)}</div>}
+            <span><input type="checkbox" aria-label={`${t("action.select")} ${item.name}`} checked={selection.has(item.path)} onClick={(event) => event.stopPropagation()} onChange={() => setSelection((current) => { const next = new Set(current); if (next.has(item.path)) next.delete(item.path); else next.add(item.path); return next; })} /></span><span className="file-type-icon">{item.is_dir ? <Folder /> : <File />}</span>{visibleColumns.map((column) => { const share = sharedPaths.get(item.path); return <span key={column.id} style={{ width: widths[column.id] }} className={column.id}>{column.id === "name" ? <>{item.name}{item.is_dir && share && <small title={`${share.name} · ${share.read_only ? t("files.readOnly") : t("files.readWrite")}`}>SMB · {share.name}{share.read_only ? " · RO" : ""}</small>}</> : column.id === "size" ? item.is_dir ? "—" : formatSize(item.size) : column.id === "modified" ? formatDate(item.mtime || item.modified) : item[column.id]}</span>; })}<span className="row-actions"><button title={t("files.properties")} onClick={(event) => { event.stopPropagation(); setProperties(item); }}><MoreHorizontal /></button></span>
+          </div>)}</div> : <div className={`file-grid ${view}`}>{items.map((item, index) => { const share = sharedPaths.get(item.path); return <button key={item.path} className={`file-entry ${selection.has(item.path) ? "selected" : ""}`} draggable onDragStart={(event) => dragPreview(event, selection.has(item.path) ? selectedItems.map((entry) => entry.path) : [item.path])} onClick={(event) => selectItem(item, event, index)} onDoubleClick={() => openItem(item)} onContextMenu={(event) => { event.preventDefault(); setSelection(new Set([item.path])); setContext({ x: event.clientX, y: event.clientY, item }); }} onDragOver={(event) => { if (item.is_dir) event.preventDefault(); }} onDrop={(event) => { if (item.is_dir) setDialog({ type: "drop", target: item.path, copy: event.ctrlKey }); }}>{item.is_dir ? <Folder /> : <File />}<span>{item.name}</span><small>{share ? `SMB · ${share.name}${share.read_only ? " · RO" : ""}` : item.is_dir ? t("files.folder") : formatSize(item.size)}</small></button>; })}</div>}
         {meta.pages > 1 && <nav className="pagination" aria-label={t("files.pagination")}><button disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t("action.previous")}</button><span>{meta.page} / {meta.pages}</span><button disabled={page >= meta.pages} onClick={() => setPage((value) => Math.min(meta.pages, value + 1))}>{t("action.next")}</button></nav>}
       </main>
     </div>
@@ -311,11 +344,13 @@ export function FileManager({ homePath, initialPath, tasks, isAdmin, t, toast, o
     {dialog?.type === "newFile" && <InputDialog title={t("action.newFile")} label={t("files.fileName")} confirmLabel={t("action.create")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={(name) => { setDialog(null); void create("file", name); }} />}
     {dialog?.type === "rename" && <InputDialog title={t("action.rename")} label={t("files.newName")} value={dialog.item.name} confirmLabel={t("action.rename")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={(name) => { const item = dialog.item; setDialog(null); void rename(item, name); }} />}
     {dialog?.type === "delete" && <ConfirmDialog title={t("files.confirmDeleteTitle")} message={t("files.confirmDelete").replace("{count}", String(dialog.items.length))} confirmLabel={t("action.delete")} cancelLabel={t("action.cancel")} danger onClose={() => setDialog(null)} onConfirm={() => { const list = dialog.items; setDialog(null); void remove(list); }} />}
+    {dialog?.type === "overwriteUpload" && <ConfirmDialog title={t("files.confirmOverwriteTitle")} message={t("files.confirmOverwrite")} confirmLabel={t("action.overwrite")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={() => { const files = dialog.files; setDialog(null); queueUpload(files); }} />}
     {dialog?.type === "drop" && <ConfirmDialog title={dialog.copy ? t("files.confirmCopy") : t("files.confirmMove")} message={t("files.confirmDrop").replace("{count}", String(dragPaths.length)).replace("{target}", dialog.target)} confirmLabel={dialog.copy ? t("action.copy") : t("action.move")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={() => { const source = { mode: dialog.copy ? "copy" as const : "move" as const, paths: dragPaths }; const target = dialog.target; setDialog(null); setDragPaths([]); void paste(target, source); }} />}
     {preview && <FilePreview item={preview} t={t} onClose={() => setPreview(null)} />}
     {editor && <TextEditor item={editor} t={t} onClose={() => setEditor(null)} onSaved={() => { toast(t("editor.saved")); void load(); }} />}
     {uploadDialogIds && <UploadProgressDialog tasks={tasks.filter((task) => uploadDialogIds.includes(task.id))} t={t} onClose={() => setUploadDialogIds(null)} onCancel={(id) => onUploadCancel?.(id)} onRetry={(id) => onUploadRetry?.(id)} />}
     {properties && <FileProperties item={properties} currentPath={path} isAdmin={isAdmin} sambaShared={sharedPaths.has(properties.path)} t={t} toast={toast} onClose={() => setProperties(null)} onChanged={() => void load()} />}
+    {sambaRemoval && <AdminActionDialog title={t("files.removeSambaShare")} fields={[{ name: "admin_password", label: t("settings.adminPassword"), type: "password", required: true }]} danger t={t} onClose={() => setSambaRemoval(null)} onSubmit={async (values) => { const share = sambaRemoval; const result = await api.removeSambaShare(share.name, values.admin_password); toast(`${t("module.jobQueued")} ${result.job.id.slice(0, 8)}`, "ok", "admin"); setSambaRemoval(null); }} />}
     {operationErrors.length > 0 && <Modal title={t("files.operationErrors")} onClose={() => setOperationErrors([])} footer={<button onClick={() => setOperationErrors([])}>{t("action.close")}</button>}><ul className="error-list">{operationErrors.map((error) => <li key={error}>{error}</li>)}</ul></Modal>}
   </section>;
 }

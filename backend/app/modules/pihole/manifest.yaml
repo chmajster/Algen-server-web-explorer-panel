@@ -1,0 +1,36 @@
+id: pihole
+name: Pi-hole
+description: DNS blocking statistics, domains, clients, filter lists and service control through the Pi-hole API.
+category: dns
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://pi-hole.net/
+icon: shield-check
+license: EUPL-1.2
+supported_distributions: [debian, ubuntu, raspbian]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [pihole-ftl]
+services:
+  - name: pihole-FTL
+    required: true
+capabilities:
+  install: false
+  update: true
+  uninstall: false
+  configure: true
+  service_control: true
+  reload: true
+  logs: true
+  diagnostics: true
+  backups: false
+  healthcheck: true
+  resources: [statistics, domains, clients, lists, updates]
+  actions: [blocking_enable, blocking_disable]
+ports: [53/tcp, 53/udp, 80/tcp]
+permissions: [systemd, network_api]
+config_paths: [/etc/pihole/pihole.toml]
+data_paths: [/etc/pihole]
+proxmox_safe: false
+requires_root: true
+removable: false

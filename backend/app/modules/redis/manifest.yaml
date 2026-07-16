@@ -1,0 +1,37 @@
+id: redis
+name: Redis
+description: Memory, persistence, limits, clients, statistics, backups and security diagnostics.
+category: databases
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://redis.io/
+icon: database-zap
+license: RSALv2-or-SSPLv1
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [redis-server, redis-tools]
+  dnf: [redis]
+  yum: [redis]
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: true
+  reload: true
+  logs: true
+  diagnostics: true
+  backups: true
+  healthcheck: true
+  resources: [memory, persistence, limits, clients, stats, security]
+  actions: [configure_memory, configure_persistence]
+ports: [6379/tcp]
+permissions: [package_management, systemd, database_socket, backup_write]
+config_paths: [/etc/redis/redis.conf]
+data_paths: [/var/lib/redis]
+backup_paths: [/var/lib/redis/dump.rdb]
+proxmox_safe: false
+requires_root: true
+removable: true

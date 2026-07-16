@@ -1,0 +1,17 @@
+.desktop .desktop-window {
+  grid-template-rows: calc(44px * var(--ui-scale, 1)) minmax(0, 1fr);
+  border-color: color-mix(in srgb, var(--border-subtle) 82%, transparent);
+  border-radius: 10px; background: color-mix(in srgb, var(--surface-primary) 94%, transparent);
+  backdrop-filter: blur(22px) saturate(125%); transition: opacity .12s ease, transform .12s ease, box-shadow .12s ease;
+}
+.desktop .desktop-window.inactive { box-shadow: 0 10px 32px rgba(20,35,48,.2); }
+.desktop .desktop-window.inactive .window-titlebar { color: var(--text-secondary); background: color-mix(in srgb, var(--surface-secondary) 90%, transparent); }
+.desktop .desktop-window.active { border-color: color-mix(in srgb, var(--accent) 36%, var(--border-strong)); }
+.desktop .desktop-window.maximized { border-radius: 0; }
+.desktop .desktop-window.minimizing { opacity: 0; transform: translateY(28px) scale(.92); }
+.desktop .window-titlebar { gap: 8px; padding: 0 0 0 14px; background: color-mix(in srgb, var(--surface-elevated) 88%, transparent); }
+.desktop .window-titlebar > strong { font-size: .78em; font-weight: 600; }
+.desktop .window-controls { align-self: stretch; gap: 0; }
+.desktop .window-controls button { width: 46px; height: 100%; border-radius: 0; }
+.desktop .window-controls .window-close:hover { background: #c42b3a; }
+.desktop .window-app-icon svg { width: 17px; height: 17px; }
