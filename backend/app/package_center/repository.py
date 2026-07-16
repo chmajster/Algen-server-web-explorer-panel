@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..config import get_config
+from .detached_updates import detached_update_session, read_update_state, update_session_directory
 from .models import PackageJobStatus, PackagePlan, PackageSourceInput
 
 
@@ -73,6 +74,7 @@ class PackageRepository:
         result["plan"] = json.loads(result.pop("plan_json") or "{}")
         result["warnings"] = json.loads(result.pop("warnings_json", "[]") or "[]")
         result["result"] = json.loads(result.pop("result_json", "{}") or "{}")
+        result["cancellable"] = not (result["status"] == PackageJobStatus.running.value and detached_update_session(result["plan"]))
         result["log_tail"] = logs or []
         result["operation"] = result["action"]
         result["stage"] = result["current_step"]
@@ -153,12 +155,23 @@ class PackageRepository:
         now = time.time()
         message = "Package operation was interrupted by a WebNAS restart"
         with self._lock, self.connect() as connection:
-            rows = connection.execute("SELECT id,module_id,action,created_by,created_at FROM package_jobs WHERE status='running'").fetchall()
+            rows = connection.execute("SELECT id,module_id,action,created_by,created_at,plan_json FROM package_jobs WHERE status='running'").fetchall()
+            recovered = 0
             for row in rows:
+                try:
+                    plan = json.loads(row["plan_json"] or "{}")
+                except (TypeError, ValueError):
+                    plan = {}
+                session_id = detached_update_session(plan) if isinstance(plan, dict) else None
+                if session_id and read_update_state(update_session_directory(self.path.parent, session_id)):
+                    # A detached screen worker owns this operation. PackageJobManager
+                    # reconnects to its atomic state file during application startup.
+                    continue
                 connection.execute("UPDATE package_jobs SET status='failed', finished_at=?, error=?, current_step='Interrupted' WHERE id=?", (now, message, row["id"]))
                 connection.execute("INSERT INTO package_job_logs(job_id,created_at,stream,line) VALUES (?,?,?,?)", (row["id"], now, "stderr", message))
                 connection.execute("INSERT INTO package_history(job_id,module_id,action,status,actor,created_at,finished_at,message) VALUES (?,?,?,?,?,?,?,?)", (row["id"], row["module_id"], row["action"], "failed", row["created_by"], row["created_at"], now, message))
-        return len(rows)
+                recovered += 1
+        return recovered
 
     def finish_history(self, job: dict) -> None:
         action = job["action"]

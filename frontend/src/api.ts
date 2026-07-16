@@ -276,6 +276,7 @@ export type AppJob = {
   warnings?: string[];
   result?: Record<string, unknown>;
   cancellation_requested?: boolean;
+  cancellable?: boolean;
   requires_reboot?: boolean;
   plan?: PackagePlan;
 };

@@ -15,6 +15,8 @@ from app.modules.providers.docker import DockerProvider
 from app.modules.providers.home_assistant import HomeAssistantProvider
 from app.modules.providers.infrastructure import ApiConnectionProvider
 from app.modules.providers.linux_updates import LinuxUpdatesProvider
+from app.modules import linux_update_worker
+from app.package_center.detached_updates import read_update_state, update_session_directory, write_update_state
 from app.modules.providers.databases import RedisProvider
 from app.package_center.manifests import discover_manifests
 from app.package_center.executor import redact
@@ -84,6 +86,21 @@ def test_proxmox_safe_mode_blocks_provider_management(monkeypatch):
     assert error.value.detail["code"] == "MODULE_BLOCKED_BY_PROXMOX"
 
 
+def test_linux_update_route_assigns_the_screen_session_server_side(monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(module_router, "_authorize", lambda *args: None)
+    monkeypatch.setattr(module_router, "get_provider", lambda *args: SimpleNamespace(manifest=SimpleNamespace(capabilities=SimpleNamespace(actions=["upgrade_security"]))))
+    monkeypatch.setattr(module_router.secrets, "token_hex", lambda length: "0123456789abcdef01234567")
+    monkeypatch.setattr(module_router, "_provider_plan", lambda module_id, action, payload: captured.update(payload) or payload)
+    monkeypatch.setattr(module_router, "_enqueue", lambda plan, payload, user: plan)
+    request = module_router.ModuleActionRequest(admin_password="pam-password", payload={"operation": "upgrade_all", "screen_session": "client-value"})
+
+    result = module_router.module_management_action("linux-updates", "upgrade_security", request, SessionUser(username="operator", csrf_token="csrf"))
+
+    assert result["operation"] == "upgrade_security"
+    assert result["screen_session"] == "0123456789abcdef01234567"
+
+
 def test_linux_updates_marks_security_packages_and_uses_closed_upgrade_command(monkeypatch):
     provider = LinuxUpdatesProvider("linux-updates")
     monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
@@ -96,13 +113,74 @@ def test_linux_updates_marks_security_packages_and_uses_closed_upgrade_command(m
         return subprocess.CompletedProcess(args, 0, simulation if "-s" in args else "updated", "")
 
     monkeypatch.setattr(provider, "_run", run)
+    detached: list[list[str]] = []
+    monkeypatch.setattr(provider, "_run_detached_update", lambda command, session_id, log, progress: detached.append(command) or {"detached": True, "screen_session": f"webnas-update-{session_id}"})
     packages = provider.list_resources("packages")["items"]
     result = provider.manage("upgrade_security", {}, "operator", lambda *_: None, lambda *_: None, lambda: False)
 
     assert packages[0]["security"] is True
     assert packages[1]["security"] is False
-    assert ["apt-get", "install", "--only-upgrade", "-y", "openssl"] in calls
+    assert detached == [["apt-get", "install", "--only-upgrade", "-y", "openssl"]]
+    assert result["detached"] is True
     assert result["reboot_required"] is True
+
+
+def test_linux_update_launches_a_fixed_worker_in_detached_screen(monkeypatch, tmp_path: Path):
+    provider = LinuxUpdatesProvider("linux-updates")
+    captured: list[list[str]] = []
+
+    def run(args, **kwargs):
+        captured.append(args)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr("app.modules.providers.linux_updates.subprocess.run", run)
+    provider._launch_screen("/usr/bin/screen", "webnas-update-0123456789abcdef01234567", tmp_path, "0123456789abcdef01234567", ["apt-get", "upgrade", "-y"])
+
+    command = captured[0]
+    assert command[:3] == ["/usr/bin/screen", "-DmS", "webnas-update-0123456789abcdef01234567"]
+    assert command[-4:] == ["--", "apt-get", "upgrade", "-y"]
+    assert "linux_update_worker.py" in command[4]
+
+
+def test_detached_update_worker_accepts_only_closed_commands_and_records_result(monkeypatch, tmp_path: Path):
+    with pytest.raises(ValueError):
+        linux_update_worker.validate_update_command(["apt-get", "upgrade", "-y", ";reboot"])
+    with pytest.raises(ValueError):
+        linux_update_worker.validate_update_command(["sh", "-c", "apt-get upgrade -y"])
+
+    class Process:
+        pid = 4321
+
+        @staticmethod
+        def wait():
+            return 0
+
+    monkeypatch.setattr(linux_update_worker.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(linux_update_worker.subprocess, "Popen", lambda *args, **kwargs: Process())
+    result = linux_update_worker.run_update(tmp_path, "0123456789abcdef01234567", ["apt-get", "upgrade", "-y"])
+
+    state = read_update_state(tmp_path)
+    assert result == 0
+    assert state and state["status"] == "completed"
+    assert state["exit_code"] == 0
+    assert (tmp_path / "output.log").is_file()
+
+
+def test_linux_update_reconnects_to_finished_worker_without_starting_a_second_upgrade(monkeypatch, tmp_path: Path):
+    session_id = "0123456789abcdef01234567"
+    directory = update_session_directory(tmp_path, session_id)
+    write_update_state(directory, {"session_id": session_id, "status": "completed", "exit_code": 0})
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
+    monkeypatch.setattr(provider, "_reboot_required", lambda: False)
+    monkeypatch.setattr(provider, "_packages", lambda: [])
+    monkeypatch.setattr(LinuxUpdatesProvider, "update_state_root", property(lambda self: tmp_path))
+    monkeypatch.setattr(provider, "_launch_screen", lambda *args: pytest.fail("a recovered update must not launch a second package manager"))
+
+    result = provider.manage("upgrade_security", {"screen_session": session_id}, "operator", lambda *_: None, lambda *_: None, lambda: False)
+
+    assert result["detached"] is True
+    assert result["screen_session"] == f"webnas-update-{session_id}"
 
 
 def test_docker_resources_and_compose_validation_never_accept_host_control(monkeypatch):

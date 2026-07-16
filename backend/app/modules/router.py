@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import re
+import secrets
 import threading
 import time
 from typing import Any, Literal
@@ -337,7 +338,11 @@ def module_management_action(module_id: str, operation: str, payload: ModuleActi
     provider = get_provider(module_id, user.username)
     if operation not in provider.manifest.capabilities.actions:
         api_error(400, "MODULE_ACTION_NOT_SUPPORTED", "Unsupported module action")
-    action_payload = {"operation": operation, **payload.payload}
+    # Route-controlled fields are assigned last so a client cannot override the
+    # validated operation or choose the name of a privileged screen session.
+    action_payload = {**payload.payload, "operation": operation}
+    if module_id == "linux-updates" and operation in {"upgrade_all", "upgrade_security"}:
+        action_payload["screen_session"] = secrets.token_hex(12)
     return _enqueue(_provider_plan(module_id, PackageAction.manage, action_payload), payload, user)
 
 

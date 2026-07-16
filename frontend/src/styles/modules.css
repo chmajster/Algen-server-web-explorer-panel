@@ -239,6 +239,8 @@
 
 .managed-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .managed-actions button, .module-hub button { display: inline-flex; align-items: center; gap: 6px; }
+.detached-update-hint { display: flex; align-items: center; gap: 7px; margin: 8px 0 12px; color: var(--text-muted); font-size: .82rem; }
+.detached-update-hint svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--accent); }
 .managed-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 9px; margin-top: 12px; }
 .managed-metrics article { display: grid; gap: 5px; padding: 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-secondary); }
 .managed-metrics span { color: var(--text-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }

@@ -9,6 +9,7 @@ from fastapi import HTTPException, Request, Response
 from app import security as session_security
 from app.package_center import distro, executor, jobs, manifests, security, service
 from app.package_center.jobs import PackageJobManager
+from app.package_center.detached_updates import update_session_directory, write_update_state
 from app.package_center.models import DistributionInfo, ModuleManifest, PackageAction, PackagePlan, PackageSourceInput
 from app.package_center.repository import PackageRepository
 
@@ -132,6 +133,57 @@ def test_repository_persists_history_and_recovers_interrupted_job(tmp_path):
     assert recovered["status"] == "failed"
     assert "interrupted" in recovered["error"].lower()
     assert second.history()[0]["job_id"] == created["id"]
+
+
+def test_repository_preserves_running_detached_linux_update_for_reconnection(tmp_path):
+    path = tmp_path / "packages.sqlite3"
+    session_id = "0123456789abcdef01234567"
+    detached_plan = plan("linux-updates", PackageAction.manage)
+    detached_plan.payload = {"operation": "upgrade_security", "screen_session": session_id}
+    first = PackageRepository(path)
+    created = first.create_job(detached_plan, "operator")
+    first.update_job(created["id"], status="running", started_at=1)
+    write_update_state(update_session_directory(tmp_path, session_id), {"session_id": session_id, "status": "running", "pid": 123})
+
+    second = PackageRepository(path)
+
+    assert second.get_job(created["id"])["status"] == "running"
+
+
+def test_running_detached_linux_update_cannot_be_cancelled_unsafely(monkeypatch, tmp_path):
+    session_id = "0123456789abcdef01234567"
+    detached_plan = plan("linux-updates", PackageAction.manage)
+    detached_plan.payload = {"operation": "upgrade_all", "screen_session": session_id}
+    repository = PackageRepository(tmp_path / "packages.sqlite3")
+    created = repository.create_job(detached_plan, "operator")
+    repository.update_job(created["id"], status="running", started_at=1)
+    write_update_state(update_session_directory(tmp_path, session_id), {"session_id": session_id, "status": "running", "pid": 123})
+    monkeypatch.setattr(PackageJobManager, "_run", lambda self, job_id: None)
+    manager = PackageJobManager(repository)
+
+    assert repository.get_job(created["id"])["cancellable"] is False
+    with pytest.raises(HTTPException) as exc:
+        manager.cancel(created["id"])
+
+    assert exc.value.detail["code"] == "JOB_NOT_CANCELLABLE"
+
+
+def test_retry_of_detached_linux_update_gets_a_fresh_screen_session(monkeypatch, tmp_path):
+    original_session = "0123456789abcdef01234567"
+    retry_session = "89abcdef0123456701234567"
+    detached_plan = plan("linux-updates", PackageAction.manage)
+    detached_plan.payload = {"operation": "upgrade_all", "screen_session": original_session}
+    repository = PackageRepository(tmp_path / "packages.sqlite3")
+    created = repository.create_job(detached_plan, "operator")
+    repository.update_job(created["id"], status="failed", error="screen unavailable")
+    manager = PackageJobManager(repository)
+    monkeypatch.setattr(manager, "_schedule", lambda: None)
+    monkeypatch.setattr("app.package_center.jobs.secrets.token_hex", lambda length: retry_session)
+
+    retried = manager.retry(created["id"], "operator")
+
+    assert retried["plan"]["payload"]["screen_session"] == retry_session
+    assert retried["retry_of"] == created["id"]
 
 
 def test_repository_persists_and_updates_package_sources(tmp_path):

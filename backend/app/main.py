@@ -23,6 +23,8 @@ from .local_disks import router as local_disks_router
 from .network_mounts import router as mounts_router
 from .modules.router import router as modules_router
 from .package_center.router import router as package_center_router
+from .package_center.jobs import manager as package_job_manager
+from .package_center.service import repository as package_repository
 from .path_policy import resolve_user_path
 from .rbac import router as rbac_router
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
@@ -47,6 +49,7 @@ app.include_router(activity_router)
 @app.on_event("startup")
 def startup() -> None:
     start_auto_update_scheduler()
+    package_job_manager(package_repository())
 
 
 @app.get("/api/health")

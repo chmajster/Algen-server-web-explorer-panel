@@ -19,6 +19,8 @@ Assignments are stored atomically in `paths.data_dir/rbac.json` with mode `0600`
 
 The module supports `apt-get`, `dnf`, and `yum`. It lists candidate packages, marks security advisories, exposes apt/dnf history, and reports `/var/run/reboot-required` or `needs-restarting -r`. Metadata refresh, security-only upgrade, and full upgrade run as durable jobs. Package names are parsed by the provider and revalidated before they become arguments.
 
+Security and full upgrades start a fixed Python worker in a server-named detached GNU `screen` session. Closing or crashing the browser cannot terminate patching. The worker keeps private `0700` session directories with `0600` output and atomically replaced state files under `paths.data_dir/linux-update-sessions`; on a WebNAS process restart, the SQLite job reconnects to the same worker instead of starting a second package manager. Running package transactions cannot be cancelled from the UI because interrupting `apt`, `dnf`, or `yum` mid-transaction is unsafe. The installer includes `screen`; existing installations that predate this feature must install that package or rerun the installer.
+
 The manifest is not Proxmox-safe. Safe Mode rejects refresh and upgrade jobs on a detected Proxmox VE host. WebNAS never queues an automatic host restart.
 
 ## Docker and Compose

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import secrets
 import threading
 import time
 
 from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..audit import logger
+from .detached_updates import detached_update_session
 from .executor import execute
 from .manifests import load_manifest
 from .models import PackageAction, PackageJobStatus, PackagePlan, api_error
@@ -15,6 +17,10 @@ class PackageJobManager:
     def __init__(self, repository: PackageRepository) -> None:
         self.repository = repository
         self._lock = threading.RLock()
+        for job in repository.active_jobs():
+            if job["status"] == PackageJobStatus.running.value and detached_update_session(job.get("plan", {})):
+                threading.Thread(target=self._run, args=(job["id"],), daemon=True, name=f"package-resume-{job['id'][:8]}").start()
+        self._schedule()
 
     def enqueue(self, plan: PackagePlan, actor: str, *, retry_of: str | None = None) -> dict:
         if self.repository.active_jobs(plan.module_id):
@@ -142,6 +148,8 @@ class PackageJobManager:
             return cancelled
         if job["status"] != PackageJobStatus.running.value:
             api_error(409, "JOB_NOT_CANCELLABLE", "Only queued or running jobs can be cancelled")
+        if detached_update_session(job.get("plan", {})):
+            api_error(409, "JOB_NOT_CANCELLABLE", "A detached system update cannot be cancelled safely while the package manager is running")
         self.repository.update_job(job_id, cancellation_requested=True, current_step="Cancellation requested; waiting for a safe step")
         return self.repository.get_job(job_id) or job
 
@@ -151,7 +159,10 @@ class PackageJobManager:
             api_error(404, "JOB_NOT_FOUND", "Package job not found")
         if job["status"] not in {PackageJobStatus.failed.value, PackageJobStatus.cancelled.value}:
             api_error(409, "JOB_NOT_RETRYABLE", "Only failed or cancelled jobs can be retried")
-        return self.enqueue(PackagePlan.model_validate(job["plan"]), actor, retry_of=job_id)
+        retry_plan = PackagePlan.model_validate(job["plan"])
+        if detached_update_session(job.get("plan", {})):
+            retry_plan.payload["screen_session"] = secrets.token_hex(12)
+        return self.enqueue(retry_plan, actor, retry_of=job_id)
 
 
 _manager: PackageJobManager | None = None

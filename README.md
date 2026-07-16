@@ -57,7 +57,7 @@ Persistent definitions use path-escaped `.mount`/`.automount` unit names matchin
 
 ## Package Center
 
-**Package Center** manages trusted WebNAS modules through a permission-controlled UI with search, categories, status filters, installed/updates views, jobs, history, and sources. The catalog includes Samba, Squid Proxy, Nginx, Syncthing, Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant. Install, update, uninstall, and systemd actions require plan confirmation and PAM reauthentication; progress and redacted logs survive browser and service restarts in SQLite.
+**Package Center** manages trusted WebNAS modules through a permission-controlled UI with search, categories, status filters, installed/updates views, jobs, history, and sources. The catalog includes Samba, Squid Proxy, Nginx, Syncthing, Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant. Install, update, uninstall, and systemd actions require plan confirmation and PAM reauthentication; progress and redacted logs survive browser and service restarts in SQLite. Linux security/full patching additionally runs in a detached GNU `screen` worker, so closing the browser does not stop the package manager and WebNAS can reconnect to the operation after its own process restarts.
 
 Modules support Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux when their manifest provides packages for the detected `apt-get`, `dnf`, or `yum` manager. Proxmox Safe Mode rejects modules not explicitly marked safe. External GitHub repositories are stored and refreshed only as untrusted metadata—they are never downloaded or executed automatically.
 
