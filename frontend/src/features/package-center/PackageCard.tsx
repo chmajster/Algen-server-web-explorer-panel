@@ -1,10 +1,17 @@
-import { Box, PackageCheck, RefreshCw, ShieldAlert } from "lucide-react";
+import { Box, Network, PackageCheck, RefreshCw, Server, Share2, ShieldAlert } from "lucide-react";
 import type { ModuleSummary } from "../../api";
 import type { Translate } from "../../app/types";
 import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, packageActionLabelKey, type PackageDisplayAction } from "./packageState";
 import type { PackageAction } from "./types";
 
 const KNOWN_OPERATIONS = new Set(["install", "update", "uninstall", "start", "stop", "restart"]);
+
+function catalogIcon(icon: string) {
+  if (icon === "share-2") return <Share2 />;
+  if (icon === "server") return <Server />;
+  if (icon === "network") return <Network />;
+  return <Box />;
+}
 
 function operationLabel(item: ModuleSummary, t: Translate): string {
   const operation = item.active_job?.operation || item.active_job?.action || "working";
@@ -25,7 +32,7 @@ export function PackageCard({ item, t, onDetails, onOpen, onAction }: { item: Mo
 
   return <article className={`package-card ui-status-${status}`} aria-labelledby={titleId} aria-busy={busy}>
     <button className="package-card-main" type="button" onClick={onDetails} aria-label={`${t("package.details")}: ${item.manifest.name}`}>
-      <span className="package-icon" aria-hidden="true">{item.blocked_by_proxmox ? <ShieldAlert /> : item.state.installed ? <PackageCheck /> : <Box />}</span>
+      <span className="package-icon" aria-hidden="true">{item.blocked_by_proxmox ? <ShieldAlert /> : item.state.installed ? <PackageCheck /> : catalogIcon(item.manifest.icon)}</span>
       <span className="package-card-copy"><strong id={titleId}>{item.manifest.name}</strong><small>{t(`package.category.${item.manifest.category}`)}</small><p>{item.manifest.description}</p></span>
       <span className={`package-status ui-status-${status}`} role="status">{t(`package.status.${status}`)}</span>
     </button>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ModuleSummary } from "../../api";
-import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus } from "./packageState";
+import type { ModuleSummary, PackageModule } from "../../api";
+import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, mergePackageCatalog } from "./packageState";
 
 function packageItem(options: { installed?: boolean; running?: boolean; update?: boolean; needsConfig?: boolean; error?: boolean } = {}): ModuleSummary {
   const installed = options.installed ?? false;
@@ -26,6 +26,27 @@ function packageItem(options: { installed?: boolean; running?: boolean; update?:
 }
 
 describe("Package Center state matrix", () => {
+  it("creates an installable Samba summary when only catalog metadata is available", () => {
+    const runtime = packageItem();
+    const catalog: PackageModule = {
+      id: "samba",
+      manifest: { ...runtime.manifest, id: "samba", name: "Samba", icon: "share-2", apt_packages: ["samba", "smbclient", "cifs-utils"] },
+      state: runtime.state,
+      services: { smbd: "inactive" },
+      status: "available",
+      compatible: true,
+      blocked_by_proxmox: false,
+      distribution: runtime.distribution,
+      jobs: [],
+    };
+
+    const [samba] = mergePackageCatalog([catalog], []);
+
+    expect(samba.id).toBe("samba");
+    expect(samba.manifest.apt_packages).toContain("cifs-utils");
+    expect(getPackageActions(samba)).toEqual(["install"]);
+  });
+
   it("offers only installation for a package that is not installed", () => {
     const item = packageItem();
     expect(getPackageUiStatus(item)).toBe("not_installed");

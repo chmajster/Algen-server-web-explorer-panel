@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { within } from "@testing-library/react";
 import { api, type ModuleSummary, type PackageModule, type PackagePlan } from "../../api";
 import en from "../../locales/en-US.json";
 import pl from "../../locales/pl-PL.json";
@@ -10,7 +11,7 @@ vi.mock("../../api", () => ({ api: { apps: vi.fn(), modules: vi.fn(), module: vi
 function module(id: string, overrides: Partial<PackageModule> = {}): PackageModule {
   return {
     id,
-    manifest: { id, name: id === "samba" ? "Samba" : "Nginx", description: `${id} description`, long_description: `${id} long description`, category: id === "samba" ? "file_sharing" : "web_server", version: "1.0.0", maintainer: "WebNAS", homepage: null, icon: "package", screenshots: [], license: "GPL", supported_distributions: ["debian"], supported_architectures: ["x86_64"], apt_packages: [id], dnf_packages: [id], systemd_services: [id], ports: ["80/tcp"], dependencies: [], conflicts: [], permissions: ["systemd"], config_paths: [`/etc/${id}`], data_paths: [`/var/lib/${id}`], backup_paths: [`/etc/${id}`], proxmox_safe: true, requires_reboot: false, requires_root: true, configurable: true, removable: true, changelog: ["Initial release"] },
+    manifest: { id, name: id === "samba" ? "Samba" : "Nginx", description: `${id} description`, long_description: `${id} long description`, category: id === "samba" ? "file_sharing" : "web_server", version: "1.0.0", maintainer: "WebNAS", homepage: null, icon: id === "samba" ? "share-2" : "server", screenshots: [], license: "GPL", supported_distributions: ["debian"], supported_architectures: ["x86_64"], apt_packages: [id], dnf_packages: [id], systemd_services: [id], ports: ["80/tcp"], dependencies: [], conflicts: [], permissions: ["systemd"], config_paths: [`/etc/${id}`], data_paths: [`/var/lib/${id}`], backup_paths: [`/etc/${id}`], proxmox_safe: true, requires_reboot: false, requires_root: true, configurable: true, removable: true, changelog: ["Initial release"] },
     state: { installed: false, installed_version: null, available_version: "1.0.0", update_available: false, requires_reboot: false }, services: { [id]: "inactive" }, status: "available", compatible: true, blocked_by_proxmox: false, distribution: { id: "debian", name: "Debian", architecture: "x86_64", package_manager: "apt-get" }, jobs: [], ...overrides
   };
 }
@@ -40,7 +41,7 @@ function summary(id: string, overrides: Partial<PackageModule> = {}): ModuleSumm
   };
 }
 
-const packagePlan: PackagePlan = { module_id: "samba", action: "install", distribution: { id: "debian", name: "Debian", version_id: "12", architecture: "x86_64", package_manager: "apt-get" }, compatible: true, blocked_by_proxmox: false, packages: ["samba", "smbclient"], services: ["smbd"], ports: ["445/tcp"], config_paths: ["/etc/samba/smb.conf"], data_paths: ["/var/lib/samba"], permissions: ["systemd"], dependencies: [], conflicts: [], warnings: [], requires_reboot: false, remove_data: false, target_version: "1.0.0", steps: ["apt-get install -y samba smbclient"] };
+const packagePlan: PackagePlan = { module_id: "samba", action: "install", distribution: { id: "debian", name: "Debian", version_id: "12", architecture: "x86_64", package_manager: "apt-get" }, compatible: true, blocked_by_proxmox: false, packages: ["samba", "smbclient", "cifs-utils"], services: ["smbd"], ports: ["445/tcp"], config_paths: ["/etc/samba/smb.conf"], data_paths: ["/var/lib/samba"], permissions: ["systemd"], dependencies: [], conflicts: [], warnings: [], requires_reboot: false, remove_data: false, target_version: "1.0.0", steps: ["apt-get install -y samba smbclient cifs-utils"] };
 
 describe("Package Center", () => {
   beforeEach(() => {
@@ -78,12 +79,24 @@ describe("Package Center", () => {
     expect(configure).not.toHaveBeenCalled();
   });
 
+  it("keeps Samba in the catalog before its runtime status is available", async () => {
+    vi.mocked(api.modules).mockResolvedValue([]);
+
+    const { container } = render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+
+    expect(await screen.findByText("Samba")).toBeInTheDocument();
+    expect(screen.getByText("samba description")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "store.install" }).length).toBeGreaterThan(0);
+    expect(container.querySelector(".package-icon .lucide-share2")).toBeInTheDocument();
+    expect(api.apps).toHaveBeenCalledOnce();
+  });
+
   it("shows and confirms a dry-run plan before installation", async () => {
     render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
     await screen.findByText("Samba");
     fireEvent.click(screen.getAllByRole("button", { name: "store.install" })[0]);
 
-    expect(await screen.findByText("apt-get install -y samba smbclient")).toBeInTheDocument();
+    expect(await screen.findByText("apt-get install -y samba smbclient cifs-utils")).toBeInTheDocument();
     expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "package.confirmOperation" }));
     await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("samba", "install", false));
@@ -95,10 +108,12 @@ describe("Package Center", () => {
     const open = vi.fn();
     render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onOpenModule={open} />);
     await screen.findByText("Samba");
-    fireEvent.click(screen.getByRole("button", { name: "action.open" }));
+    const sambaCard = screen.getByText("Samba").closest("article");
+    expect(sambaCard).not.toBeNull();
+    fireEvent.click(within(sambaCard!).getByRole("button", { name: "action.open" }));
     expect(open).toHaveBeenCalledWith("samba");
-    expect(screen.getByRole("button", { name: "store.stop" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "store.install" })).not.toBeInTheDocument();
+    expect(within(sambaCard!).getByRole("button", { name: "store.stop" })).toBeInTheDocument();
+    expect(within(sambaCard!).queryByRole("button", { name: "store.install" })).not.toBeInTheDocument();
   });
 
   it("disables package actions and shows progress while an operation is active", async () => {
@@ -108,8 +123,10 @@ describe("Package Center", () => {
     render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
 
     expect(await screen.findByText("package.operation.install")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "store.install" })).toBeDisabled();
-    expect(screen.getByText("35%")).toBeInTheDocument();
+    const sambaCard = screen.getByText("Samba").closest("article");
+    expect(sambaCard).not.toBeNull();
+    expect(within(sambaCard!).getByRole("button", { name: "store.install" })).toBeDisabled();
+    expect(within(sambaCard!).getByText("35%")).toBeInTheDocument();
   });
 
   it("renders job progress, errors and incompatible modules", async () => {
