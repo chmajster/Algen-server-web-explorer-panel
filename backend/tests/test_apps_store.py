@@ -105,7 +105,7 @@ def test_proxmox_safe_mode_blocks_unsafe_module(monkeypatch):
 
 
 def test_non_admin_cannot_list_apps(monkeypatch):
-    monkeypatch.setattr(apps, "_is_admin", lambda username: False)
+    monkeypatch.setattr(apps, "authorize", lambda user, permission: (_ for _ in ()).throw(HTTPException(403, "Permission required")))
 
     with pytest.raises(HTTPException) as exc:
         apps.list_apps(SimpleNamespace(username="alice"))

@@ -35,6 +35,12 @@ def validate_password(value: str) -> str:
     return value
 
 
+def validate_gecos(value: str) -> str:
+    if len(value) > 256 or ":" in value or any(ord(char) < 32 for char in value):
+        identity_error(400, "INVALID_GECOS", "Description contains unsupported characters", field="gecos")
+    return value
+
+
 def allowed_shells() -> list[str]:
     path = Path("/etc/shells")
     values: list[str] = []
@@ -236,7 +242,19 @@ def create_user(payload: UserCreateRequest) -> None:
     shell = validate_shell(payload.shell)
     home = validate_home(payload.home, username)
     groups = _validated_groups(payload.groups)
-    args = [_tool("useradd"), "--user-group"]
+    args = [_tool("useradd")]
+    if payload.gid is None:
+        args.append("--user-group")
+    else:
+        if payload.gid < get_config().security.system_uid_threshold:
+            identity_error(400, "SYSTEM_GID_BLOCKED", "GID is below the system group threshold", field="gid")
+        try:
+            primary_group = grp.getgrgid(payload.gid)
+        except KeyError:
+            identity_error(400, "PRIMARY_GID_NOT_FOUND", "Primary GID does not identify a local group", field="gid")
+        if is_protected_group(primary_group.gr_name, primary_group.gr_gid):
+            identity_error(403, "PROTECTED_LINUX_GROUP", "Protected Linux groups cannot be selected as a primary group", field="gid")
+        args.extend(["--gid", str(payload.gid)])
     if payload.create_home:
         args.append("--create-home")
     if home:
@@ -244,17 +262,13 @@ def create_user(payload: UserCreateRequest) -> None:
     if shell:
         args.extend(["--shell", shell])
     if payload.gecos:
-        if any(ord(char) < 32 for char in payload.gecos):
-            identity_error(400, "INVALID_GECOS", "Description contains control characters", field="gecos")
-        args.extend(["--comment", payload.gecos])
+        args.extend(["--comment", validate_gecos(payload.gecos)])
     if groups:
         args.extend(["--groups", ",".join(groups)])
     if payload.uid is not None:
         if payload.uid < get_config().security.system_uid_threshold:
             identity_error(400, "SYSTEM_UID_BLOCKED", "UID is below the system account threshold", field="uid")
         args.extend(["--uid", str(payload.uid)])
-    if payload.gid is not None:
-        args.extend(["--gid", str(payload.gid)])
     with _account_lock:
         _run([*args, username])
         try:
@@ -287,9 +301,7 @@ def update_user(username: str, payload: UserPatchRequest) -> str:
     if payload.shell is not None:
         args.extend(["--shell", validate_shell(payload.shell) or payload.shell])
     if payload.gecos is not None:
-        if any(ord(char) < 32 for char in payload.gecos):
-            identity_error(400, "INVALID_GECOS", "Description contains control characters", field="gecos")
-        args.extend(["--comment", payload.gecos])
+        args.extend(["--comment", validate_gecos(payload.gecos)])
     additions = _validated_groups(payload.groups_add)
     if additions:
         args.extend(["--append", "--groups", ",".join(additions)])

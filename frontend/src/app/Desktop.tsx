@@ -65,9 +65,9 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const moduleNotificationsInitialized = useRef(false);
   const notifiedModuleEvents = useRef<Set<string>>(new Set());
   const notificationRef = useRef<HTMLElement>(null);
-  const availableApps = useMemo(() => apps.filter((app) => !app.hidden && (!app.admin || profile.is_admin) && (!app.permission || profile.permissions.includes(app.permission))), [profile.is_admin, profile.permissions]);
-  const taskbarApps = useMemo(() => apps.filter((app) => (!app.admin || profile.is_admin) && (!app.permission || profile.permissions.includes(app.permission))), [profile.is_admin, profile.permissions]);
-  const canUseApp = useCallback((appId: AppId) => { const definition = appById[appId]; return Boolean(definition && (!definition.admin || profile.is_admin) && (!definition.permission || profile.permissions.includes(definition.permission))); }, [profile.is_admin, profile.permissions]);
+  const canUseApp = useCallback((appId: AppId) => { const definition = appById[appId]; return Boolean(definition && (!definition.admin || profile.is_admin) && (!definition.permission || profile.permissions.includes(definition.permission)) && (!definition.permissionAny || definition.permissionAny.some((permission) => profile.permissions.includes(permission)))); }, [profile.is_admin, profile.permissions]);
+  const availableApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id)), [canUseApp]);
+  const taskbarApps = useMemo(() => apps.filter((app) => canUseApp(app.id)), [canUseApp]);
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const activeTransfers = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status)).length;
 

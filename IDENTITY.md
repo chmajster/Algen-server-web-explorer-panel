@@ -32,6 +32,8 @@ role permissions
 
 UID 0 and users whose supplementary or primary group is `sudo` or `wheel` are Linux administrators. They always receive the Administrator role and every registered permission, ignore application denies, and cannot be renamed, locked, deleted, or downgraded through WebNAS.
 
+UID 0 is also the local break-glass account: it may pass the login eligibility check despite `system_uid_threshold`, but it must still have an interactive shell and successfully authenticate through the configured PAM service. Other accounts below the threshold remain blocked from sign-in.
+
 ## Built-in roles
 
 | Area | Administrator | Operator | Auditor | User |
@@ -43,7 +45,7 @@ UID 0 and users whose supplementary or primary group is `sudo` or `wheel` are Li
 | Docker/DNS/databases/Home Assistant | Full | Operate/configure | Read-only | None unless granted |
 | Global audit/system logs | Full | Own activity and selected system logs | Read-only global audit | Own activity |
 
-The exact matrix is returned by `GET /api/identity/roles`; each permission includes category, operation, risk, mutation flag, and localization keys. Built-in roles are not edited in storage. Administrators customize access through per-user and per-group allow/deny policy.
+The exact matrix is returned by `GET /api/identity/roles`; each permission includes category, operation, related WebNAS application IDs, risk, mutation flag, and localization keys. Built-in roles are not edited in storage. Administrators customize access through per-user and per-group allow/deny policy.
 
 ## API
 
@@ -63,7 +65,7 @@ POST/DELETE /api/identity/groups/{groupname}/members[/{username}]
 PUT  /api/identity/groups/{groupname}/policy
 ```
 
-Every mutation requires a valid session, CSRF token, a concrete operation permission, rate limiting, and PAM reauthentication for identity/security changes. Compatibility routes under `/api/admin/users`, `/api/admin/groups`, and `/api/rbac` call the same identity service.
+Every mutation requires a valid session, CSRF token, a concrete operation permission, rate limiting, and PAM reauthentication for identity/security changes. Identity dialogs require a freshly entered PAM password and do not read or update the existing in-memory password helper. Compatibility routes under `/api/admin/users`, `/api/admin/groups`, and `/api/rbac` call the same identity service. Global transfer review uses the separately protected `GET /api/admin/transfers` endpoint and `transfers.view_all`.
 
 ## Migration
 

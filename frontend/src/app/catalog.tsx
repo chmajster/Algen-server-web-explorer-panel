@@ -8,7 +8,7 @@ export const apps: AppDefinition[] = [
   { id: "files", labelKey: "app.fileManager", icon: <HardDrive />, permission: "files.view", minWidth: 680, minHeight: 440 },
   { id: "transfers", labelKey: "app.transfers", icon: <RefreshCw />, permission: "transfers.view_own" },
   { id: "activity", labelKey: "app.activity", icon: <History />, permission: "audit.view_own", minWidth: 720, minHeight: 480 },
-  { id: "identity", labelKey: "app.identity", icon: <Users />, permission: "users.view", minWidth: 800, minHeight: 520 },
+  { id: "identity", labelKey: "app.identity", icon: <Users />, permissionAny: ["users.view", "groups.view", "access.view"], minWidth: 800, minHeight: 520 },
   { id: "users", labelKey: "app.users", icon: <Users />, permission: "users.view", hidden: true },
   { id: "groups", labelKey: "app.groups", icon: <Boxes />, permission: "groups.view", hidden: true },
   // Kept in the registry so saved windows/localStorage using the legacy AppId

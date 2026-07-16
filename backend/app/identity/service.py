@@ -20,11 +20,11 @@ class IdentityService:
         self.repository = policy_repository
         self._lock = threading.RLock()
 
-    def _profile(self, username: str, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None) -> dict[str, Any]:
+    def _profile(self, username: str, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None, groups_override: tuple[str, set[str]] | None = None) -> dict[str, Any]:
         if linux_accounts.is_linux_admin(username):
             return {
                 "username": username, "role": Role.admin.value, "role_source": "linux-admin", "linux_admin": True, "is_admin": True,
-                "permissions": sorted(ALL_PERMISSIONS), "denied_permissions": [],
+                "permissions": sorted(ALL_PERMISSIONS), "effective_permissions": sorted(ALL_PERMISSIONS), "denied_permissions": [],
                 "permission_sources": {permission: ["linux-admin"] for permission in sorted(ALL_PERMISSIONS)},
             }
         stored = user_override if user_override and user_override.username == username else self.repository.user_policy(username)
@@ -34,7 +34,7 @@ class IdentityService:
         denied: set[str] = set()
         sources: dict[str, list[str]] = {permission: [f"role:{policy.role.value}"] for permission in role_permissions}
         try:
-            groups = linux_accounts.groups_for(username)
+            groups = sorted(groups_override[1]) if groups_override and groups_override[0] == username else linux_accounts.groups_for(username)
         except HTTPException:
             groups = []
         for groupname in groups:
@@ -59,7 +59,7 @@ class IdentityService:
         return {
             "username": username, "role": policy.role.value, "role_source": "assignment" if stored else "default", "linux_admin": False,
             "is_admin": policy.role == Role.admin and Permission.ACCESS_MANAGE_ROLES.value in permissions,
-            "permissions": sorted(permissions), "denied_permissions": sorted(denied), "permission_sources": {key: list(dict.fromkeys(value)) for key, value in sorted(sources.items())},
+            "permissions": sorted(permissions), "effective_permissions": sorted(permissions), "denied_permissions": sorted(denied), "permission_sources": {key: list(dict.fromkeys(value)) for key, value in sorted(sources.items())},
         }
 
     def access_profile(self, username: str) -> dict[str, Any]:
@@ -99,18 +99,18 @@ class IdentityService:
     def groups(self, *, include_system: bool = False, search: str = "") -> list[dict[str, Any]]:
         return [self.group(item["name"]) for item in linux_accounts.list_groups(include_system=include_system, search=search)]
 
-    def _effective_administrators(self, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None, excluding: str = "") -> list[str]:
+    def _effective_administrators(self, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None, groups_override: tuple[str, set[str]] | None = None, excluding: str = "") -> list[str]:
         result = []
         for account in pwd.getpwall():
             if account.pw_name == excluding:
                 continue
-            profile = self._profile(account.pw_name, user_override=user_override, group_override=group_override)
+            profile = self._profile(account.pw_name, user_override=user_override, group_override=group_override, groups_override=groups_override)
             if profile["linux_admin"] or (profile["role"] == Role.admin.value and Permission.ACCESS_MANAGE_ROLES.value in profile["permissions"]):
                 result.append(account.pw_name)
         return result
 
-    def _protect_admin_continuity(self, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None, excluding: str = "", field: str = "role", actor: str = "") -> None:
-        if self._effective_administrators(user_override=user_override, group_override=group_override, excluding=excluding):
+    def _protect_admin_continuity(self, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None, groups_override: tuple[str, set[str]] | None = None, excluding: str = "", field: str = "role", actor: str = "") -> None:
+        if self._effective_administrators(user_override=user_override, group_override=group_override, groups_override=groups_override, excluding=excluding):
             return
         record_activity(ActivityCategory.administration, "last_admin_protection", actor or "unknown", target=excluding or (user_override.username if user_override else group_override.groupname if group_override else ""), status=ActivityStatus.failure, summary="LAST_ADMIN_PROTECTION", source="identity")
         identity_error(409, "LAST_ADMIN_PROTECTION", "The operation would remove the last effective administrator", field=field)
@@ -132,27 +132,29 @@ class IdentityService:
             identity_error(403, "ADMIN_TARGET_PROTECTED", "Only an administrator can modify another effective administrator")
 
     def save_user_policy(self, username: str, payload: UserPolicyRequest, actor: str) -> dict[str, Any]:
-        linux_accounts.local_user(username)
-        previous = self.repository.user_policy(username) or UserPolicy(username=username)
-        if linux_accounts.is_linux_admin(username):
-            if payload.role != Role.admin or payload.deny:
-                identity_error(409, "LINUX_ADMIN_COMPATIBILITY", "A Linux administrator always retains full administrator access", field="role" if payload.role != Role.admin else "deny")
-            policy = UserPolicy(username=username, role=Role.admin, allow=payload.allow, deny=[])
-        else:
-            policy = UserPolicy(username=username, role=payload.role, allow=payload.allow, deny=payload.deny)
-            self._protect_admin_continuity(user_override=policy, actor=actor)
-        saved = self.repository.save_user_policy(policy, actor)
+        with self._lock:
+            linux_accounts.local_user(username)
+            previous = self.repository.user_policy(username) or UserPolicy(username=username)
+            if linux_accounts.is_linux_admin(username):
+                if payload.role != Role.admin or payload.deny:
+                    identity_error(409, "LINUX_ADMIN_COMPATIBILITY", "A Linux administrator always retains full administrator access", field="role" if payload.role != Role.admin else "deny")
+                policy = UserPolicy(username=username, role=Role.admin, allow=payload.allow, deny=[])
+            else:
+                policy = UserPolicy(username=username, role=payload.role, allow=payload.allow, deny=payload.deny)
+                self._protect_admin_continuity(user_override=policy, actor=actor)
+            saved = self.repository.save_user_policy(policy, actor)
         self._audit(actor, "user_policy_update", username, previous=previous.model_dump(mode="json"), current=saved.model_dump(mode="json"))
         return self.user(username)
 
     def save_group_policy(self, groupname: str, payload: GroupPolicyRequest, actor: str) -> dict[str, Any]:
-        group = linux_accounts.local_group(groupname)
-        if linux_accounts.is_protected_group(groupname, group.gr_gid):
-            identity_error(403, "PROTECTED_LINUX_GROUP", "Protected Linux groups cannot receive application policy")
-        previous = self.repository.group_policy(groupname) or GroupPolicy(groupname=groupname)
-        policy = GroupPolicy(groupname=groupname, allow=payload.allow, deny=payload.deny)
-        self._protect_admin_continuity(group_override=policy, actor=actor)
-        saved = self.repository.save_group_policy(policy, actor)
+        with self._lock:
+            group = linux_accounts.local_group(groupname)
+            if linux_accounts.is_protected_group(groupname, group.gr_gid):
+                identity_error(403, "PROTECTED_LINUX_GROUP", "Protected Linux groups cannot receive application policy")
+            previous = self.repository.group_policy(groupname) or GroupPolicy(groupname=groupname)
+            policy = GroupPolicy(groupname=groupname, allow=payload.allow, deny=payload.deny)
+            self._protect_admin_continuity(group_override=policy, actor=actor)
+            saved = self.repository.save_group_policy(policy, actor)
         self._audit(actor, "group_policy_update", groupname, previous=previous.model_dump(mode="json"), current=saved.model_dump(mode="json"))
         return self.group(groupname)
 
@@ -173,7 +175,13 @@ class IdentityService:
     def update_user(self, username: str, payload: UserPatchRequest, actor: str) -> dict[str, Any]:
         self._assert_actor_can_manage_target(actor, username)
         previous = self.user(username)
-        next_username = linux_accounts.update_user(username, payload)
+        with self._lock:
+            if payload.groups_add or payload.groups_remove:
+                next_groups = set(linux_accounts.groups_for(username))
+                next_groups.update(payload.groups_add)
+                next_groups.difference_update(payload.groups_remove)
+                self._protect_admin_continuity(groups_override=(username, next_groups), field="groups", actor=actor)
+            next_username = linux_accounts.update_user(username, payload)
         if next_username != username:
             try:
                 self.repository.rename_user_policy(username, next_username, actor)
@@ -191,20 +199,28 @@ class IdentityService:
         if username == current_username:
             identity_error(409, "CURRENT_USER_PROTECTION", "The currently signed-in user cannot be deleted")
         self._assert_actor_can_manage_target(actor, username)
-        linux_accounts.assert_manageable_user(username, "delete")
-        self._protect_admin_continuity(excluding=username, actor=actor)
-        previous = self.user(username)
-        linux_accounts.delete_user(username, remove_home=remove_home)
-        self.repository.delete_user_policy(username, actor)
+        with self._lock:
+            linux_accounts.assert_manageable_user(username, "delete")
+            self._protect_admin_continuity(excluding=username, actor=actor)
+            previous = self.user(username)
+            stored_policy = self.repository.user_policy(username)
+            self.repository.delete_user_policy(username, actor)
+            try:
+                linux_accounts.delete_user(username, remove_home=remove_home)
+            except Exception:
+                if stored_policy:
+                    self.repository.save_user_policy(stored_policy, actor, action="delete_rollback")
+                raise
         self._audit(actor, "user_delete", username, previous=previous)
 
     def set_user_lock(self, username: str, actor: str, *, current_username: str, locked: bool) -> None:
         if locked and username == current_username:
             identity_error(409, "CURRENT_USER_PROTECTION", "The currently signed-in user cannot be locked")
         self._assert_actor_can_manage_target(actor, username)
-        if locked:
-            self._protect_admin_continuity(excluding=username, actor=actor)
-        linux_accounts.set_lock(username, locked)
+        with self._lock:
+            if locked:
+                self._protect_admin_continuity(excluding=username, actor=actor)
+            linux_accounts.set_lock(username, locked)
         self._audit(actor, "user_lock" if locked else "user_unlock", username)
 
     def change_user_password(self, username: str, password: str, force_change: bool, actor: str) -> None:
@@ -249,12 +265,29 @@ class IdentityService:
 
     def delete_group(self, groupname: str, actor: str) -> None:
         previous = self.group(groupname)
-        linux_accounts.delete_group(groupname)
-        self.repository.delete_group_policy(groupname, actor)
+        linux_accounts.assert_manageable_group(groupname, "delete")
+        if previous["primary_users"]:
+            identity_error(409, "GROUP_IS_PRIMARY", "Group is the primary group of one or more users")
+        with self._lock:
+            stored_policy = self.repository.group_policy(groupname)
+            self.repository.delete_group_policy(groupname, actor)
+            try:
+                linux_accounts.delete_group(groupname)
+            except Exception:
+                if stored_policy:
+                    self.repository.save_group_policy(stored_policy, actor, action="delete_rollback")
+                raise
         self._audit(actor, "group_delete", groupname, previous=previous)
 
     def set_group_member(self, groupname: str, username: str, actor: str, present: bool) -> dict[str, Any]:
-        linux_accounts.set_group_member(groupname, username, present)
+        with self._lock:
+            next_groups = set(linux_accounts.groups_for(username))
+            if present:
+                next_groups.add(groupname)
+            else:
+                next_groups.discard(groupname)
+            self._protect_admin_continuity(groups_override=(username, next_groups), field="groups", actor=actor)
+            linux_accounts.set_group_member(groupname, username, present)
         self._audit(actor, "group_member_add" if present else "group_member_remove", f"{groupname}:{username}")
         return self.group(groupname)
 

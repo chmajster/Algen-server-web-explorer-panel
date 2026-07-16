@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from .audit import logger
 from .config import get_config
+from .identity.permissions import Permission, authorize
 from .path_policy import resolve_user_path
 from .proxmox_guard import safe_mode_active
 from .security import SessionUser, get_session_user, require_csrf
@@ -195,17 +196,8 @@ def _groups_for(username: str) -> list[str]:
     return sorted(group.gr_name for group in grp.getgrall() if username in group.gr_mem or group.gr_gid == pw.pw_gid)
 
 
-def _is_admin(username: str) -> bool:
-    try:
-        groups = _groups_for(username)
-    except KeyError:
-        return False
-    return "sudo" in groups or "wheel" in groups
-
-
-def _require_admin(user: SessionUser, password: str) -> None:
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+def _require_admin(user: SessionUser, password: str, permission: Permission = Permission.MODULES_CONFIGURE) -> None:
+    authorize(user, permission)
     from .package_center.security import reauthenticate
 
     reauthenticate(user, password)
@@ -805,8 +797,7 @@ def rollback_samba_config(username: str) -> dict:
 
 
 def list_apps(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_VIEW)
     from .package_center.service import list_modules
 
     return list_modules()
@@ -814,8 +805,7 @@ def list_apps(user: SessionUser = Depends(_current_user)):
 
 @router.get("/plugins")
 def list_store_plugins(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_VIEW)
     return {
         "plugins": [plugin.model_dump() for plugin in read_store_plugins()],
         "codex_template": PLUGIN_CODEX_TEMPLATE,
@@ -824,8 +814,7 @@ def list_store_plugins(user: SessionUser = Depends(_current_user)):
 
 @router.post("/plugins")
 def create_store_plugin(payload: StorePlugin, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_INSTALL)
     plugins = read_store_plugins()
     existing = {plugin.id for plugin in plugins}
     payload.id = payload.id or _plugin_id(payload.name, existing)
@@ -842,8 +831,7 @@ def create_store_plugin(payload: StorePlugin, user: SessionUser = Depends(_curre
 
 @router.put("/plugins/{plugin_id}")
 def update_store_plugin(plugin_id: str, payload: StorePlugin, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_INSTALL)
     plugins = read_store_plugins()
     for index, plugin in enumerate(plugins):
         if plugin.id != plugin_id:
@@ -861,8 +849,7 @@ def update_store_plugin(plugin_id: str, payload: StorePlugin, user: SessionUser 
 
 @router.delete("/plugins/{plugin_id}")
 def delete_store_plugin(plugin_id: str, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_UNINSTALL)
     plugins = read_store_plugins()
     next_plugins = [plugin for plugin in plugins if plugin.id != plugin_id]
     if len(next_plugins) == len(plugins):
@@ -873,15 +860,14 @@ def delete_store_plugin(plugin_id: str, user: SessionUser = Depends(_current_use
 
 
 def get_app(app_id: str, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_VIEW)
     from .package_center.service import get_module
 
     return get_module(app_id)
 
 
 def install_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password)
+    _require_admin(user, payload.admin_password, Permission.MODULES_INSTALL)
     from .package_center.jobs import manager as package_manager
     from .package_center.models import PackageAction
     from .package_center.service import plan_operation, repository
@@ -894,7 +880,7 @@ def install_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_
 
 
 def uninstall_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password)
+    _require_admin(user, payload.admin_password, Permission.MODULES_UNINSTALL)
     from .package_center.jobs import manager as package_manager
     from .package_center.models import PackageAction
     from .package_center.service import plan_operation, repository
@@ -907,7 +893,7 @@ def uninstall_app(app_id: str, payload: AdminAction, user: SessionUser = Depends
 
 
 def update_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password)
+    _require_admin(user, payload.admin_password, Permission.MODULES_UPDATE)
     from .package_center.jobs import manager as package_manager
     from .package_center.models import PackageAction
     from .package_center.service import plan_operation, repository
@@ -941,8 +927,7 @@ def restart_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_
 
 
 def app_logs(app_id: str, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_LOGS)
     log_file = APP_LOG_DIR / f"{app_id}.log"
     lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()[-200:] if log_file.exists() else []
     if app_id == "samba" and shutil.which("journalctl"):
@@ -954,22 +939,19 @@ def app_logs(app_id: str, user: SessionUser = Depends(_current_user)):
 
 @router.get("/samba/status")
 def samba_status(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_VIEW)
     return samba_status_payload()
 
 
 @router.get("/samba/users")
 def samba_users(user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_VIEW)
     return samba_users_payload()
 
 
 @router.post("/samba/preview")
 def samba_preview(payload: SambaApplyRequest, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_CONFIGURE)
     config = payload.config or read_samba_config()
     return preview_samba_config(user.username, config)
 
@@ -982,8 +964,7 @@ def _enqueue_samba_config(config: SambaConfig, password: str, confirm_smb1: bool
     from .package_center.security import reauthenticate
     from .package_center.service import repository
 
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_CONFIGURE)
     validation = SambaProvider(user.username).validate_config(config.model_dump())
     if not validation.ok:
         raise HTTPException(422, {"code": "CONFIG_VALIDATION_FAILED", "message": "Samba configuration is invalid", "validation": validation.model_dump(mode="json")})
@@ -1003,7 +984,7 @@ def samba_apply(payload: SambaSecuredApplyRequest, user: SessionUser = Depends(_
 
 @router.post("/samba/rollback")
 def samba_rollback(payload: AdminAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password)
+    _require_admin(user, payload.admin_password, Permission.MODULES_BACKUP_RESTORE)
     raise HTTPException(409, {"code": "MODULE_BACKUP_REQUIRED", "message": "Use the verified module backup restore endpoint"})
 
 
@@ -1014,6 +995,7 @@ def samba_service(payload: SambaServiceAction, user: SessionUser = Depends(_curr
     from .modules.router import ModuleAdminRequest, _enqueue, _provider_plan
     from .package_center.models import PackageAction
 
+    authorize(user, Permission.MODULES_CONFIGURE)
     result = _enqueue(_provider_plan("samba", PackageAction(payload.action), {}), ModuleAdminRequest(admin_password=payload.admin_password), user)
     logger.info("app_store_action actor=%s app=samba action=%s job=%s", user.username, payload.action, result["job"]["id"])
     return result
@@ -1042,8 +1024,7 @@ def samba_user_disable(payload: SambaUserAction, user: SessionUser = Depends(_cu
 
 @router.get("/{app_id}/config")
 def get_config_app(app_id: str, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_VIEW)
     if app_id != "samba":
         return read_state(app_id).get("config") or {}
     return read_samba_config().model_dump()
@@ -1051,8 +1032,7 @@ def get_config_app(app_id: str, user: SessionUser = Depends(_current_user)):
 
 @router.put("/{app_id}/config")
 def put_config_app(app_id: str, payload: SambaSecuredApplyRequest, user: SessionUser = Depends(_current_user)):
-    if not _is_admin(user.username):
-        raise HTTPException(403, "Administrator privileges required")
+    authorize(user, Permission.MODULES_CONFIGURE)
     if app_id != "samba":
         raise HTTPException(404, "Unsupported app module")
     return _enqueue_samba_config(payload.config, payload.admin_password, payload.confirm_smb1, user)

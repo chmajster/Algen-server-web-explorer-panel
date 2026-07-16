@@ -36,9 +36,12 @@ export function App() {
   useEffect(() => {
     if (!user) { setProfile(null); return; }
     api.settingsMe().then((data) => { profileRef.current = data; setProfile(data); setLanguage(data.language); setTheme(data.theme); }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
-    const refresh = () => api.tasks().then(setTasks).catch(() => undefined);
-    void refresh(); const timer = setInterval(refresh, 1500); return () => clearInterval(timer);
   }, [t, toast, user]);
+  useEffect(() => {
+    if (!user || !profile) return;
+    const refresh = () => (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);
+    void refresh(); const timer = setInterval(refresh, 1500); return () => clearInterval(timer);
+  }, [profile, user]);
   async function updateSettings(patch: SettingsPatch) {
     const currentProfile = profileRef.current || profile;
     if (!currentProfile) return;

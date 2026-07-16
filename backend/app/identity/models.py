@@ -192,6 +192,7 @@ class AccessProfile(BaseModel):
     linux_admin: bool
     is_admin: bool
     permissions: list[str]
+    effective_permissions: list[str]
     denied_permissions: list[str]
     permission_sources: dict[str, list[str]]
 

@@ -953,6 +953,8 @@
   "identity.renameGroup": "Rename group",
   "identity.newGroupName": "New group name",
   "identity.members": "Members",
+  "identity.primaryUsers": "Primary-group users",
+  "identity.supplementaryMembers": "Supplementary members",
   "identity.inheriting": "Inheriting users",
   "identity.protected": "Protected",
   "identity.groupPolicy": "Group permissions",

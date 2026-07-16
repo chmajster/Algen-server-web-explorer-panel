@@ -40,6 +40,7 @@ export type AppDefinition = {
   icon: ReactNode;
   admin?: boolean;
   permission?: string;
+  permissionAny?: string[];
   hidden?: boolean;
   minWidth?: number;
   minHeight?: number;

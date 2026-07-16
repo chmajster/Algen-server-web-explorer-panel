@@ -60,13 +60,13 @@ def module_permission(module_id: str, operation: Literal["view", "operate", "con
     if module_id == "linux-updates":
         return Permission.UPDATES_VIEW.value if operation in {"view", "logs", "diagnostics"} else Permission.UPDATES_APPLY.value
     if module_id == "docker":
-        if operation == "view":
+        if operation in {"view", "logs", "diagnostics"}:
             return Permission.DOCKER_VIEW.value
         return Permission.DOCKER_COMPOSE.value if operation == "configure" else Permission.DOCKER_CONTAINERS.value
     if module_id in {"pihole", "adguard-home"}:
         return Permission.DNS_VIEW.value if operation in {"view", "logs", "diagnostics"} else Permission.DNS_CONFIGURE.value
     if module_id in {"postgresql", "mariadb", "redis"}:
-        if operation == "view":
+        if operation in {"view", "logs", "diagnostics"}:
             return Permission.DATABASES_VIEW.value
         if operation == "restore":
             return Permission.DATABASES_RESTORE.value

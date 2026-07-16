@@ -40,6 +40,12 @@ describe("IdentityApp", () => {
     expect(screen.queryByRole("button", { name: "action.delete" })).not.toBeInTheDocument();
   });
 
+  it("selects the first permitted tab for group-only access", async () => {
+    render(<IdentityApp permissions={["groups.view"]} t={(key) => key} toast={vi.fn()} />);
+    expect(await screen.findByPlaceholderText("identity.searchGroups")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("identity.searchUsers")).not.toBeInTheDocument();
+  });
+
   it("surfaces last-administrator protection returned by the backend", async () => {
     const toast = vi.fn();
     vi.mocked(api.saveIdentityUserPolicy).mockRejectedValue(new ApiError("Cannot remove last administrator", 409, "LAST_ADMIN_PROTECTION"));

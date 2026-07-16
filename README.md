@@ -66,7 +66,7 @@ Installed modules open as regular WebNAS windows from Package Center. A shared s
 
 Samba is the complete reference provider. Its application adds Shares, SMB users, and Sessions; typed global/share configuration; controlled VFS options; `smbstatus` parsing; UFW/firewalld status; fixed-source redacted logs; comprehensive diagnostics; checksummed `0600` backups; and transactional `testparm`/atomic-write/reload/verify/rollback behavior. File Manager labels shared directories with their Samba name/read-only state and can open, create, or remove the share definition without deleting the directory.
 
-All mutations require administrator membership, an active session, CSRF, rate-limited PAM reauthentication, a structured plan, and audit logging. Admin passwords may be remembered only by the existing in-memory credential helper. SMB passwords never enter settings, local storage, plans, jobs, command lines, or logs.
+Module mutations require an active session, CSRF, the concrete operation permission, rate-limited PAM reauthentication, a structured plan, and audit logging. Package installation and uninstall remain restricted to callers with their dedicated high-risk permissions. Identity-management dialogs always request a fresh PAM password and never use the in-memory credential helper. SMB passwords never enter settings, local storage, plans, jobs, command lines, or logs.
 
 See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for the package layer, [MODULES.md](MODULES.md) for provider architecture and Samba, [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) for infrastructure modules, and [IDENTITY.md](IDENTITY.md) for roles, granular permissions, Linux account safety, migration, API, and access recovery.
 

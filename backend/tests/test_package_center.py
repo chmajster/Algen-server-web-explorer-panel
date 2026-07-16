@@ -338,3 +338,19 @@ def test_package_center_router_exposes_required_contract():
     }
 
     assert required <= routes
+
+
+def test_package_install_route_checks_the_concrete_permission(monkeypatch):
+    from app.identity.permissions import Permission
+    from app.package_center import router as package_router
+    from app.package_center.models import AdminPackageAction
+    from app.security import SessionUser
+
+    checked = []
+    monkeypatch.setattr(package_router, "authorize", lambda user, permission: checked.append(permission))
+    monkeypatch.setattr(package_router, "_enqueue_action", lambda module_id, action, payload, user: {"ok": True})
+
+    result = package_router.install_module("samba", AdminPackageAction(admin_password="fresh-pam", confirm_plan=True), SessionUser(username="admin", csrf_token="csrf"))
+
+    assert result == {"ok": True}
+    assert checked == [Permission.MODULES_INSTALL]

@@ -38,7 +38,10 @@ def assert_login_allowed(username: str) -> pwd.struct_passwd:
         raise HTTPException(400, "Invalid username")
     user = system_user(username)
     cfg = get_config()
-    if user.pw_uid < cfg.security.system_uid_threshold:
+    # UID 0 is an explicit identity/RBAC break-glass administrator. PAM and
+    # the interactive-shell checks below still apply; all other service UIDs
+    # remain blocked by the configured threshold.
+    if user.pw_uid < cfg.security.system_uid_threshold and user.pw_uid != 0:
         raise HTTPException(403, "System service accounts cannot log in")
     if user.pw_shell in BLOCKED_LOGIN_SHELLS:
         raise HTTPException(403, "User shell does not allow login")

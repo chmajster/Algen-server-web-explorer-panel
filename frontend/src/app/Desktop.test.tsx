@@ -56,6 +56,13 @@ describe("personalized desktop", () => {
     expect(screen.queryByRole("button", { name: "app.groups" })).not.toBeInTheDocument();
   });
 
+  it("shows the unified identity application with group-only access", () => {
+    renderDesktop({ permissions: [...settingsFixture().permissions, "groups.view"] });
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    expect(screen.getByRole("button", { name: "app.identity" })).toBeInTheDocument();
+  });
+
   it("does not restore an identity window after permission is removed", () => {
     localStorage.setItem("webnas_windows_test", JSON.stringify({ windows: [{ id: "identity-1", app: "identity", rect: { x: 20, y: 20, width: 900, height: 600 }, minimized: false, zIndex: 11 }], activeId: "identity-1", counter: 1, topZ: 11 }));
     renderDesktop({ startup_windows: "last", permissions: settingsFixture().permissions });

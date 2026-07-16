@@ -141,6 +141,22 @@ def test_group_deny_cannot_remove_last_administrator(monkeypatch, tmp_path: Path
     assert error.value.detail["code"] == "LAST_ADMIN_PROTECTION"
 
 
+def test_group_membership_cannot_apply_a_deny_to_last_administrator(monkeypatch, tmp_path: Path):
+    users = [account("alice", 1001, 100)]
+    groups = [group("users", 100), group("quarantine", 1100)]
+    fake_accounts(monkeypatch, users, groups)
+    repository = IdentityRepository(tmp_path / "identity.sqlite3", legacy_path=tmp_path / "missing.json")
+    repository.save_user_policy(UserPolicy(username="alice", role=Role.admin), "bootstrap")
+    repository.save_group_policy(GroupPolicy(groupname="quarantine", deny=[Permission.ACCESS_MANAGE_ROLES.value]), "bootstrap")
+    monkeypatch.setattr(linux_accounts, "set_group_member", lambda *args: pytest.fail("membership must not change after continuity check fails"))
+    service = IdentityService(repository)
+
+    with pytest.raises(HTTPException) as error:
+        service.set_group_member("quarantine", "alice", "alice", True)
+
+    assert error.value.detail["code"] == "LAST_ADMIN_PROTECTION"
+
+
 def test_legacy_rbac_migration_is_idempotent_and_creates_backup(tmp_path: Path):
     legacy = tmp_path / "rbac.json"
     legacy.write_text(json.dumps({"alice": {"role": "operator", "allow": ["audit.view", "unknown.old"], "deny": ["docker.operate"]}}), encoding="utf-8")
@@ -229,18 +245,20 @@ def test_linux_user_and_group_operations_use_expected_tools(monkeypatch):
     monkeypatch.setattr(linux_accounts, "assert_admin_user_allowed", lambda *args: None)
     monkeypatch.setattr(linux_accounts, "assert_admin_group_allowed", lambda *args: None)
 
-    linux_accounts.create_user(UserCreateRequest(username="bob", password="temporary", admin_password="pam", uid=1200, groups=["ops"], force_password_change=True))
+    linux_accounts.create_user(UserCreateRequest(username="bob", password="temporary", admin_password="pam", uid=1200, gid=1100, groups=["ops"], force_password_change=True))
     linux_accounts.update_user("alice", UserPatchRequest(admin_password="pam", gecos="Alice Operator", groups_add=["ops"], force_password_change=True))
     linux_accounts.set_lock("alice", True)
     linux_accounts.set_quota("alice", UserQuotaRequest(admin_password="pam", soft_mb=100, hard_mb=200, mountpoint="/"))
     linux_accounts.delete_user("alice", remove_home=False)
-    linux_accounts.create_group(GroupCreateRequest(groupname="support", gid=1201, admin_password="pam"))
+    linux_accounts.create_group(GroupCreateRequest(groupname="newteam", gid=1201, admin_password="pam"))
     linux_accounts.rename_group("ops", "support")
     linux_accounts.set_group_member("ops", "alice", True)
     linux_accounts.delete_group("ops")
 
     tools = [Path(command[0]).name for command, _input in calls]
     assert {"useradd", "chpasswd", "chage", "usermod", "setquota", "userdel", "groupadd", "groupmod", "groupdel"} <= set(tools)
+    useradd = next(command for command, _input in calls if Path(command[0]).name == "useradd")
+    assert "--gid" in useradd and "--user-group" not in useradd
     assert all(command[0].startswith("/usr/sbin/") for command, _input in calls)
 
 
@@ -252,6 +270,18 @@ def test_system_uid_creation_is_rejected_before_running_a_command(monkeypatch):
     with pytest.raises(HTTPException) as error:
         linux_accounts.create_user(payload)
     assert error.value.detail["code"] == "SYSTEM_UID_BLOCKED"
+
+
+def test_linux_identity_fields_reject_unsafe_values(monkeypatch):
+    with pytest.raises(HTTPException):
+        linux_accounts.validate_name("../root", "user")
+    with pytest.raises(HTTPException):
+        linux_accounts.validate_home("/etc/alice", "alice")
+    with pytest.raises(HTTPException):
+        linux_accounts.validate_gecos("Alice:root")
+    monkeypatch.setattr(linux_accounts, "allowed_shells", lambda: ["/bin/bash"])
+    with pytest.raises(HTTPException):
+        linux_accounts.validate_shell("/tmp/custom-shell")
 
 
 def test_group_rename_moves_application_policy(monkeypatch, tmp_path: Path):
@@ -293,6 +323,22 @@ def test_operator_cannot_modify_an_application_administrator(monkeypatch, tmp_pa
     with pytest.raises(HTTPException) as error:
         service.set_user_lock("admin", "operator", current_username="operator", locked=True)
     assert error.value.detail["code"] == "ADMIN_TARGET_PROTECTED"
+
+
+def test_failed_linux_user_delete_restores_application_policy(monkeypatch, tmp_path: Path):
+    users = [account("root", 0, 0), account("alice", 1001, 100)]
+    fake_accounts(monkeypatch, users, [group("root", 0), group("users", 100)])
+    repository = IdentityRepository(tmp_path / "identity.sqlite3", legacy_path=tmp_path / "missing.json")
+    repository.save_user_policy(UserPolicy(username="alice", role=Role.operator, allow=[Permission.DNS_VIEW.value]), "root")
+    monkeypatch.setattr(linux_accounts, "delete_user", lambda *args, **kwargs: (_ for _ in ()).throw(HTTPException(400, "userdel failed")))
+    service = IdentityService(repository)
+
+    with pytest.raises(HTTPException):
+        service.delete_user("alice", "root", current_username="root", remove_home=False)
+
+    restored = repository.user_policy("alice")
+    assert restored and restored.role == Role.operator
+    assert restored.allow == [Permission.DNS_VIEW.value]
 
 
 def test_new_and_legacy_identity_routes_are_registered():

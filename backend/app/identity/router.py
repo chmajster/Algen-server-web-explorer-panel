@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import threading
 from collections import defaultdict, deque
+from typing import Callable, TypeVar
 from fastapi import APIRouter, Depends, Query, Request
 
 from ..activity import ActivityCategory, ActivityStatus, record_activity
@@ -17,6 +18,7 @@ from .service import service
 
 
 router = APIRouter(tags=["identity"])
+ResultT = TypeVar("ResultT")
 
 
 class IdentityRateLimiter:
@@ -40,12 +42,27 @@ identity_rate_limiter = IdentityRateLimiter()
 
 def _reauth(request: Request, user: SessionUser, password: str, action: str, target: str = "") -> None:
     client = request.client.host if request.client else "unknown"
-    identity_rate_limiter.check(f"{client}:{user.username}:{action}")
+    try:
+        identity_rate_limiter.check(f"{client}:{user.username}:{action}")
+    except Exception:
+        record_activity(ActivityCategory.administration, action, user.username, target=target, status=ActivityStatus.failure, summary="ADMIN_RATE_LIMIT", source="identity")
+        raise
     try:
         authenticate(user.username, password)
     except Exception as error:
         record_activity(ActivityCategory.administration, action, user.username, target=target, status=ActivityStatus.failure, summary="PAM_REAUTHENTICATION_FAILED", source="identity")
         raise error
+
+
+def _execute(action: str, actor: str, target: str, operation: Callable[[], ResultT]) -> ResultT:
+    """Audit a controlled failure without serializing request bodies or secrets."""
+    try:
+        return operation()
+    except Exception as error:
+        detail = getattr(error, "detail", None)
+        code = str(detail.get("code", "IDENTITY_OPERATION_FAILED")) if isinstance(detail, dict) else "IDENTITY_OPERATION_FAILED"
+        record_activity(ActivityCategory.administration, action, actor, target=target, status=ActivityStatus.failure, summary=code, source="identity")
+        raise
 
 
 @router.get("/api/identity/me")
@@ -87,7 +104,7 @@ def identity_user_create(payload: UserCreateRequest, request: Request, user: Ses
     if payload.role != Role.user:
         authorize(user, Permission.ACCESS_MANAGE_ROLES)
     _reauth(request, user, payload.admin_password, "user_create", payload.username)
-    return service().create_user(payload, user.username)
+    return _execute("user_create", user.username, payload.username, lambda: service().create_user(payload, user.username))
 
 
 @router.get("/api/identity/users/{username}")
@@ -104,7 +121,7 @@ def identity_user_patch(username: str, payload: UserPatchRequest, request: Reque
     if payload.groups_add or payload.groups_remove:
         authorize(user, Permission.USERS_MANAGE_GROUPS)
     _reauth(request, user, payload.admin_password, "user_update", username)
-    return service().update_user(username, payload, user.username)
+    return _execute("user_update", user.username, username, lambda: service().update_user(username, payload, user.username))
 
 
 @router.delete("/api/identity/users/{username}")
@@ -113,7 +130,7 @@ def identity_user_delete(username: str, payload: UserDeleteRequest, request: Req
     if not payload.confirm:
         identity_error(400, "CONFIRMATION_REQUIRED", "Explicit confirmation is required")
     _reauth(request, user, payload.admin_password, "user_delete", username)
-    service().delete_user(username, user.username, current_username=user.username, remove_home=payload.remove_home)
+    _execute("user_delete", user.username, username, lambda: service().delete_user(username, user.username, current_username=user.username, remove_home=payload.remove_home))
     return {"ok": True}
 
 
@@ -121,7 +138,7 @@ def identity_user_delete(username: str, payload: UserDeleteRequest, request: Req
 @router.post("/api/admin/users/{username}/lock")
 def identity_user_lock(username: str, payload: AdminCredential, request: Request, user: SessionUser = Depends(require_permission(Permission.USERS_LOCK))):
     _reauth(request, user, payload.admin_password, "user_lock", username)
-    service().set_user_lock(username, user.username, current_username=user.username, locked=True)
+    _execute("user_lock", user.username, username, lambda: service().set_user_lock(username, user.username, current_username=user.username, locked=True))
     return {"ok": True}
 
 
@@ -129,7 +146,7 @@ def identity_user_lock(username: str, payload: AdminCredential, request: Request
 @router.post("/api/admin/users/{username}/unlock")
 def identity_user_unlock(username: str, payload: AdminCredential, request: Request, user: SessionUser = Depends(require_permission(Permission.USERS_UNLOCK))):
     _reauth(request, user, payload.admin_password, "user_unlock", username)
-    service().set_user_lock(username, user.username, current_username=user.username, locked=False)
+    _execute("user_unlock", user.username, username, lambda: service().set_user_lock(username, user.username, current_username=user.username, locked=False))
     return {"ok": True}
 
 
@@ -137,7 +154,7 @@ def identity_user_unlock(username: str, payload: AdminCredential, request: Reque
 @router.post("/api/admin/users/{username}/change-password")
 def identity_user_password(username: str, payload: PasswordChangeRequest, request: Request, user: SessionUser = Depends(require_permission(Permission.USERS_CHANGE_PASSWORD))):
     _reauth(request, user, payload.admin_password, "user_password_change", username)
-    service().change_user_password(username, payload.new_password, payload.force_change, user.username)
+    _execute("user_password_change", user.username, username, lambda: service().change_user_password(username, payload.new_password, payload.force_change, user.username))
     return {"ok": True}
 
 
@@ -145,7 +162,7 @@ def identity_user_password(username: str, payload: PasswordChangeRequest, reques
 @router.post("/api/admin/users/{username}/quota")
 def identity_user_quota(username: str, payload: UserQuotaRequest, request: Request, user: SessionUser = Depends(require_permission(Permission.USERS_MANAGE_QUOTA))):
     _reauth(request, user, payload.admin_password, "user_quota_update", username)
-    service().set_user_quota(username, payload, user.username)
+    _execute("user_quota_update", user.username, username, lambda: service().set_user_quota(username, payload, user.username))
     return {"ok": True, "quota_supported": True}
 
 
@@ -154,7 +171,7 @@ def identity_user_policy(username: str, payload: UserPolicyRequest, request: Req
     if service().user(username)["role"] != payload.role.value:
         authorize(user, Permission.ACCESS_MANAGE_ROLES)
     _reauth(request, user, payload.admin_password, "user_policy_update", username)
-    return service().save_user_policy(username, payload, user.username)
+    return _execute("user_policy_update", user.username, username, lambda: service().save_user_policy(username, payload, user.username))
 
 
 @router.get("/api/identity/users/{username}/effective-permissions")
@@ -173,7 +190,7 @@ def identity_group_create(payload: GroupCreateRequest, request: Request, user: S
     if payload.allow or payload.deny:
         authorize(user, Permission.ACCESS_MANAGE_GROUP_PERMISSIONS)
     _reauth(request, user, payload.admin_password, "group_create", payload.groupname)
-    return service().create_group(payload, user.username)
+    return _execute("group_create", user.username, payload.groupname, lambda: service().create_group(payload, user.username))
 
 
 @router.get("/api/identity/groups/{groupname}")
@@ -185,7 +202,7 @@ def identity_group_get(groupname: str, user: SessionUser = Depends(require_permi
 @router.patch("/api/admin/groups/{groupname}")
 def identity_group_patch(groupname: str, payload: GroupPatchRequest, request: Request, user: SessionUser = Depends(require_permission(Permission.GROUPS_RENAME))):
     _reauth(request, user, payload.admin_password, "group_rename", groupname)
-    return service().rename_group(groupname, payload.new_name, user.username)
+    return _execute("group_rename", user.username, groupname, lambda: service().rename_group(groupname, payload.new_name, user.username))
 
 
 @router.delete("/api/identity/groups/{groupname}")
@@ -194,7 +211,7 @@ def identity_group_delete(groupname: str, payload: AdminCredential, request: Req
     if not payload.confirm:
         identity_error(400, "CONFIRMATION_REQUIRED", "Explicit confirmation is required")
     _reauth(request, user, payload.admin_password, "group_delete", groupname)
-    service().delete_group(groupname, user.username)
+    _execute("group_delete", user.username, groupname, lambda: service().delete_group(groupname, user.username))
     return {"ok": True}
 
 
@@ -202,20 +219,20 @@ def identity_group_delete(groupname: str, payload: AdminCredential, request: Req
 @router.post("/api/admin/groups/{groupname}/members")
 def identity_group_member_add(groupname: str, payload: GroupMemberRequest, request: Request, user: SessionUser = Depends(require_permission(Permission.GROUPS_MANAGE_MEMBERS))):
     _reauth(request, user, payload.admin_password, "group_member_add", f"{groupname}:{payload.username}")
-    return service().set_group_member(groupname, payload.username, user.username, True)
+    return _execute("group_member_add", user.username, f"{groupname}:{payload.username}", lambda: service().set_group_member(groupname, payload.username, user.username, True))
 
 
 @router.delete("/api/identity/groups/{groupname}/members/{username}")
 @router.delete("/api/admin/groups/{groupname}/members/{username}")
 def identity_group_member_remove(groupname: str, username: str, payload: AdminCredential, request: Request, user: SessionUser = Depends(require_permission(Permission.GROUPS_MANAGE_MEMBERS))):
     _reauth(request, user, payload.admin_password, "group_member_remove", f"{groupname}:{username}")
-    return service().set_group_member(groupname, username, user.username, False)
+    return _execute("group_member_remove", user.username, f"{groupname}:{username}", lambda: service().set_group_member(groupname, username, user.username, False))
 
 
 @router.put("/api/identity/groups/{groupname}/policy")
 def identity_group_policy(groupname: str, payload: GroupPolicyRequest, request: Request, user: SessionUser = Depends(require_permission(Permission.ACCESS_MANAGE_GROUP_PERMISSIONS))):
     _reauth(request, user, payload.admin_password, "group_policy_update", groupname)
-    return service().save_group_policy(groupname, payload, user.username)
+    return _execute("group_policy_update", user.username, groupname, lambda: service().save_group_policy(groupname, payload, user.username))
 
 
 @router.get("/api/admin/users")

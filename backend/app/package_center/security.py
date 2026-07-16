@@ -23,6 +23,16 @@ def current_admin(request: Request) -> SessionUser:
     return user
 
 
+def current_user(request: Request) -> SessionUser:
+    return get_session_user(request)
+
+
+def mutating_user(request: Request) -> SessionUser:
+    user = get_session_user(request)
+    require_csrf(request, user)
+    return user
+
+
 def mutating_admin(request: Request) -> SessionUser:
     user = current_admin(request)
     require_csrf(request, user)

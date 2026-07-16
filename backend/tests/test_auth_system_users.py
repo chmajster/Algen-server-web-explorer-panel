@@ -30,6 +30,15 @@ def test_login_rejects_service_uid(monkeypatch):
         raise AssertionError("service users should not be allowed to log in")
 
 
+def test_uid_zero_break_glass_login_still_requires_an_interactive_account(monkeypatch):
+    monkeypatch.setattr(auth.pwd, "getpwnam", lambda username: _pw(uid=0, home="/root"))
+
+    user = auth.assert_login_allowed("root")
+
+    assert user.pw_uid == 0
+    assert user.pw_dir == "/root"
+
+
 def test_login_rejects_nologin_shell(monkeypatch):
     monkeypatch.setattr(auth.pwd, "getpwnam", lambda username: _pw(shell="/usr/sbin/nologin"))
 

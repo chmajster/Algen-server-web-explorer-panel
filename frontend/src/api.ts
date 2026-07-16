@@ -43,6 +43,7 @@ export type TextFileResponse = {
 
 export type Task = {
   id: string;
+  username?: string;
   type: string;
   op: string;
   status: "queued" | "running" | "paused" | "completed" | "failed" | "cancelled";
@@ -328,7 +329,7 @@ export type RbacAssignment = { username: string; uid?: number; role: RbacRole; a
 export type RbacRoles = { roles: Record<RbacRole, string[]>; permissions: string[] };
 export type PermissionRisk = "low" | "medium" | "high" | "critical";
 export type PermissionMetadata = { id: string; category: string; operation: string; applications: string[]; risk: PermissionRisk; mutating: boolean; label_key: string; description_key: string };
-export type IdentityProfile = { username: string; role: RbacRole; role_source: "linux-admin" | "assignment" | "default"; linux_admin: boolean; is_admin: boolean; permissions: string[]; denied_permissions: string[]; permission_sources: Record<string, string[]> };
+export type IdentityProfile = { username: string; role: RbacRole; role_source: "linux-admin" | "assignment" | "default"; linux_admin: boolean; is_admin: boolean; permissions: string[]; effective_permissions?: string[]; denied_permissions: string[]; permission_sources: Record<string, string[]> };
 export type IdentityUser = IdentityProfile & { uid: number; gid: number; primary_group: string; supplementary_groups: string[]; groups: string[]; home: string; shell: string; gecos: string; locked: boolean; password_change_required: boolean; is_system: boolean; manageable: boolean; allow: string[]; deny: string[] };
 export type IdentityGroup = { name: string; groupname: string; gid: number; primary_users: string[]; supplementary_members: string[]; members: string[]; is_system: boolean; protected: boolean; manageable: boolean; allow: string[]; deny: string[]; inheriting_users: string[]; inheriting_count: number };
 export type IdentityRoles = { roles: Record<RbacRole, string[]>; permissions: PermissionMetadata[] };
@@ -624,6 +625,7 @@ export const api = {
   stat: (path: string) => request<FileItem>(`/api/files/stat?path=${encodeURIComponent(path)}`),
   search: (path: string, query: string) => request<{ items: FileItem[] }>(`/api/files/search?path=${encodeURIComponent(path)}&query=${encodeURIComponent(query)}`),
   tasks: (status?: string) => request<Task[]>(`/api/files/tasks${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  allTasks: (status?: string) => request<Task[]>(`/api/admin/transfers${status ? `?status=${encodeURIComponent(status)}` : ""}`),
   task: (taskId: string) => request<Task>(`/api/files/tasks/${encodeURIComponent(taskId)}`),
   cancelTask: (taskId: string) => request("/api/files/tasks/" + encodeURIComponent(taskId) + "/cancel", { method: "POST", body: "{}" }),
   pauseTask: (taskId: string) => request("/api/files/tasks/" + encodeURIComponent(taskId) + "/pause", { method: "POST", body: "{}" }),

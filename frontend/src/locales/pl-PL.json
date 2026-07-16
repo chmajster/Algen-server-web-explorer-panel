@@ -953,6 +953,8 @@
   "identity.renameGroup": "Zmień nazwę grupy",
   "identity.newGroupName": "Nowa nazwa grupy",
   "identity.members": "Członkowie",
+  "identity.primaryUsers": "Użytkownicy z grupą podstawową",
+  "identity.supplementaryMembers": "Członkowie dodatkowi",
   "identity.inheriting": "Dziedziczący użytkownicy",
   "identity.protected": "Chroniona",
   "identity.groupPolicy": "Uprawnienia grupy",
