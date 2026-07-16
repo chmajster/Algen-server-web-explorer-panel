@@ -21,6 +21,7 @@ def test_samba_install_dry_run_lists_packages(monkeypatch):
 
     assert any("samba" in step for step in steps)
     assert any("smbclient" in step for step in steps)
+    assert any("cifs-utils" in step for step in steps)
 
 
 def test_smb_conf_backup_is_created(monkeypatch, tmp_path):

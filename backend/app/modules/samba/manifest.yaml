@@ -10,14 +10,14 @@ icon: share-2
 license: GPL-3.0-or-later
 supported_distributions: [debian, ubuntu, raspbian]
 supported_architectures: [x86_64, aarch64, armv7l]
-apt_packages: [samba, smbclient]
-dnf_packages: [samba, samba-client]
-yum_packages: [samba, samba-client]
+apt_packages: [samba, smbclient, cifs-utils]
+dnf_packages: [samba, samba-client, cifs-utils]
+yum_packages: [samba, samba-client, cifs-utils]
 systemd_services: [smbd, nmbd]
 packages:
-  apt: [samba, smbclient]
-  dnf: [samba, samba-client]
-  yum: [samba, samba-client]
+  apt: [samba, smbclient, cifs-utils]
+  dnf: [samba, samba-client, cifs-utils]
+  yum: [samba, samba-client, cifs-utils]
 services:
   - name: smbd
     required: true

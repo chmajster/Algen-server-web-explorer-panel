@@ -3,8 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type NetworkMount, type NetworkMountPayload } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { Modal } from "../../components/Modal";
-import { AdminActionDialog, type AdminField } from "../admin/AdminActionDialog";
-import { forgetAdminPassword, getRememberedAdminPassword, rememberAdminPassword } from "../admin/adminCredentials";
+import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { notifyNetworkMountsChanged, stopWatchingNetworkMountChanges, watchNetworkMountChanges } from "./useNetworkMounts";
 
 type Protocol = NetworkMountPayload["type"];
@@ -13,14 +12,14 @@ type FormState = {
   username: string; password: string; domain: string; smb_version: string; nfs_version: string;
   ssh_port: string; ssh_auth: "key"; read_only: boolean; persistent: boolean; automount: boolean;
   uid: string; gid: string; file_mode: string; dir_mode: string; noexec: boolean;
-  advanced_options: string; allowed_users: string; allowed_groups: string; remove_secret: boolean; admin_password: string;
+  advanced_options: string; allowed_users: string; allowed_groups: string; remove_secret: boolean;
 };
 
 const emptyForm = (): FormState => ({
   name: "", type: "smb", host: "", share: "", export_path: "", remote_path: "", username: "", password: "", domain: "",
   smb_version: "auto", nfs_version: "auto", ssh_port: "22", ssh_auth: "key", read_only: false, persistent: false,
   automount: false, uid: "", gid: "", file_mode: "0644", dir_mode: "0755", noexec: true, advanced_options: "",
-  allowed_users: "", allowed_groups: "", remove_secret: false, admin_password: getRememberedAdminPassword(),
+  allowed_users: "", allowed_groups: "", remove_secret: false,
 });
 
 const list = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
@@ -44,7 +43,6 @@ function MountForm({ mount, t, onClose, onSaved }: { mount?: NetworkMount; t: Tr
     advanced_options: Array.isArray(mount.config.advanced_options) ? mount.config.advanced_options.join(", ") : "",
     allowed_users: mount.allowed_users.join(", "), allowed_groups: mount.allowed_groups.join(", "),
   } : emptyForm());
-  const [remember, setRemember] = useState(Boolean(getRememberedAdminPassword()));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -61,7 +59,6 @@ function MountForm({ mount, t, onClose, onSaved }: { mount?: NetworkMount; t: Tr
     if (form.type === "sshfs" && !form.remote_path.startsWith("/")) errors.remote_path = t("mounts.pathMustBeAbsolute");
     if (form.type === "sshfs" && !form.username.trim()) errors.username = t("mounts.required");
     if (form.type === "webdav" && !/^https?:\/\//.test(form.remote_path)) errors.remote_path = t("mounts.invalidUrl");
-    if (!form.admin_password) errors.admin_password = t("mounts.required");
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   }
@@ -71,7 +68,7 @@ function MountForm({ mount, t, onClose, onSaved }: { mount?: NetworkMount; t: Tr
     if (!validate()) return;
     setSaving(true); setError("");
     const payload: NetworkMountPayload = {
-      admin_password: form.admin_password, name: form.name, type: form.type, host: form.host,
+      name: form.name, type: form.type, host: form.host,
       share: form.type === "smb" ? form.share : undefined, export_path: form.type === "nfs" ? form.export_path : undefined,
       remote_path: ["sshfs", "webdav"].includes(form.type) ? form.remote_path : undefined,
       username: ["smb", "sshfs", "webdav"].includes(form.type) ? form.username || undefined : undefined,
@@ -83,7 +80,6 @@ function MountForm({ mount, t, onClose, onSaved }: { mount?: NetworkMount; t: Tr
     };
     try {
       if (mount) await api.updateMount(mount.id, payload); else await api.createMount(payload);
-      if (remember) rememberAdminPassword(form.admin_password); else forgetAdminPassword();
       await onSaved();
       notifyNetworkMountsChanged();
       onClose();
@@ -110,8 +106,6 @@ function MountForm({ mount, t, onClose, onSaved }: { mount?: NetworkMount; t: Tr
       </div>
       <div className="mount-form-checks">{check("read_only", t("mounts.readOnly"))}{check("persistent", t("mounts.persistent"))}{check("automount", t("mounts.automount"), !form.persistent)}{check("noexec", t("mounts.noexec"))}{mount?.config.has_secret && check("remove_secret", t("mounts.removeSecret"))}</div>
       {mount?.config.has_secret && !form.remove_secret && <p className="credential-note">{t("mounts.secretPreserved")}</p>}
-      {field("admin_password", t("settings.adminPassword"), { type: "password", required: true })}
-      <label className="remember-password"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />{t("admin.rememberPassword")}</label>
       {error && <p className="error-state compact-error" role="alert">{error}</p>}
     </form>
   </Modal>;
@@ -151,14 +145,14 @@ export function NetworkMountsSettingsSection({ isAdmin, t, toast }: { isAdmin: b
   }, [mounts, t, toast]);
 
   if (!isAdmin) return null;
-  async function runAction(password: string) {
+  async function runAction() {
     if (!actionDialog) return;
     const { mount, action } = actionDialog;
     try {
       if (action === "delete") {
-        await api.deleteMount(mount.id, password);
+        await api.deleteMount(mount.id);
       } else {
-        const result = await api.mountAction(mount.id, action, password);
+        const result = await api.mountAction(mount.id, action);
         if (result.job) {
           trackedJobs.current.add(result.job.id);
           if (action !== "test") watchNetworkMountChanges();
@@ -170,7 +164,6 @@ export function NetworkMountsSettingsSection({ isAdmin, t, toast }: { isAdmin: b
     setActionDialog(null);
     if (action === "delete") notifyNetworkMountsChanged();
   }
-  const actionFields: AdminField[] = [{ name: "admin_password", label: t("settings.adminPassword"), type: "password", required: true }];
 
   return <section className="network-mounts-settings" aria-label={t("settings.networkResources")}>
     <header className="feature-header"><div><h3>{t("settings.networkResources")}</h3><p>{t("mounts.settingsSubtitle")}</p></div><div className="header-actions"><button onClick={() => void refresh()}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button><button onClick={() => setEditing("new")}><Plus />{t("mounts.new")}</button></div></header>
@@ -180,12 +173,12 @@ export function NetworkMountsSettingsSection({ isAdmin, t, toast }: { isAdmin: b
       <header><div><strong>{mount.name}</strong><small>{mount.type.toUpperCase()} · {mount.host}</small></div><span className={`status-badge ${mount.status}`}>{t(`mounts.status.${mount.status}`)}</span></header>
       <dl><div><dt>{t("mounts.remote")}</dt><dd>{mount.remote}</dd></div><div><dt>{t("mounts.mountPoint")}</dt><dd><code>{mount.mount_point}</code></dd></div><div><dt>{t("mounts.owner")}</dt><dd>{mount.owner}</dd></div><div><dt>{t("mounts.access")}</dt><dd>{[...mount.allowed_users, ...mount.allowed_groups.map((group) => `@${group}`)].join(", ") || t("mounts.allAuthenticated")}</dd></div><div><dt>{t("mounts.mode")}</dt><dd>{mount.read_only ? t("mounts.readOnly") : t("mounts.readWrite")} · {mount.persistent ? t("mounts.persistent") : t("mounts.temporary")}</dd></div>{fs && <div><dt>{t("mounts.space")}</dt><dd>{Math.round(fs.used / Math.max(fs.total, 1) * 100)}% · {(fs.free / 1073741824).toFixed(1)} GiB {t("mounts.free")} · {fs.fs_type}</dd></div>}</dl>
       {mount.missing_packages.length > 0 && <p className="warning-note">{t("mounts.missingPackages")}: {mount.missing_packages.join(", ")}</p>}
-      {mount.last_error && <p className="error-note">{mount.last_error}</p>}
+      {mount.last_error && !(mount.status === "missing_packages" && mount.missing_packages.length > 0) && <p className="error-note">{mount.last_error}</p>}
       {mount.last_operation && <small>{t("mounts.lastOperation")}: {mount.last_operation}{mount.last_operation_at ? ` · ${new Date(mount.last_operation_at * 1000).toLocaleString()}` : ""}</small>}
       <div className="data-actions"><button disabled={busy || mount.status === "mounted"} onClick={() => setActionDialog({ mount, action: "mount" })}>{t("mounts.mount")}</button><button disabled={busy || !mount.actual_mounted} onClick={() => setActionDialog({ mount, action: "unmount" })}>{t("mounts.unmount")}</button><button disabled={busy || !mount.actual_mounted} onClick={() => setActionDialog({ mount, action: "remount" })}><RotateCcw />{t("mounts.remount")}</button><button disabled={busy} onClick={() => setActionDialog({ mount, action: "test" })}><TestTube2 />{t("mounts.test")}</button><button disabled={busy} onClick={() => setEditing(mount)}><FilePenLine />{t("action.edit")}</button><button onClick={() => api.mountLogs(mount.id).then((value) => setLogs({ name: mount.name, lines: value.lines })).catch((reason: unknown) => toast(reason instanceof Error ? reason.message : t("error.generic"), "error", "admin"))}><FileText />{t("mounts.logs")}</button>{mount.migration_status !== "ready" && <button disabled={busy} onClick={() => setActionDialog({ mount, action: "migrate" })}>{t("mounts.migrate")}</button>}<button className="danger" disabled={busy} onClick={() => setActionDialog({ mount, action: "delete" })}><Trash2 />{t("action.delete")}</button></div>
     </article>; })}</div>
     {editing && <MountForm mount={editing === "new" ? undefined : editing} t={t} onClose={() => setEditing(null)} onSaved={refresh} />}
-    {actionDialog && <AdminActionDialog title={`${t(`mounts.${actionDialog.action}`)}: ${actionDialog.mount.name}`} fields={actionFields} danger={["delete", "unmount", "remount", "migrate"].includes(actionDialog.action)} t={t} onClose={() => setActionDialog(null)} onSubmit={(values) => runAction(values.admin_password)} />}
+    {actionDialog && <AdminActionDialog title={`${t(`mounts.${actionDialog.action}`)}: ${actionDialog.mount.name}`} fields={[]} danger={["delete", "unmount", "remount", "migrate"].includes(actionDialog.action)} t={t} onClose={() => setActionDialog(null)} onSubmit={runAction} />}
     {logs && <Modal wide title={`${t("mounts.logs")}: ${logs.name}`} closeLabel={t("action.close")} onClose={() => setLogs(null)} footer={<button onClick={() => setLogs(null)}>{t("action.close")}</button>}><pre className="log-view">{logs.lines.join("\n") || t("mounts.noLogs")}</pre></Modal>}
   </section>;
 }

@@ -21,6 +21,11 @@ def payload(**kwargs):
     return network_mounts.MountPayload.model_validate(data)
 
 
+def test_mount_payload_accepts_an_authenticated_session_without_admin_password():
+    data = payload().model_dump(exclude={"admin_password"})
+    assert network_mounts.MountPayload.model_validate(data).admin_password == ""
+
+
 def test_mount_point_blocks_system_paths(monkeypatch):
     monkeypatch.setattr(network_mounts, "safe_mode_active", lambda: False)
 
@@ -106,7 +111,6 @@ def test_create_mount_is_audited(monkeypatch, tmp_path):
     creds.mkdir()
     monkeypatch.setattr(network_mounts, "_is_admin", lambda username: True)
     monkeypatch.setattr(network_mounts, "authorize", lambda user, permission: None)
-    monkeypatch.setattr(network_mounts, "authenticate", lambda username, password: True)
     monkeypatch.setattr(network_mounts, "db_path", lambda: tmp_path / "mounts.sqlite3")
     monkeypatch.setattr(network_mounts, "credentials_dir", lambda: creds)
     monkeypatch.setattr(network_mounts, "validate_mount_point", lambda path, allow_existing_data=False, name=None: tmp_path / "media")

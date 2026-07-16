@@ -40,13 +40,13 @@ describe("network mount settings", () => {
     fireEvent.change(screen.getByLabelText("mounts.type"), { target: { value: "nfs" } });
     fireEvent.change(screen.getByLabelText("mounts.host"), { target: { value: "nas.local" } });
     fireEvent.change(screen.getByLabelText("mounts.exportPath"), { target: { value: "/exports/backup" } });
-    fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "secret" } });
-
     expect(screen.getByDisplayValue("/mnt/webnas/mnt/Backup-NAS")).toHaveAttribute("readonly");
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
     await waitFor(() => expect(api.createMount).toHaveBeenCalled());
     const submitted = vi.mocked(api.createMount).mock.calls[0][0] as Record<string, unknown>;
     expect(submitted).not.toHaveProperty("mount_point");
+    expect(submitted).not.toHaveProperty("admin_password");
     expect(submitted).toMatchObject({ type: "nfs", export_path: "/exports/backup" });
   });
 
@@ -54,5 +54,20 @@ describe("network mount settings", () => {
     render(<NetworkMountsSettingsSection isAdmin={false} t={t} toast={vi.fn()} />);
     expect(api.mounts).not.toHaveBeenCalled();
     expect(screen.queryByText("settings.networkResources")).not.toBeInTheDocument();
+  });
+
+  it("shows one localized missing-package warning instead of the raw backend error", async () => {
+    vi.mocked(api.mounts).mockResolvedValue([{
+      id: "mount-1", name: "media", type: "smb", host: "nas.local", remote: "//nas.local/media",
+      mount_point: "/mnt/webnas/mnt/media", owner: "admin", allowed_users: [], allowed_groups: [], read_only: false,
+      persistent: true, status: "missing_packages", actual_mounted: false, missing_packages: ["cifs-utils"],
+      last_error: "Missing packages: cifs-utils", last_operation: "mount", last_operation_at: null,
+      jobs: [], fs: null, migration_status: "ready", config: { has_secret: false },
+    }] as never);
+
+    render(<NetworkMountsSettingsSection isAdmin t={t} toast={vi.fn()} />);
+
+    expect(await screen.findByText("mounts.missingPackages: cifs-utils")).toBeInTheDocument();
+    expect(screen.queryByText("Missing packages: cifs-utils")).not.toBeInTheDocument();
   });
 });

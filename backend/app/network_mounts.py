@@ -21,7 +21,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .activity import ActivityCategory, record_activity
 from .audit import logger
-from .auth import authenticate
 from .config import get_config
 from .proxmox_guard import safe_mode_active
 from .security import SessionUser, get_session_user, require_csrf
@@ -153,7 +152,9 @@ def connect() -> sqlite3.Connection:
 
 
 class AdminMountAction(BaseModel):
-    admin_password: str
+    # Kept as an optional compatibility field for older frontend clients.
+    # An authenticated, authorized session is sufficient for mount actions.
+    admin_password: str = ""
     dry_run: bool = False
     force_empty_mountpoint: bool = False
     confirm_destructive: bool = False
@@ -162,7 +163,7 @@ class AdminMountAction(BaseModel):
 class MountPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    admin_password: str
+    admin_password: str = ""
     name: str
     type: str
     host: str
@@ -206,9 +207,8 @@ def require_admin_session(user: SessionUser, action: str, permission: str = "net
         raise
 
 
-def require_admin(user: SessionUser, password: str, action: str, permission: str) -> None:
+def require_admin(user: SessionUser, _password: str, action: str, permission: str) -> None:
     require_admin_session(user, action, permission)
-    authenticate(user.username, password)
 
 
 def audit(actor: str, action: str, target: str) -> None:

@@ -264,7 +264,8 @@ class AdminSessionAction(BaseModel):
     confirm: bool = True
 
 
-class ServiceAction(AdminPassword):
+class ServiceAction(BaseModel):
+    admin_password: str = ""
     confirm_restart: bool = False
 
 
@@ -1080,7 +1081,7 @@ def admin_systemd_service_action(service: str, action: str, payload: ServiceActi
     normalized = _assert_systemd_service_allowed(service)
     if action == "restart" and not payload.confirm_restart:
         raise HTTPException(400, "Restart requires explicit confirmation")
-    _require_admin(user, payload.admin_password, request, f"systemd_{action}", f"services.{action}")
+    _require_admin_session(user, request, f"systemd_{action}", f"services.{action}")
     _run([_tool("systemctl"), action, normalized])
     _audit(user.username, f"systemd_{action}", normalized)
     return _service_payload(normalized)

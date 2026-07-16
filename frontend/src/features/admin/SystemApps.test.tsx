@@ -2,9 +2,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api";
 import { forgetAdminPassword } from "./adminCredentials";
-import { StoreAppView, UsersApp } from "./SystemApps";
+import { ServicesApp, StoreAppView, UsersApp } from "./SystemApps";
 
-vi.mock("../../api", () => ({ api: { adminUsers: vi.fn(), createUser: vi.fn(), apps: vi.fn(), appAction: vi.fn() } }));
+vi.mock("../../api", () => ({ api: { adminUsers: vi.fn(), createUser: vi.fn(), apps: vi.fn(), appAction: vi.fn(), systemdServices: vi.fn(), systemdServiceAction: vi.fn() } }));
 
 describe("administrative forms", () => {
   beforeEach(() => { vi.clearAllMocks(); forgetAdminPassword(); });
@@ -44,5 +44,17 @@ describe("administrative forms", () => {
     expect(await screen.findByText("APT repository is unavailable")).toBeInTheDocument();
     expect(screen.getByText(/Connection timed out/)).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("store.installationFailed");
+  });
+
+  it("uses the authenticated session for routine service actions", async () => {
+    vi.mocked(api.systemdServices).mockResolvedValue([{ name: "webnas.service", status: "inactive", sub_state: "dead", enabled: "enabled", uptime_seconds: null, last_error: "", managed_by_webnas: true }]);
+    vi.mocked(api.systemdServiceAction).mockResolvedValue({ name: "webnas.service", status: "active", sub_state: "running", enabled: "enabled", uptime_seconds: 1, last_error: "", managed_by_webnas: true });
+    render(<ServicesApp t={(key) => key} toast={vi.fn()} />);
+
+    fireEvent.click(await screen.findByTitle("services.start"));
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+
+    await waitFor(() => expect(api.systemdServiceAction).toHaveBeenCalledWith("webnas.service", "start", false));
   });
 });

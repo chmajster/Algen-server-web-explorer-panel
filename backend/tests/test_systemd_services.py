@@ -39,7 +39,7 @@ def test_restart_requires_confirmation(monkeypatch):
     monkeypatch.setattr(settings, "get_config", lambda: cfg(["webnas.service"]))
 
     with pytest.raises(HTTPException) as exc:
-        settings.admin_systemd_service_action("webnas.service", "restart", settings.ServiceAction(admin_password="secret"), SimpleNamespace(client=None), SimpleNamespace(username="admin"))
+        settings.admin_systemd_service_action("webnas.service", "restart", settings.ServiceAction(), SimpleNamespace(client=None), SimpleNamespace(username="admin"))
 
     assert exc.value.status_code == 400
 
@@ -47,12 +47,12 @@ def test_restart_requires_confirmation(monkeypatch):
 def test_service_action_is_audited(monkeypatch):
     calls = []
     monkeypatch.setattr(settings, "get_config", lambda: cfg(["webnas.service"]))
-    monkeypatch.setattr(settings, "_require_admin", lambda *args, **kwargs: None)
+    monkeypatch.setattr(settings, "_require_admin_session", lambda *args, **kwargs: None)
     monkeypatch.setattr(settings, "_run", lambda args: calls.append(args))
     monkeypatch.setattr(settings, "_audit", lambda actor, action, target: calls.append([action, target]))
     monkeypatch.setattr(settings, "_service_payload", lambda service: {"name": service})
 
-    result = settings.admin_systemd_service_action("webnas", "start", settings.ServiceAction(admin_password="secret"), SimpleNamespace(client=None), SimpleNamespace(username="admin"))
+    result = settings.admin_systemd_service_action("webnas", "start", settings.ServiceAction(), SimpleNamespace(client=None), SimpleNamespace(username="admin"))
 
     assert result == {"name": "webnas.service"}
     assert ["systemd_start", "webnas.service"] in calls

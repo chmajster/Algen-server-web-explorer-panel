@@ -298,7 +298,9 @@ def test_samba_manifest_and_existing_renderer_remain_available():
     manifest = manifests.load_manifest("samba")
     rendered = apps.render_smb_conf(apps.SambaConfig(shares=[apps.SambaShare(name="media", path="/srv/media")]))
 
-    assert manifest.apt_packages == ["samba", "smbclient"]
+    assert manifest.apt_packages == ["samba", "smbclient", "cifs-utils"]
+    assert "cifs-utils" in manifest.dnf_packages
+    assert "cifs-utils" in manifest.yum_packages
     assert "[media]" in rendered
 
 
