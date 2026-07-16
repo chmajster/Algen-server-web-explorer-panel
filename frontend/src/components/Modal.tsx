@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 export function Modal({ title, children, onClose, footer, wide = false, closeLabel = "×" }: {
@@ -37,7 +38,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
     };
   }, []);
 
-  return (
+  const dialog = (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div ref={panel} className={`modal-panel ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onPointerDown={(event) => event.stopPropagation()}>
         <header className="modal-header"><h2 id={titleId}>{title}</h2><button className="icon-button" type="button" aria-label={closeLabel} onClick={onClose}><X size={18} /></button></header>
@@ -46,6 +47,8 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
       </div>
     </div>
   );
+  const portalTarget = typeof document === "undefined" ? null : document.querySelector<HTMLElement>(".desktop") || document.body;
+  return portalTarget ? createPortal(dialog, portalTarget) : dialog;
 }
 
 export function ConfirmDialog({ title, message, confirmLabel, cancelLabel, danger = false, onConfirm, onClose }: {

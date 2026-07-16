@@ -31,4 +31,18 @@ describe("modal", () => {
     expect(firstClose).not.toHaveBeenCalled();
     expect(latestClose).toHaveBeenCalledOnce();
   });
+
+  it("renders over the desktop instead of being clipped by a parent window", () => {
+    const close = vi.fn();
+    const { rerender } = render(<div className="desktop" data-testid="desktop"><div data-testid="small-window" /></div>);
+    rerender(<div className="desktop" data-testid="desktop"><div data-testid="small-window"><Modal title="Full overlay" onClose={close}><p>Content</p></Modal></div></div>);
+
+    const desktop = screen.getByTestId("desktop");
+    const smallWindow = screen.getByTestId("small-window");
+    const dialog = screen.getByRole("dialog", { name: "Full overlay" });
+    const backdrop = dialog.parentElement;
+    expect(backdrop).toHaveClass("modal-backdrop");
+    expect(backdrop?.parentElement).toBe(desktop);
+    expect(smallWindow).not.toContainElement(dialog);
+  });
 });
