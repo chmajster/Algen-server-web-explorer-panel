@@ -19,6 +19,8 @@
   --text-primary: #18222c;
   --text-secondary: #52616f;
   --text-muted: #778593;
+  --text-on-accent: #ffffff;
+  --text-on-danger: #ffffff;
   --danger: #c42b3a;
   --warning: #a96500;
   --success: #137a4b;
@@ -45,6 +47,8 @@
   --text-primary: #f3f5f7;
   --text-secondary: #c0c6ce;
   --text-muted: #929ba5;
+  --text-on-accent: #ffffff;
+  --text-on-danger: #ffffff;
   --danger: #ff6673;
   --warning: #f3b14b;
   --success: #57c58a;
