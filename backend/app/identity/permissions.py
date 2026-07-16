@@ -33,7 +33,8 @@ class Permission(StrEnum):
     TRANSFERS_CHANGE_PRIORITY = "transfers.change_priority"
     SETTINGS_VIEW_OWN = "settings.view_own"
     SETTINGS_EDIT_OWN = "settings.edit_own"
-    SETTINGS_CHANGE_OWN_PASSWORD = "settings.change_own_password"  # nosec B105 - permission identifier, never a credential
+    # These are permission identifiers, not embedded credentials.
+    SETTINGS_CHANGE_OWN_PASSWORD = "settings.change_own_password"  # nosec B105
     SETTINGS_VIEW_SYSTEM = "settings.view_system"
     SETTINGS_EDIT_SYSTEM = "settings.edit_system"
     USERS_VIEW = "users.view"
@@ -42,7 +43,7 @@ class Permission(StrEnum):
     USERS_RENAME = "users.rename"
     USERS_LOCK = "users.lock"
     USERS_UNLOCK = "users.unlock"
-    USERS_CHANGE_PASSWORD = "users.change_password"  # nosec B105 - permission identifier, never a credential
+    USERS_CHANGE_PASSWORD = "users.change_password"  # nosec B105
     USERS_MANAGE_GROUPS = "users.manage_groups"
     USERS_MANAGE_QUOTA = "users.manage_quota"
     USERS_DELETE = "users.delete"
@@ -103,13 +104,40 @@ class Permission(StrEnum):
 
 _READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics"}
 _CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE}
+_APPLICATIONS: dict[str, list[str]] = {
+    "files": ["files"],
+    "transfers": ["transfers"],
+    "settings": ["settings"],
+    "users": ["identity"],
+    "groups": ["identity"],
+    "access": ["identity"],
+    "audit": ["activity"],
+    "modules": ["modules", "store"],
+    "services": ["services"],
+    "updates": ["modules", "settings"],
+    "network_resources": ["settings"],
+    "docker": ["module:docker"],
+    "dns": ["module:pihole", "module:adguard-home"],
+    "databases": ["module:postgresql", "module:mariadb", "module:redis"],
+    "homeassistant": ["module:home-assistant"],
+    "system": ["monitor", "logs", "settings"],
+}
 
 
 def _metadata(permission: Permission) -> PermissionMetadata:
     category, operation = permission.value.split(".", 1)
     mutating = operation not in _READ_OPERATIONS and not operation.startswith("view")
     risk = PermissionRisk.critical if permission in _CRITICAL else PermissionRisk.high if mutating else PermissionRisk.low
-    return PermissionMetadata(id=permission.value, category=category, operation=operation, risk=risk, mutating=mutating, label_key=f"permissions.{permission.value}", description_key=f"permissions.{permission.value}.description")
+    return PermissionMetadata(
+        id=permission.value,
+        category=category,
+        operation=operation,
+        applications=_APPLICATIONS[category],
+        risk=risk,
+        mutating=mutating,
+        label_key=f"permissions.{permission.value}",
+        description_key=f"permissions.category.{category}.description",
+    )
 
 
 PERMISSION_REGISTRY: dict[str, PermissionMetadata] = {item.value: _metadata(item) for item in Permission}

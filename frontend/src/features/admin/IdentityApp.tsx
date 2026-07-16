@@ -77,7 +77,7 @@ export function IdentityApp({ permissions, initialTab = "users", t, toast }: { p
     {tab === "groups" && <GroupsView groups={groups} selected={selectedGroup} metadata={metadata} search={search} includeSystem={includeSystem} can={can} t={t} onSearch={setSearch} onSystem={setIncludeSystem} onCreate={createGroup} onSelect={setSelectedGroup} onDialog={setDialog} perform={perform} />}
     {tab === "roles" && roles && <RoleMatrix roles={roles} t={t} />}
     {tab === "history" && <HistoryView items={history} t={t} />}
-    {dialog && <AdminActionDialog {...dialog} t={t} onClose={() => setDialog(null)} onSubmit={dialog.submit} />}
+    {dialog && <AdminActionDialog {...dialog} allowRememberPassword={false} t={t} onClose={() => setDialog(null)} onSubmit={dialog.submit} />}
   </section>;
 }
 

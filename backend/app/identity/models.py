@@ -28,6 +28,7 @@ class PermissionMetadata(BaseModel):
     id: str
     category: str
     operation: str
+    applications: list[str]
     risk: PermissionRisk
     mutating: bool
     label_key: str
