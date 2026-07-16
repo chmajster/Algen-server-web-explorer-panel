@@ -8,7 +8,7 @@ vi.mock("../../api", async () => {
   return { ...actual, api: { ...actual.api, identityUsers: vi.fn(), identityGroups: vi.fn(), identityRoles: vi.fn(), identityHistory: vi.fn(), createIdentityUser: vi.fn(), saveIdentityUserPolicy: vi.fn() } };
 });
 
-const permission = { id: "services.restart", category: "services", operation: "restart", risk: "high" as const, mutating: true, label_key: "permissions.services.restart", description_key: "permissions.services.restart.description" };
+const permission = { id: "services.restart", category: "services", operation: "restart", applications: ["services"], risk: "high" as const, mutating: true, label_key: "permissions.services.restart", description_key: "permissions.category.services.description" };
 const roles: IdentityRoles = { permissions: [permission], roles: { admin: [permission.id], operator: [permission.id], auditor: [], user: [] } };
 const regularUser: IdentityUser = { username: "alice", uid: 1001, gid: 100, primary_group: "users", supplementary_groups: ["ops"], groups: ["users", "ops"], home: "/home/alice", shell: "/bin/bash", gecos: "Alice", locked: false, password_change_required: false, is_system: false, manageable: true, linux_admin: false, role: "operator", role_source: "assignment", is_admin: false, allow: [], deny: [], permissions: [permission.id], denied_permissions: [], permission_sources: { [permission.id]: ["group:ops"] } };
 const linuxAdmin: IdentityUser = { ...regularUser, username: "root-admin", uid: 1000, linux_admin: true, manageable: false, role: "admin", role_source: "linux-admin", is_admin: true, permission_sources: { [permission.id]: ["linux-admin"] } };
@@ -49,5 +49,24 @@ describe("IdentityApp", () => {
     fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "pam" } });
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
     await waitFor(() => expect(toast).toHaveBeenCalledWith("Cannot remove last administrator", "error", "admin"));
+  });
+
+  it("creates a Linux user with optional identity fields and fresh PAM confirmation", async () => {
+    vi.mocked(api.createIdentityUser).mockResolvedValue(regularUser);
+    render(<IdentityApp permissions={["users.view", "users.create"]} t={(key) => key} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "identity.user.create" }));
+    fireEvent.change(screen.getByLabelText("settings.username"), { target: { value: "bob" } });
+    fireEvent.change(screen.getByLabelText("settings.newPassword"), { target: { value: "temporary-password" } });
+    fireEvent.change(screen.getByLabelText("identity.optionalUid"), { target: { value: "1200" } });
+    fireEvent.change(screen.getByLabelText("identity.optionalGid"), { target: { value: "1300" } });
+    fireEvent.change(screen.getByLabelText("identity.supplementaryGroupsHint"), { target: { value: "media, operators, media" } });
+    fireEvent.change(screen.getByLabelText("identity.forcePasswordChange"), { target: { value: "true" } });
+    fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "fresh-pam" } });
+    expect(screen.queryByText("admin.rememberPassword")).not.toBeInTheDocument();
+    expect(screen.getByText("identity.freshPamRequired")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+    await waitFor(() => expect(api.createIdentityUser).toHaveBeenCalledWith(expect.objectContaining({
+      username: "bob", uid: 1200, gid: 1300, groups: ["media", "operators"], force_password_change: true, admin_password: "fresh-pam",
+    })));
   });
 });

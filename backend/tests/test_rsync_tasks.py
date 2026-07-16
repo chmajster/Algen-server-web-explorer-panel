@@ -57,6 +57,16 @@ def test_create_move_task_is_queued(monkeypatch, tmp_path: Path):
     assert task.status == TaskStatus.queued
 
 
+def test_global_transfer_listing_includes_multiple_users(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    manager = FileTaskManager()
+    alice = manager.create_transfer("alice", "copy", [str(tmp_path / "alice")], str(tmp_path / "target-a"))
+    bob = manager.create_transfer("bob", "copy", [str(tmp_path / "bob")], str(tmp_path / "target-b"))
+
+    assert {task.id for task in manager.list_all()} == {alice.id, bob.id}
+    assert [task.id for task in manager.list_for("alice")] == [alice.id]
+
+
 def test_rejects_move_directory_into_itself(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
     source = tmp_path / "source"

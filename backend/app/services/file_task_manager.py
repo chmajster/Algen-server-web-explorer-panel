@@ -447,6 +447,16 @@ class FileTaskManager:
     def list_for(self, username: str, status_filter: str | None = None) -> list[FileTask]:
         with self._lock:
             tasks = [task for task in self._tasks.values() if task.username == username]
+        return self._filter_and_sort(tasks, status_filter)
+
+    def list_all(self, status_filter: str | None = None) -> list[FileTask]:
+        """Return all users' transfers after the API has authorized global access."""
+        with self._lock:
+            tasks = list(self._tasks.values())
+        return self._filter_and_sort(tasks, status_filter)
+
+    @staticmethod
+    def _filter_and_sort(tasks: list[FileTask], status_filter: str | None) -> list[FileTask]:
         if status_filter == "active":
             tasks = [task for task in tasks if task.status in {TaskStatus.queued, TaskStatus.running, TaskStatus.paused}]
         elif status_filter == "finished":

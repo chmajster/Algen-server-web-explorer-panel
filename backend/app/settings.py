@@ -1017,6 +1017,7 @@ def admin_auto_update_get(user: SessionUser = Depends(_current_user)):
 
 @router.patch("/api/admin/system/updates/auto")
 def admin_auto_update_patch(payload: AutoUpdatePatch, request: Request, user: SessionUser = Depends(_current_user)):
+    authorize(user, "settings.edit_system")
     _require_admin_session(user, request, "configure_auto_update", "updates.configure_auto_update")
     now = time.time()
     state = _read_auto_update_state()

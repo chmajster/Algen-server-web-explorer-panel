@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,10 +9,10 @@ import pytest
 from fastapi import HTTPException, Request, Response
 
 from app.identity import linux_accounts
-from app.identity.models import GroupPolicy, GroupPolicyRequest, Role, UserCreateRequest, UserPolicy, UserPolicyRequest
-from app.identity.permissions import Permission, normalize_permission, require_permission
+from app.identity.models import GroupCreateRequest, GroupPolicy, GroupPolicyRequest, Role, UserCreateRequest, UserPatchRequest, UserPolicy, UserPolicyRequest, UserQuotaRequest
+from app.identity.permissions import PERMISSION_REGISTRY, Permission, normalize_permission, require_permission
 from app.identity.repository import IdentityRepository
-from app.identity.router import _reauth
+from app.identity.router import IdentityRateLimiter, _reauth
 from app.identity.service import IdentityService
 from app.security import SessionUser, create_session
 
@@ -87,6 +88,15 @@ def test_unknown_permissions_and_allow_deny_overlap_are_rejected():
     with pytest.raises(ValueError, match="both allowed and denied"):
         UserPolicy(username="alice", allow=[Permission.SERVICES_VIEW.value], deny=[Permission.SERVICES_VIEW.value])
     assert normalize_permission("rbac.manage") == Permission.ACCESS_MANAGE_ROLES.value
+
+
+def test_permission_metadata_identifies_apps_operation_and_risk():
+    metadata = PERMISSION_REGISTRY[Permission.USERS_CREATE.value]
+    assert metadata.applications == ["identity"]
+    assert metadata.operation == "create"
+    assert metadata.mutating is True
+    assert metadata.risk.value == "high"
+    assert metadata.description_key == "permissions.category.users.description"
 
 
 def test_linux_admin_cannot_be_degraded_or_denied(monkeypatch, tmp_path: Path):
@@ -170,6 +180,31 @@ def test_high_risk_reauthentication_uses_pam_without_persisting_password(monkeyp
     assert calls == [("admin", "temporary-secret")]
 
 
+def test_identity_rate_limiter_rejects_excess_attempts(monkeypatch):
+    monkeypatch.setattr("app.identity.router.get_config", lambda: SimpleNamespace(security=SimpleNamespace(rate_limit_admin_per_minute=1)))
+    limiter = IdentityRateLimiter()
+    limiter.check("127.0.0.1:admin:user_delete")
+    with pytest.raises(HTTPException) as error:
+        limiter.check("127.0.0.1:admin:user_delete")
+    assert error.value.status_code == 429
+
+
+def test_password_value_never_reaches_activity_audit(monkeypatch, tmp_path: Path):
+    users = [account("root", 0, 0), account("alice", 1001, 100)]
+    fake_accounts(monkeypatch, users, [group("root", 0), group("users", 100)])
+    events: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(linux_accounts, "change_password", lambda username, password, force_change: None)
+    service_module = importlib.import_module("app.identity.service")
+    monkeypatch.setattr(service_module, "record_activity", lambda *args, **kwargs: events.append((args, kwargs)))
+    service = IdentityService(IdentityRepository(tmp_path / "identity.sqlite3", legacy_path=tmp_path / "missing.json"))
+
+    service.change_user_password("alice", "do-not-log-this-secret", True, "root")
+
+    assert events
+    assert "do-not-log-this-secret" not in repr(events)
+    assert events[-1][1]["details"] == {"current": {"force_change": True}}
+
+
 def test_linux_commands_use_closed_argument_arrays_and_password_stdin(monkeypatch):
     users = [account("alice", 1001, 100)]
     groups = [group("users", 100)]
@@ -182,6 +217,41 @@ def test_linux_commands_use_closed_argument_arrays_and_password_stdin(monkeypatc
     assert calls[0][0] == ["/usr/sbin/chpasswd"]
     assert calls[0][1] == "alice:new-password\n"
     assert all("sh" not in command[0] for command, _ in calls)
+
+
+def test_linux_user_and_group_operations_use_expected_tools(monkeypatch):
+    users = [account("alice", 1001, 100)]
+    groups = [group("users", 100), group("ops", 1100)]
+    fake_accounts(monkeypatch, users, groups)
+    calls: list[tuple[list[str], str | None]] = []
+    monkeypatch.setattr(linux_accounts, "_tool", lambda name: f"/usr/sbin/{name}")
+    monkeypatch.setattr(linux_accounts, "_run", lambda args, input_text=None, timeout=60: calls.append((args, input_text)) or SimpleNamespace(returncode=0, stdout="", stderr=""))
+    monkeypatch.setattr(linux_accounts, "assert_admin_user_allowed", lambda *args: None)
+    monkeypatch.setattr(linux_accounts, "assert_admin_group_allowed", lambda *args: None)
+
+    linux_accounts.create_user(UserCreateRequest(username="bob", password="temporary", admin_password="pam", uid=1200, groups=["ops"], force_password_change=True))
+    linux_accounts.update_user("alice", UserPatchRequest(admin_password="pam", gecos="Alice Operator", groups_add=["ops"], force_password_change=True))
+    linux_accounts.set_lock("alice", True)
+    linux_accounts.set_quota("alice", UserQuotaRequest(admin_password="pam", soft_mb=100, hard_mb=200, mountpoint="/"))
+    linux_accounts.delete_user("alice", remove_home=False)
+    linux_accounts.create_group(GroupCreateRequest(groupname="support", gid=1201, admin_password="pam"))
+    linux_accounts.rename_group("ops", "support")
+    linux_accounts.set_group_member("ops", "alice", True)
+    linux_accounts.delete_group("ops")
+
+    tools = [Path(command[0]).name for command, _input in calls]
+    assert {"useradd", "chpasswd", "chage", "usermod", "setquota", "userdel", "groupadd", "groupmod", "groupdel"} <= set(tools)
+    assert all(command[0].startswith("/usr/sbin/") for command, _input in calls)
+
+
+def test_system_uid_creation_is_rejected_before_running_a_command(monkeypatch):
+    monkeypatch.setattr(linux_accounts.pwd, "getpwnam", lambda username: (_ for _ in ()).throw(KeyError(username)))
+    monkeypatch.setattr(linux_accounts, "assert_admin_user_allowed", lambda *args: None)
+    monkeypatch.setattr(linux_accounts, "_run", lambda *args, **kwargs: pytest.fail("system account creation must stop before executing useradd"))
+    payload = UserCreateRequest(username="service-user", password="temporary", admin_password="pam", uid=999)
+    with pytest.raises(HTTPException) as error:
+        linux_accounts.create_user(payload)
+    assert error.value.detail["code"] == "SYSTEM_UID_BLOCKED"
 
 
 def test_group_rename_moves_application_policy(monkeypatch, tmp_path: Path):

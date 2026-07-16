@@ -425,6 +425,12 @@ def tasks(status: str | None = None, user=Depends(current_user)):
     return [_task_payload(task) for task in task_store.list_for(user.username, status)]
 
 
+@app.get("/api/admin/transfers")
+def all_tasks(status: str | None = None, user=Depends(current_user)):
+    authorize(user, "transfers.view_all")
+    return [_task_payload(task) for task in task_store.list_all(status)]
+
+
 @app.get("/api/tasks/{task_id}")
 def task(task_id: str, user=Depends(current_user)):
     authorize(user, "transfers.view_own")
