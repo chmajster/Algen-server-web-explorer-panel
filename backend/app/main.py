@@ -63,6 +63,7 @@ def health():
 class LoginRequest(BaseModel):
     username: str
     password: str
+    remember_me: bool = False
 
 
 class PathRequest(BaseModel):
@@ -173,17 +174,17 @@ def login(payload: LoginRequest, request: Request, response: Response):
             source="auth",
         )
         raise
-    csrf = create_session(response, username)
+    csrf = create_session(response, username, remember_me=payload.remember_me)
     logger.info("login user=%s", username)
-    record_activity(ActivityCategory.login, "login", username, details={"client": client}, source="auth")
+    record_activity(ActivityCategory.login, "login", username, details={"client": client, "persistent": payload.remember_me}, source="auth")
     return {"username": username, "home": user_home(username), "csrf_token": csrf}
 
 
 @app.post("/api/auth/logout")
-def logout(response: Response, user=Depends(csrf_user)):
+def logout(request: Request, response: Response, user=Depends(csrf_user)):
     logger.info("logout user=%s", user.username)
     record_activity(ActivityCategory.login, "logout", user.username, source="auth")
-    clear_session(response)
+    clear_session(response, request)
     return {"ok": True}
 
 

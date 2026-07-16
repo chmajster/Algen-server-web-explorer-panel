@@ -5,7 +5,7 @@ import en from "../../locales/en-US.json";
 import pl from "../../locales/pl-PL.json";
 import { PackageCenterApp } from "./PackageCenterApp";
 
-vi.mock("../../api", () => ({ api: { apps: vi.fn(), modules: vi.fn(), appCategories: vi.fn(), appJobs: vi.fn(), appHistory: vi.fn(), packageSources: vi.fn(), appPlan: vi.fn(), appAction: vi.fn(), cancelAppJob: vi.fn(), retryAppJob: vi.fn() } }));
+vi.mock("../../api", () => ({ api: { apps: vi.fn(), modules: vi.fn(), module: vi.fn(), appCategories: vi.fn(), appJobs: vi.fn(), appHistory: vi.fn(), packageSources: vi.fn(), appPlan: vi.fn(), appAction: vi.fn(), cancelAppJob: vi.fn(), retryAppJob: vi.fn() } }));
 
 function module(id: string, overrides: Partial<PackageModule> = {}): PackageModule {
   return {
@@ -47,6 +47,7 @@ describe("Package Center", () => {
     vi.clearAllMocks();
     vi.mocked(api.apps).mockResolvedValue([module("samba"), module("nginx")]);
     vi.mocked(api.modules).mockResolvedValue([summary("samba"), summary("nginx")]);
+    vi.mocked(api.module).mockImplementation((id) => Promise.resolve(summary(id)));
     vi.mocked(api.appCategories).mockResolvedValue(["file_sharing", "web_server"]);
     vi.mocked(api.appJobs).mockResolvedValue([]);
     vi.mocked(api.appHistory).mockResolvedValue([]);
@@ -60,6 +61,7 @@ describe("Package Center", () => {
     render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onOpenModule={configure} />);
     expect(await screen.findByText("Samba")).toBeInTheDocument();
     expect(screen.getByText("Nginx")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "action.open" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("package.search"), { target: { value: "nginx" } });
     expect(screen.queryByText("Samba")).not.toBeInTheDocument();
@@ -71,8 +73,9 @@ describe("Package Center", () => {
     expect(screen.getByText("samba long description")).toBeInTheDocument();
     expect(screen.getByText("package.changelog")).toBeInTheDocument();
     expect(screen.getByText("package.logs")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "package.configure" }));
-    expect(configure).toHaveBeenCalledWith("samba");
+    expect(screen.queryByRole("button", { name: "package.configure" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "store.install" }).length).toBeGreaterThan(0);
+    expect(configure).not.toHaveBeenCalled();
   });
 
   it("shows and confirms a dry-run plan before installation", async () => {
@@ -81,9 +84,9 @@ describe("Package Center", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "store.install" })[0]);
 
     expect(await screen.findByText("apt-get install -y samba smbclient")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "secret" } });
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "package.confirmOperation" }));
-    await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("samba", "install", "secret", false, false));
+    await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("samba", "install", false));
   });
 
   it("offers opening and service control for an installed module", async () => {
@@ -95,6 +98,18 @@ describe("Package Center", () => {
     fireEvent.click(screen.getByRole("button", { name: "action.open" }));
     expect(open).toHaveBeenCalledWith("samba");
     expect(screen.getByRole("button", { name: "store.stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "store.install" })).not.toBeInTheDocument();
+  });
+
+  it("disables package actions and shows progress while an operation is active", async () => {
+    const running = { id: "job-running", module_id: "samba", action: "install", status: "running" as const, progress: 35, created_at: 1, error: "", current_step: "Install packages", log_tail: [] };
+    vi.mocked(api.modules).mockResolvedValue([summary("samba", { jobs: [running] })]);
+
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+
+    expect(await screen.findByText("package.operation.install")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "store.install" })).toBeDisabled();
+    expect(screen.getByText("35%")).toBeInTheDocument();
   });
 
   it("renders job progress, errors and incompatible modules", async () => {
@@ -102,7 +117,8 @@ describe("Package Center", () => {
     vi.mocked(api.appJobs).mockResolvedValue([failed]);
     vi.mocked(api.modules).mockResolvedValue([summary("samba", { status: "error", jobs: [failed] }), summary("nginx", { status: "incompatible", compatible: false })]);
     render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
-    expect(await screen.findByText("package.status.incompatible")).toBeInTheDocument();
+    expect((await screen.findAllByText("package.status.error")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("package.status.incompatible")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /package.tab.jobs/ }));
     expect(screen.getByText("APT failed")).toBeInTheDocument();
     expect(screen.getByText(/Repository unavailable/)).toBeInTheDocument();

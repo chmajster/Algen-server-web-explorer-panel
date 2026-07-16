@@ -17,7 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .activity import ActivityCategory, record_activity
 from .audit import logger
@@ -152,9 +152,6 @@ def connect() -> sqlite3.Connection:
 
 
 class AdminMountAction(BaseModel):
-    # Kept as an optional compatibility field for older frontend clients.
-    # An authenticated, authorized session is sufficient for mount actions.
-    admin_password: str = ""
     dry_run: bool = False
     force_empty_mountpoint: bool = False
     confirm_destructive: bool = False
@@ -163,7 +160,13 @@ class AdminMountAction(BaseModel):
 class MountPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    admin_password: str = ""
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_admin_password(cls, value: object) -> object:
+        if isinstance(value, dict) and "admin_password" in value:
+            value = {key: item for key, item in value.items() if key != "admin_password"}
+        return value
+
     name: str
     type: str
     host: str
@@ -207,7 +210,7 @@ def require_admin_session(user: SessionUser, action: str, permission: str = "net
         raise
 
 
-def require_admin(user: SessionUser, _password: str, action: str, permission: str) -> None:
+def require_admin(user: SessionUser, action: str, permission: str) -> None:
     require_admin_session(user, action, permission)
 
 
@@ -926,7 +929,7 @@ def list_mounts(user: SessionUser = Depends(current_user)):
 
 @router.post("")
 def create_mount(payload: MountPayload, user: SessionUser = Depends(current_user)):
-    require_admin(user, payload.admin_password, "create_mount", "network_resources.create")
+    require_admin(user, "create_mount", "network_resources.create")
     mount_id = uuid4().hex[:16]
     mount_point, remote, options = validate_payload(payload, user.username)
     write_credentials(mount_id, payload)
@@ -957,7 +960,7 @@ def get_mount(mount_id: str, user: SessionUser = Depends(current_user)):
 
 @router.put("/{mount_id}")
 def update_mount(mount_id: str, payload: MountPayload, user: SessionUser = Depends(current_user)):
-    require_admin(user, payload.admin_password, "update_mount", "network_resources.update")
+    require_admin(user, "update_mount", "network_resources.update")
     with _mount_lock(mount_id):
         old = get_mount_or_404(mount_id)
         mount_point, remote, options = validate_payload(payload, user.username, mount_id)
@@ -1031,7 +1034,7 @@ def update_mount(mount_id: str, payload: MountPayload, user: SessionUser = Depen
 
 @router.delete("/{mount_id}")
 def delete_mount(mount_id: str, payload: AdminMountAction, user: SessionUser = Depends(current_user)):
-    require_admin(user, payload.admin_password, "delete_mount", "network_resources.delete")
+    require_admin(user, "delete_mount", "network_resources.delete")
     with _mount_lock(mount_id):
         mount = get_mount_or_404(mount_id)
         if mount["actual_mounted"]:
@@ -1056,7 +1059,7 @@ def delete_mount(mount_id: str, payload: AdminMountAction, user: SessionUser = D
 
 def action_response(mount_id: str, action: str, payload: AdminMountAction, user: SessionUser):
     permission = "network_resources.unmount" if action == "unmount" else "network_resources.mount" if action in {"mount", "remount"} else "network_resources.update"
-    require_admin(user, payload.admin_password, f"{action}_mount", permission)
+    require_admin(user, f"{action}_mount", permission)
     mount = get_mount_or_404(mount_id)
     if payload.dry_run:
         return {"dry_run": True, "dependencies": dependency_plan(mount["type"]), "command": command_preview(mount, "unmount" if action == "unmount" else "mount")}

@@ -339,7 +339,6 @@ class PackagePlan(BaseModel):
 
 
 class AdminPackageAction(BaseModel):
-    admin_password: str
     confirm_plan: bool = True
     remove_data: bool = False
 

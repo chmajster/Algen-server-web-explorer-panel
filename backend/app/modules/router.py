@@ -18,7 +18,6 @@ from ..activity import ActivityCategory, record_activity
 from ..audit import logger
 from ..package_center.jobs import manager
 from ..package_center.models import ModuleStatus, PackageAction, PackagePlan, api_error
-from ..package_center.security import reauthenticate
 from ..rbac import authorize, current_user as current_admin, module_permission, mutating_user as mutating_admin
 from ..package_center.service import get_module, list_modules, plan_operation, repository
 from ..security import SessionUser
@@ -50,7 +49,6 @@ def _invalidate_status(module_id: str) -> None:
 
 
 class ModuleAdminRequest(BaseModel):
-    admin_password: str
     confirm: bool = True
     create_backup: bool = True
     remove_data: bool = False
@@ -179,7 +177,6 @@ def module_connection(module_id: str, user: SessionUser = Depends(current_admin)
 def save_module_connection(module_id: str, payload: ModuleConnectionRequest, user: SessionUser = Depends(mutating_admin)):
     _authorize(user, module_id, "configure")
     _assert_proxmox_allowed(module_id)
-    reauthenticate(user, payload.admin_password)
     provider = get_provider(module_id, user.username)
     if not isinstance(provider, ApiConnectionProvider):
         api_error(404, "MODULE_CONNECTION_NOT_SUPPORTED", "Module has no API connection settings")
@@ -194,7 +191,6 @@ def save_module_connection(module_id: str, payload: ModuleConnectionRequest, use
 def save_docker_compose(project: str, payload: ComposeSaveRequest, user: SessionUser = Depends(mutating_admin)):
     _authorize(user, "docker", "configure")
     _assert_proxmox_allowed("docker")
-    reauthenticate(user, payload.admin_password)
     result = DockerProvider(user.username).save_compose(project, payload.content)
     _invalidate_status("docker")
     logger.info("docker_compose actor=%s project=%s action=save", user.username, project)
@@ -249,7 +245,6 @@ def _provider_plan(module_id: str, action: PackageAction, payload: dict[str, Any
 def _enqueue(plan: PackagePlan, payload: ModuleAdminRequest, user: SessionUser) -> dict:
     if not payload.confirm:
         api_error(400, "PLAN_CONFIRMATION_REQUIRED", "The operation plan must be confirmed")
-    reauthenticate(user, payload.admin_password)
     _invalidate_status(plan.module_id)
     job = manager(repository()).enqueue(plan, user.username)
     logger.info("module_action actor=%s module=%s action=%s job=%s", user.username, plan.module_id, plan.action.value, job["id"])
@@ -300,7 +295,6 @@ def module_backups(module_id: str, user: SessionUser = Depends(current_admin)):
 def create_module_backup(module_id: str, payload: BackupCreateRequest, user: SessionUser = Depends(mutating_admin)):
     _authorize(user, module_id, "backup")
     _assert_proxmox_allowed(module_id)
-    reauthenticate(user, payload.admin_password)
     backup = get_provider(module_id, user.username).create_backup(user.username, payload.description)
     logger.info("module_backup actor=%s module=%s action=create backup=%s", user.username, module_id, backup["id"])
     record_activity(ActivityCategory.module, "backup_create", user.username, target=module_id, details={"backup_id": backup["id"]}, source="modules")
@@ -317,7 +311,6 @@ def restore_module_backup(module_id: str, backup_id: str, payload: ModuleAdminRe
 def delete_module_backup(module_id: str, backup_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
     _authorize(user, module_id, "backup_delete")
     _assert_proxmox_allowed(module_id)
-    reauthenticate(user, payload.admin_password)
     get_provider(module_id, user.username).delete_backup(backup_id)
     logger.info("module_backup actor=%s module=%s action=delete backup=%s", user.username, module_id, backup_id)
     record_activity(ActivityCategory.module, "backup_delete", user.username, target=module_id, details={"backup_id": backup_id}, source="modules")
@@ -411,7 +404,6 @@ def samba_users(user: SessionUser = Depends(current_admin)):
 @router.post("/samba/users/{username}/{action}")
 def samba_user_action(username: str, action: Literal["add", "password", "enable", "disable", "remove"], payload: SambaUserRequest, user: SessionUser = Depends(mutating_admin)):
     _authorize(user, "samba", "configure")
-    reauthenticate(user, payload.admin_password)
     SambaProvider(user.username).manage_user(action, username, payload.password)
     logger.info("module_user actor=%s module=samba action=%s target=%s", user.username, action, username)
     record_activity(ActivityCategory.module, f"samba_user_{action}", user.username, target="samba", details={"username": username}, source="modules")
@@ -478,7 +470,6 @@ def samba_firewall_open(payload: ModuleAdminRequest, user: SessionUser = Depends
         api_error(409, "FIREWALL_UNSUPPORTED", "No supported firewall was detected")
     if not payload.confirm:
         return {"plan": commands, "requires_confirmation": True}
-    reauthenticate(user, payload.admin_password)
     for command in commands:
         result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False, shell=False)
         if result.returncode != 0:

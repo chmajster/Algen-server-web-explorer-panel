@@ -22,7 +22,9 @@ class ServerConfig(BaseModel):
 class AuthConfig(BaseModel):
     provider: Literal["pam"] = "pam"
     pam_service: str = "webnas"
-    session_cookie_name: str = "webnas_session"
+    session_cookie_name: str = Field(default="webnas_session", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    session_lifetime_hours: int = Field(default=12, ge=1, le=168)
+    remember_me_lifetime_days: int = Field(default=30, ge=1, le=365)
 
 
 class PathsConfig(BaseModel):

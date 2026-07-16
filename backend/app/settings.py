@@ -20,6 +20,7 @@ from .activity import ActivityCategory, record_activity
 from .audit import logger
 from .auth import authenticate
 from .config import get_config
+from .host_info import collect_host_info
 from .path_policy import resolve_user_path
 from .proxmox_guard import (
     assert_admin_group_allowed,
@@ -255,17 +256,14 @@ class ChangePasswordRequest(BaseModel):
 
 
 class AdminPassword(BaseModel):
-    admin_password: str
     confirm: bool = True
 
 
 class AdminSessionAction(BaseModel):
-    admin_password: str | None = None
     confirm: bool = True
 
 
 class ServiceAction(BaseModel):
-    admin_password: str = ""
     confirm_restart: bool = False
 
 
@@ -607,11 +605,10 @@ def _admin_count(excluding: str | None = None) -> int:
     return sum(1 for entry in pwd.getpwall() if entry.pw_name != excluding and _is_admin(entry.pw_name))
 
 
-def _require_admin(user: SessionUser, password: str, request: Request, action: str, permission: str = "rbac.manage") -> None:
+def _require_admin(user: SessionUser, request: Request, action: str, permission: str = "rbac.manage") -> None:
     key = f"{request.client.host if request.client else 'unknown'}:{user.username}:admin"
     admin_rate_limiter.check(key)
     authorize(user, permission)
-    authenticate(user.username, password)
     logger.info("admin_authorized actor=%s action=%s", user.username, action)
 
 
@@ -772,7 +769,7 @@ def admin_users(user: SessionUser = Depends(_current_user)):
 
 
 def admin_user_create(payload: UserCreate, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "create_user")
+    _require_admin(user, request, "create_user")
     username = _validate_name(payload.username, "user")
     _assert_manageable_user(username, action="create")
     if payload.system:
@@ -803,7 +800,7 @@ def admin_user_get(username: str, user: SessionUser = Depends(_current_user)):
 
 
 def admin_user_patch(username: str, payload: UserPatch, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "update_user")
+    _require_admin(user, request, "update_user")
     username = _validate_name(username, "user")
     _assert_manageable_user(username, action="update")
     args = [_tool("usermod")]
@@ -828,7 +825,7 @@ def admin_user_patch(username: str, payload: UserPatch, request: Request, user: 
 
 
 def admin_user_delete(username: str, payload: AdminPassword, request: Request, advanced: bool = False, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "delete_user")
+    _require_admin(user, request, "delete_user")
     username = _validate_name(username, "user")
     _assert_manageable_user(username, action="delete")
     if not payload.confirm:
@@ -846,7 +843,7 @@ def admin_user_delete(username: str, payload: AdminPassword, request: Request, a
 
 
 def admin_user_lock(username: str, payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "lock_user")
+    _require_admin(user, request, "lock_user")
     username = _validate_name(username, "user")
     _assert_manageable_user(username, action="lock")
     _run([_tool("usermod"), "--lock", username])
@@ -855,7 +852,7 @@ def admin_user_lock(username: str, payload: AdminPassword, request: Request, use
 
 
 def admin_user_unlock(username: str, payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "unlock_user")
+    _require_admin(user, request, "unlock_user")
     username = _validate_name(username, "user")
     _assert_manageable_user(username, action="unlock")
     _run([_tool("usermod"), "--unlock", username])
@@ -864,7 +861,7 @@ def admin_user_unlock(username: str, payload: AdminPassword, request: Request, u
 
 
 def admin_user_password(username: str, payload: AdminChangePassword, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "change_user_password")
+    _require_admin(user, request, "change_user_password")
     username = _validate_name(username, "user")
     _assert_manageable_user(username, action="password")
     _run([_tool("chpasswd")], input_text=f"{username}:{_validate_password_text(payload.new_password)}\n")
@@ -875,7 +872,7 @@ def admin_user_password(username: str, payload: AdminChangePassword, request: Re
 
 
 def admin_user_quota(username: str, payload: UserQuota, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "set_user_quota")
+    _require_admin(user, request, "set_user_quota")
     pw = _assert_manageable_user(username, action="quota")
     if pw is None:
         raise HTTPException(404, "User not found")
@@ -898,7 +895,7 @@ def admin_groups(user: SessionUser = Depends(_current_user)):
 
 
 def admin_group_create(payload: GroupCreate, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "create_group")
+    _require_admin(user, request, "create_group")
     groupname = _assert_manageable_group(payload.groupname)
     args = [_tool("groupadd")]
     if payload.system:
@@ -909,7 +906,7 @@ def admin_group_create(payload: GroupCreate, request: Request, user: SessionUser
 
 
 def admin_group_patch(groupname: str, payload: GroupPatch, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "update_group")
+    _require_admin(user, request, "update_group")
     groupname = _assert_manageable_group(groupname)
     if payload.new_name:
         _run([_tool("groupmod"), "--new-name", _assert_manageable_group(payload.new_name), groupname])
@@ -918,7 +915,7 @@ def admin_group_patch(groupname: str, payload: GroupPatch, request: Request, use
 
 
 def admin_group_delete(groupname: str, payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "delete_group")
+    _require_admin(user, request, "delete_group")
     groupname = _assert_manageable_group(groupname)
     if not payload.confirm:
         raise HTTPException(400, "Confirmation required")
@@ -928,7 +925,7 @@ def admin_group_delete(groupname: str, payload: AdminPassword, request: Request,
 
 
 def admin_group_add_member(groupname: str, payload: GroupMember, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "add_group_member")
+    _require_admin(user, request, "add_group_member")
     groupname = _assert_manageable_group(groupname)
     username = _validate_name(payload.username, "user")
     _assert_manageable_user(username, action="update")
@@ -938,7 +935,7 @@ def admin_group_add_member(groupname: str, payload: GroupMember, request: Reques
 
 
 def admin_group_remove_member(groupname: str, username: str, payload: AdminPassword, request: Request, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, request, "remove_group_member")
+    _require_admin(user, request, "remove_group_member")
     groupname = _assert_manageable_group(groupname)
     username = _validate_name(username, "user")
     _assert_manageable_user(username, action="update")
@@ -953,12 +950,11 @@ def admin_file_ownership(payload: ChownRequest, request: Request, user: SessionU
     target = resolve_user_path(user.username, payload.path)
     assert_chown_allowed(target)
     if payload.owner:
-        _require_admin(user, payload.admin_password, request, "change_owner")
+        _require_admin(user, request, "change_owner")
     elif payload.group and not _is_admin(user.username):
         user_groups = _groups_for(user.username)
         if payload.group not in user_groups:
             raise HTTPException(403, "Group change is not allowed")
-        authenticate(user.username, payload.admin_password)
     owner_group = ""
     if payload.owner:
         owner_group += _validate_name(payload.owner, "user")
@@ -987,6 +983,12 @@ def admin_system_status(user: SessionUser = Depends(_current_user)):
 def system_resources(user: SessionUser = Depends(_current_user)):
     authorize(user, "system.status")
     return collect_dashboard(user.username, is_admin=_is_admin(user.username))
+
+
+@router.get("/api/system/host-info")
+def system_host_info(user: SessionUser = Depends(_current_user)):
+    authorize(user, "system.status")
+    return collect_host_info()
 
 
 @router.post("/api/admin/system/restart")

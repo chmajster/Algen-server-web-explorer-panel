@@ -8,10 +8,10 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ### Added
 
-- Production Users and groups identity module with a closed granular permission registry, Linux-group and user allow/deny policy, effective permission sources, Linux administrator/last-administrator protection, versioned `identity.sqlite3`, idempotent `rbac.json` migration, compatible legacy APIs, PAM/CSRF/rate-limited mutations, unified responsive UI, and audited policy history.
+- Production Users and groups identity module with a closed granular permission registry, Linux-group and user allow/deny policy, effective permission sources, Linux administrator/last-administrator protection, versioned `identity.sqlite3`, idempotent `rbac.json` migration, compatible legacy APIs, PAM-backed login, session/CSRF-protected mutations, unified responsive UI, and audited policy history.
 - Activity Center with a durable structured timeline for sign-ins, file operations, user configuration changes, administrative tasks, network-resource changes, RBAC assignments, and queued/completed/failed module jobs. Regular users are restricted to their own events, while `audit.view` grants global user/category/status/search filters; stored metadata is bounded and recursively redacted for credentials and tokens.
 - Granular RBAC layered over PAM/local Linux users, with `administrator`, `operator`, `auditor`, and `user` roles, closed application/operation permissions, atomic private assignments, administrator compatibility for root/sudo/wheel, backend enforcement, and a role-management application.
-- Linux Updates module with apt/dnf/yum package and security-update discovery, operation history, restart-required detection, durable metadata/security/full update jobs, PAM/CSRF enforcement, and Proxmox Safe Mode blocking.
+- Linux Updates module with apt/dnf/yum package and security-update discovery, operation history, restart-required detection, durable metadata/security/full update jobs, session/RBAC/CSRF enforcement, and Proxmox Safe Mode blocking.
 - Linux Updates `Update` action backed by a server-generated detached GNU `screen` session, private atomic worker state/log files, safe reconnection after a WebNAS process restart, and continued patching when the browser is closed or disconnected.
 - Docker module with containers, images, networks, volumes, logs, one-shot statistics, lifecycle actions, image updates, and a restricted private Docker Compose store/editor that rejects privileged/host-control configuration.
 - Pi-hole v6 API module with session authentication, statistics, domains, clients, lists, version data and blocking control; and AdGuard Home with DNS dashboard, clients, filters, upstreams, query log, API operations, updates and transactional configuration backups.
@@ -74,7 +74,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
   - Debian/Ubuntu/Raspberry Pi OS/Fedora/RHEL/Rocky/Alma detection with `apt-get`, `dnf`, and `yum` fallback;
   - dry-run plans covering packages, services, ports, paths, permissions, conflicts, reboot needs, and Proxmox compatibility;
   - durable SQLite jobs, log streaming over SSE, polling fallback, cancellation, retry, interruption recovery, history, and a global execution limit;
-  - administrator, CSRF, PAM reauthentication, audit, secret redaction, timeout, and argument-array execution controls;
+  - authenticated session, granular RBAC, CSRF, audit, secret redaction, timeout, and argument-array execution controls;
   - package catalog, detail view, filters, installed/updates/jobs/history/source tabs, progress UI, responsive light/dark styling, and Polish/English translations;
   - GitHub source metadata management without downloading or executing untrusted repository code.
 - Initial validated Package Center modules for Samba, Squid Proxy, Nginx, and Syncthing, plus a hidden authoring template.

@@ -12,7 +12,7 @@
 - Network resources are confined to direct, non-symlink children of `/mnt/webnas/mnt`, and actual mount state is reconciled from `/proc/self/mountinfo`/`mountpoint` before publication.
 - Mount options use an allowlist; `suid`, `dev`, `exec`, `allow_other`, inline credentials, authentication fields, and argument-injection syntax are rejected.
 - SMB/WebDAV secrets are atomically stored in backend-generated `0600` files inside a `0700` directory. Passwords and credentials are redacted from API responses, logs, previews, process arguments, and systemd units.
-- Administrative mount APIs require an administrator session; mutations additionally require CSRF and PAM reauthentication. The user-facing `/api/mounts/roots` response contains only verified roots and basic filesystem data.
+- Administrative mount APIs require an authenticated session, the concrete RBAC permission, and CSRF for mutations. The user-facing `/api/mounts/roots` response contains only verified roots and basic filesystem data.
 
 For production, set a strong `security.session_secret`, enable HTTPS at a reverse proxy or through configured TLS, and review whether `/home` is the correct `ReadWritePaths` boundary for your server.
 

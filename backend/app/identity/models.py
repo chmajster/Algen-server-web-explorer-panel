@@ -84,7 +84,6 @@ class GroupPolicy(PolicyBase):
 
 
 class AdminCredential(BaseModel):
-    admin_password: str = Field(min_length=1, max_length=1024)
     confirm: bool = True
 
 

@@ -3,7 +3,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, us
 import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
 import { LogsAppView, MonitorApp, ServicesApp, SettingsAppView } from "../features/admin/SystemApps";
-import { forgetAdminPassword } from "../features/admin/adminCredentials";
 import { FileManager } from "../features/files/FileManager";
 import { TransferCenter } from "../features/transfers/TransferCenter";
 import { DesktopWidgets } from "../features/widgets/DesktopWidgets";
@@ -188,7 +187,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   function togglePin(app: AppId) {
     setPinned((current) => { const next = new Set(current); if (next.has(app)) next.delete(app); else next.add(app); localStorage.setItem(`webnas_pinned_apps_${user.username}`, JSON.stringify([...next])); return next; });
   }
-  function signOut() { void logout().finally(() => { forgetAdminPassword(); onLoggedOut(); }); }
+  function signOut() { void logout().finally(onLoggedOut); }
   function moduleDirty(item: WindowInstance, dirty: boolean) { setDirtyWindows((current) => { const next = new Set(current); if (dirty) next.add(item.id); else next.delete(item.id); return next; }); }
   function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !window.confirm(t("module.unsavedClose"))) return; setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
   function renderApp(item: WindowInstance) {

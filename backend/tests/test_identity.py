@@ -12,9 +12,8 @@ from app.identity import linux_accounts
 from app.identity.models import GroupCreateRequest, GroupPolicy, GroupPolicyRequest, Role, UserCreateRequest, UserPatchRequest, UserPolicy, UserPolicyRequest, UserQuotaRequest
 from app.identity.permissions import PERMISSION_REGISTRY, Permission, normalize_permission, require_permission
 from app.identity.repository import IdentityRepository
-from app.identity.router import IdentityRateLimiter, _reauth
 from app.identity.service import IdentityService
-from app.security import SessionUser, create_session
+from app.security import create_session
 
 
 def account(name: str, uid: int, gid: int, shell: str = "/bin/bash"):
@@ -105,10 +104,10 @@ def test_linux_admin_cannot_be_degraded_or_denied(monkeypatch, tmp_path: Path):
     service = IdentityService(IdentityRepository(tmp_path / "identity.sqlite3", legacy_path=tmp_path / "missing.json"))
 
     with pytest.raises(HTTPException) as error:
-        service.save_user_policy("root", UserPolicyRequest(admin_password="pam", role=Role.user), "root")
+        service.save_user_policy("root", UserPolicyRequest(role=Role.user), "root")
     assert error.value.status_code == 409
     with pytest.raises(HTTPException) as error:
-        service.save_user_policy("root", UserPolicyRequest(admin_password="pam", role=Role.admin, deny=[Permission.FILES_DELETE.value]), "root")
+        service.save_user_policy("root", UserPolicyRequest(role=Role.admin, deny=[Permission.FILES_DELETE.value]), "root")
     assert error.value.detail["code"] == "LINUX_ADMIN_COMPATIBILITY"
 
 
@@ -121,7 +120,7 @@ def test_last_effective_administrator_is_protected(monkeypatch, tmp_path: Path):
     service = IdentityService(repository)
 
     with pytest.raises(HTTPException) as error:
-        service.save_user_policy("alice", UserPolicyRequest(admin_password="pam", role=Role.operator), "alice")
+        service.save_user_policy("alice", UserPolicyRequest(role=Role.operator), "alice")
 
     assert error.value.status_code == 409
     assert error.value.detail["code"] == "LAST_ADMIN_PROTECTION"
@@ -136,7 +135,7 @@ def test_group_deny_cannot_remove_last_administrator(monkeypatch, tmp_path: Path
     service = IdentityService(repository)
 
     with pytest.raises(HTTPException) as error:
-        service.save_group_policy("team", GroupPolicyRequest(admin_password="pam", deny=[Permission.ACCESS_MANAGE_ROLES.value]), "alice")
+        service.save_group_policy("team", GroupPolicyRequest(deny=[Permission.ACCESS_MANAGE_ROLES.value]), "alice")
 
     assert error.value.detail["code"] == "LAST_ADMIN_PROTECTION"
 
@@ -188,21 +187,10 @@ def test_permission_dependency_requires_csrf_for_mutation(monkeypatch):
     assert dependency(request).username == "alice"
 
 
-def test_high_risk_reauthentication_uses_pam_without_persisting_password(monkeypatch):
-    calls: list[tuple[str, str]] = []
-    monkeypatch.setattr("app.identity.router.authenticate", lambda username, password: calls.append((username, password)))
-    request = Request({"type": "http", "method": "POST", "path": "/", "headers": [], "client": ("127.0.0.1", 1)})
-    _reauth(request, SessionUser(username="admin", csrf_token="csrf"), "temporary-secret", "user_delete", "alice")
-    assert calls == [("admin", "temporary-secret")]
-
-
-def test_identity_rate_limiter_rejects_excess_attempts(monkeypatch):
-    monkeypatch.setattr("app.identity.router.get_config", lambda: SimpleNamespace(security=SimpleNamespace(rate_limit_admin_per_minute=1)))
-    limiter = IdentityRateLimiter()
-    limiter.check("127.0.0.1:admin:user_delete")
-    with pytest.raises(HTTPException) as error:
-        limiter.check("127.0.0.1:admin:user_delete")
-    assert error.value.status_code == 429
+def test_identity_admin_actions_accept_the_authenticated_session_without_a_second_password():
+    assert "admin_password" not in UserCreateRequest.model_fields
+    assert "admin_password" not in UserPatchRequest.model_fields
+    assert "admin_password" not in GroupCreateRequest.model_fields
 
 
 def test_password_value_never_reaches_activity_audit(monkeypatch, tmp_path: Path):
@@ -245,12 +233,12 @@ def test_linux_user_and_group_operations_use_expected_tools(monkeypatch):
     monkeypatch.setattr(linux_accounts, "assert_admin_user_allowed", lambda *args: None)
     monkeypatch.setattr(linux_accounts, "assert_admin_group_allowed", lambda *args: None)
 
-    linux_accounts.create_user(UserCreateRequest(username="bob", password="temporary", admin_password="pam", uid=1200, gid=1100, groups=["ops"], force_password_change=True))
-    linux_accounts.update_user("alice", UserPatchRequest(admin_password="pam", gecos="Alice Operator", groups_add=["ops"], force_password_change=True))
+    linux_accounts.create_user(UserCreateRequest(username="bob", password="temporary", uid=1200, gid=1100, groups=["ops"], force_password_change=True))
+    linux_accounts.update_user("alice", UserPatchRequest(gecos="Alice Operator", groups_add=["ops"], force_password_change=True))
     linux_accounts.set_lock("alice", True)
-    linux_accounts.set_quota("alice", UserQuotaRequest(admin_password="pam", soft_mb=100, hard_mb=200, mountpoint="/"))
+    linux_accounts.set_quota("alice", UserQuotaRequest(soft_mb=100, hard_mb=200, mountpoint="/"))
     linux_accounts.delete_user("alice", remove_home=False)
-    linux_accounts.create_group(GroupCreateRequest(groupname="newteam", gid=1201, admin_password="pam"))
+    linux_accounts.create_group(GroupCreateRequest(groupname="newteam", gid=1201))
     linux_accounts.rename_group("ops", "support")
     linux_accounts.set_group_member("ops", "alice", True)
     linux_accounts.delete_group("ops")
@@ -266,7 +254,7 @@ def test_system_uid_creation_is_rejected_before_running_a_command(monkeypatch):
     monkeypatch.setattr(linux_accounts.pwd, "getpwnam", lambda username: (_ for _ in ()).throw(KeyError(username)))
     monkeypatch.setattr(linux_accounts, "assert_admin_user_allowed", lambda *args: None)
     monkeypatch.setattr(linux_accounts, "_run", lambda *args, **kwargs: pytest.fail("system account creation must stop before executing useradd"))
-    payload = UserCreateRequest(username="service-user", password="temporary", admin_password="pam", uid=999)
+    payload = UserCreateRequest(username="service-user", password="temporary", uid=999)
     with pytest.raises(HTTPException) as error:
         linux_accounts.create_user(payload)
     assert error.value.detail["code"] == "SYSTEM_UID_BLOCKED"
@@ -301,7 +289,7 @@ def test_group_rename_moves_application_policy(monkeypatch, tmp_path: Path):
 
 
 def test_proxmox_guard_is_checked_before_creating_linux_user(monkeypatch):
-    payload = UserCreateRequest(username="alice", password="secret", admin_password="pam")
+    payload = UserCreateRequest(username="alice", password="secret")
     monkeypatch.setattr(linux_accounts.pwd, "getpwnam", lambda username: (_ for _ in ()).throw(KeyError(username)))
     monkeypatch.setattr(linux_accounts, "assert_admin_user_allowed", lambda *args: (_ for _ in ()).throw(HTTPException(403, "Proxmox Safe Mode")))
     monkeypatch.setattr(linux_accounts, "_run", lambda *args, **kwargs: pytest.fail("no system command may run after a Proxmox denial"))

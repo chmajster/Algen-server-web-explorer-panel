@@ -1,13 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api";
-import { forgetAdminPassword } from "./adminCredentials";
 import { ServicesApp, StoreAppView, UsersApp } from "./SystemApps";
 
 vi.mock("../../api", () => ({ api: { adminUsers: vi.fn(), createUser: vi.fn(), apps: vi.fn(), appAction: vi.fn(), systemdServices: vi.fn(), systemdServiceAction: vi.fn() } }));
 
 describe("administrative forms", () => {
-  beforeEach(() => { vi.clearAllMocks(); forgetAdminPassword(); });
+  beforeEach(() => { vi.clearAllMocks(); });
 
   it("creates a user through an accessible modal without native prompts", async () => {
     vi.mocked(api.adminUsers).mockResolvedValue([]);
@@ -18,17 +17,9 @@ describe("administrative forms", () => {
     fireEvent.change(screen.getByLabelText("settings.username"), { target: { value: "alice" } });
     fireEvent.change(screen.getByLabelText("settings.newPassword"), { target: { value: "user-secret" } });
     fireEvent.change(screen.getByLabelText("settings.groupsLabel"), { target: { value: "users, media" } });
-    const password = screen.getByLabelText("settings.adminPassword");
-    expect(password).toHaveAttribute("autocomplete", "current-password");
-    fireEvent.change(password, { target: { value: "admin-secret" } });
-    fireEvent.click(screen.getByLabelText("admin.rememberPassword"));
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
-    await waitFor(() => expect(api.createUser).toHaveBeenCalledWith(expect.objectContaining({ username: "alice", groups: ["users", "media"], admin_password: "admin-secret" })));
-    await waitFor(() => expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole("button", { name: /users.create/ }));
-    expect(screen.getByLabelText("settings.adminPassword")).toHaveValue("admin-secret");
-    expect(screen.getByLabelText("admin.rememberPassword")).toBeChecked();
+    await waitFor(() => expect(api.createUser).toHaveBeenCalledWith({ username: "alice", password: "user-secret", groups: ["users", "media"], create_home: true }));
   });
 
   it("shows the reason and log when a Samba installation job fails", async () => {

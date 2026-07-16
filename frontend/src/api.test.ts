@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError } from "./api";
+import { api, ApiError, login } from "./api";
 
 describe("API errors", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -50,6 +50,33 @@ describe("API errors", () => {
     await api.localDisks();
 
     expect(fetchMock).toHaveBeenCalledWith("/api/files/local-disks", expect.objectContaining({ credentials: "include" }));
+  });
+
+  it("loads authenticated host information for Settings", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ hostname: "nas-one" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.hostInfo();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/system/host-info", expect.objectContaining({ credentials: "include" }));
+  });
+
+  it("sends the remember-me choice only in the login request body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ username: "alice", home: "/home/alice", csrf_token: "csrf" })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await login("alice", "secret", true);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/login", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret", remember_me: true }),
+      credentials: "include",
+    }));
+    expect(localStorage.getItem("webnas_csrf")).toBe("csrf");
   });
 
   it("loads and saves a text file through the editor API", async () => {

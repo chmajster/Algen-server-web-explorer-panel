@@ -44,13 +44,13 @@ describe("module common UI", () => {
     const apply = vi.fn().mockResolvedValue(undefined);
     const validation: ModuleValidationResult = { ok: true, errors: [], warnings: ["SMB1 warning"], changes: [{ kind: "global_changed", name: "server min protocol", before: "SMB2", after: "NT1" }], generated_config: "[global]", validator_output: "Loaded services file OK", confirmations_required: ["smb1"] };
     render(<ModuleApplyPlanDialog validation={validation} t={t} onClose={vi.fn()} onApply={apply} />);
-    fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "secret" } });
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     const submit = screen.getByRole("button", { name: "module.applyConfiguration" });
     expect(submit).toBeDisabled();
     fireEvent.click(screen.getByText("module.confirm.smb1"));
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
-    await waitFor(() => expect(apply).toHaveBeenCalledWith("secret", ["smb1"]));
+    await waitFor(() => expect(apply).toHaveBeenCalledWith(["smb1"]));
   });
 
   it("requires the Samba name for destructive uninstall and preserves share paths", async () => {
@@ -60,13 +60,13 @@ describe("module common UI", () => {
     render(<ModuleUninstallDialog item={summary} activeShares={2} activeSessions={1} t={t} toast={vi.fn()} onClose={vi.fn()} onStarted={vi.fn()} />);
     await screen.findByText("Remove package samba");
     fireEvent.click(screen.getByText("module.uninstallMode.data"));
-    fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "secret" } });
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     const submit = screen.getByRole("button", { name: "store.uninstall" });
     expect(submit).toBeDisabled();
     fireEvent.change(screen.getByLabelText("module.typeModuleName"), { target: { value: "Samba" } });
     await waitFor(() => expect(submit).toBeEnabled());
     fireEvent.click(submit);
-    await waitFor(() => expect(uninstall).toHaveBeenCalledWith("samba", "secret", expect.objectContaining({ remove_config: true, remove_data: true, create_backup: true, confirm_name: "Samba" })));
+    await waitFor(() => expect(uninstall).toHaveBeenCalledWith("samba", expect.objectContaining({ remove_config: true, remove_data: true, create_backup: true, confirm_name: "Samba" })));
     expect(plan.data_paths).not.toContain("/srv/media");
     planSpy.mockRestore(); uninstall.mockRestore();
   });

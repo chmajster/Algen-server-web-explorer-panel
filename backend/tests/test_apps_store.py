@@ -123,7 +123,7 @@ def test_install_action_is_audited(monkeypatch):
     monkeypatch.setattr(package_jobs, "manager", lambda repository: SimpleNamespace(enqueue=lambda plan, actor: {"id": "job-1"}))
     monkeypatch.setattr(apps.logger, "info", lambda *args, **kwargs: messages.append(args))
 
-    result = apps.install_app("samba", apps.AdminAction(admin_password="secret"), SimpleNamespace(username="admin"))
+    result = apps.install_app("samba", apps.AdminAction(), SimpleNamespace(username="admin"))
 
     assert result == {"job": {"id": "job-1"}}
     assert any("app_store_action" in item[0] for item in messages)

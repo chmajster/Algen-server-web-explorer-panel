@@ -83,7 +83,7 @@ def test_linux_update_route_assigns_the_screen_session_server_side(monkeypatch):
     monkeypatch.setattr(module_router.secrets, "token_hex", lambda length: "0123456789abcdef01234567")
     monkeypatch.setattr(module_router, "_provider_plan", lambda module_id, action, payload: captured.update(payload) or payload)
     monkeypatch.setattr(module_router, "_enqueue", lambda plan, payload, user: plan)
-    request = module_router.ModuleActionRequest(admin_password="pam-password", payload={"operation": "upgrade_all", "screen_session": "client-value"})
+    request = module_router.ModuleActionRequest(payload={"operation": "upgrade_all", "screen_session": "client-value"})
 
     result = module_router.module_management_action("linux-updates", "upgrade_security", request, SessionUser(username="operator", csrf_token="csrf"))
 
@@ -259,7 +259,7 @@ def test_module_permission_dependency_rejects_auditor_mutation(monkeypatch):
 
 def test_durable_module_actions_reject_secret_fields():
     with pytest.raises(ValueError):
-        module_router.ModuleActionRequest(admin_password="pam-only", payload={"api_token": "must-not-enter-job"})
+        module_router.ModuleActionRequest(payload={"api_token": "must-not-enter-job"})
 
 
 def test_module_api_connections_reject_public_ssrf_targets(monkeypatch):

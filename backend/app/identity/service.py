@@ -187,7 +187,7 @@ class IdentityService:
                 self.repository.rename_user_policy(username, next_username, actor)
             except Exception:
                 try:
-                    linux_accounts.update_user(next_username, UserPatchRequest(admin_password=payload.admin_password, new_username=username))
+                    linux_accounts.update_user(next_username, UserPatchRequest(new_username=username))
                 except Exception:
                     logger.exception("identity_rename_user_compensation_failed old=%s new=%s", username, next_username)
                 raise

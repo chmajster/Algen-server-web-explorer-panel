@@ -5,7 +5,7 @@ import { ManagedModuleApp } from "./ManagedModuleApp";
 
 vi.mock("../../api", async () => {
   const actual = await vi.importActual<typeof import("../../api")>("../../api");
-  return { ...actual, api: { ...actual.api, module: vi.fn(), moduleResource: vi.fn(), moduleAction: vi.fn() } };
+  return { ...actual, api: { ...actual.api, module: vi.fn(), moduleResource: vi.fn(), moduleAction: vi.fn(), moduleService: vi.fn() } };
 });
 
 const summary = {
@@ -27,7 +27,7 @@ const linuxSummary = {
 const queuedUpdate = { id: "update-1", module_id: "linux-updates", action: "manage", operation: "upgrade_security", status: "queued" as const, progress: 0, created_at: 1, log_tail: [], error: "", current_step: "Queued" };
 
 describe("ManagedModuleApp", () => {
-  beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.module).mockResolvedValue(summary); vi.mocked(api.moduleResource).mockResolvedValue({ resource: "containers", items: [{ ID: "abc", Names: "web", State: "exited" }], total: 1 }); vi.mocked(api.moduleAction).mockResolvedValue({ job: queuedUpdate }); });
+  beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.module).mockResolvedValue(summary); vi.mocked(api.moduleResource).mockResolvedValue({ resource: "containers", items: [{ ID: "abc", Names: "web", State: "exited" }], total: 1 }); vi.mocked(api.moduleAction).mockResolvedValue({ job: queuedUpdate }); vi.mocked(api.moduleService).mockResolvedValue({ job: queuedUpdate }); });
 
   it("keeps mutating controls hidden from auditors", async () => {
     render(<ManagedModuleApp moduleId="docker" permissions={["modules.view", "docker.view"]} t={(key) => key} toast={vi.fn()} />);
@@ -36,12 +36,26 @@ describe("ManagedModuleApp", () => {
     expect(screen.queryByTitle("module.start")).not.toBeInTheDocument();
   });
 
-  it("opens PAM confirmation for an operator container action", async () => {
+  it("uses the authenticated session for an authorized container action", async () => {
     render(<ManagedModuleApp moduleId="docker" permissions={["modules.view", "docker.view", "docker.manage_containers"]} t={(key) => key} toast={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: /managed.containers/ }));
     await screen.findByText("web");
     fireEvent.click(screen.getByTitle("module.start"));
-    await waitFor(() => expect(screen.getByLabelText("settings.adminPassword")).toBeInTheDocument());
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+    await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("docker", "container_start", { target: "abc" }));
+  });
+
+  it("uses the authenticated admin session for routine module service controls", async () => {
+    render(<ManagedModuleApp moduleId="docker" permissions={["modules.view", "docker.view", "docker.manage_containers"]} t={(key) => key} toast={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /managed.service/ }));
+    fireEvent.click(screen.getByRole("button", { name: "module.restart" }));
+
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+
+    await waitFor(() => expect(api.moduleService).toHaveBeenCalledWith("docker", "restart"));
   });
 
   it("starts security patching from the update button through the durable module action", async () => {
@@ -53,9 +67,9 @@ describe("ManagedModuleApp", () => {
     await screen.findByText("openssl");
     expect(screen.getByText("managed.detachedUpdateHint")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "managed.updateNow" }));
-    fireEvent.change(await screen.findByLabelText("settings.adminPassword"), { target: { value: "pam-password" } });
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
 
-    await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "upgrade_security", "pam-password", {}));
+    await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "upgrade_security", {}));
   });
 });

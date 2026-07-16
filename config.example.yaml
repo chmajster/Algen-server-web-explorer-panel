@@ -9,6 +9,10 @@ auth:
   provider: "pam"
   pam_service: "webnas"
   session_cookie_name: "webnas_session"
+  # Browser-only sessions expire after this server-side limit. Remembered
+  # sessions use a Secure persistent cookie and can be revoked on logout.
+  session_lifetime_hours: 12
+  remember_me_lifetime_days: 30
 
 paths:
   default_root: "home"

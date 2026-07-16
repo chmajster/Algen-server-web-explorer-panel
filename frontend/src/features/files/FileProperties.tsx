@@ -18,14 +18,13 @@ export function FileProperties({ item, currentPath, isAdmin, sambaShared, t, toa
   const [owner, setOwner] = useState(item.owner);
   const [group, setGroup] = useState(item.group);
   const [mode, setMode] = useState(item.mode || item.permissions);
-  const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   async function save() {
     setSaving(true);
     try {
       const effectivePath = name !== item.name ? joinPath(currentPath, name) : item.path;
       if (name !== item.name) await api.rename(item.path, effectivePath);
-      if (isAdmin && (owner !== item.owner || group !== item.group)) await api.chown({ path: effectivePath, owner, group, admin_password: password });
+      if (isAdmin && (owner !== item.owner || group !== item.group)) await api.chown({ path: effectivePath, owner, group });
       if (isAdmin && mode !== (item.mode || item.permissions)) await api.chmod(effectivePath, mode);
       toast(t("files.propertiesSaved")); onChanged(); onClose();
     } catch (error) { toast(error instanceof Error ? error.message : t("files.operationFailed"), "error"); }
@@ -45,6 +44,5 @@ export function FileProperties({ item, currentPath, isAdmin, sambaShared, t, toa
       <dt>{t("files.mountPoint")}</dt><dd>{item.is_dir ? item.path : "—"}</dd>
       <dt>{t("files.sambaShared")}</dt><dd>{sambaShared ? t("common.yes") : t("common.no")}</dd>
     </dl>
-    {isAdmin && <label className="field-label">{t("settings.adminPassword")}<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>}
   </Modal>;
 }

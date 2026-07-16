@@ -78,7 +78,6 @@ SAFE_SAMBA_VFS_OBJECTS = {"acl_xattr", "catia", "fruit", "streams_xattr", "recyc
 
 
 class AdminAction(BaseModel):
-    admin_password: str
     dry_run: bool = False
 
 
@@ -136,7 +135,6 @@ class SambaSecuredApplyRequest(AdminAction):
 
 class SambaServiceAction(BaseModel):
     action: str
-    admin_password: str
 
 
 class SambaUserAction(AdminAction):
@@ -196,11 +194,8 @@ def _groups_for(username: str) -> list[str]:
     return sorted(group.gr_name for group in grp.getgrall() if username in group.gr_mem or group.gr_gid == pw.pw_gid)
 
 
-def _require_admin(user: SessionUser, password: str, permission: Permission = Permission.MODULES_CONFIGURE) -> None:
+def _require_admin(user: SessionUser, permission: Permission = Permission.MODULES_CONFIGURE) -> None:
     authorize(user, permission)
-    from .package_center.security import reauthenticate
-
-    reauthenticate(user, password)
 
 
 def _run(args: list[str], *, input_text: str | None = None, timeout: int = 600) -> subprocess.CompletedProcess[str]:
@@ -867,7 +862,7 @@ def get_app(app_id: str, user: SessionUser = Depends(_current_user)):
 
 
 def install_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, Permission.MODULES_INSTALL)
+    _require_admin(user, Permission.MODULES_INSTALL)
     from .package_center.jobs import manager as package_manager
     from .package_center.models import PackageAction
     from .package_center.service import plan_operation, repository
@@ -880,7 +875,7 @@ def install_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_
 
 
 def uninstall_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, Permission.MODULES_UNINSTALL)
+    _require_admin(user, Permission.MODULES_UNINSTALL)
     from .package_center.jobs import manager as package_manager
     from .package_center.models import PackageAction
     from .package_center.service import plan_operation, repository
@@ -893,7 +888,7 @@ def uninstall_app(app_id: str, payload: AdminAction, user: SessionUser = Depends
 
 
 def update_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, Permission.MODULES_UPDATE)
+    _require_admin(user, Permission.MODULES_UPDATE)
     from .package_center.jobs import manager as package_manager
     from .package_center.models import PackageAction
     from .package_center.service import plan_operation, repository
@@ -906,7 +901,7 @@ def update_app(app_id: str, payload: AdminAction, user: SessionUser = Depends(_c
 
 
 def service_action(app_id: str, action: str, payload: AdminAction, user: SessionUser) -> dict:
-    _require_admin(user, payload.admin_password)
+    _require_admin(user)
     if payload.dry_run:
         return {"dry_run": True, "steps": [f"systemctl {action} service(s) from manifest"]}
     logger.info("app_store_action actor=%s app=%s action=%s", user.username, app_id, action)
@@ -956,12 +951,11 @@ def samba_preview(payload: SambaApplyRequest, user: SessionUser = Depends(_curre
     return preview_samba_config(user.username, config)
 
 
-def _enqueue_samba_config(config: SambaConfig, password: str, confirm_smb1: bool, user: SessionUser) -> dict:
+def _enqueue_samba_config(config: SambaConfig, confirm_smb1: bool, user: SessionUser) -> dict:
     from .modules.providers.samba import SambaProvider
     from .modules.router import _provider_plan
     from .package_center.jobs import manager
     from .package_center.models import PackageAction
-    from .package_center.security import reauthenticate
     from .package_center.service import repository
 
     authorize(user, Permission.MODULES_CONFIGURE)
@@ -970,7 +964,6 @@ def _enqueue_samba_config(config: SambaConfig, password: str, confirm_smb1: bool
         raise HTTPException(422, {"code": "CONFIG_VALIDATION_FAILED", "message": "Samba configuration is invalid", "validation": validation.model_dump(mode="json")})
     if "smb1" in validation.confirmations_required and not confirm_smb1:
         raise HTTPException(400, {"code": "SECURITY_CONFIRMATION_REQUIRED", "message": "Enabling SMB1 requires explicit confirmation", "confirmation": "smb1"})
-    reauthenticate(user, password)
     plan = _provider_plan("samba", PackageAction.apply, {"config": config.model_dump()}, backup=True)
     job = manager(repository()).enqueue(plan, user.username)
     logger.info("app_store_config actor=%s app=samba action=apply_config job=%s", user.username, job["id"])
@@ -979,12 +972,12 @@ def _enqueue_samba_config(config: SambaConfig, password: str, confirm_smb1: bool
 
 @router.post("/samba/apply")
 def samba_apply(payload: SambaSecuredApplyRequest, user: SessionUser = Depends(_current_user)):
-    return _enqueue_samba_config(payload.config, payload.admin_password, payload.confirm_smb1, user)
+    return _enqueue_samba_config(payload.config, payload.confirm_smb1, user)
 
 
 @router.post("/samba/rollback")
 def samba_rollback(payload: AdminAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password, Permission.MODULES_BACKUP_RESTORE)
+    _require_admin(user, Permission.MODULES_BACKUP_RESTORE)
     raise HTTPException(409, {"code": "MODULE_BACKUP_REQUIRED", "message": "Use the verified module backup restore endpoint"})
 
 
@@ -996,14 +989,14 @@ def samba_service(payload: SambaServiceAction, user: SessionUser = Depends(_curr
     from .package_center.models import PackageAction
 
     authorize(user, Permission.MODULES_CONFIGURE)
-    result = _enqueue(_provider_plan("samba", PackageAction(payload.action), {}), ModuleAdminRequest(admin_password=payload.admin_password), user)
+    result = _enqueue(_provider_plan("samba", PackageAction(payload.action), {}), ModuleAdminRequest(), user)
     logger.info("app_store_action actor=%s app=samba action=%s job=%s", user.username, payload.action, result["job"]["id"])
     return result
 
 
 @router.post("/samba/users/enable")
 def samba_user_enable(payload: SambaPassword, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password)
+    _require_admin(user)
     if not shutil.which("smbpasswd"):
         raise HTTPException(503, "smbpasswd is not installed")
     _run(["smbpasswd", "-s", "-a", payload.username], input_text=f"{payload.password}\n{payload.password}\n")
@@ -1014,7 +1007,7 @@ def samba_user_enable(payload: SambaPassword, user: SessionUser = Depends(_curre
 
 @router.post("/samba/users/disable")
 def samba_user_disable(payload: SambaUserAction, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password)
+    _require_admin(user)
     if not shutil.which("smbpasswd"):
         raise HTTPException(503, "smbpasswd is not installed")
     _run(["smbpasswd", "-d", payload.username])
@@ -1035,12 +1028,12 @@ def put_config_app(app_id: str, payload: SambaSecuredApplyRequest, user: Session
     authorize(user, Permission.MODULES_CONFIGURE)
     if app_id != "samba":
         raise HTTPException(404, "Unsupported app module")
-    return _enqueue_samba_config(payload.config, payload.admin_password, payload.confirm_smb1, user)
+    return _enqueue_samba_config(payload.config, payload.confirm_smb1, user)
 
 
 @router.post("/samba/smbpasswd")
 def set_samba_password(payload: SambaPassword, user: SessionUser = Depends(_current_user)):
-    _require_admin(user, payload.admin_password)
+    _require_admin(user)
     if not shutil.which("smbpasswd"):
         raise HTTPException(503, "smbpasswd is not installed")
     _run(["smbpasswd", "-s", "-a", payload.username], input_text=f"{payload.password}\n{payload.password}\n")

@@ -22,8 +22,8 @@ def payload(**kwargs):
 
 
 def test_mount_payload_accepts_an_authenticated_session_without_admin_password():
-    data = payload().model_dump(exclude={"admin_password"})
-    assert network_mounts.MountPayload.model_validate(data).admin_password == ""
+    assert "admin_password" not in network_mounts.MountPayload.model_fields
+    assert payload().name == "media"  # Older clients may still send the ignored field.
 
 
 def test_mount_point_blocks_system_paths(monkeypatch):

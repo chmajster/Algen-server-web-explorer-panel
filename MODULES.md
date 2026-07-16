@@ -90,7 +90,7 @@ Jobs expose the old fields and the module aliases `operation`, `stage`, and `req
 
 ## API
 
-Read routes require the module-specific view permission. Mutations require their granular operation/configuration/install/backup/restore permission and CSRF. State-changing operations additionally perform rate-limited PAM reauthentication before queueing or executing the controlled short operation. Existing root/sudo/wheel users always resolve to administrator.
+Read routes require the module-specific view permission. Mutations require an authenticated session, their granular operation/configuration/install/backup/restore permission, CSRF, and explicit confirmation where applicable. Existing root/sudo/wheel users always resolve to administrator.
 
 ```text
 GET    /api/modules
@@ -157,7 +157,7 @@ SMB1 is off by default. `wide links`, `follow symlinks`, anonymous write, and mi
 
 The share model covers visibility, guest/read-only access, users, groups, write/admin lists, inherited permissions, masks, force user/group/modes, controlled VFS objects, recycle bin/versioning, veto patterns, and optional directory preparation. Protected roots include `/`, `/etc`, `/boot`, `/dev`, `/proc`, `/sys`, `/run`, `/root`, `/etc/pve`, `/var/lib/vz`, and `/mnt/pve`; the normal allowed-root and Proxmox policies still apply after symlink resolution.
 
-Removing sharing deletes only the share definition through a validated apply job. It never deletes the directory. File Manager shows the share name and read-only state, opens the matching editor, creates a prefilled share for an unshared directory, and offers reauthenticated removal for an existing share.
+Removing sharing deletes only the share definition through a validated apply job. It never deletes the directory. File Manager shows the share name and read-only state, opens the matching editor, creates a prefilled share for an unshared directory, and offers confirmed removal for an existing share.
 
 SMB account actions call `smbpasswd` with argument arrays and stdin, never `shell=True`. Passwords are neither returned nor put in command lines, plans, logs, SQLite, settings, or local storage. Removing an SMB user uses `smbpasswd -x`; it never removes the Linux account.
 

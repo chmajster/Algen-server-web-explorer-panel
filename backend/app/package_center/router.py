@@ -14,7 +14,7 @@ from ..identity.permissions import Permission, authorize
 from ..security import SessionUser
 from .jobs import manager
 from .models import AdminPackageAction, PackageAction, PackageSourceInput, api_error
-from .security import current_user, mutating_user, reauthenticate
+from .security import current_user, mutating_user
 from .service import categories, get_module, list_modules, plan_operation, repository
 
 router = APIRouter(prefix="/api/apps", tags=["package-center"])
@@ -94,7 +94,6 @@ def cancel_job(job_id: str, payload: AdminPackageAction, user: SessionUser = Dep
     if not existing:
         api_error(404, "JOB_NOT_FOUND", "Package job not found")
     authorize(user, _package_permission(PackageAction(existing["action"])))
-    reauthenticate(user, payload.admin_password)
     job = manager(repository()).cancel(job_id)
     logger.info("package_action actor=%s module=%s action=cancel job=%s", user.username, job["module_id"], job_id)
     return job
@@ -106,7 +105,6 @@ def retry_job(job_id: str, payload: AdminPackageAction, user: SessionUser = Depe
     if not existing:
         api_error(404, "JOB_NOT_FOUND", "Package job not found")
     authorize(user, _package_permission(PackageAction(existing["action"])))
-    reauthenticate(user, payload.admin_password)
     return manager(repository()).retry(job_id, user.username)
 
 
@@ -197,7 +195,6 @@ def _package_permission(action: PackageAction) -> Permission:
 def _enqueue_action(module_id: str, action: PackageAction, payload: AdminPackageAction, user: SessionUser) -> dict:
     if not payload.confirm_plan:
         api_error(400, "PLAN_CONFIRMATION_REQUIRED", "The operation plan must be confirmed")
-    reauthenticate(user, payload.admin_password)
     plan = plan_operation(module_id, action, remove_data=payload.remove_data)
     return {"job": manager(repository()).enqueue(plan, user.username)}
 

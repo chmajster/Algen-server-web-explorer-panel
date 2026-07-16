@@ -52,12 +52,12 @@ describe("IdentityApp", () => {
     render(<IdentityApp permissions={["users.view", "groups.view", "access.view", "access.manage_user_permissions", "access.manage_roles"]} t={(key) => key} toast={toast} />);
     fireEvent.click(await screen.findByText("alice"));
     fireEvent.click(await screen.findByRole("button", { name: "identity.savePolicy" }));
-    fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "pam" } });
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
     await waitFor(() => expect(toast).toHaveBeenCalledWith("Cannot remove last administrator", "error", "admin"));
   });
 
-  it("creates a Linux user with optional identity fields and fresh PAM confirmation", async () => {
+  it("creates a Linux user with optional identity fields from the authenticated session", async () => {
     vi.mocked(api.createIdentityUser).mockResolvedValue(regularUser);
     render(<IdentityApp permissions={["users.view", "users.create"]} t={(key) => key} toast={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "identity.user.create" }));
@@ -67,12 +67,10 @@ describe("IdentityApp", () => {
     fireEvent.change(screen.getByLabelText("identity.optionalGid"), { target: { value: "1300" } });
     fireEvent.change(screen.getByLabelText("identity.supplementaryGroupsHint"), { target: { value: "media, operators, media" } });
     fireEvent.change(screen.getByLabelText("identity.forcePasswordChange"), { target: { value: "true" } });
-    fireEvent.change(screen.getByLabelText("settings.adminPassword"), { target: { value: "fresh-pam" } });
-    expect(screen.queryByText("admin.rememberPassword")).not.toBeInTheDocument();
-    expect(screen.getByText("identity.freshPamRequired")).toBeInTheDocument();
+    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
     await waitFor(() => expect(api.createIdentityUser).toHaveBeenCalledWith(expect.objectContaining({
-      username: "bob", uid: 1200, gid: 1300, groups: ["media", "operators"], force_password_change: true, admin_password: "fresh-pam",
+      username: "bob", uid: 1200, gid: 1300, groups: ["media", "operators"], force_password_change: true,
     })));
   });
 });

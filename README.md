@@ -46,7 +46,7 @@ User preferences are stored by the backend in `paths.data_dir/settings/<username
 
 ## Network resources
 
-Administrators manage network resources in **Settings → Network resources**. The previous `mounts` application id is still restored from saved window state, but redirects to this single settings section. Each definition can be created, edited, tested, mounted, unmounted, remounted, migrated, inspected through redacted logs, and removed. Mutating operations require an administrator session, CSRF, and fresh PAM reauthentication.
+Administrators manage network resources in **Settings → Network resources**. The previous `mounts` application id is still restored from saved window state, but redirects to this single settings section. Each definition can be created, edited, tested, mounted, unmounted, remounted, migrated, inspected through redacted logs, and removed. Mutating operations require an authenticated session, their concrete permission, and CSRF.
 
 WebNAS always calculates the local path as `/mnt/webnas/mnt/<name>`; neither the UI nor the API accepts an arbitrary `mount_point`. Names are single 1–63 character path components made from letters, numbers, dots, dashes, and underscores. Separators, `..`, control characters, trailing dots/spaces, duplicates after Unicode normalization, nested paths, and symlinks escaping the base are rejected.
 
@@ -58,7 +58,7 @@ Persistent definitions use path-escaped `.mount`/`.automount` unit names matchin
 
 ## Package Center
 
-**Package Center** manages trusted WebNAS modules through a permission-controlled UI with search, categories, status filters, installed/updates views, jobs, history, and sources. The catalog includes Samba, Squid Proxy, Nginx, Syncthing, Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant. Install, update, uninstall, and systemd actions require plan confirmation and PAM reauthentication; progress and redacted logs survive browser and service restarts in SQLite. Linux security/full patching additionally runs in a detached GNU `screen` worker, so closing the browser does not stop the package manager and WebNAS can reconnect to the operation after its own process restarts.
+**Package Center** manages trusted WebNAS modules through a permission-controlled UI with search, categories, status filters, installed/updates views, jobs, history, and sources. The catalog includes Samba, Squid Proxy, Nginx, Syncthing, Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant. Install, update, uninstall, and systemd actions require an authenticated session, a concrete RBAC permission, CSRF, and plan confirmation; progress and redacted logs survive browser and service restarts in SQLite. Linux security/full patching additionally runs in a detached GNU `screen` worker, so closing the browser does not stop the package manager and WebNAS can reconnect to the operation after its own process restarts.
 
 Modules support Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux when their manifest provides packages for the detected `apt-get`, `dnf`, or `yum` manager. Proxmox Safe Mode rejects modules not explicitly marked safe. External GitHub repositories are stored and refreshed only as untrusted metadata—they are never downloaded or executed automatically.
 
@@ -66,7 +66,7 @@ Installed modules open as regular WebNAS windows from Package Center. A shared s
 
 Samba is the complete reference provider. Its application adds Shares, SMB users, and Sessions; typed global/share configuration; controlled VFS options; `smbstatus` parsing; UFW/firewalld status; fixed-source redacted logs; comprehensive diagnostics; checksummed `0600` backups; and transactional `testparm`/atomic-write/reload/verify/rollback behavior. File Manager labels shared directories with their Samba name/read-only state and can open, create, or remove the share definition without deleting the directory.
 
-Module mutations require an active session, CSRF, the concrete operation permission, rate-limited PAM reauthentication, a structured plan, and audit logging. Package installation and uninstall remain restricted to callers with their dedicated high-risk permissions. Identity-management dialogs always request a fresh PAM password and never use the in-memory credential helper. SMB passwords never enter settings, local storage, plans, jobs, command lines, or logs.
+Module mutations require an active session, CSRF, the concrete operation permission, a structured plan, and audit logging. Package installation and uninstall remain restricted to callers with their dedicated high-risk permissions. Administrative dialogs use the active authenticated session and never request or retain a second administrator password. SMB passwords never enter settings, local storage, plans, jobs, command lines, or logs.
 
 See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for the package layer, [MODULES.md](MODULES.md) for provider architecture and Samba, [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) for infrastructure modules, and [IDENTITY.md](IDENTITY.md) for roles, granular permissions, Linux account safety, migration, API, and access recovery.
 

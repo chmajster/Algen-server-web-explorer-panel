@@ -19,7 +19,6 @@ from app.modules.providers.base import ModuleProvider
 from app.modules.providers.samba import SambaProvider, parse_smb_conf, parse_smbstatus_json, parse_smbstatus_text
 from app.package_center.models import ModuleManifest, ModuleStatus, ModuleValidationResult, PackageAction
 from app.package_center.repository import PackageRepository
-from app.package_center import security as module_security
 from app.security import SessionUser
 
 
@@ -62,37 +61,20 @@ def test_router_rejects_unknown_service_action_before_handler(monkeypatch):
     app.dependency_overrides[module_router.mutating_admin] = admin
     client = TestClient(app)
 
-    response = client.post("/api/modules/samba/service/reboot", json={"admin_password": "secret"}, headers={"x-csrf-token": "csrf"})
+    response = client.post("/api/modules/samba/service/reboot", json={}, headers={"x-csrf-token": "csrf"})
 
     assert response.status_code == 422
 
 
-def test_state_change_reauthenticates_before_enqueue(monkeypatch, tmp_path: Path):
-    calls: list[tuple[str, str]] = []
+def test_state_change_uses_the_authenticated_session(monkeypatch, tmp_path: Path):
     repository = PackageRepository(tmp_path / "jobs.sqlite3")
     plan = SimpleNamespace(module_id="samba", action=PackageAction.restart)
-    monkeypatch.setattr(module_router, "reauthenticate", lambda user, password: calls.append((user.username, password)))
     monkeypatch.setattr(module_router, "repository", lambda: repository)
     monkeypatch.setattr(module_router, "manager", lambda repo: SimpleNamespace(enqueue=lambda next_plan, actor: {"id": "job", "module_id": next_plan.module_id, "created_by": actor}))
 
-    result = module_router._enqueue(plan, module_router.ModuleAdminRequest(admin_password="secret"), admin())
+    result = module_router._enqueue(plan, module_router.ModuleAdminRequest(), admin())
 
-    assert calls == [("admin", "secret")]
     assert result["job"]["id"] == "job"
-
-
-def test_module_reauthentication_is_rate_limited(monkeypatch):
-    user = SessionUser(username="rate-limit-module-admin", csrf_token="csrf")
-    module_security._reauth_attempts.pop(user.username, None)
-    monkeypatch.setattr(module_security, "get_config", lambda: SimpleNamespace(security=SimpleNamespace(rate_limit_admin_per_minute=2)))
-    monkeypatch.setattr(module_security, "authenticate", lambda username, password: None)
-
-    module_security.reauthenticate(user, "one")
-    module_security.reauthenticate(user, "two")
-    with pytest.raises(HTTPException) as exc:
-        module_security.reauthenticate(user, "three")
-
-    assert exc.value.status_code == 429
 
 
 def test_smb_conf_parser_imports_only_supported_options():

@@ -8,7 +8,7 @@ Installed modules now open in the shared module-management framework documented 
 
 The backend is split into small components under `backend/app/package_center`:
 
-- `router.py` exposes the API and enforces session, administrator, CSRF, and reauthentication rules.
+- `router.py` exposes the API and enforces session, granular RBAC, CSRF, and confirmation rules.
 - `models.py` defines Pydantic manifest, plan, action, source, and status models.
 - `manifests.py` discovers modules and safely resolves module-local files.
 - `distro.py` reads `/etc/os-release` and selects `apt-get`, `dnf`, or the `yum` compatibility fallback.
@@ -16,7 +16,7 @@ The backend is split into small components under `backend/app/package_center`:
 - `repository.py` stores jobs, logs, installed state, history, and sources in SQLite.
 - `jobs.py` serializes execution, cancellation, retry, recovery, and audit results.
 - `executor.py` builds argument arrays and runs only trusted package, systemd, and module-local actions.
-- `security.py` checks the RBAC administrator role (with automatic UID 0/`sudo`/`wheel` compatibility), CSRF, and PAM reauthentication.
+- `security.py` checks authenticated sessions, RBAC (with automatic UID 0/`sudo`/`wheel` compatibility), and CSRF.
 
 Only one package job runs at a time. A second operation for the same module cannot be queued. A running command completes before cancellation takes effect at the next safe step. Jobs left in `running` state by a WebNAS restart are marked failed with an interruption message.
 
@@ -103,7 +103,7 @@ Identifiers, package names, service names, ports, architectures, paths, healthch
 
 ## Execution and security
 
-Installation, update, and removal require `modules.install`, a valid CSRF token, explicit plan confirmation, and a fresh PAM password check. Provider resource/operation routes use their narrower RBAC permissions. The password is sent only for reauthentication and is never placed in the plan, job database, command line, or logs. The UI can remember it only in browser session memory when the administrator explicitly selects that option.
+Installation, update, and removal require their dedicated module permission, a valid CSRF token, and explicit plan confirmation. Provider resource/operation routes use their narrower RBAC permissions. The authenticated administrator session is sufficient and the UI neither requests nor retains a second administrator password.
 
 The executor uses `subprocess` argument arrays with `shell=False`, a restricted environment, timeouts, exit-code checks, and redacted output. It never runs `upgrade`, `dist-upgrade`, or implicit `autoremove`. Removal preserves configuration and user data unless the administrator explicitly selects **also remove data** in the confirmation dialog. SQLite transactions provide atomic state updates, and every completed, failed, or cancelled operation is written to history and the audit log.
 
@@ -133,7 +133,7 @@ Module configuration is not stored in the package database. Back up each manifes
 
 ## API
 
-Read operations require an administrator session. System mutations also require CSRF, plan confirmation, and PAM reauthentication.
+Read operations require an authenticated session and their view permission. System mutations additionally require CSRF, the concrete operation permission, and plan confirmation.
 
 ```text
 GET    /api/apps
@@ -168,13 +168,13 @@ POST   /api/apps/sources/{source_id}/sync
 
 `GET /api/apps` accepts `search`, `category`, `status`, `compatible_only`, `installed_only`, and `updates_only`. Existing Samba configuration and legacy StorePlugin endpoints remain available.
 
-The module-management endpoints are listed in [MODULES.md](MODULES.md). Legacy Samba mutation endpoints now require the same PAM gate and delegate writes/service actions to durable module jobs; they can no longer bypass the provider transaction.
+The module-management endpoints are listed in [MODULES.md](MODULES.md). Legacy Samba mutation endpoints use the same session, RBAC, CSRF, and confirmation checks and delegate writes/service actions to durable module jobs; they can no longer bypass the provider transaction.
 
 ## Manual verification
 
 1. Install WebNAS on a supported disposable VM or container, then log in with a local `sudo`/`wheel` administrator.
 2. Open **Centrum pakietów**, search for Nginx, filter by category and open its details.
-3. Select **Install**, review packages, services, ports, permissions, and warnings, then enter the administrator password and confirm.
+3. Select **Install**, review packages, services, ports, permissions, and warnings, then confirm the operation.
 4. Watch progress and logs in **Jobs**, reload the browser, and verify the job remains visible.
 5. Stop, start, and restart the service from the module card. Verify the systemd status shown by WebNAS.
 6. Cancel a queued job and retry a failed/cancelled job.

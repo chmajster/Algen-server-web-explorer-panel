@@ -71,7 +71,7 @@ def test_quota_uses_setquota_when_available(monkeypatch):
     monkeypatch.setattr(settings.shutil, "which", lambda name: "/usr/sbin/setquota" if name == "setquota" else None)
     monkeypatch.setattr(settings, "_run", lambda args, **kwargs: calls.append(args))
 
-    result = settings.admin_user_quota("alice", settings.UserQuota(admin_password="secret", soft_mb=1024), SimpleNamespace(client=None), SimpleNamespace(username="admin"))
+    result = settings.admin_user_quota("alice", settings.UserQuota(soft_mb=1024), SimpleNamespace(client=None), SimpleNamespace(username="admin"))
 
     assert result["ok"] is True
     assert calls == [["/usr/sbin/setquota", "-u", "alice", "1048576", "1048576", "0", "0", "/"]]

@@ -65,7 +65,7 @@ POST/DELETE /api/identity/groups/{groupname}/members[/{username}]
 PUT  /api/identity/groups/{groupname}/policy
 ```
 
-Every mutation requires a valid session, CSRF token, a concrete operation permission, rate limiting, and PAM reauthentication for identity/security changes. Identity dialogs require a freshly entered PAM password and do not read or update the existing in-memory password helper. Compatibility routes under `/api/admin/users`, `/api/admin/groups`, and `/api/rbac` call the same identity service. Global transfer review uses the separately protected `GET /api/admin/transfers` endpoint and `transfers.view_all`.
+Every mutation requires a valid session, CSRF token, a concrete operation permission, and audit logging. The authenticated administrator session is sufficient; identity dialogs do not request or retain a second administrator password. Compatibility routes under `/api/admin/users`, `/api/admin/groups`, and `/api/rbac` call the same identity service. Global transfer review uses the separately protected `GET /api/admin/transfers` endpoint and `transfers.view_all`.
 
 ## Migration
 

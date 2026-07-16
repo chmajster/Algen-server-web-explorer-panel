@@ -6,11 +6,11 @@ import type { Theme, Toast, User } from "./types";
 import { Desktop } from "./Desktop";
 import { useUploadManager } from "../features/transfers/useUploadManager";
 
-function Login({ language, onLogin }: { language: Language; onLogin: (user: User) => void }) {
-  const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
+export function Login({ language, onLogin }: { language: Language; onLogin: (user: User) => void }) {
+  const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [rememberMe, setRememberMe] = useState(false); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
   const t = (key: string) => translate(language, key);
-  async function submit(event: React.FormEvent) { event.preventDefault(); setLoading(true); setError(""); try { onLogin(await login(username.trim(), password)); } catch (reason) { setError(reason instanceof Error ? reason.message : t("auth.loginFailed")); } finally { setLoading(false); } }
-  return <main className="login-screen"><form className="login-panel" onSubmit={submit}><div className="login-brand"><HardDrive /><div><strong>WebNAS</strong><span>{t("auth.subtitle")}</span></div></div><label>{t("auth.linuxUser")}<input autoFocus autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>{t("auth.password")}<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <p className="error-state">{error}</p>}<button className="button-primary" disabled={loading} type="submit">{loading ? t("status.loading") : t("auth.signIn")}</button></form></main>;
+  async function submit(event: React.FormEvent) { event.preventDefault(); setLoading(true); setError(""); try { onLogin(await login(username.trim(), password, rememberMe)); } catch (reason) { setError(reason instanceof Error ? reason.message : t("auth.loginFailed")); } finally { setLoading(false); } }
+  return <main className="login-screen"><form className="login-panel" onSubmit={submit}><div className="login-brand"><HardDrive /><div><strong>WebNAS</strong><span>{t("auth.subtitle")}</span></div></div><label>{t("auth.linuxUser")}<input autoFocus autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>{t("auth.password")}<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label><label className="remember-me-option"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /><span>{t("auth.rememberMe")}</span></label>{error && <p className="error-state">{error}</p>}<button className="button-primary" disabled={loading} type="submit">{loading ? t("status.loading") : t("auth.signIn")}</button></form></main>;
 }
 
 export function App() {

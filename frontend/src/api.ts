@@ -152,6 +152,19 @@ export class ApiError extends Error {
 export type AdminUser = SettingsMe & { is_system: boolean; manageable: boolean };
 export type AdminGroup = { name: string; gid: number; members: string[] };
 export type SystemStatus = { service: string; version: string; port: number; data_dir: string; log_dir: string; temp_dir: string };
+export type HostInfo = {
+  hostname: string;
+  operating_system: string;
+  kernel_version: string;
+  architecture: string;
+  ip_addresses: string[];
+  application_version: string;
+  uptime_seconds: number | null;
+  cpu: { model: string; physical_cores: number | null; logical_threads: number | null };
+  memory: UsageMetric;
+  gpus: string[];
+  storage: UsageMetric & { path: string } | null;
+};
 export type UpdateStatus = { branch: string; local: string; remote: string; update_available: boolean };
 export type UpdateStart = { ok: boolean; pid: number; log: string };
 export type AutoUpdateSettings = {
@@ -483,7 +496,6 @@ export type NetworkMount = {
   jobs: Array<{ id: string; action: string; status: string; exit_code: number | null; error: string; log_tail: string[] }>;
 };
 export type NetworkMountPayload = {
-  admin_password?: string;
   name: string;
   type: NetworkMount["type"];
   host: string;
@@ -576,10 +588,10 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function login(username: string, password: string) {
+export async function login(username: string, password: string, rememberMe = false) {
   const data = await request<{ username: string; home: string; csrf_token: string }>("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, password, remember_me: rememberMe })
   });
   csrfToken = data.csrf_token;
   localStorage.setItem("webnas_csrf", csrfToken);
@@ -660,34 +672,35 @@ export const api = {
   identityUser: (username: string) => request<IdentityUser>(`/api/identity/users/${encodeURIComponent(username)}`),
   createIdentityUser: (payload: Record<string, unknown>) => request<IdentityUser>("/api/identity/users", { method: "POST", body: JSON.stringify(payload) }),
   updateIdentityUser: (username: string, payload: Record<string, unknown>) => request<IdentityUser>(`/api/identity/users/${encodeURIComponent(username)}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteIdentityUser: (username: string, admin_password: string, remove_home: boolean) => request(`/api/identity/users/${encodeURIComponent(username)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm: true, remove_home }) }),
-  lockIdentityUser: (username: string, admin_password: string, locked: boolean) => request(`/api/identity/users/${encodeURIComponent(username)}/${locked ? "lock" : "unlock"}`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true }) }),
-  changeIdentityUserPassword: (username: string, new_password: string, force_change: boolean, admin_password: string) => request(`/api/identity/users/${encodeURIComponent(username)}/password`, { method: "POST", body: JSON.stringify({ new_password, force_change, admin_password, confirm: true }) }),
-  setIdentityUserQuota: (username: string, soft_mb: number, hard_mb: number | null, mountpoint: string | null, admin_password: string) => request(`/api/identity/users/${encodeURIComponent(username)}/quota`, { method: "POST", body: JSON.stringify({ soft_mb, hard_mb, mountpoint, admin_password, confirm: true }) }),
-  saveIdentityUserPolicy: (username: string, policy: { role: RbacRole; allow: string[]; deny: string[] }, admin_password: string) => request<IdentityUser>(`/api/identity/users/${encodeURIComponent(username)}/policy`, { method: "PUT", body: JSON.stringify({ ...policy, admin_password, confirm: true }) }),
+  deleteIdentityUser: (username: string, remove_home: boolean) => request(`/api/identity/users/${encodeURIComponent(username)}`, { method: "DELETE", body: JSON.stringify({ confirm: true, remove_home }) }),
+  lockIdentityUser: (username: string, locked: boolean) => request(`/api/identity/users/${encodeURIComponent(username)}/${locked ? "lock" : "unlock"}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  changeIdentityUserPassword: (username: string, new_password: string, force_change: boolean) => request(`/api/identity/users/${encodeURIComponent(username)}/password`, { method: "POST", body: JSON.stringify({ new_password, force_change, confirm: true }) }),
+  setIdentityUserQuota: (username: string, soft_mb: number, hard_mb: number | null, mountpoint: string | null) => request(`/api/identity/users/${encodeURIComponent(username)}/quota`, { method: "POST", body: JSON.stringify({ soft_mb, hard_mb, mountpoint, confirm: true }) }),
+  saveIdentityUserPolicy: (username: string, policy: { role: RbacRole; allow: string[]; deny: string[] }) => request<IdentityUser>(`/api/identity/users/${encodeURIComponent(username)}/policy`, { method: "PUT", body: JSON.stringify({ ...policy, confirm: true }) }),
   identityEffectivePermissions: (username: string) => request<IdentityProfile>(`/api/identity/users/${encodeURIComponent(username)}/effective-permissions`),
   identityGroups: (params: { search?: string; include_system?: boolean } = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== "" && value !== false) query.set(key, String(value)); }); return request<IdentityGroup[]>(`/api/identity/groups${query.size ? `?${query}` : ""}`); },
   createIdentityGroup: (payload: Record<string, unknown>) => request<IdentityGroup>("/api/identity/groups", { method: "POST", body: JSON.stringify(payload) }),
-  renameIdentityGroup: (groupname: string, new_name: string, admin_password: string) => request<IdentityGroup>(`/api/identity/groups/${encodeURIComponent(groupname)}`, { method: "PATCH", body: JSON.stringify({ new_name, admin_password, confirm: true }) }),
-  deleteIdentityGroup: (groupname: string, admin_password: string) => request(`/api/identity/groups/${encodeURIComponent(groupname)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm: true }) }),
-  setIdentityGroupMember: (groupname: string, username: string, present: boolean, admin_password: string) => request<IdentityGroup>(present ? `/api/identity/groups/${encodeURIComponent(groupname)}/members` : `/api/identity/groups/${encodeURIComponent(groupname)}/members/${encodeURIComponent(username)}`, { method: present ? "POST" : "DELETE", body: JSON.stringify({ username, admin_password, confirm: true }) }),
-  saveIdentityGroupPolicy: (groupname: string, policy: { allow: string[]; deny: string[] }, admin_password: string) => request<IdentityGroup>(`/api/identity/groups/${encodeURIComponent(groupname)}/policy`, { method: "PUT", body: JSON.stringify({ ...policy, admin_password, confirm: true }) }),
+  renameIdentityGroup: (groupname: string, new_name: string) => request<IdentityGroup>(`/api/identity/groups/${encodeURIComponent(groupname)}`, { method: "PATCH", body: JSON.stringify({ new_name, confirm: true }) }),
+  deleteIdentityGroup: (groupname: string) => request(`/api/identity/groups/${encodeURIComponent(groupname)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
+  setIdentityGroupMember: (groupname: string, username: string, present: boolean) => request<IdentityGroup>(present ? `/api/identity/groups/${encodeURIComponent(groupname)}/members` : `/api/identity/groups/${encodeURIComponent(groupname)}/members/${encodeURIComponent(username)}`, { method: present ? "POST" : "DELETE", body: JSON.stringify({ username, confirm: true }) }),
+  saveIdentityGroupPolicy: (groupname: string, policy: { allow: string[]; deny: string[] }) => request<IdentityGroup>(`/api/identity/groups/${encodeURIComponent(groupname)}/policy`, { method: "PUT", body: JSON.stringify({ ...policy, confirm: true }) }),
   adminUsers: () => request<AdminUser[]>("/api/admin/users"),
   createUser: (payload: Record<string, unknown>) => request<AdminUser>("/api/admin/users", { method: "POST", body: JSON.stringify(payload) }),
   patchUser: (username: string, payload: Record<string, unknown>) => request<AdminUser>(`/api/admin/users/${encodeURIComponent(username)}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteUser: (username: string, admin_password: string) => request(`/api/admin/users/${encodeURIComponent(username)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm: true }) }),
-  lockUser: (username: string, admin_password: string) => request(`/api/admin/users/${encodeURIComponent(username)}/lock`, { method: "POST", body: JSON.stringify({ admin_password }) }),
-  unlockUser: (username: string, admin_password: string) => request(`/api/admin/users/${encodeURIComponent(username)}/unlock`, { method: "POST", body: JSON.stringify({ admin_password }) }),
+  deleteUser: (username: string) => request(`/api/admin/users/${encodeURIComponent(username)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
+  lockUser: (username: string) => request(`/api/admin/users/${encodeURIComponent(username)}/lock`, { method: "POST", body: "{}" }),
+  unlockUser: (username: string) => request(`/api/admin/users/${encodeURIComponent(username)}/unlock`, { method: "POST", body: "{}" }),
   changeUserPassword: (username: string, payload: Record<string, unknown>) => request(`/api/admin/users/${encodeURIComponent(username)}/change-password`, { method: "POST", body: JSON.stringify(payload) }),
   setUserQuota: (username: string, payload: Record<string, unknown>) => request(`/api/admin/users/${encodeURIComponent(username)}/quota`, { method: "POST", body: JSON.stringify(payload) }),
   adminGroups: () => request<AdminGroup[]>("/api/admin/groups"),
   createGroup: (payload: Record<string, unknown>) => request("/api/admin/groups", { method: "POST", body: JSON.stringify(payload) }),
-  deleteGroup: (groupname: string, admin_password: string) => request(`/api/admin/groups/${encodeURIComponent(groupname)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm: true }) }),
+  deleteGroup: (groupname: string) => request(`/api/admin/groups/${encodeURIComponent(groupname)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
   addGroupMember: (groupname: string, payload: Record<string, unknown>) => request(`/api/admin/groups/${encodeURIComponent(groupname)}/members`, { method: "POST", body: JSON.stringify(payload) }),
-  removeGroupMember: (groupname: string, username: string, admin_password: string) => request(`/api/admin/groups/${encodeURIComponent(groupname)}/members/${encodeURIComponent(username)}`, { method: "DELETE", body: JSON.stringify({ admin_password }) }),
+  removeGroupMember: (groupname: string, username: string) => request(`/api/admin/groups/${encodeURIComponent(groupname)}/members/${encodeURIComponent(username)}`, { method: "DELETE", body: "{}" }),
   chown: (payload: Record<string, unknown>) => request("/api/admin/files/ownership", { method: "POST", body: JSON.stringify(payload) }),
   chmod: (path: string, mode: string) => request("/api/files/chmod", { method: "POST", body: JSON.stringify({ path, mode }) }),
   systemStatus: () => request<SystemStatus>("/api/admin/system/status"),
+  hostInfo: () => request<HostInfo>("/api/system/host-info"),
   resources: () => request<ResourceDashboard>("/api/system/resources"),
   systemLogs: (lines = 160) => request<SystemLogs>(`/api/admin/system/logs?lines=${lines}`),
   proxmoxSafety: () => request<ProxmoxSafety>("/api/admin/system/proxmox-safety"),
@@ -708,64 +721,64 @@ export const api = {
   appPlan: (id: string, action: PackagePlan["action"], remove_data = false) => request<PackagePlan>(`/api/apps/${encodeURIComponent(id)}/plan?action=${encodeURIComponent(action)}&remove_data=${remove_data}`, { method: "POST", body: "{}" }),
   appJobs: (status = "", moduleId = "") => { const query = new URLSearchParams(); if (status) query.set("status", status); if (moduleId) query.set("module_id", moduleId); return request<AppJob[]>(`/api/apps/jobs${query.size ? `?${query}` : ""}`); },
   appJob: (id: string) => request<AppJob>(`/api/apps/jobs/${encodeURIComponent(id)}`),
-  cancelAppJob: (id: string, admin_password: string) => request<AppJob>(`/api/apps/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: JSON.stringify({ admin_password, confirm_plan: true }) }),
-  retryAppJob: (id: string, admin_password: string) => request<AppJob>(`/api/apps/jobs/${encodeURIComponent(id)}/retry`, { method: "POST", body: JSON.stringify({ admin_password, confirm_plan: true }) }),
+  cancelAppJob: (id: string) => request<AppJob>(`/api/apps/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: JSON.stringify({ confirm_plan: true }) }),
+  retryAppJob: (id: string) => request<AppJob>(`/api/apps/jobs/${encodeURIComponent(id)}/retry`, { method: "POST", body: JSON.stringify({ confirm_plan: true }) }),
   appHistory: () => request<PackageHistoryItem[]>("/api/apps/history"),
   packageSources: () => request<PackageSource[]>("/api/apps/sources"),
   createPackageSource: (payload: Omit<PackageSource, "id" | "created_at" | "updated_at" | "last_sync_at" | "validation_error" | "metadata">) => request<PackageSource>("/api/apps/sources", { method: "POST", body: JSON.stringify(payload) }),
   updatePackageSource: (id: string, payload: Omit<PackageSource, "id" | "created_at" | "updated_at" | "last_sync_at" | "validation_error" | "metadata">) => request<PackageSource>(`/api/apps/sources/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) }),
   deletePackageSource: (id: string) => request(`/api/apps/sources/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
   syncPackageSource: (id: string) => request<PackageSource>(`/api/apps/sources/${encodeURIComponent(id)}/sync`, { method: "POST", body: "{}" }),
-  appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", admin_password: string, _dry_run = false, remove_data = false) => request<{ job?: AppJob; ok?: boolean }>(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm_plan: true, remove_data }) }),
+  appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", remove_data = false) => request<{ job?: AppJob; ok?: boolean }>(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ confirm_plan: true, remove_data }) }),
   modules: () => request<ModuleSummary[]>("/api/modules"),
   module: (id: string) => request<ModuleSummary>(`/api/modules/${encodeURIComponent(id)}`),
   moduleStatus: (id: string) => request<ModuleStatus>(`/api/modules/${encodeURIComponent(id)}/status`),
   moduleResource: (id: string, resource: string, limit = 200, search = "") => request<ModuleResource>(`/api/modules/${encodeURIComponent(id)}/resources/${encodeURIComponent(resource)}?limit=${limit}&search=${encodeURIComponent(search)}`),
-  moduleAction: (id: string, action: string, admin_password: string, payload: Record<string, unknown> = {}) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true, payload }) }),
+  moduleAction: (id: string, action: string, payload: Record<string, unknown> = {}) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`, { method: "POST", body: JSON.stringify({ confirm: true, payload }) }),
   moduleConnection: (id: string) => request<ModuleConnection>(`/api/modules/${encodeURIComponent(id)}/connection`),
-  saveModuleConnection: (id: string, connection: Omit<ModuleConnection, "secret_configured"> & { secret?: string }, admin_password: string) => request<ModuleConnection>(`/api/modules/${encodeURIComponent(id)}/connection`, { method: "PUT", body: JSON.stringify({ ...connection, admin_password, confirm: true }) }),
-  saveDockerCompose: (project: string, content: string, admin_password: string) => request<{ name: string; updated_at: number; size: number }>(`/api/modules/docker/compose/${encodeURIComponent(project)}`, { method: "PUT", body: JSON.stringify({ content, admin_password, confirm: true }) }),
+  saveModuleConnection: (id: string, connection: Omit<ModuleConnection, "secret_configured"> & { secret?: string }) => request<ModuleConnection>(`/api/modules/${encodeURIComponent(id)}/connection`, { method: "PUT", body: JSON.stringify({ ...connection, confirm: true }) }),
+  saveDockerCompose: (project: string, content: string) => request<{ name: string; updated_at: number; size: number }>(`/api/modules/docker/compose/${encodeURIComponent(project)}`, { method: "PUT", body: JSON.stringify({ content, confirm: true }) }),
   dockerCompose: (project: string) => request<{ name: string; content: string; updated_at: number; size: number }>(`/api/modules/docker/compose/${encodeURIComponent(project)}`),
   moduleConfig: (id: string) => request<ModuleConfig>(`/api/modules/${encodeURIComponent(id)}/config`),
   validateModuleConfig: (id: string, config: ModuleConfig) => request<ModuleValidationResult>(`/api/modules/${encodeURIComponent(id)}/validate`, { method: "POST", body: JSON.stringify({ config }) }),
-  applyModuleConfig: (id: string, config: ModuleConfig, admin_password: string, confirmations: string[] = []) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/apply`, { method: "POST", body: JSON.stringify({ config, admin_password, confirm: true, create_backup: true, confirm_smb1: confirmations.includes("smb1") }) }),
+  applyModuleConfig: (id: string, config: ModuleConfig, confirmations: string[] = []) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/apply`, { method: "POST", body: JSON.stringify({ config, confirm: true, create_backup: true, confirm_smb1: confirmations.includes("smb1") }) }),
   moduleLogs: (id: string, source = "", lines = 200, search = "", level = "") => { const query = new URLSearchParams({ source, lines: String(lines), search, level }); return request<{ sources: ModuleLogSource[]; source: string; lines: string[]; truncated: boolean }>(`/api/modules/${encodeURIComponent(id)}/logs?${query}`); },
   moduleDiagnostics: (id: string) => request<{ diagnostics: ModuleDiagnostic[]; job?: ModuleJob | null }>(`/api/modules/${encodeURIComponent(id)}/diagnostics`),
-  runModuleDiagnostics: (id: string, admin_password: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/diagnostics`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true }) }),
+  runModuleDiagnostics: (id: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/diagnostics`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   moduleBackups: (id: string) => request<ModuleBackup[]>(`/api/modules/${encodeURIComponent(id)}/backups`),
-  createModuleBackup: (id: string, admin_password: string, description = "") => request<ModuleBackup>(`/api/modules/${encodeURIComponent(id)}/backups`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true, description }) }),
-  restoreModuleBackup: (id: string, backupId: string, admin_password: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}/restore`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true }) }),
-  deleteModuleBackup: (id: string, backupId: string, admin_password: string) => request(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm: true }) }),
-  moduleService: (id: string, action: "start" | "stop" | "restart" | "reload" | "enable" | "disable", admin_password: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/service/${action}`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true }) }),
+  createModuleBackup: (id: string, description = "") => request<ModuleBackup>(`/api/modules/${encodeURIComponent(id)}/backups`, { method: "POST", body: JSON.stringify({ confirm: true, description }) }),
+  restoreModuleBackup: (id: string, backupId: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}/restore`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  deleteModuleBackup: (id: string, backupId: string) => request(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
+  moduleService: (id: string, action: "start" | "stop" | "restart" | "reload" | "enable" | "disable") => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/service/${action}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   sambaModuleUsers: () => request<SambaModuleUser[]>("/api/modules/samba/users"),
-  sambaModuleUserAction: (username: string, action: "add" | "password" | "enable" | "disable" | "remove", admin_password: string, password = "") => request("/api/modules/samba/users/" + encodeURIComponent(username) + "/" + action, { method: "POST", body: JSON.stringify({ admin_password, password, confirm: true }) }),
+  sambaModuleUserAction: (username: string, action: "add" | "password" | "enable" | "disable" | "remove", password = "") => request("/api/modules/samba/users/" + encodeURIComponent(username) + "/" + action, { method: "POST", body: JSON.stringify({ password, confirm: true }) }),
   sambaSessions: () => request<SambaSession[]>("/api/modules/samba/sessions"),
   testSambaShare: (name: string) => request<SambaShareAccess>(`/api/modules/samba/shares/${encodeURIComponent(name)}/test`),
-  removeSambaShare: (name: string, admin_password: string) => request<{ job: ModuleJob }>(`/api/modules/samba/shares/${encodeURIComponent(name)}`, { method: "DELETE", body: JSON.stringify({ admin_password, confirm: true, create_backup: true }) }),
-  uninstallModule: (id: string, admin_password: string, options: { remove_config: boolean; remove_data: boolean; create_backup: boolean; confirm_name?: string }) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/uninstall`, { method: "POST", body: JSON.stringify({ admin_password, confirm: true, ...options }) }),
+  removeSambaShare: (name: string) => request<{ job: ModuleJob }>(`/api/modules/samba/shares/${encodeURIComponent(name)}`, { method: "DELETE", body: JSON.stringify({ confirm: true, create_backup: true }) }),
+  uninstallModule: (id: string, options: { remove_config: boolean; remove_data: boolean; create_backup: boolean; confirm_name?: string }) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/uninstall`, { method: "POST", body: JSON.stringify({ confirm: true, ...options }) }),
   validateSambaImport: (content: string) => request<{ config: SambaConfig; validation: ModuleValidationResult }>("/api/modules/samba/import/validate", { method: "POST", body: JSON.stringify({ content }) }),
   sambaFirewall: () => request<{ adapter: string; ports: string[]; can_manage: boolean; plan: string[][] }>("/api/modules/samba/firewall"),
-  openSambaFirewall: (admin_password: string, confirm = true) => request<{ ok?: boolean; plan: string[][]; requires_confirmation?: boolean }>("/api/modules/samba/firewall/open", { method: "POST", body: JSON.stringify({ admin_password, confirm }) }),
+  openSambaFirewall: (confirm = true) => request<{ ok?: boolean; plan: string[][]; requires_confirmation?: boolean }>("/api/modules/samba/firewall/open", { method: "POST", body: JSON.stringify({ confirm }) }),
   rbacMe: () => request<{ role: RbacRole; permissions: string[]; role_source: string; is_admin: boolean }>("/api/rbac/me"),
   rbacRoles: () => request<RbacRoles>("/api/rbac/roles"),
   rbacAssignments: () => request<RbacAssignment[]>("/api/rbac/assignments"),
-  saveRbacAssignment: (assignment: Pick<RbacAssignment, "username" | "role" | "allow" | "deny">, admin_password: string) => request<RbacAssignment>(`/api/rbac/assignments/${encodeURIComponent(assignment.username)}`, { method: "PUT", body: JSON.stringify({ ...assignment, admin_password }) }),
+  saveRbacAssignment: (assignment: Pick<RbacAssignment, "username" | "role" | "allow" | "deny">) => request<RbacAssignment>(`/api/rbac/assignments/${encodeURIComponent(assignment.username)}`, { method: "PUT", body: JSON.stringify(assignment) }),
   appLogs: (id: string) => request<{ lines: string[] }>(`/api/apps/${encodeURIComponent(id)}/logs`),
   appConfig: (id: string) => request<SambaConfig>(`/api/apps/${encodeURIComponent(id)}/config`),
   storePlugins: () => request<{ plugins: StorePlugin[]; codex_template: string }>("/api/apps/plugins"),
   createStorePlugin: (plugin: Partial<StorePlugin>) => request<StorePlugin>("/api/apps/plugins", { method: "POST", body: JSON.stringify(plugin) }),
   updateStorePlugin: (id: string, plugin: Partial<StorePlugin>) => request<StorePlugin>(`/api/apps/plugins/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(plugin) }),
   deleteStorePlugin: (id: string) => request(`/api/apps/plugins/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  saveSambaConfig: (config: SambaConfig, admin_password: string, confirm_smb1 = false) => request<{ job: ModuleJob }>("/api/apps/samba/config", { method: "PUT", body: JSON.stringify({ config, admin_password, confirm_smb1 }) }),
-  setSambaPassword: (username: string, password: string, admin_password: string) => request("/api/apps/samba/smbpasswd", { method: "POST", body: JSON.stringify({ username, password, admin_password }) }),
+  saveSambaConfig: (config: SambaConfig, confirm_smb1 = false) => request<{ job: ModuleJob }>("/api/apps/samba/config", { method: "PUT", body: JSON.stringify({ config, confirm_smb1 }) }),
+  setSambaPassword: (username: string, password: string) => request("/api/apps/samba/smbpasswd", { method: "POST", body: JSON.stringify({ username, password }) }),
   sambaStatus: () => request<SambaStatus>("/api/apps/samba/status"),
   sambaUsers: () => request<SambaUser[]>("/api/apps/samba/users"),
   sambaPreview: (config: SambaConfig) => request<{ config: string; validation: SambaValidation }>("/api/apps/samba/preview", { method: "POST", body: JSON.stringify({ config }) }),
-  sambaApply: (config: SambaConfig, admin_password: string, confirm_smb1 = false) => request<{ job: ModuleJob }>("/api/apps/samba/apply", { method: "POST", body: JSON.stringify({ config, admin_password, confirm_smb1 }) }),
-  sambaRollback: (admin_password: string) => request("/api/apps/samba/rollback", { method: "POST", body: JSON.stringify({ admin_password }) }),
-  sambaService: (action: "start" | "stop" | "restart" | "reload", admin_password: string) => request<{ ok: boolean; status: SambaStatus }>("/api/apps/samba/service", { method: "POST", body: JSON.stringify({ action, admin_password }) }),
-  enableSambaUser: (username: string, password: string, admin_password: string) => request("/api/apps/samba/users/enable", { method: "POST", body: JSON.stringify({ username, password, admin_password }) }),
-  disableSambaUser: (username: string, admin_password: string) => request("/api/apps/samba/users/disable", { method: "POST", body: JSON.stringify({ username, admin_password }) }),
+  sambaApply: (config: SambaConfig, confirm_smb1 = false) => request<{ job: ModuleJob }>("/api/apps/samba/apply", { method: "POST", body: JSON.stringify({ config, confirm_smb1 }) }),
+  sambaRollback: () => request("/api/apps/samba/rollback", { method: "POST", body: "{}" }),
+  sambaService: (action: "start" | "stop" | "restart" | "reload") => request<{ ok: boolean; status: SambaStatus }>("/api/apps/samba/service", { method: "POST", body: JSON.stringify({ action }) }),
+  enableSambaUser: (username: string, password: string) => request("/api/apps/samba/users/enable", { method: "POST", body: JSON.stringify({ username, password }) }),
+  disableSambaUser: (username: string) => request("/api/apps/samba/users/disable", { method: "POST", body: JSON.stringify({ username }) }),
   mounts: () => request<NetworkMount[]>("/api/mounts"),
   mountRoots: () => request<NetworkMountRoot[]>("/api/mounts/roots"),
   localDisks: () => request<LocalDisk[]>("/api/files/local-disks"),

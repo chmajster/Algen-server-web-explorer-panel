@@ -283,15 +283,6 @@ def test_package_mutation_requires_csrf(monkeypatch):
     assert security.mutating_admin(Request({"type": "http", "method": "POST", "path": "/", "headers": headers})).username == "alice"
 
 
-def test_reauthentication_maps_pam_failure(monkeypatch):
-    monkeypatch.setattr(security, "authenticate", lambda username, password: (_ for _ in ()).throw(HTTPException(401, "bad")))
-
-    with pytest.raises(HTTPException) as exc:
-        security.reauthenticate(SimpleNamespace(username="alice"), "bad")
-
-    assert exc.value.detail["code"] == "AUTHENTICATION_FAILED"
-
-
 def test_samba_manifest_and_existing_renderer_remain_available():
     from app import apps
 
@@ -352,7 +343,7 @@ def test_package_install_route_checks_the_concrete_permission(monkeypatch):
     monkeypatch.setattr(package_router, "authorize", lambda user, permission: checked.append(permission))
     monkeypatch.setattr(package_router, "_enqueue_action", lambda module_id, action, payload, user: {"ok": True})
 
-    result = package_router.install_module("samba", AdminPackageAction(admin_password="fresh-pam", confirm_plan=True), SessionUser(username="admin", csrf_token="csrf"))
+    result = package_router.install_module("samba", AdminPackageAction(confirm_plan=True), SessionUser(username="admin", csrf_token="csrf"))
 
     assert result == {"ok": True}
     assert checked == [Permission.MODULES_INSTALL]

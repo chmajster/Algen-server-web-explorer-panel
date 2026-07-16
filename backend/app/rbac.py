@@ -10,14 +10,12 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import Field
 
 from .config import get_config
 from .identity.linux_accounts import is_linux_admin as is_linux_admin
 from .identity.models import Role as Role, UserPolicy
 from .identity.permissions import ALL_PERMISSIONS, LEGACY_PERMISSION_MAP, ROLE_PERMISSIONS, Permission, authorize, has_permission as has_permission, normalize_permissions, require_permission
 from .identity.repository import IdentityRepository
-from .identity.router import _reauth
 from .identity.service import access_profile, service
 from .security import SessionUser, get_session_user, require_csrf
 
@@ -34,7 +32,7 @@ class RoleAssignment(UserPolicy):
 
 
 class RoleAssignmentRequest(RoleAssignment):
-    admin_password: str = Field(min_length=1, max_length=1024)
+    pass
 
 
 def _path() -> Path:
@@ -125,7 +123,6 @@ def save_assignment(username: str, payload: RoleAssignmentRequest, request: Requ
         from .identity.exceptions import identity_error
 
         identity_error(400, "INVALID_USERNAME", "Assignment username does not match the route", field="username")
-    _reauth(request, user, payload.admin_password, "user_policy_update", username)
     from .identity.models import UserPolicyRequest
 
-    return service().save_user_policy(username, UserPolicyRequest(admin_password=payload.admin_password, role=payload.role, allow=payload.allow, deny=payload.deny), user.username)
+    return service().save_user_policy(username, UserPolicyRequest(role=payload.role, allow=payload.allow, deny=payload.deny), user.username)

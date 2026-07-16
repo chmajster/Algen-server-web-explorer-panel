@@ -119,7 +119,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now webnas
 ```
 
-The root service context is intentional: WebNAS uses PAM and authenticated user contexts for file operations, while Package Center performs validated package-manager and systemd actions. `ProtectHome=false` is also intentional: workers drop to the authenticated UID and the path policy confines them to configured roots, while a read-only systemd home mount would prevent users from creating their own files. Do not expose WebNAS directly to the public internet. Keep the session secret private, restrict network access, and use TLS through a trusted reverse proxy. Package Center never accepts command strings from the browser and still requires an administrator session, CSRF token, confirmed plan, and fresh PAM password.
+The root service context is intentional: WebNAS uses PAM for login and authenticated user contexts for file operations, while Package Center performs validated package-manager and systemd actions. `ProtectHome=false` is also intentional: workers drop to the authenticated UID and the path policy confines them to configured roots, while a read-only systemd home mount would prevent users from creating their own files. Do not expose WebNAS directly to the public internet. Keep the session secret private, restrict network access, and use TLS through a trusted reverse proxy. Package Center never accepts command strings from the browser and requires an authenticated session, a concrete RBAC permission, CSRF token, and confirmed plan.
 
 ## Package Center installation notes
 
