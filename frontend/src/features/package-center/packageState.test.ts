@@ -58,26 +58,26 @@ describe("Package Center state matrix", () => {
   it("offers opening and stopping for an installed running package", () => {
     const item = packageItem({ installed: true, running: true });
     expect(getPackageUiStatus(item)).toBe("running");
-    expect(getPackageActions(item)).toEqual(["open", "stop"]);
+    expect(getPackageActions(item)).toEqual(["open", "stop", "reinstall"]);
     expect(getPackageActions(item)).not.toContain("install");
   });
 
-  it("offers only start for service control when an installed package is stopped", () => {
+  it("offers start and reinstall when an installed package is stopped", () => {
     const item = packageItem({ installed: true });
     expect(getPackageUiStatus(item)).toBe("stopped");
-    expect(getPackageActions(item)).toEqual(["start"]);
+    expect(getPackageActions(item)).toEqual(["start", "reinstall"]);
   });
 
   it("offers configuration before service actions when configuration is invalid", () => {
     const item = packageItem({ installed: true, needsConfig: true });
     expect(getPackageUiStatus(item)).toBe("needs_config");
-    expect(getPackageActions(item)).toEqual(["configure"]);
+    expect(getPackageActions(item)).toEqual(["configure", "reinstall"]);
   });
 
   it("adds update while preserving valid running service actions", () => {
     const item = packageItem({ installed: true, running: true, update: true });
     expect(getPackageUiStatus(item)).toBe("update_available");
-    expect(getPackageActions(item)).toEqual(["update", "open", "stop"]);
+    expect(getPackageActions(item)).toEqual(["update", "open", "stop", "reinstall"]);
   });
 
   it("normalizes technical failures to the user-facing error state", () => {

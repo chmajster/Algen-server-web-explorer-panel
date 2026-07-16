@@ -113,7 +113,22 @@ describe("Package Center", () => {
     fireEvent.click(within(sambaCard!).getByRole("button", { name: "action.open" }));
     expect(open).toHaveBeenCalledWith("samba");
     expect(within(sambaCard!).getByRole("button", { name: "store.stop" })).toBeInTheDocument();
+    expect(within(sambaCard!).getByRole("button", { name: "store.reinstall" })).toBeInTheDocument();
     expect(within(sambaCard!).queryByRole("button", { name: "store.install" })).not.toBeInTheDocument();
+  });
+
+  it("shows a reinstall plan and queues it for an installed package", async () => {
+    const installed = summary("samba", { state: { installed: true, installed_version: "1.0.0", available_version: "1.0.0", update_available: false, requires_reboot: false }, services: { smbd: "active" }, status: "running" });
+    vi.mocked(api.modules).mockResolvedValue([installed]);
+    vi.mocked(api.appPlan).mockResolvedValue({ ...packagePlan, action: "reinstall", steps: ["apt-get install -y --reinstall --no-install-recommends samba smbclient cifs-utils"] });
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+
+    const sambaCard = (await screen.findByText("Samba")).closest("article");
+    fireEvent.click(within(sambaCard!).getByRole("button", { name: "store.reinstall" }));
+
+    expect(await screen.findByText("apt-get install -y --reinstall --no-install-recommends samba smbclient cifs-utils")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "package.confirmOperation" }));
+    await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("samba", "reinstall", false));
   });
 
   it("disables package actions and shows progress while an operation is active", async () => {

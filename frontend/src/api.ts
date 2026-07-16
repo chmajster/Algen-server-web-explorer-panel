@@ -377,7 +377,7 @@ export type ModuleLogSource = { id: string; label: string };
 export type ModuleSummary = PackageModule & { module_status: ModuleStatus; capabilities: ModuleCapability; active_job?: ModuleJob | null };
 export type PackagePlan = {
   module_id: string;
-  action: "install" | "update" | "uninstall" | "start" | "stop" | "restart" | "reload" | "enable" | "disable" | "apply" | "diagnostics" | "restore" | "firewall" | "manage";
+  action: "install" | "reinstall" | "update" | "uninstall" | "start" | "stop" | "restart" | "reload" | "enable" | "disable" | "apply" | "diagnostics" | "restore" | "firewall" | "manage";
   distribution: { id: string; name: string; version_id: string; architecture: string; package_manager?: string | null };
   compatible: boolean;
   blocked_by_proxmox: boolean;
@@ -729,7 +729,7 @@ export const api = {
   updatePackageSource: (id: string, payload: Omit<PackageSource, "id" | "created_at" | "updated_at" | "last_sync_at" | "validation_error" | "metadata">) => request<PackageSource>(`/api/apps/sources/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(payload) }),
   deletePackageSource: (id: string) => request(`/api/apps/sources/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
   syncPackageSource: (id: string) => request<PackageSource>(`/api/apps/sources/${encodeURIComponent(id)}/sync`, { method: "POST", body: "{}" }),
-  appAction: (id: string, action: "install" | "uninstall" | "update" | "start" | "stop" | "restart", remove_data = false) => request<{ job?: AppJob; ok?: boolean }>(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ confirm_plan: true, remove_data }) }),
+  appAction: (id: string, action: "install" | "reinstall" | "uninstall" | "update" | "start" | "stop" | "restart", remove_data = false) => request<{ job?: AppJob; ok?: boolean }>(`/api/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ confirm_plan: true, remove_data }) }),
   modules: () => request<ModuleSummary[]>("/api/modules"),
   module: (id: string) => request<ModuleSummary>(`/api/modules/${encodeURIComponent(id)}`),
   moduleStatus: (id: string) => request<ModuleStatus>(`/api/modules/${encodeURIComponent(id)}/status`),

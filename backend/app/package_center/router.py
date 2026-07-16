@@ -185,7 +185,7 @@ def package_plan(module_id: str, action: PackageAction = PackageAction.install, 
 def _package_permission(action: PackageAction) -> Permission:
     if action == PackageAction.install:
         return Permission.MODULES_INSTALL
-    if action == PackageAction.update:
+    if action in {PackageAction.reinstall, PackageAction.update}:
         return Permission.MODULES_UPDATE
     if action == PackageAction.uninstall:
         return Permission.MODULES_UNINSTALL
@@ -209,6 +209,12 @@ def install_module(module_id: str, payload: AdminPackageAction, user: SessionUse
 def update_module(module_id: str, payload: AdminPackageAction, user: SessionUser = Depends(mutating_user)):
     authorize(user, Permission.MODULES_UPDATE)
     return _enqueue_action(module_id, PackageAction.update, payload, user)
+
+
+@router.post("/{module_id}/reinstall")
+def reinstall_module(module_id: str, payload: AdminPackageAction, user: SessionUser = Depends(mutating_user)):
+    authorize(user, Permission.MODULES_UPDATE)
+    return _enqueue_action(module_id, PackageAction.reinstall, payload, user)
 
 
 @router.post("/{module_id}/uninstall")

@@ -110,7 +110,7 @@ class ComposeSaveRequest(ModuleAdminRequest):
     content: str = Field(max_length=512 * 1024)
 
 
-def _authorize(user: SessionUser, module_id: str, operation: Literal["view", "operate", "configure", "install", "update", "uninstall", "backup", "restore", "backup_delete", "logs", "diagnostics"]) -> None:
+def _authorize(user: SessionUser, module_id: str, operation: Literal["view", "operate", "configure", "install", "reinstall", "update", "uninstall", "backup", "restore", "backup_delete", "logs", "diagnostics"]) -> None:
     authorize(user, module_permission(module_id, operation))
 
 
@@ -346,12 +346,12 @@ def module_management_action(module_id: str, operation: str, payload: ModuleActi
 
 def _package_action(module_id: str, action: PackageAction, payload: ModuleAdminRequest, user: SessionUser) -> dict:
     provider = get_provider(module_id, user.username)
-    provider.assert_capability(action.value)
+    provider.assert_capability("update" if action == PackageAction.reinstall else action.value)
     if action == PackageAction.uninstall and payload.remove_data and module_id == "samba" and payload.confirm_name != "Samba":
         api_error(400, "MODULE_NAME_CONFIRMATION_REQUIRED", "Type Samba to confirm removal of module data")
     plan = plan_operation(module_id, action, remove_data=payload.remove_data)
     plan.payload["remove_config"] = payload.remove_config
-    plan.create_backup = payload.create_backup and action in {PackageAction.update, PackageAction.uninstall} and provider.manifest.capabilities.backups
+    plan.create_backup = payload.create_backup and action in {PackageAction.reinstall, PackageAction.update, PackageAction.uninstall} and provider.manifest.capabilities.backups
     if payload.remove_config:
         plan.warnings.append("WebNAS-managed module configuration will be removed")
     return _enqueue(plan, payload, user)
@@ -367,6 +367,12 @@ def module_install(module_id: str, payload: ModuleAdminRequest, user: SessionUse
 def module_update(module_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
     _authorize(user, module_id, "update")
     return _package_action(module_id, PackageAction.update, payload, user)
+
+
+@router.post("/{module_id}/reinstall")
+def module_reinstall(module_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
+    _authorize(user, module_id, "reinstall")
+    return _package_action(module_id, PackageAction.reinstall, payload, user)
 
 
 @router.post("/{module_id}/uninstall")

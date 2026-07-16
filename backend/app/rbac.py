@@ -50,9 +50,9 @@ def _write(assignments: dict[str, RoleAssignment]) -> None:
         store.save_user_policy(UserPolicy.model_validate(assignment.model_dump(mode="json")), "compatibility")
 
 
-def module_permission(module_id: str, operation: Literal["view", "operate", "configure", "install", "update", "uninstall", "backup", "restore", "backup_delete", "logs", "diagnostics"]) -> str:
-    if operation in {"install", "update", "uninstall"}:
-        return {"install": Permission.MODULES_INSTALL.value, "update": Permission.MODULES_UPDATE.value, "uninstall": Permission.MODULES_UNINSTALL.value}[operation]
+def module_permission(module_id: str, operation: Literal["view", "operate", "configure", "install", "reinstall", "update", "uninstall", "backup", "restore", "backup_delete", "logs", "diagnostics"]) -> str:
+    if operation in {"install", "reinstall", "update", "uninstall"}:
+        return {"install": Permission.MODULES_INSTALL.value, "reinstall": Permission.MODULES_UPDATE.value, "update": Permission.MODULES_UPDATE.value, "uninstall": Permission.MODULES_UNINSTALL.value}[operation]
     if operation == "backup_delete":
         return Permission.MODULES_BACKUP_DELETE.value
     if module_id == "linux-updates":

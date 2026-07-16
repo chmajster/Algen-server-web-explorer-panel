@@ -4,7 +4,7 @@ import type { Translate } from "../../app/types";
 import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, packageActionLabelKey, type PackageDisplayAction } from "./packageState";
 import type { PackageAction } from "./types";
 
-const KNOWN_OPERATIONS = new Set(["install", "update", "uninstall", "start", "stop", "restart"]);
+const KNOWN_OPERATIONS = new Set(["install", "reinstall", "update", "uninstall", "start", "stop", "restart"]);
 
 function catalogIcon(icon: string) {
   if (icon === "share-2") return <Share2 />;

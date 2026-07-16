@@ -52,6 +52,18 @@ describe("API errors", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/files/local-disks", expect.objectContaining({ credentials: "include" }));
   });
 
+  it("queues a package reinstall through its dedicated endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ job: { id: "job-1" } }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.appAction("samba", "reinstall");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/apps/samba/reinstall",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ confirm_plan: true, remove_data: false }), credentials: "include" })
+    );
+  });
+
   it("loads authenticated host information for Settings", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ hostname: "nas-one" }) });
     vi.stubGlobal("fetch", fetchMock);

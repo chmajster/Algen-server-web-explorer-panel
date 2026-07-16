@@ -15,6 +15,7 @@ ARCH_RE = re.compile(r"^[A-Za-z0-9_.-]{1,32}$")
 
 class PackageAction(StrEnum):
     install = "install"
+    reinstall = "reinstall"
     update = "update"
     uninstall = "uninstall"
     start = "start"

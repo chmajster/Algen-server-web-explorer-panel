@@ -153,20 +153,26 @@ def get_module(module_id: str) -> dict:
 def plan_operation(module_id: str, action: PackageAction, *, remove_data: bool = False) -> PackagePlan:
     manifest = load_manifest(module_id)
     repo = repository()
+    _migrate_samba_state(repo)
     installed = repo.installed()
     distro = detect_distribution()
     is_compatible = compatible(manifest, distro)
     blocked = safe_mode_active() and not manifest.proxmox_safe
     if blocked:
         api_error(403, "MODULE_BLOCKED_BY_PROXMOX", "Module is blocked by Proxmox Safe Mode")
-    if action in {PackageAction.install, PackageAction.update, PackageAction.uninstall} and not is_compatible:
+    package_actions = {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}
+    if action in package_actions and not is_compatible:
         code = "PACKAGE_MANAGER_UNAVAILABLE" if distro.package_manager is None else "MODULE_INCOMPATIBLE"
         api_error(409, code, "Module is not compatible with this system")
     if action == PackageAction.uninstall and not manifest.removable:
         api_error(409, "MODULE_NOT_REMOVABLE", "Module cannot be removed")
     record = installed.get(module_id)
+    if action == PackageAction.reinstall and not record:
+        api_error(409, "MODULE_NOT_INSTALLED", "Only an installed module can be reinstalled")
+    if action == PackageAction.reinstall and not manifest.capabilities.update:
+        api_error(409, "MODULE_REINSTALL_UNSUPPORTED", "Module does not support package reinstallation")
     packages = packages_for(manifest, distro)
-    if action in {PackageAction.install, PackageAction.update, PackageAction.uninstall} and not packages:
+    if action in package_actions and not packages:
         api_error(409, "MODULE_INCOMPATIBLE", "Module has no package mapping for the selected package manager")
     conflicts = [item for item in manifest.conflicts if item in installed]
     warnings: list[str] = []
@@ -178,6 +184,10 @@ def plan_operation(module_id: str, action: PackageAction, *, remove_data: bool =
         warnings.append("A system restart is required after this operation")
     if action == PackageAction.uninstall:
         warnings.append("Configuration and user data are preserved by default")
+    if action == PackageAction.reinstall:
+        warnings.append("Installed packages will be reinstalled; WebNAS-managed configuration and user data will be preserved")
+        if manifest.capabilities.backups:
+            warnings.append("A configuration backup will be created before reinstallation")
     steps: list[str] = []
     plan = PackagePlan(
         module_id=module_id,
@@ -199,6 +209,7 @@ def plan_operation(module_id: str, action: PackageAction, *, remove_data: bool =
         previous_version=record["version"] if record else None,
         target_version=None if action == PackageAction.uninstall else manifest.version,
         steps=steps,
+        create_backup=action == PackageAction.reinstall and manifest.capabilities.backups,
     )
     plan.steps = [" ".join(command) for command in command_preview(plan, manifest)]
     return plan

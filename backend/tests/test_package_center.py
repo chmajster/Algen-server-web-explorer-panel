@@ -99,6 +99,25 @@ def test_dry_run_contains_packages_services_and_safe_commands(monkeypatch, tmp_p
     assert not any("upgrade" in step or "autoremove" in step for step in result.steps)
 
 
+def test_reinstall_plan_requires_an_installed_module_and_uses_package_manager_reinstall(monkeypatch, tmp_path):
+    repository = PackageRepository(tmp_path / "packages.sqlite3")
+    monkeypatch.setattr(service, "repository", lambda: repository)
+    monkeypatch.setattr(service, "_migrate_samba_state", lambda repo: None)
+    monkeypatch.setattr(service, "detect_distribution", lambda: DistributionInfo(id="debian", name="Debian", architecture="x86_64", package_manager="apt-get"))
+    monkeypatch.setattr(service, "safe_mode_active", lambda: False)
+
+    with pytest.raises(HTTPException) as exc:
+        service.plan_operation("samba", PackageAction.reinstall)
+    assert exc.value.detail["code"] == "MODULE_NOT_INSTALLED"
+
+    repository.mark_installed("samba", "1.0.0", "admin", False)
+    result = service.plan_operation("samba", PackageAction.reinstall)
+
+    assert result.create_backup is True
+    assert any(step.startswith("apt-get install -y --reinstall --no-install-recommends samba smbclient cifs-utils") for step in result.steps)
+    assert any("preserved" in warning for warning in result.warnings)
+
+
 @pytest.mark.parametrize("module_id", ["samba", "squid", "nginx", "syncthing"])
 def test_every_production_module_builds_an_apt_plan(module_id, monkeypatch, tmp_path):
     repository = PackageRepository(tmp_path / f"{module_id}.sqlite3")
@@ -255,6 +274,22 @@ def test_install_hook_runs_after_package_install_and_before_service_start(monkey
     assert install_index < hook_index < start_index
 
 
+def test_reinstall_uses_the_trusted_install_hook_and_healthcheck(monkeypatch):
+    calls: list[list[str]] = []
+    package_plan = plan("syncthing", PackageAction.reinstall)
+    manifest = manifests.load_manifest("syncthing")
+    monkeypatch.setattr(executor.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(executor, "_run", lambda args, timeout, log: calls.append(args))
+    monkeypatch.setattr(executor, "_run_hook", lambda module, action, log: calls.append(["hook", action]))
+
+    executor.execute(package_plan, manifest, lambda stream, line: None, lambda percent, step: None, lambda: False)
+
+    reinstall_index = next(index for index, args in enumerate(calls) if "--reinstall" in args)
+    install_hook_index = calls.index(["hook", "install"])
+    health_hook_index = calls.index(["hook", "health"])
+    assert reinstall_index < install_hook_index < health_hook_index
+
+
 def test_redacts_secrets_and_executor_never_uses_shell_true():
     assert "secret=[REDACTED]" in executor.redact("secret=hunter2")
     assert "password: [REDACTED]" in executor.redact("password: admin")
@@ -326,6 +361,7 @@ def test_package_center_router_exposes_required_contract():
         ("GET", "/api/apps/sources"),
         ("POST", "/api/apps/{module_id}/plan"),
         ("POST", "/api/apps/{module_id}/install"),
+        ("POST", "/api/apps/{module_id}/reinstall"),
         ("POST", "/api/apps/{module_id}/update"),
         ("POST", "/api/apps/{module_id}/uninstall"),
         ("POST", "/api/apps/{module_id}/start"),
@@ -350,3 +386,19 @@ def test_package_install_route_checks_the_concrete_permission(monkeypatch):
 
     assert result == {"ok": True}
     assert checked == [Permission.MODULES_INSTALL]
+
+
+def test_package_reinstall_route_uses_update_permission(monkeypatch):
+    from app.identity.permissions import Permission
+    from app.package_center import router as package_router
+    from app.package_center.models import AdminPackageAction
+    from app.security import SessionUser
+
+    checked = []
+    monkeypatch.setattr(package_router, "authorize", lambda user, permission: checked.append(permission))
+    monkeypatch.setattr(package_router, "_enqueue_action", lambda module_id, action, payload, user: {"action": action.value})
+
+    result = package_router.reinstall_module("samba", AdminPackageAction(confirm_plan=True), SessionUser(username="admin", csrf_token="csrf"))
+
+    assert result == {"action": "reinstall"}
+    assert checked == [Permission.MODULES_UPDATE]

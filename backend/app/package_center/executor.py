@@ -52,6 +52,16 @@ def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[st
         for service in required_services:
             steps.append((f"Enable {service}", ["systemctl", "enable", service], 120))
             steps.append((f"Start {service}", ["systemctl", "start", service], 180))
+    elif plan.action == PackageAction.reinstall:
+        if manager == "apt-get":
+            steps.append(("Refresh package metadata", ["apt-get", "update"], 900))
+            steps.append(("Reinstall packages", ["apt-get", "install", "-y", "--reinstall", "--no-install-recommends", *packages], 1800))
+        elif manager in {"dnf", "yum"}:
+            steps.append(("Reinstall packages", [manager, "reinstall", "-y", *packages], 1800))
+        steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
+        for service in required_services:
+            steps.append((f"Enable {service}", ["systemctl", "enable", service], 120))
+            steps.append((f"Start {service}", ["systemctl", "start", service], 180))
     elif plan.action == PackageAction.uninstall:
         for service in reversed(required_services):
             steps.append((f"Stop {service}", ["systemctl", "stop", service], 180))
@@ -147,17 +157,19 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
             raise InterruptedError("Package operation cancelled before the next safe step")
         progress(max(1, int(index / total * 90)), label)
         _run(args, timeout, log)
-        if label in {"Install packages", "Remove packages"} and plan.action in {PackageAction.install, PackageAction.update, PackageAction.uninstall}:
-            progress(max(1, int((index + 0.5) / total * 90)), f"Run trusted {plan.action.value} hook")
-            _run_hook(manifest, plan.action.value, log)
+        if label in {"Install packages", "Reinstall packages", "Remove packages"} and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
+            hook_action = "install" if plan.action == PackageAction.reinstall else plan.action.value
+            progress(max(1, int((index + 0.5) / total * 90)), f"Run trusted {hook_action} hook")
+            _run_hook(manifest, hook_action, log)
             hook_complete = True
-    if plan.action in {PackageAction.install, PackageAction.update, PackageAction.uninstall} and not hook_complete:
-        progress(92, f"Run trusted {plan.action.value} hook")
-        _run_hook(manifest, plan.action.value, log)
+    if plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall} and not hook_complete:
+        hook_action = "install" if plan.action == PackageAction.reinstall else plan.action.value
+        progress(92, f"Run trusted {hook_action} hook")
+        _run_hook(manifest, hook_action, log)
     if plan.action == PackageAction.uninstall and plan.remove_data:
         progress(96, "Remove module data")
         _remove_data(manifest, log)
-    if plan.action in {PackageAction.install, PackageAction.update} and manifest.healthcheck:
+    if plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update} and manifest.healthcheck:
         progress(97, "Run health check")
         _run_hook(manifest, "health", log)
     if plan.action == PackageAction.uninstall:
