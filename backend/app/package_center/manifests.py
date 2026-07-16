@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from ..modules import BUILTIN_MODULE_IDS
 from .models import MODULE_ID_RE, ModuleManifest, api_error
 
 MODULES_DIR = Path(__file__).resolve().parents[1] / "modules"
@@ -46,14 +47,18 @@ def discover_manifests(modules_dir: Path = MODULES_DIR) -> list[ModuleManifest]:
     manifests: list[ModuleManifest] = []
     if not modules_dir.exists():
         return manifests
-    for directory in sorted(modules_dir.iterdir()):
+    directories = {directory.name: directory for directory in modules_dir.iterdir() if directory.is_dir() and MODULE_ID_RE.fullmatch(directory.name)}
+    ordered_ids = [module_id for module_id in BUILTIN_MODULE_IDS if module_id in directories]
+    ordered_ids.extend(sorted(set(directories) - set(ordered_ids)))
+    for module_id in ordered_ids:
+        directory = directories[module_id]
         if not directory.is_dir() or not MODULE_ID_RE.fullmatch(directory.name):
             continue
         # The modules package also contains provider infrastructure. A directory
         # becomes a user-visible module only by explicitly declaring a manifest.
         if not (directory / "manifest.yaml").is_file():
             continue
-        manifest = load_manifest(directory.name, modules_dir)
+        manifest = load_manifest(module_id, modules_dir)
         if not manifest.ui.hidden:
             manifests.append(manifest)
     return manifests

@@ -63,6 +63,15 @@ describe("personalized desktop", () => {
     expect(screen.getByRole("button", { name: "app.identity" })).toBeInTheDocument();
   });
 
+  it("keeps Samba inside the shared module applications instead of the launcher", () => {
+    renderDesktop({ is_admin: true, permissions: [...settingsFixture().permissions, "modules.view", "modules.install"] });
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    expect(screen.queryByRole("button", { name: "app.samba" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "app.modules" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "app.store" })).toBeInTheDocument();
+  });
+
   it("does not restore an identity window after permission is removed", () => {
     localStorage.setItem("webnas_windows_test", JSON.stringify({ windows: [{ id: "identity-1", app: "identity", rect: { x: 20, y: 20, width: 900, height: 600 }, minimized: false, zIndex: 11 }], activeId: "identity-1", counter: 1, topZ: 11 }));
     renderDesktop({ startup_windows: "last", permissions: settingsFixture().permissions });

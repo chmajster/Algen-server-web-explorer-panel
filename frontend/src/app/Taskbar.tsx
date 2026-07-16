@@ -24,7 +24,7 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
 }) {
   const [sessionOpen, setSessionOpen] = useState(false);
   const sessionRef = useRef<HTMLDivElement>(null);
-  const visibleApps = useMemo(() => apps.filter((app) => pinned.has(app.id) || windows.some((item) => item.app === app.id)), [apps, pinned, windows]);
+  const visibleApps = useMemo(() => apps.filter((app) => (!app.hidden && pinned.has(app.id)) || windows.some((item) => item.app === app.id)), [apps, pinned, windows]);
   const activeWindow = windows.find((item) => item.id === activeId);
 
   useEffect(() => {

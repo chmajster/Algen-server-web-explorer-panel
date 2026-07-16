@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException, Request, Response
 
 from app import security as session_security
+from app.modules import BUILTIN_MODULE_IDS
 from app.package_center import distro, executor, jobs, manifests, security, service
 from app.package_center.jobs import PackageJobManager
 from app.package_center.detached_updates import update_session_directory, write_update_state
@@ -27,11 +28,13 @@ def plan(module_id: str = "nginx", action: PackageAction = PackageAction.install
     )
 
 
-def test_discovers_four_valid_production_manifests_and_hides_example():
-    found = {item.id: item for item in manifests.discover_manifests()}
+def test_discovers_registered_production_manifests_and_hides_example():
+    discovered = manifests.discover_manifests()
+    found = {item.id: item for item in discovered}
 
-    assert {"samba", "squid", "nginx", "syncthing"} <= set(found)
+    assert set(BUILTIN_MODULE_IDS) <= set(found)
     assert "example" not in found
+    assert discovered[0].id == "samba"
     assert found["samba"].category == "file_sharing"
 
 

@@ -14,7 +14,9 @@ export const apps: AppDefinition[] = [
   // Kept in the registry so saved windows/localStorage using the legacy AppId
   // restore safely. It is no longer shown as a separate launcher app.
   { id: "mounts", labelKey: "app.networkMounts", icon: <Network />, permission: "network_resources.view", hidden: true },
-  { id: "samba", labelKey: "app.samba", icon: <Share2 />, permission: "modules.view" },
+  // Legacy AppId retained only so old saved windows restore safely. Samba is
+  // opened from Package Center and the shared Modules application now.
+  { id: "samba", labelKey: "app.samba", icon: <Share2 />, permission: "modules.view", hidden: true, minWidth: 760, minHeight: 500 },
   { id: "modules", labelKey: "app.modules", icon: <Boxes />, permission: "modules.view", minWidth: 760, minHeight: 500 },
   { id: "access", labelKey: "app.access", icon: <ShieldCheck />, permission: "access.view", hidden: true, minWidth: 760, minHeight: 500 },
   { id: "services", labelKey: "app.services", icon: <ServerCog />, permission: "services.view" },
