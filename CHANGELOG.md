@@ -106,6 +106,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 ### Fixed
 
 - Accessibility interface scale and larger-text settings now resize typography consistently across the desktop. Scale options submit numeric values instead of percent-suffixed strings, fixed pixel font sizes use scalable `rem` units, and taskbar/title-bar dimensions receive browser-compatible precomputed values.
+- Modal forms now retain the active input, cursor position, and entered value while parent views refresh; Escape handling still uses the latest close callback without restarting the focus trap.
 
 ### Changed
 
