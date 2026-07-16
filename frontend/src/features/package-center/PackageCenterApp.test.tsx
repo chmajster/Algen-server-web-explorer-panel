@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { within } from "@testing-library/react";
-import { api, type ModuleSummary, type PackageModule, type PackagePlan } from "../../api";
+import { api, type AppJob, type ModuleSummary, type PackageModule, type PackagePlan } from "../../api";
 import en from "../../locales/en-US.json";
 import pl from "../../locales/pl-PL.json";
 import { PackageCenterApp } from "./PackageCenterApp";
@@ -42,6 +42,7 @@ function summary(id: string, overrides: Partial<PackageModule> = {}): ModuleSumm
 }
 
 const packagePlan: PackagePlan = { module_id: "samba", action: "install", distribution: { id: "debian", name: "Debian", version_id: "12", architecture: "x86_64", package_manager: "apt-get" }, compatible: true, blocked_by_proxmox: false, packages: ["samba", "smbclient", "cifs-utils"], services: ["smbd"], ports: ["445/tcp"], config_paths: ["/etc/samba/smb.conf"], data_paths: ["/var/lib/samba"], permissions: ["systemd"], dependencies: [], conflicts: [], warnings: [], requires_reboot: false, remove_data: false, target_version: "1.0.0", steps: ["apt-get install -y samba smbclient cifs-utils"] };
+const queuedInstall: AppJob = { id: "install-1", module_id: "samba", action: "install", status: "queued", progress: 0, created_at: 1, error: "", current_step: "Queued", log_tail: [] };
 
 describe("Package Center", () => {
   beforeEach(() => {
@@ -54,7 +55,7 @@ describe("Package Center", () => {
     vi.mocked(api.appHistory).mockResolvedValue([]);
     vi.mocked(api.packageSources).mockResolvedValue([]);
     vi.mocked(api.appPlan).mockResolvedValue(packagePlan);
-    vi.mocked(api.appAction).mockResolvedValue({ job: undefined });
+    vi.mocked(api.appAction).mockResolvedValue({ job: queuedInstall });
   });
 
   it("renders, searches, filters and opens package details", async () => {
@@ -100,6 +101,8 @@ describe("Package Center", () => {
     expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "package.confirmOperation" }));
     await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("samba", "install", false));
+    expect(await screen.findByRole("dialog", { name: "package.liveJobTitle" })).toBeInTheDocument();
+    expect(screen.getByText("package.backgroundJobHint")).toBeInTheDocument();
   });
 
   it("offers opening and service control for an installed module", async () => {
@@ -113,22 +116,8 @@ describe("Package Center", () => {
     fireEvent.click(within(sambaCard!).getByRole("button", { name: "action.open" }));
     expect(open).toHaveBeenCalledWith("samba");
     expect(within(sambaCard!).getByRole("button", { name: "store.stop" })).toBeInTheDocument();
-    expect(within(sambaCard!).getByRole("button", { name: "store.reinstall" })).toBeInTheDocument();
+    expect(within(sambaCard!).queryByRole("button", { name: "store.reinstall" })).not.toBeInTheDocument();
     expect(within(sambaCard!).queryByRole("button", { name: "store.install" })).not.toBeInTheDocument();
-  });
-
-  it("shows a reinstall plan and queues it for an installed package", async () => {
-    const installed = summary("samba", { state: { installed: true, installed_version: "1.0.0", available_version: "1.0.0", update_available: false, requires_reboot: false }, services: { smbd: "active" }, status: "running" });
-    vi.mocked(api.modules).mockResolvedValue([installed]);
-    vi.mocked(api.appPlan).mockResolvedValue({ ...packagePlan, action: "reinstall", steps: ["apt-get install -y --reinstall --no-install-recommends samba smbclient cifs-utils"] });
-    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
-
-    const sambaCard = (await screen.findByText("Samba")).closest("article");
-    fireEvent.click(within(sambaCard!).getByRole("button", { name: "store.reinstall" }));
-
-    expect(await screen.findByText("apt-get install -y --reinstall --no-install-recommends samba smbclient cifs-utils")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "package.confirmOperation" }));
-    await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("samba", "reinstall", false));
   });
 
   it("disables package actions and shows progress while an operation is active", async () => {

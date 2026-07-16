@@ -44,6 +44,7 @@ describe("ManagedModuleApp", () => {
     expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("docker", "container_start", { target: "abc" }));
+    expect(await screen.findByRole("dialog", { name: "package.liveJobTitle" })).toBeInTheDocument();
   });
 
   it("uses the authenticated admin session for routine module service controls", async () => {

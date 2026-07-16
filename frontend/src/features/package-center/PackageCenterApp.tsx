@@ -6,6 +6,7 @@ import { PackageActionDialog } from "./PackageActionDialog";
 import { PackageDetails } from "./PackageDetails";
 import { PackageGrid } from "./PackageGrid";
 import { PackageHistory } from "./PackageHistory";
+import { PackageJobDialog } from "./PackageJobDialog";
 import { PackageJobs } from "./PackageJobs";
 import { PackageSources } from "./PackageSources";
 import { PackageTabs } from "./PackageTabs";
@@ -20,6 +21,7 @@ export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toa
   const state = usePackageCenter();
   const [selected, setSelected] = useState<ModuleSummary | null>(null);
   const [action, setAction] = useState<{ item: ModuleSummary; action: PackageAction } | null>(null);
+  const [liveJob, setLiveJob] = useState<{ job: AppJob; name: string } | null>(null);
   const [credential, setCredential] = useState<CredentialAction>(null);
   const counts = useMemo(() => ({
     all: state.modules.length,
@@ -57,7 +59,8 @@ export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toa
         {state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
       </main>}
     {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => onOpenModule(selected.id) : undefined} />}
-    {action && <PackageActionDialog item={action.item} action={action.action} t={t} toast={toast} onClose={() => setAction(null)} onStarted={() => { void state.refreshModule(action.item.id); void state.refresh(true); }} />}
+    {action && <PackageActionDialog item={action.item} action={action.action} t={t} toast={toast} onClose={() => setAction(null)} onStarted={(job) => { setLiveJob({ job, name: action.item.manifest.name }); void state.refreshModule(action.item.id); void state.refresh(true); }} />}
+    {liveJob && <PackageJobDialog initialJob={liveJob.job} moduleName={liveJob.name} t={t} onClose={() => setLiveJob(null)} />}
     {credential && <AdminActionDialog title={t(credential.operation === "cancel" ? "package.cancelJob" : "action.retry")} fields={[]} danger={credential.operation === "cancel"} t={t} onClose={() => setCredential(null)} onSubmit={jobOperation} />}
   </section>;
 }

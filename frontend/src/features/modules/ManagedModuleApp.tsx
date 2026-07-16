@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type ModuleBackup, type ModuleDiagnostic, type ModuleJob, type ModuleResource, type ModuleStatus, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog, type AdminField } from "../admin/AdminActionDialog";
+import { PackageJobDialog } from "../package-center/PackageJobDialog";
 import { ModuleHeader, ModuleHealthCard } from "./common/ModuleAppShell";
 import { ModuleBackups, ModuleDiagnostics, ModuleJobProgress, ModuleLogs } from "./common/ModuleComponents";
 
@@ -27,7 +28,7 @@ const ACTIONS: Record<string, string[]> = {
 };
 
 export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId: string; permissions: string[]; t: Translate; toast: ToastFn }) {
-  const [summary, setSummary] = useState<ModuleSummary | null>(null); const [status, setStatus] = useState(EMPTY); const [section, setSection] = useState("overview"); const [resource, setResource] = useState<ModuleResource | null>(null); const [job, setJob] = useState<ModuleJob | null>(null); const [diagnostics, setDiagnostics] = useState<ModuleDiagnostic[]>([]); const [backups, setBackups] = useState<ModuleBackup[]>([]); const [dialog, setDialog] = useState<ActionDialog | null>(null); const [search, setSearch] = useState("");
+  const [summary, setSummary] = useState<ModuleSummary | null>(null); const [status, setStatus] = useState(EMPTY); const [section, setSection] = useState("overview"); const [resource, setResource] = useState<ModuleResource | null>(null); const [job, setJob] = useState<ModuleJob | null>(null); const [liveJob, setLiveJob] = useState<ModuleJob | null>(null); const [diagnostics, setDiagnostics] = useState<ModuleDiagnostic[]>([]); const [backups, setBackups] = useState<ModuleBackup[]>([]); const [dialog, setDialog] = useState<ActionDialog | null>(null); const [search, setSearch] = useState("");
   const canOperate = useMemo(() => moduleId === "linux-updates" ? permissions.includes("updates.apply") : moduleId === "docker" ? permissions.includes("docker.manage_containers") : ["pihole", "adguard-home"].includes(moduleId) ? permissions.includes("dns.configure") : moduleId === "home-assistant" ? permissions.includes("homeassistant.operate") : permissions.includes("modules.configure") || permissions.includes("databases.backup"), [moduleId, permissions]);
   const canConfigure = moduleId === "docker" ? permissions.includes("docker.manage_compose") : canOperate;
   const refresh = useCallback(async () => { try { const data = await api.module(moduleId); setSummary(data); setStatus(data.module_status); setJob(data.active_job || null); } catch (error) { toast(message(error, t), "error", "admin"); } }, [moduleId, t, toast]);
@@ -42,18 +43,19 @@ export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId
   const screenUnavailable = moduleId === "linux-updates" && status.metrics.screen_available === false;
   const canOperateResource = moduleId !== "docker" ? canOperate : section === "images" ? permissions.includes("docker.manage_images") : section === "compose" ? permissions.includes("docker.manage_compose") : permissions.includes("docker.manage_containers");
 
+  function trackJob(next: ModuleJob) { setJob(next); setLiveJob(next); }
   async function submit(values: Record<string, string>) {
     if (!dialog) return;
     if (dialog.kind === "action") {
       const payload = actionPayload(dialog.action, values, dialog.payload);
-      setJob((await api.moduleAction(moduleId, dialog.action, payload)).job);
+      trackJob((await api.moduleAction(moduleId, dialog.action, payload)).job);
     } else if (dialog.kind === "connection") await api.saveModuleConnection(moduleId, { base_url: values.base_url, username: values.username, secret: values.secret });
     else if (dialog.kind === "compose") await api.saveDockerCompose(values.project, values.content);
     else if (dialog.kind === "backup") { await api.createModuleBackup(moduleId, values.description); setBackups(await api.moduleBackups(moduleId)); }
-    else if (dialog.kind === "restore") setJob((await api.restoreModuleBackup(moduleId, dialog.backup.id)).job);
+    else if (dialog.kind === "restore") trackJob((await api.restoreModuleBackup(moduleId, dialog.backup.id)).job);
     else if (dialog.kind === "delete") { await api.deleteModuleBackup(moduleId, dialog.backup.id); setBackups(await api.moduleBackups(moduleId)); }
-    else if (dialog.kind === "diagnostics") setJob((await api.runModuleDiagnostics(moduleId)).job);
-    else if (dialog.kind === "service") setJob((await api.moduleService(moduleId, dialog.action)).job);
+    else if (dialog.kind === "diagnostics") trackJob((await api.runModuleDiagnostics(moduleId)).job);
+    else if (dialog.kind === "service") trackJob((await api.moduleService(moduleId, dialog.action)).job);
     toast(t("admin.actionCompleted"), "ok", "admin"); await refresh(); if (summary?.capabilities.resources.includes(selectedResource)) await loadResource(selectedResource);
   }
   async function editCompose(project: string) { try { const data = await api.dockerCompose(project); setDialog({ kind: "compose", project, content: data.content }); } catch (error) { toast(message(error, t), "error", "admin"); } }
@@ -69,7 +71,7 @@ export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId
   else if (section === "backups") content = canOperate ? <ModuleBackups backups={backups} t={t} onCreate={() => setDialog({ kind: "backup" })} onRestore={(backup) => setDialog({ kind: "restore", backup })} onDelete={(backup) => setDialog({ kind: "delete", backup })} /> : <ResourceTable resource={{ resource: "backups", items: backups as unknown as Array<Record<string, unknown>>, total: backups.length }} t={t} />;
   else content = <ConnectionPanel moduleId={moduleId} canConfigure={canConfigure} t={t} onEdit={(connection) => setDialog({ kind: "connection", connection })} />;
 
-  return <><section className="module-app managed-module"><ModuleHeader name={summary.manifest.name} status={status} activeJob={job ? { operation: job.operation || job.action, progress: job.progress } : null} t={t} actions={<button onClick={() => void refresh()}><RefreshCw />{t("action.refresh")}</button>} /><div className="module-layout"><nav className="module-navigation" aria-label={t("module.sections")}>{sections.map((name) => <button key={name} className={section === name ? "active" : ""} onClick={() => setSection(name)}>{navIcon(name)}<span>{t(RESOURCE_LABELS[name] || `managed.${name}`)}</span></button>)}</nav><main className="module-content">{content}</main></div></section>{dialog && <AdminActionDialog title={dialogTitle(dialog, t)} fields={dialogFields(dialog, t)} danger={"danger" in dialog ? dialog.danger : dialog.kind === "restore" || dialog.kind === "delete"} t={t} onClose={() => setDialog(null)} onSubmit={submit} />}</>;
+  return <><section className="module-app managed-module"><ModuleHeader name={summary.manifest.name} status={status} activeJob={job ? { operation: job.operation || job.action, progress: job.progress } : null} t={t} actions={<button onClick={() => void refresh()}><RefreshCw />{t("action.refresh")}</button>} /><div className="module-layout"><nav className="module-navigation" aria-label={t("module.sections")}>{sections.map((name) => <button key={name} className={section === name ? "active" : ""} onClick={() => setSection(name)}>{navIcon(name)}<span>{t(RESOURCE_LABELS[name] || `managed.${name}`)}</span></button>)}</nav><main className="module-content">{content}</main></div></section>{liveJob && <PackageJobDialog initialJob={liveJob} moduleName={summary.manifest.name} t={t} onClose={() => setLiveJob(null)} />}{dialog && <AdminActionDialog title={dialogTitle(dialog, t)} fields={dialogFields(dialog, t)} danger={"danger" in dialog ? dialog.danger : dialog.kind === "restore" || dialog.kind === "delete"} t={t} onClose={() => setDialog(null)} onSubmit={submit} />}</>;
 }
 
 function ResourceTable({ resource, t, actions }: { resource: ModuleResource | null; t: Translate; actions?: (item: Record<string, unknown>) => React.ReactNode }) {

@@ -1,11 +1,11 @@
 import { useEffect, useId, useState } from "react";
-import { api, type ModuleSummary, type PackagePlan } from "../../../api";
+import { api, type ModuleJob, type ModuleSummary, type PackagePlan } from "../../../api";
 import type { ToastFn, Translate } from "../../../app/types";
 import { Modal } from "../../../components/Modal";
 
 type RemovalMode = "packages" | "config" | "data";
 
-export function ModuleUninstallDialog({ item, activeShares = 0, activeSessions = 0, t, toast, onClose, onStarted }: { item: ModuleSummary; activeShares?: number; activeSessions?: number; t: Translate; toast: ToastFn; onClose: () => void; onStarted: (jobId: string) => void }) {
+export function ModuleUninstallDialog({ item, activeShares = 0, activeSessions = 0, t, toast, onClose, onStarted }: { item: ModuleSummary; activeShares?: number; activeSessions?: number; t: Translate; toast: ToastFn; onClose: () => void; onStarted: (job: ModuleJob) => void }) {
   const formId = `module-uninstall-${useId().replace(/:/g, "")}`;
   const [mode, setMode] = useState<RemovalMode>("packages"); const [createBackup, setCreateBackup] = useState(true); const [confirmName, setConfirmName] = useState(""); const [plan, setPlan] = useState<PackagePlan | null>(null); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState("");
   const removeData = mode === "data";
@@ -14,7 +14,7 @@ export function ModuleUninstallDialog({ item, activeShares = 0, activeSessions =
     event.preventDefault(); if (!plan) return; setSaving(true); setError("");
     try {
       const response = await api.uninstallModule(item.id, { remove_config: mode !== "packages", remove_data: removeData, create_backup: createBackup, confirm_name: confirmName });
-      toast(t("module.jobQueued"), "ok", "admin", item.id); onStarted(response.job.id); onClose();
+      toast(t("module.jobQueued"), "ok", "admin", item.id); onStarted(response.job); onClose();
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } finally { setSaving(false); }
   }
   const nameConfirmed = !removeData || confirmName === item.manifest.name || item.id === "samba" && confirmName === "Samba";

@@ -109,8 +109,6 @@ export function getPackageActions(item: ModuleSummary, options: { advanced?: boo
     }
   }
 
-  if (item.capabilities.update) actions.push("reinstall");
-
   if (advanced && item.manifest.removable && item.capabilities.uninstall) actions.push("uninstall");
   return actions;
 }
