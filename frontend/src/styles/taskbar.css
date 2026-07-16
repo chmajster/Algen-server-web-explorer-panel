@@ -6,7 +6,7 @@
 .desktop.dark .taskbar { border-color: rgba(255,255,255,.1); background: color-mix(in srgb, var(--surface-glass) 94%, transparent); }
 .desktop .taskbar-primary { position: absolute; left: 50%; min-width: 0; max-width: min(850px, calc(100% - 700px)); display: flex; align-items: center; gap: 4px; transform: translateX(-50%); }
 .desktop.taskbar-align-left .taskbar-primary { left: 10px; max-width: calc(100% - 430px); transform: none; }
-.desktop .taskbar-start, .desktop .taskbar-items button, .desktop .system-tray > button, .desktop .taskbar-user { position: relative; height: calc(44px * var(--ui-scale, 1)); min-width: calc(44px * var(--ui-scale, 1)); display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; }
+.desktop .taskbar-start, .desktop .taskbar-items button, .desktop .system-tray > button, .desktop .taskbar-user { position: relative; height: var(--taskbar-item-size-scaled); min-width: var(--taskbar-item-size-scaled); display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; }
 .desktop .taskbar-start:hover, .desktop .taskbar-start.active, .desktop .taskbar-items button:hover, .desktop .taskbar-items button.active, .desktop .system-tray > button:hover, .desktop .system-tray > button.active, .desktop .taskbar-user:hover, .desktop .taskbar-user.active { border-color: var(--border-subtle); background: var(--surface-hover); }
 .desktop .taskbar-start svg { width: 23px; height: 23px; color: var(--accent); stroke-width: 2; }
 .desktop .taskbar-items { min-width: 0; max-width: 100%; gap: 3px; }
@@ -15,7 +15,7 @@
 .desktop .taskbar-items button span { font-size: .72em; }
 .desktop .taskbar-items button i { right: 12px; bottom: 2px; left: 12px; height: 3px; opacity: 1; transform: scaleX(.38); transition: transform .12s ease; }
 .desktop .taskbar-items button.active i { transform: scaleX(1); }
-.desktop .taskbar-items button b { position: absolute; top: 1px; right: 2px; min-width: 15px; height: 15px; border-radius: 8px; color: white; background: var(--accent); font-size: 9px; line-height: 15px; }
+.desktop .taskbar-items button b { position: absolute; top: 1px; right: 2px; min-width: 15px; height: 15px; border-radius: 8px; color: white; background: var(--accent); font-size: 0.5625rem; line-height: 15px; }
 .desktop .system-tray { z-index: 2; margin-left: auto; gap: 1px; }
 .desktop .system-tray > button { padding: 0 9px; }
 .desktop .system-tray svg { width: 17px; height: 17px; }
@@ -26,7 +26,7 @@
 .desktop .session-menu-wrap { position: relative; }
 .desktop .session-menu { position: absolute; right: 0; bottom: calc(var(--taskbar-height-scaled) - 1px); width: 240px; overflow: hidden; padding: 6px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-elevated); box-shadow: var(--shadow-menu); animation: taskbar-flyout .14s ease-out; }
 .desktop .session-menu header { display: flex; align-items: center; gap: 10px; padding: 12px; border-bottom: 1px solid var(--border-subtle); }
-.desktop .session-menu header > svg { width: 28px; height: 28px; color: var(--accent); }.desktop .session-menu header span { display: grid; }.desktop .session-menu header small { color: var(--text-muted); font-size: 11px; }
+.desktop .session-menu header > svg { width: 28px; height: 28px; color: var(--accent); }.desktop .session-menu header span { display: grid; }.desktop .session-menu header small { color: var(--text-muted); font-size: 0.6875rem; }
 .desktop .session-menu button { width: 100%; min-height: 38px; display: flex; align-items: center; gap: 10px; margin-top: 5px; padding: 0 10px; border-radius: 6px; background: transparent; }.desktop .session-menu button:hover { background: var(--surface-hover); }
 
 .desktop .app-launcher { top: auto; bottom: calc(var(--taskbar-height-scaled) + 10px); left: 50%; width: min(640px, calc(100vw - 20px)); max-height: min(720px, calc(100vh - var(--taskbar-height-scaled) - 24px)); padding: 0; overflow: hidden; border-radius: 15px; background: color-mix(in srgb, var(--surface-elevated) 89%, transparent); transform: translateX(-50%); backdrop-filter: blur(28px) saturate(140%); animation: taskbar-flyout .16s ease-out; }
@@ -41,13 +41,13 @@
 .desktop .launcher-grid { max-height: 390px; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; overflow: auto; padding: 0 24px 18px; }
 .desktop .launcher-app { position: relative; min-width: 0; border: 1px solid transparent; border-radius: 7px; }.desktop .launcher-app:hover { border-color: var(--border-subtle); background: var(--surface-hover); }
 .desktop .launcher-open { min-height: 92px; gap: 7px; padding: 10px 5px; }.desktop .launcher-open svg { width: 34px; height: 34px; }.desktop .launcher-open span { font-size: .7em; }
-.desktop .launcher-open small { display: flex; align-items: center; gap: 3px; color: var(--warning); font-size: 9px; }.desktop .launcher-open small svg { width: 10px; height: 10px; padding: 0; color: inherit; background: none; }
+.desktop .launcher-open small { display: flex; align-items: center; gap: 3px; color: var(--warning); font-size: 0.5625rem; }.desktop .launcher-open small svg { width: 10px; height: 10px; padding: 0; color: inherit; background: none; }
 .desktop .launcher-pin { opacity: 0; }.desktop .launcher-app:hover .launcher-pin, .desktop .launcher-pin.active { opacity: 1; }
 .desktop .launcher-list { max-height: 410px; display: grid; overflow: auto; padding: 0 24px 18px; }
 .desktop .launcher-app.compact .launcher-open { min-height: 52px; flex-direction: row; justify-content: flex-start; padding: 6px 10px; }.desktop .launcher-app.compact .launcher-open svg { width: 30px; height: 30px; }.desktop .launcher-app.compact .launcher-open small { margin-left: auto; }
 .desktop .launcher-empty { padding: 35px; color: var(--text-muted); text-align: center; }
 .desktop .launcher-footer { min-height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 10px 28px; border-top: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--surface-secondary) 78%, transparent); }
-.desktop .launcher-footer > div { display: flex; align-items: center; gap: 10px; }.desktop .launcher-footer > div > svg { width: 28px; height: 28px; color: var(--accent); }.desktop .launcher-footer span { display: grid; }.desktop .launcher-footer small { display: flex; align-items: center; gap: 3px; color: var(--text-muted); font-size: 10px; }.desktop .launcher-footer small svg { width: 11px; }.desktop .launcher-footer button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 6px; background: transparent; }.desktop .launcher-footer button:hover { background: var(--surface-hover); }
+.desktop .launcher-footer > div { display: flex; align-items: center; gap: 10px; }.desktop .launcher-footer > div > svg { width: 28px; height: 28px; color: var(--accent); }.desktop .launcher-footer span { display: grid; }.desktop .launcher-footer small { display: flex; align-items: center; gap: 3px; color: var(--text-muted); font-size: 0.625rem; }.desktop .launcher-footer small svg { width: 11px; }.desktop .launcher-footer button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 6px; background: transparent; }.desktop .launcher-footer button:hover { background: var(--surface-hover); }
 
 .desktop .notification-center { top: auto; right: 10px; bottom: calc(var(--taskbar-height-scaled) + 10px); max-height: calc(100vh - var(--taskbar-height-scaled) - 24px); background: color-mix(in srgb, var(--surface-elevated) 90%, transparent); }
 .desktop .notification-center header > div { display: flex; align-items: center; gap: 8px; }.desktop .notification-center header svg { width: 17px; }

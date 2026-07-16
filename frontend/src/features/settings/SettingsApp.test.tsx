@@ -29,6 +29,18 @@ describe("settings application", () => {
     expect(save).toHaveBeenCalledWith({ taskbar_alignment: "left" });
   });
 
+  it("saves interface scale and larger text accessibility settings", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={save} onOpenApp={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.accessibility" }));
+
+    fireEvent.change(screen.getByLabelText("settings.interfaceScale"), { target: { value: "125" } });
+    fireEvent.click(screen.getByLabelText("settings.largerText"));
+
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: 125 }));
+    expect(save).toHaveBeenCalledWith({ larger_text: true });
+  });
+
   it("renders administrative categories only for administrators", () => {
     const common = { t, toast: vi.fn(), onSettingsChange: vi.fn().mockResolvedValue(undefined), onOpenApp: vi.fn() };
     const { rerender } = render(<SettingsAppView settings={settingsFixture()} {...common} />);

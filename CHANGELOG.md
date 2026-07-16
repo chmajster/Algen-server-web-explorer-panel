@@ -103,6 +103,10 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 - Proxmox Safe Mode guards for protected paths, services, users/groups, storage paths, and admin operations.
 - Additional backend and frontend tests covering transfers, path policy, security/session/CSRF, file operations, resource dashboard, Proxmox guards, app store, network mounts, and file listing.
 
+### Fixed
+
+- Accessibility interface scale and larger-text settings now resize typography consistently across the desktop. Scale options submit numeric values instead of percent-suffixed strings, fixed pixel font sizes use scalable `rem` units, and taskbar/title-bar dimensions receive browser-compatible precomputed values.
+
 ### Changed
 
 - File listing API now supports:

@@ -6,7 +6,7 @@
 .desktop .file-workspace { border-top: 1px solid var(--border-subtle); }
 .desktop .directory-tree { padding-top: 12px; background: color-mix(in srgb, var(--surface-secondary) 78%, var(--surface-primary)); }
 .desktop .file-list-header { text-transform: none; background: var(--surface-primary); }
-.desktop .file-list-header > button { text-transform: none; font-size: 11px; }
+.desktop .file-list-header > button { text-transform: none; font-size: 0.6875rem; }
 .desktop .file-row { min-height: 42px; background: var(--surface-elevated); }
 .desktop .file-row.selected, .desktop .file-grid > button.selected { box-shadow: inset 3px 0 0 var(--accent); }
 .desktop .file-type-icon svg, .desktop .file-grid > button > svg { stroke-width: 1.5; }

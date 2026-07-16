@@ -27,8 +27,10 @@
   --radius-small: var(--radius-control);
   --radius-medium: var(--radius-panel);
   --radius-large: var(--radius-flyout);
-  --taskbar-height-scaled: calc(var(--taskbar-height) * var(--ui-scale, 1));
-  font-size: calc(16px * var(--ui-scale, 1));
+  --taskbar-height-scaled: var(--taskbar-height);
+  --taskbar-item-size-scaled: 44px;
+  --window-titlebar-height-scaled: 44px;
+  font-size: var(--interface-font-size, 16px);
 }
 
 .desktop.desktop.dark {

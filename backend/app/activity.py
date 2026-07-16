@@ -197,7 +197,7 @@ class ActivityRepository:
         return self._event(row)
 
     @staticmethod
-    def _filters(
+    def _filter_values(
         *,
         actor: str | None = None,
         category: ActivityCategory | None = None,
@@ -205,29 +205,19 @@ class ActivityRepository:
         search: str = "",
         since: float | None = None,
         until: float | None = None,
-    ) -> tuple[str, list[Any]]:
-        clauses: list[str] = []
-        values: list[Any] = []
-        if actor:
-            clauses.append("actor = ?")
-            values.append(actor)
-        if category:
-            clauses.append("category = ?")
-            values.append(category.value)
-        if status:
-            clauses.append("status = ?")
-            values.append(status.value)
-        if search:
-            clauses.append("(action LIKE ? OR target LIKE ? OR summary LIKE ? OR actor LIKE ?)")
-            pattern = f"%{search[:200]}%"
-            values.extend([pattern, pattern, pattern, pattern])
-        if since is not None:
-            clauses.append("created_at >= ?")
-            values.append(since)
-        if until is not None:
-            clauses.append("created_at <= ?")
-            values.append(until)
-        return (" WHERE " + " AND ".join(clauses)) if clauses else "", values
+    ) -> list[Any]:
+        category_value = category.value if category else None
+        status_value = status.value if status else None
+        clipped_search = search[:200]
+        pattern = f"%{clipped_search}%"
+        return [
+            actor, actor,
+            category_value, category_value,
+            status_value, status_value,
+            clipped_search, pattern, pattern, pattern, pattern,
+            since, since,
+            until, until,
+        ]
 
     def list(
         self,
@@ -241,28 +231,50 @@ class ActivityRepository:
         page: int = 1,
         page_size: int = 50,
     ) -> tuple[list[ActivityEvent], int]:
-        where, values = self._filters(actor=actor, category=category, status=status, search=search, since=since, until=until)
+        values = self._filter_values(actor=actor, category=category, status=status, search=search, since=since, until=until)
         with self._lock, self._connect() as connection:
-            total = int(connection.execute(f"SELECT COUNT(*) FROM activity_events{where}", values).fetchone()[0])  # nosec B608
+            total = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM activity_events
+                    WHERE (? IS NULL OR actor = ?)
+                      AND (? IS NULL OR category = ?)
+                      AND (? IS NULL OR status = ?)
+                      AND (? = '' OR action LIKE ? OR target LIKE ? OR summary LIKE ? OR actor LIKE ?)
+                      AND (? IS NULL OR created_at >= ?)
+                      AND (? IS NULL OR created_at <= ?)
+                    """,
+                    values,
+                ).fetchone()[0]
+            )
             rows = connection.execute(
-                f"SELECT * FROM activity_events{where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",  # nosec B608
+                """
+                SELECT * FROM activity_events
+                WHERE (? IS NULL OR actor = ?)
+                  AND (? IS NULL OR category = ?)
+                  AND (? IS NULL OR status = ?)
+                  AND (? = '' OR action LIKE ? OR target LIKE ? OR summary LIKE ? OR actor LIKE ?)
+                  AND (? IS NULL OR created_at >= ?)
+                  AND (? IS NULL OR created_at <= ?)
+                ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+                """,
                 [*values, page_size, (page - 1) * page_size],
             ).fetchall()
         return [self._event(row) for row in rows], total
 
     def summary(self, *, actor: str | None = None) -> dict[str, Any]:
-        where, values = self._filters(actor=actor)
+        values = [actor, actor]
         with self._lock, self._connect() as connection:
-            total = int(connection.execute(f"SELECT COUNT(*) FROM activity_events{where}", values).fetchone()[0])  # nosec B608
+            total = int(connection.execute("SELECT COUNT(*) FROM activity_events WHERE (? IS NULL OR actor = ?)", values).fetchone()[0])
             categories = {
                 row["category"]: int(row["amount"])
-                for row in connection.execute(f"SELECT category, COUNT(*) AS amount FROM activity_events{where} GROUP BY category", values).fetchall()  # nosec B608
+                for row in connection.execute("SELECT category, COUNT(*) AS amount FROM activity_events WHERE (? IS NULL OR actor = ?) GROUP BY category", values).fetchall()
             }
             statuses = {
                 row["status"]: int(row["amount"])
-                for row in connection.execute(f"SELECT status, COUNT(*) AS amount FROM activity_events{where} GROUP BY status", values).fetchall()  # nosec B608
+                for row in connection.execute("SELECT status, COUNT(*) AS amount FROM activity_events WHERE (? IS NULL OR actor = ?) GROUP BY status", values).fetchall()
             }
-            latest = connection.execute(f"SELECT MAX(created_at) FROM activity_events{where}", values).fetchone()[0]  # nosec B608
+            latest = connection.execute("SELECT MAX(created_at) FROM activity_events WHERE (? IS NULL OR actor = ?)", values).fetchone()[0]
         return {
             "total": total,
             "categories": {item.value: categories.get(item.value, 0) for item in ActivityCategory},

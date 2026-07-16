@@ -37,6 +37,7 @@ export function ActivityCenter({ locale, t }: { locale: "pl-PL" | "en-US"; t: Tr
   const [category, setCategory] = useState<ActivityCategory | "">("");
   const [status, setStatus] = useState<ActivityStatus | "">("");
   const [actor, setActor] = useState("");
+  const [debouncedActor, setDebouncedActor] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -49,8 +50,12 @@ export function ActivityCenter({ locale, t }: { locale: "pl-PL" | "en-US"; t: Tr
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [search]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedActor(actor.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [actor]);
 
-  useEffect(() => setPage(1), [category, status, actor, debouncedSearch]);
+  useEffect(() => setPage(1), [category, status, debouncedActor, debouncedSearch]);
 
   const refresh = useCallback(async (quiet = false) => {
     const id = ++requestId.current;
@@ -58,13 +63,13 @@ export function ActivityCenter({ locale, t }: { locale: "pl-PL" | "en-US"; t: Tr
     setError("");
     try {
       const [events, totals] = await Promise.all([
-        api.activity({ category, status, actor: actor.trim(), search: debouncedSearch, page, page_size: 50 }),
+        api.activity({ category, status, actor: debouncedActor, search: debouncedSearch, page, page_size: 50 }),
         api.activitySummary(),
       ]);
       if (requestId.current !== id) return;
       setData(events);
       setSummary(totals);
-      if (events.scope === "own" && actor) setActor("");
+      if (events.scope === "own") setActor("");
     } catch (reason) {
       if (requestId.current === id) setError(reason instanceof Error ? reason.message : t("status.error"));
     } finally {
@@ -73,7 +78,7 @@ export function ActivityCenter({ locale, t }: { locale: "pl-PL" | "en-US"; t: Tr
         setRefreshing(false);
       }
     }
-  }, [actor, category, debouncedSearch, page, status, t]);
+  }, [category, debouncedActor, debouncedSearch, page, status, t]);
 
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {

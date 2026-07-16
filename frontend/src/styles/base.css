@@ -15,7 +15,7 @@
 
 .desktop.high-contrast { --border-subtle: currentColor; --border-strong: currentColor; }
 .desktop.high-contrast button, .desktop.high-contrast input, .desktop.high-contrast select { border-width: 2px; }
-.desktop.larger-text { font-size: calc(18px * var(--ui-scale, 1)); }
+.desktop.larger-text { font-size: var(--interface-font-size, 18px); }
 .desktop.strong-active-borders .active, .desktop.strong-active-borders .selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 .desktop.always-show-focus :focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 

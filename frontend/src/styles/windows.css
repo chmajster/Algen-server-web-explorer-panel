@@ -1,5 +1,5 @@
 .desktop .desktop-window {
-  grid-template-rows: calc(44px * var(--ui-scale, 1)) minmax(0, 1fr);
+  grid-template-rows: var(--window-titlebar-height-scaled) minmax(0, 1fr);
   border-color: color-mix(in srgb, var(--border-subtle) 82%, transparent);
   border-radius: 10px; background: color-mix(in srgb, var(--surface-primary) 94%, transparent);
   backdrop-filter: blur(22px) saturate(125%); transition: opacity .12s ease, transform .12s ease, box-shadow .12s ease;

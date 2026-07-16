@@ -1,15 +1,10 @@
 import { Bell, ShieldCheck, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
 import { GroupsApp, LogsAppView, MonitorApp, ServicesApp, SettingsAppView, UsersApp } from "../features/admin/SystemApps";
-import { AccessControlApp } from "../features/admin/AccessControlApp";
 import { forgetAdminPassword } from "../features/admin/adminCredentials";
-import { ActivityCenter } from "../features/activity/ActivityCenter";
 import { FileManager } from "../features/files/FileManager";
-import { PackageCenterApp } from "../features/package-center/PackageCenterApp";
-import { ModuleApp } from "../features/modules/ModuleApp";
-import { ModuleHub } from "../features/modules/ModuleHub";
 import { TransferCenter } from "../features/transfers/TransferCenter";
 import { DesktopWidgets } from "../features/widgets/DesktopWidgets";
 import type { UploadControls } from "../features/transfers/useUploadManager";
@@ -20,6 +15,12 @@ import { DesktopWindow } from "./DesktopWindow";
 import { Taskbar } from "./Taskbar";
 import type { AppId, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
 import { initialWindowState, restoreWindowState, windowReducer } from "./windowState";
+
+const ActivityCenter = lazy(() => import("../features/activity/ActivityCenter").then((module) => ({ default: module.ActivityCenter })));
+const AccessControlApp = lazy(() => import("../features/admin/AccessControlApp").then((module) => ({ default: module.AccessControlApp })));
+const ModuleApp = lazy(() => import("../features/modules/ModuleApp").then((module) => ({ default: module.ModuleApp })));
+const ModuleHub = lazy(() => import("../features/modules/ModuleHub").then((module) => ({ default: module.ModuleHub })));
+const PackageCenterApp = lazy(() => import("../features/package-center/PackageCenterApp").then((module) => ({ default: module.PackageCenterApp })));
 
 function wallpaperStyle(profile: SettingsMe): CSSProperties {
   if (!profile.wallpaper) return {};
@@ -190,23 +191,31 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     switch (item.app) {
       case "files": return <FileManager homePath={user.home} initialPath={item.initialPath} settings={profile} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onUploadCancel={uploadControls.cancel} onUploadRetry={uploadControls.retry} onSettingsChange={onSettingsChange} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={(path) => openApp("samba", path)} />;
       case "transfers": return <TransferCenter tasks={tasks} settings={profile} t={t} toast={toast} uploadControls={uploadControls} />;
-      case "activity": return <ActivityCenter locale={profile.language} t={t} />;
+      case "activity": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ActivityCenter locale={profile.language} t={t} /></Suspense>;
       case "users": return <UsersApp t={t} toast={toast} />;
       case "groups": return <GroupsApp t={t} toast={toast} />;
       case "mounts": return <SettingsAppView settings={profile} initialSection="network" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} />;
-      case "samba": return <ModuleApp moduleId="samba" initialPath={item.initialPath} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} />;
-      case "modules": return <ModuleHub t={t} toast={toast} onOpen={(moduleId) => openApp(moduleId === "samba" ? "samba" : "module", undefined, moduleId)} />;
-      case "access": return <AccessControlApp t={t} toast={toast} />;
+      case "samba": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="samba" initialPath={item.initialPath} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
+      case "modules": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleHub t={t} toast={toast} onOpen={(moduleId) => openApp(moduleId === "samba" ? "samba" : "module", undefined, moduleId)} /></Suspense>;
+      case "access": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><AccessControlApp t={t} toast={toast} /></Suspense>;
       case "services": return <ServicesApp t={t} toast={toast} />;
-      case "store": return <PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => { if (moduleId === "samba") openApp("samba"); else openApp("module", undefined, moduleId); }} />;
+      case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => { if (moduleId === "samba") openApp("samba"); else openApp("module", undefined, moduleId); }} /></Suspense>;
       case "logs": return <LogsAppView t={t} />;
       case "settings": return <SettingsAppView settings={profile} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} />;
       case "monitor": return <MonitorApp t={t} />;
-      case "module": return <ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} />;
+      case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
     }
   }
 
-  const rootStyle = { "--ui-scale": profile.interface_scale / 100 } as CSSProperties;
+  const interfaceScale = profile.interface_scale / 100;
+  const textScale = interfaceScale * (profile.larger_text ? 1.125 : 1);
+  const rootStyle = {
+    "--ui-scale": interfaceScale,
+    "--interface-font-size": `${16 * textScale}px`,
+    "--taskbar-height-scaled": `${58 * interfaceScale}px`,
+    "--taskbar-item-size-scaled": `${44 * interfaceScale}px`,
+    "--window-titlebar-height-scaled": `${44 * interfaceScale}px`,
+  } as CSSProperties;
   const rootClasses = ["desktop", resolvedTheme, `accent-${profile.accent_color}`, `taskbar-align-${profile.taskbar_alignment}`, profile.window_transparency ? "" : "no-transparency", profile.animations_enabled && !profile.reduced_motion ? "" : "no-animations", profile.high_contrast ? "high-contrast" : "", profile.larger_text ? "larger-text" : "", profile.strong_active_borders ? "strong-active-borders" : "", profile.always_show_focus ? "always-show-focus" : ""].filter(Boolean).join(" ");
   const visibleToasts = profile.show_notifications ? toasts.filter((item) => (item.type !== "error" || profile.notification_errors) && (item.category !== "admin" || profile.notification_admin) && (item.category !== "transfer" || profile.notification_transfer)).slice(-profile.notification_limit) : [];
   const clockText = clock.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", second: profile.clock_show_seconds ? "2-digit" : undefined, hour12: profile.time_format === "12" });
