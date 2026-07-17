@@ -93,7 +93,52 @@ export function SambaModuleApp({ initialSharePath, readOnly = false, canReinstal
   else if (section === "sessions") content = <SambaSessions sessions={sessions} t={t} onRefresh={() => void api.sambaSessions().then(setSessions)} />;
   else content = <><section className="module-info"><h3>{t("module.information")}</h3><dl><dt>{t("module.version")}</dt><dd>{status.package_version || "—"}</dd><dt>{t("module.homepage")}</dt><dd><a href="https://www.samba.org" target="_blank" rel="noreferrer">samba.org</a></dd><dt>{t("module.license")}</dt><dd>GPL-3.0-or-later</dd></dl></section><ModuleDangerZone name="Samba" t={t} onUninstall={() => setUninstallOpen(true)} /></>;
 
-  return <><ModuleAppShell name="Samba" status={status} activeJob={job ? { operation: job.operation || job.action, progress: job.progress } : null} section={section} sections={sections} t={t} onSection={setSection} actions={<>{!readOnly && <><button onClick={() => setDialog({ type: "service", action: "start" })}><Play />{t("module.start")}</button><button onClick={() => setDialog({ type: "service", action: "stop" })}><Square />{t("module.stop")}</button><button onClick={() => setDialog({ type: "service", action: "restart" })}><RotateCcw />{t("module.restart")}</button><button onClick={() => setDialog({ type: "service", action: "reload" })}><RefreshCw />{t("module.reload")}</button><button onClick={() => void validateAndPlan()}><FileCheck2 />{t("module.checkConfiguration")}</button></>}<button onClick={() => setSection("logs")}>{t("module.section.logs")}</button></>}><fieldset className="module-readonly" disabled={readOnly}>{content}</fieldset>{section === "configuration" && canReinstall && summary?.state.installed && summary.capabilities.update && <section className="module-info"><h3>{t("module.packageMaintenance")}</h3><p>{t("module.reinstallHint")}</p><div className="module-section-toolbar"><button type="button" disabled={Boolean(job && ["queued", "running", "waiting_for_confirmation"].includes(job.status))} onClick={() => setReinstallOpen(true)}><RefreshCw />{t("store.reinstall")}</button></div></section>}</ModuleAppShell>{!readOnly && dirty && <div className="module-save-bar" role="status"><span><i />{t("module.unsavedChanges")}</span><button type="button" onClick={() => setConfig(savedConfig)}>{t("action.cancel")}</button><button className="button-primary" type="button" onClick={() => void validateAndPlan()}><Save />{t("module.reviewAndApply")}</button></div>}{!readOnly && editing && <SambaShareEditor share={editing === "new" ? undefined : editing} t={t} onClose={() => setEditing(null)} onSave={saveShare} />}{!readOnly && validation && <ModuleApplyPlanDialog validation={validation} t={t} onClose={() => setValidation(null)} onApply={apply} />}{canReinstall && reinstallOpen && summary && <PackageActionDialog item={summary} action="reinstall" t={t} toast={toast} onClose={() => setReinstallOpen(false)} onStarted={(started) => { trackJob(started); void refresh(true); }} />}{!readOnly && uninstallOpen && summary && <ModuleUninstallDialog item={summary} activeShares={config.shares.filter((item) => item.enabled).length} activeSessions={sessions.length || Number(metrics.sessions || 0)} t={t} toast={toast} onClose={() => setUninstallOpen(false)} onStarted={(started) => { trackJob(started); void refresh(true); }} />}{liveJob && <PackageJobDialog initialJob={liveJob} moduleName="Samba" t={t} onClose={() => setLiveJob(null)} />}{!readOnly && dialog && <AdminActionDialog title={dialog.type === "service" ? t(`module.${dialog.action}`) : dialog.type === "diagnostics" ? t("module.runDiagnostics") : dialog.type === "backup" ? t("module.createBackup") : dialog.type === "restore" ? t("module.restore") : dialog.type === "deleteBackup" ? t("module.deleteBackup") : dialog.type === "firewall" ? t("module.samba.openFirewall") : t(`module.samba.userAction.${dialog.action}`)} description={dialog.type === "firewall" ? <div className="module-firewall-plan"><strong>{t("module.changePlan")}</strong><p>{t("module.samba.firewallPlanHint")}</p><pre>{firewall.plan.map((command) => command.join(" ")).join("\n")}</pre></div> : undefined} fields={[...(dialog.type === "backup" ? [{ name: "description", label: t("module.backupDescription") }] : []), ...(dialog.type === "user" && ["add", "password"].includes(dialog.action) ? [{ name: "password", label: t("auth.password"), type: "password" as const, required: true }] : [])]} danger={dialog.type === "deleteBackup" || dialog.type === "restore" || dialog.type === "firewall" || dialog.type === "service" && ["stop", "restart"].includes(dialog.action)} t={t} onClose={() => setDialog(null)} onSubmit={submit} />}</>;
+  return <>
+    <ModuleAppShell
+      name="Samba"
+      status={status}
+      healthMessage={healthMessage}
+      activeJob={busy && job ? { operation: job.operation || job.action, progress: job.progress } : null}
+      section={section}
+      sections={sections}
+      t={t}
+      onSection={setSection}
+      actions={<>
+        {!readOnly && <>
+          <button className={!serviceActive ? "button-primary" : ""} type="button" disabled={busy || serviceActive} onClick={() => setDialog({ type: "service", action: "start" })}><Play />{t("module.start")}</button>
+          <button type="button" disabled={busy || !serviceActive} onClick={() => setDialog({ type: "service", action: "stop" })}><Square />{t("module.stop")}</button>
+          <button type="button" disabled={busy || !status.installed} onClick={() => setDialog({ type: "service", action: "restart" })}><RotateCcw />{t("module.restart")}</button>
+          <button type="button" disabled={busy || !status.installed} onClick={() => setDialog({ type: "service", action: "reload" })}><RefreshCw />{t("module.reload")}</button>
+          <button type="button" disabled={busy || !status.installed} onClick={() => void validateAndPlan()}><FileCheck2 />{t("module.checkConfiguration")}</button>
+        </>}
+        <button type="button" onClick={() => setSection("logs")}><FileText />{t("module.section.logs")}</button>
+      </>}
+    >
+      <fieldset className="module-readonly" disabled={readOnly}>{content}</fieldset>
+      {section === "configuration" && canReinstall && summary?.state.installed && summary.capabilities.update && <section className="module-info"><h3>{t("module.packageMaintenance")}</h3><p>{t("module.reinstallHint")}</p><div className="module-section-toolbar"><button type="button" disabled={busy} onClick={() => setReinstallOpen(true)}><RefreshCw />{t("store.reinstall")}</button></div></section>}
+    </ModuleAppShell>
+    {!readOnly && dirty && <div className="module-save-bar" role="status"><span><i />{t("module.unsavedChanges")}</span><button type="button" onClick={() => setConfig(savedConfig)}>{t("action.cancel")}</button><button className="button-primary" type="button" onClick={() => void validateAndPlan()}><Save />{t("module.reviewAndApply")}</button></div>}
+    {!readOnly && editing && <SambaShareEditor share={editing === "new" ? undefined : editing} t={t} onClose={() => setEditing(null)} onSave={saveShare} />}
+    {!readOnly && validation && <ModuleApplyPlanDialog validation={validation} t={t} onClose={() => setValidation(null)} onApply={apply} />}
+    {canReinstall && reinstallOpen && summary && <PackageActionDialog item={summary} action="reinstall" t={t} toast={toast} onClose={() => setReinstallOpen(false)} onStarted={(started) => { trackJob(started); void refresh(true); }} />}
+    {!readOnly && uninstallOpen && summary && <ModuleUninstallDialog item={summary} activeShares={config.shares.filter((item) => item.enabled).length} activeSessions={sessions.length || Number(metrics.sessions || 0)} t={t} toast={toast} onClose={() => setUninstallOpen(false)} onStarted={(started) => { trackJob(started); void refresh(true); }} />}
+    {liveJob && <PackageJobDialog initialJob={liveJob} moduleName="Samba" t={t} onClose={() => setLiveJob(null)} />}
+    {!readOnly && dialog && <AdminActionDialog title={dialog.type === "service" ? t(`module.${dialog.action}`) : dialog.type === "diagnostics" ? t("module.runDiagnostics") : dialog.type === "backup" ? t("module.createBackup") : dialog.type === "restore" ? t("module.restore") : dialog.type === "deleteBackup" ? t("module.deleteBackup") : dialog.type === "firewall" ? t("module.samba.openFirewall") : t(`module.samba.userAction.${dialog.action}`)} description={dialog.type === "firewall" ? <div className="module-firewall-plan"><strong>{t("module.changePlan")}</strong><p>{t("module.samba.firewallPlanHint")}</p><pre>{firewall.plan.map((command) => command.join(" ")).join("\n")}</pre></div> : undefined} fields={[...(dialog.type === "backup" ? [{ name: "description", label: t("module.backupDescription") }] : []), ...(dialog.type === "user" && ["add", "password"].includes(dialog.action) ? [{ name: "password", label: t("auth.password"), type: "password" as const, required: true }] : [])]} danger={dialog.type === "deleteBackup" || dialog.type === "restore" || dialog.type === "firewall" || dialog.type === "service" && ["stop", "restart"].includes(dialog.action)} t={t} onClose={() => setDialog(null)} onSubmit={submit} />}
+  </>;
+}
+
+function serviceTone(state?: string): "neutral" | "success" | "warning" | "danger" {
+  if (state === "active") return "success";
+  if (state === "failed" || state === "error") return "danger";
+  if (!state || ["unknown", "unavailable"].includes(state)) return "warning";
+  return "neutral";
+}
+
+function sambaHealthMessage(status: ModuleStatus, t: Translate): string {
+  if (!status.installed) return t("module.samba.healthNotInstalled");
+  if (status.health === "healthy") return t("module.samba.healthHealthy");
+  if (status.configuration_valid === false) return t("module.samba.healthInvalidConfiguration");
+  return t("module.samba.healthServiceInactive");
 }
 
 function SambaGlobalConfiguration({ config, t, onChange, onImport }: { config: SambaConfig; t: Translate; onChange: (config: SambaConfig) => void; onImport: (config: SambaConfig) => void }) {
