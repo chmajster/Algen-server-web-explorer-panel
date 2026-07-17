@@ -33,6 +33,8 @@ sudo ./install.sh --user webnas
 sudo ./install.sh --yes
 sudo ./install.sh --no-firewall
 sudo ./install.sh --skip-build
+sudo ./install.sh --existing-action update
+sudo ./install.sh --existing-action reinstall
 ```
 
 The installer supports `apt`, `dnf`, and `yum`.
@@ -55,6 +57,8 @@ proxmox:
 ```
 
 The installer does not remove packages, run `apt autoremove`, change Proxmox repositories, edit `/etc/pve`, edit `/etc/network/interfaces`, restart Proxmox services, reboot the host, or change Proxmox storage. WebNAS then blocks protected file/admin operations at runtime.
+
+If APT reports `401`, `403`, or another explicit subscription error for `enterprise.proxmox.com`, the installer retries through an ephemeral filtered source view. The host's files under `/etc/apt` are not rewritten, and unrelated repository/network/signature failures still stop installation. Configure the official Proxmox no-subscription repository separately if the host itself must receive Proxmox package updates.
 
 ## Required Packages
 
@@ -154,7 +158,18 @@ Run the installer again:
 sudo ./install.sh
 ```
 
-If `/opt/webnas` already exists, the installer asks whether to update, create a backup and update, or abort. In `--yes` mode it updates and backs up the existing config automatically.
+If `/opt/webnas` already exists, the installer presents update, reinstall, config-backup, removal, and abort actions. The prompt waits five seconds; if no action is selected, WebNAS automatically performs an update. Automatic and explicit updates preserve `/etc/webnas/config.yaml` and first create a timestamped safety backup under `/var/backups/webnas`.
+
+The **reinstall** action removes and recreates application files in `/opt/webnas`, while preserving the configuration, database and other data under `/var/lib/webnas`, and logs under `/var/log/webnas`. Before removal it backs up the application, config, systemd unit, and PAM policy. If the clean reinstall fails after application replacement starts, the installer attempts to restore the previous version and restart a service that was active before the operation.
+
+For automation, select the action explicitly:
+
+```bash
+sudo ./install.sh --existing-action update --yes
+sudo ./install.sh --existing-action reinstall --yes
+```
+
+`--update-config` is intentionally separate. Without it, update and reinstall never regenerate the existing configuration or session secret. The legacy `--existing-action remove` mode remains available for a fresh application reinstall that generates a new config after backing up the previous installation.
 
 ## Uninstall
 

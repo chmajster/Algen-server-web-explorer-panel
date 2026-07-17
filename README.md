@@ -13,7 +13,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - PAM authentication with local Linux accounts.
 - FastAPI backend and React + TypeScript + Vite frontend.
 - Default port `5000`.
-- One-command installer with systemd/autostart support.
+- One-command installer with systemd/autostart support, a five-second automatic update for detected installations, config-preserving reinstall, safety backups, and failed-reinstall rollback.
 - Optional firewall setup for `ufw` or `firewalld`.
 - Modular NAS-style Package Center with validated YAML manifests, dry-run plans, durable jobs, live logs, service control, history, and GitHub source metadata.
 - Shared module-management applications with health, service controls, configuration plans, diagnostics, bounded/redacted logs, private backups, verified restore, and safe uninstall workflows.

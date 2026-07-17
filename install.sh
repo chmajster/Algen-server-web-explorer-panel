@@ -7,8 +7,10 @@ ARCHIVE_URL="${REPO_URL}/archive/refs/heads/main.tar.gz"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh"
 
 PORT="5000"
+PORT_EXPLICIT="no"
 INSTALL_DIR="/opt/webnas"
 SERVICE_USER="webnas"
+SERVICE_USER_EXPLICIT="no"
 SERVICE_GROUP="webnas"
 NODE_MAJOR="22"
 START_SERVICE="yes"
@@ -21,6 +23,7 @@ ACTION="install"
 EXISTING_ACTION=""
 REMOVE_SCOPE=""
 UPDATE_CONFIG="no"
+EXISTING_ACTION_TIMEOUT="5"
 ALLOW_PROXMOX_HOST_INSTALL="no"
 IS_PROXMOX="no"
 
@@ -28,13 +31,19 @@ CONFIG_DIR="/etc/webnas"
 CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 DATA_DIR="/var/lib/webnas"
 LOG_DIR="/var/log/webnas"
+BACKUP_ROOT="/var/backups/webnas"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 PAM_SERVICE_FILE="/etc/pam.d/${SERVICE_NAME}"
 WORK_DIR=""
 SOURCE_DIR=""
+APT_TEMP_DIR=""
+APT_SOURCE_OPTIONS=()
+APT_SOURCES_ROOT="/etc/apt"
 CURRENT_STEP="startup"
 APP_COPY_STARTED="no"
 INSTALL_COMPLETED="no"
+LAST_BACKUP_DIR=""
+SERVICE_WAS_ACTIVE="no"
 
 if [[ -t 1 ]]; then
   RED="$(printf '\033[31m')"
@@ -70,7 +79,7 @@ Options:
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
   --existing-action ACTION
-                          Existing install action: update, backup-config, remove, remove-app, remove-all, or abort
+                          Existing install action: update, reinstall, backup-config, remove, remove-app, remove-all, or abort
   --update-config         Also regenerate config.yaml during update actions
   --help                  Show this help
 EOF
@@ -120,6 +129,7 @@ parse_args() {
       --port)
         [[ $# -ge 2 ]] || fail "--port requires a value"
         PORT="$2"
+        PORT_EXPLICIT="yes"
         NON_INTERACTIVE="yes"
         shift 2
         ;;
@@ -132,6 +142,7 @@ parse_args() {
       --user)
         [[ $# -ge 2 ]] || fail "--user requires a value"
         SERVICE_USER="$2"
+        SERVICE_USER_EXPLICIT="yes"
         NON_INTERACTIVE="yes"
         shift 2
         ;;
@@ -158,8 +169,8 @@ parse_args() {
       --existing-action)
         [[ $# -ge 2 ]] || fail "--existing-action requires a value"
         case "$2" in
-          update|backup-config|remove|remove-app|remove-all|abort) EXISTING_ACTION="$2" ;;
-          *) fail "--existing-action must be one of: update, backup-config, remove, remove-app, remove-all, abort" ;;
+          update|reinstall|backup-config|remove|remove-app|remove-all|abort) EXISTING_ACTION="$2" ;;
+          *) fail "--existing-action must be one of: update, reinstall, backup-config, remove, remove-app, remove-all, abort" ;;
         esac
         NON_INTERACTIVE="yes"
         shift 2
@@ -187,6 +198,19 @@ read_from_tty() {
     read -r -p "$prompt" answer </dev/tty || return 1
     printf '%s' "$answer"
     return 0
+  fi
+  return 1
+}
+
+read_from_tty_timeout() {
+  local prompt="$1"
+  local timeout="$2"
+  local answer=""
+  if [[ -e /dev/tty ]]; then
+    if IFS= read -r -t "$timeout" -p "$prompt" answer </dev/tty; then
+      printf '%s' "$answer"
+      return 0
+    fi
   fi
   return 1
 }
@@ -291,12 +315,103 @@ EOF
   fi
 }
 
+apt_error_is_unsubscribed_proxmox() {
+  local output_file="$1"
+  grep -qi 'enterprise\.proxmox\.com' "$output_file" &&
+    grep -Eqi '401|403|unauthorized|forbidden|subscription|authentication required|does not have a release file|no longer has a release file|is not signed' "$output_file"
+}
+
+prepare_apt_sources_without_proxmox_enterprise() {
+  local source_root="$APT_SOURCES_ROOT"
+  local source_list=""
+  local source_parts=""
+  local candidate=""
+  local removed="no"
+  APT_TEMP_DIR="$(mktemp -d -t webnas-apt.XXXXXX)"
+  source_list="${APT_TEMP_DIR}/sources.list"
+  source_parts="${APT_TEMP_DIR}/sources.list.d"
+  install -d -m 0700 "$source_parts"
+  if [[ -f "${source_root}/sources.list" ]]; then
+    grep -Evi 'enterprise\.proxmox\.com' "${source_root}/sources.list" > "$source_list" || true
+    grep -qi 'enterprise\.proxmox\.com' "${source_root}/sources.list" && removed="yes" || true
+  else
+    : > "$source_list"
+  fi
+  if [[ -d "${source_root}/sources.list.d" ]]; then
+    while IFS= read -r -d '' candidate; do
+      grep -qi 'enterprise\.proxmox\.com' "$candidate" && removed="yes" || true
+      case "$candidate" in
+        *.sources)
+          awk 'BEGIN { RS=""; ORS="\n\n" } tolower($0) !~ /enterprise\.proxmox\.com/ { print }' "$candidate" > "${source_parts}/$(basename "$candidate")"
+          ;;
+        *.list)
+          grep -Evi 'enterprise\.proxmox\.com' "$candidate" > "${source_parts}/$(basename "$candidate")" || true
+          ;;
+      esac
+      [[ -s "${source_parts}/$(basename "$candidate")" ]] || rm -f "${source_parts}/$(basename "$candidate")"
+    done < <(find "${source_root}/sources.list.d" -maxdepth 1 -type f \( -name '*.list' -o -name '*.sources' \) -print0)
+  fi
+  if [[ "$removed" != "yes" ]]; then
+    rm -rf -- "$APT_TEMP_DIR"
+    APT_TEMP_DIR=""
+    return 1
+  fi
+  APT_SOURCE_OPTIONS=(
+    -o "Dir::Etc::sourcelist=${source_list}"
+    -o "Dir::Etc::sourceparts=${source_parts}"
+  )
+}
+
+apt_get() {
+  apt-get "${APT_SOURCE_OPTIONS[@]}" "$@"
+}
+
+refresh_apt_metadata() {
+  local output_file=""
+  local exit_code="0"
+  output_file="$(mktemp -t webnas-apt-output.XXXXXX)"
+  if apt-get update 2>&1 | tee "$output_file"; then
+    rm -f "$output_file"
+    return 0
+  else
+    exit_code="${PIPESTATUS[0]}"
+  fi
+  if apt_error_is_unsubscribed_proxmox "$output_file" && prepare_apt_sources_without_proxmox_enterprise; then
+    warn "Proxmox Enterprise requires an active subscription; retrying APT with that repository temporarily omitted"
+    rm -f "$output_file"
+    apt_get update
+    return
+  fi
+  rm -f "$output_file"
+  return "$exit_code"
+}
+
+setup_nodesource_repository() {
+  if [[ ${#APT_SOURCE_OPTIONS[@]} -eq 0 ]]; then
+    curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+    return
+  fi
+  local apt_config="${APT_TEMP_DIR}/apt.conf"
+  local previous_temp="$APT_TEMP_DIR"
+  printf 'Dir::Etc::sourcelist "%s";\nDir::Etc::sourceparts "%s";\n' \
+    "${APT_TEMP_DIR}/sources.list" "${APT_TEMP_DIR}/sources.list.d" > "$apt_config"
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | APT_CONFIG="$apt_config" bash -
+  APT_TEMP_DIR=""
+  APT_SOURCE_OPTIONS=()
+  case "$previous_temp" in
+    /tmp/webnas-apt.*|/var/tmp/webnas-apt.*) rm -rf -- "$previous_temp" ;;
+    *) fail "Unexpected APT temporary path: ${previous_temp}" ;;
+  esac
+  prepare_apt_sources_without_proxmox_enterprise || fail "Could not rebuild temporary APT sources after configuring NodeSource"
+  apt_get update
+}
+
 install_dependencies() {
   section "Installing dependencies"
   case "$PKG_MANAGER" in
     apt)
-      apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      refresh_apt_metadata
+      DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpam0g-dev rsync sudo curl ca-certificates tar gzip \
         passwd procps iproute2 screen quota
@@ -340,8 +455,8 @@ setup_node_runtime() {
   warn "Node.js 20.19+ or 22.12+ is required for the frontend build"
   case "$PKG_MANAGER" in
     apt)
-      curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
-      DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+      setup_nodesource_repository
+      DEBIAN_FRONTEND=noninteractive apt_get install -y nodejs
       ;;
     dnf)
       curl -fsSL "https://rpm.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
@@ -388,11 +503,19 @@ print_runtime_diagnostics() {
 prepare_source() {
   section "Preparing source"
   local script_dir=""
+  local resolved_script_dir=""
+  local resolved_install_dir=""
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+  resolved_script_dir="$(readlink -f "$script_dir" 2>/dev/null || printf '%s' "$script_dir")"
+  resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
   if [[ -n "$script_dir" && -f "${script_dir}/backend/app/main.py" && -f "${script_dir}/frontend/package.json" ]]; then
-    SOURCE_DIR="$script_dir"
-    ok "Using local repository: ${SOURCE_DIR}"
-    return
+    if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
+      warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
+    else
+      SOURCE_DIR="$script_dir"
+      ok "Using local repository: ${SOURCE_DIR}"
+      return
+    fi
   fi
 
   WORK_DIR="$(mktemp -d)"
@@ -415,8 +538,16 @@ prompt_install_dir() {
 }
 
 prompt_configuration() {
-  if [[ "$ACTION" == "update" ]]; then
+  if [[ "$ACTION" == "update" || "$ACTION" == "reinstall" ]]; then
     validate_port
+    section "Operation summary"
+    printf 'Action:           %s\n' "$ACTION"
+    printf 'Port:             %s\n' "$PORT"
+    printf 'Install dir:      %s\n' "$INSTALL_DIR"
+    printf 'Service user:     %s\n' "$SERVICE_USER"
+    printf 'Update config:    %s\n' "$UPDATE_CONFIG"
+    printf 'Config backup:    yes\n'
+    printf 'Build frontend:   %s\n' "$([[ "$SKIP_BUILD" == "yes" ]] && printf 'no' || printf 'yes')"
     return
   fi
   if [[ "$NON_INTERACTIVE" != "yes" ]]; then
@@ -448,6 +579,38 @@ prompt_configuration() {
   fi
 }
 
+load_existing_installation_defaults() {
+  local configured_port=""
+  local install_owner=""
+  if [[ "$PORT_EXPLICIT" != "yes" && -f "$CONFIG_FILE" ]]; then
+    configured_port="$(awk '
+      /^server:[[:space:]]*$/ { in_server=1; next }
+      in_server && /^[^[:space:]]/ { exit }
+      in_server && /^[[:space:]]+port:[[:space:]]*/ {
+        sub(/^[[:space:]]+port:[[:space:]]*/, "")
+        sub(/[[:space:]#].*$/, "")
+        gsub(/"/, "")
+        gsub(/\047/, "")
+        print
+        exit
+      }
+    ' "$CONFIG_FILE" 2>/dev/null || true)"
+    if [[ "$configured_port" =~ ^[0-9]+$ ]] && (( configured_port >= 1 && configured_port <= 65535 )); then
+      PORT="$configured_port"
+      info "Using port ${PORT} from existing configuration"
+    else
+      warn "Could not read a valid port from ${CONFIG_FILE}; keeping ${PORT}"
+    fi
+  fi
+  if [[ "$SERVICE_USER_EXPLICIT" != "yes" ]]; then
+    install_owner="$(stat -c '%U' "$INSTALL_DIR" 2>/dev/null || true)"
+    if [[ -n "$install_owner" && "$install_owner" != "root" ]] && id "$install_owner" >/dev/null 2>&1; then
+      SERVICE_USER="$install_owner"
+      info "Using service file owner ${SERVICE_USER} from existing installation"
+    fi
+  fi
+}
+
 handle_existing_installation() {
   if [[ ! -d "$INSTALL_DIR" ]]; then
     ACTION="install"
@@ -462,6 +625,7 @@ handle_existing_installation() {
 
   section "Existing installation detected"
   warn "${INSTALL_DIR} already exists"
+  load_existing_installation_defaults
   if [[ -n "$EXISTING_ACTION" ]]; then
     ACTION="$EXISTING_ACTION"
     [[ "$ACTION" != "abort" ]] || fail "Installation cancelled"
@@ -471,33 +635,37 @@ handle_existing_installation() {
   if [[ "$ASSUME_YES" == "yes" ]]; then
     ACTION="update"
     UPDATE_CONFIG="no"
+    info "Automatic update selected; existing configuration will be backed up and preserved"
     return
   fi
-  printf 'Choose action:\n'
-  printf '  1) Update application (keep config)\n'
-  printf '  2) Backup config\n'
-  printf '  3) Remove application and reinstall\n'
-  printf '  5) Remove app\n'
-  printf '  6) Remove app and all files\n'
-  printf '  7) Abort\n'
+  printf 'Choose action (automatic update starts after %s seconds):\n' "$EXISTING_ACTION_TIMEOUT"
+  printf '  1) Update application (backup and keep config) [default]\n'
+  printf '  2) Reinstall application (clean app files; keep config, data, and logs)\n'
+  printf '  3) Backup config only\n'
+  printf '  4) Remove app (keep config, data, and logs)\n'
+  printf '  5) Remove app and all files\n'
+  printf '  6) Abort\n'
   local choice=""
-  if choice="$(read_from_tty "Action [1]: ")"; then
+  if choice="$(read_from_tty_timeout "Action [1, auto in ${EXISTING_ACTION_TIMEOUT}s]: " "$EXISTING_ACTION_TIMEOUT")"; then
     :
   else
-    printf 'Action [1]: 1\n' >&2
+    printf '\n' >&2
+    info "No action selected within ${EXISTING_ACTION_TIMEOUT} seconds; starting update with configuration backup"
     choice="1"
   fi
   case "${choice:-1}" in
-    1) ACTION="update" ;;
-    2) ACTION="backup-config" ;;
-    3)
-      confirm "Remove ${INSTALL_DIR} and install fresh?" "no" || fail "Installation cancelled"
-      ACTION="remove"
-      UPDATE_CONFIG="yes"
+    1)
+      ACTION="update"
+      UPDATE_CONFIG="no"
       ;;
-    5) ACTION="remove-app" ;;
-    6) ACTION="remove-all" ;;
-    7) fail "Installation cancelled" ;;
+    2)
+      ACTION="reinstall"
+      UPDATE_CONFIG="no"
+      ;;
+    3) ACTION="backup-config" ;;
+    4) ACTION="remove-app" ;;
+    5) ACTION="remove-all" ;;
+    6) fail "Installation cancelled" ;;
     *) fail "Invalid choice" ;;
   esac
 }
@@ -513,6 +681,13 @@ prompt_config_update() {
         return
       fi
       confirm "Update configuration file ${CONFIG_FILE}?" "no" && UPDATE_CONFIG="yes" || UPDATE_CONFIG="no"
+      ;;
+    reinstall)
+      if [[ "$UPDATE_CONFIG" == "yes" ]]; then
+        warn "Reinstall will regenerate config because --update-config was explicitly provided"
+      else
+        UPDATE_CONFIG="no"
+      fi
       ;;
     install|remove)
       UPDATE_CONFIG="yes"
@@ -530,33 +705,53 @@ backup_config_only() {
   fi
   local stamp backup_dir
   stamp="$(date +%Y%m%d-%H%M%S)"
-  backup_dir="/var/backups/webnas/${stamp}"
-  install -d -m 0750 "$backup_dir"
+  install -d -m 0750 "$BACKUP_ROOT"
+  backup_dir="$(mktemp -d "${BACKUP_ROOT}/${stamp}-manual.XXXXXX")"
+  chmod 0750 "$backup_dir"
   cp -a "$CONFIG_FILE" "${backup_dir}/config.yaml"
+  printf 'action=backup-config\ncreated_at=%s\ninstall_dir=%s\n' "$(date --iso-8601=seconds)" "$INSTALL_DIR" > "${backup_dir}/installer-state"
+  chmod 0640 "${backup_dir}/config.yaml" "${backup_dir}/installer-state"
   ok "Config backup created: ${backup_dir}/config.yaml"
   return 0
 }
 
-backup_before_reinstall() {
+backup_before_application_change() {
+  case "$ACTION" in
+    update|reinstall|remove) ;;
+    *) return ;;
+  esac
+  section "Backing up existing installation"
   local stamp backup_dir
   stamp="$(date +%Y%m%d-%H%M%S)"
-  if [[ "$ACTION" == "remove" ]]; then
-    backup_dir="/var/backups/webnas/${stamp}"
-    install -d -m 0750 "$backup_dir"
-    [[ -d "$INSTALL_DIR" ]] && rsync -a "$INSTALL_DIR/" "${backup_dir}/app/"
-    [[ -f "$CONFIG_FILE" ]] && cp -a "$CONFIG_FILE" "${backup_dir}/config.yaml"
-    ok "Pre-reinstall backup created: ${backup_dir}"
+  install -d -m 0750 "$BACKUP_ROOT"
+  backup_dir="$(mktemp -d "${BACKUP_ROOT}/${stamp}-${ACTION}.XXXXXX")"
+  chmod 0750 "$backup_dir"
+  LAST_BACKUP_DIR="$backup_dir"
+  if [[ -f "$CONFIG_FILE" ]]; then
+    cp -a "$CONFIG_FILE" "${backup_dir}/config.yaml"
+    chmod 0640 "${backup_dir}/config.yaml"
+  else
+    warn "No existing config found at ${CONFIG_FILE}; the installer will create one"
   fi
+  if [[ "$ACTION" == "reinstall" || "$ACTION" == "remove" ]]; then
+    [[ -d "$INSTALL_DIR" ]] && rsync -a "$INSTALL_DIR/" "${backup_dir}/app/"
+  fi
+  [[ -f "$SERVICE_FILE" ]] && cp -a "$SERVICE_FILE" "${backup_dir}/webnas.service"
+  [[ -f "$PAM_SERVICE_FILE" ]] && cp -a "$PAM_SERVICE_FILE" "${backup_dir}/webnas.pam"
+  printf 'action=%s\ncreated_at=%s\ninstall_dir=%s\nconfig_file=%s\n' "$ACTION" "$(date --iso-8601=seconds)" "$INSTALL_DIR" "$CONFIG_FILE" > "${backup_dir}/installer-state"
+  chmod 0640 "${backup_dir}/installer-state"
+  ok "Safety backup created: ${backup_dir}"
 }
 
 remove_existing_installation() {
-  if [[ "$ACTION" != "remove" ]]; then
+  if [[ "$ACTION" != "reinstall" && "$ACTION" != "remove" ]]; then
     return
   fi
-  section "Removing existing installation"
+  section "Preparing clean application reinstall"
   validate_install_dir
+  assert_removable_path "$INSTALL_DIR"
   rm -rf --one-file-system "$INSTALL_DIR"
-  ok "Removed ${INSTALL_DIR}"
+  ok "Removed old application files from ${INSTALL_DIR}; config, data, and logs remain untouched"
 }
 
 remove_app_only() {
@@ -634,7 +829,7 @@ copy_application() {
 write_config() {
   # This also runs during updates that preserve config.
   install -d -o root -g root -m 0711 /mnt/webnas /mnt/webnas/mnt
-  if [[ "$ACTION" == "update" && -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
+  if [[ ("$ACTION" == "update" || "$ACTION" == "reinstall") && -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
     ok "Keeping existing config: ${CONFIG_FILE}"
     return
   fi
@@ -884,6 +1079,32 @@ EOF
 
 cleanup() {
   [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] && rm -rf "$WORK_DIR"
+  if [[ -n "$APT_TEMP_DIR" && -d "$APT_TEMP_DIR" ]]; then
+    case "$APT_TEMP_DIR" in
+      /tmp/webnas-apt.*|/var/tmp/webnas-apt.*) rm -rf -- "$APT_TEMP_DIR" ;;
+      *) warn "Refusing to remove unexpected APT temporary path: ${APT_TEMP_DIR}" ;;
+    esac
+  fi
+  return 0
+}
+
+restore_failed_reinstall() {
+  [[ "$ACTION" == "reinstall" && "$APP_COPY_STARTED" == "yes" ]] || return 1
+  [[ -n "$LAST_BACKUP_DIR" && -d "${LAST_BACKUP_DIR}/app" ]] || return 1
+  warn "Reinstall failed; restoring the previous application from ${LAST_BACKUP_DIR}"
+  validate_install_dir
+  assert_removable_path "$INSTALL_DIR"
+  rm -rf --one-file-system "$INSTALL_DIR" || return 1
+  install -d -m 0755 "$INSTALL_DIR" || return 1
+  rsync -a "${LAST_BACKUP_DIR}/app/" "$INSTALL_DIR/" || return 1
+  [[ ! -f "${LAST_BACKUP_DIR}/config.yaml" ]] || cp -a "${LAST_BACKUP_DIR}/config.yaml" "$CONFIG_FILE" || return 1
+  [[ ! -f "${LAST_BACKUP_DIR}/webnas.service" ]] || cp -a "${LAST_BACKUP_DIR}/webnas.service" "$SERVICE_FILE" || return 1
+  [[ ! -f "${LAST_BACKUP_DIR}/webnas.pam" ]] || cp -a "${LAST_BACKUP_DIR}/webnas.pam" "$PAM_SERVICE_FILE" || return 1
+  systemctl daemon-reload 2>/dev/null || true
+  if [[ "$SERVICE_WAS_ACTIVE" == "yes" ]]; then
+    systemctl start "$SERVICE_NAME" 2>/dev/null || warn "Previous application was restored, but the service could not be restarted automatically"
+  fi
+  ok "Previous application and configuration restored"
   return 0
 }
 
@@ -892,6 +1113,12 @@ cleanup_failed_install() {
   cleanup
   if [[ "$INSTALL_COMPLETED" == "yes" ]]; then
     return 0
+  fi
+  if restore_failed_reinstall; then
+    return 0
+  fi
+  if [[ "$ACTION" == "update" && -n "$LAST_BACKUP_DIR" && -f "${LAST_BACKUP_DIR}/config.yaml" && "$UPDATE_CONFIG" == "yes" ]]; then
+    cp -a "${LAST_BACKUP_DIR}/config.yaml" "$CONFIG_FILE" 2>/dev/null || warn "Could not restore the previous configuration after the failed update"
   fi
   case "$ACTION" in
     install|remove)
@@ -930,8 +1157,11 @@ main() {
   prompt_configuration
   install_dependencies
   setup_node_runtime
-  backup_before_reinstall
+  backup_before_application_change
   ensure_service_user
+  if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    SERVICE_WAS_ACTIVE="yes"
+  fi
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
   remove_existing_installation
   copy_application

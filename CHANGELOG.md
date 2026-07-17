@@ -8,6 +8,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ### Added
 
+- Expanded existing-installation workflow in `install.sh` with an explicit config-preserving reinstall action, a five-second default-to-update prompt, automatic configuration snapshots, current port/service-owner discovery, and rollback to the previous application after a failed clean reinstall.
 - Production Users and groups identity module with a closed granular permission registry, Linux-group and user allow/deny policy, effective permission sources, Linux administrator/last-administrator protection, versioned `identity.sqlite3`, idempotent `rbac.json` migration, compatible legacy APIs, PAM-backed login, session/CSRF-protected mutations, unified responsive UI, and audited policy history.
 - Activity Center with a durable structured timeline for sign-ins, file operations, user configuration changes, administrative tasks, network-resource changes, RBAC assignments, and queued/completed/failed module jobs. Regular users are restricted to their own events, while `audit.view` grants global user/category/status/search filters; stored metadata is bounded and recursively redacted for credentials and tokens.
 - Granular RBAC layered over PAM/local Linux users, with `administrator`, `operator`, `auditor`, and `user` roles, closed application/operation permissions, atomic private assignments, administrator compatibility for root/sudo/wheel, backend enforcement, and a role-management application.
