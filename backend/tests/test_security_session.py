@@ -41,16 +41,30 @@ def test_session_cookie_roundtrip(session_store):
     assert "expires=" not in header.casefold()
 
 
-def test_remembered_session_uses_a_long_lived_secure_cookie(session_store):
+def test_remembered_session_uses_a_long_lived_cookie_over_http(session_store, monkeypatch):
+    cfg = security.get_config().model_copy(deep=True)
+    cfg.security.cookie_secure = False
+    monkeypatch.setattr(security, "get_config", lambda: cfg)
     response = Response()
 
     security.create_session(response, "alice", remember_me=True)
 
     header = response.headers["set-cookie"]
     assert "HttpOnly" in header
-    assert "Secure" in header
+    assert "; Secure" not in header
     assert "SameSite=strict" in header
     assert "Max-Age=2592000" in header
+
+
+def test_remembered_session_respects_secure_cookie_configuration(session_store, monkeypatch):
+    cfg = security.get_config().model_copy(deep=True)
+    cfg.security.cookie_secure = True
+    monkeypatch.setattr(security, "get_config", lambda: cfg)
+    response = Response()
+
+    security.create_session(response, "alice", remember_me=True)
+
+    assert "; Secure" in response.headers["set-cookie"]
 
 
 def test_store_keeps_only_a_hash_of_the_bearer_token(session_store):

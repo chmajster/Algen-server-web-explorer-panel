@@ -144,8 +144,10 @@ def create_session(response: Response, username: str, *, remember_me: bool = Fal
         cfg.auth.session_cookie_name,
         token,
         httponly=True,
-        # Persistent authentication is never allowed in a non-Secure cookie.
-        secure=True if remember_me else cfg.security.cookie_secure,
+        # Use the configured transport policy for both browser-session and
+        # persistent cookies. Forcing Secure only for remembered sessions
+        # makes them unusable on the default HTTP installation.
+        secure=cfg.security.cookie_secure,
         samesite="strict",
         max_age=lifetime if remember_me else None,
         path="/",

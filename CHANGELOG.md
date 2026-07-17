@@ -6,6 +6,10 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased] - 2026-07-16
 
+### Fixed
+
+- Remember-me sessions now persist on HTTP installations while still honoring `security.cookie_secure` when secure cookies are configured.
+
 ### Added
 
 - Complete **Containers Manager** application and typed `/api/modules/docker` API covering the engine dashboard/lifecycle, strict container creation and lifecycle, bounded logs/statistics/processes, local images and Docker Hub search, private registries, Compose validation/history/rollback/scaling, volumes, networks, application templates, checksummed backup artifacts, restore, prune previews, events and diagnostics.

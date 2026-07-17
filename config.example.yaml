@@ -10,7 +10,8 @@ auth:
   pam_service: "webnas"
   session_cookie_name: "webnas_session"
   # Browser-only sessions expire after this server-side limit. Remembered
-  # sessions use a Secure persistent cookie and can be revoked on logout.
+  # sessions use a persistent cookie and can be revoked on logout. Enable
+  # security.cookie_secure whenever the panel is served over HTTPS.
   session_lifetime_hours: 12
   remember_me_lifetime_days: 30
 
