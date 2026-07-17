@@ -15,7 +15,12 @@
 .desktop .taskbar-items button span { font-size: .72em; }
 .desktop .taskbar-items button i { right: 12px; bottom: 2px; left: 12px; height: 3px; opacity: 1; transform: scaleX(.38); transition: transform .12s ease; }
 .desktop .taskbar-items button.active i { transform: scaleX(1); }
+.desktop .taskbar-items button.running:not(.active) i { opacity: .82; }
+.desktop .taskbar-items button.minimized { opacity: .68; }
 .desktop .taskbar-items button b { position: absolute; top: 1px; right: 2px; min-width: 15px; height: 15px; border-radius: 8px; color: white; background: var(--accent); font-size: 0.5625rem; line-height: 15px; }
+.desktop .taskbar > .context-menu { z-index: 3200; min-width: 260px; max-width: min(340px, calc(100vw - 16px)); backdrop-filter: blur(22px) saturate(135%); }
+.desktop .taskbar > .context-menu button { min-height: 36px; }
+.desktop .taskbar > .context-menu button svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .desktop .system-tray { z-index: 2; margin-left: auto; gap: 1px; }
 .desktop .system-tray > button { padding: 0 9px; }
 .desktop .system-tray svg { width: 17px; height: 17px; }

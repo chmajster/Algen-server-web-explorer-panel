@@ -347,6 +347,51 @@ def test_apt_update_retries_only_for_the_unavailable_proxmox_enterprise_reposito
         executor._run_apt_update(900, lambda *_: None)
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "403 Forbidden: this repository requires a valid subscription",
+        "Authentication required for the Proxmox Enterprise repository",
+        "The repository no longer has a Release file because no subscription is active",
+    ],
+)
+def test_detects_additional_proxmox_subscription_failures(message):
+    assert executor.proxmox_enterprise_repository_failure(f"E: https://enterprise.proxmox.com/debian/pve {message}")
+    assert not executor.proxmox_enterprise_repository_failure(f"E: https://deb.debian.org/debian {message}")
+
+
+def test_apt_install_retries_without_enterprise_repository_after_subscription_failure(monkeypatch, tmp_path):
+    source_root = tmp_path / "apt"
+    parts = source_root / "sources.list.d"
+    parts.mkdir(parents=True)
+    (source_root / "sources.list").write_text("deb http://deb.debian.org/debian bookworm main\n", encoding="utf-8")
+    (parts / "pve-enterprise.list").write_text("deb https://enterprise.proxmox.com/debian/pve bookworm pve-enterprise\n", encoding="utf-8")
+    monkeypatch.setattr(executor, "APT_SOURCES_ROOT", source_root)
+    original = ["apt-get", "install", "-y", "--reinstall", "samba", "cifs-utils"]
+    calls: list[list[str]] = []
+    retry_sources: list[str] = []
+
+    def run(args, timeout, log):
+        calls.append(args)
+        if args == original:
+            raise executor.CommandExecutionError("apt-get", 100, "E: https://enterprise.proxmox.com/debian/pve 403 Forbidden - subscription required")
+        source_list = Path(args[2].split("=", 1)[1])
+        source_parts = Path(args[4].split("=", 1)[1])
+        retry_sources.append(source_list.read_text(encoding="utf-8") + "\n".join(path.read_text(encoding="utf-8") for path in source_parts.iterdir()))
+
+    monkeypatch.setattr(executor, "_run", run)
+    messages: list[str] = []
+
+    executor._run_apt_command(original, 1800, lambda stream, line: messages.append(line))
+
+    assert calls[0] == original
+    assert calls[1][:5] == ["apt-get", "-o", calls[1][2], "-o", calls[1][4]]
+    assert calls[1][5:] == original[1:]
+    assert "enterprise.proxmox.com" not in retry_sources[0]
+    assert "deb.debian.org" in retry_sources[0]
+    assert any("active subscription" in message for message in messages)
+
+
 def test_redacts_secrets_and_executor_never_uses_shell_true():
     assert "secret=[REDACTED]" in executor.redact("secret=hunter2")
     assert "password: [REDACTED]" in executor.redact("password: admin")

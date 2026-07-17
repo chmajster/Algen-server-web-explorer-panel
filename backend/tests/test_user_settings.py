@@ -17,6 +17,7 @@ def test_defaults_cover_every_user_preference():
     assert values["language"] == "en-US"
     assert values["theme"] == "system"
     assert values["taskbar_alignment"] == "center"
+    assert values["pinned_apps"] == ["files", "transfers", "monitor", "settings"]
     assert values["file_page_size"] == 50
     assert values["notification_limit"] == 5
     assert values["animations_enabled"] is True
@@ -51,6 +52,8 @@ def test_old_settings_file_keeps_valid_fields_and_repairs_invalid_fields(monkeyp
         ("file_page_size", 20),
         ("notification_limit", 0),
         ("wallpaper", "javascript:alert(1)"),
+        ("pinned_apps", ["files", "unknown-app"]),
+        ("pinned_apps", ["files", "files"]),
     ],
 )
 def test_patch_rejects_invalid_preferences(field, value):

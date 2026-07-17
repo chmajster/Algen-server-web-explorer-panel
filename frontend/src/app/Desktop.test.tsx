@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { settingsFixture } from "../test/settings";
 import { Desktop } from "./Desktop";
@@ -91,5 +91,35 @@ describe("personalized desktop", () => {
     expect(confirm).toHaveBeenCalledTimes(2);
     confirm.mockRestore();
     localStorage.removeItem("webnas_windows_test");
+  });
+
+  it("controls a running window from the taskbar context menu", () => {
+    localStorage.setItem("webnas_windows_test", JSON.stringify({ windows: [{ id: "transfers-1", app: "transfers", rect: { x: 20, y: 20, width: 900, height: 600 }, minimized: false, zIndex: 11 }], activeId: "transfers-1", counter: 1, topZ: 11 }));
+    renderDesktop({ startup_windows: "last" });
+    const taskbar = screen.getByLabelText("desktop.taskbar");
+    expect(screen.getByRole("dialog", { name: "app.transfers" })).toBeInTheDocument();
+
+    fireEvent.contextMenu(within(taskbar).getByRole("button", { name: "app.transfers" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "window.minimize" }));
+    expect(screen.queryByRole("dialog", { name: "app.transfers" })).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(within(taskbar).getByRole("button", { name: "app.transfers" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.showWindow" }));
+    expect(screen.getByRole("dialog", { name: "app.transfers" })).toBeInTheDocument();
+
+    fireEvent.contextMenu(within(taskbar).getByRole("button", { name: "app.transfers" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.closeWindow" }));
+    expect(screen.queryByRole("dialog", { name: "app.transfers" })).not.toBeInTheDocument();
+    localStorage.removeItem("webnas_windows_test");
+  });
+
+  it("persists pinning changes through user settings", () => {
+    const profile = settingsFixture({ pinned_apps: ["monitor", "settings"] });
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={save} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+
+    fireEvent.contextMenu(within(screen.getByLabelText("desktop.taskbar")).getByRole("button", { name: "app.monitor" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.unpinFromTaskbar" }));
+    expect(save).toHaveBeenCalledWith({ pinned_apps: ["settings"] });
   });
 });

@@ -84,6 +84,7 @@ export type UserPreferences = {
   accent_color: "blue" | "teal" | "green" | "violet" | "rose" | "orange";
   wallpaper_fit: "cover" | "contain" | "stretch" | "center";
   taskbar_alignment: "left" | "center";
+  pinned_apps: Array<"files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "module">;
   show_desktop_shortcuts: boolean;
   desktop_shortcut_size: "small" | "medium" | "large";
   show_welcome_widget: boolean;

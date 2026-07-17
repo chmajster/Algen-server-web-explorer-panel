@@ -52,7 +52,20 @@ def redact(line: str) -> str:
 
 def proxmox_enterprise_repository_failure(output: str) -> bool:
     normalized = output.lower()
-    return PROXMOX_ENTERPRISE_HOST in normalized and any(marker in normalized for marker in ("401", "unauthorized", "does not have a release file", "is not signed"))
+    return PROXMOX_ENTERPRISE_HOST in normalized and any(
+        marker in normalized
+        for marker in (
+            "401",
+            "403",
+            "unauthorized",
+            "forbidden",
+            "subscription",
+            "authentication required",
+            "does not have a release file",
+            "no longer has a release file",
+            "is not signed",
+        )
+    )
 
 
 def _filter_apt_source(path: Path, content: str) -> tuple[str, int]:
@@ -67,8 +80,11 @@ def _filter_apt_source(path: Path, content: str) -> tuple[str, int]:
 
 
 @contextmanager
-def apt_update_without_proxmox_enterprise(source_root: Path | None = None) -> Iterator[tuple[list[str], int]]:
-    """Build an ephemeral APT source view without changing host configuration."""
+def apt_command_without_proxmox_enterprise(command: list[str], source_root: Path | None = None) -> Iterator[tuple[list[str], int]]:
+    """Run a closed APT command against an ephemeral source view without Enterprise."""
+
+    if not command or command[0] != "apt-get":
+        raise ValueError("Only apt-get commands can use the Proxmox repository fallback")
 
     root = source_root or APT_SOURCES_ROOT
     with tempfile.TemporaryDirectory(prefix="webnas-apt-") as temporary:
@@ -92,13 +108,21 @@ def apt_update_without_proxmox_enterprise(source_root: Path | None = None) -> It
             if filtered.strip():
                 (source_parts / candidate.name).write_text(filtered, encoding="utf-8")
 
-        command = [
+        retry_command = [
             "apt-get",
             "-o", f"Dir::Etc::sourcelist={source_list}",
             "-o", f"Dir::Etc::sourceparts={source_parts}",
-            "update",
+            *command[1:],
         ]
-        yield command, removed
+        yield retry_command, removed
+
+
+@contextmanager
+def apt_update_without_proxmox_enterprise(source_root: Path | None = None) -> Iterator[tuple[list[str], int]]:
+    """Backward-compatible temporary source view for an APT metadata refresh."""
+
+    with apt_command_without_proxmox_enterprise(["apt-get", "update"], source_root) as result:
+        yield result
 
 
 def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[str, list[str], int]]:
@@ -192,17 +216,25 @@ def _run(args: list[str], timeout: int, log: LogCallback) -> None:
         raise CommandExecutionError(Path(args[0]).name, code, "\n".join(output))
 
 
-def _run_apt_update(timeout: int, log: LogCallback) -> None:
+def _run_apt_command(args: list[str], timeout: int, log: LogCallback) -> None:
+    if not args or args[0] != "apt-get":
+        raise ValueError("APT fallback received a non-APT command")
     try:
-        _run(["apt-get", "update"], timeout, log)
+        _run(args, timeout, log)
     except CommandExecutionError as error:
         if not proxmox_enterprise_repository_failure(error.output):
             raise
-        with apt_update_without_proxmox_enterprise() as (command, removed):
+        with apt_command_without_proxmox_enterprise(args) as (command, removed):
             if removed == 0:
                 raise
-            log("warning", "Proxmox Enterprise repository is unavailable without a subscription; retrying APT metadata refresh with that repository temporarily omitted")
+            log("warning", "Proxmox Enterprise repository requires an active subscription; retrying the APT operation with that repository temporarily omitted")
             _run(command, timeout, log)
+
+
+def _run_apt_update(timeout: int, log: LogCallback) -> None:
+    """Compatibility wrapper retained for callers and extensions."""
+
+    _run_apt_command(["apt-get", "update"], timeout, log)
 
 
 def _run_hook(manifest: ModuleManifest, action: str, log: LogCallback) -> None:
@@ -237,8 +269,8 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
         if cancelled():
             raise InterruptedError("Package operation cancelled before the next safe step")
         progress(max(1, int(index / total * 90)), label)
-        if label == "Refresh package metadata" and args == ["apt-get", "update"]:
-            _run_apt_update(timeout, log)
+        if args and args[0] == "apt-get":
+            _run_apt_command(args, timeout, log)
         else:
             _run(args, timeout, log)
         if label in {"Install packages", "Reinstall packages", "Remove packages"} and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:

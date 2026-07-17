@@ -122,6 +122,12 @@ DEFAULT_DESKTOP_WIDGETS = [
     DesktopWidget(id="alerts", x=7, y=2, width=3, height=2),
 ]
 
+PinnedAppId = Literal[
+    "files", "transfers", "activity", "identity", "users", "groups", "mounts", "samba",
+    "services", "store", "logs", "settings", "monitor", "modules", "access", "module",
+]
+DEFAULT_PINNED_APPS: list[PinnedAppId] = ["files", "transfers", "monitor", "settings"]
+
 
 class UserSettings(BaseModel):
     language: Literal["pl-PL", "en-US"] = "pl-PL"
@@ -131,6 +137,7 @@ class UserSettings(BaseModel):
     accent_color: Literal["blue", "teal", "green", "violet", "rose", "orange"] = "blue"
     wallpaper_fit: Literal["cover", "contain", "stretch", "center"] = "cover"
     taskbar_alignment: Literal["left", "center"] = "center"
+    pinned_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
     show_desktop_shortcuts: bool = True
     desktop_shortcut_size: Literal["small", "medium", "large"] = "medium"
     show_welcome_widget: bool = True
@@ -177,6 +184,13 @@ class UserSettings(BaseModel):
             raise ValueError("desktop widget identifiers must be unique")
         return values
 
+    @field_validator("pinned_apps")
+    @classmethod
+    def unique_pinned_apps(cls, values: list[PinnedAppId]) -> list[PinnedAppId]:
+        if len(values) != len(set(values)):
+            raise ValueError("pinned application identifiers must be unique")
+        return values
+
     @field_validator("wallpaper")
     @classmethod
     def validate_wallpaper(cls, value: str) -> str:
@@ -194,6 +208,7 @@ class MePatch(BaseModel):
     accent_color: Literal["blue", "teal", "green", "violet", "rose", "orange"] | None = None
     wallpaper_fit: Literal["cover", "contain", "stretch", "center"] | None = None
     taskbar_alignment: Literal["left", "center"] | None = None
+    pinned_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
     show_desktop_shortcuts: bool | None = None
     desktop_shortcut_size: Literal["small", "medium", "large"] | None = None
     show_welcome_widget: bool | None = None
@@ -237,6 +252,13 @@ class MePatch(BaseModel):
     def unique_widgets(cls, values: list[DesktopWidget] | None) -> list[DesktopWidget] | None:
         if values is not None and len({item.id for item in values}) != len(values):
             raise ValueError("desktop widget identifiers must be unique")
+        return values
+
+    @field_validator("pinned_apps")
+    @classmethod
+    def unique_pinned_apps(cls, values: list[PinnedAppId] | None) -> list[PinnedAppId] | None:
+        if values is not None and len(values) != len(set(values)):
+            raise ValueError("pinned application identifiers must be unique")
         return values
 
     @field_validator("wallpaper")

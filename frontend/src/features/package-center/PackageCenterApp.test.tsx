@@ -118,6 +118,10 @@ describe("Package Center", () => {
     expect(within(sambaCard!).getByRole("button", { name: "store.stop" })).toBeInTheDocument();
     expect(within(sambaCard!).queryByRole("button", { name: "store.reinstall" })).not.toBeInTheDocument();
     expect(within(sambaCard!).queryByRole("button", { name: "store.install" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(sambaCard!).getByRole("button", { name: "package.details" }));
+    fireEvent.click(screen.getByRole("button", { name: "store.reinstall" }));
+    await waitFor(() => expect(api.appPlan).toHaveBeenCalledWith("samba", "reinstall", false));
   });
 
   it("disables package actions and shows progress while an operation is active", async () => {
