@@ -243,3 +243,59 @@ def test_visible_roots_require_real_mount(tmp_path, monkeypatch):
         conn.commit()
 
     assert network_mounts.visible_mount_roots("alice") == []
+
+
+def test_stale_mounted_state_is_reconciled_without_user_facing_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "db_path", lambda: tmp_path / "mounts.sqlite3")
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+    monkeypatch.setattr(network_mounts, "actual_mount", lambda path: None)
+    monkeypatch.setattr(network_mounts, "missing_packages", lambda mount_type: [])
+    monkeypatch.setattr(network_mounts, "log_dir", lambda: tmp_path)
+    with network_mounts.connect() as conn:
+        conn.execute(
+            """INSERT INTO mounts
+            (id,name,normalized_name,type,host,remote,mount_point,owner,read_only,persistent,status,config_json,allowed_users_json,allowed_groups_json,created_at,updated_at,migration_status)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("m1", "media", "media", "nfs", "nas", "nas:/media", "/mnt/webnas/mnt/media", "admin", 0, 0, "mounted", "{}", "[]", "[]", 1.0, 1.0, "ready"),
+        )
+        conn.commit()
+
+    mount = network_mounts.get_mount_or_404("m1")
+
+    assert mount["status"] == "unmounted"
+    assert mount["actual_mounted"] is False
+    assert mount["last_error"] == ""
+    with network_mounts.connect() as conn:
+        row = conn.execute("SELECT status, last_error FROM mounts WHERE id='m1'").fetchone()
+    assert dict(row) == {"status": "unmounted", "last_error": ""}
+
+
+def test_successful_mount_waits_for_operating_system_confirmation(monkeypatch):
+    mount = {
+        "mount_point": "/mnt/webnas/mnt/media",
+        "type": "nfs",
+        "remote": "nas:/media",
+        "persistent": False,
+        "config": {"noexec": True, "advanced_options": [], "nfs_version": "auto"},
+        "read_only": False,
+    }
+    states = iter([None, None, {"mount_point": mount["mount_point"], "fs_type": "nfs", "source": "nas:/media"}])
+    monkeypatch.setattr(network_mounts, "actual_mount", lambda path: next(states))
+    monkeypatch.setattr(network_mounts, "_prepare_mount_directory", lambda value: None)
+    monkeypatch.setattr(network_mounts, "write_systemd_units", lambda value: None)
+    monkeypatch.setattr(network_mounts, "run_command", lambda *args, **kwargs: network_mounts.subprocess.CompletedProcess(args[0], 0, "mounted", ""))
+    monkeypatch.setattr(network_mounts.time, "sleep", lambda seconds: None)
+
+    result = network_mounts.execute_mount(mount, "mount")
+
+    assert result.returncode == 0
+
+
+def test_mount_reports_failure_when_kernel_never_registers_it(monkeypatch):
+    result = network_mounts.subprocess.CompletedProcess(["mount"], 0, "", "")
+    monkeypatch.setattr(network_mounts, "wait_for_mount_state", lambda path, expected: None)
+
+    verified = network_mounts._verify_mount_result(result, "/mnt/webnas/mnt/media", True)
+
+    assert verified.returncode == 1
+    assert "did not register" in verified.stderr

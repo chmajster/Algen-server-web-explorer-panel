@@ -49,6 +49,8 @@ BLOCKED_OPTION_KEYS = {
 }
 BASE_OPTIONS = ["nosuid", "nodev", "_netdev", "nofail"]
 TRANSIENT_STATUSES = {"mounting", "unmounting", "remounting", "testing", "migrating"}
+MOUNT_STATE_TIMEOUT_SECONDS = 3.0
+MOUNT_STATE_POLL_INTERVAL_SECONDS = 0.1
 _locks_guard = threading.Lock()
 _mount_locks: dict[str, threading.Lock] = {}
 
@@ -454,12 +456,12 @@ def _decode_mountinfo(value: str) -> str:
 
 
 def actual_mount(path: str | Path) -> dict | None:
-    target = str(Path(path))
+    target = os.path.normpath(str(Path(path)))
     try:
         for line in Path("/proc/self/mountinfo").read_text(encoding="utf-8", errors="replace").splitlines():
             fields = line.split()
             separator = fields.index("-")
-            mount_point = _decode_mountinfo(fields[4])
+            mount_point = os.path.normpath(_decode_mountinfo(fields[4]))
             if mount_point == target:
                 return {"mount_point": mount_point, "fs_type": fields[separator + 1], "source": _decode_mountinfo(fields[separator + 2])}
     except (OSError, ValueError, IndexError):
@@ -469,6 +471,16 @@ def actual_mount(path: str | Path) -> dict | None:
         if result.returncode == 0:
             return {"mount_point": target, "fs_type": fs_type(Path(target)), "source": "unknown"}
     return None
+
+
+def wait_for_mount_state(path: str | Path, expected_mounted: bool, timeout: float = MOUNT_STATE_TIMEOUT_SECONDS) -> dict | None:
+    """Wait briefly for the kernel mount table to reflect a completed command."""
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        mounted = actual_mount(path)
+        if (mounted is not None) == expected_mounted or time.monotonic() >= deadline:
+            return mounted
+        time.sleep(MOUNT_STATE_POLL_INTERVAL_SECONDS)
 
 
 def missing_packages(mount_type: str) -> list[str]:
@@ -502,10 +514,17 @@ def row_to_mount(row: sqlite3.Row, *, reconcile: bool = True) -> dict:
         elif not mounted and data["missing_packages"]:
             desired = "missing_packages"
         if data["status"] != desired:
-            diagnostic = "Stored state said mounted, but the operating system does not report this mount" if data["status"] == "mounted" and not mounted else data["last_error"]
+            stale_mounted_state = data["status"] == "mounted" and not mounted
+            # The kernel state is authoritative. Losing a mount after a reboot or
+            # network interruption is not a new operation failure and must not
+            # leave a permanent internal diagnostic in the user interface.
+            diagnostic = "" if stale_mounted_state or desired == "mounted" else data["last_error"]
             with connect() as conn:
                 conn.execute("UPDATE mounts SET status=?, last_error=?, updated_at=? WHERE id=?", (desired, diagnostic, time.time(), data["id"]))
                 conn.commit()
+            if stale_mounted_state:
+                logger.warning("network_mount_state_reconciled mount_id=%s stored=mounted actual=unmounted", data["id"])
+                log_line(data["id"], "reconcile", "Stored mounted state reconciled to unmounted")
             data["status"] = desired
             data["last_error"] = diagnostic
     data["fs"] = filesystem_payload(Path(data["mount_point"]), mounted)
@@ -685,25 +704,36 @@ def _prepare_mount_directory(mount: dict, allow_existing_data: bool = False) -> 
     point.mkdir(mode=0o750, exist_ok=True)
 
 
+def _verify_mount_result(result: subprocess.CompletedProcess[str], mount_point: str, expected_mounted: bool) -> subprocess.CompletedProcess[str]:
+    if result.returncode:
+        return result
+    mounted = wait_for_mount_state(mount_point, expected_mounted)
+    if (mounted is not None) == expected_mounted:
+        return result
+    message = "Mount command completed, but the operating system did not register the mount" if expected_mounted else "Unmount command completed, but the operating system still reports the mount as active"
+    stderr = "\n".join(part for part in ((result.stderr or "").strip(), message) if part)
+    return subprocess.CompletedProcess(result.args, 1, result.stdout, stderr)
+
+
 def execute_mount(mount: dict, action: str) -> subprocess.CompletedProcess[str]:
     if action == "mount":
         if actual_mount(mount["mount_point"]):
             return subprocess.CompletedProcess(["mountpoint", mount["mount_point"]], 0, "Already mounted", "")
         _prepare_mount_directory(mount)
         write_systemd_units(mount)
-        return run_command(mount_command(mount), timeout=180)
+        return _verify_mount_result(run_command(mount_command(mount), timeout=180), mount["mount_point"], True)
     if action == "unmount":
         if not actual_mount(mount["mount_point"]):
             return subprocess.CompletedProcess(["umount", mount["mount_point"]], 0, "Already unmounted", "")
-        return run_command(["umount", mount["mount_point"]], timeout=90)
+        return _verify_mount_result(run_command(["umount", mount["mount_point"]], timeout=90), mount["mount_point"], False)
     if action == "remount":
         if actual_mount(mount["mount_point"]):
-            result = run_command(["umount", mount["mount_point"]], timeout=90)
+            result = _verify_mount_result(run_command(["umount", mount["mount_point"]], timeout=90), mount["mount_point"], False)
             if result.returncode:
                 return result
         _prepare_mount_directory(mount)
         write_systemd_units(mount)
-        return run_command(mount_command(mount), timeout=180)
+        return _verify_mount_result(run_command(mount_command(mount), timeout=180), mount["mount_point"], True)
     raise HTTPException(400, "Unsupported mount action")
 
 
