@@ -1,10 +1,10 @@
-import { Archive, FileCog, FileText, FolderNetwork, Info, LayoutDashboard, Radio, Server, Stethoscope, Users } from "lucide-react";
+import { Archive, FileCog, FileText, Folder, Info, LayoutDashboard, Radio, Server, Stethoscope, Users } from "lucide-react";
 import type { ModuleStatus } from "../../../api";
 import type { Translate } from "../../../app/types";
 
 export type ModuleSection = "overview" | "configuration" | "service" | "logs" | "diagnostics" | "backups" | "info" | "shares" | "users" | "sessions";
 
-const icons: Record<ModuleSection, React.ReactNode> = { overview: <LayoutDashboard />, configuration: <FileCog />, service: <Server />, logs: <FileText />, diagnostics: <Stethoscope />, backups: <Archive />, info: <Info />, shares: <FolderNetwork />, users: <Users />, sessions: <Radio /> };
+const icons: Record<ModuleSection, React.ReactNode> = { overview: <LayoutDashboard />, configuration: <FileCog />, service: <Server />, logs: <FileText />, diagnostics: <Stethoscope />, backups: <Archive />, info: <Info />, shares: <Folder />, users: <Users />, sessions: <Radio /> };
 
 export function ModuleStatusBadge({ status, t }: { status: ModuleStatus; t: Translate }) {
   return <span className={`module-status-badge ${status.health}`}><i aria-hidden="true" />{t(`module.health.${status.health}`)}</span>;

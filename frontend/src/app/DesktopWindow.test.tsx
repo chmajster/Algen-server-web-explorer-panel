@@ -30,6 +30,6 @@ describe("desktop window interactions", () => {
     const { container } = render(<DesktopWindow window={moduleWindow} active t={(key) => key} onFocus={vi.fn()} onClose={vi.fn()} onMinimize={vi.fn()} onCommit={vi.fn()} onToggleMaximize={vi.fn()}><div /></DesktopWindow>);
 
     expect(screen.getByRole("dialog", { name: "Samba" })).toBeInTheDocument();
-    expect(container.querySelector(".window-app-icon .lucide-share-2")).toBeInTheDocument();
+    expect(container.querySelector(".window-app-icon .lucide-share2")).toBeInTheDocument();
   });
 });

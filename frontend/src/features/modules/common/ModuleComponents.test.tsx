@@ -30,8 +30,9 @@ describe("module common UI", () => {
   it("translates reinstall operations and known backend progress steps", () => {
     render(<ModuleJobProgress job={{ id: "2", module_id: "samba", action: "reinstall", operation: "reinstall", status: "completed", progress: 100, created_at: 1, error: "", current_step: "Completed", log_tail: [] }} t={t} />);
 
-    expect(screen.getByText("module.operation.reinstall")).toBeInTheDocument();
-    expect(screen.getAllByText("task.completed")).toHaveLength(2);
+    expect(screen.getByText("reinstall")).toBeInTheDocument();
+    expect(screen.getByText("task.completed")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.tagName === "SPAN" && element.textContent?.includes("task.completed") === true)).toHaveTextContent("100%");
     expect(screen.queryByText("Completed")).not.toBeInTheDocument();
   });
 

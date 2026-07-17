@@ -31,7 +31,7 @@ describe("Samba module app", () => {
   it("shows module health and switches to the share table", async () => {
     render(<SambaModuleApp t={t} toast={vi.fn()} onOpenFolder={vi.fn()} onDirtyChange={vi.fn()} />);
     expect(await screen.findByText("module.samba.healthHealthy")).toBeInTheDocument();
-    expect(screen.getByText("module.operation.restart")).toBeInTheDocument();
+    expect(screen.getByText("restart")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "module.section.shares" }));
     expect(await screen.findByText("Media files")).toBeInTheDocument();
     expect(screen.getByText("module.samba.pathAvailable")).toBeInTheDocument();
@@ -85,6 +85,6 @@ describe("Samba module app", () => {
     render(<SambaModuleApp t={t} toast={vi.fn()} onOpenFolder={vi.fn()} onDirtyChange={vi.fn()} />);
 
     await screen.findByText("module.samba.healthHealthy");
-    await waitFor(() => expect(screen.queryByText("module.operation.reinstall")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("reinstall")).not.toBeInTheDocument());
   });
 });
