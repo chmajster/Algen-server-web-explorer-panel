@@ -91,6 +91,7 @@ def test_reinstall_creates_backup_and_removes_only_application_files(tmp_path):
         printf 'service\n' > "$SERVICE_FILE"
         printf 'pam\n' > "$PAM_SERVICE_FILE"
         rsync() {
+          [[ "$1" != "-a" ]] || shift
           local source="${1%/}"
           local target="$2"
           mkdir -p "$target"

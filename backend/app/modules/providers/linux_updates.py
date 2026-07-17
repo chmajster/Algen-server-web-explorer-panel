@@ -59,7 +59,10 @@ class LinuxUpdatesProvider(CommandProvider):
             "LC_ALL": "C.UTF-8",
         }
         result = subprocess.run(
-            [screen, "-DmS", session_name, sys.executable, str(worker), "--state-dir", str(directory), "--session-id", session_id, "--", *command],
+            # Lowercase -d starts screen detached and lets this launcher return
+            # immediately. Uppercase -D keeps screen in the foreground and made
+            # every package operation hit the ten-second launcher timeout.
+            [screen, "-dmS", session_name, sys.executable, str(worker), "--state-dir", str(directory), "--session-id", session_id, "--", *command],
             capture_output=True,
             text=True,
             timeout=10,

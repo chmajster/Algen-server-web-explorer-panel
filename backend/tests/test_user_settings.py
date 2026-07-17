@@ -96,3 +96,23 @@ def test_patch_merges_a_partial_legacy_file(monkeypatch):
     assert written["startup_windows"] == "none"
     assert written["taskbar_alignment"] == "left"
     assert result["username"] == "alice"
+
+
+def test_patch_persists_each_application_pin_destination(monkeypatch):
+    written = {}
+    monkeypatch.setattr(settings, "_read_settings", lambda username: {})
+    monkeypatch.setattr(settings, "_write_settings", lambda username, data: written.update(data))
+    monkeypatch.setattr(settings, "_user_info", lambda username: {"username": username, "is_admin": False})
+
+    settings.settings_patch(
+        settings.MePatch(
+            pinned_apps=["files"],
+            start_pinned_apps=["monitor"],
+            desktop_shortcut_apps=["settings"],
+        ),
+        SimpleNamespace(username="alice"),
+    )
+
+    assert written["pinned_apps"] == ["files"]
+    assert written["start_pinned_apps"] == ["monitor"]
+    assert written["desktop_shortcut_apps"] == ["settings"]

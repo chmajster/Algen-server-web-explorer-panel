@@ -158,7 +158,7 @@ def test_linux_update_launches_a_fixed_worker_in_detached_screen(monkeypatch, tm
     provider._launch_screen("/usr/bin/screen", "webnas-update-0123456789abcdef01234567", tmp_path, "0123456789abcdef01234567", ["apt-get", "upgrade", "-y"])
 
     command = captured[0]
-    assert command[:3] == ["/usr/bin/screen", "-DmS", "webnas-update-0123456789abcdef01234567"]
+    assert command[:3] == ["/usr/bin/screen", "-dmS", "webnas-update-0123456789abcdef01234567"]
     assert command[-4:] == ["--", "apt-get", "upgrade", "-y"]
     assert "linux_update_worker.py" in command[4]
 
