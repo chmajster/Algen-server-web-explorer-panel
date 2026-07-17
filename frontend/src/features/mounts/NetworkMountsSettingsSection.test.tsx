@@ -50,6 +50,16 @@ describe("network mount settings", () => {
     expect(submitted).toMatchObject({ type: "nfs", export_path: "/exports/backup" });
   });
 
+  it("explains writable network-resource behavior and hides it in read-only mode", async () => {
+    render(<NetworkMountsSettingsSection isAdmin t={t} toast={vi.fn()} />);
+    await waitFor(() => expect(api.mounts).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /mounts.new/ }));
+
+    expect(screen.getByText("mounts.writeAccessHint")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("mounts.readOnly"));
+    expect(screen.queryByText("mounts.writeAccessHint")).not.toBeInTheDocument();
+  });
+
   it("does not load administrative mounts for a regular user", () => {
     render(<NetworkMountsSettingsSection isAdmin={false} t={t} toast={vi.fn()} />);
     expect(api.mounts).not.toHaveBeenCalled();

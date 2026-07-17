@@ -105,6 +105,7 @@ function MountForm({ mount, t, onClose, onSaved }: { mount?: NetworkMount; t: Tr
         {field("uid", "UID")}{field("gid", "GID")}{field("file_mode", t("mounts.fileMode"))}{field("dir_mode", t("mounts.dirMode"))}{field("advanced_options", t("mounts.advancedOptions"))}{field("allowed_users", t("mounts.allowedUsers"))}{field("allowed_groups", t("mounts.allowedGroups"))}
       </div>
       <div className="mount-form-checks">{check("read_only", t("mounts.readOnly"))}{check("persistent", t("mounts.persistent"))}{check("automount", t("mounts.automount"), !form.persistent)}{check("noexec", t("mounts.noexec"))}{mount?.config.has_secret && check("remove_secret", t("mounts.removeSecret"))}</div>
+      {!form.read_only && <p className="credential-note">{t("mounts.writeAccessHint")}</p>}
       {mount?.config.has_secret && !form.remove_secret && <p className="credential-note">{t("mounts.secretPreserved")}</p>}
       {error && <p className="error-state compact-error" role="alert">{error}</p>}
     </form>

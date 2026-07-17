@@ -272,6 +272,7 @@
   "mounts.sshUser": "SSH user",
   "mounts.temporary": "Until restart",
   "mounts.webdavUrl": "WebDAV URL",
+  "mounts.writeAccessHint": "A writable resource supports uploads, editing, renaming, and creating or deleting files and directories. SMB, SSHFS and WebDAV use the resource owner's local UID/GID by default; NFS keeps the permissions configured on the server.",
   "mounts.status.mounted": "Mounted",
   "mounts.status.unmounted": "Unmounted",
   "mounts.status.mounting": "Mounting",

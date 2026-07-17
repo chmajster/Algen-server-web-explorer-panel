@@ -272,6 +272,7 @@
   "mounts.sshUser": "Użytkownik SSH",
   "mounts.temporary": "Do restartu",
   "mounts.webdavUrl": "Adres WebDAV",
+  "mounts.writeAccessHint": "Zasób z włączonym zapisem obsługuje przesyłanie, edycję, zmianę nazw oraz tworzenie i usuwanie plików i katalogów. SMB, SSHFS i WebDAV domyślnie używają lokalnego UID/GID właściciela zasobu; NFS zachowuje uprawnienia skonfigurowane na serwerze.",
   "mounts.status.mounted": "Zamontowany",
   "mounts.status.unmounted": "Odmontowany",
   "mounts.status.mounting": "Montowanie",

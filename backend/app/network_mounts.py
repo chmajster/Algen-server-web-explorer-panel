@@ -524,7 +524,6 @@ def row_to_mount(row: sqlite3.Row, *, reconcile: bool = True) -> dict:
                 conn.commit()
             if stale_mounted_state:
                 logger.warning("network_mount_state_reconciled mount_id=%s stored=mounted actual=unmounted", data["id"])
-                log_line(data["id"], "reconcile", "Stored mounted state reconciled to unmounted")
             data["status"] = desired
             data["last_error"] = diagnostic
     data["fs"] = filesystem_payload(Path(data["mount_point"]), mounted)
@@ -539,6 +538,24 @@ def get_mount_or_404(mount_id: str, *, reconcile: bool = True) -> dict:
     return row_to_mount(row, reconcile=reconcile)
 
 
+def local_mount_identity(mount: dict) -> tuple[str, str]:
+    """Resolve the local identity used for client-side network permissions."""
+    cfg = mount.get("config", {})
+    uid = str(cfg.get("uid") or "")
+    gid = str(cfg.get("gid") or "")
+    if uid and gid:
+        return uid, gid
+    owner = str(mount.get("owner") or "")
+    if owner:
+        try:
+            account = pwd.getpwnam(owner)
+            uid = uid or str(account.pw_uid)
+            gid = gid or str(account.pw_gid)
+        except KeyError:
+            pass
+    return uid, gid
+
+
 def mount_options(mount: dict) -> list[str]:
     cfg = mount["config"]
     options = [*BASE_OPTIONS, "ro" if mount["read_only"] else "rw"]
@@ -549,15 +566,27 @@ def mount_options(mount: dict) -> list[str]:
         options.extend([f"credentials={credentials_path(mount['id'])}", f"file_mode={cfg.get('file_mode', '0644')}", f"dir_mode={cfg.get('dir_mode', '0755')}"])
         if cfg.get("smb_version") not in {None, "auto"}:
             options.append(f"vers={cfg['smb_version']}")
-        for key in ("uid", "gid"):
-            if cfg.get(key):
-                options.append(f"{key}={cfg[key]}")
+        uid, gid = local_mount_identity(mount)
+        if uid:
+            options.extend([f"uid={uid}", "forceuid"])
+        if gid:
+            options.extend([f"gid={gid}", "forcegid"])
     elif mount["type"] == "nfs" and cfg.get("nfs_version") not in {None, "auto"}:
         options.append(f"vers={cfg['nfs_version']}")
     elif mount["type"] == "sshfs":
-        options.extend(["ServerAliveInterval=15", "StrictHostKeyChecking=accept-new", f"port={cfg.get('ssh_port', 22)}"])
+        uid, gid = local_mount_identity(mount)
+        options.extend(["ServerAliveInterval=15", "StrictHostKeyChecking=accept-new", f"port={cfg.get('ssh_port', 22)}", "allow_other", "default_permissions"])
+        if uid:
+            options.append(f"uid={uid}")
+        if gid:
+            options.append(f"gid={gid}")
     elif mount["type"] == "webdav":
-        options.append(f"conf={davfs_config_path(mount['id'])}")
+        uid, gid = local_mount_identity(mount)
+        options.extend([f"conf={davfs_config_path(mount['id'])}", f"file_mode={cfg.get('file_mode', '0644')}", f"dir_mode={cfg.get('dir_mode', '0755')}"])
+        if uid:
+            options.append(f"uid={uid}")
+        if gid:
+            options.append(f"gid={gid}")
     return list(dict.fromkeys(options))
 
 
@@ -698,9 +727,12 @@ def mount_command(mount: dict) -> list[str]:
 
 def _prepare_mount_directory(mount: dict, allow_existing_data: bool = False) -> None:
     point = validate_mount_point(mount["mount_point"], allow_existing_data=allow_existing_data, name=mount["name"])
-    MOUNT_BASE_DIR.mkdir(parents=True, exist_ok=True, mode=0o750)
+    MOUNT_BASE_DIR.mkdir(parents=True, exist_ok=True, mode=0o711)
     if MOUNT_BASE_DIR.is_symlink():
         raise HTTPException(403, "Mount base directory cannot be a symlink")
+    # Users need traversal permission to reach a mount, while listings remain
+    # protected by the mounted filesystem and WebNAS path/ACL checks.
+    os.chmod(MOUNT_BASE_DIR, 0o711)
     point.mkdir(mode=0o750, exist_ok=True)
 
 

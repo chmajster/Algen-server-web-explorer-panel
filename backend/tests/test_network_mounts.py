@@ -57,6 +57,62 @@ def test_systemd_units_are_generated_without_plain_secret(tmp_path, monkeypatch)
     assert any(name.endswith(".automount") for name in units)
 
 
+def test_writable_smb_maps_files_to_the_local_mount_owner(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+    monkeypatch.setattr(network_mounts.pwd, "getpwnam", lambda username: SimpleNamespace(pw_uid=1001, pw_gid=1002))
+    mount = {
+        "id": "abc123", "owner": "alice", "type": "smb", "read_only": False,
+        "config": {"smb_version": "auto", "file_mode": "0644", "dir_mode": "0755", "noexec": True, "advanced_options": [], "uid": "", "gid": ""},
+    }
+
+    options = network_mounts.mount_options(mount)
+
+    assert "rw" in options
+    assert "uid=1001" in options
+    assert "gid=1002" in options
+    assert "forceuid" in options
+    assert "forcegid" in options
+
+
+def test_explicit_smb_identity_overrides_the_mount_owner(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+    monkeypatch.setattr(network_mounts.pwd, "getpwnam", lambda username: pytest.fail("explicit identity must not resolve the owner"))
+    mount = {
+        "id": "abc123", "owner": "alice", "type": "smb", "read_only": False,
+        "config": {"smb_version": "auto", "file_mode": "0660", "dir_mode": "0770", "noexec": True, "advanced_options": [], "uid": "2001", "gid": "2002"},
+    }
+
+    options = network_mounts.mount_options(mount)
+
+    assert "uid=2001" in options
+    assert "gid=2002" in options
+
+
+def test_webdav_uses_local_identity_and_writable_modes(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+    monkeypatch.setattr(network_mounts.pwd, "getpwnam", lambda username: SimpleNamespace(pw_uid=1001, pw_gid=1002))
+    mount = {
+        "id": "abc123", "owner": "alice", "type": "webdav", "read_only": False,
+        "config": {"file_mode": "0660", "dir_mode": "0770", "noexec": True, "advanced_options": [], "uid": "", "gid": ""},
+    }
+
+    options = network_mounts.mount_options(mount)
+
+    assert {"rw", "uid=1001", "gid=1002", "file_mode=0660", "dir_mode=0770"}.issubset(options)
+
+
+def test_sshfs_allows_the_local_owner_to_use_the_root_created_fuse_mount(monkeypatch):
+    monkeypatch.setattr(network_mounts.pwd, "getpwnam", lambda username: SimpleNamespace(pw_uid=1001, pw_gid=1002))
+    mount = {
+        "owner": "alice", "type": "sshfs", "read_only": False,
+        "config": {"ssh_port": 22, "noexec": True, "advanced_options": [], "uid": "", "gid": ""},
+    }
+
+    options = network_mounts.mount_options(mount)
+
+    assert {"rw", "allow_other", "default_permissions", "uid=1001", "gid=1002"}.issubset(options)
+
+
 def test_credentials_file_is_0600(tmp_path, monkeypatch):
     monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
     mount_id = "credtest"
@@ -250,7 +306,6 @@ def test_stale_mounted_state_is_reconciled_without_user_facing_error(tmp_path, m
     monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
     monkeypatch.setattr(network_mounts, "actual_mount", lambda path: None)
     monkeypatch.setattr(network_mounts, "missing_packages", lambda mount_type: [])
-    monkeypatch.setattr(network_mounts, "log_dir", lambda: tmp_path)
     with network_mounts.connect() as conn:
         conn.execute(
             """INSERT INTO mounts
