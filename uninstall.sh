@@ -8,6 +8,8 @@ CONFIG_DIR="/etc/webnas"
 DATA_DIR="/var/lib/webnas"
 LOG_DIR="/var/log/webnas"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+USB_SERVICE_FILE="/etc/systemd/system/webnas-usb-mount@.service"
+USB_UDEV_RULE_FILE="/etc/udev/rules.d/99-webnas-usb-automount.rules"
 ASSUME_YES="no"
 
 usage() {
@@ -104,9 +106,24 @@ for row in rows:
 PY
 }
 
+cleanup_usb_mounts() {
+  echo "Unmounting USB filesystems managed by WebNAS..."
+  systemctl stop 'webnas-usb-mount@*.service' 2>/dev/null || true
+  if [[ -x "${INSTALL_DIR}/scripts/usb_automount.py" ]]; then
+    /usr/bin/python3 "${INSTALL_DIR}/scripts/usb_automount.py" cleanup || \
+      echo "WARNING: one or more busy USB filesystems remain mounted; no USB data was removed." >&2
+  fi
+  rm -f "$USB_SERVICE_FILE" "$USB_UDEV_RULE_FILE"
+  if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules 2>/dev/null || true
+  fi
+  rmdir /run/webnas/usb-mounts /media/webnas-usb 2>/dev/null || true
+}
+
 echo "Stopping WebNAS service..."
 systemctl disable --now "${SERVICE_NAME}.service" 2>/dev/null || true
 cleanup_managed_mounts
+cleanup_usb_mounts
 rm -f "$SERVICE_FILE"
 systemctl daemon-reload
 

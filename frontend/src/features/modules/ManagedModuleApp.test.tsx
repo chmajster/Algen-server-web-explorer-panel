@@ -5,7 +5,7 @@ import { ManagedModuleApp } from "./ManagedModuleApp";
 
 vi.mock("../../api", async () => {
   const actual = await vi.importActual<typeof import("../../api")>("../../api");
-  return { ...actual, api: { ...actual.api, module: vi.fn(), moduleResource: vi.fn(), moduleAction: vi.fn(), moduleService: vi.fn() } };
+  return { ...actual, api: { ...actual.api, module: vi.fn(), moduleResource: vi.fn(), moduleAction: vi.fn(), moduleService: vi.fn(), saveModuleConnection: vi.fn() } };
 });
 
 const summary = {
@@ -45,6 +45,22 @@ describe("ManagedModuleApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("docker", "container_start", { target: "abc" }));
     expect(await screen.findByRole("dialog", { name: "package.liveJobTitle" })).toBeInTheDocument();
+  });
+
+  it("installs Pi-hole from the controlled Docker application catalog without placing its password in the job", async () => {
+    vi.mocked(api.module).mockResolvedValue({ ...summary, capabilities: { ...summary.capabilities, resources: ["apps", "containers"], actions: ["app_install", "app_start", "app_stop", "app_update", "app_remove"] } });
+    vi.mocked(api.moduleResource).mockResolvedValue({ resource: "apps", items: [{ id: "pihole", name: "Pi-hole", description: "DNS filtering", category: "dns", image: "pihole/pihole:latest", ports: ["53/tcp", "53/udp", "8080/tcp"], panel_port: 8080, installed: false, running: false, managed: false, status: "not_installed" }], total: 1 });
+    vi.mocked(api.saveModuleConnection).mockResolvedValue({ base_url: "http://127.0.0.1:8080", username: "", secret_configured: true });
+
+    render(<ManagedModuleApp moduleId="docker" permissions={["modules.view", "docker.view", "docker.manage_containers"]} t={(key) => key} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /managed.apps/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "store.install" }));
+    fireEvent.change(screen.getByLabelText("managed.piholePassword"), { target: { value: "private-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+
+    await waitFor(() => expect(api.saveModuleConnection).toHaveBeenCalledWith("pihole", { base_url: "http://127.0.0.1:8080", username: "", secret: "private-password" }));
+    expect(api.moduleAction).toHaveBeenCalledWith("docker", "app_install", { app_id: "pihole", timezone: "Europe/Warsaw" });
+    expect(JSON.stringify(vi.mocked(api.moduleAction).mock.calls)).not.toContain("private-password");
   });
 
   it("uses the authenticated admin session for routine module service controls", async () => {

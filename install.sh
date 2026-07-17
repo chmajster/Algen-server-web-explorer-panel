@@ -34,6 +34,10 @@ LOG_DIR="/var/log/webnas"
 BACKUP_ROOT="/var/backups/webnas"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 PAM_SERVICE_FILE="/etc/pam.d/${SERVICE_NAME}"
+USB_SERVICE_FILE="/etc/systemd/system/webnas-usb-mount@.service"
+USB_UDEV_RULE_FILE="/etc/udev/rules.d/99-webnas-usb-automount.rules"
+USB_MOUNT_ROOT="/media/webnas-usb"
+USB_STATE_DIR="/run/webnas/usb-mounts"
 WORK_DIR=""
 SOURCE_DIR=""
 APT_TEMP_DIR=""
@@ -463,19 +467,23 @@ install_dependencies() {
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpam0g-dev rsync sudo curl wget ca-certificates tar gzip \
-        passwd procps iproute2 screen quota
+        passwd procps iproute2 screen quota util-linux udev
+      DEBIAN_FRONTEND=noninteractive apt_get install -y ntfs-3g || warn "Optional NTFS tools could not be installed"
+      DEBIAN_FRONTEND=noninteractive apt_get install -y exfatprogs || warn "Optional exFAT tools could not be installed"
       ;;
     dnf)
       dnf install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl wget ca-certificates tar gzip \
-        shadow-utils procps-ng iproute screen quota
+        shadow-utils procps-ng iproute screen quota util-linux systemd-udev
+      dnf install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
     yum)
       yum install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl wget ca-certificates tar gzip \
-        shadow-utils procps-ng iproute screen quota
+        shadow-utils procps-ng iproute screen quota util-linux systemd-udev
+      yum install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
   esac
   ok "Dependencies installed"
@@ -797,10 +805,44 @@ remove_existing_installation() {
     return
   fi
   section "Preparing clean application reinstall"
+  stop_usb_automount_instances
   validate_install_dir
   assert_removable_path "$INSTALL_DIR"
   rm -rf --one-file-system "$INSTALL_DIR"
   ok "Removed old application files from ${INSTALL_DIR}; config, data, and logs remain untouched"
+}
+
+stop_usb_automount_instances() {
+  systemctl stop 'webnas-usb-mount@*.service' 2>/dev/null || true
+  if [[ -x "${INSTALL_DIR}/scripts/usb_automount.py" ]]; then
+    /usr/bin/python3 "${INSTALL_DIR}/scripts/usb_automount.py" cleanup 2>/dev/null || \
+      warn "One or more busy USB filesystems could not be unmounted"
+  fi
+}
+
+remove_usb_automount_integration() {
+  stop_usb_automount_instances
+  rm -f "$USB_SERVICE_FILE" "$USB_UDEV_RULE_FILE"
+  systemctl daemon-reload 2>/dev/null || true
+  if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules 2>/dev/null || true
+  fi
+}
+
+start_existing_usb_filesystems() {
+  [[ -f "$USB_SERVICE_FILE" ]] || return 0
+  command -v udevadm >/dev/null 2>&1 || return 0
+  local sys_block kname properties
+  for sys_block in /sys/class/block/*; do
+    [[ -e "$sys_block" ]] || continue
+    kname="${sys_block##*/}"
+    [[ "$kname" =~ ^[A-Za-z0-9._+-]{1,128}$ ]] || continue
+    properties="$(udevadm info --query=property --name="/dev/${kname}" 2>/dev/null || true)"
+    if grep -qx 'ID_BUS=usb' <<< "$properties" && grep -qx 'ID_FS_USAGE=filesystem' <<< "$properties"; then
+      systemctl start --no-block "webnas-usb-mount@${kname}.service" 2>/dev/null || \
+        warn "Could not queue USB automount for /dev/${kname}"
+    fi
+  done
 }
 
 remove_app_only() {
@@ -820,6 +862,7 @@ remove_app_only() {
     REMOVE_SCOPE="app"
     confirm "Remove application files from ${INSTALL_DIR} only?" "no" || fail "Installation cancelled"
   fi
+  remove_usb_automount_integration
   systemctl disable --now "${SERVICE_NAME}.service" 2>/dev/null || true
   rm -f "$SERVICE_FILE"
   rm -f "$PAM_SERVICE_FILE"
@@ -1018,6 +1061,62 @@ EOF
   fi
 }
 
+install_usb_automount() {
+  section "Installing USB automount"
+  [[ -f "${INSTALL_DIR}/scripts/usb_automount.py" ]] || fail "USB automount helper is missing"
+  [[ -f "${INSTALL_DIR}/packaging/99-webnas-usb-automount.rules" ]] || fail "USB automount udev rule is missing"
+  command -v udevadm >/dev/null 2>&1 || fail "udevadm is required for USB automount"
+  command -v findmnt >/dev/null 2>&1 || fail "findmnt is required for USB automount"
+
+  chown root:root "${INSTALL_DIR}/scripts/usb_automount.py"
+  chmod 0755 "${INSTALL_DIR}/scripts/usb_automount.py"
+  install -d -o root -g root -m 0755 "$USB_MOUNT_ROOT"
+  install -d -o root -g root -m 0700 "$USB_STATE_DIR"
+  install -D -o root -g root -m 0644 \
+    "${INSTALL_DIR}/packaging/99-webnas-usb-automount.rules" "$USB_UDEV_RULE_FILE"
+
+  cat > "$USB_SERVICE_FILE" <<EOF
+[Unit]
+Description=WebNAS automount for USB filesystem /dev/%I
+BindsTo=dev-%i.device
+After=dev-%i.device
+Before=umount.target
+Conflicts=umount.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 ${INSTALL_DIR}/scripts/usb_automount.py mount /dev/%I
+ExecStop=/usr/bin/python3 ${INSTALL_DIR}/scripts/usb_automount.py unmount /dev/%I
+TimeoutStartSec=45
+TimeoutStopSec=45
+User=root
+Group=root
+RuntimeDirectory=webnas
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=${USB_MOUNT_ROOT} /run/webnas
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER
+EOF
+  chmod 0644 "$USB_SERVICE_FILE"
+  systemctl daemon-reload
+  udevadm control --reload-rules
+
+  # SYSTEMD_WANTS is evaluated when a device first becomes active. Start a
+  # matching instance explicitly for USB filesystems already present now.
+  start_existing_usb_filesystems
+  ok "USB filesystems will be mounted below ${USB_MOUNT_ROOT}"
+}
+
 configure_firewall() {
   [[ "$CONFIGURE_FIREWALL" == "yes" ]] || return
   section "Configuring firewall"
@@ -1152,6 +1251,13 @@ restore_failed_reinstall() {
   [[ ! -f "${LAST_BACKUP_DIR}/webnas.service" ]] || cp -a "${LAST_BACKUP_DIR}/webnas.service" "$SERVICE_FILE" || return 1
   [[ ! -f "${LAST_BACKUP_DIR}/webnas.pam" ]] || cp -a "${LAST_BACKUP_DIR}/webnas.pam" "$PAM_SERVICE_FILE" || return 1
   systemctl daemon-reload 2>/dev/null || true
+  if [[ -x "${INSTALL_DIR}/scripts/usb_automount.py" ]]; then
+    start_existing_usb_filesystems
+  else
+    rm -f "$USB_SERVICE_FILE" "$USB_UDEV_RULE_FILE"
+    systemctl daemon-reload 2>/dev/null || true
+    command -v udevadm >/dev/null 2>&1 && udevadm control --reload-rules 2>/dev/null || true
+  fi
   if [[ "$SERVICE_WAS_ACTIVE" == "yes" ]]; then
     systemctl start "$SERVICE_NAME" 2>/dev/null || warn "Previous application was restored, but the service could not be restarted automatically"
   fi
@@ -1181,6 +1287,7 @@ cleanup_failed_install() {
       ;;
   esac
   if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
+    remove_usb_automount_integration
     rm -f "$SERVICE_FILE"
     systemctl daemon-reload 2>/dev/null || true
   fi
@@ -1223,6 +1330,7 @@ main() {
   build_frontend
   install_uninstaller
   write_service
+  install_usb_automount
   configure_firewall
   start_service
   validate_installation

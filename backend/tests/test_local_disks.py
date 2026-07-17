@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -75,6 +76,40 @@ def test_recognizes_read_only_and_read_write_options(monkeypatch):
 
     assert disks["archive"]["read_only"] is True
     assert disks["work"]["read_only"] is False
+
+
+def test_marks_managed_usb_mount_and_uses_private_volume_label(monkeypatch, tmp_path):
+    state_dir = tmp_path / "usb-mounts"
+    state_dir.mkdir()
+    (state_dir / "sdb1.json").write_text(
+        json.dumps(
+            {
+                "device": "/dev/sdb1",
+                "mount_point": "/media/webnas-usb/backup-1234",
+                "filesystem": "exfat",
+                "label": "Backup USB",
+                "uuid": "1234",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(local_disks, "USB_STATE_DIR", state_dir)
+    patch_discovery(monkeypatch, mount_line("/dev/sdb1", "/media/webnas-usb/backup-1234", "exfat"))
+
+    disk = local_disks.local_disk_mounts("alice")[0]
+
+    assert disk["removable"] is True
+    assert disk["name"] == "Backup USB"
+
+
+def test_managed_usb_mount_stays_identifiable_without_runtime_state(monkeypatch, tmp_path):
+    monkeypatch.setattr(local_disks, "USB_STATE_DIR", tmp_path / "missing")
+    patch_discovery(monkeypatch, mount_line("/dev/sdb1", "/media/webnas-usb/usb-sdb1", "vfat"))
+
+    disk = local_disks.local_disk_mounts("alice")[0]
+
+    assert disk["removable"] is True
+    assert disk["name"] == "usb-sdb1"
 
 
 def test_decodes_proc_mount_escapes():

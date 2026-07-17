@@ -226,6 +226,8 @@ class PiHoleProvider(DnsContainerProvider):
 
     def manage(self, operation: str, payload: dict[str, Any], actor: str, log: LogCallback, progress: ProgressCallback, cancelled: CancelCallback) -> dict[str, Any]:
         if operation in {"install_container", "container_start", "container_stop", "container_restart", "update_container", "remove_container"}:
+            if operation == "install_container" and not str(self.connection().get("secret") or ""):
+                api_error(409, "PIHOLE_PASSWORD_REQUIRED", "Set a Pi-hole web/API password before installing the container")
             return self._manage_container(operation, payload, log, progress, cancelled)
         if operation not in {"blocking_enable", "blocking_disable"}:
             return super().manage(operation, payload, actor, log, progress, cancelled)
@@ -281,7 +283,7 @@ class AdGuardHomeProvider(DnsContainerProvider):
     def get_status(self) -> ModuleStatus:
         inspect = self._container_inspect()
         container_running = bool(inspect and inspect.get("State", {}).get("Running"))
-        local_install = bool(shutil.which("AdGuardHome") or any(path.exists() for path in self._config_paths()) or inspect)
+        local_install = bool(shutil.which("AdGuardHome") or any(path.exists() for path in self.CONFIG_PATHS) or inspect)
         if not local_install and not self.connection():
             return ModuleStatus(installed=False, service_state="not_installed", services={}, health=ModuleHealth.not_installed, health_message="AdGuard Home is not installed", metrics={"status": {}, "statistics": {}})
         try:

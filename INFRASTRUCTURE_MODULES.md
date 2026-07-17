@@ -27,7 +27,13 @@ The manifest is not Proxmox-safe. Safe Mode rejects refresh and upgrade jobs on 
 
 Docker uses the local Docker CLI with fixed argument arrays. It exposes containers, images, networks, volumes, one-shot statistics, bounded container logs, image pulls, and start/stop/restart operations.
 
+The **Apps** resource is a closed catalog of official Pi-hole, AdGuard Home, and Home Assistant images. Install/update/remove operations delegate to their typed providers; a client can select only an application identifier and timezone, never an image, container name, mount, port, label, or Docker flag. Catalog containers carry an `io.webnas.app` ownership label, and a reserved name already used by an unrelated container is reported but never adopted. Removing a catalog container preserves its private data under `paths.data_dir/container-apps` (or `paths.data_dir/home-assistant`).
+
+Pi-hole v6 receives its panel/API password through a private `0600` file mounted read-only and `WEBPASSWORD_FILE`; the password is saved through the existing private connection store and never enters the durable job payload or Docker command arguments. AdGuard Home exposes port 3000 for its first-run wizard and persistent work/config volumes. Both DNS templates bind host port 53 and therefore conflict with each other and with `systemd-resolved` or another local DNS server already using that port. Home Assistant retains the existing fixed host-network container setup.
+
 Compose projects live under `paths.data_dir/compose/<project>/compose.yaml` with `0700` directories and `0600` files. The accepted schema intentionally excludes `build`, `privileged`, host PID/IPC, capabilities, devices, arbitrary extensions, and Docker socket mounting. Host bind mounts are restricted to `/srv`, `/mnt`, `/media`, or `paths.data_dir`; named volumes are allowed. Compose content is returned only to callers with `docker.compose`, never in the general resource list or a durable job. Jobs carry only the validated project identifier.
+
+On apt systems the Docker module installs the distribution-common `docker.io` and `docker-compose` packages. At runtime it prefers the Compose v2 `docker compose` plugin and falls back to the standalone `docker-compose` executable, which keeps Docker installation functional on both Debian and Ubuntu repositories.
 
 ## Pi-hole and AdGuard Home
 

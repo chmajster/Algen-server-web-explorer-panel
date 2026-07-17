@@ -37,6 +37,7 @@ def test_infrastructure_manifests_declare_only_supported_resources_and_actions()
     assert NEW_MODULES <= manifests.keys()
     assert manifests["linux-updates"].capabilities.actions == ["refresh", "upgrade_all", "upgrade_security"]
     assert {"containers", "images", "networks", "volumes", "stats", "compose"} <= set(manifests["docker"].capabilities.resources)
+    assert manifests["docker"].packages.apt == ["docker.io", "docker-compose"]
     assert manifests["postgresql"].capabilities.backups is True
     assert manifests["home-assistant"].proxmox_safe is False
 
@@ -274,6 +275,78 @@ def test_docker_resources_and_compose_validation_never_accept_host_control(monke
     assert error.value.detail["code"] == "UNSAFE_COMPOSE"
     with pytest.raises(HTTPException):
         provider.validate_compose("services:\n  web:\n    image: nginx:stable\n    volumes: [/var/run/docker.sock:/var/run/docker.sock]\n")
+
+
+def test_docker_application_catalog_reports_controlled_container_state(monkeypatch):
+    provider = DockerProvider("docker")
+    monkeypatch.setattr(
+        provider,
+        "_inspect_container",
+        lambda name: {
+            "State": {"Running": True},
+            "Config": {"Image": "pihole/pihole:latest", "Labels": {"io.webnas.app": "pihole"}},
+        } if name == "webnas-pihole" else None,
+    )
+
+    catalog = provider.list_resources("apps")
+    pihole = next(item for item in catalog["items"] if item["id"] == "pihole")
+    home_assistant = next(item for item in catalog["items"] if item["id"] == "home-assistant")
+
+    assert pihole["installed"] is True
+    assert pihole["running"] is True
+    assert pihole["managed"] is True
+    assert home_assistant["installed"] is False
+
+
+def test_docker_application_catalog_rejects_arbitrary_app_ids():
+    provider = DockerProvider("docker")
+    with pytest.raises(HTTPException) as error:
+        provider.manage("app_install", {"app_id": "attacker/image"}, "admin", lambda *_: None, lambda *_: None, lambda: False)
+    assert error.value.detail["code"] == "INVALID_CONTAINER_APP"
+
+
+def test_docker_compose_uses_standalone_fallback_when_plugin_is_unavailable(monkeypatch, tmp_path: Path):
+    provider = DockerProvider("docker")
+    compose_dir = tmp_path / "compose"
+    project_dir = compose_dir / "media"
+    project_dir.mkdir(parents=True)
+    (project_dir / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if args == ["docker", "compose", "version"]:
+            return subprocess.CompletedProcess(args, 1, "", "plugin unavailable")
+        return subprocess.CompletedProcess(args, 0, "done", "")
+
+    monkeypatch.setattr(type(provider), "compose_dir", property(lambda self: compose_dir))
+    monkeypatch.setattr(provider, "_run", run)
+    monkeypatch.setattr("app.modules.providers.docker.shutil.which", lambda name: f"/usr/bin/{name}" if name == "docker-compose" else None)
+    monkeypatch.setattr(provider, "get_status", lambda: ModuleStatus(installed=True, service_state="active"))
+
+    provider.manage("compose_up", {"project": "media"}, "admin", lambda *_: None, lambda *_: None, lambda: False)
+
+    assert calls[-1][0] == "docker-compose"
+    assert calls[-1][-2:] == ["up", "-d"]
+
+
+def test_pihole_container_install_keeps_password_out_of_docker_arguments(monkeypatch, tmp_path: Path):
+    provider = PiHoleProvider("pihole")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(provider, "connection", lambda: {"secret": "correct horse battery staple"})
+    monkeypatch.setattr(provider, "_container_inspect", lambda: None)
+    monkeypatch.setattr("app.modules.providers.dns.shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("app.modules.providers.dns.available_timezones", lambda: {"Europe/Warsaw"})
+    monkeypatch.setattr(type(provider), "container_data_dir", property(lambda self: tmp_path))
+    monkeypatch.setattr(provider, "_docker", lambda args, timeout=180: calls.append(args) or "")
+    monkeypatch.setattr(provider, "get_status", lambda: SimpleNamespace(model_dump=lambda **_: {"installed": True}))
+
+    provider.manage("install_container", {"timezone": "Europe/Warsaw"}, "admin", lambda *_: None, lambda *_: None, lambda: False)
+
+    assert calls[0] == ["pull", "pihole/pihole:latest"]
+    assert calls[1][0:3] == ["run", "-d", "--name"]
+    assert "correct horse battery staple" not in json.dumps(calls)
+    assert (tmp_path / "webpassword").read_text(encoding="utf-8") == "correct horse battery staple"
 
 
 def test_pihole_session_authentication_keeps_secret_out_of_public_configuration(monkeypatch):

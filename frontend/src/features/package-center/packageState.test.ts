@@ -55,6 +55,13 @@ describe("Package Center state matrix", () => {
     expect(getPackageServiceStatus(item)).toBe("not_applicable");
   });
 
+  it("opens the managed installer for an uninstalled container application", () => {
+    const item = packageItem();
+    item.capabilities = { ...item.capabilities, install: false, actions: ["install_container", "container_start"] };
+
+    expect(getPackageActions(item)).toEqual(["open"]);
+  });
+
   it("offers opening and stopping for an installed running package", () => {
     const item = packageItem({ installed: true, running: true });
     expect(getPackageUiStatus(item)).toBe("running");

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import pwd
 import shutil
@@ -30,6 +31,8 @@ NETWORK_FILESYSTEMS = {
     "sshfs", "virtiofs",
 }
 PREFERRED_ROOTS = (PurePosixPath("/mnt"), PurePosixPath("/media"), PurePosixPath("/srv"))
+USB_MOUNT_ROOT = PurePosixPath("/media/webnas-usb")
+USB_STATE_DIR = Path("/run/webnas/usb-mounts")
 BLOCKED_ROOTS = tuple(
     PurePosixPath(path)
     for path in (
@@ -53,6 +56,7 @@ class LocalDisk(BaseModel):
     name: str
     fs_type: str
     read_only: bool
+    removable: bool = False
     total: int
     used: int
     free: int
@@ -195,6 +199,36 @@ def visible_local_disk_roots(username: str) -> list[Path]:
     return [root for _mount, root in _visible_mount_records(username)]
 
 
+def _usb_metadata(device: str, mount_point: str | Path) -> tuple[bool, str]:
+    try:
+        point = PurePosixPath(str(mount_point))
+    except (TypeError, ValueError):
+        return False, ""
+    if point.parent != USB_MOUNT_ROOT:
+        return False, ""
+
+    # The private runtime record adds the filesystem label. The mount location
+    # remains authoritative, so a USB disk is still identified if /run state is
+    # briefly unavailable during startup or removal.
+    device_name = PurePosixPath(device).name
+    if not device_name or "/" in device_name or device_name in {".", ".."}:
+        return True, ""
+    state_file = USB_STATE_DIR / f"{device_name}.json"
+    try:
+        if state_file.is_symlink() or state_file.stat().st_size > 8192:
+            return True, ""
+        payload = json.loads(state_file.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return True, ""
+    if not isinstance(payload, dict) or payload.get("device") != device or payload.get("mount_point") != str(mount_point):
+        return True, ""
+    label = payload.get("label", "")
+    if not isinstance(label, str):
+        return True, ""
+    label = " ".join("".join(character for character in label if character.isprintable()).split())[:80]
+    return True, label
+
+
 def local_disk_mounts(username: str) -> list[dict]:
     disks: list[dict] = []
     for mount, root in _visible_mount_records(username):
@@ -202,7 +236,8 @@ def local_disk_mounts(username: str) -> list[dict]:
             usage = shutil.disk_usage(root)
         except OSError:
             continue
-        name = root.name or PurePosixPath(mount["device"]).name or mount["device"]
+        removable, usb_label = _usb_metadata(mount["device"], mount["mount_point"])
+        name = usb_label or root.name or PurePosixPath(mount["device"]).name or mount["device"]
         disks.append(
             LocalDisk(
                 device=mount["device"],
@@ -210,6 +245,7 @@ def local_disk_mounts(username: str) -> list[dict]:
                 name=name,
                 fs_type=mount["fs_type"],
                 read_only="ro" in mount["options"],
+                removable=removable,
                 total=usage.total,
                 used=usage.used,
                 free=usage.free,

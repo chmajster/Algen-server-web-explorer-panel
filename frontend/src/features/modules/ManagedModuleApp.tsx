@@ -127,8 +127,9 @@ function DockerAppCatalog({ resource, loading, error, canOperate, t, onRetry, on
 
 function dockerAppPanelUrl(port: number): string {
   if (!port || typeof window === "undefined") return "";
-  const host = window.location.hostname.includes(":") ? `[${window.location.hostname}]` : window.location.hostname;
-  return `${window.location.protocol}//${host}:${port}`;
+  const hostname = window.location.hostname.replace(/^\[|\]$/g, "");
+  const host = hostname.includes(":") ? `[${hostname}]` : hostname;
+  return `http://${host}:${port}`;
 }
 
 function ResourceTable({ resource, loading = false, error = "", moduleId = "", section = "", onRetry, t, actions }: { resource: ModuleResource | null; loading?: boolean; error?: string; moduleId?: string; section?: string; onRetry?: () => void; t: Translate; actions?: (item: Record<string, unknown>) => React.ReactNode }) {

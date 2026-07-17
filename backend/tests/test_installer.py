@@ -11,6 +11,7 @@ import pytest
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 INSTALLER = REPOSITORY / "install.sh"
+UNINSTALLER = REPOSITORY / "uninstall.sh"
 
 
 def _bash() -> str:
@@ -45,6 +46,21 @@ def _run_harness(tmp_path: Path, commands: str) -> subprocess.CompletedProcess[s
 def test_installer_has_valid_bash_syntax():
     result = subprocess.run([_bash(), "-n", str(INSTALLER)], capture_output=True, text=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_installer_wires_usb_udev_events_to_a_device_bound_systemd_service():
+    installer = INSTALLER.read_text(encoding="utf-8")
+    uninstaller = UNINSTALLER.read_text(encoding="utf-8")
+    rule = (REPOSITORY / "packaging" / "99-webnas-usb-automount.rules").read_text(encoding="utf-8")
+
+    assert 'ENV{ID_BUS}=="usb"' in rule
+    assert 'ENV{ID_FS_USAGE}=="filesystem"' in rule
+    assert 'ENV{SYSTEMD_WANTS}+="webnas-usb-mount@%k.service"' in rule
+    assert "BindsTo=dev-%i.device" in installer
+    assert "RuntimeDirectory=webnas" in installer
+    assert "usb_automount.py mount /dev/%I" in installer
+    assert "usb_automount.py unmount /dev/%I" in installer
+    assert 'rm -f "$USB_SERVICE_FILE" "$USB_UDEV_RULE_FILE"' in uninstaller
 
 
 def test_existing_install_defaults_to_update_after_timeout_and_keeps_config(tmp_path):

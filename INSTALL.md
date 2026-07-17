@@ -70,6 +70,7 @@ The installer installs the packages actually used by WebNAS:
 - `rsync` for copy and move transfers.
 - `sudo`, PAM development/runtime packages, and local account tools.
 - `curl`, `tar`, `gzip`, `iproute2`/`iproute`, and system utilities.
+- `udev`/`systemd-udev` and `util-linux` (`mount`, `umount`, and `findmnt`) for USB automount; NTFS/exFAT utilities are installed when the distribution provides them.
 
 ## Manual Installation
 
@@ -125,6 +126,21 @@ sudo systemctl enable --now webnas
 
 The root service context is intentional: WebNAS uses PAM for login and authenticated user contexts for file operations, while Package Center performs validated package-manager and systemd actions. `ProtectHome=false` is also intentional: workers drop to the authenticated UID and the path policy confines them to configured roots, while a read-only systemd home mount would prevent users from creating their own files. Do not expose WebNAS directly to the public internet. Keep the session secret private, restrict network access, and use TLS through a trusted reverse proxy. Package Center never accepts command strings from the browser and requires an authenticated session, a concrete RBAC permission, CSRF token, and confirmed plan.
 
+## USB automount
+
+The automatic installer also installs `/etc/udev/rules.d/99-webnas-usb-automount.rules` and `/etc/systemd/system/webnas-usb-mount@.service`. Re-run the installer after upgrading an older WebNAS installation so these OS components are created. Connected supported USB filesystems are mounted below `/media/webnas-usb` and appear in File Manager within about four seconds.
+
+Useful diagnostics:
+
+```bash
+sudo udevadm info --query=property --name=/dev/sdb1
+sudo systemctl status webnas-usb-mount@sdb1.service
+sudo journalctl -u webnas-usb-mount@sdb1.service -n 100 --no-pager
+findmnt --submounts /media/webnas-usb
+```
+
+Replace `sdb1` with the kernel name shown by `lsblk`. The helper rejects non-USB devices, unsupported/encrypted filesystems, and unsafe or occupied mountpoints. A busy filesystem may need its open files closed before a manual service stop; physically removed devices use a lazy detach only after the block device has disappeared.
+
 ## Package Center installation notes
 
 No separate package-center daemon is required. Its SQLite database is created automatically at:
@@ -177,7 +193,7 @@ sudo ./install.sh --existing-action reinstall --yes
 sudo /opt/webnas/uninstall.sh
 ```
 
-The uninstaller first checks and unmounts WebNAS-managed network resources, disables/removes their path-derived systemd units, and runs `daemon-reload`. It then stops WebNAS, removes `/etc/systemd/system/webnas.service`, validates every deletion path, and asks for the text confirmation `REMOVE WEBNAS`. Config, data, and logs are not removed without confirmation. `/mnt/webnas/mnt` is never deleted recursively: non-empty mount-point directories are retained, and removal of an empty base directory requires a separate confirmation.
+The uninstaller first checks and unmounts WebNAS-managed network resources and USB filesystems, removes their systemd/udev integration, and runs `daemon-reload`. It then stops WebNAS, removes `/etc/systemd/system/webnas.service`, validates every deletion path, and asks for the text confirmation `REMOVE WEBNAS`. Config, data, logs, and USB contents are not removed without confirmation. `/mnt/webnas/mnt` is never deleted recursively: non-empty mount-point directories are retained, and removal of an empty base directory requires a separate confirmation.
 
 ## Network mount prerequisites
 

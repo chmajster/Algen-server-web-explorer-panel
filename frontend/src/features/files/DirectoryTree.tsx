@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Folder, HardDrive, LoaderCircle, Network } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, HardDrive, LoaderCircle, Network, Usb } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type FileItem, type LocalDisk, type NetworkMountRoot } from "../../api";
 import type { Translate } from "../../app/types";
@@ -45,6 +45,8 @@ export function DirectoryTree({ currentPath, homePath, localDisks, mounts, t, on
   }, [tree]);
 
   const pathIsReadOnly = (path: string) => [...localDisks, ...mounts].some((mount) => mount.read_only && (path === mount.mount_point || path.startsWith(`${mount.mount_point}/`)));
+  const fixedDisks = localDisks.filter((disk) => !disk.removable);
+  const usbDisks = localDisks.filter((disk) => disk.removable);
   function row(path: string, label: string, icon: React.ReactNode, level: number, canExpand = true, details = "") {
     const state = tree[path];
     return <div key={path}>
@@ -60,8 +62,10 @@ export function DirectoryTree({ currentPath, homePath, localDisks, mounts, t, on
   return <aside className="directory-tree" aria-label={t("files.directoryTree")}>
     <h3>{t("files.locations")}</h3>
     {row(homePath || "/", t("files.home"), <HardDrive />, 0)}
-    {localDisks.length > 0 && <h3>{t("files.localDisks")}</h3>}
-    {localDisks.map((disk) => row(disk.mount_point, disk.name, <HardDrive />, 0, true, [disk.fs_type, disk.read_only ? t("files.readOnly") : ""].filter(Boolean).join(" · ")))}
+    {fixedDisks.length > 0 && <h3>{t("files.localDisks")}</h3>}
+    {fixedDisks.map((disk) => row(disk.mount_point, disk.name, <HardDrive />, 0, true, [disk.fs_type, disk.read_only ? t("files.readOnly") : ""].filter(Boolean).join(" · ")))}
+    {usbDisks.length > 0 && <h3>{t("files.usbDevices")}</h3>}
+    {usbDisks.map((disk) => row(disk.mount_point, disk.name, <Usb />, 0, true, [disk.fs_type, disk.read_only ? t("files.readOnly") : ""].filter(Boolean).join(" · ")))}
     {mounts.length > 0 && <h3>{t("files.networkResources")}</h3>}
     {mounts.map((mount) => row(mount.mount_point, mount.name, <Network />, 0))}
   </aside>;

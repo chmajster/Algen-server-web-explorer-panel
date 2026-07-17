@@ -9,8 +9,8 @@ import {
 } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
 import type { AppId, ToastFn, Translate } from "../../app/types";
-import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSection";
 import { HostInformationSection } from "./HostInformationSection";
+import { NetworkSettingsSection } from "./NetworkSettingsSection";
 
 export type SettingsCategory = "system" | "personalization" | "files" | "transfers" | "notifications" | "accessibility" | "language" | "account" | "identity" | "network" | "administration" | "about";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -29,7 +29,7 @@ const categorySettings: Record<SettingsCategory, string[]> = {
   notifications: ["notificationsEnabled", "transferNotifications", "errorNotifications", "adminNotifications", "notificationLimit", "notificationAutoHide"],
   accessibility: ["interfaceScale", "largerText", "reduceMotion", "highContrast", "strongActiveBorders", "alwaysShowFocus"],
   language: ["language", "dateFormat", "timeFormat", "firstDayOfWeek"], account: ["username", "groups", "changePassword"],
-  identity: ["usersAndGroups"], network: ["networkResources"], administration: ["serviceInformation", "updates", "automaticUpdates", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
+  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable", "networkResources"], administration: ["serviceInformation", "updates", "automaticUpdates", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
 };
 
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
@@ -140,7 +140,7 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
     if (category === "language") return <Card><SettingRow title={t("settings.language")}><Select label={t("settings.language")} value={settings.language} onChange={(value) => void save({ language: value as SettingsMe["language"] })}><option value="pl-PL">Polski</option><option value="en-US">English</option></Select></SettingRow><SettingRow title={t("settings.dateFormat")}><Select label={t("settings.dateFormat")} value={settings.date_format} onChange={(value) => void save({ date_format: value as SettingsMe["date_format"] })}><option value="locale">{t("settings.formatLocale")}</option><option value="short">{t("settings.formatShort")}</option><option value="long">{t("settings.formatLong")}</option><option value="iso">ISO 8601</option></Select></SettingRow><SettingRow title={t("settings.timeFormat")}><Select label={t("settings.timeFormat")} value={settings.time_format} onChange={(value) => void save({ time_format: value as SettingsMe["time_format"] })}><option value="24">24 h</option><option value="12">12 h</option></Select></SettingRow><SettingRow title={t("settings.firstDayOfWeek")}><Select label={t("settings.firstDayOfWeek")} value={settings.first_day_of_week} onChange={(value) => void save({ first_day_of_week: value as SettingsMe["first_day_of_week"] })}><option value="locale">{t("settings.formatLocale")}</option><option value="monday">{t("settings.monday")}</option><option value="sunday">{t("settings.sunday")}</option></Select></SettingRow></Card>;
     if (category === "account") return <div className="settings-card-stack"><Card title={t("settings.accountInformation")}><dl className="settings-details"><dt>{t("settings.username")}</dt><dd>{settings.username}</dd><dt>UID</dt><dd>{settings.uid}</dd><dt>GID</dt><dd>{settings.gid}</dd><dt>{t("settings.homeDirectory")}</dt><dd>{settings.home}</dd><dt>{t("settings.shell")}</dt><dd>{settings.shell}</dd><dt>{t("settings.groupsLabel")}</dt><dd>{settings.groups.join(", ") || "—"}</dd><dt>{t("settings.administratorStatus")}</dt><dd>{settings.is_admin ? t("common.yes") : t("common.no")}</dd></dl></Card><PasswordSection t={t} toast={toast} /></div>;
     if (category === "identity") return <Card title={t("app.identity")}><SettingRow title={t("settings.usersAndGroups")} description={t("settings.usersAndGroupsHint")}><div className="settings-app-links"><button type="button" onClick={() => onOpenApp("identity")}><Users />{t("settings.openUsersAndGroups")}</button></div></SettingRow></Card>;
-    if (category === "network") return <NetworkMountsSettingsSection isAdmin={settings.is_admin} t={t} toast={toast} />;
+    if (category === "network") return <NetworkSettingsSection isAdmin={settings.is_admin} t={t} toast={toast} />;
     if (category === "administration") return <AdministrationSection t={t} toast={toast} onOpenApp={onOpenApp} />;
     return <div className="settings-card-stack"><Card title="WebNAS"><dl className="settings-details"><dt>{t("settings.applicationName")}</dt><dd>WebNAS</dd><dt>{t("settings.version")}</dt><dd>0.1.0</dd><dt>{t("settings.frontendEnvironment")}</dt><dd>{window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "development" : "production"}</dd><dt>{t("settings.backendEnvironment")}</dt><dd>FastAPI / Linux</dd><dt>{t("settings.technologies")}</dt><dd>React · TypeScript · FastAPI · lucide-react</dd><dt>{t("settings.license")}</dt><dd>{t("settings.licenseInfo")}</dd></dl><a className="settings-repository" href="https://github.com/chmajster/Algen-server-web-explorer-panel" target="_blank" rel="noreferrer">{t("settings.repository")}</a></Card></div>;
   }

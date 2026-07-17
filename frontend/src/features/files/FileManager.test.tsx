@@ -123,9 +123,32 @@ describe("file manager behavior", () => {
     expect(screen.queryByText("disks unavailable")).not.toBeInTheDocument();
   });
 
+  it("returns home when the active managed USB filesystem disappears", async () => {
+    const toast = vi.fn();
+    vi.mocked(api.localDisks).mockResolvedValue([]);
+
+    render(<FileManager homePath="/home/test" initialPath="/media/webnas-usb/BACKUP-1234/Films" tasks={[]} isAdmin={false} t={t} toast={toast} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+
+    await waitFor(() => expect(api.list).toHaveBeenLastCalledWith("/home/test", expect.any(Object)));
+    expect(toast).toHaveBeenCalledWith("files.usbUnavailable", "error");
+  });
+
+  it("refreshes removable USB devices when the page becomes visible", async () => {
+    const usbDisk = { device: "/dev/sdd1", mount_point: "/media/webnas-usb/BACKUP-1234", name: "BACKUP", fs_type: "exfat", read_only: false, removable: true, total: 300, used: 10, free: 290 };
+    vi.mocked(api.localDisks).mockResolvedValueOnce([]).mockResolvedValue([usbDisk]);
+
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await waitFor(() => expect(api.localDisks).toHaveBeenCalledTimes(1));
+
+    fireEvent(document, new Event("visibilitychange"));
+
+    expect(await screen.findByText("BACKUP")).toBeInTheDocument();
+    expect(screen.getByText("files.usbDevices")).toBeInTheDocument();
+  });
+
   it("uses a local disk as the breadcrumb root", async () => {
     vi.mocked(api.localDisks).mockResolvedValue([
-      { device: "/dev/sdb1", mount_point: "/mnt/storage", name: "storage", fs_type: "ext4", read_only: false, total: 100, used: 50, free: 50 },
+      { device: "/dev/sdb1", mount_point: "/mnt/storage", name: "storage", fs_type: "ext4", read_only: false, removable: false, total: 100, used: 50, free: 50 },
     ]);
     vi.mocked(api.list).mockResolvedValue({ path: "/mnt/storage/Films", current_path: "/mnt/storage/Films", parent_path: "/mnt/storage", items: [], page: 1, page_size: 100, total_items: 0, total_pages: 1, sort: "name", direction: "asc", can_write: true, can_upload: true, can_delete: true });
 

@@ -542,6 +542,7 @@ export type LocalDisk = {
   name: string;
   fs_type: string;
   read_only: boolean;
+  removable: boolean;
   total: number;
   used: number;
   free: number;
@@ -560,6 +561,102 @@ export type ProxmoxSafety = {
   allowed_roots_effective: string[];
   service_user: string;
   warnings: string[];
+};
+export type NetworkInterfaceAddress = {
+  family: "ipv4" | "ipv6";
+  address: string;
+  prefix_length: number;
+  scope: string;
+};
+export type NetworkInterfaceDetail = {
+  name: string;
+  state: "up" | "down" | "dormant" | "lowerlayerdown" | "unknown";
+  carrier: boolean | null;
+  speed_mbps: number | null;
+  duplex: "full" | "half" | null;
+  mtu: number | null;
+  mac_address: string | null;
+  addresses: NetworkInterfaceAddress[];
+  rx_bytes: number;
+  rx_packets: number;
+  rx_errors: number;
+  rx_dropped: number;
+  tx_bytes: number;
+  tx_packets: number;
+  tx_errors: number;
+  tx_dropped: number;
+  rx_bytes_per_sec: number | null;
+  tx_bytes_per_sec: number | null;
+  system: boolean;
+};
+export type NetworkOverview = {
+  timestamp: number;
+  sample_interval_seconds: number | null;
+  interfaces: NetworkInterfaceDetail[];
+  warnings: string[];
+};
+export type DnsConfiguration = {
+  resolv_conf: {
+    path: string;
+    symlink_target: string | null;
+    mode: "stub" | "uplink" | "static";
+    nameservers: string[];
+    search: string[];
+    options: string[];
+  };
+  systemd_resolved: {
+    available: boolean;
+    global_servers: string[];
+    global_domains?: string[];
+    links: Array<{ interface: string; servers: string[]; domains: string[] }>;
+  };
+  warnings: string[];
+};
+export type DnsTestResult = {
+  hostname: string;
+  success: boolean;
+  addresses: string[];
+  servers: Array<{
+    server: string;
+    success: boolean;
+    rcode: string | null;
+    addresses: string[];
+    latency_ms: number | null;
+    error: string | null;
+  }>;
+  tested_at: number;
+};
+export type NetworkRoute = {
+  family: "ipv4" | "ipv6";
+  destination: string;
+  gateway: string | null;
+  device: string | null;
+  preferred_source: string | null;
+  protocol: string | null;
+  scope: string | null;
+  type: string;
+  table: string;
+  metric: number | null;
+  nexthops: Array<{ gateway: string | null; device: string | null; weight: number | null }>;
+};
+export type NetworkRule = {
+  family: "ipv4" | "ipv6";
+  priority: number | null;
+  from: string;
+  to: string;
+  table: string | null;
+  fwmark: string | null;
+  input_interface: string | null;
+  output_interface: string | null;
+  action: string;
+};
+export type RoutingSnapshot = {
+  timestamp: number;
+  routes: NetworkRoute[];
+  rules: NetworkRule[];
+  gateways: Array<{ family: "ipv4" | "ipv6"; address: string; device: string | null; metric: number | null; table: string }>;
+  warnings: string[];
+  read_only: true;
 };
 
 let csrfToken = localStorage.getItem("webnas_csrf") || "";
@@ -709,6 +806,10 @@ export const api = {
   resources: () => request<ResourceDashboard>("/api/system/resources"),
   systemLogs: (lines = 160) => request<SystemLogs>(`/api/admin/system/logs?lines=${lines}`),
   proxmoxSafety: () => request<ProxmoxSafety>("/api/admin/system/proxmox-safety"),
+  networkOverview: () => request<NetworkOverview>("/api/admin/network/overview"),
+  networkDns: () => request<DnsConfiguration>("/api/admin/network/dns"),
+  testNetworkDns: (hostname: string) => request<DnsTestResult>("/api/admin/network/dns/test", { method: "POST", body: JSON.stringify({ hostname }) }),
+  networkRouting: () => request<RoutingSnapshot>("/api/admin/network/routing"),
   restartSystem: () => request("/api/admin/system/restart", { method: "POST", body: "{}" }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
   downloadUpdates: (update_config = false) => request<UpdateStart>("/api/admin/system/updates/download", { method: "POST", body: JSON.stringify({ update_config }) }),

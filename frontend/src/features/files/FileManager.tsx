@@ -81,6 +81,7 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
   const { roots: mounts, loading: mountsLoading, initialized: mountsInitialized, refresh: refreshMounts } = useNetworkMounts();
   const [localDisks, setLocalDisks] = useState<LocalDisk[]>([]);
+  const [localDisksInitialized, setLocalDisksInitialized] = useState(false);
   const [sharedPaths, setSharedPaths] = useState<Map<string, SambaShare>>(new Map());
   const [sambaRemoval, setSambaRemoval] = useState<SambaShare | null>(null);
   const [treeVisible, setTreeVisible] = useState(() => localStorage.getItem(`${storagePrefix}_tree`) !== "hidden");
@@ -123,8 +124,25 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
   }, [direction, filter, page, path, preferences.file_page_size, preferences.file_remember_last_path, preferences.file_show_hidden, sort, storagePrefix, t]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (!isAdmin) return; api.moduleConfig("samba").then((data) => { const config = data as unknown as SambaConfig; setSharedPaths(new Map(config.shares.filter((share) => share.enabled).map((share) => [share.path, share]))); }).catch(() => undefined); }, [isAdmin]);
-  const loadLocalDisks = useCallback(() => api.localDisks().then(setLocalDisks).catch(() => setLocalDisks([])), []);
-  useEffect(() => { void loadLocalDisks(); }, [loadLocalDisks]);
+  const loadLocalDisks = useCallback(async () => {
+    try {
+      setLocalDisks(await api.localDisks());
+      setLocalDisksInitialized(true);
+    } catch {
+      // Keep the last successful result: a temporary API error must not look
+      // like physical removal while a user is browsing the USB filesystem.
+    }
+  }, []);
+  useEffect(() => {
+    void loadLocalDisks();
+    const refreshWhenVisible = () => { if (document.visibilityState !== "hidden") void loadLocalDisks(); };
+    const timer = window.setInterval(refreshWhenVisible, 4000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [loadLocalDisks]);
   useEffect(() => {
     if (!mountsInitialized || mountsLoading || !path.startsWith("/mnt/webnas/mnt/")) return;
     const stillVisible = mounts.some((mount) => path === mount.mount_point || path.startsWith(`${mount.mount_point}/`));
@@ -134,10 +152,24 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
     setClipboard(null);
     toast(t("files.networkResourceUnavailable"), "error");
   }, [homePath, mounts, mountsInitialized, mountsLoading, path, t, toast]);
+  useEffect(() => {
+    if (!localDisksInitialized || !path.startsWith("/media/webnas-usb/")) return;
+    const stillVisible = localDisks.some((disk) => disk.removable && (path === disk.mount_point || path.startsWith(`${disk.mount_point}/`)));
+    if (stillVisible) return;
+    setHistory({ entries: [homePath], index: 0 });
+    setSelection(new Set());
+    setClipboard(null);
+    toast(t("files.usbUnavailable"), "error");
+  }, [homePath, localDisks, localDisksInitialized, path, t, toast]);
   const mountAccessVersion = mounts.map((mount) => `${mount.id}:${mount.mount_point}:${mount.read_only}`).join("|");
   useEffect(() => {
     if (mountsInitialized && mounts.some((mount) => path === mount.mount_point || path.startsWith(`${mount.mount_point}/`))) void load();
   }, [load, mountAccessVersion, mounts, mountsInitialized, path]);
+  const localDiskAccessVersion = localDisks.map((disk) => `${disk.device}:${disk.mount_point}:${disk.read_only}:${disk.removable}`).join("|");
+  const currentPathIsOnLocalDisk = localDisks.some((disk) => path === disk.mount_point || path.startsWith(`${disk.mount_point}/`));
+  useEffect(() => {
+    if (localDisksInitialized && currentPathIsOnLocalDisk) void load();
+  }, [currentPathIsOnLocalDisk, load, localDiskAccessVersion, localDisksInitialized]);
   useEffect(() => {
     const completed = tasks.some((task) => ["copy", "move", "delete", "upload"].includes(task.type) && ["completed", "failed"].includes(task.status) && (task.finished_at || 0) * 1000 > Date.now() - 2500);
     if (completed) void load();

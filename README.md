@@ -18,10 +18,12 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - Modular NAS-style Package Center with validated YAML manifests, dry-run plans, durable jobs, live logs, service control, history, and GitHub source metadata.
 - Shared module-management applications with health, service controls, configuration plans, diagnostics, bounded/redacted logs, private backups, verified restore, and safe uninstall workflows.
 - Administrator-managed SMB/CIFS, NFS, SSHFS, and WebDAV network resources integrated with Settings and File Explorer.
+- Read-only network diagnostics in Settings with per-interface traffic history, errors, link/IP/gateway/DNS details, DNS resolution latency tests, and kernel routing tables/rules.
+- OS-level USB filesystem automount through udev and a device-bound systemd service, with removable media shown automatically in File Manager.
 - Windows 11-inspired (but independently branded) WebNAS desktop with one bottom taskbar, Start menu search, pinned/running app indicators, notification and transfer flyouts, and responsive application windows.
 - Per-user personalization synchronized by the backend: theme, accent, wallpaper, taskbar alignment, accessibility, notifications, transfer behavior, and File Manager defaults.
 - Role-based authorization for local Linux users with administrator, operator, auditor, and user roles plus closed per-operation grants/denials; existing root/sudo/wheel administrators retain full access.
-- Infrastructure modules for Linux security/system updates, Docker and safe Compose projects, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant Container.
+- Infrastructure modules for Linux security/system updates, Docker with a controlled Pi-hole/AdGuard Home/Home Assistant application catalog and safe Compose projects, PostgreSQL, MariaDB, Redis, and Home Assistant Container.
 - One permission-aware **Users and groups** application for local Linux account/group management, built-in roles, per-user and Linux-group allow/deny policy, effective-access sources, and an audited SQLite policy store. PAM and Linux accounts remain the source of truth.
 - Per-user CPU, RAM, disk, transfer, service, and alert widgets that can be pinned, hidden, moved, and resized on the desktop.
 - Persistent Activity Center for sign-ins, file operations, configuration changes, administrative tasks, and module events, with private per-user history and permission-controlled global audit access.
@@ -32,7 +34,7 @@ The WebNAS workspace uses one bottom taskbar for the Start menu, pinned and runn
 
 Desktop shortcuts flow down from the upper-left corner and can be hidden or resized. A user can configure an HTTP(S) or supported image data URL as wallpaper and choose `cover`, `contain`, stretch, or centered display. Window transparency and short animations can be disabled. The responsive layout maximizes app windows on narrow screens, keeps taskbar flyouts inside the viewport, converts Settings to mobile navigation, and preserves controlled scrolling for file tables.
 
-**Settings** is organized into System, Personalization, File Manager, Transfers, Notifications, Accessibility, Language & region, Account, and About. Administrators additionally receive Network resources and Administration. Settings search opens the category containing a matching control. Changes are applied optimistically and saved automatically; text input uses a short debounce and exposes saving, saved, and error states.
+**Settings** is organized into System, Personalization, File Manager, Transfers, Notifications, Accessibility, Language & region, Account, and About. Administrators additionally receive Network and Administration. Settings search opens the category containing a matching control. Changes are applied optimistically and saved automatically; text input uses a short debounce and exposes saving, saved, and error states.
 
 File Manager preferences are active rather than cosmetic. They control list/grid/large-icon view, compact rows, hidden files, delete/overwrite confirmation, 25/50/100/200 item pages, initial sorting and direction, and whether the last directory is remembered. The explorer keeps the existing path validation and operation security model.
 
@@ -44,9 +46,13 @@ Events are stored in `paths.data_dir/activity.sqlite3` with a bounded history an
 
 User preferences are stored by the backend in `paths.data_dir/settings/<username>.json`. Every value is validated against an enum, length limit, or numeric range, files are replaced atomically with owner-only permissions, and missing fields from older files receive safe defaults automatically. Passwords and other secrets are never part of this settings store; password changes continue to require the current password through the dedicated authenticated endpoint.
 
-## Network resources
+## Network diagnostics and resources
 
-Administrators manage network resources in **Settings → Network resources**. The previous `mounts` application id is still restored from saved window state, but redirects to this single settings section. Each definition can be created, edited, tested, mounted, unmounted, remounted, migrated, inspected through redacted logs, and removed. Mutating operations require an authenticated session, their concrete permission, and CSRF.
+**Settings → Network** contains four tabs. **Network monitor** samples Linux interface counters every two seconds and keeps a 60-sample browser history for receive/transmit rates; it also shows packets, errors, dropped packets, carrier state, negotiated speed/duplex, MTU, MAC and IP addresses, active gateways, and effective per-link/global DNS servers. **DNS** presents `/etc/resolv.conf` and `systemd-resolved` state and can send bounded direct DNS queries for one validated domain to configured DNS servers, reporting each server's latency and response code. **Routing table** is a read-only view of IPv4/IPv6 routes, policy rules, and default gateways.
+
+The diagnostic API accepts no command or routing expressions. Route and rule collection uses fixed server-side `ip -j ... show` argument lists, response sizes and item counts are bounded, and the DNS test accepts only a validated IDNA hostname and contacts only servers already present in the system resolver configuration.
+
+Administrators manage SMB/CIFS, NFS, SSHFS, and WebDAV definitions under **Settings → Network → Network resources**. The previous `mounts` application id is still restored from saved window state, but redirects to this single settings section. Each definition can be created, edited, tested, mounted, unmounted, remounted, migrated, inspected through redacted logs, and removed. Mutating operations require an authenticated session, their concrete permission, and CSRF.
 
 WebNAS always calculates the local path as `/mnt/webnas/mnt/<name>`; neither the UI nor the API accepts an arbitrary `mount_point`. Names are single 1–63 character path components made from letters, numbers, dots, dashes, and underscores. Separators, `..`, control characters, trailing dots/spaces, duplicates after Unicode normalization, nested paths, and symlinks escaping the base are rejected.
 
@@ -58,6 +64,14 @@ Protocol dependencies are `cifs-utils` (SMB), `nfs-common` (NFS), `sshfs` plus `
 
 Persistent definitions use path-escaped `.mount`/`.automount` unit names matching `Where=`. Existing definitions outside the managed base are marked for migration and are never published until the administrator completes a conflict-free migration. Local directory contents are not moved or overwritten automatically.
 
+## USB automount
+
+The installer registers `99-webnas-usb-automount.rules` and the `webnas-usb-mount@.service` template. A USB disk or partition containing a supported filesystem is mounted by the operating system below `/media/webnas-usb/<label>-<id>` and unmounted when its device unit disappears. USB filesystems that were already connected during installation are also queued for mounting.
+
+File Manager polls the authenticated local-disk endpoint while the page is visible and publishes managed media under a separate **USB devices** section without requiring a page reload. If the currently open device is disconnected, the explorer returns to the user's home directory. The same path policy, Linux-user permission checks, read-only enforcement, and Proxmox Safe Mode restrictions used for other local disks remain in force.
+
+Supported filesystems are ext2/3/4, XFS, Btrfs, F2FS, VFAT, exFAT, NTFS, and NTFS3. Mounts always use `nosuid,nodev,noexec`; filesystems without Unix permission bits receive broad file access so authenticated local users can use them, while native Linux filesystems keep their existing ownership and modes. Encrypted volumes, swap, LVM members, unknown filesystems, symlink mountpoints, and non-USB block devices are rejected. Runtime mount metadata is private under `/run/webnas/usb-mounts`, and uninstall only removes the integration and empty mount directories—it never deletes files from a USB device.
+
 ## Package Center
 
 **Package Center** manages trusted WebNAS modules through a permission-controlled UI with search, categories, status filters, installed/updates views, jobs, history, and sources. The catalog includes Samba, Squid Proxy, Nginx, Syncthing, Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant. Install, update, uninstall, and systemd actions require an authenticated session, a concrete RBAC permission, CSRF, and plan confirmation; progress and redacted logs survive browser and service restarts in SQLite. Linux security/full patching additionally runs in a detached GNU `screen` worker, so closing the browser does not stop the package manager and WebNAS can reconnect to the operation after its own process restarts.
@@ -65,6 +79,8 @@ Persistent definitions use path-escaped `.mount`/`.automount` unit names matchin
 Modules support Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux when their manifest provides packages for the detected `apt-get`, `dnf`, or `yum` manager. Proxmox Safe Mode rejects modules not explicitly marked safe. External GitHub repositories are stored and refreshed only as untrusted metadata—they are never downloaded or executed automatically.
 
 Installed modules open as regular WebNAS windows from Package Center. A shared shell provides Overview, Configuration (when supported), Service, Logs, Diagnostics, Backups, and Information; providers expose only manifest-declared capabilities. Module jobs extend the existing SQLite queue with durable stages, warnings, results, SSE updates, interruption recovery, and real post-operation status checks.
+
+The Docker module includes an **Apps** section for controlled one-click installation of Pi-hole, AdGuard Home, and Home Assistant Container. The catalog uses only fixed official image names, container names, ports, mounts, labels, and restart policies. It can start, stop, update, and remove the managed containers while preserving their configuration directories under `paths.data_dir`. Port 53 can be owned by only one DNS service, so Pi-hole and AdGuard Home cannot run on the same host ports simultaneously without custom networking.
 
 Samba is the complete reference provider. Its application adds Shares, SMB users, and Sessions; typed global/share configuration; controlled VFS options; `smbstatus` parsing; UFW/firewalld status; fixed-source redacted logs; comprehensive diagnostics; checksummed `0600` backups; and transactional `testparm`/atomic-write/reload/verify/rollback behavior. File Manager labels shared directories with their Samba name/read-only state and can open, create, or remove the share definition without deleting the directory.
 

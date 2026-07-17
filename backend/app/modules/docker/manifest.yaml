@@ -10,7 +10,7 @@ license: Apache-2.0
 supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
 supported_architectures: [x86_64, aarch64, armv7l]
 packages:
-  apt: [docker.io, docker-compose-v2]
+  apt: [docker.io, docker-compose]
   dnf: [docker, docker-compose-plugin]
   yum: [docker, docker-compose-plugin]
 services:

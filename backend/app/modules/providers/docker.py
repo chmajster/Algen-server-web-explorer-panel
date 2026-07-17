@@ -22,7 +22,7 @@ COMPOSE_SERVICE_FIELDS = {"image", "container_name", "restart", "ports", "volume
 
 
 class DockerProvider(CommandProvider):
-    allowed_tools = {"docker"}
+    allowed_tools = {"docker", "docker-compose"}
 
     @property
     def compose_dir(self) -> Path:
@@ -33,6 +33,14 @@ class DockerProvider(CommandProvider):
 
     def _docker(self, args: list[str], *, timeout: int = 60) -> str:
         return self._result(self._run(["docker", *args], timeout=timeout), "Docker operation failed")
+
+    def _compose_tool(self) -> list[str]:
+        plugin = self._run(["docker", "compose", "version"], timeout=15)
+        if plugin.returncode == 0:
+            return ["docker", "compose"]
+        if shutil.which("docker-compose"):
+            return ["docker-compose"]
+        api_error(409, "DOCKER_COMPOSE_UNAVAILABLE", "Docker Compose is not installed")
 
     def _inspect_container(self, name: str) -> dict[str, Any] | None:
         if not shutil.which("docker"):
@@ -197,6 +205,7 @@ class DockerProvider(CommandProvider):
             }[operation]
             result = provider.manage(delegated, payload, actor, log, progress, cancelled)
             return {"operation": operation, "app_id": app_id, **result}
+        tool = ["docker"]
         if operation in {"container_start", "container_stop", "container_restart"}:
             target = self._checked_identifier(payload.get("target"), "container")
             command = [operation.removeprefix("container_"), target]
@@ -213,7 +222,8 @@ class DockerProvider(CommandProvider):
             if not file.is_file():
                 api_error(404, "COMPOSE_PROJECT_NOT_FOUND", "Compose project not found")
             verb = operation.removeprefix("compose_")
-            command = ["compose", "--ansi", "never", "-f", str(file), "-p", project, verb]
+            tool = self._compose_tool()
+            command = ["--ansi", "never", "-f", str(file), "-p", project, verb]
             if verb == "up":
                 command.append("-d")
         else:
@@ -221,7 +231,7 @@ class DockerProvider(CommandProvider):
         progress(15, "Executing Docker operation")
         if cancelled():
             raise InterruptedError("Docker operation cancelled before execution")
-        result = self._run(["docker", *command], timeout=1800)
+        result = self._run([*tool, *command], timeout=1800)
         for line in (result.stdout + "\n" + result.stderr).splitlines()[-500:]:
             log("stdout" if result.returncode == 0 else "stderr", line)
         self._result(result, "Docker operation failed")

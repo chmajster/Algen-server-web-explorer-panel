@@ -7,8 +7,8 @@ vi.mock("../../api", () => ({ api: { tree: vi.fn() } }));
 
 const t = (key: string) => key;
 const disks: LocalDisk[] = [
-  { device: "/dev/sdb1", mount_point: "/mnt/storage", name: "storage", fs_type: "ext4", read_only: false, total: 100, used: 50, free: 50 },
-  { device: "/dev/sdc1", mount_point: "/media/archive", name: "archive", fs_type: "xfs", read_only: true, total: 200, used: 100, free: 100 },
+  { device: "/dev/sdb1", mount_point: "/mnt/storage", name: "storage", fs_type: "ext4", read_only: false, removable: false, total: 100, used: 50, free: 50 },
+  { device: "/dev/sdc1", mount_point: "/media/archive", name: "archive", fs_type: "xfs", read_only: true, removable: false, total: 200, used: 100, free: 100 },
 ];
 
 describe("local disks in directory tree", () => {
@@ -31,6 +31,16 @@ describe("local disks in directory tree", () => {
   it("does not render the section when no disks are visible", () => {
     render(<DirectoryTree currentPath="/home/alice" homePath="/home/alice" localDisks={[]} mounts={[]} t={t} onOpen={vi.fn()} onDropItems={vi.fn()} />);
 
+    expect(screen.queryByText("files.localDisks")).not.toBeInTheDocument();
+  });
+
+  it("renders removable filesystems in a separate USB section", () => {
+    const usbDisk: LocalDisk = { device: "/dev/sdd1", mount_point: "/media/webnas-usb/BACKUP-1234", name: "BACKUP", fs_type: "exfat", read_only: false, removable: true, total: 300, used: 10, free: 290 };
+
+    render(<DirectoryTree currentPath="/home/alice" homePath="/home/alice" localDisks={[usbDisk]} mounts={[]} t={t} onOpen={vi.fn()} onDropItems={vi.fn()} />);
+
+    expect(screen.getByText("files.usbDevices")).toBeInTheDocument();
+    expect(screen.getByText("BACKUP")).toBeInTheDocument();
     expect(screen.queryByText("files.localDisks")).not.toBeInTheDocument();
   });
 

@@ -1,0 +1,3 @@
+# Hand USB filesystems to a systemd service. Mounting directly from udev is
+# intentionally unsupported by systemd-udevd's sandbox.
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="webnas-usb-mount@%k.service"
