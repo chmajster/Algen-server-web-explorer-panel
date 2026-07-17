@@ -131,6 +131,29 @@ describe("Package Center", () => {
     await waitFor(() => expect(api.appPlan).toHaveBeenCalledWith("samba", "reinstall", false));
   });
 
+  it("does not mark Linux workload updates as an update of the Package Center module", async () => {
+    const linuxUpdates = summary("linux-updates", {
+      state: { installed: true, installed_version: "1.0.0", available_version: "1.0.0", update_available: true, requires_reboot: false },
+      status: "update_available",
+    });
+    linuxUpdates.manifest = { ...linuxUpdates.manifest, id: "linux-updates", name: "Linux system updates", systemd_services: [], configurable: false, removable: false };
+    linuxUpdates.capabilities = { ...linuxUpdates.capabilities, update: false, configure: false, service_control: false, resources: ["packages", "security"], actions: ["refresh", "upgrade_all"] };
+    linuxUpdates.module_status = { ...linuxUpdates.module_status, update_available: true, service_state: "not_applicable", metrics: { updates: 4, package_manager: "apt-get" } };
+    vi.mocked(api.apps).mockResolvedValue([]);
+    vi.mocked(api.modules).mockResolvedValue([linuxUpdates]);
+
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onOpenModule={vi.fn()} />);
+
+    const card = (await screen.findByText("Linux system updates")).closest("article");
+    expect(card).not.toBeNull();
+    expect(within(card!).getByText("package.status.installed")).toBeInTheDocument();
+    expect(within(card!).getByText("common.no")).toBeInTheDocument();
+    expect(within(card!).getByText("managed.field.package_manager")).toBeInTheDocument();
+    expect(within(card!).getByText("apt-get")).toBeInTheDocument();
+    expect(within(card!).queryByText("module.serviceState")).not.toBeInTheDocument();
+    expect(within(card!).queryByText("package.status.update_available")).not.toBeInTheDocument();
+  });
+
   it("disables package actions and shows progress while an operation is active", async () => {
     const running = { id: "job-running", module_id: "samba", action: "install", status: "running" as const, progress: 35, created_at: 1, error: "", current_step: "Install packages", log_tail: [] };
     vi.mocked(api.modules).mockResolvedValue([summary("samba", { jobs: [running] })]);

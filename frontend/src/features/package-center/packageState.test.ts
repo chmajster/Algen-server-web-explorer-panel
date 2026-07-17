@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModuleSummary, PackageModule } from "../../api";
-import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, mergePackageCatalog } from "./packageState";
+import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, isPackageUpdateAvailable, mergePackageCatalog } from "./packageState";
 
 function packageItem(options: { installed?: boolean; running?: boolean; update?: boolean; needsConfig?: boolean; error?: boolean } = {}): ModuleSummary {
   const installed = options.installed ?? false;
@@ -78,6 +78,18 @@ describe("Package Center state matrix", () => {
     const item = packageItem({ installed: true, running: true, update: true });
     expect(getPackageUiStatus(item)).toBe("update_available");
     expect(getPackageActions(item)).toEqual(["update", "open", "stop"]);
+  });
+
+  it("does not present workload updates as a Package Center module update", () => {
+    const item = packageItem({ installed: true, update: true });
+    item.id = "linux-updates";
+    item.capabilities = { ...item.capabilities, update: false, configure: false, service_control: false, actions: ["refresh", "upgrade_all"] };
+    item.module_status.service_state = "not_applicable";
+
+    expect(item.module_status.update_available).toBe(true);
+    expect(isPackageUpdateAvailable(item)).toBe(false);
+    expect(getPackageUiStatus(item)).toBe("installed");
+    expect(getPackageActions(item)).toEqual(["open"]);
   });
 
   it("normalizes technical failures to the user-facing error state", () => {

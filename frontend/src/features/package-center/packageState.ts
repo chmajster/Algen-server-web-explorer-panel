@@ -74,6 +74,10 @@ export function packageNeedsConfiguration(item: ModuleSummary): boolean {
   return item.state.needs_configuration === true || item.module_status.configuration_valid === false || item.status === "needs_config";
 }
 
+export function isPackageUpdateAvailable(item: ModuleSummary): boolean {
+  return item.capabilities.update && (item.state.update_available || item.module_status.update_available);
+}
+
 export function hasPackageManagement(item: ModuleSummary): boolean {
   return item.capabilities.configure || item.capabilities.resources.length > 0 || item.capabilities.actions.length > 0;
 }
@@ -82,7 +86,7 @@ export function getPackageUiStatus(item: ModuleSummary): PackageUiStatus {
   if (ERROR_STATES.has(item.status) || item.module_status.health === "failed") return "error";
   if (!item.state.installed) return "not_installed";
   if (packageNeedsConfiguration(item)) return "needs_config";
-  if (item.state.update_available || item.module_status.update_available) return "update_available";
+  if (isPackageUpdateAvailable(item)) return "update_available";
   if (isPackageRunning(item)) return "running";
   if (item.capabilities.service_control) return "stopped";
   return "installed";
@@ -97,7 +101,7 @@ export function getPackageActions(item: ModuleSummary, options: { advanced?: boo
   const running = isPackageRunning(item);
   const manageable = hasPackageManagement(item);
 
-  if ((item.state.update_available || item.module_status.update_available) && item.capabilities.update) actions.push("update");
+  if (isPackageUpdateAvailable(item)) actions.push("update");
 
   if (packageNeedsConfiguration(item)) {
     if (manageable) actions.push("configure");

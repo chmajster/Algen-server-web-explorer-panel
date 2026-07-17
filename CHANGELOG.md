@@ -109,6 +109,8 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ### Fixed
 
+- Package Center no longer mistakes workload updates reported inside modules such as Linux system updates for an available update of the WebNAS module itself.
+- The Linux system updates card now displays its detected package manager instead of the inapplicable systemd service-state field.
 - Linux system updates no longer report a fictitious `available` service state; the UI now shows the detected package manager and localizes real service states.
 - Opening a module from the Package Center details dialog now closes the modal before creating and focusing the module window, preventing the new window from appearing behind the details overlay.
 - Package Center can now install distribution packages containing required SUID/SGID helpers, including Ubuntu's `cifs-utils` `mount.cifs`; older WebNAS service profiles that block the mode receive a precise remediation error instead of an unexplained APT exit code 100.

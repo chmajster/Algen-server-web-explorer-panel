@@ -126,7 +126,8 @@ def _module_summary(module: dict, actor: str) -> dict:
     if status.installed:
         state["installed"] = True
         state["installed_version"] = status.package_version or state.get("installed_version") or provider.manifest.version
-        state["update_available"] = status.update_available
+        if provider.manifest.capabilities.update:
+            state["update_available"] = status.update_available
     active = next((job for job in module.get("jobs", []) if job["status"] in {"queued", "running"}), None)
     return {**module, "state": state, "module_status": status.model_dump(mode="json"), "capabilities": provider.manifest.capabilities.model_dump(), "active_job": active}
 

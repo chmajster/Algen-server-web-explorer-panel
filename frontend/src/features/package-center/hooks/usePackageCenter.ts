@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type AppJob, type ModuleSummary, type PackageHistoryItem, type PackageSource } from "../../../api";
 import type { PackageTab } from "../types";
-import { getPackageUiStatus, mergePackageCatalog } from "../packageState";
+import { getPackageUiStatus, isPackageUpdateAvailable, mergePackageCatalog } from "../packageState";
 
 export function usePackageCenter() {
   const [modules, setModules] = useState<ModuleSummary[]>([]);
@@ -62,7 +62,7 @@ export function usePackageCenter() {
     if (category && item.manifest.category !== category) return false;
     if (status && getPackageUiStatus(item) !== status) return false;
     if (tab === "installed" && !item.state.installed) return false;
-    if (tab === "updates" && !item.state.update_available) return false;
+    if (tab === "updates" && !isPackageUpdateAvailable(item)) return false;
     return true;
   }), [category, modules, search, status, tab]);
 

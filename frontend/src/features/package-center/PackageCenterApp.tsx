@@ -12,6 +12,7 @@ import { PackageSources } from "./PackageSources";
 import { PackageTabs } from "./PackageTabs";
 import { PackageToolbar } from "./PackageToolbar";
 import { usePackageCenter } from "./hooks/usePackageCenter";
+import { isPackageUpdateAvailable } from "./packageState";
 import type { PackageAction } from "./types";
 import "./package-center.css";
 
@@ -26,7 +27,7 @@ export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toa
   const counts = useMemo(() => ({
     all: state.modules.length,
     installed: state.modules.filter((item) => item.state.installed).length,
-    updates: state.modules.filter((item) => item.state.update_available).length,
+    updates: state.modules.filter(isPackageUpdateAvailable).length,
     jobs: state.jobs.filter((job) => ["queued", "running"].includes(job.status)).length,
     history: state.history.length,
     sources: state.sources.length,

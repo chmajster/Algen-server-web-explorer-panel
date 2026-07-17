@@ -21,7 +21,7 @@ from app.modules.providers.databases import RedisProvider
 from app.package_center.manifests import discover_manifests
 from app.package_center import executor as package_executor
 from app.package_center.executor import redact
-from app.package_center.models import PackageAction
+from app.package_center.models import ModuleCapabilities, ModuleStatus, PackageAction
 from app.package_center.models import DistributionInfo, PackagePlan
 from app.package_center.repository import PackageRepository
 from app.security import SessionUser
@@ -90,6 +90,25 @@ def test_linux_update_route_assigns_the_screen_session_server_side(monkeypatch):
 
     assert result["operation"] == "upgrade_security"
     assert result["screen_session"] == "0123456789abcdef01234567"
+
+
+def test_module_summary_does_not_expose_workload_updates_as_a_package_center_update(monkeypatch):
+    capabilities = ModuleCapabilities(update=False, resources=["packages"], actions=["refresh", "upgrade_all"])
+    provider = SimpleNamespace(manifest=SimpleNamespace(version="1.0.0", capabilities=capabilities))
+    status = ModuleStatus(installed=True, package_version=None, update_available=True, service_state="not_applicable", metrics={"updates": 4})
+    module = {
+        "id": "linux-updates",
+        "state": {"installed": False, "installed_version": None, "available_version": "1.0.0", "update_available": False, "requires_reboot": False},
+        "jobs": [],
+    }
+    monkeypatch.setattr(module_router, "get_provider", lambda *args: provider)
+    monkeypatch.setattr(module_router, "_provider_status", lambda *args: status)
+
+    summary = module_router._module_summary(module, "admin")
+
+    assert summary["state"]["installed"] is True
+    assert summary["state"]["update_available"] is False
+    assert summary["module_status"]["update_available"] is True
 
 
 def test_linux_updates_marks_security_packages_and_uses_closed_upgrade_command(monkeypatch):
