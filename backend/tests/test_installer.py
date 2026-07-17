@@ -154,3 +154,49 @@ def test_proxmox_enterprise_source_fallback_is_temporary(tmp_path):
         """,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_installer_bootstraps_only_missing_download_tools_before_source_download(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        PKG_MANAGER=apt
+        installed=no
+        calls="$TEST_ROOT/calls"
+        refresh_apt_metadata() { printf 'refresh\n' >> "$calls"; }
+        apt_get() {
+          printf '%s\n' "$*" >> "$calls"
+          installed=yes
+        }
+        command() {
+          if [[ "$1" == "-v" ]]; then
+            if [[ "$installed" == "yes" ]]; then
+              return 0
+            fi
+            case "$2" in
+              curl|tar|rsync) return 1 ;;
+              wget) return 0 ;;
+            esac
+          fi
+          builtin command "$@"
+        }
+        ensure_download_tools >/dev/null
+        grep -qx 'refresh' "$calls"
+        grep -qx 'install -y curl tar rsync' "$calls"
+        ! grep -q 'wget' "$calls"
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_installer_skips_bootstrap_when_curl_wget_tar_and_rsync_exist(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        PKG_MANAGER=apt
+        refresh_apt_metadata() { return 99; }
+        apt_get() { return 99; }
+        ensure_download_tools >/dev/null
+        """,
+    )
+    assert result.returncode == 0, result.stderr

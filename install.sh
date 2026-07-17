@@ -404,6 +404,37 @@ refresh_apt_metadata() {
   return "$exit_code"
 }
 
+ensure_download_tools() {
+  local tool=""
+  local missing=()
+  for tool in curl wget tar rsync; do
+    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+  done
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    ok "Download, archive, and synchronization tools are available: curl, wget, tar, rsync"
+    return
+  fi
+
+  section "Installing required download tools"
+  info "Missing tools: ${missing[*]}"
+  case "$PKG_MANAGER" in
+    apt)
+      refresh_apt_metadata
+      DEBIAN_FRONTEND=noninteractive apt_get install -y "${missing[@]}"
+      ;;
+    dnf)
+      dnf install -y "${missing[@]}"
+      ;;
+    yum)
+      yum install -y "${missing[@]}"
+      ;;
+  esac
+  for tool in curl wget tar rsync; do
+    command -v "$tool" >/dev/null 2>&1 || fail "Required tool was not installed: ${tool}"
+  done
+  ok "Download, archive, and synchronization tools installed"
+}
+
 setup_nodesource_repository() {
   if [[ ${#APT_SOURCE_OPTIONS[@]} -eq 0 ]]; then
     curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
@@ -431,19 +462,19 @@ install_dependencies() {
       refresh_apt_metadata
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
-        libpam0g-dev rsync sudo curl ca-certificates tar gzip \
+        libpam0g-dev rsync sudo curl wget ca-certificates tar gzip \
         passwd procps iproute2 screen quota
       ;;
     dnf)
       dnf install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
-        pam-devel rsync sudo curl ca-certificates tar gzip \
+        pam-devel rsync sudo curl wget ca-certificates tar gzip \
         shadow-utils procps-ng iproute screen quota
       ;;
     yum)
       yum install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
-        pam-devel rsync sudo curl ca-certificates tar gzip \
+        pam-devel rsync sudo curl wget ca-certificates tar gzip \
         shadow-utils procps-ng iproute screen quota
       ;;
   esac
@@ -1171,6 +1202,7 @@ main() {
   fi
   detect_package_manager
   detect_proxmox_host
+  ensure_download_tools
   prepare_source
   prompt_configuration
   install_dependencies

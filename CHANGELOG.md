@@ -109,6 +109,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ### Fixed
 
+- The installer now bootstraps missing `curl`, `wget`, `tar`, and `rsync` packages before downloading, extracting, or synchronizing WebNAS application files, while skipping packages already available on the host.
 - Linux Updates now reports package-manager failures instead of presenting them as an empty healthy result, provides retryable resource errors and accurate empty states, runs a real repository metadata refresh from the package toolbar, and reloads the visible list after operations.
 - Samba reinstall now recovers from the Ubuntu merged-`/usr` `cifs-utils` self-conflict for `mount.cifs` using a package-scoped repair and then retries the original operation; conflicts owned by any other package remain blocked.
 - Linux Updates now launches GNU `screen` with the detached `-dmS` mode, preventing the WebNAS launcher from timing out after ten seconds while package patching continues independently.
