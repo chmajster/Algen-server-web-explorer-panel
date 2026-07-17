@@ -4,7 +4,7 @@ import { api, type ModuleBackup, type ModuleDiagnostic, type ModuleJob, type Mod
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { PackageJobDialog } from "../package-center/PackageJobDialog";
-import { ModuleAppShell, ModuleHealthCard, type ModuleSection } from "./common/ModuleAppShell";
+import { ModuleAppShell, ModuleHealthCard, translateServiceState, type ModuleSection } from "./common/ModuleAppShell";
 import { ModuleBackups, ModuleDangerZone, ModuleDiagnostics, ModuleJobProgress, ModuleLogs, ModuleServiceControls } from "./common/ModuleComponents";
 import { ModuleUninstallDialog } from "./common/ModuleUninstallDialog";
 import { SambaModuleApp } from "./samba/SambaModuleApp";
@@ -28,7 +28,7 @@ function GenericModuleApp({ moduleId, t, toast }: { moduleId: string; t: Transla
   if (!summary) return <div className="loading-state">{t("status.loading")}</div>;
   const sections: ModuleSection[] = ["overview", "service", ...(summary.capabilities.logs ? ["logs" as const] : []), ...(summary.capabilities.diagnostics ? ["diagnostics" as const] : []), ...(summary.capabilities.backups ? ["backups" as const] : []), "info"];
   let content: React.ReactNode;
-  if (section === "overview") content = <><div className="module-health-grid"><ModuleHealthCard title={t("module.packageState")} value={status.installed ? t("common.enabled") : t("common.disabled")} /><ModuleHealthCard title={t("module.version")} value={status.package_version || "—"} /><ModuleHealthCard title={t("module.serviceState")} value={status.service_state} /><ModuleHealthCard title={t("module.health")} value={t(`module.health.${status.health}`)} /></div>{job && <ModuleJobProgress job={job} t={t} />}</>;
+  if (section === "overview") content = <><div className="module-health-grid"><ModuleHealthCard title={t("module.packageState")} value={status.installed ? t("common.enabled") : t("common.disabled")} /><ModuleHealthCard title={t("module.version")} value={status.package_version || "—"} /><ModuleHealthCard title={t("module.serviceState")} value={translateServiceState(status.service_state, t)} /><ModuleHealthCard title={t("module.health")} value={t(`module.health.${status.health}`)} /></div>{job && <ModuleJobProgress job={job} t={t} />}</>;
   else if (section === "service") content = <><ModuleServiceControls status={status} disabled={Boolean(job)} t={t} onAction={(action) => setDialog({ type: "service", action })} /><div className="module-service-list">{Object.entries(status.services).map(([name, value]) => <article key={name}><strong>{name}</strong><span>{value.state}</span><span>{value.enabled ? t("module.enabledAtBoot") : t("module.disabledAtBoot")}</span></article>)}</div></>;
   else if (section === "logs") content = <ModuleLogs moduleId={moduleId} t={t} toast={toast} />;
   else if (section === "diagnostics") content = <><div className="module-section-toolbar"><button onClick={() => setDialog({ type: "diagnostics" })}><Stethoscope />{t("module.runDiagnostics")}</button></div><ModuleDiagnostics diagnostics={diagnostics} t={t} /></>;

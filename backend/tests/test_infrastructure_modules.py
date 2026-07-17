@@ -129,6 +129,7 @@ def test_linux_updates_reports_apt_simulation_failure_instead_of_an_empty_health
 
     status = provider.get_status()
 
+    assert status.service_state == "not_applicable"
     assert status.health.value == "failed"
     assert status.configuration_valid is False
     assert status.metrics["updates"] == 0

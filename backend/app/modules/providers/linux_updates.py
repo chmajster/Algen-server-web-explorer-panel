@@ -203,7 +203,7 @@ class LinuxUpdatesProvider(CommandProvider):
         elif manager and not screen_available:
             health_message = "GNU screen is unavailable; install it before starting a durable update"
         return ModuleStatus(
-            installed=bool(manager), package_version=None, update_available=bool(packages), service_state="available" if manager else "not_installed",
+            installed=bool(manager), package_version=None, update_available=bool(packages), service_state="not_applicable",
             configuration_valid=False if package_error else True if manager else None,
             health=ModuleHealth.failed if package_error else ModuleHealth.degraded if security or reboot or (manager and not screen_available) else ModuleHealth.healthy if manager else ModuleHealth.not_installed,
             health_message=health_message,

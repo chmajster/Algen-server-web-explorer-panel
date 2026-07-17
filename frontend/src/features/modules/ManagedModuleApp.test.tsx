@@ -20,7 +20,7 @@ const linuxSummary = {
   id: "linux-updates",
   manifest: { ...summary.manifest, id: "linux-updates", name: "Linux system updates", description: "Updates", category: "system_tools", apt_packages: ["apt"], dnf_packages: ["dnf"], systemd_services: [], configurable: false },
   services: {},
-  module_status: { ...summary.module_status, package_version: null, update_available: true, service_state: "available", metrics: { updates: 2, security_updates: 1, reboot_required: false } },
+  module_status: { ...summary.module_status, package_version: null, update_available: true, service_state: "not_applicable", metrics: { updates: 2, security_updates: 1, reboot_required: false, package_manager: "apt-get" } },
   capabilities: { ...summary.capabilities, configure: false, service_control: false, reload: false, logs: false, resources: ["packages", "security", "history", "reboot"], actions: ["refresh", "upgrade_all", "upgrade_security"] },
 } satisfies ModuleSummary;
 
@@ -72,6 +72,16 @@ describe("ManagedModuleApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
 
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "upgrade_security", {}));
+  });
+
+  it("shows the package manager instead of a fictitious service state for Linux updates", async () => {
+    vi.mocked(api.module).mockResolvedValue(linuxSummary);
+
+    render(<ManagedModuleApp moduleId="linux-updates" permissions={["modules.view", "updates.view"]} t={(key) => key} toast={vi.fn()} />);
+
+    expect(await screen.findByText("managed.field.package_manager: apt-get")).toBeInTheDocument();
+    expect(screen.getByText("managed.field.package_manager")).toBeInTheDocument();
+    expect(screen.queryByText("module.serviceState: available")).not.toBeInTheDocument();
   });
 
   it("shows a healthy empty security state and disables an unnecessary update", async () => {
