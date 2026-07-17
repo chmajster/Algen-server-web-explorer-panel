@@ -42,6 +42,10 @@ SAFE_CIFS_USRMERGE_PATHS = frozenset({
     "/sbin/umount.cifs",
     "/usr/sbin/umount.cifs",
 })
+DPKG_CIFS_SUID_PERMISSION_RE = re.compile(
+    r"error setting permissions of\s+['\"]\.?/(?:usr/)?sbin/mount\.cifs['\"]:\s*Operation not permitted",
+    re.IGNORECASE,
+)
 
 
 class CommandExecutionError(RuntimeError):
@@ -241,6 +245,12 @@ def _is_safe_cifs_usrmerge_conflict(args: list[str], output: str) -> bool:
     )
 
 
+def _is_cifs_suid_sandbox_failure(args: list[str], output: str) -> bool:
+    """Recognize dpkg being blocked from restoring mount.cifs' SUID mode."""
+
+    return "cifs-utils" in args and bool(DPKG_CIFS_SUID_PERMISSION_RE.search(output))
+
+
 def _temporary_apt_source_options(args: list[str]) -> list[str]:
     """Keep only the internally generated temporary APT source options."""
 
@@ -259,6 +269,13 @@ def _run_apt_with_cifs_recovery(args: list[str], timeout: int, log: LogCallback)
         _run(args, timeout, log)
         return
     except CommandExecutionError as error:
+        if _is_cifs_suid_sandbox_failure(args, error.output):
+            message = (
+                "The installed WebNAS systemd sandbox blocks the SUID mode required by cifs-utils/mount.cifs. "
+                "Update or reinstall WebNAS to regenerate webnas.service, restart WebNAS, and retry this operation."
+            )
+            log("stderr", message)
+            raise RuntimeError(message) from error
         if not _is_safe_cifs_usrmerge_conflict(args, error.output):
             raise
 

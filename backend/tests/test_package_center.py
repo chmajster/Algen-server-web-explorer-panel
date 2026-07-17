@@ -478,6 +478,28 @@ def test_cifs_overwrite_owned_by_another_package_is_never_forced(monkeypatch):
     assert calls == [original]
 
 
+def test_cifs_suid_sandbox_failure_has_a_precise_remediation_and_is_not_forced(monkeypatch):
+    original = ["apt-get", "install", "-y", "--reinstall", "samba", "smbclient", "cifs-utils"]
+    calls: list[list[str]] = []
+    output = (
+        "dpkg: error processing archive cifs-utils.deb (--unpack):\n"
+        " error setting permissions of './sbin/mount.cifs': Operation not permitted"
+    )
+
+    def run(args, timeout, log):
+        calls.append(args)
+        raise executor.CommandExecutionError("apt-get", 100, output)
+
+    monkeypatch.setattr(executor, "_run", run)
+    logs: list[str] = []
+
+    with pytest.raises(RuntimeError, match="systemd sandbox blocks the SUID mode"):
+        executor._run_apt_command(original, 1800, lambda stream, line: logs.append(line))
+
+    assert calls == [original]
+    assert any("regenerate webnas.service" in line for line in logs)
+
+
 def test_redacts_secrets_and_executor_never_uses_shell_true():
     assert "secret=[REDACTED]" in executor.redact("secret=hunter2")
     assert "password: [REDACTED]" in executor.redact("password: admin")

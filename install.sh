@@ -996,7 +996,9 @@ ProtectHome=false
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-RestrictSUIDSGID=true
+# Validated package-manager jobs must be able to install distribution packages
+# containing required SUID/SGID helpers (for example cifs-utils/mount.cifs).
+RestrictSUIDSGID=false
 LockPersonality=true
 MemoryDenyWriteExecute=true
 SystemCallArchitectures=native

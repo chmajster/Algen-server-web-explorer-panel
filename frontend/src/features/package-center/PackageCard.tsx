@@ -21,7 +21,8 @@ function operationLabel(item: ModuleSummary, t: Translate): string {
 export function PackageCard({ item, t, onDetails, onOpen, onAction, onShowJob }: { item: ModuleSummary; t: Translate; onDetails: () => void; onOpen?: () => void; onAction: (action: PackageAction) => void; onShowJob: (job: AppJob) => void }) {
   const status = getPackageUiStatus(item);
   const serviceStatus = getPackageServiceStatus(item);
-  const busy = Boolean(item.active_job && ["queued", "running", "waiting_for_confirmation"].includes(item.active_job.status));
+  const activeJob = item.active_job && ["queued", "running", "waiting_for_confirmation"].includes(item.active_job.status) ? item.active_job : null;
+  const busy = Boolean(activeJob);
   const actions = getPackageActions(item).filter((action) => !["open", "configure"].includes(action) || onOpen);
   const titleId = `package-card-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
@@ -43,7 +44,7 @@ export function PackageCard({ item, t, onDetails, onOpen, onAction, onShowJob }:
       <div><dt>{t("package.updateAvailable")}</dt><dd>{item.state.update_available || item.module_status.update_available ? t("common.yes") : t("common.no")}</dd></div>
       {item.module_status.last_error && <div className="package-last-error"><dt>{t("module.lastError")}</dt><dd>{item.module_status.last_error}</dd></div>}
     </dl>
-    {busy && item.active_job && <button className="package-operation-state" type="button" onClick={() => onShowJob(item.active_job!)} aria-label={`${t("package.showLiveJob")}: ${operationLabel(item, t)}`}><RefreshCw className="spin" aria-hidden="true" /><span>{operationLabel(item, t)}</span><small>{item.active_job.progress}%</small></button>}
+    {activeJob && <button className="package-operation-state" type="button" onClick={() => onShowJob(activeJob)} aria-live="polite" aria-label={`${t("package.showLiveJob")}: ${operationLabel(item, t)}, ${activeJob.progress}%`}><RefreshCw className="spin" aria-hidden="true" /><span>{operationLabel(item, t)}</span><small>{activeJob.progress}%</small></button>}
     <footer>
       <button type="button" onClick={onDetails}>{t("package.details")}</button>
       {actions.map((action, index) => <button type="button" disabled={busy} className={index === 0 && !["stop", "uninstall"].includes(action) ? "button-primary" : action === "uninstall" ? "button-danger" : ""} onClick={() => run(action)} key={action}>{t(packageActionLabelKey(action))}</button>)}

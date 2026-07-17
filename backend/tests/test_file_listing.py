@@ -143,9 +143,13 @@ def test_directory_write_capability_comes_from_user_worker(monkeypatch, tmp_path
 
 def test_systemd_profile_keeps_allowed_home_directories_writable():
     repository = Path(__file__).resolve().parents[2]
+    packaged_service = (repository / "packaging" / "webnas.service").read_text(encoding="utf-8")
+    installer = (repository / "install.sh").read_text(encoding="utf-8")
 
-    assert "ProtectHome=false" in (repository / "packaging" / "webnas.service").read_text(encoding="utf-8")
-    assert "ProtectHome=false" in (repository / "install.sh").read_text(encoding="utf-8")
+    assert "ProtectHome=false" in packaged_service
+    assert "ProtectHome=false" in installer
+    assert "RestrictSUIDSGID=false" in packaged_service
+    assert "RestrictSUIDSGID=false" in installer
 
 
 def test_child_directory_has_parent_within_allowed_root(monkeypatch, tmp_path):
