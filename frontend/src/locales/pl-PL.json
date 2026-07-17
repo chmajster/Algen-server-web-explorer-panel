@@ -380,6 +380,7 @@
   "package.license": "Licencja",
   "package.logs": "Logi",
   "package.liveJobTitle": "Przebieg operacji: {name}",
+  "package.showLiveJob": "Pokaż status i dziennik operacji",
   "package.liveLog": "Dziennik na żywo",
   "package.logConnected": "Połączono — log na żywo",
   "package.logConnecting": "Łączenie ze strumieniem logu…",

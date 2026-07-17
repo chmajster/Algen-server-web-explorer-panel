@@ -37,7 +37,9 @@
 .package-card dt { color: var(--text-muted); }
 .package-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--text-secondary); text-align: left; }
 .package-last-error dd { color: var(--danger); }
-.package-operation-state { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 7px; margin: 0 14px 12px; padding: 8px 10px; border-radius: 7px; color: var(--accent); background: var(--surface-selected); font-size: .6875rem; }
+.package-operation-state { display: grid; width: calc(100% - 28px); grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 7px; margin: 0 14px 12px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 7px; color: var(--accent); background: var(--surface-selected); font: inherit; font-size: .6875rem; text-align: left; cursor: pointer; }
+.package-operation-state:hover { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: var(--surface-hover); }
+.package-operation-state:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .package-operation-state svg { width: 15px; }
 .package-operation-state small { color: var(--text-secondary); }
 .package-card footer { min-height: 60px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: auto; padding: 10px 13px; border-top: 1px solid var(--border-subtle); background: var(--surface-secondary); }

@@ -137,6 +137,22 @@ describe("Package Center", () => {
     expect(within(sambaCard!).getByText("35%")).toBeInTheDocument();
   });
 
+  it("reopens the live status and log dialog from the active reinstall banner", async () => {
+    const reinstalling = { id: "job-reinstall", module_id: "samba", action: "reinstall", status: "running" as const, progress: 62, created_at: 1, error: "", current_step: "Installing cifs-utils", log_tail: [{ id: 1, created_at: 2, stream: "stdout", line: "Unpacking cifs-utils" }] };
+    const installed = { installed: true, installed_version: "1.0.0", available_version: "1.0.0", update_available: false, requires_reboot: false };
+    vi.mocked(api.modules).mockResolvedValue([summary("samba", { state: installed, services: { smbd: "active" }, status: "running", jobs: [reinstalling] })]);
+
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+
+    const banner = await screen.findByRole("button", { name: /package.showLiveJob.*package.operation.reinstall/ });
+    fireEvent.click(banner);
+
+    const dialog = await screen.findByRole("dialog", { name: "package.liveJobTitle" });
+    expect(within(dialog).getByText("62%")).toBeInTheDocument();
+    expect(within(dialog).getByText("Installing cifs-utils")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Unpacking cifs-utils/)).toBeInTheDocument();
+  });
+
   it("renders job progress, errors and incompatible modules", async () => {
     const failed = { id: "job-1", module_id: "samba", action: "install", status: "failed" as const, progress: 45, created_at: 1, error: "APT failed", current_step: "Install packages", log_tail: [{ id: 1, created_at: 1, stream: "stderr", line: "Repository unavailable" }] };
     vi.mocked(api.appJobs).mockResolvedValue([failed]);

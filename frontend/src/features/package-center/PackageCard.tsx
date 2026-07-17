@@ -1,5 +1,5 @@
 import { Box, Network, PackageCheck, RefreshCw, Server, Share2, ShieldAlert } from "lucide-react";
-import type { ModuleSummary } from "../../api";
+import type { AppJob, ModuleSummary } from "../../api";
 import type { Translate } from "../../app/types";
 import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, packageActionLabelKey, type PackageDisplayAction } from "./packageState";
 import type { PackageAction } from "./types";
@@ -18,7 +18,7 @@ function operationLabel(item: ModuleSummary, t: Translate): string {
   return t(`package.operation.${KNOWN_OPERATIONS.has(operation) ? operation : "working"}`);
 }
 
-export function PackageCard({ item, t, onDetails, onOpen, onAction }: { item: ModuleSummary; t: Translate; onDetails: () => void; onOpen?: () => void; onAction: (action: PackageAction) => void }) {
+export function PackageCard({ item, t, onDetails, onOpen, onAction, onShowJob }: { item: ModuleSummary; t: Translate; onDetails: () => void; onOpen?: () => void; onAction: (action: PackageAction) => void; onShowJob: (job: AppJob) => void }) {
   const status = getPackageUiStatus(item);
   const serviceStatus = getPackageServiceStatus(item);
   const busy = Boolean(item.active_job && ["queued", "running", "waiting_for_confirmation"].includes(item.active_job.status));
@@ -43,7 +43,7 @@ export function PackageCard({ item, t, onDetails, onOpen, onAction }: { item: Mo
       <div><dt>{t("package.updateAvailable")}</dt><dd>{item.state.update_available || item.module_status.update_available ? t("common.yes") : t("common.no")}</dd></div>
       {item.module_status.last_error && <div className="package-last-error"><dt>{t("module.lastError")}</dt><dd>{item.module_status.last_error}</dd></div>}
     </dl>
-    {busy && <div className="package-operation-state" role="status" aria-live="polite"><RefreshCw className="spin" aria-hidden="true" /><span>{operationLabel(item, t)}</span><small>{item.active_job?.progress ?? 0}%</small></div>}
+    {busy && item.active_job && <button className="package-operation-state" type="button" onClick={() => onShowJob(item.active_job!)} aria-label={`${t("package.showLiveJob")}: ${operationLabel(item, t)}`}><RefreshCw className="spin" aria-hidden="true" /><span>{operationLabel(item, t)}</span><small>{item.active_job.progress}%</small></button>}
     <footer>
       <button type="button" onClick={onDetails}>{t("package.details")}</button>
       {actions.map((action, index) => <button type="button" disabled={busy} className={index === 0 && !["stop", "uninstall"].includes(action) ? "button-primary" : action === "uninstall" ? "button-danger" : ""} onClick={() => run(action)} key={action}>{t(packageActionLabelKey(action))}</button>)}

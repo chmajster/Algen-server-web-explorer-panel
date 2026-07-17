@@ -53,7 +53,7 @@ export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toa
     {state.error
       ? <div className="error-state"><strong>{t("status.error")}</strong><span>{state.error}</span><button type="button" onClick={() => void state.refresh()}>{t("action.retry")}</button></div>
       : <main>
-        {["all", "installed", "updates"].includes(state.tab) && <PackageGrid modules={state.visibleModules} loading={state.loading} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} />}
+        {["all", "installed", "updates"].includes(state.tab) && <PackageGrid modules={state.visibleModules} loading={state.loading} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: item.manifest.name })} />}
         {state.tab === "jobs" && <PackageJobs jobs={state.jobs} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
         {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
         {state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
