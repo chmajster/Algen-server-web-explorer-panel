@@ -12,6 +12,7 @@ import yaml
 from ...config import get_config
 from ...package_center.models import ModuleDiagnostic, ModuleHealth, ModuleStatus, api_error
 from .base import CancelCallback, LogCallback, ProgressCallback
+from .container_apps import CONTAINER_APPS, CONTAINER_APPS_BY_ID
 from .infrastructure import CommandProvider, SLUG_RE
 
 
@@ -32,6 +33,18 @@ class DockerProvider(CommandProvider):
 
     def _docker(self, args: list[str], *, timeout: int = 60) -> str:
         return self._result(self._run(["docker", *args], timeout=timeout), "Docker operation failed")
+
+    def _inspect_container(self, name: str) -> dict[str, Any] | None:
+        if not shutil.which("docker"):
+            return None
+        result = self._run(["docker", "inspect", name], timeout=15)
+        if result.returncode != 0:
+            return None
+        try:
+            payload = json.loads(result.stdout)
+            return payload[0] if isinstance(payload, list) and payload and isinstance(payload[0], dict) else None
+        except (json.JSONDecodeError, IndexError):
+            return None
 
     def get_status(self) -> ModuleStatus:
         if not shutil.which("docker"):
@@ -73,6 +86,33 @@ class DockerProvider(CommandProvider):
             for path in sorted(self.compose_dir.glob("*/compose.yaml")):
                 stat = path.stat()
                 items.append({"name": path.parent.name, "updated_at": stat.st_mtime, "size": stat.st_size})
+            return {"resource": resource, "items": items[:limit], "total": len(items)}
+        if resource == "apps":
+            items: list[dict[str, Any]] = []
+            for app in CONTAINER_APPS:
+                inspect = self._inspect_container(app.container)
+                state = inspect.get("State", {}) if inspect else {}
+                labels = inspect.get("Config", {}).get("Labels") or {} if inspect else {}
+                configured_image = str(inspect.get("Config", {}).get("Image") or "") if inspect else ""
+                managed = bool(inspect and (labels.get("io.webnas.app") == app.id or (app.id == "home-assistant" and configured_image == app.image)))
+                running = bool(state.get("Running"))
+                items.append({
+                    "id": app.id,
+                    "name": app.name,
+                    "description": app.description,
+                    "category": app.category,
+                    "image": app.image,
+                    "container": app.container,
+                    "ports": list(app.ports),
+                    "panel_port": app.panel_port,
+                    "installed": inspect is not None,
+                    "running": running,
+                    "managed": managed,
+                    "status": "running" if running else "stopped" if inspect else "not_installed",
+                })
+            needle = search.lower().strip()
+            if needle:
+                items = [item for item in items if needle in f"{item['name']} {item['description']} {item['category']}".lower()]
             return {"resource": resource, "items": items[:limit], "total": len(items)}
         return super().list_resources(resource, limit=limit, search=search)
 
@@ -134,6 +174,29 @@ class DockerProvider(CommandProvider):
         return {"name": project, "content": target.read_text(encoding="utf-8", errors="replace"), "updated_at": target.stat().st_mtime, "size": target.stat().st_size}
 
     def manage(self, operation: str, payload: dict[str, Any], actor: str, log: LogCallback, progress: ProgressCallback, cancelled: CancelCallback) -> dict[str, Any]:
+        if operation in {"app_install", "app_start", "app_stop", "app_restart", "app_update", "app_remove"}:
+            app_id = str(payload.get("app_id") or "")
+            if app_id not in CONTAINER_APPS_BY_ID:
+                api_error(400, "INVALID_CONTAINER_APP", "Unknown container application")
+            inspect = self._inspect_container(CONTAINER_APPS_BY_ID[app_id].container)
+            labels = inspect.get("Config", {}).get("Labels") or {} if inspect else {}
+            configured_image = str(inspect.get("Config", {}).get("Image") or "") if inspect else ""
+            managed = labels.get("io.webnas.app") == app_id or (app_id == "home-assistant" and configured_image == CONTAINER_APPS_BY_ID[app_id].image)
+            if inspect and not managed:
+                api_error(409, "CONTAINER_NOT_MANAGED", "A container with the reserved name exists outside the WebNAS application catalog")
+            from . import get_provider
+
+            provider = get_provider(app_id, actor)
+            delegated = {
+                "app_install": "install_container",
+                "app_start": "container_start",
+                "app_stop": "container_stop",
+                "app_restart": "container_restart",
+                "app_update": "update_container",
+                "app_remove": "remove_container",
+            }[operation]
+            result = provider.manage(delegated, payload, actor, log, progress, cancelled)
+            return {"operation": operation, "app_id": app_id, **result}
         if operation in {"container_start", "container_stop", "container_restart"}:
             target = self._checked_identifier(payload.get("target"), "container")
             command = [operation.removeprefix("container_"), target]

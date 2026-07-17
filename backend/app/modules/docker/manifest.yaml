@@ -27,8 +27,8 @@ capabilities:
   diagnostics: true
   backups: false
   healthcheck: true
-  resources: [containers, images, networks, volumes, stats, logs, compose]
-  actions: [container_start, container_stop, container_restart, image_update, compose_up, compose_down, compose_pull, compose_restart]
+  resources: [apps, containers, images, networks, volumes, stats, logs, compose]
+  actions: [app_install, app_start, app_stop, app_restart, app_update, app_remove, container_start, container_stop, container_restart, image_update, compose_up, compose_down, compose_pull, compose_restart]
 ports: []
 permissions: [package_management, systemd, docker_socket, config_write]
 config_paths: [/etc/docker/daemon.json]

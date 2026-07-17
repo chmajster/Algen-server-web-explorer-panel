@@ -26,11 +26,11 @@ capabilities:
   backups: false
   healthcheck: true
   resources: [statistics, domains, clients, lists, updates]
-  actions: [blocking_enable, blocking_disable]
+  actions: [install_container, container_start, container_stop, container_restart, update_container, remove_container, blocking_enable, blocking_disable]
 ports: [53/tcp, 53/udp, 80/tcp]
-permissions: [systemd, network_api]
+permissions: [docker_socket, systemd, network_api, config_write]
 config_paths: [/etc/pihole/pihole.toml]
-data_paths: [/etc/pihole]
+data_paths: [/etc/pihole, /var/lib/webnas/container-apps/pihole]
 proxmox_safe: false
 requires_root: true
 removable: false

@@ -28,7 +28,7 @@ export function PackageDetails({ item, t, onClose, onAction, onConfigure }: {
 
   return <Modal wide title={item.manifest.name} closeLabel={t("action.close")} onClose={onClose} footer={<>
     <button type="button" onClick={onClose}>{t("action.close")}</button>
-    {actions.map((action, index) => <button type="button" disabled={busy} className={action === "uninstall" ? "button-danger" : index === 0 && action !== "stop" ? "button-primary" : ""} onClick={() => run(action)} key={action}>{t(packageActionLabelKey(action))}</button>)}
+    {actions.map((action, index) => <button type="button" disabled={busy} className={action === "uninstall" ? "button-danger" : index === 0 && action !== "stop" ? "button-primary" : ""} onClick={() => run(action)} key={action}>{t(!item.state.installed && action === "open" ? "store.install" : packageActionLabelKey(action))}</button>)}
   </>}>
     <div className="package-details">
       <header>

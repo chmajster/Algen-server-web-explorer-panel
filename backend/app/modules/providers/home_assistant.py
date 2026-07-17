@@ -74,7 +74,7 @@ class HomeAssistantProvider(ApiConnectionProvider):
         return super().list_resources(resource, limit=limit, search=search)
 
     def _run_container(self, image: str, timezone: str) -> None:
-        self._docker(["run", "-d", "--name", self.container, "--restart", "unless-stopped", "--network", "host", "-e", f"TZ={timezone}", "-v", f"{self.config_dir}:/config", image], timeout=180)
+        self._docker(["run", "-d", "--name", self.container, "--label", "io.webnas.app=home-assistant", "--restart", "unless-stopped", "--network", "host", "-e", f"TZ={timezone}", "-v", f"{self.config_dir}:/config", image], timeout=180)
 
     def manage(self, operation: str, payload: dict[str, Any], actor: str, log: LogCallback, progress: ProgressCallback, cancelled: CancelCallback) -> dict[str, Any]:
         timezone = str(payload.get("timezone") or "UTC")
@@ -105,6 +105,13 @@ class HomeAssistantProvider(ApiConnectionProvider):
                 self._run_container(old_image, timezone)
                 log("stderr", "Updated container failed; the previous image was restored")
                 raise
+        elif operation == "remove_container":
+            if not inspect:
+                api_error(404, "CONTAINER_NOT_FOUND", "Home Assistant container is not installed")
+            if bool(inspect.get("State", {}).get("Running")):
+                self._docker(["stop", self.container], timeout=180)
+            self._docker(["rm", self.container], timeout=180)
+            log("stdout", "Home Assistant container removed; configuration data was preserved")
         else:
             return super().manage(operation, payload, actor, log, progress, cancelled)
         log("stdout", f"Home Assistant operation {operation} completed")

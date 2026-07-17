@@ -94,13 +94,15 @@ export function getPackageUiStatus(item: ModuleSummary): PackageUiStatus {
 
 export function getPackageActions(item: ModuleSummary, options: { advanced?: boolean } = {}): PackageDisplayAction[] {
   if (!item.compatible || item.blocked_by_proxmox) return [];
-  if (!item.state.installed) return item.capabilities.install ? ["install"] : [];
+  const controlledContainer = item.capabilities.actions.includes("install_container");
+  if (!item.state.installed) return item.capabilities.install ? ["install"] : controlledContainer ? ["open"] : [];
 
   const actions: PackageDisplayAction[] = [];
   const advanced = options.advanced === true;
   const running = isPackageRunning(item);
   const manageable = hasPackageManagement(item);
 
+  if (controlledContainer) return hasPackageManagement(item) ? ["open"] : [];
   if (isPackageUpdateAvailable(item)) actions.push("update");
 
   if (packageNeedsConfiguration(item)) {

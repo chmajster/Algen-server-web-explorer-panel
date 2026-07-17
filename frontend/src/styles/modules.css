@@ -261,5 +261,11 @@
 .admin-action-form textarea { min-height: 190px; resize: vertical; font-family: var(--font-mono, ui-monospace, monospace); }
 .module-readonly { min-width: 0; margin: 0; padding: 0; border: 0; }.module-readonly:disabled { color: inherit; }
 .module-hub .data-card > header { display: flex; align-items: center; gap: 8px; }.module-hub .data-card > header strong { flex: 1; }.module-hub dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; font-size: .8rem; }.module-hub dt { color: var(--text-muted); }.module-hub dd { margin: 0; }
+.docker-app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 310px), 1fr)); gap: 14px; }
+.docker-app-card { min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-elevated); }
+.docker-app-card > header { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.docker-app-card > header > div { min-width: 0; display: grid; gap: 3px; }.docker-app-card > header small { color: var(--accent); font-size: .6875rem; }.docker-app-card > p { margin: 0; color: var(--text-secondary); font-size: .78rem; line-height: 1.45; }
+.docker-app-card dl { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: .7rem; }.docker-app-card dt { color: var(--text-muted); }.docker-app-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.docker-app-card footer { display: flex; flex-wrap: wrap; gap: 7px; margin-top: auto; padding-top: 4px; }.docker-app-card footer button, .docker-app-card footer a { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); color: inherit; background: var(--surface-secondary); font-size: .7rem; text-decoration: none; }.docker-app-card footer svg { width: 14px; height: 14px; }
 .rbac-row { grid-template-columns: auto minmax(120px,1fr) auto auto minmax(120px,1fr) auto; }
 @media (max-width: 700px) { .managed-table { min-width: 680px; }.rbac-row { grid-template-columns: auto 1fr auto; }.rbac-row > span:nth-of-type(n+2) { display: none; } }

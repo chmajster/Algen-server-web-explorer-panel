@@ -50,7 +50,7 @@ export function PackageCard({ item, t, onDetails, onOpen, onAction, onShowJob }:
     {activeJob && <button className="package-operation-state" type="button" onClick={() => onShowJob(activeJob)} aria-live="polite" aria-label={`${t("package.showLiveJob")}: ${operationLabel(item, t)}, ${activeJob.progress}%`}><RefreshCw className="spin" aria-hidden="true" /><span>{operationLabel(item, t)}</span><small>{activeJob.progress}%</small></button>}
     <footer>
       <button type="button" onClick={onDetails}>{t("package.details")}</button>
-      {actions.map((action, index) => <button type="button" disabled={busy} className={index === 0 && !["stop", "uninstall"].includes(action) ? "button-primary" : action === "uninstall" ? "button-danger" : ""} onClick={() => run(action)} key={action}>{t(packageActionLabelKey(action))}</button>)}
+      {actions.map((action, index) => <button type="button" disabled={busy} className={index === 0 && !["stop", "uninstall"].includes(action) ? "button-primary" : action === "uninstall" ? "button-danger" : ""} onClick={() => run(action)} key={action}>{t(!item.state.installed && action === "open" ? "store.install" : packageActionLabelKey(action))}</button>)}
     </footer>
   </article>;
 }

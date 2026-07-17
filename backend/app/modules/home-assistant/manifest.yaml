@@ -26,7 +26,7 @@ capabilities:
   backups: true
   healthcheck: true
   resources: [container, logs, panel, updates]
-  actions: [install_container, container_start, container_stop, container_restart, update_container]
+  actions: [install_container, container_start, container_stop, container_restart, update_container, remove_container]
 dependencies: [docker]
 ports: [8123/tcp]
 permissions: [docker_socket, config_write, backup_write]

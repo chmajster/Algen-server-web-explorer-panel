@@ -28,12 +28,12 @@ capabilities:
   backups: true
   healthcheck: true
   resources: [statistics, clients, filters, upstreams, querylog]
-  actions: [protection_enable, protection_disable, refresh_filters, set_rules, set_upstreams, update_application]
+  actions: [install_container, container_start, container_stop, container_restart, update_container, remove_container, protection_enable, protection_disable, refresh_filters, set_rules, set_upstreams, update_application]
 ports: [53/tcp, 53/udp, 3000/tcp]
-permissions: [systemd, network_api, config_write]
+permissions: [docker_socket, systemd, network_api, config_write]
 config_paths: [/opt/AdGuardHome/AdGuardHome.yaml]
-data_paths: [/opt/AdGuardHome]
-backup_paths: [/opt/AdGuardHome/AdGuardHome.yaml]
+data_paths: [/opt/AdGuardHome, /var/lib/webnas/container-apps/adguard-home]
+backup_paths: [/opt/AdGuardHome/AdGuardHome.yaml, /var/lib/webnas/container-apps/adguard-home/conf/AdGuardHome.yaml]
 proxmox_safe: false
 requires_root: true
 removable: false
