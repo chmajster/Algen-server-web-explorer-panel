@@ -10,8 +10,8 @@ export function ModuleStatusBadge({ status, t }: { status: ModuleStatus; t: Tran
   return <span className={`module-status-badge ${status.health}`}><i aria-hidden="true" />{t(`module.health.${status.health}`)}</span>;
 }
 
-export function ModuleHeader({ name, status, activeJob, t, actions }: { name: string; status: ModuleStatus; activeJob?: { operation: string; progress: number } | null; t: Translate; actions?: React.ReactNode }) {
-  return <header className="module-header"><div><div className="module-title-line"><h2>{name}</h2><ModuleStatusBadge status={status} t={t} /></div><p>{status.health_message}</p><div className="module-header-meta"><span>{t("module.version")}: {status.package_version || "—"}</span><span>{t("module.serviceState")}: {status.service_state}</span>{activeJob && <span>{t("module.activeJob")}: {t(`module.operation.${activeJob.operation}`)} · {activeJob.progress}%</span>}</div></div><div className="module-quick-actions">{actions}</div></header>;
+export function ModuleHeader({ name, status, healthMessage, activeJob, t, actions }: { name: string; status: ModuleStatus; healthMessage?: string; activeJob?: { operation: string; progress: number } | null; t: Translate; actions?: React.ReactNode }) {
+  return <header className="module-header"><div><div className="module-title-line"><h2>{name}</h2><ModuleStatusBadge status={status} t={t} /></div><p>{healthMessage ?? status.health_message}</p><div className="module-header-meta"><span>{t("module.version")}: {status.package_version || "—"}</span><span>{t("module.serviceState")}: {status.service_state}</span>{activeJob && <span>{t("module.activeJob")}: {t(`module.operation.${activeJob.operation}`)} · {activeJob.progress}%</span>}</div></div><div className="module-quick-actions">{actions}</div></header>;
 }
 
 export function ModuleAppShell({ name, status, activeJob, section, sections, t, actions, onSection, children }: { name: string; status: ModuleStatus; activeJob?: { operation: string; progress: number } | null; section: ModuleSection; sections: ModuleSection[]; t: Translate; actions?: React.ReactNode; onSection: (section: ModuleSection) => void; children: React.ReactNode }) {

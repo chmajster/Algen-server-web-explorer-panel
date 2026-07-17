@@ -73,4 +73,40 @@ describe("ManagedModuleApp", () => {
 
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "upgrade_security", {}));
   });
+
+  it("shows a healthy empty security state and disables an unnecessary update", async () => {
+    vi.mocked(api.module).mockResolvedValue({ ...linuxSummary, module_status: { ...linuxSummary.module_status, update_available: true, metrics: { updates: 2, security_updates: 0, reboot_required: false } } });
+    vi.mocked(api.moduleResource).mockResolvedValue({ resource: "security", items: [], total: 0 });
+
+    render(<ManagedModuleApp moduleId="linux-updates" permissions={["modules.view", "updates.view", "updates.apply"]} t={(key) => key} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /managed.securityUpdates/ }));
+
+    expect(await screen.findByText("managed.noSecurityUpdates")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "managed.updateNow" })).toBeDisabled();
+  });
+
+  it("exposes resource failures with a retry instead of leaving the module loading forever", async () => {
+    vi.mocked(api.module).mockResolvedValue(linuxSummary);
+    vi.mocked(api.moduleResource).mockRejectedValue(new Error("APT metadata unavailable"));
+
+    render(<ManagedModuleApp moduleId="linux-updates" permissions={["modules.view", "updates.view"]} t={(key) => key} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /managed.packages/ }));
+
+    expect(await screen.findByText("managed.resourceLoadFailed")).toBeInTheDocument();
+    expect(screen.getByText("APT metadata unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "action.retry" })).toBeInTheDocument();
+  });
+
+  it("runs a real repository metadata refresh from the package toolbar", async () => {
+    vi.mocked(api.module).mockResolvedValue(linuxSummary);
+    vi.mocked(api.moduleResource).mockResolvedValue({ resource: "packages", items: [{ name: "curl", available_version: "8.1" }], total: 1 });
+
+    render(<ManagedModuleApp moduleId="linux-updates" permissions={["modules.view", "updates.view", "updates.apply"]} t={(key) => key} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /managed.packages/ }));
+    await screen.findByText("curl");
+    fireEvent.click(screen.getByRole("button", { name: "managed.refreshMetadata" }));
+    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+
+    await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "refresh", {}));
+  });
 });

@@ -109,6 +109,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ### Fixed
 
+- Linux Updates now reports package-manager failures instead of presenting them as an empty healthy result, provides retryable resource errors and accurate empty states, runs a real repository metadata refresh from the package toolbar, and reloads the visible list after operations.
 - Samba reinstall now recovers from the Ubuntu merged-`/usr` `cifs-utils` self-conflict for `mount.cifs` using a package-scoped repair and then retries the original operation; conflicts owned by any other package remain blocked.
 - Linux Updates now launches GNU `screen` with the detached `-dmS` mode, preventing the WebNAS launcher from timing out after ten seconds while package patching continues independently.
 - Accessibility interface scale and larger-text settings now resize typography consistently across the desktop. Scale options submit numeric values instead of percent-suffixed strings, fixed pixel font sizes use scalable `rem` units, and taskbar/title-bar dimensions receive browser-compatible precomputed values.

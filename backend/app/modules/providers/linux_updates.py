@@ -147,8 +147,9 @@ class LinuxUpdatesProvider(CommandProvider):
         manager = self._manager()
         if manager == "apt-get":
             result = self._run(["apt-get", "-s", "-o", "Debug::NoLocking=1", "dist-upgrade"], timeout=90)
+            output = self._result(result, "APT could not calculate available updates")
             packages: list[dict[str, Any]] = []
-            for line in result.stdout.splitlines():
+            for line in output.splitlines():
                 match = APT_INST_RE.match(line)
                 if not match:
                     continue
@@ -157,6 +158,8 @@ class LinuxUpdatesProvider(CommandProvider):
             return packages
         if manager in {"dnf", "yum"}:
             result = self._run([manager, "-q", "check-update"], timeout=90)
+            if result.returncode not in {0, 100}:
+                self._result(result, f"{manager} could not calculate available updates")
             packages = []
             for line in result.stdout.splitlines():
                 parts = line.split()
@@ -164,6 +167,8 @@ class LinuxUpdatesProvider(CommandProvider):
                     name, architecture = parts[0].rsplit(".", 1)
                     packages.append({"name": name, "architecture": architecture, "current_version": "", "available_version": parts[1], "security": False, "origin": parts[2]})
             security = self._run([manager, "-q", "updateinfo", "list", "security", "updates"], timeout=90)
+            if security.returncode not in {0, 100}:
+                self._result(security, f"{manager} could not calculate security updates")
             security_names = {part.rsplit(".", 1)[0] for line in security.stdout.splitlines() for part in line.split() if "." in part and not part.startswith("FEDORA-")}
             for package in packages:
                 package["security"] = package["name"] in security_names
@@ -183,18 +188,26 @@ class LinuxUpdatesProvider(CommandProvider):
 
     def get_status(self) -> ModuleStatus:
         manager = self._manager()
-        packages = self._packages() if manager else []
+        package_error = ""
+        try:
+            packages = self._packages() if manager else []
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            packages = []
+            package_error = redact(str(error))[:500]
         security = sum(1 for item in packages if item["security"])
         reboot = self._reboot_required()
         screen_available = bool(shutil.which("screen"))
         health_message = f"{len(packages)} updates, {security} security updates" if manager else "A supported package manager is unavailable"
-        if manager and not screen_available:
+        if package_error:
+            health_message = f"Could not read available updates: {package_error}"
+        elif manager and not screen_available:
             health_message = "GNU screen is unavailable; install it before starting a durable update"
         return ModuleStatus(
             installed=bool(manager), package_version=None, update_available=bool(packages), service_state="available" if manager else "not_installed",
-            configuration_valid=True if manager else None, health=ModuleHealth.degraded if security or reboot or (manager and not screen_available) else ModuleHealth.healthy if manager else ModuleHealth.not_installed,
+            configuration_valid=False if package_error else True if manager else None,
+            health=ModuleHealth.failed if package_error else ModuleHealth.degraded if security or reboot or (manager and not screen_available) else ModuleHealth.healthy if manager else ModuleHealth.not_installed,
             health_message=health_message,
-            metrics={"updates": len(packages), "security_updates": security, "reboot_required": reboot, "package_manager": manager, "screen_available": screen_available},
+            metrics={"updates": len(packages), "security_updates": security, "reboot_required": reboot, "package_manager": manager, "screen_available": screen_available, "package_query_error": package_error},
         )
 
     def list_resources(self, resource: str, *, limit: int = 200, search: str = "") -> dict[str, Any]:

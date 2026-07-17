@@ -116,6 +116,43 @@ def test_linux_updates_marks_security_packages_and_uses_closed_upgrade_command(m
     assert result["reboot_required"] is True
 
 
+def test_linux_updates_reports_apt_simulation_failure_instead_of_an_empty_healthy_list(monkeypatch):
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
+    monkeypatch.setattr(provider, "_reboot_required", lambda: False)
+    monkeypatch.setattr("app.modules.providers.linux_updates.shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        provider,
+        "_run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 100, "", "E: package metadata is unavailable"),
+    )
+
+    status = provider.get_status()
+
+    assert status.health.value == "failed"
+    assert status.configuration_valid is False
+    assert status.metrics["updates"] == 0
+    assert "metadata is unavailable" in status.metrics["package_query_error"]
+    with pytest.raises(RuntimeError, match="metadata is unavailable"):
+        provider.list_resources("packages")
+
+
+def test_linux_updates_accepts_dnf_update_available_exit_code(monkeypatch):
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(provider, "_manager", lambda: "dnf")
+
+    def run(args, **kwargs):
+        if "check-update" in args:
+            return subprocess.CompletedProcess(args, 100, "openssl.x86_64 3.2.1 updates\n", "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(provider, "_run", run)
+
+    packages = provider.list_resources("packages")["items"]
+
+    assert packages == [{"name": "openssl", "architecture": "x86_64", "current_version": "", "available_version": "3.2.1", "security": False, "origin": "updates"}]
+
+
 def test_linux_update_refresh_retries_without_unsubscribed_proxmox_enterprise(monkeypatch, tmp_path: Path):
     source_root = tmp_path / "apt"
     parts = source_root / "sources.list.d"

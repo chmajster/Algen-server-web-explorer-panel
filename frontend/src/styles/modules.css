@@ -241,6 +241,8 @@
 .managed-actions button, .module-hub button { display: inline-flex; align-items: center; gap: 6px; }
 .detached-update-hint { display: flex; align-items: center; gap: 7px; margin: 8px 0 12px; color: var(--text-muted); font-size: .82rem; }
 .detached-update-hint svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--accent); }
+.module-health-message { margin: 10px 0 0; padding: 9px 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-secondary); color: var(--text-secondary); font-size: .8rem; }
+.module-health-message.error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border-subtle)); color: var(--danger); }
 .managed-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 9px; margin-top: 12px; }
 .managed-metrics article { display: grid; gap: 5px; padding: 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-secondary); }
 .managed-metrics span { color: var(--text-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
