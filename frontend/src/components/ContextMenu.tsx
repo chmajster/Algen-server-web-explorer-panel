@@ -9,7 +9,7 @@ export function ContextMenu({ x, y, items, onClose, className = "", portalTarget
   // Keep menus outside window and scroll containers. A fixed element can still
   // become relative to an animated/transformed ancestor and expand its scroll
   // area, which made application contents jump when a context menu was opened.
-  const desktopRoot = portalTarget?.closest(".desktop") ?? document.querySelector(".desktop") ?? document.body;
+  const menuRoot = portalTarget?.closest(".desktop") ?? document.querySelector(".desktop") ?? portalTarget ?? document.body;
   useLayoutEffect(() => {
     const rect = ref.current?.getBoundingClientRect();
     if (!rect) return;
@@ -35,5 +35,5 @@ export function ContextMenu({ x, y, items, onClose, className = "", portalTarget
   const menu = <div ref={ref} className={`context-menu ${className}`.trim()} style={{ left: position.x, top: position.y }} role="menu" onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
     {items.map((item, index) => <div key={`${item.label}-${index}`} className={item.separator ? "context-separator" : undefined}><button role="menuitem" className={item.danger ? "danger" : ""} disabled={item.disabled} onClick={() => { item.action(); onClose(); }}>{item.icon}{item.label}</button></div>)}
   </div>;
-  return createPortal(menu, desktopRoot);
+  return createPortal(menu, menuRoot);
 }
