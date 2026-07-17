@@ -39,7 +39,12 @@ describe("Windows-like taskbar", () => {
 
   it("allows alignment and taskbar settings from the empty taskbar menu", () => {
     const events = renderTaskbar();
-    fireEvent.contextMenu(screen.getByLabelText("desktop.taskbar"));
+    const taskbar = screen.getByLabelText("desktop.taskbar");
+    fireEvent.contextMenu(taskbar);
+    const menu = screen.getByRole("menu");
+    expect(menu).toHaveClass("taskbar-context-menu");
+    expect(taskbar).not.toContainElement(menu);
+    expect(menu.parentElement).toBe(taskbar.parentElement);
     fireEvent.click(screen.getByRole("menuitem", { name: "settings.alignLeft" }));
     expect(events.onAlignment).toHaveBeenCalledWith("left");
 

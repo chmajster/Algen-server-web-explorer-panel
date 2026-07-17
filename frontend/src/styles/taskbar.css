@@ -1,5 +1,8 @@
-.desktop .taskbar {
-  height: var(--taskbar-height-scaled); justify-content: initial; padding: 6px 10px;
+.desktop > .taskbar {
+  position: absolute; z-index: 1100; top: auto; right: 0; bottom: 0; left: 0;
+  width: 100%; height: var(--taskbar-height-scaled); min-height: var(--taskbar-height-scaled); max-height: var(--taskbar-height-scaled);
+  display: flex; flex: 0 0 var(--taskbar-height-scaled); align-items: center; justify-content: initial; margin: 0; padding: 6px 10px; overflow: visible;
+  box-sizing: border-box;
   border-color: rgba(255,255,255,.52); background: color-mix(in srgb, var(--surface-glass) 94%, transparent);
   backdrop-filter: blur(24px) saturate(145%); box-shadow: 0 -1px 12px rgba(24,43,58,.1);
 }
@@ -18,9 +21,9 @@
 .desktop .taskbar-items button.running:not(.active) i { opacity: .82; }
 .desktop .taskbar-items button.minimized { opacity: .68; }
 .desktop .taskbar-items button b { position: absolute; top: 1px; right: 2px; min-width: 15px; height: 15px; border-radius: 8px; color: white; background: var(--accent); font-size: 0.5625rem; line-height: 15px; }
-.desktop .taskbar > .context-menu { z-index: 3200; min-width: 260px; max-width: min(340px, calc(100vw - 16px)); backdrop-filter: blur(22px) saturate(135%); }
-.desktop .taskbar > .context-menu button { min-height: 36px; }
-.desktop .taskbar > .context-menu button svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.desktop > .taskbar-context-menu { z-index: 3200; min-width: 260px; max-width: min(340px, calc(100vw - 16px)); backdrop-filter: blur(22px) saturate(135%); }
+.desktop > .taskbar-context-menu button { min-height: 36px; }
+.desktop > .taskbar-context-menu button svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .desktop .system-tray { z-index: 2; margin-left: auto; gap: 1px; }
 .desktop .system-tray > button { padding: 0 9px; }
 .desktop .system-tray svg { width: 17px; height: 17px; }

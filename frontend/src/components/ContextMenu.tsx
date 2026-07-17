@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type ContextMenuItem = { label: string; icon?: React.ReactNode; disabled?: boolean; danger?: boolean; separator?: boolean; action: () => void };
 
-export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; items: ContextMenuItem[]; onClose: () => void }) {
+export function ContextMenu({ x, y, items, onClose, className = "", portalTarget }: { x: number; y: number; items: ContextMenuItem[]; onClose: () => void; className?: string; portalTarget?: Element | null }) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
   useLayoutEffect(() => {
@@ -27,7 +28,8 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
     ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", keydown); };
   }, [onClose]);
-  return <div ref={ref} className="context-menu" style={{ left: position.x, top: position.y }} role="menu">
+  const menu = <div ref={ref} className={`context-menu ${className}`.trim()} style={{ left: position.x, top: position.y }} role="menu" onContextMenu={(event) => event.stopPropagation()}>
     {items.map((item, index) => <div key={`${item.label}-${index}`} className={item.separator ? "context-separator" : undefined}><button role="menuitem" className={item.danger ? "danger" : ""} disabled={item.disabled} onClick={() => { item.action(); onClose(); }}>{item.icon}{item.label}</button></div>)}
   </div>;
+  return portalTarget ? createPortal(menu, portalTarget) : menu;
 }

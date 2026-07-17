@@ -206,12 +206,30 @@ read_from_tty_timeout() {
   local prompt="$1"
   local timeout="$2"
   local answer=""
-  if [[ -e /dev/tty ]]; then
-    if IFS= read -r -t "$timeout" -p "$prompt" answer </dev/tty; then
-      printf '%s' "$answer"
-      return 0
+  local key=""
+  local deadline=0
+  local remaining=0
+  [[ -e /dev/tty ]] || return 1
+  [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || return 1
+  deadline=$((SECONDS + timeout))
+  while (( (remaining = deadline - SECONDS) > 0 )); do
+    printf '\r\033[2K%s (auto update in %ss): %s' "$prompt" "$remaining" "$answer" >/dev/tty
+    key=""
+    if IFS= read -r -s -n 1 -t 1 key </dev/tty; then
+      case "$key" in
+        "")
+          printf '\r\033[2K%s: %s\n' "$prompt" "$answer" >/dev/tty
+          printf '%s' "$answer"
+          return 0
+          ;;
+        $'\b'|$'\177')
+          [[ -z "$answer" ]] || answer="${answer%?}"
+          ;;
+        *) answer+="$key" ;;
+      esac
     fi
-  fi
+  done
+  printf '\r\033[2K' >/dev/tty
   return 1
 }
 
@@ -646,7 +664,7 @@ handle_existing_installation() {
   printf '  5) Remove app and all files\n'
   printf '  6) Abort\n'
   local choice=""
-  if choice="$(read_from_tty_timeout "Action [1, auto in ${EXISTING_ACTION_TIMEOUT}s]: " "$EXISTING_ACTION_TIMEOUT")"; then
+  if choice="$(read_from_tty_timeout "Action [1]" "$EXISTING_ACTION_TIMEOUT")"; then
     :
   else
     printf '\n' >&2

@@ -5,7 +5,7 @@ import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import type { AppDefinition, AppId, Translate, WindowInstance } from "./types";
 
 export type TaskbarWindowAction = "focus" | "minimize" | "toggleMaximize" | "close";
-type TaskbarContext = { x: number; y: number; app: AppDefinition | null };
+type TaskbarContext = { x: number; y: number; app: AppDefinition | null; portalTarget: Element | null };
 
 export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedTheme, clockText, dateText, activeTransfers, launcherOpen, notificationsOpen, t, onToggleLauncher, onToggleNotifications, onToggleTheme, onApp, onOpenNew, onTogglePin, onWindow, onCloseApp, onTaskbarSettings, onAlignment, onLogout }: {
   apps: AppDefinition[];
@@ -86,7 +86,7 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
     ];
   }
 
-  return <footer className={`taskbar taskbar-${profile.taskbar_alignment}`} aria-label={t("desktop.taskbar")} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, app: null }); }}>
+  return <footer className={`taskbar taskbar-${profile.taskbar_alignment}`} aria-label={t("desktop.taskbar")} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, app: null, portalTarget: event.currentTarget.parentElement }); }}>
     <div className="taskbar-primary">
       <button className={`taskbar-start ${launcherOpen ? "active" : ""}`} type="button" title={t("desktop.mainMenu")} aria-label={t("desktop.mainMenu")} aria-expanded={launcherOpen} onClick={onToggleLauncher}><LayoutGrid /></button>
       <div className="taskbar-items" aria-label={t("desktop.runningApps")}>
@@ -95,7 +95,7 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
           const running = appWindows.length > 0;
           const active = activeWindow?.app === app.id && !activeWindow.minimized;
           const minimized = running && appWindows.every((item) => item.minimized);
-          return <button key={app.id} type="button" className={`${pinned.has(app.id) ? "pinned" : ""} ${active ? "active" : ""} ${running ? "running" : ""} ${minimized ? "minimized" : ""}`} title={t(app.labelKey)} aria-label={t(app.labelKey)} aria-pressed={active} onClick={() => onApp(app.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, app }); }}>
+          return <button key={app.id} type="button" className={`${pinned.has(app.id) ? "pinned" : ""} ${active ? "active" : ""} ${running ? "running" : ""} ${minimized ? "minimized" : ""}`} title={t(app.labelKey)} aria-label={t(app.labelKey)} aria-pressed={active} onClick={() => onApp(app.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, app, portalTarget: event.currentTarget.closest(".taskbar")?.parentElement ?? null }); }}>
             {app.icon}<span>{t(app.labelKey)}</span>{running && <i aria-hidden="true" />}{appWindows.length > 1 && <b aria-label={`${t("taskbar.windowCount")}: ${appWindows.length}`}>{appWindows.length}</b>}
           </button>;
         })}
@@ -111,6 +111,6 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
       </div>
       <time className="system-clock" dateTime={new Date().toISOString()}><span>{clockText}</span><small>{dateText}</small></time>
     </div>
-    {context && <ContextMenu x={context.x} y={context.y} items={context.app ? appMenu(context.app) : taskbarMenu()} onClose={() => setContext(null)} />}
+    {context && <ContextMenu className="taskbar-context-menu" portalTarget={context.portalTarget} x={context.x} y={context.y} items={context.app ? appMenu(context.app) : taskbarMenu()} onClose={() => setContext(null)} />}
   </footer>;
 }
