@@ -125,6 +125,13 @@ def test_smbstatus_json_and_text_fallback_parsers():
     assert parsed_text[0]["pid"] == 123
 
 
+def test_samba_version_is_normalized_for_the_user_interface(monkeypatch):
+    monkeypatch.setattr("app.modules.providers.samba.shutil.which", lambda name: "/usr/sbin/smbd")
+    monkeypatch.setattr("app.modules.providers.samba.subprocess.run", lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "Version 4.19.5-Ubuntu\n", ""))
+
+    assert SambaProvider._version() == "4.19.5-Ubuntu"
+
+
 def test_global_config_uses_closed_validation_and_renders_safe_warnings(monkeypatch, tmp_path: Path):
     provider = SambaProvider("admin")
     current = apps.SambaConfig()

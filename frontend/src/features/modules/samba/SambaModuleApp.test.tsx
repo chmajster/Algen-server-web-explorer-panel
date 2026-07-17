@@ -30,7 +30,8 @@ describe("Samba module app", () => {
 
   it("shows module health and switches to the share table", async () => {
     render(<SambaModuleApp t={t} toast={vi.fn()} onOpenFolder={vi.fn()} onDirtyChange={vi.fn()} />);
-    expect(await screen.findByText("Samba is healthy")).toBeInTheDocument();
+    expect(await screen.findByText("module.samba.healthHealthy")).toBeInTheDocument();
+    expect(screen.getByText("module.operation.restart")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "module.section.shares" }));
     expect(await screen.findByText("Media files")).toBeInTheDocument();
     expect(screen.getByText("module.samba.pathAvailable")).toBeInTheDocument();
@@ -47,7 +48,7 @@ describe("Samba module app", () => {
     vi.mocked(api.validateModuleConfig).mockResolvedValue({ ok: true, errors: [], warnings: [], changes: [{ kind: "global_changed", name: "workgroup", before: "WORKGROUP", after: "HOME" }], generated_config: "[global]\nworkgroup = HOME", validator_output: "Loaded services file OK", confirmations_required: [] });
     vi.mocked(api.applyModuleConfig).mockResolvedValue({ job: { id: "job", module_id: "samba", action: "apply", status: "queued", progress: 0, created_at: 1, error: "", log_tail: [] } });
     render(<SambaModuleApp t={t} toast={vi.fn()} onOpenFolder={vi.fn()} onDirtyChange={dirty} />);
-    await screen.findByText("Samba is healthy");
+    await screen.findByText("module.samba.healthHealthy");
     fireEvent.click(screen.getByRole("button", { name: "module.section.configuration" }));
     fireEvent.change(screen.getByLabelText("workgroup"), { target: { value: "HOME" } });
     expect(await screen.findByText("module.unsavedChanges")).toBeInTheDocument();
@@ -58,7 +59,7 @@ describe("Samba module app", () => {
 
   it("offers reinstall from configuration and queues the background operation", async () => {
     render(<SambaModuleApp canReinstall t={t} toast={vi.fn()} onOpenFolder={vi.fn()} onDirtyChange={vi.fn()} />);
-    await screen.findByText("Samba is healthy");
+    await screen.findByText("module.samba.healthHealthy");
     expect(screen.queryByRole("button", { name: "store.reinstall" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "module.section.configuration" }));
@@ -73,8 +74,17 @@ describe("Samba module app", () => {
 
   it("hides reinstall without module update permission", async () => {
     render(<SambaModuleApp t={t} toast={vi.fn()} onOpenFolder={vi.fn()} onDirtyChange={vi.fn()} />);
-    await screen.findByText("Samba is healthy");
+    await screen.findByText("module.samba.healthHealthy");
     fireEvent.click(screen.getByRole("button", { name: "module.section.configuration" }));
     expect(screen.queryByRole("button", { name: "store.reinstall" })).not.toBeInTheDocument();
+  });
+
+  it("does not keep a completed background operation in the overview", async () => {
+    vi.mocked(api.appJobs).mockResolvedValue([{ id: "done", module_id: "samba", action: "reinstall", operation: "reinstall", status: "completed", progress: 100, created_at: 1, error: "", current_step: "Completed", log_tail: [] }]);
+
+    render(<SambaModuleApp t={t} toast={vi.fn()} onOpenFolder={vi.fn()} onDirtyChange={vi.fn()} />);
+
+    await screen.findByText("module.samba.healthHealthy");
+    await waitFor(() => expect(screen.queryByText("module.operation.reinstall")).not.toBeInTheDocument());
   });
 });

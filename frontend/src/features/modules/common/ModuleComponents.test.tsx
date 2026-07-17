@@ -27,6 +27,14 @@ describe("module common UI", () => {
     expect(screen.getByText("reload failed")).toBeInTheDocument();
   });
 
+  it("translates reinstall operations and known backend progress steps", () => {
+    render(<ModuleJobProgress job={{ id: "2", module_id: "samba", action: "reinstall", operation: "reinstall", status: "completed", progress: 100, created_at: 1, error: "", current_step: "Completed", log_tail: [] }} t={t} />);
+
+    expect(screen.getByText("module.operation.reinstall")).toBeInTheDocument();
+    expect(screen.getAllByText("task.completed")).toHaveLength(2);
+    expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+  });
+
   it("renders diagnostics and backup actions", () => {
     const restore = vi.fn(); const remove = vi.fn();
     const backup: ModuleBackup = { id: "a".repeat(32), module_id: "samba", created_at: 1, created_by: "admin", description: "Before edit", automatic: true, checksum: "b".repeat(64), package_version: "4.20", size: 1024, files: ["smb.conf"] };

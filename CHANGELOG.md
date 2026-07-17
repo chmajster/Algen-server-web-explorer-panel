@@ -109,6 +109,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ### Fixed
 
+- The Samba module now uses a responsive action toolbar, wider overview cards, specific navigation icons, localized service and operation states, a normalized version, a module-specific window title, and no longer leaves completed jobs pinned to the overview.
 - Package Center no longer mistakes workload updates reported inside modules such as Linux system updates for an available update of the WebNAS module itself.
 - The Linux system updates card now displays its detected package manager instead of the inapplicable systemd service-state field.
 - Linux system updates no longer report a fictitious `available` service state; the UI now shows the detected package manager and localizes real service states.
