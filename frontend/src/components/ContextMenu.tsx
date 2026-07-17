@@ -6,6 +6,10 @@ export type ContextMenuItem = { label: string; icon?: React.ReactNode; disabled?
 export function ContextMenu({ x, y, items, onClose, className = "", portalTarget }: { x: number; y: number; items: ContextMenuItem[]; onClose: () => void; className?: string; portalTarget?: Element | null }) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
+  // Keep menus outside window and scroll containers. A fixed element can still
+  // become relative to an animated/transformed ancestor and expand its scroll
+  // area, which made application contents jump when a context menu was opened.
+  const desktopRoot = portalTarget?.closest(".desktop") ?? document.querySelector(".desktop") ?? document.body;
   useLayoutEffect(() => {
     const rect = ref.current?.getBoundingClientRect();
     if (!rect) return;
@@ -21,15 +25,15 @@ export function ContextMenu({ x, y, items, onClose, className = "", portalTarget
       if (!buttons.length) return;
       const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
       const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : event.key === "ArrowDown" ? (current + 1) % buttons.length : (current - 1 + buttons.length) % buttons.length;
-      buttons[next].focus();
+      buttons[next].focus({ preventScroll: true });
     }
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", keydown);
-    ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", keydown); };
   }, [onClose]);
-  const menu = <div ref={ref} className={`context-menu ${className}`.trim()} style={{ left: position.x, top: position.y }} role="menu" onContextMenu={(event) => event.stopPropagation()}>
+  const menu = <div ref={ref} className={`context-menu ${className}`.trim()} style={{ left: position.x, top: position.y }} role="menu" onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
     {items.map((item, index) => <div key={`${item.label}-${index}`} className={item.separator ? "context-separator" : undefined}><button role="menuitem" className={item.danger ? "danger" : ""} disabled={item.disabled} onClick={() => { item.action(); onClose(); }}>{item.icon}{item.label}</button></div>)}
   </div>;
-  return portalTarget ? createPortal(menu, portalTarget) : menu;
+  return createPortal(menu, desktopRoot);
 }

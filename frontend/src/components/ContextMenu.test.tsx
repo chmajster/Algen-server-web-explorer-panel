@@ -11,4 +11,28 @@ describe("context menu", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it("uses the desktop portal and focuses without scrolling the application", () => {
+    const desktop = document.createElement("div");
+    desktop.className = "desktop";
+    const windowContent = document.createElement("div");
+    windowContent.className = "window-content";
+    desktop.append(windowContent);
+    document.body.append(desktop);
+    const focus = vi.spyOn(HTMLButtonElement.prototype, "focus");
+
+    const { unmount } = render(
+      <div data-testid="scroll-container">
+        <ContextMenu x={40} y={40} items={[{ label: "Open", action: vi.fn() }]} onClose={vi.fn()} portalTarget={windowContent} />
+      </div>,
+      { container: windowContent },
+    );
+
+    expect(screen.getByRole("menu").parentElement).toBe(desktop);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+
+    unmount();
+    focus.mockRestore();
+    desktop.remove();
+  });
 });
