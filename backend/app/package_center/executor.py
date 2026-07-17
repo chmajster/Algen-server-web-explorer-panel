@@ -32,6 +32,16 @@ BEARER_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
 SQL_SECRET_RE = re.compile(r"(?i)((?:identified\s+by|password)\s+')[^']*'")
 PROXMOX_ENTERPRISE_HOST = "enterprise.proxmox.com"
 APT_SOURCES_ROOT = Path("/etc/apt")
+DPKG_OVERWRITE_CONFLICT_RE = re.compile(
+    r"trying to overwrite\s+['\"](?P<path>[^'\"]+)['\"],\s+which is also in package\s+(?P<owner>[A-Za-z0-9][A-Za-z0-9+.:~-]*)",
+    re.IGNORECASE,
+)
+SAFE_CIFS_USRMERGE_PATHS = frozenset({
+    "/sbin/mount.cifs",
+    "/usr/sbin/mount.cifs",
+    "/sbin/umount.cifs",
+    "/usr/sbin/umount.cifs",
+})
 
 
 class CommandExecutionError(RuntimeError):
@@ -216,11 +226,60 @@ def _run(args: list[str], timeout: int, log: LogCallback) -> None:
         raise CommandExecutionError(Path(args[0]).name, code, "\n".join(output))
 
 
+def _is_safe_cifs_usrmerge_conflict(args: list[str], output: str) -> bool:
+    """Recognize only the cifs-utils self-conflict caused by /usr path aliases."""
+
+    if "cifs-utils" not in args:
+        return False
+    conflicts = list(DPKG_OVERWRITE_CONFLICT_RE.finditer(output))
+    if not conflicts or output.lower().count("trying to overwrite") != len(conflicts):
+        return False
+    return all(
+        match.group("path") in SAFE_CIFS_USRMERGE_PATHS
+        and match.group("owner").split(":", 1)[0] == "cifs-utils"
+        for match in conflicts
+    )
+
+
+def _temporary_apt_source_options(args: list[str]) -> list[str]:
+    """Keep only the internally generated temporary APT source options."""
+
+    options: list[str] = []
+    index = 1
+    while index + 1 < len(args) and args[index] == "-o":
+        value = args[index + 1]
+        if value.startswith(("Dir::Etc::sourcelist=", "Dir::Etc::sourceparts=")):
+            options.extend(["-o", value])
+        index += 2
+    return options
+
+
+def _run_apt_with_cifs_recovery(args: list[str], timeout: int, log: LogCallback) -> None:
+    try:
+        _run(args, timeout, log)
+        return
+    except CommandExecutionError as error:
+        if not _is_safe_cifs_usrmerge_conflict(args, error.output):
+            raise
+
+    source_options = _temporary_apt_source_options(args)
+    log("warning", "Detected a cifs-utils merged-/usr self-conflict; repairing only cifs-utils before retrying the requested operation")
+    repair = [
+        "apt-get",
+        *source_options,
+        "-o", "Dpkg::Options::=--force-overwrite",
+        "install", "-y", "--reinstall", "--no-install-recommends", "cifs-utils",
+    ]
+    _run(repair, timeout, log)
+    log("stdout", "cifs-utils repair completed; retrying the original package operation")
+    _run(args, timeout, log)
+
+
 def _run_apt_command(args: list[str], timeout: int, log: LogCallback) -> None:
     if not args or args[0] != "apt-get":
         raise ValueError("APT fallback received a non-APT command")
     try:
-        _run(args, timeout, log)
+        _run_apt_with_cifs_recovery(args, timeout, log)
     except CommandExecutionError as error:
         if not proxmox_enterprise_repository_failure(error.output):
             raise
@@ -228,7 +287,7 @@ def _run_apt_command(args: list[str], timeout: int, log: LogCallback) -> None:
             if removed == 0:
                 raise
             log("warning", "Proxmox Enterprise repository requires an active subscription; retrying the APT operation with that repository temporarily omitted")
-            _run(command, timeout, log)
+            _run_apt_with_cifs_recovery(command, timeout, log)
 
 
 def _run_apt_update(timeout: int, log: LogCallback) -> None:

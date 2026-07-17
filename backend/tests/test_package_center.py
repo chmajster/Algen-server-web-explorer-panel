@@ -392,6 +392,92 @@ def test_apt_install_retries_without_enterprise_repository_after_subscription_fa
     assert any("active subscription" in message for message in messages)
 
 
+def test_samba_reinstall_repairs_only_the_cifs_utils_usrmerge_self_conflict(monkeypatch):
+    original = ["apt-get", "install", "-y", "--reinstall", "--no-install-recommends", "samba", "smbclient", "cifs-utils"]
+    calls: list[list[str]] = []
+    conflict = (
+        "dpkg: error processing archive cifs-utils.deb (--unpack):\n"
+        " trying to overwrite '/sbin/mount.cifs', which is also in package cifs-utils:amd64 2:7.0-2ubuntu0.4"
+    )
+
+    def run(args, timeout, log):
+        calls.append(args)
+        if args == original and calls.count(original) == 1:
+            raise executor.CommandExecutionError("apt-get", 100, conflict)
+
+    monkeypatch.setattr(executor, "_run", run)
+    messages: list[str] = []
+
+    executor._run_apt_command(original, 1800, lambda stream, line: messages.append(line))
+
+    assert calls[0] == original
+    assert calls[1] == [
+        "apt-get", "-o", "Dpkg::Options::=--force-overwrite",
+        "install", "-y", "--reinstall", "--no-install-recommends", "cifs-utils",
+    ]
+    assert calls[2] == original
+    assert any("repairing only cifs-utils" in message for message in messages)
+
+
+def test_cifs_repair_keeps_the_temporary_non_enterprise_sources(monkeypatch, tmp_path):
+    source_root = tmp_path / "apt"
+    parts = source_root / "sources.list.d"
+    parts.mkdir(parents=True)
+    (source_root / "sources.list").write_text("deb http://deb.debian.org/debian bookworm main\n", encoding="utf-8")
+    (parts / "pve-enterprise.list").write_text("deb https://enterprise.proxmox.com/debian/pve bookworm pve-enterprise\n", encoding="utf-8")
+    monkeypatch.setattr(executor, "APT_SOURCES_ROOT", source_root)
+    original = ["apt-get", "install", "-y", "--reinstall", "samba", "cifs-utils"]
+    calls: list[list[str]] = []
+    repair_sources: list[str] = []
+    fallback_attempts = 0
+
+    def run(args, timeout, log):
+        nonlocal fallback_attempts
+        calls.append(args)
+        if args == original:
+            raise executor.CommandExecutionError("apt-get", 100, "E: https://enterprise.proxmox.com/debian/pve 401 Unauthorized")
+        if "Dpkg::Options::=--force-overwrite" in args:
+            source_list = Path(args[2].split("=", 1)[1])
+            source_parts = Path(args[4].split("=", 1)[1])
+            repair_sources.append(source_list.read_text(encoding="utf-8") + "".join(path.read_text(encoding="utf-8") for path in source_parts.iterdir()))
+        if "Dpkg::Options::=--force-overwrite" not in args:
+            fallback_attempts += 1
+            if fallback_attempts == 1:
+                raise executor.CommandExecutionError(
+                    "apt-get", 100,
+                    "trying to overwrite '/usr/sbin/mount.cifs', which is also in package cifs-utils 2:7.0-2ubuntu0.4",
+                )
+
+    monkeypatch.setattr(executor, "_run", run)
+
+    executor._run_apt_command(original, 1800, lambda *_: None)
+
+    repair = next(args for args in calls if "Dpkg::Options::=--force-overwrite" in args)
+    assert repair[1:5] == calls[1][1:5]
+    assert "enterprise.proxmox.com" not in repair_sources[0]
+    assert "deb.debian.org" in repair_sources[0]
+    assert calls[-1][5:] == original[1:]
+
+
+def test_cifs_overwrite_owned_by_another_package_is_never_forced(monkeypatch):
+    original = ["apt-get", "install", "-y", "--reinstall", "samba", "cifs-utils"]
+    calls: list[list[str]] = []
+
+    def run(args, timeout, log):
+        calls.append(args)
+        raise executor.CommandExecutionError(
+            "apt-get", 100,
+            "trying to overwrite '/sbin/mount.cifs', which is also in package untrusted-package 1.0",
+        )
+
+    monkeypatch.setattr(executor, "_run", run)
+
+    with pytest.raises(executor.CommandExecutionError):
+        executor._run_apt_command(original, 1800, lambda *_: None)
+
+    assert calls == [original]
+
+
 def test_redacts_secrets_and_executor_never_uses_shell_true():
     assert "secret=[REDACTED]" in executor.redact("secret=hunter2")
     assert "password: [REDACTED]" in executor.redact("password: admin")
