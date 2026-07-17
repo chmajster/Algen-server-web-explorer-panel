@@ -109,6 +109,7 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ### Fixed
 
+- Opening a module from the Package Center details dialog now closes the modal before creating and focusing the module window, preventing the new window from appearing behind the details overlay.
 - Package Center can now install distribution packages containing required SUID/SGID helpers, including Ubuntu's `cifs-utils` `mount.cifs`; older WebNAS service profiles that block the mode receive a precise remediation error instead of an unexplained APT exit code 100.
 - Active Package Center operation banners such as “Reinstalling…” are now interactive and reopen the live status, progress, current-step, and log dialog after it has been closed.
 - The installer now bootstraps missing `curl`, `wget`, `tar`, and `rsync` packages before downloading, extracting, or synchronizing WebNAS application files, while skipping packages already available on the host.

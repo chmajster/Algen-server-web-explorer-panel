@@ -37,6 +37,11 @@ export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toa
     setAction({ item, action: nextAction });
   }
 
+  function openSelectedModule(item: ModuleSummary) {
+    setSelected(null);
+    window.setTimeout(() => onOpenModule?.(item.id), 0);
+  }
+
   async function jobOperation() {
     if (!credential) return;
     if (credential.operation === "cancel") await api.cancelAppJob(credential.job.id);
@@ -58,7 +63,7 @@ export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toa
         {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
         {state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
       </main>}
-    {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => onOpenModule(selected.id) : undefined} />}
+    {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => openSelectedModule(selected) : undefined} />}
     {action && <PackageActionDialog item={action.item} action={action.action} t={t} toast={toast} onClose={() => setAction(null)} onStarted={(job) => { setLiveJob({ job, name: action.item.manifest.name }); void state.refreshModule(action.item.id); void state.refresh(true); }} />}
     {liveJob && <PackageJobDialog initialJob={liveJob.job} moduleName={liveJob.name} t={t} onClose={() => setLiveJob(null)} />}
     {credential && <AdminActionDialog title={t(credential.operation === "cancel" ? "package.cancelJob" : "action.retry")} fields={[]} danger={credential.operation === "cancel"} t={t} onClose={() => setCredential(null)} onSubmit={jobOperation} />}

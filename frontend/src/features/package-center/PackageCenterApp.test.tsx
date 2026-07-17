@@ -120,6 +120,13 @@ describe("Package Center", () => {
     expect(within(sambaCard!).queryByRole("button", { name: "store.install" })).not.toBeInTheDocument();
 
     fireEvent.click(within(sambaCard!).getByRole("button", { name: "package.details" }));
+    const details = screen.getByRole("dialog", { name: "Samba" });
+    open.mockClear();
+    fireEvent.click(within(details).getByRole("button", { name: "action.open" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Samba" })).not.toBeInTheDocument());
+    expect(open).toHaveBeenCalledWith("samba");
+
+    fireEvent.click(within(sambaCard!).getByRole("button", { name: "package.details" }));
     fireEvent.click(screen.getByRole("button", { name: "store.reinstall" }));
     await waitFor(() => expect(api.appPlan).toHaveBeenCalledWith("samba", "reinstall", false));
   });
