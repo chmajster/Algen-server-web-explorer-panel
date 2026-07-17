@@ -60,10 +60,10 @@
 .module-navigation svg { width: 16px; height: 16px; }
 .module-content { min-width: 0; min-height: 0; display: grid; align-content: start; gap: 14px; overflow: auto; padding: 18px; }
 
-.module-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; }
-.module-health-card { min-width: 0; min-height: 94px; display: grid; align-content: start; gap: 6px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-elevated); box-shadow: var(--shadow-card); }
+.module-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.module-health-card { min-width: 0; min-height: 100px; display: grid; align-content: start; gap: 7px; padding: 14px 15px; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-elevated); box-shadow: var(--shadow-card); }
 .module-health-card > span { color: var(--text-secondary); font-size: 0.625rem; }
-.module-health-card > strong { overflow-wrap: anywhere; font-size: 1.125rem; font-weight: 650; }
+.module-health-card > strong { overflow-wrap: anywhere; font-size: 1.0625rem; font-weight: 650; line-height: 1.25; }
 .module-health-card > small { color: var(--text-muted); font-size: 0.625rem; }
 .module-health-card.success { border-left: 3px solid var(--success); }
 .module-health-card.warning { border-left: 3px solid var(--warning); }
@@ -199,6 +199,11 @@
 .module-skeleton { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .module-skeleton span { height: 94px; border-radius: var(--radius-medium); background: linear-gradient(100deg, var(--surface-secondary) 25%, var(--surface-hover) 45%, var(--surface-secondary) 65%); background-size: 250% 100%; animation: module-shimmer 1.3s infinite linear; }
 @keyframes module-shimmer { to { background-position-x: -250%; } }
+
+@container (max-width: 1100px) {
+  .module-header { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+  .module-quick-actions { flex: 1 0 100%; justify-content: flex-start; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
+}
 
 @container (max-width: 760px) {
   .module-header { align-items: flex-start; padding: 13px; }

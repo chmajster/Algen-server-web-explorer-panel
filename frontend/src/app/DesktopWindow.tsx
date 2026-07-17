@@ -1,12 +1,14 @@
 /* eslint-disable react-hooks/refs -- pointer gesture refs are only mutated by pointer event handlers */
 import { useEffect, useRef, useState } from "react";
-import { Maximize2, Minimize2, X } from "lucide-react";
+import { Maximize2, Minimize2, Share2, X } from "lucide-react";
 import { appById } from "./catalog";
 import { clampRect, DESKTOP_TOP, workspaceRect } from "./windowState";
 import type { Translate, WindowInstance, WindowRect } from "./types";
 
 type Edge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 type Gesture = { mode: "move" | "resize"; edge?: Edge; startX: number; startY: number; rect: WindowRect; offsetX: number; offsetY: number };
+
+const moduleTitles: Record<string, string> = { samba: "Samba", docker: "Docker", pihole: "Pi-hole", "adguard-home": "AdGuard Home", postgresql: "PostgreSQL", mariadb: "MariaDB", redis: "Redis", "home-assistant": "Home Assistant" };
 
 export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMinimize, onCommit, onToggleMaximize, children, animationsEnabled = false }: {
   window: WindowInstance;
@@ -21,6 +23,9 @@ export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMin
   animationsEnabled?: boolean;
 }) {
   const definition = appById[item.app];
+  const moduleTitle = item.moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : item.moduleId ? moduleTitles[item.moduleId] : undefined;
+  const title = item.app === "module" && moduleTitle ? moduleTitle : t(definition.labelKey);
+  const icon = item.app === "module" && item.moduleId === "samba" ? <Share2 /> : definition.icon;
   const [displayRect, setDisplayRect] = useState(item.rect);
   const [minimizing, setMinimizing] = useState(false);
   const gesture = useRef<Gesture | null>(null);
@@ -94,9 +99,9 @@ export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMin
     window.setTimeout(onMinimize, 120);
   }
 
-  return <section role="dialog" aria-modal="false" className={`desktop-window ${active ? "active" : "inactive"} ${maximized ? "maximized" : ""} ${minimizing ? "minimizing" : ""}`} style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: item.zIndex }} onPointerDown={onFocus} aria-label={t(definition.labelKey)}>
+  return <section role="dialog" aria-modal="false" className={`desktop-window ${active ? "active" : "inactive"} ${maximized ? "maximized" : ""} ${minimizing ? "minimizing" : ""}`} style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: item.zIndex }} onPointerDown={onFocus} aria-label={title}>
     <header className="window-titlebar" onPointerDown={startMove} onDoubleClick={() => { gesture.current = null; onToggleMaximize(); }}>
-      <span className="window-app-icon">{definition.icon}</span><strong>{t(definition.labelKey)}</strong>
+      <span className="window-app-icon">{icon}</span><strong>{title}</strong>
       <div className="window-controls">
         <button type="button" title={t("window.minimize")} aria-label={t("window.minimize")} onClick={minimize}><Minimize2 /></button>
         <button type="button" title={maximized ? t("window.restore") : t("window.maximize")} aria-label={maximized ? t("window.restore") : t("window.maximize")} onClick={onToggleMaximize}><Maximize2 /></button>

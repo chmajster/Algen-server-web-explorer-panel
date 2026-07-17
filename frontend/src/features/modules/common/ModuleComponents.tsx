@@ -2,6 +2,7 @@ import { ArchiveRestore, Copy, Download, Play, RefreshCw, RotateCcw, Square, Tra
 import { useCallback, useEffect, useState } from "react";
 import { api, type ModuleBackup, type ModuleDiagnostic, type ModuleJob, type ModuleLogSource, type ModuleStatus } from "../../../api";
 import type { ToastFn, Translate } from "../../../app/types";
+import { translateModuleOperation } from "./ModuleAppShell";
 
 export function ModuleServiceControls({ status, disabled, t, onAction }: { status: ModuleStatus; disabled?: boolean; t: Translate; onAction: (action: "start" | "stop" | "restart" | "reload" | "enable" | "disable") => void }) {
   const active = status.service_state === "active";
@@ -9,7 +10,10 @@ export function ModuleServiceControls({ status, disabled, t, onAction }: { statu
 }
 
 export function ModuleJobProgress({ job, t }: { job: ModuleJob; t: Translate }) {
-  return <section className={`module-job-progress ${job.status}`} aria-live="polite"><header><strong>{t(`module.operation.${job.operation || job.action}`)}</strong><span>{t(`task.${job.status}`)} · {job.progress}%</span></header><div className="progress-track"><span style={{ width: `${job.progress}%` }} /></div><p>{job.stage || job.current_step}</p>{job.error && <pre>{job.error}</pre>}</section>;
+  const step = job.stage || job.current_step || "";
+  const normalizedStep = step.trim().toLowerCase();
+  const translatedStep = ["queued", "running", "completed", "failed", "cancelled"].includes(normalizedStep) ? t(`task.${normalizedStep}`) : step;
+  return <section className={`module-job-progress ${job.status}`} aria-live="polite"><header><strong>{translateModuleOperation(job.operation || job.action, t)}</strong><span>{t(`task.${job.status}`)} · {job.progress}%</span></header><div className="progress-track"><span style={{ width: `${job.progress}%` }} /></div>{translatedStep && <p>{translatedStep}</p>}{job.error && <pre>{job.error}</pre>}</section>;
 }
 
 export function ModuleDiagnostics({ diagnostics, t }: { diagnostics: ModuleDiagnostic[]; t: Translate }) {

@@ -148,7 +148,8 @@ class SambaProvider(ModuleProvider):
         if not executable:
             return None
         result = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=8, check=False, shell=False)
-        return result.stdout.strip()[:120] or None
+        version = re.sub(r"^Version\s+", "", result.stdout.strip(), flags=re.IGNORECASE)
+        return version[:120] or None
 
     def get_status(self) -> ModuleStatus:
         base = super().get_status()
