@@ -138,6 +138,8 @@ class UserSettings(BaseModel):
     wallpaper_fit: Literal["cover", "contain", "stretch", "center"] = "cover"
     taskbar_alignment: Literal["left", "center"] = "center"
     pinned_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
+    start_pinned_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
+    desktop_shortcut_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
     show_desktop_shortcuts: bool = True
     desktop_shortcut_size: Literal["small", "medium", "large"] = "medium"
     show_welcome_widget: bool = True
@@ -184,7 +186,7 @@ class UserSettings(BaseModel):
             raise ValueError("desktop widget identifiers must be unique")
         return values
 
-    @field_validator("pinned_apps")
+    @field_validator("pinned_apps", "start_pinned_apps", "desktop_shortcut_apps")
     @classmethod
     def unique_pinned_apps(cls, values: list[PinnedAppId]) -> list[PinnedAppId]:
         if len(values) != len(set(values)):
@@ -209,6 +211,8 @@ class MePatch(BaseModel):
     wallpaper_fit: Literal["cover", "contain", "stretch", "center"] | None = None
     taskbar_alignment: Literal["left", "center"] | None = None
     pinned_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
+    start_pinned_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
+    desktop_shortcut_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
     show_desktop_shortcuts: bool | None = None
     desktop_shortcut_size: Literal["small", "medium", "large"] | None = None
     show_welcome_widget: bool | None = None
@@ -254,7 +258,7 @@ class MePatch(BaseModel):
             raise ValueError("desktop widget identifiers must be unique")
         return values
 
-    @field_validator("pinned_apps")
+    @field_validator("pinned_apps", "start_pinned_apps", "desktop_shortcut_apps")
     @classmethod
     def unique_pinned_apps(cls, values: list[PinnedAppId] | None) -> list[PinnedAppId] | None:
         if values is not None and len(values) != len(set(values)):
@@ -392,6 +396,12 @@ def _normalize_user_settings(data: dict, *, default_language: Literal["pl-PL", "
         except ValidationError:
             continue
         normalized[key] = getattr(candidate, key)
+    # Before destinations were independent, pinned_apps drove the desktop,
+    # Start menu, and taskbar together. Preserve that layout for legacy files.
+    if "pinned_apps" in data:
+        for key in ("start_pinned_apps", "desktop_shortcut_apps"):
+            if key not in data:
+                normalized[key] = list(normalized["pinned_apps"])
     return normalized
 
 

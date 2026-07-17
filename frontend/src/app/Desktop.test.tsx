@@ -122,4 +122,27 @@ describe("personalized desktop", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.unpinFromTaskbar" }));
     expect(save).toHaveBeenCalledWith({ pinned_apps: ["settings"] });
   });
+
+  it("persists independent desktop, Start, and taskbar destinations from All apps", () => {
+    const profile = settingsFixture({ pinned_apps: [], start_pinned_apps: [], desktop_shortcut_apps: [] });
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={save} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    const allApps = container.querySelector<HTMLElement>(".launcher-list");
+    expect(allApps).not.toBeNull();
+    const monitor = within(allApps as HTMLElement).getByRole("button", { name: "app.monitor" });
+
+    fireEvent.contextMenu(monitor);
+    fireEvent.click(screen.getByRole("menuitem", { name: "desktop.addToDesktop" }));
+    expect(save).toHaveBeenCalledWith({ desktop_shortcut_apps: ["monitor"] });
+
+    fireEvent.contextMenu(monitor);
+    fireEvent.click(screen.getByRole("menuitem", { name: "desktop.pinToStart" }));
+    expect(save).toHaveBeenCalledWith({ start_pinned_apps: ["monitor"] });
+
+    fireEvent.contextMenu(monitor);
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
+    expect(save).toHaveBeenCalledWith({ pinned_apps: ["monitor"] });
+  });
 });

@@ -61,6 +61,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       return new Set(Array.isArray(values) ? values.filter((value): value is AppId => typeof value === "string" && apps.some((app) => app.id === value)) : profile.pinned_apps);
     } catch { return new Set(profile.pinned_apps); }
   });
+  const [startPinned, setStartPinned] = useState<Set<AppId>>(() => new Set(profile.start_pinned_apps));
+  const [desktopShortcuts, setDesktopShortcuts] = useState<Set<AppId>>(() => new Set(profile.desktop_shortcut_apps));
   const migrateLegacyPins = useRef(localStorage.getItem(legacyPinnedKey) !== null);
   const [clock, setClock] = useState(new Date());
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -92,7 +94,9 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   useEffect(() => {
     if (!migrateLegacyPins.current) return;
     migrateLegacyPins.current = false;
-    void onSettingsChange({ pinned_apps: [...pinned] }).then(() => localStorage.removeItem(legacyPinnedKey)).catch(() => undefined);
+    setStartPinned(new Set(pinned));
+    setDesktopShortcuts(new Set(pinned));
+    void onSettingsChange({ pinned_apps: [...pinned], start_pinned_apps: [...pinned], desktop_shortcut_apps: [...pinned] }).then(() => localStorage.removeItem(legacyPinnedKey)).catch(() => undefined);
   }, [legacyPinnedKey, onSettingsChange, pinned]);
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), profile.clock_show_seconds ? 1000 : 30000);
@@ -209,6 +213,26 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
     });
   }
+  function toggleStartPin(app: AppId) {
+    const previous = new Set(startPinned);
+    const next = new Set(startPinned);
+    if (next.has(app)) next.delete(app); else next.add(app);
+    setStartPinned(next);
+    void onSettingsChange({ start_pinned_apps: [...next] }).catch((error: unknown) => {
+      setStartPinned(previous);
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    });
+  }
+  function toggleDesktopShortcut(app: AppId) {
+    const previous = new Set(desktopShortcuts);
+    const next = new Set(desktopShortcuts);
+    if (next.has(app)) next.delete(app); else next.add(app);
+    setDesktopShortcuts(next);
+    void onSettingsChange({ desktop_shortcut_apps: [...next] }).catch((error: unknown) => {
+      setDesktopShortcuts(previous);
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    });
+  }
   function signOut() { void logout().finally(onLoggedOut); }
   function moduleDirty(item: WindowInstance, dirty: boolean) { setDirtyWindows((current) => { const next = new Set(current); if (dirty) next.add(item.id); else next.delete(item.id); return next; }); }
   function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !window.confirm(t("module.unsavedClose"))) return; setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
@@ -256,12 +280,12 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
 
   return <div className={rootClasses} style={rootStyle}>
     <main className="desktop-surface" style={wallpaperStyle(profile)} onPointerDown={(event) => { if (event.target === event.currentTarget) setSelectedShortcut(null); }}>
-      {profile.show_desktop_shortcuts && <div className={`desktop-shortcuts shortcuts-${profile.desktop_shortcut_size}`} aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => pinned.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} selected={selectedShortcut === app.id} onSelect={() => setSelectedShortcut(app.id)} onOpen={() => openApp(app.id)} />)}</div>}
+      {profile.show_desktop_shortcuts && <div className={`desktop-shortcuts shortcuts-${profile.desktop_shortcut_size}`} aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => desktopShortcuts.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} selected={selectedShortcut === app.id} onSelect={() => setSelectedShortcut(app.id)} onOpen={() => openApp(app.id)} />)}</div>}
       {profile.show_welcome_widget && <div className="desktop-welcome"><span>WebNAS</span><strong>{t("desktop.welcome")}, {user.username}</strong><small>{t("desktop.welcomeHint")}</small></div>}
       <DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} />
       {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } })}>{renderApp(item)}</DesktopWindow>)}
     </main>
-    {launcherOpen && <AppLauncher apps={availableApps} pinned={pinned} profile={profile} t={t} onOpen={openApp} onTogglePin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
+    {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} profile={profile} t={t} onOpen={openApp} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
     <Taskbar apps={taskbarApps} pinned={pinned} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setNotificationsOpen((value) => !value); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onOpenNew={(app) => openApp(app)} onTogglePin={togglePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
     {notificationsOpen && <aside ref={notificationRef} className="notification-center" aria-label={t("desktop.notifications")}><header><div><Bell /><strong>{t("desktop.notifications")}</strong></div><button type="button" aria-label={t("action.close")} onClick={() => setNotificationsOpen(false)}><X /></button></header>{visibleToasts.length === 0 && (!profile.notification_transfer || tasks.length === 0) ? <div className="empty-state">{t("desktop.noNotifications")}</div> : <>{visibleToasts.slice().reverse().map((item) => <article className={item.type} key={item.id} role={item.moduleId ? "button" : undefined} tabIndex={item.moduleId ? 0 : undefined} onClick={() => { if (!item.moduleId) return; openApp("module", undefined, item.moduleId); setNotificationsOpen(false); }} onKeyDown={(event) => { if (item.moduleId && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openApp("module", undefined, item.moduleId); setNotificationsOpen(false); } }}><strong>{item.type === "error" ? t("status.error") : "WebNAS"}</strong><span>{item.text}</span></article>)}{profile.notification_transfer && tasks.slice(-profile.notification_limit).reverse().map((task) => <article key={task.id}><strong>{t(`transfers.${task.type}`)}</strong><span>{t(`task.${task.status}`)} · {Math.round(task.progress_percent ?? task.progress ?? 0)}%</span></article>)}</>}</aside>}
     <div className="toasts" role="status" aria-live="polite">{visibleToasts.map((item) => <div className={item.type} key={item.id}>{item.type === "error" && <ShieldCheck />}{item.text}</div>)}</div>

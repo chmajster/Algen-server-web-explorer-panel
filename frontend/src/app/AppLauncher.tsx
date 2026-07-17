@@ -1,15 +1,22 @@
-import { ArrowRight, LogOut, Pin, Search, ShieldCheck, UserRound, X } from "lucide-react";
+import { ArrowRight, LayoutGrid, LogOut, Monitor, PanelBottom, Pin, Search, ShieldCheck, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SettingsMe } from "../api";
+import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import type { AppDefinition, AppId, Translate } from "./types";
 
-export function AppLauncher({ apps, pinned, profile, t, onOpen, onTogglePin, onLogout, onClose }: {
+type LauncherContext = { x: number; y: number; app: AppDefinition; portalTarget: Element | null };
+
+export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned, profile, t, onOpen, onToggleStartPin, onToggleDesktopShortcut, onToggleTaskbarPin, onLogout, onClose }: {
   apps: AppDefinition[];
-  pinned: Set<AppId>;
+  startPinned: Set<AppId>;
+  desktopShortcuts: Set<AppId>;
+  taskbarPinned: Set<AppId>;
   profile: SettingsMe;
   t: Translate;
   onOpen: (app: AppId) => void;
-  onTogglePin: (app: AppId) => void;
+  onToggleStartPin: (app: AppId) => void;
+  onToggleDesktopShortcut: (app: AppId) => void;
+  onToggleTaskbarPin: (app: AppId) => void;
   onLogout: () => void;
   onClose: () => void;
 }) {
@@ -17,25 +24,38 @@ export function AppLauncher({ apps, pinned, profile, t, onOpen, onTogglePin, onL
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
+  const [context, setContext] = useState<LauncherContext | null>(null);
   const normalized = query.trim().toLocaleLowerCase(profile.language);
   const filtered = useMemo(() => apps.filter((app) => t(app.labelKey).toLocaleLowerCase(profile.language).includes(normalized)), [apps, normalized, profile.language, t]);
-  const pinnedApps = filtered.filter((app) => pinned.has(app.id));
+  const pinnedApps = filtered.filter((app) => startPinned.has(app.id));
   const allVisible = showAll || Boolean(normalized);
 
   useEffect(() => {
-    function click(event: MouseEvent) { if (!ref.current?.contains(event.target as Node)) onClose(); }
-    function key(event: KeyboardEvent) { if (event.key === "Escape") onClose(); }
+    searchRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    function click(event: MouseEvent) {
+      if (event.target instanceof Element && event.target.closest(".launcher-context-menu")) return;
+      if (!ref.current?.contains(event.target as Node)) onClose();
+    }
+    function key(event: KeyboardEvent) { if (event.key === "Escape") { if (context) setContext(null); else onClose(); } }
     document.addEventListener("mousedown", click);
     document.addEventListener("keydown", key);
-    searchRef.current?.focus();
     return () => { document.removeEventListener("mousedown", click); document.removeEventListener("keydown", key); };
-  }, [onClose]);
+  }, [context, onClose]);
 
-  function open(app: AppId) { onOpen(app); onClose(); }
+  function open(app: AppId) { setContext(null); onOpen(app); onClose(); }
+  function contextItems(app: AppDefinition): ContextMenuItem[] {
+    return [
+      { label: t(desktopShortcuts.has(app.id) ? "desktop.removeFromDesktop" : "desktop.addToDesktop"), icon: <Monitor />, action: () => onToggleDesktopShortcut(app.id) },
+      { label: t(startPinned.has(app.id) ? "desktop.unpinFromStart" : "desktop.pinToStart"), icon: <LayoutGrid />, action: () => onToggleStartPin(app.id) },
+      { label: t(taskbarPinned.has(app.id) ? "taskbar.unpinFromTaskbar" : "taskbar.pinToTaskbar"), icon: <PanelBottom />, action: () => onToggleTaskbarPin(app.id) },
+    ];
+  }
   function appButton(app: AppDefinition, compact = false) {
     return <article className={`launcher-app ${app.admin ? "administrative" : ""} ${compact ? "compact" : ""}`} key={app.id}>
-      <button className="launcher-open" type="button" onClick={() => open(app.id)}>{app.icon}<span>{t(app.labelKey)}</span>{app.admin && <small><ShieldCheck />{t("desktop.adminApp")}</small>}</button>
-      <button className={`launcher-pin ${pinned.has(app.id) ? "active" : ""}`} type="button" aria-label={`${pinned.has(app.id) ? t("desktop.unpin") : t("desktop.pin")} ${t(app.labelKey)}`} title={pinned.has(app.id) ? t("desktop.unpin") : t("desktop.pin")} onClick={() => onTogglePin(app.id)}><Pin /></button>
+      <button className="launcher-open" type="button" onClick={() => open(app.id)} onContextMenu={compact ? (event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, app, portalTarget: event.currentTarget.closest(".desktop") }); } : undefined}>{app.icon}<span>{t(app.labelKey)}</span>{app.admin && <small><ShieldCheck />{t("desktop.adminApp")}</small>}</button>
+      <button className={`launcher-pin ${startPinned.has(app.id) ? "active" : ""}`} type="button" aria-label={`${startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} ${t(app.labelKey)}`} title={startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} onClick={() => onToggleStartPin(app.id)}><Pin /></button>
     </article>;
   }
 
@@ -44,5 +64,6 @@ export function AppLauncher({ apps, pinned, profile, t, onOpen, onTogglePin, onL
     {!allVisible && <><header className="launcher-section-title"><strong>{t("desktop.pinned")}</strong><button type="button" onClick={() => setShowAll(true)}>{t("desktop.allApps")}<ArrowRight /></button></header><div className="launcher-grid">{pinnedApps.map((app) => appButton(app))}</div></>}
     {allVisible && <><header className="launcher-section-title"><strong>{t("desktop.allApps")}</strong>{showAll && !normalized && <button type="button" onClick={() => setShowAll(false)}>{t("action.back")}</button>}</header><div className="launcher-list">{filtered.length > 0 ? filtered.map((app) => appButton(app, true)) : <p className="launcher-empty">{t("desktop.noAppsFound")}</p>}</div></>}
     <footer className="launcher-footer"><div><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? <><ShieldCheck />{t("desktop.administrator")}</> : t(`rbac.role.${profile.role}`)}</small></span></div><button type="button" title={t("notify.logout")} aria-label={t("notify.logout")} onClick={onLogout}><LogOut /></button></footer>
+    {context && <ContextMenu className="launcher-context-menu" portalTarget={context.portalTarget} x={context.x} y={context.y} items={contextItems(context.app)} onClose={() => setContext(null)} />}
   </div>;
 }

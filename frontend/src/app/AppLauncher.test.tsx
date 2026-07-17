@@ -14,7 +14,7 @@ const t = (key: string) => key;
 describe("Start menu", () => {
   it("filters apps, launches the selected app and closes", () => {
     const open = vi.fn(); const close = vi.fn();
-    render(<AppLauncher apps={appList} pinned={new Set(["files", "settings"])} profile={settingsFixture()} t={t} onOpen={open} onTogglePin={vi.fn()} onLogout={vi.fn()} onClose={close} />);
+    render(<AppLauncher apps={appList} startPinned={new Set(["files", "settings"])} desktopShortcuts={new Set(["files"])} taskbarPinned={new Set(["settings"])} profile={settingsFixture()} t={t} onOpen={open} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={close} />);
 
     fireEvent.change(screen.getByLabelText("desktop.searchApps"), { target: { value: "settings" } });
     expect(screen.queryByRole("button", { name: "File Manager" })).not.toBeInTheDocument();
@@ -25,9 +25,30 @@ describe("Start menu", () => {
 
   it("closes on Escape and outside click", () => {
     const close = vi.fn();
-    render(<AppLauncher apps={appList} pinned={new Set(["files"])} profile={settingsFixture()} t={t} onOpen={vi.fn()} onTogglePin={vi.fn()} onLogout={vi.fn()} onClose={close} />);
+    render(<AppLauncher apps={appList} startPinned={new Set(["files"])} desktopShortcuts={new Set(["files"])} taskbarPinned={new Set(["files"])} profile={settingsFixture()} t={t} onOpen={vi.fn()} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={close} />);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.mouseDown(document.body);
     expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers separate desktop, Start, and taskbar actions in the All apps context menu", () => {
+    const desktop = vi.fn(); const start = vi.fn(); const taskbar = vi.fn();
+    render(<div className="desktop"><AppLauncher apps={appList} startPinned={new Set()} desktopShortcuts={new Set()} taskbarPinned={new Set()} profile={settingsFixture()} t={t} onOpen={vi.fn()} onToggleStartPin={start} onToggleDesktopShortcut={desktop} onToggleTaskbarPin={taskbar} onLogout={vi.fn()} onClose={vi.fn()} /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    const settings = screen.getByRole("button", { name: "Settings" });
+
+    fireEvent.contextMenu(settings);
+    const desktopAction = screen.getByRole("menuitem", { name: "desktop.addToDesktop" });
+    fireEvent.mouseDown(desktopAction);
+    fireEvent.click(desktopAction);
+    expect(desktop).toHaveBeenCalledWith("settings");
+
+    fireEvent.contextMenu(settings);
+    fireEvent.click(screen.getByRole("menuitem", { name: "desktop.pinToStart" }));
+    expect(start).toHaveBeenCalledWith("settings");
+
+    fireEvent.contextMenu(settings);
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
+    expect(taskbar).toHaveBeenCalledWith("settings");
   });
 });

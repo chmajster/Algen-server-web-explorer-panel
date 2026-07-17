@@ -18,6 +18,8 @@ def test_defaults_cover_every_user_preference():
     assert values["theme"] == "system"
     assert values["taskbar_alignment"] == "center"
     assert values["pinned_apps"] == ["files", "transfers", "monitor", "settings"]
+    assert values["start_pinned_apps"] == values["pinned_apps"]
+    assert values["desktop_shortcut_apps"] == values["pinned_apps"]
     assert values["file_page_size"] == 50
     assert values["notification_limit"] == 5
     assert values["animations_enabled"] is True
@@ -54,6 +56,8 @@ def test_old_settings_file_keeps_valid_fields_and_repairs_invalid_fields(monkeyp
         ("wallpaper", "javascript:alert(1)"),
         ("pinned_apps", ["files", "unknown-app"]),
         ("pinned_apps", ["files", "files"]),
+        ("start_pinned_apps", ["files", "files"]),
+        ("desktop_shortcut_apps", ["unknown-app"]),
     ],
 )
 def test_patch_rejects_invalid_preferences(field, value):
@@ -70,6 +74,14 @@ def test_settings_are_written_and_read_atomically_per_user(monkeypatch, tmp_path
     assert settings._read_settings("alice") == payload
     assert not (tmp_path / "settings" / "alice.tmp").exists()
     assert not (tmp_path / "settings" / "bob.json").exists()
+
+
+def test_legacy_pins_are_migrated_to_each_destination():
+    values = settings._normalize_user_settings({"pinned_apps": ["files", "monitor"]})
+
+    assert values["pinned_apps"] == ["files", "monitor"]
+    assert values["start_pinned_apps"] == ["files", "monitor"]
+    assert values["desktop_shortcut_apps"] == ["files", "monitor"]
 
 
 def test_patch_merges_a_partial_legacy_file(monkeypatch):
