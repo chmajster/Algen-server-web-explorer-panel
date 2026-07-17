@@ -24,6 +24,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - Per-user personalization synchronized by the backend: theme, accent, wallpaper, taskbar alignment, accessibility, notifications, transfer behavior, and File Manager defaults.
 - Role-based authorization for local Linux users with administrator, operator, auditor, and user roles plus closed per-operation grants/denials; existing root/sudo/wheel administrators retain full access.
 - Infrastructure modules for Linux security/system updates, Docker with a controlled Pi-hole/AdGuard Home/Home Assistant application catalog and safe Compose projects, PostgreSQL, MariaDB, Redis, and Home Assistant Container.
+- Complete **Containers Manager** for official Docker Engine installation/update, containers, images and Docker Hub search, registries, Compose projects/history/scaling, volumes, networks, application templates, backups, diagnostics, granular RBAC and high-risk PAM confirmations.
 - One permission-aware **Users and groups** application for local Linux account/group management, built-in roles, per-user and Linux-group allow/deny policy, effective-access sources, and an audited SQLite policy store. PAM and Linux accounts remain the source of truth.
 - Per-user CPU, RAM, disk, transfer, service, and alert widgets that can be pinned, hidden, moved, and resized on the desktop.
 - Persistent Activity Center for sign-ins, file operations, configuration changes, administrative tasks, and module events, with private per-user history and permission-controlled global audit access.
@@ -80,13 +81,13 @@ Modules support Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and 
 
 Installed modules open as regular WebNAS windows from Package Center. A shared shell provides Overview, Configuration (when supported), Service, Logs, Diagnostics, Backups, and Information; providers expose only manifest-declared capabilities. Module jobs extend the existing SQLite queue with durable stages, warnings, results, SSE updates, interruption recovery, and real post-operation status checks.
 
-The Docker module includes an **Apps** section for controlled one-click installation of Pi-hole, AdGuard Home, and Home Assistant Container. The catalog uses only fixed official image names, container names, ports, mounts, labels, and restart policies. It can start, stop, update, and remove the managed containers while preserving their configuration directories under `paths.data_dir`. Port 53 can be owned by only one DNS service, so Pi-hole and AdGuard Home cannot run on the same host ports simultaneously without custom networking.
+The Docker entry opens the dedicated **Containers Manager** instead of the generic package dialog. Its closed application catalog includes Pi-hole, AdGuard Home, Home Assistant, Uptime Kuma, Nginx Proxy Manager, Jellyfin, Syncthing, Nextcloud, MariaDB, PostgreSQL, and Redis. See [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) for installation, API, storage migration, permissions, safety boundaries and verification.
 
 Samba is the complete reference provider. Its application adds Shares, SMB users, and Sessions; typed global/share configuration; controlled VFS options; `smbstatus` parsing; UFW/firewalld status; fixed-source redacted logs; comprehensive diagnostics; checksummed `0600` backups; and transactional `testparm`/atomic-write/reload/verify/rollback behavior. File Manager labels shared directories with their Samba name/read-only state and can open, create, or remove the share definition without deleting the directory.
 
 Module mutations require an active session, CSRF, the concrete operation permission, a structured plan, and audit logging. Package installation and uninstall remain restricted to callers with their dedicated high-risk permissions. Administrative dialogs use the active authenticated session and never request or retain a second administrator password. SMB passwords never enter settings, local storage, plans, jobs, command lines, or logs.
 
-See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for the package layer, [MODULES.md](MODULES.md) for provider architecture and Samba, [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) for infrastructure modules, and [IDENTITY.md](IDENTITY.md) for roles, granular permissions, Linux account safety, migration, API, and access recovery.
+See [PACKAGE_CENTER.md](PACKAGE_CENTER.md) for the package layer, [MODULES.md](MODULES.md) for provider architecture and Samba, [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) for Docker, [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) for infrastructure modules, and [IDENTITY.md](IDENTITY.md) for roles, granular permissions, Linux account safety, migration, API, and access recovery.
 
 ## Szybki start
 

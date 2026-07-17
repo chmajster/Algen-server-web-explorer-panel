@@ -2,7 +2,7 @@ id: docker
 name: Docker
 description: Containers, images, networks, volumes, logs, statistics and Compose projects.
 category: containers
-version: "1.0.0"
+version: "2.0.0"
 maintainer: WebNAS
 homepage: https://docs.docker.com/engine/
 icon: boxes
@@ -10,9 +10,9 @@ license: Apache-2.0
 supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
 supported_architectures: [x86_64, aarch64, armv7l]
 packages:
-  apt: [docker.io, docker-compose]
-  dnf: [docker, docker-compose-plugin]
-  yum: [docker, docker-compose-plugin]
+  apt: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+  dnf: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+  yum: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
 services:
   - name: docker
     required: true
@@ -25,10 +25,10 @@ capabilities:
   reload: true
   logs: true
   diagnostics: true
-  backups: false
+  backups: true
   healthcheck: true
-  resources: [apps, containers, images, networks, volumes, stats, logs, compose]
-  actions: [app_install, app_start, app_stop, app_restart, app_update, app_remove, container_start, container_stop, container_restart, image_update, compose_up, compose_down, compose_pull, compose_restart]
+  resources: [apps, containers, images, networks, volumes, stats, logs, compose, events, registries, backups]
+  actions: [app_install, app_start, app_stop, app_restart, app_update, app_remove, container_create, container_start, container_stop, container_restart, container_pause, container_unpause, container_kill, container_rename, container_remove, container_duplicate, container_recreate, container_check_update, container_update, container_export, container_import, container_backup, container_restore, image_pull, image_update, image_remove, image_prune, image_save, image_load, registry_login, registry_logout, volume_create, volume_remove, volume_prune, volume_backup, volume_restore, volume_clone, network_create, network_remove, network_prune, network_connect, network_disconnect, compose_up, compose_down, compose_start, compose_stop, compose_pull, compose_restart, compose_recreate, compose_scale, compose_delete, system_prune]
 ports: []
 permissions: [package_management, systemd, docker_socket, config_write]
 config_paths: [/etc/docker/daemon.json]

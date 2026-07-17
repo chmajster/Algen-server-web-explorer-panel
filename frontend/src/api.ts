@@ -76,7 +76,7 @@ export type Task = {
   errors: string[];
 };
 
-export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "module";
+export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "module";
 
 export type UserPreferences = {
   language: "pl-PL" | "en-US";
@@ -380,6 +380,43 @@ export type ModuleDiagnostic = { status: "ok" | "info" | "warning" | "critical";
 export type ModuleBackup = { id: string; module_id: string; created_at: number; created_by: string; description: string; automatic: boolean; checksum: string; package_version: string; size: number; files: string[] };
 export type ModuleLogSource = { id: string; label: string };
 export type ModuleSummary = PackageModule & { module_status: ModuleStatus; capabilities: ModuleCapability; active_job?: ModuleJob | null };
+export type DockerPaged<T = Record<string, unknown>> = { items: T[]; total: number; page: number; page_size: number; pages: number };
+export type DockerDashboard = { status: ModuleStatus; counts: Record<string, number>; storage: Array<Record<string, unknown>>; security: Array<{ level: string; message: string }>; engine: Record<string, unknown>; usage: { cpu_percent?: number; memory_bytes?: number }; events: Array<Record<string, unknown>>; updates: Array<Record<string, unknown>>; prune_preview: { total?: number; estimated_reclaimable?: number } };
+export type DockerContainer = { ID?: string; Names?: string; Image?: string; State?: string; Status?: string; Ports?: string; Size?: string; [key: string]: unknown };
+export type DockerImage = { ID?: string; Repository?: string; Tag?: string; Digest?: string; Size?: string; CreatedSince?: string; consumers?: string[]; [key: string]: unknown };
+export type DockerApp = { id: string; name: string; description: string; image: string; container: string; category: string; panel_port: number; ports: string[]; version: string; required_secrets: string[]; architectures: string[]; healthcheck: string; dependencies: string[]; minimum_memory_mb: number; documentation_url: string; update_strategy: string; backup_strategy: string; uninstall_strategy: string; installed: boolean; running: boolean; managed: boolean; status: string };
+export type DockerArtifact = { id: string; kind: string; display_name: string; checksum: string; size: number; created_at: number; created_by: string; metadata: Record<string, unknown> };
+export type DockerRegistry = { id: string; name: string; provider: string; server: string; username: string; tls: boolean; ca_certificate_configured: boolean; secret_configured: boolean; created_at: number; updated_at: number };
+export type DockerPortMapping = { host_ip?: string | null; published: number; target: number; protocol?: "tcp" | "udp" };
+export type DockerMount = { type: "volume" | "bind" | "tmpfs"; source?: string; target: string; read_only?: boolean; tmpfs_size_mb?: number | null };
+export type DockerContainerCreate = {
+  name: string; image: string; pull_policy?: "missing" | "always" | "never";
+  environment?: Record<string, string>; secret_environment?: Record<string, string>;
+  ports?: DockerPortMapping[]; mounts?: DockerMount[]; network?: string;
+  network_aliases?: string[]; hostname?: string | null; working_dir?: string | null; user?: string | null;
+  restart_policy?: "no" | "always" | "unless-stopped" | "on-failure";
+  limits?: { cpus?: number | null; memory_mb?: number | null; memory_swap_mb?: number | null; pids?: number | null };
+  healthcheck?: { type: "none" | "http" | "tcp"; port?: number | null; path?: string; interval_seconds?: number; timeout_seconds?: number; retries?: number; start_period_seconds?: number };
+  labels?: Record<string, string>; read_only?: boolean; init?: boolean; auto_start?: boolean; confirmation?: string;
+};
+export type DockerContainerAction = {
+  action: "start" | "stop" | "restart" | "pause" | "unpause" | "kill" | "rename" | "remove" | "duplicate" | "recreate" | "check_update" | "update";
+  timeout?: number; signal?: "KILL" | "TERM" | "HUP" | "INT" | "QUIT" | "USR1" | "USR2";
+  force?: boolean; new_name?: string; image?: string | null; confirmation?: string; pam_password?: string | null;
+};
+export type DockerImageAction = { action: "pull" | "update" | "remove" | "prune" | "save"; image?: string; platform?: "linux/amd64" | "linux/arm64" | "linux/arm/v7"; force?: boolean; confirmation?: string; pam_password?: string | null };
+export type DockerComposeSave = { content: string; environment?: Record<string, string>; secret_environment?: Record<string, string> | null; description?: string };
+export type DockerComposeAction = { action: "up" | "down" | "start" | "stop" | "restart" | "pull" | "recreate" | "scale" | "delete" | "validate"; services?: string[]; scale?: Record<string, number>; remove_volumes?: boolean; confirmation?: string; pam_password?: string | null };
+export type DockerVolumeAction = { action: "remove" | "prune" | "backup" | "restore" | "clone"; target_name?: string | null; backup_id?: string | null; force?: boolean; confirmation?: string; pam_password?: string | null };
+export type DockerNetworkAction = { action: "remove" | "prune" | "connect" | "disconnect"; container?: string | null; force?: boolean; confirmation?: string; pam_password?: string | null };
+export type DockerEngineAction = { action: "install" | "reinstall" | "update" | "start" | "stop" | "restart" | "enable" | "disable" | "test"; confirmation?: string; pam_password?: string | null };
+export type DockerRegistrySave = { name: string; provider: "docker_hub" | "ghcr" | "gitlab" | "quay" | "custom"; server: string; username: string; password?: string | null; tls?: boolean; ca_certificate?: string | null };
+export type DockerVolumeCreate = { name: string; labels?: Record<string, string> };
+export type DockerNetworkCreate = { name: string; driver?: "bridge"; subnet?: string | null; gateway?: string | null; internal?: boolean; ipv6?: boolean; labels?: Record<string, string> };
+export type DockerAppInstall = { secret_environment?: Record<string, string>; timezone?: string; hostname?: string; panel_port?: number; dns_port?: number; network?: string; confirmation?: string };
+export type DockerAppAction = { confirmation?: string; pam_password?: string | null };
+export type DockerBackupRestore = { new_name: string; secret_environment?: Record<string, string>; confirmation?: string; pam_password?: string | null };
+export type DockerPrune = { resources: Array<"containers" | "images" | "networks" | "volumes" | "build_cache">; confirmation?: string; pam_password?: string | null };
 export type PackagePlan = {
   module_id: string;
   action: "install" | "reinstall" | "update" | "uninstall" | "start" | "stop" | "restart" | "reload" | "enable" | "disable" | "apply" | "diagnostics" | "restore" | "firewall" | "manage";
@@ -856,6 +893,54 @@ export const api = {
   restoreModuleBackup: (id: string, backupId: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}/restore`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   deleteModuleBackup: (id: string, backupId: string) => request(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
   moduleService: (id: string, action: "start" | "stop" | "restart" | "reload" | "enable" | "disable") => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/service/${action}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  dockerDashboard: () => request<DockerDashboard>("/api/modules/docker/dashboard"),
+  dockerEngine: () => request<{ status: ModuleStatus; config: Record<string, unknown>; diagnostics: ModuleDiagnostic[] }>("/api/modules/docker/engine"),
+  dockerEngineAction: (payload: DockerEngineAction) => request<{ job?: ModuleJob; diagnostics?: ModuleDiagnostic[] }>("/api/modules/docker/engine/actions", { method: "POST", body: JSON.stringify(payload) }),
+  dockerDaemonConfig: () => request<{ config: Record<string, unknown>; path: string; valid: boolean; error: string }>("/api/modules/docker/daemon-config"),
+  validateDockerDaemonConfig: (config: Record<string, unknown>) => request<ModuleValidationResult>("/api/modules/docker/daemon-config/validate", { method: "POST", body: JSON.stringify({ config, confirmation: "" }) }),
+  saveDockerDaemonConfig: (config: Record<string, unknown>, pamPassword: string) => request<{ job: ModuleJob; validation: ModuleValidationResult }>("/api/modules/docker/daemon-config", { method: "PUT", body: JSON.stringify({ config, confirmation: "daemon.json", pam_password: pamPassword }) }),
+  dockerContainers: (params: Record<string, string | number> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => query.set(key, String(value))); return request<DockerPaged<DockerContainer>>(`/api/modules/docker/containers?${query}`); },
+  dockerContainer: (target: string) => request<Record<string, unknown>>(`/api/modules/docker/containers/${encodeURIComponent(target)}`),
+  dockerContainerStats: (target: string, historyHours = 1) => request<{ current: Record<string, unknown> | null; history: Array<Record<string, unknown>> }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/stats?history_hours=${historyHours}`),
+  dockerContainerLogs: (target: string, params: Record<string, string | number> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => query.set(key, String(value))); return request<{ lines: string[]; total: number; truncated: boolean }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/logs?${query}`); },
+  dockerContainerProcesses: (target: string) => request<{ items: Array<Record<string, string>>; total: number; truncated: boolean }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/processes`),
+  dockerContainerCompose: (target: string) => request<{ content: string; secrets_omitted: boolean; environment_keys: string[] }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/compose`),
+  createDockerContainer: (payload: DockerContainerCreate) => request<{ job: ModuleJob }>("/api/modules/docker/containers", { method: "POST", body: JSON.stringify(payload) }),
+  dockerContainerAction: (target: string, payload: DockerContainerAction) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
+  dockerContainerBackup: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/backup?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),
+  dockerContainerExport: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/export?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),
+  importDockerContainerFilesystem: (file: File, repository: string) => { const body = new FormData(); body.set("file", file); body.set("repository", repository); body.set("confirmation", repository); return request<{ job: ModuleJob }>("/api/modules/docker/containers/import", { method: "POST", body }); },
+  dockerImages: (params: Record<string, string | number> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => query.set(key, String(value))); return request<DockerPaged<DockerImage>>(`/api/modules/docker/images?${query}`); },
+  searchDockerImages: (query: string) => request<{ items: Array<Record<string, unknown>>; total: number; source: string }>(`/api/modules/docker/images/search?q=${encodeURIComponent(query)}&limit=50`),
+  dockerImageAction: (payload: DockerImageAction) => request<{ job: ModuleJob }>("/api/modules/docker/images/actions", { method: "POST", body: JSON.stringify(payload) }),
+  importDockerImage: (file: File) => { const body = new FormData(); body.set("file", file); return request<{ job: ModuleJob }>("/api/modules/docker/images/import", { method: "POST", body }); },
+  dockerVolumes: (search = "") => request<DockerPaged>(`/api/modules/docker/volumes?search=${encodeURIComponent(search)}`),
+  createDockerVolume: (payload: DockerVolumeCreate) => request<{ job: ModuleJob }>("/api/modules/docker/volumes", { method: "POST", body: JSON.stringify(payload) }),
+  dockerVolumeAction: (target: string, payload: DockerVolumeAction) => request<{ job: ModuleJob }>(`/api/modules/docker/volumes/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
+  dockerNetworks: (search = "") => request<DockerPaged>(`/api/modules/docker/networks?search=${encodeURIComponent(search)}`),
+  createDockerNetwork: (payload: DockerNetworkCreate) => request<{ job: ModuleJob }>("/api/modules/docker/networks", { method: "POST", body: JSON.stringify(payload) }),
+  dockerNetworkAction: (target: string, payload: DockerNetworkAction) => request<{ job: ModuleJob }>(`/api/modules/docker/networks/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
+  dockerComposeProjects: () => request<ModuleResource>("/api/modules/docker/compose"),
+  dockerComposeProject: (project: string) => request<{ name: string; content: string; environment: Record<string, string>; secrets_configured: boolean; history: Array<Record<string, unknown>>; plan: Record<string, unknown> }>(`/api/modules/docker/compose/${encodeURIComponent(project)}`),
+  saveDockerComposeProject: (project: string, payload: DockerComposeSave) => request<Record<string, unknown>>(`/api/modules/docker/compose/${encodeURIComponent(project)}`, { method: "PUT", body: JSON.stringify(payload) }),
+  validateDockerCompose: (project: string, payload: DockerComposeSave) => request<Record<string, unknown>>(`/api/modules/docker/compose/${encodeURIComponent(project)}/validate`, { method: "POST", body: JSON.stringify(payload) }),
+  dockerComposeAction: (project: string, payload: DockerComposeAction) => request<{ job?: ModuleJob; valid?: boolean }>(`/api/modules/docker/compose/${encodeURIComponent(project)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
+  rollbackDockerCompose: (project: string, revision: string, confirmation: string) => request<Record<string, unknown>>(`/api/modules/docker/compose/${encodeURIComponent(project)}/history/${encodeURIComponent(revision)}/rollback?confirmation=${encodeURIComponent(confirmation)}`, { method: "POST", body: "{}" }),
+  dockerComposeStatus: (project: string) => request<{ items: Array<Record<string, unknown>>; total: number }>(`/api/modules/docker/compose/${encodeURIComponent(project)}/status`),
+  dockerComposeLogs: (project: string, service = "") => request<{ lines: string[]; total: number; truncated: boolean }>(`/api/modules/docker/compose/${encodeURIComponent(project)}/logs?tail=500&service=${encodeURIComponent(service)}`),
+  dockerApps: (search = "") => request<{ items: DockerApp[]; total: number }>(`/api/modules/docker/apps?search=${encodeURIComponent(search)}`),
+  installDockerApp: (id: string, payload: DockerAppInstall) => request<{ job: ModuleJob }>(`/api/modules/docker/apps/${encodeURIComponent(id)}/install`, { method: "POST", body: JSON.stringify(payload) }),
+  dockerAppAction: (id: string, action: "start" | "stop" | "restart" | "update" | "remove", payload: DockerAppAction = {}) => request<{ job: ModuleJob }>(`/api/modules/docker/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify(payload) }),
+  dockerRegistries: () => request<{ items: DockerRegistry[] }>("/api/modules/docker/registries"),
+  saveDockerRegistry: (payload: DockerRegistrySave, id = "") => request<{ registry: DockerRegistry; job: ModuleJob }>(id ? `/api/modules/docker/registries/${encodeURIComponent(id)}` : "/api/modules/docker/registries", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  testDockerRegistry: (id: string) => request<{ job: ModuleJob }>(`/api/modules/docker/registries/${encodeURIComponent(id)}/test`, { method: "POST", body: "{}" }),
+  logoutDockerRegistry: (id: string) => request<{ job: ModuleJob }>(`/api/modules/docker/registries/${encodeURIComponent(id)}/logout`, { method: "POST", body: "{}" }),
+  deleteDockerRegistry: (id: string, confirmation: string) => request<{ ok: boolean }>(`/api/modules/docker/registries/${encodeURIComponent(id)}?confirmation=${encodeURIComponent(confirmation)}`, { method: "DELETE", body: "{}" }),
+  dockerBackups: () => request<{ configuration: ModuleBackup[]; artifacts: DockerArtifact[] }>("/api/modules/docker/backups"),
+  restoreDockerBackup: (id: string, payload: DockerBackupRestore) => request<{ job: ModuleJob }>(`/api/modules/docker/backups/${encodeURIComponent(id)}/restore`, { method: "POST", body: JSON.stringify(payload) }),
+  dockerDiagnostics: () => request<{ generated_at: number; status: ModuleStatus; checks: ModuleDiagnostic[]; config: Record<string, unknown>; prune: Record<string, unknown> }>("/api/modules/docker/diagnostics"),
+  dockerEvents: () => request<{ items: Array<Record<string, unknown>>; total: number }>("/api/modules/docker/events?since_seconds=3600&limit=500"),
+  dockerPrune: (payload: DockerPrune) => request<{ job: ModuleJob }>("/api/modules/docker/prune", { method: "POST", body: JSON.stringify(payload) }),
   sambaModuleUsers: () => request<SambaModuleUser[]>("/api/modules/samba/users"),
   sambaModuleUserAction: (username: string, action: "add" | "password" | "enable" | "disable" | "remove", password = "") => request("/api/modules/samba/users/" + encodeURIComponent(username) + "/" + action, { method: "POST", body: JSON.stringify({ password, confirm: true }) }),
   sambaSessions: () => request<SambaSession[]>("/api/modules/samba/sessions"),

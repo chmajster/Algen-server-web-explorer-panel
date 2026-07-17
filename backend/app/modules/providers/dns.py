@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -53,7 +54,7 @@ class DnsContainerProvider(ApiConnectionProvider):
             api_error(422, "INVALID_TIMEZONE", "Timezone must be a known IANA timezone")
         return timezone
 
-    def _run_container(self, image: str, timezone: str) -> None:
+    def _run_container(self, image: str, timezone: str, options: dict[str, Any] | None = None) -> None:
         raise NotImplementedError
 
     def _manage_container(self, operation: str, payload: dict[str, Any], log: LogCallback, progress: ProgressCallback, cancelled: CancelCallback) -> dict[str, Any]:
@@ -68,7 +69,7 @@ class DnsContainerProvider(ApiConnectionProvider):
             self._docker(["pull", self.container_app.image], timeout=1800)
             if cancelled():
                 raise InterruptedError(f"{self.container_app.name} installation cancelled before container creation")
-            self._run_container(self.container_app.image, timezone)
+            self._run_container(self.container_app.image, timezone, payload)
         elif operation in {"container_start", "container_stop", "container_restart"}:
             if not inspect:
                 api_error(404, "CONTAINER_NOT_FOUND", f"{self.container_app.name} container is not installed")
@@ -85,11 +86,11 @@ class DnsContainerProvider(ApiConnectionProvider):
                 self._docker(["stop", self.container_app.container])
             self._docker(["rm", self.container_app.container])
             try:
-                self._run_container(self.container_app.image, timezone)
+                self._run_container(self.container_app.image, timezone, payload)
                 if not was_running:
                     self._docker(["stop", self.container_app.container])
             except RuntimeError:
-                self._run_container(old_image, timezone)
+                self._run_container(old_image, timezone, payload)
                 if not was_running:
                     self._docker(["stop", self.container_app.container])
                 log("stderr", f"{self.container_app.name} update failed; the previous image was restored")
@@ -136,7 +137,36 @@ class PiHoleProvider(DnsContainerProvider):
     def default_base_url(self) -> str:
         return "http://127.0.0.1:8080"
 
-    def _run_container(self, image: str, timezone: str) -> None:
+    def _container_settings(self, options: dict[str, Any] | None) -> dict[str, Any]:
+        settings_path = self.container_data_dir / "settings.json"
+        try:
+            saved = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            saved = {}
+        options = options or {}
+        settings: dict[str, Any] = {
+            "hostname": str(options.get("hostname") or saved.get("hostname") or "pihole"),
+            "panel_port": int(options.get("panel_port") or saved.get("panel_port") or 8080),
+            "dns_port": int(options.get("dns_port") or saved.get("dns_port") or 53),
+            "network": str(options.get("network") or saved.get("network") or "bridge"),
+        }
+        if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", settings["hostname"]):
+            api_error(422, "INVALID_HOSTNAME", "Pi-hole hostname is invalid")
+        if not 1 <= settings["panel_port"] <= 65535 or not 1 <= settings["dns_port"] <= 65535:
+            api_error(422, "INVALID_PORT", "Pi-hole ports must be between 1 and 65535")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", settings["network"]) or settings["network"] in {"host", "none"}:
+            api_error(422, "INVALID_NETWORK", "Pi-hole must use a managed bridge network")
+        temp = settings_path.with_suffix(".tmp")
+        with temp.open("w", encoding="utf-8") as handle:
+            json.dump(settings, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp, 0o600)
+        os.replace(temp, settings_path)
+        os.chmod(settings_path, 0o600)
+        return settings
+
+    def _run_container(self, image: str, timezone: str, options: dict[str, Any] | None = None) -> None:
         secret = str(self.connection().get("secret") or "")
         if not secret:
             api_error(409, "PIHOLE_PASSWORD_REQUIRED", "Set a Pi-hole web/API password before installing the container")
@@ -149,12 +179,15 @@ class PiHoleProvider(DnsContainerProvider):
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(password_file, 0o600)
+        settings = self._container_settings(options)
         self._docker([
             "run", "-d", "--name", self.container_app.container,
             "--label", "io.webnas.app=pihole", "--restart", "unless-stopped",
+            "--hostname", settings["hostname"], "--network", settings["network"],
             "-e", f"TZ={timezone}", "-e", "FTLCONF_dns_listeningMode=all",
             "-e", "WEBPASSWORD_FILE=/run/secrets/pihole_webpassword",
-            "-p", "53:53/tcp", "-p", "53:53/udp", "-p", "8080:80/tcp", "-p", "8443:443/tcp",
+            "-p", f"{settings['dns_port']}:53/tcp", "-p", f"{settings['dns_port']}:53/udp", "-p", f"{settings['panel_port']}:80/tcp",
+            "--health-cmd", "dig +short +norecurse +retry=0 @127.0.0.1 pi.hole || exit 1", "--health-interval", "30s", "--health-timeout", "5s", "--health-retries", "5",
             "-v", f"{config_dir}:/etc/pihole", "-v", f"{password_file}:/run/secrets/pihole_webpassword:ro",
             image,
         ])
@@ -228,6 +261,13 @@ class PiHoleProvider(DnsContainerProvider):
         if operation in {"install_container", "container_start", "container_stop", "container_restart", "update_container", "remove_container"}:
             if operation == "install_container" and not str(self.connection().get("secret") or ""):
                 api_error(409, "PIHOLE_PASSWORD_REQUIRED", "Set a Pi-hole web/API password before installing the container")
+            if (
+                operation == "install_container"
+                and Path("/run/systemd/system").is_dir()
+                and shutil.which("systemctl")
+                and self._systemctl("systemd-resolved", "is-active").returncode == 0
+            ):
+                api_error(409, "DNS_PORT_CONFLICT", "systemd-resolved is active and may own port 53. Reconfigure its DNS stub listener explicitly before installing Pi-hole; WebNAS will not change host DNS automatically")
             return self._manage_container(operation, payload, log, progress, cancelled)
         if operation not in {"blocking_enable", "blocking_disable"}:
             return super().manage(operation, payload, actor, log, progress, cancelled)
@@ -256,7 +296,7 @@ class AdGuardHomeProvider(DnsContainerProvider):
     def default_base_url(self) -> str:
         return "http://127.0.0.1:3000"
 
-    def _run_container(self, image: str, timezone: str) -> None:
+    def _run_container(self, image: str, timezone: str, options: dict[str, Any] | None = None) -> None:
         work_dir = self.container_data_dir / "work"
         config_dir = self.container_data_dir / "conf"
         for path in (work_dir, config_dir):

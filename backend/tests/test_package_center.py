@@ -291,6 +291,21 @@ def test_reinstall_uses_the_trusted_install_hook_and_healthcheck(monkeypatch):
     assert reinstall_index < install_hook_index < health_hook_index
 
 
+def test_docker_package_failure_runs_trusted_rollback_hook(monkeypatch):
+    calls: list[str] = []
+    package_plan = plan("docker")
+    manifest = manifests.load_manifest("docker")
+    monkeypatch.setattr(executor.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(executor, "module_script", lambda module_id, action: Path(f"{action}.py") if action in {"prepare", "rollback", "health"} else None)
+    monkeypatch.setattr(executor, "_run_hook", lambda module, action, log: calls.append(action))
+    monkeypatch.setattr(executor, "_run_apt_command", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("package failure")))
+
+    with pytest.raises(RuntimeError, match="package failure"):
+        executor.execute(package_plan, manifest, lambda *_: None, lambda *_: None, lambda: False)
+
+    assert calls == ["prepare", "rollback"]
+
+
 def test_proxmox_enterprise_source_is_removed_only_from_temporary_apt_view(tmp_path):
     source_root = tmp_path / "apt"
     parts = source_root / "sources.list.d"

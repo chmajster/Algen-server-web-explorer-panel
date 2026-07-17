@@ -27,6 +27,8 @@ frontend/features/modules/common + module-specific application
 
 Long operations reuse `package_jobs`; no second queue exists. The repository automatically adds `warnings_json` and `result_json` to older databases. Existing rows, history, installed-module records, and `/api/apps` endpoints remain valid.
 
+Docker is intentionally routed through the stricter dedicated API and split frontend described in [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md). Generic module actions cannot be used to bypass Docker's typed contracts, granular permissions, exact confirmations or PAM gates.
+
 ## Manifest
 
 New manifests can use the structured fields below. Legacy `apt_packages`, `dnf_packages`, `systemd_services`, `config_paths`, and `backup_paths` are mapped automatically.

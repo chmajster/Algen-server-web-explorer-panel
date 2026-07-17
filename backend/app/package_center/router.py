@@ -193,6 +193,8 @@ def _package_permission(action: PackageAction) -> Permission:
 
 
 def _enqueue_action(module_id: str, action: PackageAction, payload: AdminPackageAction, user: SessionUser) -> dict:
+    if module_id == "docker" and action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
+        api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker Engine package changes require the typed Containers Manager API and PAM confirmation")
     if not payload.confirm_plan:
         api_error(400, "PLAN_CONFIRMATION_REQUIRED", "The operation plan must be confirmed")
     plan = plan_operation(module_id, action, remove_data=payload.remove_data)

@@ -149,6 +149,8 @@ No separate package-center daemon is required. Its SQLite database is created au
 /var/lib/webnas/package-center.sqlite3
 ```
 
+Docker installation from Containers Manager configures Docker's official stable repository and installs Docker CE, CLI, containerd, Buildx and the Compose plugin. It requires a supported systemd Linux host and root-run WebNAS service. The first manager access creates `/var/lib/webnas/docker-manager/manager.sqlite3`; no manual database migration is required. For the engine lifecycle, daemon rollback, supported distributions and post-install verification, see [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md).
+
 Supported hosts are Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux with systemd. Modules select `apt-get`, `dnf`, or `yum` from `/etc/os-release` and their validated manifest. A module is rejected before execution when its distribution, architecture, package manager, or Proxmox safety declaration is incompatible.
 
 The package catalog ships with Samba, Squid Proxy, Nginx, and Syncthing. Before the first real operation, use a disposable VM/container and review the dry-run plan in the UI. The production systemd profile must retain `User=root`, `Group=root`, `NoNewPrivileges=false`, and `ProtectSystem=false`; changing those values makes package installation fail with a clear permission or read-only-filesystem error.

@@ -74,7 +74,7 @@ class HomeAssistantProvider(ApiConnectionProvider):
         return super().list_resources(resource, limit=limit, search=search)
 
     def _run_container(self, image: str, timezone: str) -> None:
-        self._docker(["run", "-d", "--name", self.container, "--label", "io.webnas.app=home-assistant", "--restart", "unless-stopped", "--network", "host", "-e", f"TZ={timezone}", "-v", f"{self.config_dir}:/config", image], timeout=180)
+        self._docker(["run", "-d", "--name", self.container, "--label", "io.webnas.app=home-assistant", "--restart", "unless-stopped", "--network", "bridge", "-p", "8123:8123/tcp", "-e", f"TZ={timezone}", "-v", f"{self.config_dir}:/config", image], timeout=180)
 
     def manage(self, operation: str, payload: dict[str, Any], actor: str, log: LogCallback, progress: ProgressCallback, cancelled: CancelCallback) -> dict[str, Any]:
         timezone = str(payload.get("timezone") or "UTC")

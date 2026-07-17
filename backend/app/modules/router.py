@@ -190,13 +190,7 @@ def save_module_connection(module_id: str, payload: ModuleConnectionRequest, use
 
 @router.put("/docker/compose/{project}")
 def save_docker_compose(project: str, payload: ComposeSaveRequest, user: SessionUser = Depends(mutating_admin)):
-    _authorize(user, "docker", "configure")
-    _assert_proxmox_allowed("docker")
-    result = DockerProvider(user.username).save_compose(project, payload.content)
-    _invalidate_status("docker")
-    logger.info("docker_compose actor=%s project=%s action=save", user.username, project)
-    record_activity(ActivityCategory.module, "compose_save", user.username, target="docker", details={"project": project}, source="modules")
-    return result
+    api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker Compose changes are available only through the typed Containers Manager API")
 
 
 @router.get("/docker/compose/{project}")
@@ -254,6 +248,8 @@ def _enqueue(plan: PackagePlan, payload: ModuleAdminRequest, user: SessionUser) 
 
 @router.post("/{module_id}/apply")
 def module_apply(module_id: str, payload: ModuleApplyRequest, user: SessionUser = Depends(mutating_admin)):
+    if module_id == "docker":
+        api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker daemon changes require the typed Containers Manager API and PAM confirmation")
     _authorize(user, module_id, "configure")
     validation = get_provider(module_id, user.username).validate_config(payload.config)
     if not validation.ok:
@@ -304,12 +300,16 @@ def create_module_backup(module_id: str, payload: BackupCreateRequest, user: Ses
 
 @router.post("/{module_id}/backups/{backup_id}/restore")
 def restore_module_backup(module_id: str, backup_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
+    if module_id == "docker":
+        api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker restores require the typed Containers Manager API and PAM confirmation")
     _authorize(user, module_id, "restore")
     return _enqueue(_provider_plan(module_id, PackageAction.restore, {"backup_id": backup_id}, backup=True), payload, user)
 
 
 @router.delete("/{module_id}/backups/{backup_id}")
 def delete_module_backup(module_id: str, backup_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
+    if module_id == "docker":
+        api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker backup changes require the typed Containers Manager API")
     _authorize(user, module_id, "backup_delete")
     _assert_proxmox_allowed(module_id)
     get_provider(module_id, user.username).delete_backup(backup_id)
@@ -320,18 +320,17 @@ def delete_module_backup(module_id: str, backup_id: str, payload: ModuleAdminReq
 
 @router.post("/{module_id}/service/{action}")
 def module_service_action(module_id: str, action: Literal["start", "stop", "restart", "reload", "enable", "disable"], payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
+    if module_id == "docker":
+        api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker service changes require the typed Containers Manager API and PAM confirmation")
     _authorize(user, module_id, "operate")
     return _enqueue(_provider_plan(module_id, PackageAction(action), {}), payload, user)
 
 
 @router.post("/{module_id}/actions/{operation}")
 def module_management_action(module_id: str, operation: str, payload: ModuleActionRequest, user: SessionUser = Depends(mutating_admin)):
-    if module_id == "docker" and operation.startswith("compose_"):
-        authorize(user, "docker.manage_compose")
-    elif module_id == "docker" and operation.startswith("image_"):
-        authorize(user, "docker.manage_images")
-    else:
-        _authorize(user, module_id, "operate")
+    if module_id == "docker":
+        api_error(409, "TYPED_DOCKER_API_REQUIRED", "This Docker operation is available only through the typed Containers Manager API")
+    _authorize(user, module_id, "operate")
     if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", operation):
         api_error(400, "INVALID_MODULE_ACTION", "Invalid module action")
     provider = get_provider(module_id, user.username)
@@ -346,6 +345,8 @@ def module_management_action(module_id: str, operation: str, payload: ModuleActi
 
 
 def _package_action(module_id: str, action: PackageAction, payload: ModuleAdminRequest, user: SessionUser) -> dict:
+    if module_id == "docker" and action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
+        api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker Engine package changes require the typed Containers Manager API and PAM confirmation")
     provider = get_provider(module_id, user.username)
     provider.assert_capability("update" if action == PackageAction.reinstall else action.value)
     if action == PackageAction.uninstall and payload.remove_data and module_id == "samba" and payload.confirm_name != "Samba":

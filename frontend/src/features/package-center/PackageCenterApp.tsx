@@ -34,6 +34,11 @@ export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toa
   }), [state.history.length, state.jobs, state.modules, state.sources.length]);
 
   function begin(item: ModuleSummary, nextAction: PackageAction) {
+    if (item.id === "docker" && onOpenModule) {
+      setSelected(null);
+      window.setTimeout(() => onOpenModule("docker"), 0);
+      return;
+    }
     setSelected(null);
     setAction({ item, action: nextAction });
   }

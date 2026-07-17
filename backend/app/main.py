@@ -25,6 +25,7 @@ from .identity.permissions import authorize
 from .network_mounts import router as mounts_router
 from .network_diagnostics import router as network_diagnostics_router
 from .modules.router import router as modules_router
+from .modules.docker_manager.router import router as docker_manager_router
 from .package_center.router import router as package_center_router
 from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
@@ -46,6 +47,7 @@ app.include_router(package_center_router)
 app.include_router(mounts_router)
 app.include_router(network_diagnostics_router)
 app.include_router(local_disks_router)
+app.include_router(docker_manager_router)
 app.include_router(modules_router)
 app.include_router(rbac_router)
 app.include_router(activity_router)

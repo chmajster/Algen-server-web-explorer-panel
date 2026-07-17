@@ -37,7 +37,7 @@ def test_infrastructure_manifests_declare_only_supported_resources_and_actions()
     assert NEW_MODULES <= manifests.keys()
     assert manifests["linux-updates"].capabilities.actions == ["refresh", "upgrade_all", "upgrade_security"]
     assert {"containers", "images", "networks", "volumes", "stats", "compose"} <= set(manifests["docker"].capabilities.resources)
-    assert manifests["docker"].packages.apt == ["docker.io", "docker-compose"]
+    assert manifests["docker"].packages.apt == ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
     assert manifests["postgresql"].capabilities.backups is True
     assert manifests["home-assistant"].proxmox_safe is False
 
@@ -338,6 +338,7 @@ def test_pihole_container_install_keeps_password_out_of_docker_arguments(monkeyp
     monkeypatch.setattr("app.modules.providers.dns.shutil.which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr("app.modules.providers.dns.available_timezones", lambda: {"Europe/Warsaw"})
     monkeypatch.setattr(type(provider), "container_data_dir", property(lambda self: tmp_path))
+    monkeypatch.setattr(provider, "_systemctl", lambda *args: SimpleNamespace(returncode=3))
     monkeypatch.setattr(provider, "_docker", lambda args, timeout=180: calls.append(args) or "")
     monkeypatch.setattr(provider, "get_status", lambda: SimpleNamespace(model_dump=lambda **_: {"installed": True}))
 

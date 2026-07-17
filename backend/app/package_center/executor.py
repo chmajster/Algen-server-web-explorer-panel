@@ -318,7 +318,15 @@ def _run_hook(manifest: ModuleManifest, action: str, log: LogCallback) -> None:
     if not script:
         return
     args = [sys.executable, str(script)] if script.suffix == ".py" else ["/bin/bash", str(script)]
-    _run(args, 300, log)
+    _run(args, 1800 if action in {"prepare", "rollback", "health"} else 300, log)
+
+
+def _rollback_hook(manifest: ModuleManifest, log: LogCallback) -> None:
+    if not module_script(manifest.id, "rollback"):
+        return
+    log("warning", f"Restoring the previous {manifest.name} package state")
+    _run_hook(manifest, "rollback", log)
+    log("stdout", f"Previous {manifest.name} package state restored")
 
 
 def _remove_data(manifest: ModuleManifest, log: LogCallback) -> None:
@@ -338,17 +346,30 @@ def _remove_data(manifest: ModuleManifest, log: LogCallback) -> None:
 def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progress: ProgressCallback, cancelled: CancelCallback) -> None:
     if manifest.requires_root and hasattr(os, "geteuid") and os.geteuid() != 0:
         raise PermissionError("Package operations require the WebNAS service to run as root")
+    if plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update} and module_script(manifest.id, "prepare"):
+        if cancelled():
+            raise InterruptedError("Package operation cancelled before repository preparation")
+        progress(1, "Prepare trusted package repository")
+        _run_hook(manifest, "prepare", log)
     steps = _command_steps(plan, manifest)
     total = max(1, len(steps) + 1)
     hook_complete = False
     for index, (label, args, timeout) in enumerate(steps):
         if cancelled():
+            _rollback_hook(manifest, log)
             raise InterruptedError("Package operation cancelled before the next safe step")
         progress(max(1, int(index / total * 90)), label)
-        if args and args[0] == "apt-get":
-            _run_apt_command(args, timeout, log)
-        else:
-            _run(args, timeout, log)
+        try:
+            if args and args[0] == "apt-get":
+                _run_apt_command(args, timeout, log)
+            else:
+                _run(args, timeout, log)
+        except Exception as error:
+            try:
+                _rollback_hook(manifest, log)
+            except Exception as rollback_error:
+                raise RuntimeError(f"{label} failed and automatic package rollback also failed: {rollback_error}") from error
+            raise
         if label in {"Install packages", "Reinstall packages", "Remove packages"} and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
             hook_action = "install" if plan.action == PackageAction.reinstall else plan.action.value
             progress(max(1, int((index + 0.5) / total * 90)), f"Run trusted {hook_action} hook")

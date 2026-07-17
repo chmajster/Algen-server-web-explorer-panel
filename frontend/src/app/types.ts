@@ -16,6 +16,7 @@ export type AppId =
   | "monitor"
   | "modules"
   | "access"
+  | "containers"
   | "module";
 
 export type Theme = "light" | "dark" | "system";

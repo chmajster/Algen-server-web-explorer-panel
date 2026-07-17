@@ -89,6 +89,30 @@ class Permission(StrEnum):
     DOCKER_CONTAINERS = "docker.manage_containers"
     DOCKER_IMAGES = "docker.manage_images"
     DOCKER_COMPOSE = "docker.manage_compose"
+    DOCKER_INSTALL_ENGINE = "docker.install_engine"
+    DOCKER_START_SERVICE = "docker.start_service"
+    DOCKER_STOP_SERVICE = "docker.stop_service"
+    DOCKER_UPDATE_ENGINE = "docker.update_engine"
+    DOCKER_VIEW_CONTAINERS = "docker.view_containers"
+    DOCKER_CREATE_CONTAINER = "docker.create_container"
+    DOCKER_START_CONTAINER = "docker.start_container"
+    DOCKER_STOP_CONTAINER = "docker.stop_container"
+    DOCKER_RESTART_CONTAINER = "docker.restart_container"
+    DOCKER_REMOVE_CONTAINER = "docker.remove_container"
+    DOCKER_INSPECT_CONTAINER = "docker.inspect_container"
+    DOCKER_VIEW_LOGS = "docker.view_logs"
+    DOCKER_VIEW_STATS = "docker.view_stats"
+    DOCKER_VIEW_IMAGES = "docker.view_images"
+    DOCKER_PULL_IMAGE = "docker.pull_image"
+    DOCKER_REMOVE_IMAGE = "docker.remove_image"
+    DOCKER_MANAGE_REGISTRIES = "docker.manage_registries"
+    DOCKER_MANAGE_VOLUMES = "docker.manage_volumes"
+    DOCKER_MANAGE_NETWORKS = "docker.manage_networks"
+    DOCKER_EXPORT_BACKUP = "docker.export_backup"
+    DOCKER_RESTORE_BACKUP = "docker.restore_backup"
+    DOCKER_PRUNE = "docker.prune"
+    DOCKER_DIAGNOSTICS = "docker.diagnostics"
+    DOCKER_HIGH_RISK = "docker.high_risk"
     DNS_VIEW = "dns.view"
     DNS_CONFIGURE = "dns.configure"
     DATABASES_VIEW = "databases.view"
@@ -103,7 +127,7 @@ class Permission(StrEnum):
 
 
 _READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics"}
-_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE}
+_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK}
 _APPLICATIONS: dict[str, list[str]] = {
     "files": ["files"],
     "transfers": ["transfers"],
@@ -185,6 +209,15 @@ ALL_PERMISSIONS = set(PERMISSION_REGISTRY)
 _FILES = {item.value for item in Permission if item.value.startswith("files.")}
 _TRANSFERS_OWN = {Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_CREATE.value, Permission.TRANSFERS_PAUSE.value, Permission.TRANSFERS_RESUME.value, Permission.TRANSFERS_CANCEL.value, Permission.TRANSFERS_RETRY.value, Permission.TRANSFERS_CHANGE_PRIORITY.value}
 _SETTINGS_OWN = {Permission.SETTINGS_VIEW_OWN.value, Permission.SETTINGS_EDIT_OWN.value, Permission.SETTINGS_CHANGE_OWN_PASSWORD.value}
+_DOCKER_OPERATOR = {
+    Permission.DOCKER_VIEW.value, Permission.DOCKER_CONTAINERS.value, Permission.DOCKER_IMAGES.value, Permission.DOCKER_COMPOSE.value,
+    Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_CREATE_CONTAINER.value, Permission.DOCKER_START_CONTAINER.value,
+    Permission.DOCKER_STOP_CONTAINER.value, Permission.DOCKER_RESTART_CONTAINER.value, Permission.DOCKER_REMOVE_CONTAINER.value,
+    Permission.DOCKER_INSPECT_CONTAINER.value, Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value,
+    Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_PULL_IMAGE.value, Permission.DOCKER_REMOVE_IMAGE.value,
+    Permission.DOCKER_MANAGE_REGISTRIES.value, Permission.DOCKER_MANAGE_VOLUMES.value, Permission.DOCKER_MANAGE_NETWORKS.value,
+    Permission.DOCKER_EXPORT_BACKUP.value, Permission.DOCKER_DIAGNOSTICS.value,
+}
 
 ROLE_PERMISSIONS: dict[Role, set[str]] = {
     Role.admin: set(ALL_PERMISSIONS),
@@ -195,7 +228,7 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.AUDIT_VIEW_OWN.value, Permission.MODULES_VIEW.value, Permission.MODULES_CONFIGURE.value, Permission.MODULES_DIAGNOSTICS.value, Permission.MODULES_LOGS.value, Permission.MODULES_BACKUP_CREATE.value, Permission.MODULES_BACKUP_RESTORE.value,
         Permission.SERVICES_VIEW.value, Permission.SERVICES_START.value, Permission.SERVICES_STOP.value, Permission.SERVICES_RESTART.value, Permission.SERVICES_ENABLE.value, Permission.SERVICES_DISABLE.value, Permission.SERVICES_LOGS.value,
         Permission.UPDATES_VIEW.value, Permission.UPDATES_APPLY.value, Permission.NETWORK_VIEW.value, Permission.NETWORK_CREATE.value, Permission.NETWORK_UPDATE.value, Permission.NETWORK_MOUNT.value, Permission.NETWORK_UNMOUNT.value,
-        Permission.DOCKER_VIEW.value, Permission.DOCKER_CONTAINERS.value, Permission.DOCKER_IMAGES.value, Permission.DOCKER_COMPOSE.value,
+        *_DOCKER_OPERATOR,
         Permission.DNS_VIEW.value, Permission.DNS_CONFIGURE.value, Permission.DATABASES_VIEW.value, Permission.DATABASES_CONFIGURE.value, Permission.DATABASES_BACKUP.value, Permission.DATABASES_RESTORE.value,
         Permission.HOMEASSISTANT_VIEW.value, Permission.HOMEASSISTANT_OPERATE.value,
     },
@@ -203,7 +236,9 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.FILES_VIEW.value, Permission.FILES_READ.value, Permission.FILES_DOWNLOAD.value, Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_VIEW_ALL.value,
         Permission.SETTINGS_VIEW_OWN.value, Permission.SETTINGS_VIEW_SYSTEM.value, Permission.USERS_VIEW.value, Permission.GROUPS_VIEW.value, Permission.ACCESS_VIEW.value,
         Permission.AUDIT_VIEW_OWN.value, Permission.AUDIT_VIEW_ALL.value, Permission.AUDIT_EXPORT.value, Permission.MODULES_VIEW.value, Permission.MODULES_DIAGNOSTICS.value, Permission.MODULES_LOGS.value,
-        Permission.SERVICES_VIEW.value, Permission.SERVICES_LOGS.value, Permission.UPDATES_VIEW.value, Permission.NETWORK_VIEW.value, Permission.DOCKER_VIEW.value,
+        Permission.SERVICES_VIEW.value, Permission.SERVICES_LOGS.value, Permission.UPDATES_VIEW.value, Permission.NETWORK_VIEW.value,
+        Permission.DOCKER_VIEW.value, Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_INSPECT_CONTAINER.value,
+        Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value, Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_DIAGNOSTICS.value,
         Permission.DNS_VIEW.value, Permission.DATABASES_VIEW.value, Permission.HOMEASSISTANT_VIEW.value, Permission.SYSTEM_STATUS.value, Permission.SYSTEM_LOGS.value,
     },
     Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.SYSTEM_STATUS.value},

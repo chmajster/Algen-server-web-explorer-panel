@@ -65,7 +65,7 @@ def discover_manifests(modules_dir: Path = MODULES_DIR) -> list[ModuleManifest]:
 
 
 def module_script(module_id: str, action: str, modules_dir: Path = MODULES_DIR) -> Path | None:
-    if action not in {"install", "update", "uninstall", "health"}:
+    if action not in {"prepare", "install", "update", "uninstall", "health", "rollback"}:
         api_error(400, "INVALID_ACTION", "Unsupported module script action")
     directory = module_directory(module_id, modules_dir)
     for suffix in (".py", ".sh"):

@@ -18,6 +18,7 @@ export const apps: AppDefinition[] = [
   // opened from Package Center and the shared Modules application now.
   { id: "samba", labelKey: "app.samba", icon: <Share2 />, permission: "modules.view", hidden: true, minWidth: 760, minHeight: 500 },
   { id: "modules", labelKey: "app.modules", icon: <Boxes />, permission: "modules.view", minWidth: 760, minHeight: 500 },
+  { id: "containers", labelKey: "app.containers", icon: <Boxes />, permission: "docker.view", minWidth: 900, minHeight: 580 },
   { id: "access", labelKey: "app.access", icon: <ShieldCheck />, permission: "access.view", hidden: true, minWidth: 760, minHeight: 500 },
   { id: "services", labelKey: "app.services", icon: <ServerCog />, permission: "services.view" },
   { id: "store", labelKey: "app.store", icon: <Package />, permission: "modules.install" },
