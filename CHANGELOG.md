@@ -96,7 +96,8 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
   - persistent systemd mount and automount unit generation;
   - safe dry-run previews;
   - File Manager integration;
-  - read-only mount write protection.
+  - read-only mount write protection;
+  - writable SMB/CIFS, SSHFS, and WebDAV identity mapping to the local resource owner, enabling uploads, editing, rename, copy/move, and file/directory deletion without running Explorer operations as root.
   - a single administrator-only **Settings → Network resources** interface with dynamic SMB/NFS/SSHFS/WebDAV create and edit forms;
   - fixed mount locations under `/mnt/webnas/mnt/<name>`, normalized-name uniqueness, traversal/symlink protection, and client `mount_point` rejection;
   - real operating-system status reconciliation, filesystem capacity only for active mounts, and a minimal user-filtered `/api/mounts/roots` endpoint;
