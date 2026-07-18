@@ -381,6 +381,7 @@ if ! id "$managed_user" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash -- "$managed_user"
   created_user=1
 fi
+usermod --lock --shell /bin/bash -- "$managed_user"
 home_dir=$(getent passwd "$managed_user" | cut -d: -f6)
 test -n "$home_dir"
 install -d -m 0700 -o "$managed_user" -g "$managed_user" -- "$home_dir/.ssh"
@@ -435,13 +436,19 @@ def run_remote_user_setup(
                 os.chown(path, uid, gid)
         target = {**host, "ssh_user": initial_username}
         args = build_ssh_args(target, known_hosts, key_file=None if password_mode else key_path, probe="true", batch_mode=not password_mode)
-        # Replace only the backend-owned fixed probe with a fixed sudo script receiver.
-        args = args[: -len(SSH_COMMANDS["true"])] + (["sudo", "-S", "-p", "", "sh", "-s"] if password_mode else ["sudo", "-n", "sh", "-s"])
+        # Replace only the backend-owned fixed probe with a fixed script receiver.
+        # Root can run it directly, while bootstrap administrator accounts use sudo.
+        if initial_username == "root":
+            receiver = ["sh", "-s"]
+        else:
+            receiver = ["sudo", "-S", "-p", "", "sh", "-s"] if password_mode else ["sudo", "-n", "sh", "-s"]
+        args = args[: -len(SSH_COMMANDS["true"])] + receiver
         environment = _safe_environment(home, directory)
         process_input = script
         if password_mode:
             environment.update({"SSH_ASKPASS": str(askpass_path), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": "webnas-ansible:0"})
-            process_input = f"{credential['secret']}\n{script}"
+            if initial_username != "root":
+                process_input = f"{credential['secret']}\n{script}"
         result = subprocess.run(
             args,
             input=process_input,

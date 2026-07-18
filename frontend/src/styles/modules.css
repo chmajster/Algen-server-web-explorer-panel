@@ -264,9 +264,55 @@
 .ansible-panel > header h3 { margin: 0; font-size: .9rem; }
 .ansible-panel > header p { margin: 4px 0 0; color: var(--text-secondary); font-size: .7rem; }
 .ansible-panel .header-actions, .ansible-panel .module-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.ansible-panel > header > button,
+.ansible-panel > header .header-actions > button,
+.ansible-panel .module-section-toolbar > button:not(.button-primary),
+.ansible-key-confirm > button:not(.button-primary),
+.ansible-plan > button:not(.button-primary),
+.ansible-panel .module-table-wrap td > button:not(.link-button),
+.ansible-details header button,
+.ansible-live-log > header button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background: var(--surface-secondary);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 6%, transparent);
+  font-size: .6875rem;
+  line-height: 1;
+  white-space: nowrap;
+  transition: border-color .14s ease, background .14s ease, box-shadow .14s ease, transform .14s ease;
+}
+.ansible-panel > header > button:hover:not(:disabled),
+.ansible-panel > header .header-actions > button:hover:not(:disabled),
+.ansible-panel .module-section-toolbar > button:not(.button-primary):hover:not(:disabled),
+.ansible-key-confirm > button:not(.button-primary):hover:not(:disabled),
+.ansible-plan > button:not(.button-primary):hover:not(:disabled),
+.ansible-panel .module-table-wrap td > button:not(.link-button):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-subtle));
+  background: var(--surface-hover);
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--text-primary) 9%, transparent);
+  transform: translateY(-1px);
+}
+.ansible-panel > header button svg,
+.ansible-panel .module-section-toolbar button svg,
+.ansible-key-confirm > button svg,
+.ansible-plan > button svg,
+.ansible-panel .module-table-wrap td > button svg { width: 15px; height: 15px; }
+.ansible-panel .module-table-wrap td > button.danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border-subtle)); color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, var(--surface-secondary)); }
+.ansible-details header button,
+.ansible-live-log > header button { width: 34px; padding: 0; color: var(--text-secondary); }
 .ansible-search { min-width: 180px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); }
 .ansible-search svg { width: 14px; color: var(--text-muted); }
 .ansible-search input { min-width: 0; border: 0; background: transparent; }
+.ansible-credential-form textarea { min-height: 180px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .68rem; }
+.ansible-credential-type-hint { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-subtle)); border-radius: var(--radius-control); background: color-mix(in srgb, var(--accent) 6%, var(--surface-primary)); }
+.ansible-credential-type-hint strong { color: var(--text-primary); font-size: .69rem; }.ansible-credential-type-hint span { color: var(--text-secondary); font-size: .64rem; line-height: 1.45; }
 .ansible-status { width: max-content; display: inline-flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: .65rem; white-space: nowrap; }
 .ansible-status svg { width: 13px; height: 13px; color: var(--warning); }
 .ansible-status.healthy svg, .ansible-status.completed svg, .ansible-status.ok svg, .ansible-status.accepted svg, .ansible-status.open svg { color: var(--success); }

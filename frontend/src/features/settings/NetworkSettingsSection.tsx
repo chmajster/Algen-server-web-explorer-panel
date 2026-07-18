@@ -1,5 +1,5 @@
-import { Activity, CheckCircle2, Globe2, RefreshCw, Route as RouteIcon, ShieldCheck, XCircle } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Activity, CheckCircle2, Download, Globe2, Pause, Play, RefreshCw, Route as RouteIcon, Search, ShieldCheck, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   api,
@@ -14,6 +14,8 @@ import { formatSize } from "../files/utils";
 const MAX_SAMPLES = 60;
 type NetworkTab = "monitor" | "dns" | "routing";
 type History = Record<string, number[]>;
+type InterfaceFilter = "all" | "up" | "down" | "errors";
+type RouteFamily = "all" | "ipv4" | "ipv6";
 
 function formatRate(value: number | null) {
   return value === null ? "—" : `${formatSize(value)}/s`;
@@ -34,6 +36,15 @@ function Warnings({ warnings }: { warnings: string[] }) {
   return <div className="network-warning-list" role="status">{warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>;
 }
 
+function exportJson(filename: string, value: unknown) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function NetworkMonitor({ t }: { t: Translate }) {
   const [overview, setOverview] = useState<NetworkOverview | null>(null);
   const [dns, setDns] = useState<DnsConfiguration | null>(null);
@@ -41,6 +52,10 @@ function NetworkMonitor({ t }: { t: Translate }) {
   const [history, setHistory] = useState<History>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<InterfaceFilter>("all");
+  const [refreshInterval, setRefreshInterval] = useState(2000);
+  const [paused, setPaused] = useState(false);
   const mounted = useRef(true);
   const inFlight = useRef(false);
 
@@ -79,11 +94,12 @@ function NetworkMonitor({ t }: { t: Translate }) {
     mounted.current = true;
     void refreshOverview();
     void refreshContext();
+    if (paused || refreshInterval === 0) return () => { mounted.current = false; };
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void refreshOverview();
-    }, 2000);
+    }, refreshInterval);
     return () => { mounted.current = false; window.clearInterval(timer); };
-  }, [refreshContext, refreshOverview]);
+  }, [paused, refreshContext, refreshInterval, refreshOverview]);
 
   async function refreshAll() {
     await Promise.all([refreshOverview(), refreshContext()]);
@@ -93,12 +109,42 @@ function NetworkMonitor({ t }: { t: Translate }) {
     ? dns.systemd_resolved.global_servers
     : dns?.resolv_conf.nameservers || [];
 
+  const summary = useMemo(() => {
+    const interfaces = overview?.interfaces || [];
+    return {
+      up: interfaces.filter((item) => item.state === "up").length,
+      down: interfaces.filter((item) => item.state === "down").length,
+      download: interfaces.reduce((total, item) => total + (item.rx_bytes_per_sec || 0), 0),
+      upload: interfaces.reduce((total, item) => total + (item.tx_bytes_per_sec || 0), 0),
+      errors: interfaces.reduce((total, item) => total + item.rx_errors + item.tx_errors + item.rx_dropped + item.tx_dropped, 0),
+    };
+  }, [overview]);
+  const visibleInterfaces = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (overview?.interfaces || []).filter((item) => {
+      const matchesText = !needle || [item.name, item.mac_address || "", ...item.addresses.map((address) => address.address)].some((value) => value.toLowerCase().includes(needle));
+      const hasErrors = item.rx_errors + item.tx_errors + item.rx_dropped + item.tx_dropped > 0;
+      const matchesState = filter === "all" || (filter === "errors" ? hasErrors : item.state === filter);
+      return matchesText && matchesState;
+    });
+  }, [filter, overview, query]);
+
   return <section className="network-diagnostic-panel" aria-labelledby="network-monitor-title">
-    <header><div><h3 id="network-monitor-title">{t("network.monitor")}</h3><p>{t("network.monitorDescription")}</p></div><button type="button" onClick={() => void refreshAll()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button></header>
+    <header><div><h3 id="network-monitor-title">{t("network.monitor")}</h3><p>{t("network.monitorDescription")}</p></div><div className="network-header-actions"><button type="button" onClick={() => overview && exportJson(`network-${new Date().toISOString()}.json`, { overview, dns, routing })} disabled={!overview}><Download />{t("network.exportSnapshot")}</button><button type="button" onClick={() => void refreshAll()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button></div></header>
     {error && <p className="error-state compact-error" role="alert">{error}</p>}
     <Warnings warnings={overview?.warnings || []} />
     {!overview && loading && <div className="loading-state">{t("status.loading")}</div>}
-    {overview && <div className="monitor-network-grid network-interface-grid">{overview.interfaces.map((network) => {
+    {overview && <><div className="network-summary-grid">
+      <article><span>{t("network.interfacesUp")}</span><strong className="success">{summary.up}</strong><small>{t("network.interfacesDown")}: {summary.down}</small></article>
+      <article><span>{t("network.currentDownload")}</span><strong>{formatRate(summary.download)}</strong><small>{t("network.received")}</small></article>
+      <article><span>{t("network.currentUpload")}</span><strong>{formatRate(summary.upload)}</strong><small>{t("network.sent")}</small></article>
+      <article><span>{t("network.errorsAndDrops")}</span><strong className={summary.errors ? "danger" : "success"}>{summary.errors.toLocaleString()}</strong><small>{routing?.gateways.length || 0} {t("network.activeGateways").toLowerCase()}</small></article>
+    </div><div className="network-toolbar">
+      <label className="network-search"><Search /><span className="sr-only">{t("network.searchInterfaces")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("network.searchInterfaces")} /></label>
+      <label><span>{t("network.filter")}</span><select value={filter} onChange={(event) => setFilter(event.target.value as InterfaceFilter)}><option value="all">{t("network.allInterfaces")}</option><option value="up">UP</option><option value="down">DOWN</option><option value="errors">{t("network.withErrors")}</option></select></label>
+      <label><span>{t("network.autoRefresh")}</span><select value={refreshInterval} onChange={(event) => setRefreshInterval(Number(event.target.value))}><option value={0}>{t("network.off")}</option><option value={2000}>2 s</option><option value={5000}>5 s</option><option value={10000}>10 s</option><option value={30000}>30 s</option></select></label>
+      <button type="button" className="network-pause-button" onClick={() => setPaused((value) => !value)}>{paused ? <Play /> : <Pause />}{paused ? t("network.resume") : t("network.pause")}</button>
+    </div><div className="monitor-network-grid network-interface-grid">{visibleInterfaces.map((network) => {
       const gateways = routing?.gateways.filter((gateway) => gateway.device === network.name).map((gateway) => gateway.address) || [];
       const linkDns = dns?.systemd_resolved.links.find((link) => link.interface === network.name)?.servers || [];
       const dnsServers = linkDns.length ? linkDns : globalDns;
@@ -120,8 +166,8 @@ function NetworkMonitor({ t }: { t: Translate }) {
         </div>
         <div className="monitor-network-history"><div><Sparkline values={history[`rx:${network.name}`] || []} label={`${network.name} ${t("network.downloadHistory")}`} /><small>{t("network.downloadHistory")}</small></div><div><Sparkline values={history[`tx:${network.name}`] || []} label={`${network.name} ${t("network.uploadHistory")}`} /><small>{t("network.uploadHistory")}</small></div></div>
       </article>;
-    })}</div>}
-    {overview && !overview.interfaces.length && <div className="empty-state">{t("network.noInterfaces")}</div>}
+    })}</div></>}
+    {overview && !visibleInterfaces.length && <div className="empty-state">{t("network.noMatchingInterfaces")}</div>}
   </section>;
 }
 
@@ -184,6 +230,8 @@ function RoutingTable({ t }: { t: Translate }) {
   const [data, setData] = useState<RoutingSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [family, setFamily] = useState<RouteFamily>("all");
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
     try { setData(await api.networkRouting()); }
@@ -191,15 +239,23 @@ function RoutingTable({ t }: { t: Translate }) {
     finally { setLoading(false); }
   }, [t]);
   useEffect(() => { void refresh(); }, [refresh]);
+  const routes = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (data?.routes || []).filter((route) => {
+      const matchesFamily = family === "all" || route.family === family;
+      const values = [route.destination, route.gateway || "", route.device || "", route.table, route.protocol || "", route.preferred_source || ""];
+      return matchesFamily && (!needle || values.some((value) => value.toLowerCase().includes(needle)));
+    });
+  }, [data, family, query]);
 
   return <section className="network-diagnostic-panel" aria-labelledby="network-routing-title">
-    <header><div><h3 id="network-routing-title">{t("network.routing")}</h3><p>{t("network.routingDescription")}</p></div><button type="button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button></header>
+    <header><div><h3 id="network-routing-title">{t("network.routing")}</h3><p>{t("network.routingDescription")}</p></div><div className="network-header-actions"><button type="button" onClick={() => data && exportJson(`routing-${new Date().toISOString()}.json`, data)} disabled={!data}><Download />{t("network.exportSnapshot")}</button><button type="button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button></div></header>
     <div className="network-read-only"><ShieldCheck /> <span><strong>{t("network.readOnly")}</strong>{t("network.readOnlyHint")}</span></div>
     {error && <p className="error-state compact-error" role="alert">{error}</p>}
     <Warnings warnings={data?.warnings || []} />
     {data && <>
       <section className="network-routing-section"><h4>{t("network.activeGateways")}</h4><div className="network-gateway-grid">{data.gateways.length ? data.gateways.map((gateway, index) => <article key={`${gateway.family}:${gateway.address}:${gateway.device}:${index}`}><strong>{gateway.address}</strong><span>{gateway.family.toUpperCase()} · {gateway.device || "—"}</span><small>{t("network.table")}: {gateway.table} · {t("network.metric")}: {valueOrDash(gateway.metric)}</small></article>) : <div className="empty-state">{t("network.noGateways")}</div>}</div></section>
-      <section className="network-routing-section"><h4>{t("network.routes")} ({data.routes.length})</h4><div className="monitor-table-wrap"><table><thead><tr><th>{t("network.family")}</th><th>{t("network.destination")}</th><th>{t("network.gateway")}</th><th>{t("network.interface")}</th><th>{t("network.table")}</th><th>{t("network.metric")}</th><th>{t("network.protocol")}</th><th>{t("network.source")}</th></tr></thead><tbody>{data.routes.length ? data.routes.map((route, index) => <tr key={`${route.family}:${route.table}:${route.destination}:${index}`}><td>{route.family.toUpperCase()}</td><td><code>{route.destination}</code></td><td>{valueOrDash(route.gateway)}</td><td>{valueOrDash(route.device)}</td><td>{route.table}</td><td>{valueOrDash(route.metric)}</td><td>{valueOrDash(route.protocol)}</td><td>{valueOrDash(route.preferred_source)}</td></tr>) : <tr><td colSpan={8} className="monitor-empty-cell">{t("network.noRoutes")}</td></tr>}</tbody></table></div></section>
+      <section className="network-routing-section"><div className="network-routing-heading"><h4>{t("network.routes")} ({routes.length}/{data.routes.length})</h4><div><label className="network-search"><Search /><span className="sr-only">{t("network.searchRoutes")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("network.searchRoutes")} /></label><select aria-label={t("network.family")} value={family} onChange={(event) => setFamily(event.target.value as RouteFamily)}><option value="all">IPv4 + IPv6</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select></div></div><div className="monitor-table-wrap"><table><thead><tr><th>{t("network.family")}</th><th>{t("network.destination")}</th><th>{t("network.gateway")}</th><th>{t("network.interface")}</th><th>{t("network.table")}</th><th>{t("network.metric")}</th><th>{t("network.protocol")}</th><th>{t("network.source")}</th></tr></thead><tbody>{routes.length ? routes.map((route, index) => <tr key={`${route.family}:${route.table}:${route.destination}:${index}`}><td>{route.family.toUpperCase()}</td><td><code>{route.destination}</code></td><td>{valueOrDash(route.gateway)}</td><td>{valueOrDash(route.device)}</td><td>{route.table}</td><td>{valueOrDash(route.metric)}</td><td>{valueOrDash(route.protocol)}</td><td>{valueOrDash(route.preferred_source)}</td></tr>) : <tr><td colSpan={8} className="monitor-empty-cell">{t("network.noRoutes")}</td></tr>}</tbody></table></div></section>
       <section className="network-routing-section"><h4>{t("network.rules")} ({data.rules.length})</h4><div className="monitor-table-wrap"><table><thead><tr><th>{t("network.priority")}</th><th>{t("network.family")}</th><th>{t("network.from")}</th><th>{t("network.to")}</th><th>{t("network.table")}</th><th>{t("network.action")}</th><th>fwmark</th><th>IIF / OIF</th></tr></thead><tbody>{data.rules.length ? data.rules.map((rule, index) => <tr key={`${rule.family}:${rule.priority}:${index}`}><td>{valueOrDash(rule.priority)}</td><td>{rule.family.toUpperCase()}</td><td><code>{rule.from}</code></td><td><code>{rule.to}</code></td><td>{valueOrDash(rule.table)}</td><td>{rule.action}</td><td>{valueOrDash(rule.fwmark)}</td><td>{rule.input_interface || "—"} / {rule.output_interface || "—"}</td></tr>) : <tr><td colSpan={8} className="monitor-empty-cell">{t("network.noRules")}</td></tr>}</tbody></table></div></section>
     </>}
   </section>;

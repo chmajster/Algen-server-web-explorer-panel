@@ -4,7 +4,7 @@ import ipaddress
 import json
 import re
 from enum import StrEnum
-from typing import Any, Annotated
+from typing import Any, Annotated, Literal
 from urllib.parse import urlsplit
 
 import yaml
@@ -13,7 +13,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, StringConstraints
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,127}$")]
 Identifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64, pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")]
-LinuxUsername = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32, pattern=r"^[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]$")]
+MANAGED_SSH_USERNAME = "algen-ansible"
 
 
 class StrictModel(BaseModel):
@@ -167,6 +167,8 @@ class CredentialInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_secret_shape(self) -> "CredentialInput":
+        if self.type == CredentialType.ssh_password and not self.username:
+            raise ValueError("SSH password credentials require a username")
         if self.type in {CredentialType.ssh_private_key, CredentialType.git_private_key}:
             if not re.fullmatch(r"-----BEGIN (?:OPENSSH |RSA |EC )?PRIVATE KEY-----\r?\n[A-Za-z0-9+/=\r\n]+\r?\n-----END (?:OPENSSH |RSA |EC )?PRIVATE KEY-----\r?\n?", self.secret):
                 raise ValueError("private-key credentials require a PEM or OpenSSH private key")
@@ -231,8 +233,8 @@ class OnboardingInput(StrictModel):
     host: HostInput
     initial_username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
     credential_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-f0-9]{24,64}$")
-    create_managed_user: bool = False
-    managed_username: LinuxUsername = "algen-ansible"
+    create_managed_user: Literal[True] = True
+    managed_username: Literal["algen-ansible"] = MANAGED_SSH_USERNAME
     sudo_profile: str = Field(default="none", pattern=r"^(none|password|nopasswd|custom)$")
     sudoers_policy: str = Field(default="", max_length=8192)
     confirm: bool = False

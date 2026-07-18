@@ -31,6 +31,7 @@ from .models import (
     HostInput,
     InventoryImportInput,
     LaunchInput,
+    MANAGED_SSH_USERNAME,
     NetworkScanInput,
     OnboardingInput,
     PlaybookInput,
@@ -241,8 +242,8 @@ def onboarding(payload: OnboardingInput, user: SessionUser = Depends(require_per
     if not existing:
         api_error(409, "HOST_KEY_NOT_ACCEPTED", "Scan and accept the host fingerprint before onboarding", host_id=host_record["id"])
     # Only identifiers and validated policy metadata enter the durable queue.
-    job = _enqueue("onboard_host", {"host_id": host_record["id"], "initial_username": payload.initial_username, "credential_id": payload.credential_id, "create_managed_user": payload.create_managed_user, "managed_username": payload.managed_username, "sudo_profile": payload.sudo_profile, "sudoers_policy": payload.sudoers_policy}, user.username)
-    repository().audit(user.username, "host", host_record["id"], "onboard", {"job_id": job["id"], "create_managed_user": payload.create_managed_user, "sudo_profile": payload.sudo_profile})
+    job = _enqueue("onboard_host", {"host_id": host_record["id"], "initial_username": payload.initial_username, "credential_id": payload.credential_id, "create_managed_user": True, "managed_username": MANAGED_SSH_USERNAME, "sudo_profile": payload.sudo_profile, "sudoers_policy": payload.sudoers_policy}, user.username)
+    repository().audit(user.username, "host", host_record["id"], "onboard", {"job_id": job["id"], "create_managed_user": True, "managed_username": MANAGED_SSH_USERNAME, "sudo_profile": payload.sudo_profile})
     return {"host": host_record, "job": job, "onboarding_id": host_record["id"]}
 
 

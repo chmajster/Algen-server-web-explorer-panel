@@ -61,6 +61,9 @@ describe("network settings", () => {
     expect(screen.getByText("2 / 3")).toBeInTheDocument();
     expect(screen.getByText("4 / 5")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "eth0 network.downloadHistory" })).toBeInTheDocument();
+    expect(screen.getByText("network.currentDownload")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("network.searchInterfaces"), { target: { value: "missing" } });
+    expect(screen.getByText("network.noMatchingInterfaces")).toBeInTheDocument();
   });
 
   it("shows DNS configuration and runs a validated name-resolution test", async () => {
@@ -84,9 +87,11 @@ describe("network settings", () => {
 
     expect(await screen.findByText("network.readOnlyHint")).toBeInTheDocument();
     expect(screen.getAllByText("192.0.2.1").length).toBeGreaterThan(0);
-    expect(screen.getByText("network.routes (1)")).toBeInTheDocument();
+    expect(screen.getByText("network.routes (1/1)")).toBeInTheDocument();
     expect(screen.getByText("network.rules (1)")).toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("network.searchRoutes"), { target: { value: "missing" } });
+    expect(screen.getByText("network.routes (0/1)")).toBeInTheDocument();
+    expect(screen.getByText("network.noRoutes")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "action.apply" })).not.toBeInTheDocument();
   });
 });

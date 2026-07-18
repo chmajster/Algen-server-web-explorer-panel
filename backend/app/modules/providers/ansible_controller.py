@@ -12,7 +12,7 @@ from typing import Any
 from ...package_center.models import ModuleDiagnostic, ModuleHealth, ModuleStatus, ModuleValidationResult, PackageAction, api_error
 from ..ansible_controller.awx import AwxClient
 from ..ansible_controller.backup import create_backup, delete_backup as remove_backup, list_backups, restore_backup
-from ..ansible_controller.models import AwxSettingsInput, CredentialInput, CredentialType, HostInput, NetworkScanInput
+from ..ansible_controller.models import MANAGED_SSH_USERNAME, AwxSettingsInput, CredentialInput, CredentialType, HostInput, NetworkScanInput
 from ..ansible_controller.network import build_nmap_args, parse_nmap_xml, scan_addresses
 from ..ansible_controller.repository import repository
 from ..ansible_controller.runner import controller_identity, demote_preexec, execute_ad_hoc, execute_template, execution_directory, run_remote_user_setup
@@ -346,37 +346,36 @@ class AnsibleControllerProvider(ModuleProvider):
             if not self.store.known_key(str(host["address"]), int(host["port"])):
                 raise RuntimeError("SSH host key is not accepted")
             progress(10, "Verify accepted SSH host fingerprint")
-            if bool(payload.get("create_managed_user")):
-                credential_id = str(payload.get("credential_id") or host.get("credential_id") or "")
-                run_remote_user_setup(
-                    self.store,
-                    host,
-                    credential_id,
-                    str(payload.get("initial_username") or "root"),
-                    str(payload.get("managed_username") or "algen-ansible"),
-                    str(payload.get("sudo_profile") or "none"),
-                    str(payload.get("sudoers_policy") or ""),
-                    log,
-                )
-                private_key = self.store.root / "home" / ".ssh" / "id_ed25519"
-                if not private_key.is_file():
-                    raise RuntimeError("controller private key is missing")
-                existing = next((item for item in self.store.credentials() if item["name"] == "Controller managed-host key" and item["active"]), None)
-                credential_payload = CredentialInput(name="Controller managed-host key", type=CredentialType.ssh_private_key, username=str(payload.get("managed_username") or "algen-ansible"), secret=private_key.read_text(encoding="utf-8"), description="Private key generated for algen-ansible managed accounts")
-                managed_credential = self.store.save_credential(credential_payload, actor, existing["id"] if existing else None)
-                updated = HostInput.model_validate({
-                    "name": host["name"], "address": host["address"], "port": host["port"],
-                    "ssh_user": str(payload.get("managed_username") or "algen-ansible"), "credential_id": managed_credential["id"],
-                    "python_interpreter": host["python_interpreter"], "connection_type": host["connection_type"],
-                    "environment": host["environment"], "location": host["location"], "tags": host.get("tags") or [],
-                    "variables": host.get("variables") or {}, "active": host["active"],
-                })
-                self.store.save_host(updated, actor, host_id)
-                with self.store._lock, self.store.connect() as connection:
-                    connection.execute("UPDATE hosts SET managed_user_created=1,updated_at=?,updated_by=? WHERE id=?", (time.time(), actor, host_id))
-                progress(65, "Managed user and controller key installed")
+            credential_id = str(payload.get("credential_id") or host.get("credential_id") or "")
+            run_remote_user_setup(
+                self.store,
+                host,
+                credential_id,
+                str(payload.get("initial_username") or "root"),
+                MANAGED_SSH_USERNAME,
+                str(payload.get("sudo_profile") or "none"),
+                str(payload.get("sudoers_policy") or ""),
+                log,
+            )
+            private_key = self.store.root / "home" / ".ssh" / "id_ed25519"
+            if not private_key.is_file():
+                raise RuntimeError("controller private key is missing")
+            existing = next((item for item in self.store.credentials() if item["name"] == "Controller managed-host key" and item["active"]), None)
+            credential_payload = CredentialInput(name="Controller managed-host key", type=CredentialType.ssh_private_key, username=MANAGED_SSH_USERNAME, secret=private_key.read_text(encoding="utf-8"), description="Private key generated for algen-ansible managed accounts")
+            managed_credential = self.store.save_credential(credential_payload, actor, existing["id"] if existing else None)
+            updated = HostInput.model_validate({
+                "name": host["name"], "address": host["address"], "port": host["port"],
+                "ssh_user": MANAGED_SSH_USERNAME, "credential_id": managed_credential["id"],
+                "python_interpreter": host["python_interpreter"], "connection_type": host["connection_type"],
+                "environment": host["environment"], "location": host["location"], "tags": host.get("tags") or [],
+                "variables": host.get("variables") or {}, "active": host["active"],
+            })
+            self.store.save_host(updated, actor, host_id)
+            with self.store._lock, self.store.connect() as connection:
+                connection.execute("UPDATE hosts SET managed_user_created=1,updated_at=?,updated_by=? WHERE id=?", (time.time(), actor, host_id))
+            progress(65, "Managed algen-ansible account and controller key installed")
             result = execute_ad_hoc(self.store, host_id, actor, log, progress, cancelled, facts=True)
-            self.store.audit(actor, "host", host_id, "onboard_complete", {"managed_user_created": bool(payload.get("create_managed_user"))})
+            self.store.audit(actor, "host", host_id, "onboard_complete", {"managed_user_created": True, "managed_username": MANAGED_SSH_USERNAME})
             return result
         if operation == "sync_project":
             project_id = str(payload.get("project_id") or "")

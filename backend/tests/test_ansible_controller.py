@@ -183,6 +183,13 @@ def test_host_model_blocks_transport_override_and_controller_loopback():
         HostInput(name="node", address="192.168.1.9", python_interpreter="/tmp/python;id")
 
 
+def test_ssh_password_credential_requires_a_local_username():
+    with pytest.raises(ValueError, match="require a username"):
+        CredentialInput(name="Local account", type=CredentialType.ssh_password, secret="password")
+    credential = CredentialInput(name="Local account", type=CredentialType.ssh_password, username="operator", secret="password")
+    assert credential.username == "operator"
+
+
 def test_known_host_change_is_blocked_without_explicit_replace(tmp_path: Path):
     repository = store(tmp_path)
     host = repository.save_host(HostInput(name="node", address="192.168.1.20"), "admin")
@@ -208,6 +215,7 @@ def test_remote_user_script_validates_sudoers_and_contains_rollback():
     assert "rollback" in script
     assert "authorized_keys.new" in script
     assert "chmod 0600" in script
+    assert "usermod --lock" in script
     assert "NOPASSWD: ALL" in script
     with pytest.raises(ValueError):
         build_managed_user_script("root;reboot", "ssh-ed25519 AAAA")
@@ -224,6 +232,21 @@ def test_passwordless_onboarding_requires_typed_host_confirmation():
     with pytest.raises(ValueError, match="typing the host address"):
         OnboardingInput.model_validate(payload)
     assert OnboardingInput.model_validate({**payload, "confirm_host_name": "192.168.1.4"}).sudo_profile == "nopasswd"
+
+
+def test_onboarding_always_provisions_the_fixed_managed_account():
+    base = {
+        "host": {"name": "node", "address": "192.168.1.4"},
+        "initial_username": "root",
+        "confirm": True,
+    }
+    payload = OnboardingInput.model_validate(base)
+    assert payload.create_managed_user is True
+    assert payload.managed_username == "algen-ansible"
+    with pytest.raises(ValueError):
+        OnboardingInput.model_validate({**base, "create_managed_user": False})
+    with pytest.raises(ValueError):
+        OnboardingInput.model_validate({**base, "managed_username": "custom-user"})
 
 
 def test_demote_preexec_drops_groups_gid_and_uid(monkeypatch):

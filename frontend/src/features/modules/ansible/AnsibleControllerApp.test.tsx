@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnsibleControllerApp } from "./AnsibleControllerApp";
 
 const mocks = vi.hoisted(() => ({
-  module: vi.fn(), dashboard: vi.fn(), hosts: vi.fn(), groups: vi.fn(), credentials: vi.fn(), scans: vi.fn(), startScan: vi.fn(),
+  module: vi.fn(), dashboard: vi.fn(), hosts: vi.fn(), groups: vi.fn(), credentials: vi.fn(), saveCredential: vi.fn(), scans: vi.fn(), startScan: vi.fn(),
 }));
 
 vi.mock("../../../api", async () => {
   const actual = await vi.importActual<typeof import("../../../api")>("../../../api");
-  return { ...actual, api: { ...actual.api, module: mocks.module, ansibleDashboard: mocks.dashboard, ansibleHosts: mocks.hosts, ansibleGroups: mocks.groups, ansibleCredentials: mocks.credentials, ansibleScans: mocks.scans, startAnsibleScan: mocks.startScan } };
+  return { ...actual, api: { ...actual.api, module: mocks.module, ansibleDashboard: mocks.dashboard, ansibleHosts: mocks.hosts, ansibleGroups: mocks.groups, ansibleCredentials: mocks.credentials, saveAnsibleCredential: mocks.saveCredential, ansibleScans: mocks.scans, startAnsibleScan: mocks.startScan } };
 });
 
 const status = { installed: true, update_available: false, service_state: "ready", service_enabled: false, services: {}, health: "healthy", health_message: "ready", last_action: "", last_action_status: "", last_error: "", metrics: {} };
@@ -22,6 +22,7 @@ describe("AnsibleControllerApp", () => {
     mocks.module.mockResolvedValue({ module_status: status, manifest: { name: "Ansible" }, capabilities: {}, state: {}, jobs: [] });
     mocks.dashboard.mockResolvedValue({ hosts: 2, hosts_online: 1, hosts_unreachable: 1, host_key_errors: 0, groups: 1, projects: 0, playbooks: 0, templates: 0, active_jobs: 0, failed_jobs: 0, scheduled: 0, ansible_version: "ansible 2.18" });
     mocks.hosts.mockResolvedValue([]); mocks.groups.mockResolvedValue([]); mocks.credentials.mockResolvedValue([]); mocks.scans.mockResolvedValue([]);
+    mocks.saveCredential.mockResolvedValue({ id: "credential" });
     mocks.startScan.mockResolvedValue({ scan: { id: "scan", status: "queued", progress: 0, discovered: 0, request: {}, error: "", created_at: 1 }, job: { id: "job" }, address_count: 254 });
   });
 
@@ -45,5 +46,21 @@ describe("AnsibleControllerApp", () => {
     fireEvent.change(cidr, { target: { value: "192.168.50.0/24" } });
     fireEvent.click(screen.getByRole("button", { name: /ansible.discovery.start/ }));
     await waitFor(() => expect(mocks.startScan).toHaveBeenCalledWith(expect.objectContaining({ cidr: "192.168.50.0/24", method: "nmap" })));
+  });
+
+  it("shows credential fields appropriate for the selected type", async () => {
+    const credentialPermissions = [...permissions, "ansible-controller.credentials.manage"];
+    render(<AnsibleControllerApp permissions={credentialPermissions} t={t} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /module.section.credentials/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /ansible.credential.add/ }));
+
+    const type = screen.getByLabelText("ansible.credential.type");
+    fireEvent.change(type, { target: { value: "ssh_password" } });
+    expect(screen.getByLabelText("ansible.credential.localUsername")).toBeRequired();
+    expect(screen.getByLabelText("ansible.credential.secret.ssh_password")).toHaveAttribute("type", "password");
+
+    fireEvent.change(type, { target: { value: "awx_token" } });
+    expect(screen.queryByLabelText("ansible.credential.localUsername")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("ansible.credential.secret.awx_token")).toHaveAttribute("type", "password");
   });
 });
