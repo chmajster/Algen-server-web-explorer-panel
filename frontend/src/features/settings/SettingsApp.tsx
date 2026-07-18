@@ -68,28 +68,50 @@ function AdministrationSection({ t, toast, onOpenApp }: { t: Translate; toast: T
   const [automatic, setAutomatic] = useState<AutoUpdateSettings | null>(null);
   const [proxmox, setProxmox] = useState<ProxmoxSafety | null>(null);
   const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(false);
+  const [runningUpdate, setRunningUpdate] = useState(false);
+  const [updateError, setUpdateError] = useState("");
   useEffect(() => {
     let live = true;
     Promise.allSettled([api.systemStatus(), api.checkUpdates(), api.autoUpdate(), api.proxmoxSafety()]).then((results) => {
       if (!live) return;
       if (results[0].status === "fulfilled") setStatus(results[0].value);
-      if (results[1].status === "fulfilled") setUpdates(results[1].value);
+      if (results[1].status === "fulfilled") { setUpdates(results[1].value); setUpdateError(results[1].value.error || ""); }
+      else setUpdateError(results[1].reason instanceof Error ? results[1].reason.message : t("settings.updateUnavailable"));
       if (results[2].status === "fulfilled") setAutomatic(results[2].value);
       if (results[3].status === "fulfilled") setProxmox(results[3].value);
       setLoading(false);
     });
     return () => { live = false; };
-  }, []);
-  async function saveAutomatic(enabled: boolean) {
+  }, [t]);
+  async function refreshUpdates() {
+    setChecking(true); setUpdateError("");
+    try { const value = await api.checkUpdates(); setUpdates(value); setUpdateError(value.error || ""); }
+    catch (error) { setUpdateError(error instanceof Error ? error.message : t("settings.updateUnavailable")); }
+    finally { setChecking(false); }
+  }
+  async function saveAutomatic(patch: Partial<Pick<AutoUpdateSettings, "enabled" | "interval_hours" | "update_config">>) {
     if (!automatic) return;
-    const before = automatic; setAutomatic({ ...automatic, enabled });
-    try { setAutomatic(await api.saveAutoUpdate({ enabled, interval_hours: automatic.interval_hours, update_config: automatic.update_config })); toast(t("settings.saved"), "ok", "admin"); }
+    const before = automatic; const next = { ...automatic, ...patch }; setAutomatic(next);
+    try { setAutomatic(await api.saveAutoUpdate({ enabled: next.enabled, interval_hours: next.interval_hours, update_config: next.update_config })); toast(t("settings.saved"), "ok", "admin"); }
     catch (error) { setAutomatic(before); toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin"); }
   }
+  async function runUpdateNow() {
+    if (!window.confirm(t("settings.confirmUpdateNow"))) return;
+    setRunningUpdate(true);
+    try {
+      const result = await api.runAutoUpdate(false);
+      toast(result.updated ? t("settings.updateStarted") : t("settings.noUpdateAvailable"), "ok", "admin");
+      setAutomatic(await api.autoUpdate());
+      if (!result.updated) await refreshUpdates();
+    } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin"); }
+    finally { setRunningUpdate(false); }
+  }
+  const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
   if (loading) return <div className="loading-state">{t("status.loading")}</div>;
   return <div className="settings-card-stack">
     <Card title={t("settings.serviceInformation")}><dl className="settings-details"><dt>{t("settings.service")}</dt><dd>{status?.service || "WebNAS"}</dd><dt>{t("settings.version")}</dt><dd>{status?.version || "—"}</dd><dt>{t("settings.port")}</dt><dd>{status?.port || "—"}</dd><dt>{t("settings.dataDirectory")}</dt><dd>{status?.data_dir || "—"}</dd></dl></Card>
-    <Card title={t("settings.updates")}><SettingRow title={t("settings.updateStatus")} description={updates ? (updates.update_available ? t("settings.updateAvailable") : t("settings.upToDate")) : t("settings.updateUnavailable")}><span className={`settings-status-pill ${updates?.update_available ? "warning" : "success"}`}>{updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow>{automatic && <SettingRow title={t("settings.automaticUpdates")}><Switch label={t("settings.automaticUpdates")} checked={automatic.enabled} onChange={(value) => void saveAutomatic(value)} /></SettingRow>}</Card>
+    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateError || (updates?.update_available ? t("settings.updateAvailable") : updates ? t("settings.upToDate") : t("settings.updateUnavailable"))}><span className={`settings-status-pill ${updateError ? "danger" : updates?.update_available ? "warning" : "success"}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code></dd><dt>{t("settings.availableRevision")}</dt><dd><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code></dd></dl>}{automatic && <div className="auto-update-settings"><SettingRow title={t("settings.automaticUpdates")} description={t("settings.automaticUpdatesHint")}><Switch label={t("settings.automaticUpdates")} checked={automatic.enabled} onChange={(value) => void saveAutomatic({ enabled: value })} /></SettingRow><SettingRow title={t("settings.updateInterval")}><Select label={t("settings.updateInterval")} value={automatic.interval_hours} onChange={(value) => void saveAutomatic({ interval_hours: Number(value) })}>{[1, 6, 12, 24, 48, 72, 168].map((hours) => <option key={hours} value={hours}>{hours < 24 ? `${hours} h` : `${hours / 24} d`}</option>)}</Select></SettingRow><SettingRow title={t("settings.updateConfiguration")} description={t("settings.updateConfigurationHint")}><Switch label={t("settings.updateConfiguration")} checked={automatic.update_config} onChange={(value) => void saveAutomatic({ update_config: value })} /></SettingRow><dl className="settings-details"><dt>{t("settings.lastChecked")}</dt><dd>{dateTime(automatic.last_checked)}</dd><dt>{t("settings.lastUpdateRun")}</dt><dd>{dateTime(automatic.last_run)}</dd><dt>{t("settings.nextCheck")}</dt><dd>{automatic.enabled ? dateTime(automatic.next_check) : t("common.disabled")}</dd></dl>{automatic.last_error && <p className="update-settings-error">{automatic.last_error}</p>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></div>}</Card>
     <Card title={t("settings.proxmoxSafeMode")}><SettingRow title={t("settings.proxmoxDetected")} description={proxmox?.safe_mode_enabled ? t("settings.proxmoxProtectionActive") : t("settings.proxmoxProtectionInactive")}><span className={`settings-status-pill ${proxmox?.safe_mode_enabled ? "success" : "neutral"}`}>{proxmox?.is_proxmox ? t("common.yes") : t("common.no")}</span></SettingRow></Card>
     <Card title={t("settings.administrationApps")}><div className="settings-app-links">{(["services", "logs", "identity"] as AppId[]).map((app) => <button key={app} type="button" onClick={() => onOpenApp(app)}>{app === "identity" ? <Users /> : <SlidersHorizontal />}{t(`app.${app}`)}</button>)}</div></Card>
   </div>;

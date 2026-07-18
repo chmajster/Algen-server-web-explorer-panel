@@ -91,6 +91,24 @@ describe("settings application", () => {
     expect(openApp).toHaveBeenCalledWith("identity");
   });
 
+  it("configures and runs automatic updates from administration settings", async () => {
+    vi.spyOn(api, "systemStatus").mockResolvedValue({ service: "webnas", version: "1", port: 5000, data_dir: "/var/lib/webnas", log_dir: "/var/log/webnas", temp_dir: "/tmp" });
+    vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "a".repeat(40), remote: "b".repeat(40), update_available: true, available: true });
+    vi.spyOn(api, "autoUpdate").mockResolvedValue({ enabled: false, interval_hours: 24, update_config: true, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: null });
+    vi.spyOn(api, "proxmoxSafety").mockResolvedValue({ is_proxmox: false, safe_mode_enabled: false, protected_paths: [], blocked_admin_features: [], allowed_roots_effective: [], service_user: "webnas", warnings: [] });
+    const saveAuto = vi.spyOn(api, "saveAutoUpdate").mockResolvedValue({ enabled: true, interval_hours: 24, update_config: true, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 1 });
+    const run = vi.spyOn(api, "runAutoUpdate").mockResolvedValue({ ok: true, pid: 123, log: "/var/log/webnas/update.log", updated: true });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.administration" }));
+    await screen.findByText("settings.updateAvailable");
+    fireEvent.click(screen.getByLabelText("settings.automaticUpdates"));
+    await waitFor(() => expect(saveAuto).toHaveBeenCalledWith({ enabled: true, interval_hours: 24, update_config: true }));
+    fireEvent.click(screen.getByRole("button", { name: /settings.updateNow/ }));
+    await waitFor(() => expect(run).toHaveBeenCalledWith(false));
+  });
+
   it("reports a failed automatic save", async () => {
     render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockRejectedValue(new Error("offline"))} onOpenApp={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "settings.category.personalization" }));

@@ -913,6 +913,18 @@ copy_application() {
     --exclude "frontend/node_modules" \
     --exclude "frontend/dist" \
     "$SOURCE_DIR/" "$INSTALL_DIR/"
+  local source_revision=""
+  if [[ -d "${SOURCE_DIR}/.git" ]] && command -v git >/dev/null 2>&1; then
+    source_revision="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
+  fi
+  if [[ -z "$source_revision" ]] && command -v git >/dev/null 2>&1; then
+    source_revision="$(git ls-remote "${REPO_URL}.git" refs/heads/main 2>/dev/null | awk 'NR == 1 {print $1}')"
+  fi
+  if [[ "$source_revision" =~ ^[0-9a-fA-F]{40,64}$ ]]; then
+    printf '%s\n' "$source_revision" > "${INSTALL_DIR}/.webnas-revision"
+  else
+    warn "Could not record the installed source revision; update status will request an initial refresh"
+  fi
   chown -R "${SERVICE_USER}:${SERVICE_USER}" "$INSTALL_DIR"
   chmod 0755 "$INSTALL_DIR"
   ok "Application copied to ${INSTALL_DIR}"

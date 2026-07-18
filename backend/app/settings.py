@@ -7,6 +7,7 @@ import pwd
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from collections import defaultdict, deque
@@ -478,6 +479,10 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _revision_path() -> Path:
+    return _repo_root() / ".webnas-revision"
+
+
 def _auto_update_path() -> Path:
     directory = Path(get_config().paths.data_dir) / "settings"
     directory.mkdir(parents=True, exist_ok=True)
@@ -526,24 +531,56 @@ def _git_output(args: list[str], *, timeout: int = 20) -> str:
 
 
 def _update_status() -> dict:
-    local = _git_output(["rev-parse", "HEAD"])
-    branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"])
-    remote = _git_output(["ls-remote", "origin", branch]).split()
-    if not remote:
-        raise HTTPException(400, f"Could not find remote branch: origin/{branch}")
-    remote_sha = remote[0]
+    branch = "main"
+    revision_file = _revision_path()
+    if (_repo_root() / ".git").exists():
+        local = _git_output(["rev-parse", "HEAD"])
+        branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"]) or branch
+    elif revision_file.exists():
+        revision_text = revision_file.read_text(encoding="utf-8", errors="replace").strip()
+        local = revision_text.splitlines()[0] if revision_text else "unknown"
+        if not re.fullmatch(r"[0-9a-fA-F]{40,64}", local):
+            local = "unknown"
+    else:
+        local = "unknown"
+    try:
+        remote = _git_output(["ls-remote", "https://github.com/chmajster/Algen-server-web-explorer-panel.git", f"refs/heads/{branch}"]).split()
+        if not remote:
+            raise HTTPException(400, f"Could not find remote branch: {branch}")
+        remote_sha = remote[0]
+    except (HTTPException, OSError, subprocess.SubprocessError) as error:
+        message = str(error.detail) if isinstance(error, HTTPException) else str(error)
+        return {"branch": branch, "local": local, "remote": "", "update_available": False, "available": False, "error": message}
     return {
         "branch": branch,
         "local": local,
         "remote": remote_sha,
-        "update_available": local != remote_sha,
+        "update_available": local == "unknown" or local != remote_sha,
+        "available": True,
+        "error": "",
     }
 
 
 def _start_update_process(update_config: bool, *, actor: str) -> dict:
-    installer = _repo_root() / "install.sh"
-    if not installer.exists():
-        raise HTTPException(500, f"Installer not found: {installer}")
+    settings_dir = _auto_update_path().parent
+    installer = settings_dir / "update-install.sh"
+    download = subprocess.run(
+        [_tool("curl"), "-fsSL", "https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh"],
+        capture_output=True, timeout=60, check=False,
+    )
+    if download.returncode != 0:
+        raise HTTPException(503, download.stderr.decode("utf-8", errors="replace").strip() or "Could not download the current WebNAS installer")
+    if not download.stdout.startswith(b"#!/usr/bin/env bash"):
+        raise HTTPException(503, "Downloaded WebNAS installer is invalid")
+    with tempfile.NamedTemporaryFile(dir=settings_dir, prefix=".update-install-", suffix=".tmp", delete=False) as handle:
+        handle.write(download.stdout)
+        temporary = Path(handle.name)
+    try:
+        os.chmod(temporary, 0o700)
+        os.replace(temporary, installer)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
     command = [_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
     if update_config:
         command.append("--update-config")
@@ -570,6 +607,12 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
         try:
             status = _update_status()
             interval = max(1, int(state.get("interval_hours") or 24))
+            if not status.get("available", True):
+                state.update({"last_error": status.get("error") or "Update status unavailable", "next_check": now + 3600})
+                _write_auto_update_state(state)
+                if force:
+                    raise HTTPException(503, state["last_error"])
+                return {"ok": False, "updated": False, "status": status, "error": state["last_error"]}
             if not status["update_available"]:
                 state.update({"last_error": "", "next_check": now + interval * 3600})
                 _write_auto_update_state(state)

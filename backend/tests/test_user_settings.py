@@ -116,3 +116,26 @@ def test_patch_persists_each_application_pin_destination(monkeypatch):
     assert written["pinned_apps"] == ["files"]
     assert written["start_pinned_apps"] == ["monitor"]
     assert written["desktop_shortcut_apps"] == ["settings"]
+
+
+def test_update_status_uses_installed_revision_without_git_checkout(monkeypatch, tmp_path):
+    revision = "a" * 40
+    (tmp_path / ".webnas-revision").write_text(revision + "\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(settings, "_git_output", lambda args: f"{revision}\trefs/heads/main")
+
+    result = settings._update_status()
+
+    assert result == {"branch": "main", "local": revision, "remote": revision, "update_available": False, "available": True, "error": ""}
+
+
+def test_legacy_install_without_revision_offers_initial_update(monkeypatch, tmp_path):
+    remote = "b" * 40
+    monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(settings, "_git_output", lambda args: f"{remote}\trefs/heads/main")
+
+    result = settings._update_status()
+
+    assert result["local"] == "unknown"
+    assert result["remote"] == remote
+    assert result["update_available"] is True
