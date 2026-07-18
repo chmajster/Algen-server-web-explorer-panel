@@ -301,12 +301,12 @@ def validate_inventory(payload: InventoryImportInput, user: SessionUser = Depend
 
 
 @router.get("/scans")
-def scans(user: SessionUser = Depends(require_permission(Permission.ANSIBLE_DISCOVERY))):
+def scans(user: SessionUser = Depends(require_permission(Permission.ANSIBLE_DISCOVERY, mutating=False))):
     return repository().scans()
 
 
 @router.get("/scans/{scan_id}")
-def scan(scan_id: str, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_DISCOVERY))):
+def scan(scan_id: str, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_DISCOVERY, mutating=False))):
     item = repository().scan(scan_id)
     if not item:
         api_error(404, "SCAN_NOT_FOUND", "Network scan not found")
@@ -479,7 +479,7 @@ def _template_hosts(template: dict[str, Any]) -> list[str]:
 
 
 @router.get("/templates/{template_id}/plan")
-def launch_plan(template_id: str, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_JOBS_LAUNCH))):
+def launch_plan(template_id: str, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_JOBS_LAUNCH, mutating=False))):
     template = repository()._get("job_templates", template_id)
     if not template:
         api_error(404, "TEMPLATE_NOT_FOUND", "Job template not found")
@@ -627,7 +627,7 @@ def diagnostics(user: SessionUser = Depends(require_permission(Permission.ANSIBL
 
 
 @router.get("/backups")
-def backups(user: SessionUser = Depends(require_permission(Permission.ANSIBLE_BACKUP))):
+def backups(user: SessionUser = Depends(require_permission(Permission.ANSIBLE_BACKUP, mutating=False))):
     return AnsibleControllerProvider(user.username).list_backups()
 
 
@@ -660,7 +660,7 @@ def delete_controller_backup(backup_id: str, payload: ConfirmationInput, user: S
 
 
 @router.get("/backups/{backup_id}/download")
-def download_backup(backup_id: str, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_BACKUP))):
+def download_backup(backup_id: str, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_BACKUP, mutating=False))):
     from fastapi.responses import FileResponse
 
     path = backup_path(repository(), backup_id)

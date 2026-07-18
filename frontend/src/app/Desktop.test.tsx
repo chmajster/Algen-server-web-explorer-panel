@@ -80,6 +80,16 @@ describe("personalized desktop", () => {
     expect(screen.getByRole("button", { name: "app.store" })).toBeInTheDocument();
   });
 
+  it("opens current-user information when the profile in Start is clicked", () => {
+    renderDesktop();
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: /desktop.openUserSettings/ }));
+
+    expect(screen.getByRole("dialog", { name: "app.settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "settings.category.account" })).toBeInTheDocument();
+    expect(screen.getAllByText("test").length).toBeGreaterThan(0);
+  });
+
   it("adds Ansible to the Start application list only when its module is installed", async () => {
     vi.spyOn(api, "modules").mockResolvedValue([{ id: "ansible-controller", manifest: { name: "Ansible Automation Controller" }, state: { installed: true, update_available: false }, jobs: [], module_status: { health: "healthy" } }] as unknown as ModuleSummary[]);
     renderDesktop({ is_admin: true, permissions: [...settingsFixture().permissions, "modules.view"] });

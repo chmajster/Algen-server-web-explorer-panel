@@ -62,6 +62,7 @@
   "column.size": "Size",
   "column.type": "Type",
   "desktop.applications": "Applications",
+  "desktop.openUserSettings": "Open user settings",
   "desktop.recentlyUsed": "Recently used",
   "desktop.noRecentApps": "No recently used applications.",
   "desktop.timeAgo": "ago",

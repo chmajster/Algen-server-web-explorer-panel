@@ -31,6 +31,15 @@ describe("Start menu", () => {
     expect(close).toHaveBeenCalledTimes(2);
   });
 
+  it("opens the current user's account settings from the footer", () => {
+    const openProfile = vi.fn(); const close = vi.fn();
+    render(<AppLauncher apps={appList} startPinned={new Set()} desktopShortcuts={new Set()} taskbarPinned={new Set()} profile={settingsFixture()} t={t} onOpen={vi.fn()} onOpenProfile={openProfile} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={close} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /desktop.openUserSettings/ }));
+    expect(openProfile).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("offers separate desktop, Start, and taskbar actions in the All apps context menu", () => {
     const desktop = vi.fn(); const start = vi.fn(); const taskbar = vi.fn();
     render(<div className="desktop"><AppLauncher apps={appList} startPinned={new Set()} desktopShortcuts={new Set()} taskbarPinned={new Set()} profile={settingsFixture()} t={t} onOpen={vi.fn()} onToggleStartPin={start} onToggleDesktopShortcut={desktop} onToggleTaskbarPin={taskbar} onLogout={vi.fn()} onClose={vi.fn()} /></div>);
@@ -58,7 +67,7 @@ describe("Start menu", () => {
 
     expect(screen.getByText("desktop.recentlyUsed")).toBeInTheDocument();
     expect(screen.getByText("desktop.justNow")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Settings/ }));
+    fireEvent.click(screen.getByText("desktop.justNow").closest("button")!);
     expect(open).toHaveBeenCalledWith("settings");
   });
 });

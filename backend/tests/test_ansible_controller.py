@@ -350,7 +350,7 @@ def test_all_granular_permissions_are_registered():
     assert Permission.ANSIBLE_RESTORE.value in expected
 
 
-def test_ansible_mutation_requires_csrf(monkeypatch, tmp_path: Path):
+def test_ansible_read_is_csrf_free_and_mutation_requires_csrf(monkeypatch, tmp_path: Path):
     repository = store(tmp_path)
     monkeypatch.setattr(ansible_router, "repository", lambda: repository)
     monkeypatch.setattr(identity_permissions, "get_session_user", lambda _request: SessionUser(username="admin", csrf_token="csrf"))
@@ -360,6 +360,7 @@ def test_ansible_mutation_requires_csrf(monkeypatch, tmp_path: Path):
     client = TestClient(app)
     payload = {"name": "node", "address": "192.168.1.25"}
 
+    assert client.get("/api/modules/ansible-controller/scans").status_code == 200
     assert client.post("/api/modules/ansible-controller/hosts", json=payload).status_code == 403
     assert client.post("/api/modules/ansible-controller/hosts", json=payload, headers={"x-csrf-token": "csrf"}).status_code == 200
 
