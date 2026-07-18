@@ -35,3 +35,5 @@ backup_paths: [/var/lib/webnas/home-assistant/config]
 proxmox_safe: false
 requires_root: true
 removable: false
+ui:
+  hidden: true

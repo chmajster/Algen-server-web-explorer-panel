@@ -33,7 +33,9 @@ def test_discovers_registered_production_manifests_and_hides_example():
     discovered = manifests.discover_manifests()
     found = {item.id: item for item in discovered}
 
-    assert set(BUILTIN_MODULE_IDS) <= set(found)
+    container_only_modules = {"pihole", "adguard-home", "home-assistant"}
+    assert set(BUILTIN_MODULE_IDS) - container_only_modules <= set(found)
+    assert container_only_modules.isdisjoint(found)
     assert "example" not in found
     assert discovered[0].id == "samba"
     assert found["samba"].category == "file_sharing"

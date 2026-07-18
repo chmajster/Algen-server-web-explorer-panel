@@ -6,6 +6,10 @@ The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased] - 2026-07-16
 
+### Changed
+
+- Pi-hole, AdGuard Home, and Home Assistant are no longer duplicated in Package Center; they remain available as container applications in Containers Manager.
+
 ### Fixed
 
 - Remember-me sessions now persist on HTTP installations while still honoring `security.cookie_secure` when secure cookies are configured.

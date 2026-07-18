@@ -37,3 +37,5 @@ backup_paths: [/opt/AdGuardHome/AdGuardHome.yaml, /var/lib/webnas/container-apps
 proxmox_safe: false
 requires_root: true
 removable: false
+ui:
+  hidden: true

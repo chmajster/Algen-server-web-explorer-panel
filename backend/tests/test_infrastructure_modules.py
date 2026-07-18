@@ -18,7 +18,7 @@ from app.modules.providers.linux_updates import LinuxUpdatesProvider
 from app.modules import linux_update_worker
 from app.package_center.detached_updates import read_update_state, update_session_directory, write_update_state
 from app.modules.providers.databases import RedisProvider
-from app.package_center.manifests import discover_manifests
+from app.package_center.manifests import load_manifest
 from app.package_center import executor as package_executor
 from app.package_center.executor import redact
 from app.package_center.models import ModuleCapabilities, ModuleStatus, PackageAction
@@ -32,14 +32,14 @@ NEW_MODULES = {"linux-updates", "docker", "pihole", "adguard-home", "postgresql"
 
 
 def test_infrastructure_manifests_declare_only_supported_resources_and_actions():
-    manifests = {manifest.id: manifest for manifest in discover_manifests()}
+    manifests = {module_id: load_manifest(module_id) for module_id in NEW_MODULES}
 
-    assert NEW_MODULES <= manifests.keys()
     assert manifests["linux-updates"].capabilities.actions == ["refresh", "upgrade_all", "upgrade_security"]
     assert {"containers", "images", "networks", "volumes", "stats", "compose"} <= set(manifests["docker"].capabilities.resources)
     assert manifests["docker"].packages.apt == ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
     assert manifests["postgresql"].capabilities.backups is True
     assert manifests["home-assistant"].proxmox_safe is False
+    assert all(manifests[module_id].ui.hidden for module_id in {"pihole", "adguard-home", "home-assistant"})
 
 
 def test_rbac_preserves_linux_admin_and_gives_roles_granular_permissions(monkeypatch):

@@ -34,3 +34,5 @@ data_paths: [/etc/pihole, /var/lib/webnas/container-apps/pihole]
 proxmox_safe: false
 requires_root: true
 removable: false
+ui:
+  hidden: true
