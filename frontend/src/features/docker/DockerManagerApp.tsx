@@ -53,17 +53,23 @@ type Section =
   | "diagnostics";
 
 export function DockerManagerApp({
+  draftKey,
   permissions,
   t,
   toast,
   onDirtyChange,
 }: {
+  draftKey?: string;
   permissions: string[];
   t: Translate;
   toast: ToastFn;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [section, setSection] = useState<Section>("dashboard");
+  const [section, setSection] = useState<Section>(() => {
+    const saved = draftKey ? sessionStorage.getItem(`${draftKey}:section`) : null;
+    const valid: Section[] = ["dashboard", "containers", "images", "apps", "compose", "volumes", "networks", "registries", "events", "backups", "engine", "diagnostics"];
+    return valid.includes(saved as Section) ? saved as Section : "dashboard";
+  });
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [events, setEvents] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +81,7 @@ export function DockerManagerApp({
     (permission: string) => permissions.includes(permission),
     [permissions],
   );
+  useEffect(() => { if (draftKey) sessionStorage.setItem(`${draftKey}:section`, section); }, [draftKey, section]);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -176,6 +183,7 @@ export function DockerManagerApp({
   else if (section === "containers")
     content = (
       <ContainersList
+        draftKey={draftKey ? `${draftKey}:create-container` : undefined}
         permissions={permissions}
         t={t}
         toast={toast}

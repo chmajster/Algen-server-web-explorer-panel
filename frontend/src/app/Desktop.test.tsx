@@ -79,6 +79,22 @@ describe("personalized desktop", () => {
     localStorage.removeItem("webnas_windows_test");
   });
 
+  it("saves the current windows synchronously before an F5 reload and restores them", () => {
+    localStorage.removeItem("webnas_windows_test");
+    const first = renderDesktop({ startup_windows: "last" });
+    fireEvent.click(within(screen.getByLabelText("desktop.taskbar")).getByRole("button", { name: "app.monitor" }));
+    expect(screen.getByRole("dialog", { name: "app.monitor" })).toBeInTheDocument();
+
+    window.dispatchEvent(new Event("pagehide"));
+    const saved = JSON.parse(localStorage.getItem("webnas_windows_test") || "{}") as { windows?: Array<{ app: string }> };
+    expect(saved.windows).toEqual(expect.arrayContaining([expect.objectContaining({ app: "monitor" })]));
+
+    first.unmount();
+    renderDesktop({ startup_windows: "last" });
+    expect(screen.getByRole("dialog", { name: "app.monitor" })).toBeInTheDocument();
+    localStorage.removeItem("webnas_windows_test");
+  });
+
   it("confirms before closing a module with unapplied changes", async () => {
     localStorage.setItem("webnas_windows_test", JSON.stringify({ windows: [{ id: "samba-1", app: "samba", rect: { x: 20, y: 20, width: 900, height: 600 }, minimized: false, zIndex: 11 }], activeId: "samba-1", counter: 1, topZ: 11 }));
     const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);

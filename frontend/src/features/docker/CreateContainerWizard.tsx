@@ -28,6 +28,24 @@ type MountRow = {
   tmpfsSizeMb: string;
 };
 
+type ContainerWizardDraft = {
+  step?: number; name?: string; image?: string; network?: string; ports?: string; environment?: string; mounts?: MountRow[];
+  memory?: string; memorySwap?: string; cpus?: string; pids?: string; hostname?: string; workingDir?: string; containerUser?: string;
+  networkAliases?: string; restartPolicy?: "no" | "always" | "unless-stopped" | "on-failure"; labels?: string;
+  healthType?: "none" | "http" | "tcp"; healthPort?: string; healthPath?: string; readOnly?: boolean; init?: boolean; autoStart?: boolean;
+  composeMode?: boolean; composeProject?: string; composeContent?: string; composeEnvironment?: string; composeAutoStart?: boolean;
+};
+
+function readContainerDraft(key?: string): ContainerWizardDraft {
+  if (!key) return {};
+  try {
+    const value = JSON.parse(sessionStorage.getItem(key) || "{}") as ContainerWizardDraft;
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
 function DockerPathPicker({ initialPath, t, onClose, onSelect }: { initialPath: string; t: Translate; onClose: () => void; onSelect: (path: string) => void }) {
   const [path, setPath] = useState(initialPath);
   const [parent, setParent] = useState<string | null>(null);
@@ -85,6 +103,7 @@ function DockerPathPicker({ initialPath, t, onClose, onSelect }: { initialPath: 
 }
 
 export function CreateContainerWizard({
+  draftKey,
   t,
   toast,
   onClose,
@@ -93,6 +112,7 @@ export function CreateContainerWizard({
   canViewLocalImages,
   canViewLocalNetworks,
 }: {
+  draftKey?: string;
   t: Translate;
   toast: ToastFn;
   onClose: () => void;
@@ -101,39 +121,40 @@ export function CreateContainerWizard({
   canViewLocalImages: boolean;
   canViewLocalNetworks: boolean;
 }) {
-  const [step, setStep] = useState(0);
+  const [draft] = useState(() => readContainerDraft(draftKey));
+  const [step, setStep] = useState(() => Math.max(0, Math.min(3, Number(draft.step) || 0)));
   const [busy, setBusy] = useState(false);
-  const [name, setName] = useState("");
-  const [image, setImage] = useState("");
-  const [network, setNetwork] = useState("bridge");
-  const [ports, setPorts] = useState("");
-  const [environment, setEnvironment] = useState("");
+  const [name, setName] = useState(draft.name || "");
+  const [image, setImage] = useState(draft.image || "");
+  const [network, setNetwork] = useState(draft.network || "bridge");
+  const [ports, setPorts] = useState(draft.ports || "");
+  const [environment, setEnvironment] = useState(draft.environment || "");
   const [secretRows, setSecretRows] = useState([{ key: "", value: "" }]);
-  const [mounts, setMounts] = useState<MountRow[]>([]);
+  const [mounts, setMounts] = useState<MountRow[]>(() => Array.isArray(draft.mounts) ? draft.mounts : []);
   const [pathPickerMountId, setPathPickerMountId] = useState<number | null>(null);
-  const nextMountId = useRef(1);
-  const [memory, setMemory] = useState("");
-  const [memorySwap, setMemorySwap] = useState("");
-  const [cpus, setCpus] = useState("");
-  const [pids, setPids] = useState("");
-  const [hostname, setHostname] = useState("");
-  const [workingDir, setWorkingDir] = useState("");
-  const [containerUser, setContainerUser] = useState("");
-  const [networkAliases, setNetworkAliases] = useState("");
-  const [restartPolicy, setRestartPolicy] = useState<"no" | "always" | "unless-stopped" | "on-failure">("unless-stopped");
-  const [labels, setLabels] = useState("");
-  const [healthType, setHealthType] = useState<"none" | "http" | "tcp">("none");
-  const [healthPort, setHealthPort] = useState("");
-  const [healthPath, setHealthPath] = useState("/");
-  const [readOnly, setReadOnly] = useState(false);
-  const [init, setInit] = useState(true);
-  const [autoStart, setAutoStart] = useState(true);
-  const [composeMode, setComposeMode] = useState(false);
-  const [composeProject, setComposeProject] = useState("");
-  const [composeContent, setComposeContent] = useState("");
-  const [composeEnvironment, setComposeEnvironment] = useState("");
+  const nextMountId = useRef(Math.max(0, ...(draft.mounts || []).map((item) => Number(item.id) || 0)) + 1);
+  const [memory, setMemory] = useState(draft.memory || "");
+  const [memorySwap, setMemorySwap] = useState(draft.memorySwap || "");
+  const [cpus, setCpus] = useState(draft.cpus || "");
+  const [pids, setPids] = useState(draft.pids || "");
+  const [hostname, setHostname] = useState(draft.hostname || "");
+  const [workingDir, setWorkingDir] = useState(draft.workingDir || "");
+  const [containerUser, setContainerUser] = useState(draft.containerUser || "");
+  const [networkAliases, setNetworkAliases] = useState(draft.networkAliases || "");
+  const [restartPolicy, setRestartPolicy] = useState<"no" | "always" | "unless-stopped" | "on-failure">(draft.restartPolicy || "unless-stopped");
+  const [labels, setLabels] = useState(draft.labels || "");
+  const [healthType, setHealthType] = useState<"none" | "http" | "tcp">(draft.healthType || "none");
+  const [healthPort, setHealthPort] = useState(draft.healthPort || "");
+  const [healthPath, setHealthPath] = useState(draft.healthPath || "/");
+  const [readOnly, setReadOnly] = useState(draft.readOnly || false);
+  const [init, setInit] = useState(draft.init ?? true);
+  const [autoStart, setAutoStart] = useState(draft.autoStart ?? true);
+  const [composeMode, setComposeMode] = useState(draft.composeMode || false);
+  const [composeProject, setComposeProject] = useState(draft.composeProject || "");
+  const [composeContent, setComposeContent] = useState(draft.composeContent || "");
+  const [composeEnvironment, setComposeEnvironment] = useState(draft.composeEnvironment || "");
   const [composeSecretEnvironment, setComposeSecretEnvironment] = useState("");
-  const [composeAutoStart, setComposeAutoStart] = useState(true);
+  const [composeAutoStart, setComposeAutoStart] = useState(draft.composeAutoStart ?? true);
   const [localImages, setLocalImages] = useState<string[]>([]);
   const [imagesLoading, setImagesLoading] = useState(false);
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
@@ -158,6 +179,16 @@ export function CreateContainerWizard({
   function updateMount(id: number, values: Partial<Omit<MountRow, "id">>) {
     setMounts((current) => current.map((item) => item.id === id ? { ...item, ...values } : item));
   }
+
+  useEffect(() => {
+    if (!draftKey) return;
+    const value: ContainerWizardDraft = {
+      step, name, image, network, ports, environment, mounts, memory, memorySwap, cpus, pids, hostname, workingDir,
+      containerUser, networkAliases, restartPolicy, labels, healthType, healthPort, healthPath, readOnly, init, autoStart,
+      composeMode, composeProject, composeContent, composeEnvironment, composeAutoStart,
+    };
+    sessionStorage.setItem(draftKey, JSON.stringify(value));
+  }, [autoStart, composeAutoStart, composeContent, composeEnvironment, composeMode, composeProject, containerUser, cpus, draftKey, environment, healthPath, healthPort, healthType, hostname, image, init, labels, memory, memorySwap, mounts, name, network, networkAliases, pids, ports, readOnly, restartPolicy, step, workingDir]);
 
   useEffect(() => {
     if (!canViewLocalImages) return;

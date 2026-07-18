@@ -20,11 +20,13 @@ import { CreateContainerWizard } from "./CreateContainerWizard";
 import { DockerTable, LoadState, StatusPill, errorMessage } from "./shared";
 
 export function ContainersList({
+  draftKey,
   permissions,
   t,
   toast,
   onJob,
 }: {
+  draftKey?: string;
   permissions: string[];
   t: Translate;
   toast: ToastFn;
@@ -40,13 +42,15 @@ export function ContainersList({
   const [sort, setSort] = useState("Names");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [selected, setSelected] = useState("");
-  const [wizard, setWizard] = useState(false);
+  const [wizard, setWizard] = useState(() => Boolean(draftKey && sessionStorage.getItem(draftKey)));
   const [importFile, setImportFile] = useState<File | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const [dialog, setDialog] = useState<{
     target: string;
     action: "remove" | "backup" | "export" | "rename" | "duplicate" | "import" | "stop" | "kill";
   } | null>(null);
+  function openWizard() { if (draftKey && !sessionStorage.getItem(draftKey)) sessionStorage.setItem(draftKey, "{}"); setWizard(true); }
+  function closeWizard() { if (draftKey) sessionStorage.removeItem(draftKey); setWizard(false); }
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -187,7 +191,7 @@ export function ContainersList({
             {t("action.refresh")}
           </button>
           {permissions.includes("docker.create_container") && (
-            <button className="button-primary" onClick={() => setWizard(true)}>
+            <button className="button-primary" onClick={openWizard}>
               <Plus />
               {t("docker.createContainer")}
             </button>
@@ -360,7 +364,8 @@ export function ContainersList({
         <CreateContainerWizard
           t={t}
           toast={toast}
-          onClose={() => setWizard(false)}
+          draftKey={draftKey}
+          onClose={closeWizard}
           onStarted={onJob}
           canImportCompose={permissions.includes("docker.manage_compose")}
           canViewLocalImages={permissions.includes("docker.view_images")}

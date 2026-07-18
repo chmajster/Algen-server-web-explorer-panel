@@ -67,6 +67,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [clock, setClock] = useState(new Date());
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const restored = useRef(false);
+  const windowStateRef = useRef(state);
   const previousTaskStatus = useRef<Map<string, Task["status"]>>(new Map());
   const tasksInitialized = useRef(false);
   const previousModuleJobs = useRef<Map<string, AppJob["status"]>>(new Map());
@@ -80,6 +81,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const activeTransfers = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status)).length;
 
+  useEffect(() => { windowStateRef.current = state; }, [state]);
+
   useEffect(() => {
     const restoredState = profile.startup_windows === "last" ? restoreWindowState(localStorage.getItem(storageKey)) : initialWindowState;
     const windows = restoredState.windows.filter((item) => canUseApp(item.app));
@@ -91,6 +94,21 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     const timer = window.setTimeout(() => localStorage.setItem(storageKey, JSON.stringify(state)), 240);
     return () => window.clearTimeout(timer);
   }, [state, storageKey]);
+  useEffect(() => {
+    const persistCurrentWindows = () => {
+      if (!restored.current) return;
+      localStorage.setItem(storageKey, JSON.stringify(windowStateRef.current));
+    };
+    const persistWhenHidden = () => { if (document.visibilityState === "hidden") persistCurrentWindows(); };
+    window.addEventListener("pagehide", persistCurrentWindows);
+    window.addEventListener("beforeunload", persistCurrentWindows);
+    document.addEventListener("visibilitychange", persistWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", persistCurrentWindows);
+      window.removeEventListener("beforeunload", persistCurrentWindows);
+      document.removeEventListener("visibilitychange", persistWhenHidden);
+    };
+  }, [storageKey]);
   useEffect(() => {
     if (!migrateLegacyPins.current) return;
     migrateLegacyPins.current = false;
@@ -233,9 +251,9 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
     });
   }
-  function signOut() { void logout().finally(onLoggedOut); }
+  function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); void logout().finally(onLoggedOut); }
   function moduleDirty(item: WindowInstance, dirty: boolean) { setDirtyWindows((current) => { const next = new Set(current); if (dirty) next.add(item.id); else next.delete(item.id); return next; }); }
-  function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !window.confirm(t("module.unsavedClose"))) return; setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
+  function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !window.confirm(t("module.unsavedClose"))) return; const draftPrefix = `webnas_window_draft_${user.username}_${item.id}`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
   function taskbarWindow(item: WindowInstance, action: TaskbarWindowAction) {
     if (action === "close") closeWindow(item);
     else if (action === "focus") dispatch({ type: "focus", id: item.id });
@@ -253,16 +271,16 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       case "users": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="users" t={t} toast={toast} /></Suspense>;
       case "groups": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="groups" t={t} toast={toast} /></Suspense>;
       case "mounts": return <SettingsAppView settings={profile} initialSection="networkResources" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} />;
-      case "samba": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="samba" initialPath={item.initialPath} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
+      case "samba": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="samba" initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
       case "modules": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleHub t={t} toast={toast} onOpen={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
-      case "containers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="docker" permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
+      case "containers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="docker" draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
       case "access": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="roles" t={t} toast={toast} /></Suspense>;
       case "services": return <ServicesApp t={t} toast={toast} />;
       case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
       case "logs": return <LogsAppView t={t} />;
       case "settings": return <SettingsAppView settings={profile} initialSection={item.initialPath === "personalization" ? "personalization" : "system"} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} />;
       case "monitor": return <MonitorApp t={t} />;
-      case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
+      case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
     }
   }
 

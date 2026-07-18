@@ -80,6 +80,33 @@ describe("DockerManagerApp", () => {
     expect(vi.mocked(api.createDockerContainer).mock.calls[0][0]).toMatchObject({ name: "safe-web", image: "nginx:stable", secret_environment: { APP_PASSWORD: "private" } });
   });
 
+  it("restores a create-container draft after reload without persisting secret fields", async () => {
+    const draftKey = "test-window:create-container";
+    sessionStorage.removeItem(draftKey);
+    sessionStorage.removeItem("test-window:section");
+    const permissions = ["docker.view", "docker.view_containers", "docker.create_container"];
+    const first = render(<DockerManagerApp draftKey="test-window" permissions={permissions} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "restored-media" } });
+    fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "jellyfin:latest" } });
+    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
+    fireEvent.change(screen.getByLabelText("docker.field.ports"), { target: { value: "8096:8096/tcp" } });
+    fireEvent.change(screen.getByLabelText("docker.secretName"), { target: { value: "API_TOKEN" } });
+    fireEvent.change(screen.getByLabelText("docker.secretValue"), { target: { value: "do-not-store" } });
+    expect(sessionStorage.getItem(draftKey)).not.toContain("do-not-store");
+
+    first.unmount();
+    render(<DockerManagerApp draftKey="test-window" permissions={permissions} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    expect(await screen.findByRole("heading", { name: "docker.createContainer" })).toBeInTheDocument();
+    expect(screen.getByLabelText("docker.field.ports")).toHaveValue("8096:8096/tcp");
+    fireEvent.click(screen.getByRole("button", { name: /action.back/ }));
+    expect(screen.getByLabelText("docker.field.name")).toHaveValue("restored-media");
+    expect(screen.getByLabelText("docker.field.image")).toHaveValue("jellyfin:latest");
+    sessionStorage.removeItem(draftKey);
+    sessionStorage.removeItem("test-window:section");
+  });
+
   it("imports a JSON container definition into the editable create wizard", async () => {
     render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
