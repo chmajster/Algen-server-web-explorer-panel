@@ -98,6 +98,7 @@ describe("settings application", () => {
     vi.spyOn(api, "proxmoxSafety").mockResolvedValue({ is_proxmox: false, safe_mode_enabled: false, protected_paths: [], blocked_admin_features: [], allowed_roots_effective: [], service_user: "webnas", warnings: [] });
     const saveAuto = vi.spyOn(api, "saveAutoUpdate").mockResolvedValue({ enabled: true, interval_hours: 24, update_config: true, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 1 });
     const run = vi.spyOn(api, "runAutoUpdate").mockResolvedValue({ ok: true, pid: 123, log: "/var/log/webnas/update.log", updated: true });
+    const progress = vi.spyOn(api, "updateProgress").mockResolvedValue({ state: "completed", running: false, pid: 123, exit_code: 0, started_at: 10, finished_at: 20, log: "/var/log/webnas/update.log", lines: ["Downloading", "Installation complete"] });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
@@ -109,6 +110,10 @@ describe("settings application", () => {
     await waitFor(() => expect(saveAuto).toHaveBeenCalledWith({ enabled: true, interval_hours: 24, update_config: true }));
     fireEvent.click(screen.getByRole("button", { name: /settings.updateNow/ }));
     await waitFor(() => expect(run).toHaveBeenCalledWith(false));
+    expect(await screen.findByRole("dialog", { name: "settings.updateProgressTitle" })).toBeInTheDocument();
+    await waitFor(() => expect(progress).toHaveBeenCalled());
+    expect(await screen.findByText("settings.updatePhase.completed")).toBeInTheDocument();
+    expect(screen.getByText(/Installation complete/)).toBeInTheDocument();
   });
 
   it("reports a failed automatic save", async () => {

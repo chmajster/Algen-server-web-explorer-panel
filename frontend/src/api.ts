@@ -172,6 +172,7 @@ export type HostInfo = {
 };
 export type UpdateStatus = { branch: string; local: string; remote: string; update_available: boolean; available?: boolean; error?: string; source?: string; source_url?: string; released_at?: number | null };
 export type UpdateStart = { ok: boolean; pid: number; log: string };
+export type UpdateProgress = { state: "idle" | "running" | "completed" | "failed"; running: boolean; pid: number | null; exit_code: number | null; started_at: number | null; finished_at: number | null; log: string; lines: string[] };
 export type AutoUpdateSettings = {
   enabled: boolean;
   interval_hours: number;
@@ -880,6 +881,7 @@ export const api = {
   networkRouting: () => request<RoutingSnapshot>("/api/admin/network/routing"),
   restartSystem: () => request("/api/admin/system/restart", { method: "POST", body: "{}" }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
+  updateProgress: () => request<UpdateProgress>("/api/admin/system/updates/progress"),
   downloadUpdates: (update_config = false) => request<UpdateStart>("/api/admin/system/updates/download", { method: "POST", body: JSON.stringify({ update_config }) }),
   autoUpdate: () => request<AutoUpdateSettings>("/api/admin/system/updates/auto"),
   saveAutoUpdate: (payload: { enabled: boolean; interval_hours: number; update_config: boolean }) => request<AutoUpdateSettings>("/api/admin/system/updates/auto", { method: "PATCH", body: JSON.stringify(payload) }),

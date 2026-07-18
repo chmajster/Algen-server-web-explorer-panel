@@ -5,6 +5,7 @@ import json
 import os
 import pwd
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -492,6 +493,10 @@ def _auto_update_path() -> Path:
     return directory / "auto_update.json"
 
 
+def _update_progress_path() -> Path:
+    return _auto_update_path().parent / "update_progress.json"
+
+
 def _default_auto_update_state() -> dict:
     return {
         "enabled": False,
@@ -620,13 +625,70 @@ def _start_update_process(update_config: bool, *, actor: str) -> dict:
     command = [_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
     if update_config:
         command.append("--update-config")
+    progress_path = _update_progress_path()
+    runner = settings_dir / "update-runner.sh"
+    started_at = time.time()
+    runner_content = "\n".join([
+        "#!/usr/bin/env bash",
+        "set +e",
+        " ".join(shlex.quote(value) for value in command),
+        "rc=$?",
+        f"finished=$(date +%s); printf '{{\"running\":false,\"exit_code\":%s,\"started_at\":{int(started_at)},\"finished_at\":%s}}\\n' \"$rc\" \"$finished\" > {shlex.quote(str(progress_path))}.tmp",
+        f"mv -f -- {shlex.quote(str(progress_path))}.tmp {shlex.quote(str(progress_path))}",
+        "exit \"$rc\"",
+        "",
+    ])
+    runner.write_text(runner_content, encoding="utf-8")
+    os.chmod(runner, 0o700)
+    _write_json_atomic(progress_path, {"running": True, "exit_code": None, "started_at": started_at, "finished_at": None})
     log_path = Path(get_config().paths.log_dir) / "update.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as log:
         log.write("\n=== WebNAS update started ===\n")
-        process = subprocess.Popen(command, cwd=_repo_root(), stdout=log, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        process = subprocess.Popen([_tool("bash"), str(runner)], cwd=_repo_root(), stdout=log, stderr=subprocess.STDOUT, text=True, start_new_session=True)
     _audit(actor, "download_update", f"pid={process.pid}")
     return {"ok": True, "pid": process.pid, "log": str(log_path)}
+
+
+def _write_json_atomic(path: Path, value: dict) -> None:
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporary, path)
+    os.chmod(path, 0o600)
+
+
+def _update_progress() -> dict:
+    state = _read_auto_update_state()
+    progress_path = _update_progress_path()
+    progress: dict = {"running": False, "exit_code": None, "started_at": None, "finished_at": None}
+    try:
+        if progress_path.exists():
+            value = json.loads(progress_path.read_text(encoding="utf-8"))
+            if isinstance(value, dict):
+                progress.update({key: value.get(key) for key in progress})
+    except (OSError, json.JSONDecodeError):
+        pass
+    log_path = Path(get_config().paths.log_dir) / "update.log"
+    lines: list[str] = []
+    try:
+        if log_path.exists():
+            with log_path.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                size = handle.tell()
+                handle.seek(max(0, size - 64 * 1024))
+                lines = handle.read().decode("utf-8", errors="replace").splitlines()[-120:]
+    except OSError:
+        pass
+    running = bool(progress.get("running"))
+    exit_code = progress.get("exit_code")
+    return {
+        **progress,
+        "running": running,
+        "state": "running" if running else "completed" if exit_code == 0 else "failed" if exit_code is not None else "idle",
+        "pid": state.get("last_pid"),
+        "log": str(log_path),
+        "lines": lines,
+    }
 
 
 def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_config: bool | None = None) -> dict:
@@ -1121,6 +1183,12 @@ def admin_updates_check(user: SessionUser = Depends(_current_user)):
 def admin_updates_download(payload: UpdateAction, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin_session(user, request, "download_update", "updates.apply")
     return _start_update_process(payload.update_config, actor=user.username)
+
+
+@router.get("/api/admin/system/updates/progress")
+def admin_updates_progress(user: SessionUser = Depends(_current_user)):
+    authorize(user, "updates.view")
+    return _update_progress()
 
 
 @router.get("/api/admin/system/updates/auto")

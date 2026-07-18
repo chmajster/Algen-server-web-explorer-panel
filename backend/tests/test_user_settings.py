@@ -150,3 +150,20 @@ def test_remote_release_timestamp_reads_github_commit_date(monkeypatch):
     result = settings._remote_release_timestamp("a" * 40)
 
     assert result == 1_784_289_600
+
+
+def test_update_progress_returns_persistent_state_and_bounded_log(monkeypatch, tmp_path):
+    progress_path = tmp_path / "update_progress.json"
+    progress_path.write_text('{"running":false,"exit_code":0,"started_at":10,"finished_at":20}', encoding="utf-8")
+    log_path = tmp_path / "update.log"
+    log_path.write_text("prepare\ninstall\ncomplete\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "_update_progress_path", lambda: progress_path)
+    monkeypatch.setattr(settings, "_read_auto_update_state", lambda: {"last_pid": 123})
+    monkeypatch.setattr(settings, "get_config", lambda: SimpleNamespace(paths=SimpleNamespace(log_dir=str(tmp_path))))
+
+    result = settings._update_progress()
+
+    assert result["state"] == "completed"
+    assert result["pid"] == 123
+    assert result["exit_code"] == 0
+    assert result["lines"] == ["prepare", "install", "complete"]
