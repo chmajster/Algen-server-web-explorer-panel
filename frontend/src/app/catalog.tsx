@@ -1,6 +1,6 @@
 import {
   Activity, Boxes, HardDrive, History, Network, Package, RefreshCw, ServerCog,
-  Settings, Share2, Terminal, Users, ShieldCheck
+  Settings, Share2, Terminal, Users, ShieldCheck, Workflow
 } from "lucide-react";
 import type { AppDefinition, AppId } from "./types";
 
@@ -19,6 +19,7 @@ export const apps: AppDefinition[] = [
   { id: "samba", labelKey: "app.samba", icon: <Share2 />, permission: "modules.view", hidden: true, minWidth: 760, minHeight: 500 },
   { id: "modules", labelKey: "app.modules", icon: <Boxes />, permission: "modules.view", minWidth: 760, minHeight: 500 },
   { id: "containers", labelKey: "app.containers", icon: <Boxes />, permission: "docker.view", minWidth: 900, minHeight: 580 },
+  { id: "ansible", labelKey: "ansible.name", icon: <Workflow />, permission: "modules.view", minWidth: 900, minHeight: 580 },
   { id: "access", labelKey: "app.access", icon: <ShieldCheck />, permission: "access.view", hidden: true, minWidth: 760, minHeight: 500 },
   { id: "services", labelKey: "app.services", icon: <ServerCog />, permission: "services.view" },
   { id: "store", labelKey: "app.store", icon: <Package />, permission: "modules.install" },

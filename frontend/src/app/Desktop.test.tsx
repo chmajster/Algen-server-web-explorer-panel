@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { api, type ModuleSummary } from "../api";
 import { settingsFixture } from "../test/settings";
 import { Desktop } from "./Desktop";
 
@@ -9,8 +10,10 @@ const controls = { add: vi.fn(() => []), pause: vi.fn(), resume: vi.fn(), cancel
 const t = (key: string) => key;
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   localStorage.removeItem("webnas_windows_test");
   sessionStorage.removeItem("webnas_windows_test_session");
+  localStorage.removeItem("webnas_recent_apps_test");
 });
 
 function renderDesktop(overrides = {}) {
@@ -75,6 +78,16 @@ describe("personalized desktop", () => {
     expect(screen.queryByRole("button", { name: "app.samba" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "app.modules" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "app.store" })).toBeInTheDocument();
+  });
+
+  it("adds Ansible to the Start application list only when its module is installed", async () => {
+    vi.spyOn(api, "modules").mockResolvedValue([{ id: "ansible-controller", manifest: { name: "Ansible Automation Controller" }, state: { installed: true, update_available: false }, jobs: [], module_status: { health: "healthy" } }] as unknown as ModuleSummary[]);
+    renderDesktop({ is_admin: true, permissions: [...settingsFixture().permissions, "modules.view"] });
+
+    await waitFor(() => expect(api.modules).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    expect(screen.getByRole("button", { name: "ansible.name" })).toBeInTheDocument();
   });
 
   it("does not restore an identity window after permission is removed", () => {

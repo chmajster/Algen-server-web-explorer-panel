@@ -12,7 +12,7 @@ import { AppLauncher } from "./AppLauncher";
 import { appById, apps } from "./catalog";
 import { DesktopWindow } from "./DesktopWindow";
 import { Taskbar, type TaskbarWindowAction } from "./Taskbar";
-import type { AppId, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
+import type { AppId, RecentApp, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
 import { initialWindowState, restoreWindowState, windowReducer } from "./windowState";
 
 const ActivityCenter = lazy(() => import("../features/activity/ActivityCenter").then((module) => ({ default: module.ActivityCenter })));
@@ -49,6 +49,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
 }) {
   const storageKey = `webnas_windows_${user.username}`;
   const sessionWindowKey = `${storageKey}_session`;
+  const recentAppsKey = `webnas_recent_apps_${user.username}`;
   const [state, dispatch] = useReducer(windowReducer, initialWindowState);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -64,6 +65,13 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   });
   const [startPinned, setStartPinned] = useState<Set<AppId>>(() => new Set(profile.start_pinned_apps));
   const [desktopShortcuts, setDesktopShortcuts] = useState<Set<AppId>>(() => new Set(profile.desktop_shortcut_apps));
+  const [recentApps, setRecentApps] = useState<RecentApp[]>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem(recentAppsKey) || "[]") as unknown;
+      return Array.isArray(value) ? value.filter((item): item is RecentApp => Boolean(item && typeof item === "object" && "id" in item && "usedAt" in item && typeof item.id === "string" && typeof item.usedAt === "number" && apps.some((app) => app.id === item.id))).slice(0, 8) : [];
+    } catch { return []; }
+  });
+  const [installedModules, setInstalledModules] = useState<Set<string>>(new Set());
   const migrateLegacyPins = useRef(localStorage.getItem(legacyPinnedKey) !== null);
   const [clock, setClock] = useState(new Date());
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -77,8 +85,9 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const notifiedModuleEvents = useRef<Set<string>>(new Set());
   const notificationRef = useRef<HTMLElement>(null);
   const canUseApp = useCallback((appId: AppId) => { const definition = appById[appId]; return Boolean(definition && (!definition.admin || profile.is_admin) && (!definition.permission || profile.permissions.includes(definition.permission)) && (!definition.permissionAny || definition.permissionAny.some((permission) => profile.permissions.includes(permission)))); }, [profile.is_admin, profile.permissions]);
-  const availableApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id)), [canUseApp]);
-  const taskbarApps = useMemo(() => apps.filter((app) => canUseApp(app.id)), [canUseApp]);
+  const moduleAppAvailable = useCallback((appId: AppId) => appId !== "ansible" || installedModules.has("ansible-controller"), [installedModules]);
+  const availableApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
+  const taskbarApps = useMemo(() => apps.filter((app) => canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const activeTransfers = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status)).length;
 
@@ -150,9 +159,15 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
 
   const openApp = useCallback((app: AppId, initialPath?: string, moduleId?: string) => {
     if (!canUseApp(app)) { toast(t("error.permissionRequired"), "error"); return; }
+    const usedAt = Date.now();
+    setRecentApps((current) => {
+      const next = [{ id: app, usedAt }, ...current.filter((item) => item.id !== app)].slice(0, 8);
+      localStorage.setItem(recentAppsKey, JSON.stringify(next));
+      return next;
+    });
     dispatch({ type: "open", app, initialPath, moduleId, viewport: { width: window.innerWidth, height: window.innerHeight } });
     setLauncherOpen(false);
-  }, [canUseApp, t, toast]);
+  }, [canUseApp, recentAppsKey, t, toast]);
   useEffect(() => {
     if (!tasksInitialized.current) {
       tasks.forEach((task) => previousTaskStatus.current.set(task.id, task.status));
@@ -174,6 +189,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     async function refreshModules() {
       try {
         const modules = await api.modules();
+        setInstalledModules(new Set(modules.filter((item) => item.state.installed).map((item) => item.id)));
         const jobs = modules.flatMap((item) => item.jobs);
         if (!moduleNotificationsInitialized.current) {
           jobs.forEach((job) => previousModuleJobs.current.set(job.id, job.status));
@@ -279,6 +295,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       case "samba": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="samba" initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
       case "modules": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleHub t={t} toast={toast} onOpen={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
       case "containers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="docker" draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
+      case "ansible": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="ansible-controller" draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
       case "access": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="roles" t={t} toast={toast} /></Suspense>;
       case "services": return <ServicesApp t={t} toast={toast} />;
       case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
@@ -309,7 +326,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       <DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} />
       {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } })}>{renderApp(item)}</DesktopWindow>)}
     </main>
-    {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} profile={profile} t={t} onOpen={openApp} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
+    {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
     <Taskbar apps={taskbarApps} pinned={pinned} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setNotificationsOpen((value) => !value); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onOpenNew={(app) => openApp(app)} onTogglePin={togglePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
     {notificationsOpen && <aside ref={notificationRef} className="notification-center" aria-label={t("desktop.notifications")}><header><div><Bell /><strong>{t("desktop.notifications")}</strong></div><button type="button" aria-label={t("action.close")} onClick={() => setNotificationsOpen(false)}><X /></button></header>{visibleToasts.length === 0 && (!profile.notification_transfer || tasks.length === 0) ? <div className="empty-state">{t("desktop.noNotifications")}</div> : <>{visibleToasts.slice().reverse().map((item) => <article className={item.type} key={item.id} role={item.moduleId ? "button" : undefined} tabIndex={item.moduleId ? 0 : undefined} onClick={() => { if (!item.moduleId) return; openApp("module", undefined, item.moduleId); setNotificationsOpen(false); }} onKeyDown={(event) => { if (item.moduleId && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openApp("module", undefined, item.moduleId); setNotificationsOpen(false); } }}><strong>{item.type === "error" ? t("status.error") : "WebNAS"}</strong><span>{item.text}</span></article>)}{profile.notification_transfer && tasks.slice(-profile.notification_limit).reverse().map((task) => <article key={task.id}><strong>{t(`transfers.${task.type}`)}</strong><span>{t(`task.${task.status}`)} · {Math.round(task.progress_percent ?? task.progress ?? 0)}%</span></article>)}</>}</aside>}
     <div className="toasts" role="status" aria-live="polite">{visibleToasts.map((item) => <div className={item.type} key={item.id}>{item.type === "error" && <ShieldCheck />}{item.text}</div>)}</div>

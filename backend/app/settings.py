@@ -124,7 +124,7 @@ DEFAULT_DESKTOP_WIDGETS = [
 
 PinnedAppId = Literal[
     "files", "transfers", "activity", "identity", "users", "groups", "mounts", "samba",
-    "services", "store", "logs", "settings", "monitor", "modules", "access", "containers", "module",
+    "services", "store", "logs", "settings", "monitor", "modules", "access", "containers", "ansible", "module",
 ]
 DEFAULT_PINNED_APPS: list[PinnedAppId] = ["files", "transfers", "monitor", "settings"]
 

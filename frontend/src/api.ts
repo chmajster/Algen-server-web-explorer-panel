@@ -76,7 +76,7 @@ export type Task = {
   errors: string[];
 };
 
-export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "module";
+export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "ansible" | "module";
 
 export type UserPreferences = {
   language: "pl-PL" | "en-US";

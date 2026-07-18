@@ -51,4 +51,14 @@ describe("Start menu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
     expect(taskbar).toHaveBeenCalledWith("settings");
   });
+
+  it("shows recently used applications with a compact relative time", () => {
+    const open = vi.fn();
+    render(<AppLauncher apps={appList} startPinned={new Set(["files"])} desktopShortcuts={new Set()} taskbarPinned={new Set()} recentApps={[{ id: "settings", usedAt: Date.now() }]} profile={settingsFixture()} t={t} onOpen={open} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={vi.fn()} />);
+
+    expect(screen.getByText("desktop.recentlyUsed")).toBeInTheDocument();
+    expect(screen.getByText("desktop.justNow")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Settings/ }));
+    expect(open).toHaveBeenCalledWith("settings");
+  });
 });

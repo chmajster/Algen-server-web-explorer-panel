@@ -46,7 +46,7 @@
 .desktop .launcher-section-title { height: 52px; display: flex; align-items: center; justify-content: space-between; margin: 0 28px; }
 .desktop .launcher-section-title strong { font-size: .9em; }.desktop .launcher-section-title button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 6px; background: var(--surface-secondary); font-size: .72em; }
 .desktop .launcher-section-title button svg { width: 13px; }
-.desktop .launcher-grid { max-height: 390px; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; overflow: auto; padding: 0 24px 18px; }
+.desktop .launcher-grid { max-height: 300px; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; overflow: auto; padding: 0 24px 18px; }
 .desktop .launcher-app { position: relative; min-width: 0; border: 1px solid transparent; border-radius: 7px; }.desktop .launcher-app:hover { border-color: var(--border-subtle); background: var(--surface-hover); }
 .desktop .launcher-open { min-height: 92px; gap: 7px; padding: 10px 5px; }.desktop .launcher-open svg { width: 34px; height: 34px; }.desktop .launcher-open span { font-size: .7em; }
 .desktop .launcher-open small { display: flex; align-items: center; gap: 3px; color: var(--warning); font-size: 0.5625rem; }.desktop .launcher-open small svg { width: 10px; height: 10px; padding: 0; color: inherit; background: none; }
@@ -56,6 +56,8 @@
 .desktop > .launcher-context-menu { z-index: 3200; min-width: 245px; }
 .desktop > .launcher-context-menu button svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .desktop .launcher-empty { padding: 35px; color: var(--text-muted); text-align: center; }
+.desktop .launcher-recent-title { height: 38px; }.desktop .launcher-recent-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px 12px; padding: 0 28px 18px; }.desktop .launcher-recent-list button { min-width: 0; display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 7px; background: transparent; text-align: left; }.desktop .launcher-recent-list button:hover { background: var(--surface-hover); }.desktop .launcher-recent-list button > svg { width: 32px; height: 32px; flex: 0 0 32px; padding: 6px; border-radius: 8px; color: white; background: var(--accent); }.desktop .launcher-recent-list span { min-width: 0; display: grid; gap: 3px; }.desktop .launcher-recent-list strong { overflow: hidden; font-size: 0.7em; text-overflow: ellipsis; white-space: nowrap; }.desktop .launcher-recent-list small { color: var(--text-muted); font-size: 0.625rem; }
+.desktop .launcher-recent-empty { margin: 0; padding: 4px 38px 20px; color: var(--text-muted); font-size: 0.6875rem; }
 .desktop .launcher-footer { min-height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 10px 28px; border-top: 1px solid var(--border-subtle); background: color-mix(in srgb, var(--surface-secondary) 78%, transparent); }
 .desktop .launcher-footer > div { display: flex; align-items: center; gap: 10px; }.desktop .launcher-footer > div > svg { width: 28px; height: 28px; color: var(--accent); }.desktop .launcher-footer span { display: grid; }.desktop .launcher-footer small { display: flex; align-items: center; gap: 3px; color: var(--text-muted); font-size: 0.625rem; }.desktop .launcher-footer small svg { width: 11px; }.desktop .launcher-footer button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 6px; background: transparent; }.desktop .launcher-footer button:hover { background: var(--surface-hover); }
 

@@ -17,6 +17,7 @@ export type AppId =
   | "modules"
   | "access"
   | "containers"
+  | "ansible"
   | "module";
 
 export type Theme = "light" | "dark" | "system";
@@ -46,6 +47,8 @@ export type AppDefinition = {
   minWidth?: number;
   minHeight?: number;
 };
+
+export type RecentApp = { id: AppId; usedAt: number };
 
 export type User = { username: string; home: string };
 export type Toast = { id: number; text: string; type: "ok" | "error"; category?: "general" | "admin" | "transfer"; moduleId?: string };
