@@ -99,6 +99,7 @@ export function CreateContainerWizard({
   const [localNetworks, setLocalNetworks] = useState<string[]>(["bridge"]);
   const [networksLoading, setNetworksLoading] = useState(false);
   const [networkPickerOpen, setNetworkPickerOpen] = useState(false);
+  const [networkFilterActive, setNetworkFilterActive] = useState(false);
   const configUpload = useRef<HTMLInputElement>(null);
   const composeUpload = useRef<HTMLInputElement>(null);
 
@@ -135,7 +136,7 @@ export function CreateContainerWizard({
     let active = true;
     const timer = window.setTimeout(() => {
       setNetworksLoading(true);
-      void api.dockerNetworks(network.trim())
+      void api.dockerNetworks("")
         .then((result) => {
           if (!active) return;
           const names = result.items
@@ -147,12 +148,12 @@ export function CreateContainerWizard({
         .finally(() => { if (active) setNetworksLoading(false); });
     }, 180);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [canViewLocalNetworks, network]);
+  }, [canViewLocalNetworks]);
 
   const networkSuggestions = useMemo(() => {
-    const needle = network.trim().toLowerCase();
+    const needle = networkFilterActive ? network.trim().toLowerCase() : "";
     return localNetworks.filter((item) => !needle || item.toLowerCase().includes(needle)).slice(0, 12);
-  }, [localNetworks, network]);
+  }, [localNetworks, network, networkFilterActive]);
 
   function lines(value: Record<string, string> | undefined) {
     return Object.entries(value || {}).map(([key, item]) => `${key}=${item}`).join("\n");
@@ -400,8 +401,8 @@ export function CreateContainerWizard({
                 <div className="docker-resource-picker">
                   <input
                     value={network}
-                    onChange={(event) => setNetwork(event.target.value)}
-                    onFocus={() => setNetworkPickerOpen(true)}
+                    onChange={(event) => { setNetwork(event.target.value); setNetworkFilterActive(true); }}
+                    onFocus={(event) => { setNetworkFilterActive(false); setNetworkPickerOpen(true); event.currentTarget.select(); }}
                     onBlur={() => setNetworkPickerOpen(false)}
                     role="combobox"
                     aria-label={t("docker.field.network")}
@@ -412,7 +413,7 @@ export function CreateContainerWizard({
                   />
                   {networkPickerOpen && canViewLocalNetworks && (
                     <div id="docker-local-network-options" className="docker-resource-options" role="listbox" aria-label={t("docker.localNetworks")}>
-                      {networkSuggestions.map((item) => <button key={item} type="button" role="option" aria-selected={network === item} onMouseDown={(event) => event.preventDefault()} onClick={() => { setNetwork(item); setNetworkPickerOpen(false); }}>{item}</button>)}
+                      {networkSuggestions.map((item) => <button key={item} type="button" role="option" aria-selected={network === item} onMouseDown={(event) => event.preventDefault()} onClick={() => { setNetwork(item); setNetworkFilterActive(false); setNetworkPickerOpen(false); }}>{item}</button>)}
                       {!networkSuggestions.length && <span>{networksLoading ? t("status.loading") : t("docker.noLocalNetworks")}</span>}
                     </div>
                   )}

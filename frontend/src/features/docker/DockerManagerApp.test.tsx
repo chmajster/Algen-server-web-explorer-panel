@@ -108,15 +108,16 @@ describe("DockerManagerApp", () => {
       { Name: "host", Driver: "host" },
       { Name: "none", Driver: "null" },
     ], total: 4, page: 1, page_size: 50, pages: 1 });
-    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.view_networks", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     const networkInput = screen.getByRole("combobox", { name: "docker.field.network" });
     fireEvent.focus(networkInput);
+    expect(await screen.findByRole("option", { name: "app-network" })).toBeInTheDocument();
     fireEvent.change(networkInput, { target: { value: "app" } });
 
     const option = await screen.findByRole("option", { name: "app-network" });
-    expect(api.dockerNetworks).toHaveBeenLastCalledWith("app");
+    expect(api.dockerNetworks).toHaveBeenCalledWith("");
     expect(screen.queryByRole("option", { name: "host" })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "none" })).not.toBeInTheDocument();
     fireEvent.mouseDown(option);

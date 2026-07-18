@@ -364,7 +364,7 @@ export function ContainersList({
           onStarted={onJob}
           canImportCompose={permissions.includes("docker.manage_compose")}
           canViewLocalImages={permissions.includes("docker.view_images")}
-          canViewLocalNetworks={permissions.includes("docker.view_networks")}
+          canViewLocalNetworks={permissions.includes("docker.manage_networks") || permissions.includes("docker.create_container")}
         />
       )}
       {dialog && (

@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from ...activity import ActivityCategory, record_activity
 from ...auth import authenticate
-from ...identity.permissions import authorize
+from ...identity.permissions import authorize, has_permission
 from ...package_center.jobs import manager
 from ...package_center.executor import SAFE_ENV, redact
 from ...package_center.models import PackageAction, PackagePlan, api_error
@@ -59,6 +59,12 @@ def _provider(user: SessionUser) -> DockerProvider:
 
 def _allow(user: SessionUser, permission: str) -> None:
     authorize(user, permission)
+
+
+def _allow_any(user: SessionUser, *permissions: str) -> None:
+    if any(has_permission(user.username, permission) for permission in permissions):
+        return
+    authorize(user, permissions[0])
 
 
 def _enqueue(operation: str, payload: dict, user: SessionUser, *, warning: str = "") -> dict:
@@ -504,7 +510,7 @@ def volume_action(target: str, payload: VolumeActionRequest, user: SessionUser =
 
 @router.get("/networks")
 def networks(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200), search: str = "", user: SessionUser = Depends(current_user)):
-    _allow(user, "docker.manage_networks")
+    _allow_any(user, "docker.manage_networks", "docker.create_container")
     return _provider(user).networks(page=page, page_size=page_size, search=search[:200])
 
 
