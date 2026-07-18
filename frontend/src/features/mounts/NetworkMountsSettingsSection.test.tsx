@@ -26,9 +26,20 @@ describe("network mount settings", () => {
     const common = { t, toast: vi.fn(), onSettingsChange: vi.fn().mockResolvedValue(undefined), onOpenApp: vi.fn() };
     const { rerender } = render(<SettingsAppView settings={settingsFixture()} {...common} />);
     expect(screen.queryByRole("button", { name: "settings.category.network" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "settings.category.networkResources" })).not.toBeInTheDocument();
 
     rerender(<SettingsAppView settings={settingsFixture({ is_admin: true })} {...common} />);
     expect(screen.getByRole("button", { name: "settings.category.network" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "settings.category.networkResources" })).toBeInTheDocument();
+  });
+
+  it("opens network resources as a top-level Settings category", async () => {
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="networkResources" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    expect(screen.getByRole("heading", { name: "settings.category.networkResources" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "settings.category.networkResources" })).toHaveAttribute("aria-current", "page");
+    await waitFor(() => expect(api.mounts).toHaveBeenCalled());
+    expect(screen.queryByRole("tab", { name: "settings.networkResources" })).not.toBeInTheDocument();
   });
 
   it("uses protocol-dependent fields and never submits mount_point", async () => {

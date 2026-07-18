@@ -71,11 +71,13 @@ describe("settings application", () => {
     const { rerender } = render(<SettingsAppView settings={settingsFixture()} {...common} />);
     expect(screen.queryByRole("button", { name: "settings.category.administration" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "settings.category.network" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "settings.category.networkResources" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "settings.category.identity" })).not.toBeInTheDocument();
 
     rerender(<SettingsAppView settings={settingsFixture({ is_admin: true })} {...common} />);
     expect(screen.getByRole("button", { name: "settings.category.administration" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "settings.category.network" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "settings.category.networkResources" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "settings.category.identity" })).toBeInTheDocument();
   });
 

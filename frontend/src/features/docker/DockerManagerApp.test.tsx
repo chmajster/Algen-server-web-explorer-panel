@@ -6,9 +6,10 @@ import { DockerManagerApp } from "./DockerManagerApp";
 vi.mock("../../api", () => ({
   api: {
     dockerDashboard: vi.fn(), dockerEvents: vi.fn(), dockerContainers: vi.fn(), dockerContainer: vi.fn(), dockerContainerStats: vi.fn(),
-    dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(),
+    dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(),
     dockerContainerBackup: vi.fn(), dockerImages: vi.fn(), dockerImageAction: vi.fn(), importDockerImage: vi.fn(), dockerApps: vi.fn(),
-    dockerComposeProjects: vi.fn(), dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerRegistries: vi.fn(), dockerBackups: vi.fn(),
+    dockerComposeProjects: vi.fn(), validateDockerCompose: vi.fn(), saveDockerComposeProject: vi.fn(), dockerComposeAction: vi.fn(),
+    dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerRegistries: vi.fn(), dockerBackups: vi.fn(),
     dockerDaemonConfig: vi.fn(), dockerDiagnostics: vi.fn(), dockerEngineAction: vi.fn(), dockerPrune: vi.fn(),
   },
 }));
@@ -24,6 +25,11 @@ describe("DockerManagerApp", () => {
     vi.mocked(api.dockerDashboard).mockResolvedValue(dashboard as never);
     vi.mocked(api.dockerEvents).mockResolvedValue({ items: [], total: 0 });
     vi.mocked(api.dockerContainers).mockResolvedValue({ items: [{ ID: "abc", Names: "web", Image: "nginx:stable", State: "running", Status: "Up" }], total: 1, page: 1, page_size: 50, pages: 1 });
+    vi.mocked(api.dockerContainer).mockResolvedValue({ name: "web", state: { Status: "running" } });
+    vi.mocked(api.dockerContainerSettings).mockResolvedValue({ name: "web", resource_limits_enabled: false, cpu_priority: "medium", memory_mb: null, auto_restart: false, restart_policy: "no", portal_enabled: false, portal_port: null, portal_published_port: null, portal_protocol: "http", compose_managed: false, available_ports: [{ target: 8096, published: 8096, protocol: "tcp" }] });
+    vi.mocked(api.updateDockerContainerSettings).mockResolvedValue({ job: { id: "settings-job" } } as never);
+    vi.mocked(api.dockerImages).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
+    vi.mocked(api.dockerNetworks).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.createDockerContainer).mockResolvedValue({ job: { id: "job-1" } } as never);
   });
 
@@ -59,5 +65,99 @@ describe("DockerManagerApp", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "docker.createContainer" }));
     await waitFor(() => expect(api.createDockerContainer).toHaveBeenCalled());
     expect(vi.mocked(api.createDockerContainer).mock.calls[0][0]).toMatchObject({ name: "safe-web", image: "nginx:stable", secret_environment: { APP_PASSWORD: "private" } });
+  });
+
+  it("imports a JSON container definition into the editable create wizard", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    expect(screen.getByRole("dialog").parentElement).toHaveClass("modal-backdrop", "docker-wizard-backdrop");
+    const file = new File([JSON.stringify({ name: "imported-web", image: "nginx:stable", environment: { TZ: "Europe/Warsaw" }, ports: [{ published: 8080, target: 80, protocol: "tcp" }] })], "container.json", { type: "application/json" });
+    const input = document.querySelector('input[accept=".json,application/json"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByLabelText("docker.field.name")).toHaveValue("imported-web"));
+    expect(screen.getByLabelText("docker.field.image")).toHaveValue("nginx:stable");
+    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
+    expect(screen.getByLabelText("docker.field.environment")).toHaveValue("TZ=Europe/Warsaw");
+    expect(screen.getByLabelText("docker.field.ports")).toHaveValue("8080:80/tcp");
+  });
+
+  it("searches and selects an image already downloaded to Docker", async () => {
+    vi.mocked(api.dockerImages).mockResolvedValue({ items: [
+      { Repository: "nginx", Tag: "stable", ID: "sha256:one" },
+      { Repository: "postgres", Tag: "17", ID: "sha256:two" },
+    ], total: 2, page: 1, page_size: 50, pages: 1 });
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.view_images", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    const imageInput = screen.getByRole("combobox", { name: "docker.field.image" });
+    fireEvent.focus(imageInput);
+    fireEvent.change(imageInput, { target: { value: "post" } });
+
+    const option = await screen.findByRole("option", { name: "postgres:17" });
+    expect(api.dockerImages).toHaveBeenLastCalledWith(expect.objectContaining({ search: "post" }));
+    fireEvent.mouseDown(option);
+    fireEvent.click(option);
+    expect(imageInput).toHaveValue("postgres:17");
+  });
+
+  it("searches and selects an existing Docker network", async () => {
+    vi.mocked(api.dockerNetworks).mockResolvedValue({ items: [
+      { Name: "bridge", Driver: "bridge" },
+      { Name: "app-network", Driver: "bridge" },
+      { Name: "host", Driver: "host" },
+      { Name: "none", Driver: "null" },
+    ], total: 4, page: 1, page_size: 50, pages: 1 });
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.view_networks", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    const networkInput = screen.getByRole("combobox", { name: "docker.field.network" });
+    fireEvent.focus(networkInput);
+    fireEvent.change(networkInput, { target: { value: "app" } });
+
+    const option = await screen.findByRole("option", { name: "app-network" });
+    expect(api.dockerNetworks).toHaveBeenLastCalledWith("app");
+    expect(screen.queryByRole("option", { name: "host" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "none" })).not.toBeInTheDocument();
+    fireEvent.mouseDown(option);
+    fireEvent.click(option);
+    expect(networkInput).toHaveValue("app-network");
+  });
+
+  it("validates, saves, and starts an imported Compose file", async () => {
+    vi.mocked(api.validateDockerCompose).mockResolvedValue({} as never);
+    vi.mocked(api.saveDockerComposeProject).mockResolvedValue({} as never);
+    vi.mocked(api.dockerComposeAction).mockResolvedValue({ job: { id: "compose-job" } } as never);
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container", "docker.manage_compose"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    const file = new File(["services:\n  web:\n    image: nginx:stable\n"], "my-stack.yaml", { type: "application/yaml" });
+    const input = document.querySelector('input[accept^=".yaml"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(await screen.findByRole("heading", { name: "docker.importComposeAndRun" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "docker.importAndRun" }));
+    await waitFor(() => expect(api.validateDockerCompose).toHaveBeenCalled());
+    expect(api.saveDockerComposeProject).toHaveBeenCalledWith("my-stack", expect.objectContaining({ content: expect.stringContaining("nginx:stable") }));
+    expect(api.dockerComposeAction).toHaveBeenCalledWith("my-stack", expect.objectContaining({ action: "up" }));
+  });
+
+  it("modifies live container resources, restart policy, name, and web portal", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.inspect_container", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByTitle("docker.inspect"));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.detail.settings" }));
+    expect(await screen.findByLabelText("docker.containerName")).toHaveValue("web");
+    fireEvent.change(screen.getByLabelText("docker.containerName"), { target: { value: "jellyfin" } });
+    fireEvent.click(screen.getByLabelText("docker.enableResourceLimits"));
+    fireEvent.change(screen.getByLabelText("docker.cpuPriority"), { target: { value: "high" } });
+    fireEvent.change(screen.getByLabelText("docker.memoryLimit"), { target: { value: "4096" } });
+    fireEvent.click(screen.getByLabelText("docker.enableAutoRestart"));
+    fireEvent.click(screen.getByLabelText("docker.configureWebPortal"));
+    fireEvent.click(screen.getByRole("button", { name: "action.save" }));
+
+    await waitFor(() => expect(api.updateDockerContainerSettings).toHaveBeenCalledWith("abc", expect.objectContaining({
+      name: "jellyfin", resource_limits_enabled: true, cpu_priority: "high", memory_mb: 4096,
+      auto_restart: true, portal_enabled: true, portal_port: 8096, portal_protocol: "http", confirmation: "abc",
+    })));
   });
 });

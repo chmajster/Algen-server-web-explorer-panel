@@ -249,6 +249,31 @@ class ContainerActionRequest(DockerModel):
         return self
 
 
+class ContainerSettingsRequest(DockerModel):
+    name: str
+    resource_limits_enabled: bool = False
+    cpu_priority: Literal["low", "medium", "high"] = "medium"
+    memory_mb: int | None = Field(default=None, ge=16, le=1_048_576)
+    auto_restart: bool = True
+    portal_enabled: bool = False
+    portal_port: int | None = Field(default=None, ge=1, le=65535)
+    portal_protocol: Literal["http", "https"] = "http"
+    confirmation: str = ""
+
+    @field_validator("name")
+    @classmethod
+    def valid_name(cls, value: str) -> str:
+        return _identifier(value, "container name")
+
+    @model_validator(mode="after")
+    def required_settings(self) -> "ContainerSettingsRequest":
+        if self.resource_limits_enabled and self.memory_mb is None:
+            raise ValueError("memory limit is required when resource limits are enabled")
+        if self.portal_enabled and self.portal_port is None:
+            raise ValueError("a published container port is required for the web portal")
+        return self
+
+
 class ImageActionRequest(DockerModel):
     action: Literal["pull", "update", "remove", "prune", "save"]
     image: str | None = None

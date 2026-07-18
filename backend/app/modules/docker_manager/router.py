@@ -34,6 +34,7 @@ from .models import (
     ContainerCreateRequest,
     ContainerFilesystemImportRequest,
     ContainerRestoreRequest,
+    ContainerSettingsRequest,
     DaemonConfigRequest,
     EngineActionRequest,
     ImageActionRequest,
@@ -303,6 +304,21 @@ def container_processes(target: str, user: SessionUser = Depends(current_user)):
 def container_compose(target: str, user: SessionUser = Depends(current_user)):
     _allow(user, "docker.inspect_container")
     return _provider(user).generate_compose(target)
+
+
+@router.get("/containers/{target}/settings")
+def container_settings(target: str, user: SessionUser = Depends(current_user)):
+    _allow(user, "docker.inspect_container")
+    return _provider(user).container_settings(target)
+
+
+@router.put("/containers/{target}/settings")
+def update_container_settings(target: str, payload: ContainerSettingsRequest, user: SessionUser = Depends(mutating_user)):
+    _allow(user, "docker.create_container")
+    if payload.confirmation != target:
+        api_error(400, "EXACT_CONFIRMATION_REQUIRED", "Enter the current container name to update its settings", expected=target)
+    settings = payload.model_dump(mode="json", exclude={"confirmation"})
+    return _enqueue("container_settings", {"target": target, "settings": settings}, user, warning="Resource and restart settings are applied to the running container")
 
 
 @router.get("/containers/{target}")

@@ -50,8 +50,9 @@ describe("network settings", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("shows interface traffic, errors, link data, addresses, gateway, and DNS", async () => {
-    render(<NetworkSettingsSection isAdmin t={t} toast={vi.fn()} />);
+    render(<NetworkSettingsSection isAdmin t={t} />);
 
+    expect(screen.queryByRole("tab", { name: "settings.networkResources" })).not.toBeInTheDocument();
     expect(await screen.findByText("eth0")).toBeInTheDocument();
     expect(screen.getByText("1000 Mb/s · full")).toBeInTheDocument();
     expect(screen.getByText("192.0.2.10/24")).toBeInTheDocument();
@@ -63,7 +64,7 @@ describe("network settings", () => {
   });
 
   it("shows DNS configuration and runs a validated name-resolution test", async () => {
-    render(<NetworkSettingsSection isAdmin t={t} toast={vi.fn()} />);
+    render(<NetworkSettingsSection isAdmin t={t} />);
     fireEvent.click(screen.getByRole("tab", { name: "DNS" }));
 
     expect(await screen.findByRole("heading", { name: "/etc/resolv.conf" })).toBeInTheDocument();
@@ -78,7 +79,7 @@ describe("network settings", () => {
   });
 
   it("renders gateways, routes, and rules as a read-only view", async () => {
-    render(<NetworkSettingsSection isAdmin t={t} toast={vi.fn()} />);
+    render(<NetworkSettingsSection isAdmin t={t} />);
     fireEvent.click(screen.getByRole("tab", { name: "network.routing" }));
 
     expect(await screen.findByText("network.readOnlyHint")).toBeInTheDocument();

@@ -383,6 +383,13 @@ export type ModuleSummary = PackageModule & { module_status: ModuleStatus; capab
 export type DockerPaged<T = Record<string, unknown>> = { items: T[]; total: number; page: number; page_size: number; pages: number };
 export type DockerDashboard = { status: ModuleStatus; counts: Record<string, number>; storage: Array<Record<string, unknown>>; security: Array<{ level: string; message: string }>; engine: Record<string, unknown>; usage: { cpu_percent?: number; memory_bytes?: number }; events: Array<Record<string, unknown>>; updates: Array<Record<string, unknown>>; prune_preview: { total?: number; estimated_reclaimable?: number } };
 export type DockerContainer = { ID?: string; Names?: string; Image?: string; State?: string; Status?: string; Ports?: string; Size?: string; [key: string]: unknown };
+export type DockerContainerSettings = {
+  name: string; resource_limits_enabled: boolean; cpu_priority: "low" | "medium" | "high"; memory_mb: number | null;
+  auto_restart: boolean; restart_policy: string; portal_enabled: boolean; portal_port: number | null; portal_published_port: number | null;
+  portal_protocol: "http" | "https"; compose_managed: boolean;
+  available_ports: Array<{ target: number; published: number; protocol: "tcp" | "udp"; host_ip?: string | null }>;
+};
+export type DockerContainerSettingsUpdate = Pick<DockerContainerSettings, "name" | "resource_limits_enabled" | "cpu_priority" | "memory_mb" | "auto_restart" | "portal_enabled" | "portal_port" | "portal_protocol"> & { confirmation: string };
 export type DockerImage = { ID?: string; Repository?: string; Tag?: string; Digest?: string; Size?: string; CreatedSince?: string; consumers?: string[]; [key: string]: unknown };
 export type DockerApp = { id: string; name: string; description: string; image: string; container: string; category: string; panel_port: number; ports: string[]; version: string; required_secrets: string[]; architectures: string[]; healthcheck: string; dependencies: string[]; minimum_memory_mb: number; documentation_url: string; update_strategy: string; backup_strategy: string; uninstall_strategy: string; installed: boolean; running: boolean; managed: boolean; status: string };
 export type DockerArtifact = { id: string; kind: string; display_name: string; checksum: string; size: number; created_at: number; created_by: string; metadata: Record<string, unknown> };
@@ -905,6 +912,8 @@ export const api = {
   dockerContainerLogs: (target: string, params: Record<string, string | number> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => query.set(key, String(value))); return request<{ lines: string[]; total: number; truncated: boolean }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/logs?${query}`); },
   dockerContainerProcesses: (target: string) => request<{ items: Array<Record<string, string>>; total: number; truncated: boolean }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/processes`),
   dockerContainerCompose: (target: string) => request<{ content: string; secrets_omitted: boolean; environment_keys: string[] }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/compose`),
+  dockerContainerSettings: (target: string) => request<DockerContainerSettings>(`/api/modules/docker/containers/${encodeURIComponent(target)}/settings`),
+  updateDockerContainerSettings: (target: string, payload: DockerContainerSettingsUpdate) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/settings`, { method: "PUT", body: JSON.stringify(payload) }),
   createDockerContainer: (payload: DockerContainerCreate) => request<{ job: ModuleJob }>("/api/modules/docker/containers", { method: "POST", body: JSON.stringify(payload) }),
   dockerContainerAction: (target: string, payload: DockerContainerAction) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
   dockerContainerBackup: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/backup?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),

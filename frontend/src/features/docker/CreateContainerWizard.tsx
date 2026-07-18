@@ -1,6 +1,7 @@
-import { ArrowLeft, ArrowRight, Boxes, Plus, Trash2, X } from "lucide-react";
-import { useState } from "react";
-import { api, type ModuleJob } from "../../api";
+import { ArrowLeft, ArrowRight, Boxes, FileJson, Plus, ScrollText, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { api, type DockerContainerCreate, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { errorMessage } from "./shared";
 
@@ -49,11 +50,17 @@ export function CreateContainerWizard({
   toast,
   onClose,
   onStarted,
+  canImportCompose,
+  canViewLocalImages,
+  canViewLocalNetworks,
 }: {
   t: Translate;
   toast: ToastFn;
   onClose: () => void;
   onStarted: (job: ModuleJob) => void;
+  canImportCompose: boolean;
+  canViewLocalImages: boolean;
+  canViewLocalNetworks: boolean;
 }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -80,6 +87,155 @@ export function CreateContainerWizard({
   const [readOnly, setReadOnly] = useState(false);
   const [init, setInit] = useState(true);
   const [autoStart, setAutoStart] = useState(true);
+  const [composeMode, setComposeMode] = useState(false);
+  const [composeProject, setComposeProject] = useState("");
+  const [composeContent, setComposeContent] = useState("");
+  const [composeEnvironment, setComposeEnvironment] = useState("");
+  const [composeSecretEnvironment, setComposeSecretEnvironment] = useState("");
+  const [composeAutoStart, setComposeAutoStart] = useState(true);
+  const [localImages, setLocalImages] = useState<string[]>([]);
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const [localNetworks, setLocalNetworks] = useState<string[]>(["bridge"]);
+  const [networksLoading, setNetworksLoading] = useState(false);
+  const [networkPickerOpen, setNetworkPickerOpen] = useState(false);
+  const configUpload = useRef<HTMLInputElement>(null);
+  const composeUpload = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!canViewLocalImages) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setImagesLoading(true);
+      void api.dockerImages({ search: image.trim(), page_size: 50, sort: "Repository", direction: "asc" })
+        .then((result) => {
+          if (!active) return;
+          const references = result.items
+            .map((item) => {
+              const repository = String(item.Repository || "");
+              const tag = String(item.Tag || "");
+              return repository && repository !== "<none>" ? `${repository}:${tag && tag !== "<none>" ? tag : "latest"}` : "";
+            })
+            .filter(Boolean);
+          setLocalImages([...new Set(references)]);
+        })
+        .catch(() => { if (active) setLocalImages([]); })
+        .finally(() => { if (active) setImagesLoading(false); });
+    }, 180);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [canViewLocalImages, image]);
+
+  const imageSuggestions = useMemo(() => {
+    const needle = image.trim().toLowerCase();
+    return localImages.filter((item) => !needle || item.toLowerCase().includes(needle)).slice(0, 12);
+  }, [image, localImages]);
+
+  useEffect(() => {
+    if (!canViewLocalNetworks) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setNetworksLoading(true);
+      void api.dockerNetworks(network.trim())
+        .then((result) => {
+          if (!active) return;
+          const names = result.items
+            .map((item) => String(item.Name || ""))
+            .filter((item) => item && item !== "host" && item !== "none");
+          setLocalNetworks([...new Set(names)]);
+        })
+        .catch(() => { if (active) setLocalNetworks(["bridge"]); })
+        .finally(() => { if (active) setNetworksLoading(false); });
+    }, 180);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [canViewLocalNetworks, network]);
+
+  const networkSuggestions = useMemo(() => {
+    const needle = network.trim().toLowerCase();
+    return localNetworks.filter((item) => !needle || item.toLowerCase().includes(needle)).slice(0, 12);
+  }, [localNetworks, network]);
+
+  function lines(value: Record<string, string> | undefined) {
+    return Object.entries(value || {}).map(([key, item]) => `${key}=${item}`).join("\n");
+  }
+
+  async function importConfig(file?: File) {
+    if (!file) return;
+    try {
+      if (file.size > 512 * 1024) throw new Error(t("docker.configTooLarge"));
+      const parsed = JSON.parse(await file.text()) as DockerContainerCreate;
+      if (!parsed || typeof parsed !== "object" || typeof parsed.name !== "string" || typeof parsed.image !== "string")
+        throw new Error(t("docker.invalidContainerConfig"));
+      setName(parsed.name);
+      setImage(parsed.image);
+      setNetwork(parsed.network || "bridge");
+      setNetworkAliases((parsed.network_aliases || []).join(", "));
+      setHostname(parsed.hostname || "");
+      setWorkingDir(parsed.working_dir || "");
+      setContainerUser(parsed.user || "");
+      setRestartPolicy(parsed.restart_policy || "unless-stopped");
+      setEnvironment(lines(parsed.environment));
+      setSecretRows(Object.entries(parsed.secret_environment || {}).map(([key, value]) => ({ key, value })).concat(Object.keys(parsed.secret_environment || {}).length ? [] : [{ key: "", value: "" }]));
+      setPorts((parsed.ports || []).map((item) => `${item.published}:${item.target}/${item.protocol || "tcp"}`).join("\n"));
+      setMounts((parsed.mounts || []).map((item) => item.type === "tmpfs" ? `tmpfs:${item.target}${item.tmpfs_size_mb ? `:${item.tmpfs_size_mb}` : ""}` : `${item.type}:${item.source || ""}:${item.target}${item.read_only ? ":ro" : ""}`).join("\n"));
+      setLabels(lines(parsed.labels));
+      setMemory(parsed.limits?.memory_mb == null ? "" : String(parsed.limits.memory_mb));
+      setMemorySwap(parsed.limits?.memory_swap_mb == null ? "" : String(parsed.limits.memory_swap_mb));
+      setCpus(parsed.limits?.cpus == null ? "" : String(parsed.limits.cpus));
+      setPids(parsed.limits?.pids == null ? "" : String(parsed.limits.pids));
+      setHealthType(parsed.healthcheck?.type || "none");
+      setHealthPort(parsed.healthcheck?.port == null ? "" : String(parsed.healthcheck.port));
+      setHealthPath(parsed.healthcheck?.path || "/");
+      setReadOnly(Boolean(parsed.read_only));
+      setInit(parsed.init ?? true);
+      setAutoStart(parsed.auto_start ?? true);
+      setStep(0);
+      toast(t("docker.configImported"), "ok", "admin");
+    } catch (error) {
+      toast(errorMessage(error, t), "error", "admin");
+    } finally {
+      if (configUpload.current) configUpload.current.value = "";
+    }
+  }
+
+  async function importCompose(file?: File) {
+    if (!file) return;
+    try {
+      if (file.size > 512 * 1024) throw new Error(t("docker.composeTooLarge"));
+      const base = file.name.replace(/\.(ya?ml)$/i, "").toLowerCase();
+      setComposeProject(base.replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63) || "imported-compose");
+      setComposeContent(await file.text());
+      setComposeMode(true);
+    } catch (error) {
+      toast(errorMessage(error, t), "error", "admin");
+    } finally {
+      if (composeUpload.current) composeUpload.current.value = "";
+    }
+  }
+
+  async function submitCompose() {
+    setBusy(true);
+    try {
+      const payload = {
+        content: composeContent,
+        environment: pairs(composeEnvironment, t("docker.invalidEnvironment")),
+        secret_environment: composeSecretEnvironment.trim() ? pairs(composeSecretEnvironment, t("docker.invalidEnvironment")) : null,
+        description: t("docker.composeImported"),
+      };
+      await api.validateDockerCompose(composeProject, payload);
+      await api.saveDockerComposeProject(composeProject, payload);
+      if (composeAutoStart) {
+        const result = await api.dockerComposeAction(composeProject, { action: "up", services: [], remove_volumes: false, confirmation: "" });
+        if (result.job) onStarted(result.job);
+      } else {
+        toast(t("docker.composeSaved"), "ok", "admin");
+      }
+      onClose();
+    } catch (error) {
+      toast(errorMessage(error, t), "error", "admin");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submit() {
     setBusy(true);
     try {
@@ -138,10 +294,35 @@ export function CreateContainerWizard({
       setBusy(false);
     }
   }
-  return (
-    <div className="dialog-backdrop">
+  if (composeMode) return createPortal(
+    <div className="modal-backdrop docker-wizard-backdrop">
+      <section className="modal-panel docker-wizard" role="dialog" aria-modal="true" aria-labelledby="docker-compose-import-title">
+        <header>
+          <div><ScrollText /><h2 id="docker-compose-import-title">{t("docker.importComposeAndRun")}</h2></div>
+          <button aria-label={t("action.close")} onClick={onClose}><X /></button>
+        </header>
+        <div className="docker-wizard-body docker-compose-import">
+          <label>{t("docker.projectName")}<input value={composeProject} onChange={(event) => setComposeProject(event.target.value)} autoFocus required /></label>
+          <label>{t("docker.composeYaml")}<textarea className="docker-code-editor" value={composeContent} onChange={(event) => setComposeContent(event.target.value)} required /></label>
+          <div className="form-grid">
+            <label>{t("docker.publicEnvironment")}<textarea value={composeEnvironment} onChange={(event) => setComposeEnvironment(event.target.value)} placeholder="TZ=Europe/Warsaw" /></label>
+            <label>{t("docker.secretEnvironment")}<textarea value={composeSecretEnvironment} onChange={(event) => setComposeSecretEnvironment(event.target.value)} /></label>
+          </div>
+          <label className="check-row"><input type="checkbox" checked={composeAutoStart} onChange={(event) => setComposeAutoStart(event.target.checked)} />{t("docker.startAfterImport")}</label>
+          <p className="field-hint">{t("docker.composeImportHint")}</p>
+        </div>
+        <footer>
+          <button onClick={() => setComposeMode(false)}><ArrowLeft />{t("action.back")}</button><span />
+          <button className="button-primary" disabled={busy || !composeProject || !composeContent.trim()} onClick={() => void submitCompose()}><Upload />{t(composeAutoStart ? "docker.importAndRun" : "docker.importCompose")}</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+  return createPortal(
+    <div className="modal-backdrop docker-wizard-backdrop">
       <section
-        className="dialog docker-wizard"
+        className="modal-panel docker-wizard"
         role="dialog"
         aria-modal="true"
         aria-labelledby="docker-create-title"
@@ -150,6 +331,14 @@ export function CreateContainerWizard({
           <div>
             <Boxes />
             <h2 id="docker-create-title">{t("docker.createContainer")}</h2>
+          </div>
+          <div className="docker-wizard-imports">
+            <input ref={configUpload} className="visually-hidden" type="file" accept=".json,application/json" onChange={(event) => void importConfig(event.target.files?.[0])} />
+            <button type="button" onClick={() => configUpload.current?.click()}><FileJson />{t("docker.importContainerConfig")}</button>
+            {canImportCompose && <>
+              <input ref={composeUpload} className="visually-hidden" type="file" accept=".yaml,.yml,application/yaml,text/yaml" onChange={(event) => void importCompose(event.target.files?.[0])} />
+              <button type="button" onClick={() => composeUpload.current?.click()}><ScrollText />{t("docker.importCompose")}</button>
+            </>}
           </div>
           <button aria-label={t("action.close")} onClick={onClose}>
             <X />
@@ -183,19 +372,52 @@ export function CreateContainerWizard({
               </label>
               <label>
                 {t("docker.field.image")}
-                <input
-                  value={image}
-                  onChange={(event) => setImage(event.target.value)}
-                  placeholder="nginx:stable"
-                  required
-                />
+                <div className="docker-resource-picker">
+                  <input
+                    value={image}
+                    onChange={(event) => setImage(event.target.value)}
+                    onFocus={() => setImagePickerOpen(true)}
+                    onBlur={() => setImagePickerOpen(false)}
+                    placeholder="nginx:stable"
+                    role="combobox"
+                    aria-label={t("docker.field.image")}
+                    aria-autocomplete="list"
+                    aria-expanded={imagePickerOpen && canViewLocalImages}
+                    aria-controls="docker-local-image-options"
+                    required
+                  />
+                  {imagePickerOpen && canViewLocalImages && (
+                    <div id="docker-local-image-options" className="docker-resource-options" role="listbox" aria-label={t("docker.localImages")}>
+                      {imageSuggestions.map((item) => <button key={item} type="button" role="option" aria-selected={image === item} onMouseDown={(event) => event.preventDefault()} onClick={() => { setImage(item); setImagePickerOpen(false); }}>{item}</button>)}
+                      {!imageSuggestions.length && <span>{imagesLoading ? t("status.loading") : t("docker.noLocalImages")}</span>}
+                    </div>
+                  )}
+                </div>
+                {canViewLocalImages && <small className="field-hint">{t("docker.localImageSearchHint")}</small>}
               </label>
               <label>
                 {t("docker.field.network")}
-                <input
-                  value={network}
-                  onChange={(event) => setNetwork(event.target.value)}
-                />
+                <div className="docker-resource-picker">
+                  <input
+                    value={network}
+                    onChange={(event) => setNetwork(event.target.value)}
+                    onFocus={() => setNetworkPickerOpen(true)}
+                    onBlur={() => setNetworkPickerOpen(false)}
+                    role="combobox"
+                    aria-label={t("docker.field.network")}
+                    aria-autocomplete="list"
+                    aria-expanded={networkPickerOpen && canViewLocalNetworks}
+                    aria-controls="docker-local-network-options"
+                    required
+                  />
+                  {networkPickerOpen && canViewLocalNetworks && (
+                    <div id="docker-local-network-options" className="docker-resource-options" role="listbox" aria-label={t("docker.localNetworks")}>
+                      {networkSuggestions.map((item) => <button key={item} type="button" role="option" aria-selected={network === item} onMouseDown={(event) => event.preventDefault()} onClick={() => { setNetwork(item); setNetworkPickerOpen(false); }}>{item}</button>)}
+                      {!networkSuggestions.length && <span>{networksLoading ? t("status.loading") : t("docker.noLocalNetworks")}</span>}
+                    </div>
+                  )}
+                </div>
+                {canViewLocalNetworks && <small className="field-hint">{t("docker.localNetworkSearchHint")}</small>}
               </label>
               <label>
                 {t("docker.field.networkAliases")}
@@ -390,6 +612,7 @@ export function CreateContainerWizard({
           )}
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

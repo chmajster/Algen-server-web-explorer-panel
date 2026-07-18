@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from app.identity.models import Role
 from app.identity.permissions import ROLE_PERMISSIONS
-from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, MountSpec, NetworkCreateRequest, RegistryRequest
+from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, ContainerSettingsRequest, MountSpec, NetworkCreateRequest, RegistryRequest
 from app.modules.docker_manager.storage import DockerManagerStore
 from app.modules import router as legacy_module_router
 from app.modules.providers.container_apps import CONTAINER_APPS
@@ -63,6 +63,13 @@ def test_compose_scale_contract_is_typed_and_bounded():
         ComposeActionRequest(action="scale", scale={"web": 1001})
 
 
+def test_container_settings_require_limits_and_a_published_port_selection():
+    with pytest.raises(ValidationError):
+        ContainerSettingsRequest(name="demo", resource_limits_enabled=True)
+    with pytest.raises(ValidationError):
+        ContainerSettingsRequest(name="demo", portal_enabled=True)
+
+
 def test_private_store_never_returns_registry_password_and_consumes_inputs(tmp_path: Path):
     storage = DockerManagerStore(tmp_path / "docker")
     saved = storage.save_registry(registry_id=None, name="ghcr", provider="ghcr", server="ghcr.io", username="alice", password="private-value")
@@ -72,7 +79,11 @@ def test_private_store_never_returns_registry_password_and_consumes_inputs(tmp_p
     assert b"private-value" not in storage.path.read_bytes()
     assert storage.registry_credentials(saved["id"])["password"] == "private-value"
     with sqlite3.connect(storage.path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+
+    preferences = storage.save_container_preferences("sha256:container", portal_enabled=True, portal_protocol="https", portal_port=8096)
+    assert preferences["portal_enabled"] == 1
+    assert storage.container_preferences("sha256:container")["portal_port"] == 8096
 
     token = storage.stage_input({"environment": {"APP_PASSWORD": "one-time"}})
     assert storage.consume_input(token)["environment"]["APP_PASSWORD"] == "one-time"
@@ -102,7 +113,7 @@ def test_registry_v1_migration_moves_plaintext_credential_to_private_store(tmp_p
     assert storage.registry_credentials("0123456789abcdef01234567")["password"] == "legacy-secret"
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT password FROM registries").fetchone()[0] == ""
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
     assert all(b"legacy-secret" not in path.read_bytes() for path in root.glob("manager.sqlite3*"))
 
 
@@ -190,6 +201,36 @@ def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, 
     assert "--health-cmd" in docker_run and "--pids-limit" in docker_run and docker_run.count("--mount") == 2
     assert all(input_text is None for _, input_text in calls)
     assert not list(storage.inputs_dir.glob("env-*.list"))
+
+
+def test_running_container_settings_use_typed_docker_update_and_store_portal(monkeypatch, tmp_path: Path):
+    provider = DockerProvider("alice")
+    storage = DockerManagerStore(tmp_path / "manager")
+    monkeypatch.setattr(DockerProvider, "manager_store", property(lambda self: storage))
+    inspect = {
+        "Id": "sha256:demo", "Name": "/demo", "Config": {"Labels": {}, "Image": "jellyfin:latest"},
+        "HostConfig": {"PortBindings": {"8096/tcp": [{"HostIp": "", "HostPort": "8096"}]}, "RestartPolicy": {"Name": "no"}},
+    }
+    monkeypatch.setattr(provider, "_inspect", lambda kind, target: inspect)
+    monkeypatch.setattr(provider, "_inspect_container", lambda name: None)
+    monkeypatch.setattr(provider, "container_settings", lambda name: {"name": name})
+    monkeypatch.setattr(provider, "container_details", lambda name: {"name": name})
+    calls: list[list[str]] = []
+    monkeypatch.setattr(provider, "_run", lambda args, timeout=30, input_text=None, env=None: calls.append(list(args)) or subprocess.CompletedProcess(args, 0, "", ""))
+
+    result = provider.update_container_settings("demo", {
+        "name": "media", "resource_limits_enabled": True, "cpu_priority": "high", "memory_mb": 4096,
+        "auto_restart": True, "portal_enabled": True, "portal_port": 8096, "portal_protocol": "http",
+    })
+
+    update = calls[0]
+    assert update[:2] == ["docker", "update"]
+    assert update[update.index("--cpu-shares") + 1] == "2048"
+    assert update[update.index("--memory") + 1] == "4096m"
+    assert update[update.index("--restart") + 1] == "unless-stopped"
+    assert calls[1] == ["docker", "rename", "demo", "media"]
+    assert storage.container_preferences("sha256:demo")["portal_port"] == 8096
+    assert result["container"]["name"] == "media"
 
 
 def test_granular_docker_permissions_keep_high_risk_admin_only():
@@ -311,3 +352,21 @@ def test_inspect_response_omits_environment_values(monkeypatch):
     assert result["environment_keys"] == ["APP_PASSWORD", "MODE"]
     assert "private-value" not in encoded
     assert "MODE=prod" not in encoded
+
+
+def test_container_settings_offer_only_real_published_ports(monkeypatch, tmp_path: Path):
+    provider = DockerProvider("alice")
+    storage = DockerManagerStore(tmp_path / "manager")
+    monkeypatch.setattr(DockerProvider, "manager_store", property(lambda self: storage))
+    monkeypatch.setattr(provider, "_inspect", lambda kind, target: {
+        "Id": "abc", "Name": "/media", "Config": {"Labels": {"com.docker.compose.project": "jellyfin"}},
+        "HostConfig": {"CpuShares": 2048, "Memory": 4096 * 1024 * 1024, "RestartPolicy": {"Name": "unless-stopped"}, "PortBindings": {"8096/tcp": [{"HostIp": "", "HostPort": "18096"}], "1900/udp": None}},
+    })
+    storage.save_container_preferences("abc", portal_enabled=True, portal_protocol="http", portal_port=8096)
+
+    result = provider.container_settings("media")
+
+    assert result["cpu_priority"] == "high" and result["memory_mb"] == 4096
+    assert result["portal_enabled"] is True and result["portal_published_port"] == 18096
+    assert result["available_ports"] == [{"target": 8096, "published": 18096, "protocol": "tcp", "host_ip": None}]
+    assert result["compose_managed"] is True

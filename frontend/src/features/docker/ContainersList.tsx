@@ -143,6 +143,9 @@ export function ContainersList({
         target={selected}
         t={t}
         onBack={() => setSelected("")}
+        permissions={permissions}
+        toast={toast}
+        onJob={onJob}
       />
     );
   return (
@@ -359,6 +362,9 @@ export function ContainersList({
           toast={toast}
           onClose={() => setWizard(false)}
           onStarted={onJob}
+          canImportCompose={permissions.includes("docker.manage_compose")}
+          canViewLocalImages={permissions.includes("docker.view_images")}
+          canViewLocalNetworks={permissions.includes("docker.view_networks")}
         />
       )}
       {dialog && (

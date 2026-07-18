@@ -5,11 +5,13 @@ import {
   Gauge,
   ListTree,
   RefreshCw,
+  Save,
+  Settings,
   TerminalSquare,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api } from "../../api";
-import type { Translate } from "../../app/types";
+import { api, type DockerContainerSettings, type ModuleJob } from "../../api";
+import type { ToastFn, Translate } from "../../app/types";
 import {
   DockerTable,
   LoadState,
@@ -18,7 +20,61 @@ import {
   StatusPill,
 } from "./shared";
 
-type DetailTab = "overview" | "stats" | "logs" | "processes";
+type DetailTab = "overview" | "stats" | "logs" | "processes" | "settings";
+
+function ContainerSettingsEditor({ target, value, t, toast, onStarted, onBack }: { target: string; value: DockerContainerSettings; t: Translate; toast: ToastFn; onStarted: (job: ModuleJob) => void; onBack: () => void }) {
+  const [name, setName] = useState(value.name);
+  const [limitsEnabled, setLimitsEnabled] = useState(value.resource_limits_enabled);
+  const [cpuPriority, setCpuPriority] = useState(value.cpu_priority);
+  const [memory, setMemory] = useState(String(value.memory_mb || 4096));
+  const [autoRestart, setAutoRestart] = useState(value.auto_restart);
+  const [portalEnabled, setPortalEnabled] = useState(value.portal_enabled);
+  const [portalPort, setPortalPort] = useState(String(value.portal_port || value.available_ports.find((item) => item.protocol === "tcp")?.target || ""));
+  const [portalProtocol, setPortalProtocol] = useState(value.portal_protocol);
+  const [saving, setSaving] = useState(false);
+  const portalPorts = value.available_ports.filter((item) => item.protocol === "tcp");
+  const selectedBinding = portalPorts.find((item) => item.target === Number(portalPort));
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const result = await api.updateDockerContainerSettings(target, {
+        name, resource_limits_enabled: limitsEnabled, cpu_priority: cpuPriority,
+        memory_mb: limitsEnabled ? Number(memory) : null, auto_restart: autoRestart,
+        portal_enabled: portalEnabled, portal_port: portalEnabled ? Number(portalPort) : null,
+        portal_protocol: portalProtocol, confirmation: target,
+      });
+      onStarted(result.job);
+      onBack();
+    } catch (reason) {
+      toast(errorMessage(reason, t), "error", "admin");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <form className="docker-container-settings" onSubmit={(event) => void submit(event)}>
+    {value.compose_managed && <p className="docker-notice warning">{t("docker.composeManagedSettingsWarning")}</p>}
+    <label>{t("docker.containerName")}<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
+    <fieldset>
+      <label className="check-row"><input type="checkbox" checked={limitsEnabled} onChange={(event) => setLimitsEnabled(event.target.checked)} />{t("docker.enableResourceLimits")}</label>
+      <div className="docker-settings-fields" aria-disabled={!limitsEnabled}>
+        <label>{t("docker.cpuPriority")}<select value={cpuPriority} disabled={!limitsEnabled} onChange={(event) => setCpuPriority(event.target.value as typeof cpuPriority)}>{(["low", "medium", "high"] as const).map((item) => <option key={item} value={item}>{t(`docker.priority.${item}`)}</option>)}</select></label>
+        <label>{t("docker.memoryLimit")}<span className="docker-unit-input"><input aria-label={t("docker.memoryLimit")} type="number" min="16" max="1048576" value={memory} disabled={!limitsEnabled} onChange={(event) => setMemory(event.target.value)} required={limitsEnabled} /><span>MB</span></span></label>
+      </div>
+    </fieldset>
+    <label className="check-row"><input type="checkbox" checked={autoRestart} onChange={(event) => setAutoRestart(event.target.checked)} />{t("docker.enableAutoRestart")}</label>
+    <fieldset>
+      <label className="check-row"><input type="checkbox" checked={portalEnabled} disabled={!portalPorts.length} onChange={(event) => setPortalEnabled(event.target.checked)} />{t("docker.configureWebPortal")}</label>
+      {portalEnabled && <div className="docker-settings-fields">
+        <label>{t("docker.containerPort")}<select value={portalPort} onChange={(event) => setPortalPort(event.target.value)} required>{portalPorts.map((item) => <option key={`${item.target}:${item.published}`} value={item.target}>{item.target} → {item.published}</option>)}</select></label>
+        <label>{t("docker.portalProtocol")}<select value={portalProtocol} onChange={(event) => setPortalProtocol(event.target.value as typeof portalProtocol)}><option value="http">HTTP</option><option value="https">HTTPS</option></select></label>
+      </div>}
+      {!portalPorts.length && <small className="field-hint">{t("docker.portalRequiresPublishedPort")}</small>}
+      {portalEnabled && selectedBinding && <a href={`${portalProtocol}://${window.location.hostname}:${selectedBinding.published}`} target="_blank" rel="noreferrer">{t("docker.openPanel")}: {portalProtocol}://{window.location.hostname}:{selectedBinding.published}</a>}
+    </fieldset>
+    <footer><button className="button-primary" type="submit" disabled={saving || !name || limitsEnabled && !memory || portalEnabled && !portalPort}><Save />{saving ? t("status.loading") : t("action.save")}</button></footer>
+  </form>;
+}
 
 function Sparkline({ values }: { values: number[] }) {
   const samples = values.slice(-60);
@@ -39,10 +95,16 @@ export function ContainerDetails({
   target,
   t,
   onBack,
+  permissions,
+  toast,
+  onJob,
 }: {
   target: string;
   t: Translate;
   onBack: () => void;
+  permissions: string[];
+  toast: ToastFn;
+  onJob: (job: ModuleJob) => void;
 }) {
   const [tab, setTab] = useState<DetailTab>("overview");
   const [data, setData] = useState<Record<string, unknown> | null>(null);
@@ -64,6 +126,8 @@ export function ContainerDetails({
         setExtra(await api.dockerContainerLogs(target, { tail: 500, search: logSearch, level: logLevel, since: logSince }));
       else if (tab === "processes")
         setExtra(await api.dockerContainerProcesses(target));
+      else if (tab === "settings")
+        setExtra(await api.dockerContainerSettings(target));
       else setExtra(null);
     } catch (reason) {
       setError(errorMessage(reason, t));
@@ -122,6 +186,7 @@ export function ContainerDetails({
     ["stats", <Gauge />],
     ["logs", <FileText />],
     ["processes", <TerminalSquare />],
+    ...(permissions.includes("docker.create_container") ? [["settings" as DetailTab, <Settings />] as [DetailTab, ReactNode]] : []),
   ];
   return (
     <section className="docker-details">
@@ -232,6 +297,7 @@ export function ContainerDetails({
             empty={t("docker.noProcesses")}
           />
         )}
+        {tab === "settings" && extra !== null && <ContainerSettingsEditor target={target} value={extra as DockerContainerSettings} t={t} toast={toast} onStarted={onJob} onBack={onBack} />}
       </LoadState>
     </section>
   );

@@ -368,6 +368,74 @@ class DockerProvider(PrivateBackupProvider):
         }
         return _redact_value(safe)
 
+    def container_settings(self, target: str) -> dict[str, Any]:
+        inspect = self._inspect("container", target)
+        config = inspect.get("Config") or {}
+        host = inspect.get("HostConfig") or {}
+        container_id = str(inspect.get("Id") or "")
+        ports: list[dict[str, Any]] = []
+        for raw_target, bindings in (host.get("PortBindings") or {}).items():
+            target_port, protocol = str(raw_target).split("/", 1)
+            for binding in bindings or []:
+                if binding.get("HostPort"):
+                    ports.append({"target": int(target_port), "published": int(binding["HostPort"]), "protocol": protocol, "host_ip": binding.get("HostIp") or None})
+        preferences = self.manager_store.container_preferences(container_id)
+        memory = int(host.get("Memory") or 0)
+        cpu_shares = int(host.get("CpuShares") or 0)
+        priority = "low" if cpu_shares and cpu_shares < 768 else "high" if cpu_shares > 1280 else "medium"
+        portal_target = int(preferences.get("portal_port") or 0) or None
+        portal_binding = next((item for item in ports if item["target"] == portal_target and item["protocol"] == "tcp"), None)
+        return {
+            "name": str(inspect.get("Name") or "").removeprefix("/"),
+            "resource_limits_enabled": bool(memory or cpu_shares),
+            "cpu_priority": priority,
+            "memory_mb": memory // (1024 * 1024) if memory else None,
+            "auto_restart": str((host.get("RestartPolicy") or {}).get("Name") or "no") != "no",
+            "restart_policy": str((host.get("RestartPolicy") or {}).get("Name") or "no"),
+            "available_ports": ports,
+            "portal_enabled": bool(preferences.get("portal_enabled") and portal_binding),
+            "portal_port": portal_target,
+            "portal_published_port": portal_binding["published"] if portal_binding else None,
+            "portal_protocol": str(preferences.get("portal_protocol") or "http"),
+            "compose_managed": bool((config.get("Labels") or {}).get("com.docker.compose.project")),
+        }
+
+    def update_container_settings(self, target: str, settings: dict[str, Any]) -> dict[str, Any]:
+        from ..docker_manager.models import ContainerSettingsRequest
+
+        normalized = self._checked_identifier(target, "container")
+        request = ContainerSettingsRequest.model_validate(settings)
+        inspect = self._inspect("container", normalized)
+        original_name = str(inspect.get("Name") or "").removeprefix("/")
+        if request.name != original_name and self._inspect_container(request.name):
+            api_error(409, "CONTAINER_NAME_EXISTS", "A container with the requested name already exists")
+        host = inspect.get("HostConfig") or {}
+        published_targets = {
+            int(str(raw_target).split("/", 1)[0])
+            for raw_target, bindings in (host.get("PortBindings") or {}).items()
+            if str(raw_target).endswith("/tcp") and any(binding.get("HostPort") for binding in (bindings or []))
+        }
+        if request.portal_enabled and request.portal_port not in published_targets:
+            api_error(422, "PORTAL_PORT_NOT_PUBLISHED", "The selected web portal port is not published by this container")
+        cpu_shares = {"low": 256, "medium": 1024, "high": 2048}[request.cpu_priority] if request.resource_limits_enabled else 0
+        memory = f"{request.memory_mb}m" if request.resource_limits_enabled and request.memory_mb else "0"
+        memory_swap = "-1" if request.resource_limits_enabled else "0"
+        restart = "unless-stopped" if request.auto_restart else "no"
+        result = self._run(["docker", "update", "--cpu-shares", str(cpu_shares), "--memory", memory, "--memory-swap", memory_swap, "--restart", restart, normalized], timeout=120)
+        self._result(result, "Could not update container settings")
+        current_name = original_name
+        if request.name != original_name:
+            renamed = self._run(["docker", "rename", normalized, request.name], timeout=30)
+            self._result(renamed, "Container settings were updated but the container could not be renamed")
+            current_name = request.name
+        self.manager_store.save_container_preferences(
+            str(inspect.get("Id") or ""),
+            portal_enabled=request.portal_enabled,
+            portal_protocol=request.portal_protocol,
+            portal_port=request.portal_port if request.portal_enabled else None,
+        )
+        return {"settings": self.container_settings(current_name), "container": self.container_details(current_name)}
+
     def container_processes(self, target: str) -> dict[str, Any]:
         normalized = self._checked_identifier(target, "container")
         headings = ["PID", "PPID", "USER", "STAT", "ELAPSED", "COMMAND"]
@@ -1216,6 +1284,8 @@ class DockerProvider(PrivateBackupProvider):
             input_ref = str(payload.get("input_ref") or "")
             private = self.manager_store.consume_input(input_ref) if input_ref else {}
             response = {"container": self._run_container(definition, dict(private.get("environment") or {}), log)}
+        elif operation == "container_settings":
+            response = self.update_container_settings(str(payload.get("target") or ""), dict(payload.get("settings") or {}))
         elif operation in {"container_start", "container_stop", "container_restart", "container_pause", "container_unpause", "container_kill", "container_rename", "container_remove"}:
             normalized = self._checked_identifier(target, "container")
             if operation == "container_start":

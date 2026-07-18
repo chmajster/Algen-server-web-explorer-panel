@@ -101,6 +101,20 @@ class DockerManagerStore:
                 connection.execute("UPDATE registries SET password='' WHERE password<>''")
                 connection.execute("PRAGMA user_version=2")
                 purge_plaintext = bool(legacy_credentials)
+                version = 2
+            if version < 3:
+                connection.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS container_preferences (
+                        container_id TEXT PRIMARY KEY,
+                        portal_enabled INTEGER NOT NULL DEFAULT 0,
+                        portal_protocol TEXT NOT NULL DEFAULT 'http',
+                        portal_port INTEGER,
+                        updated_at REAL NOT NULL
+                    );
+                    PRAGMA user_version=3;
+                    """
+                )
         if purge_plaintext:
             with self._lock, self._connect() as connection:
                 connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -241,6 +255,22 @@ class DockerManagerStore:
                 [(float(item["captured_at"]), str(item["container_id"]), str(item["name"]), float(item["cpu_percent"]), int(item["memory_bytes"]), int(item["network_input_bytes"]), int(item["network_output_bytes"])) for item in items],
             )
             connection.execute("DELETE FROM stats_history WHERE captured_at<?", (cutoff,))
+
+    def container_preferences(self, container_id: str) -> dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute("SELECT portal_enabled,portal_protocol,portal_port,updated_at FROM container_preferences WHERE container_id=?", (container_id,)).fetchone()
+        return dict(row) if row else {"portal_enabled": False, "portal_protocol": "http", "portal_port": None, "updated_at": None}
+
+    def save_container_preferences(self, container_id: str, *, portal_enabled: bool, portal_protocol: str, portal_port: int | None) -> dict[str, Any]:
+        now = time.time()
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """INSERT INTO container_preferences(container_id,portal_enabled,portal_protocol,portal_port,updated_at)
+                VALUES(?,?,?,?,?) ON CONFLICT(container_id) DO UPDATE SET portal_enabled=excluded.portal_enabled,
+                portal_protocol=excluded.portal_protocol,portal_port=excluded.portal_port,updated_at=excluded.updated_at""",
+                (container_id, int(portal_enabled), portal_protocol, portal_port, now),
+            )
+        return self.container_preferences(container_id)
 
     def stats(self, container_id: str, *, since: float, limit: int = 1000) -> list[dict[str, Any]]:
         with self._connect() as connection:

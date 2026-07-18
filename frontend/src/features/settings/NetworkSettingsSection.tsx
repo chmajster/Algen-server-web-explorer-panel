@@ -1,4 +1,4 @@
-import { Activity, CheckCircle2, FolderOpen, Globe2, RefreshCw, Route as RouteIcon, ShieldCheck, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, Globe2, RefreshCw, Route as RouteIcon, ShieldCheck, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -8,12 +8,11 @@ import {
   type NetworkOverview,
   type RoutingSnapshot,
 } from "../../api";
-import type { ToastFn, Translate } from "../../app/types";
+import type { Translate } from "../../app/types";
 import { formatSize } from "../files/utils";
-import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSection";
 
 const MAX_SAMPLES = 60;
-type NetworkTab = "monitor" | "dns" | "routing" | "resources";
+type NetworkTab = "monitor" | "dns" | "routing";
 type History = Record<string, number[]>;
 
 function formatRate(value: number | null) {
@@ -206,13 +205,12 @@ function RoutingTable({ t }: { t: Translate }) {
   </section>;
 }
 
-export function NetworkSettingsSection({ isAdmin, t, toast }: { isAdmin: boolean; t: Translate; toast: ToastFn }) {
+export function NetworkSettingsSection({ isAdmin, t }: { isAdmin: boolean; t: Translate }) {
   const [tab, setTab] = useState<NetworkTab>("monitor");
   const tabs: Array<{ id: NetworkTab; icon: ReactNode; label: string }> = [
     { id: "monitor", icon: <Activity />, label: t("network.monitor") },
     { id: "dns", icon: <Globe2 />, label: "DNS" },
     { id: "routing", icon: <RouteIcon />, label: t("network.routing") },
-    { id: "resources", icon: <FolderOpen />, label: t("settings.networkResources") },
   ];
   if (!isAdmin) return null;
   return <div className="network-settings">
@@ -220,6 +218,5 @@ export function NetworkSettingsSection({ isAdmin, t, toast }: { isAdmin: boolean
     {tab === "monitor" && <NetworkMonitor t={t} />}
     {tab === "dns" && <DnsDiagnostics t={t} />}
     {tab === "routing" && <RoutingTable t={t} />}
-    {tab === "resources" && <NetworkMountsSettingsSection isAdmin={isAdmin} t={t} toast={toast} />}
   </div>;
 }

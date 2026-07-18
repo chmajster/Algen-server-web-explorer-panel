@@ -15,12 +15,13 @@ Docker mutations remain disabled when Proxmox Safe Mode blocks the module. The m
 The desktop application is split into independently maintained views:
 
 - dashboard with engine/Compose/package versions, service state and uptime, container/image/volume/network counts, CPU/RAM/storage summaries, update availability, security information and prune preview;
-- containers list, details, bounded logs, SSE log delivery, live/current statistics plus seven-day sampled history, processes, typed creation wizard and lifecycle/update/duplicate/recreate/export/backup actions;
+- containers list, details, bounded logs, SSE log delivery, live/current statistics plus seven-day sampled history, processes, typed creation wizard, live name/resource/restart/web-portal settings, and lifecycle/update/duplicate/recreate/export/backup actions;
 - local images, Docker Hub search, pull/update/remove/prune, checksummed save artifacts and bounded tar upload/load;
 - registries with password/token files outside SQLite, TLS/custom-CA metadata, login tests, logout and `docker login --password-stdin`;
 - Compose projects with static allowlist checks plus mandatory `docker compose config`, separate public and secret `.env` values, service status/logs, revision history, rollback, lifecycle actions and typed service scaling;
 - volumes and networks with consumers, protected system networks, subnet-conflict checks, volume backup/restore/clone and destructive previews;
 - versioned one-click templates for Pi-hole, AdGuard Home, Home Assistant, Uptime Kuma, Nginx Proxy Manager, Jellyfin, Syncthing, Nextcloud, MariaDB, PostgreSQL and Redis;
+- container creation from the typed wizard, an editable JSON container configuration, or an imported Compose YAML file that is validated before it is saved and optionally started;
 - WebNAS container/volume/image backup artifacts and restore to a new container name;
 - engine settings, diagnostics and Docker event history.
 
@@ -33,7 +34,7 @@ All routes are under `/api/modules/docker`:
 | Family | Main routes |
 | --- | --- |
 | Dashboard/engine | `GET /dashboard`, `GET /engine`, `POST /engine/actions`, `GET/PUT /daemon-config` |
-| Containers | `GET/POST /containers`, `POST /containers/import`, `GET /containers/{name}`, `POST /containers/{name}/actions`, `/logs`, `/logs/stream`, `/stats`, `/processes`, `/compose`, `/export`, `/backup` |
+| Containers | `GET/POST /containers`, `POST /containers/import`, `GET /containers/{name}`, `GET/PUT /containers/{name}/settings`, `POST /containers/{name}/actions`, `/logs`, `/logs/stream`, `/stats`, `/processes`, `/compose`, `/export`, `/backup` |
 | Images/registries | `GET /images`, `GET /images/search`, `POST /images/actions`, `POST /images/import`, registry CRUD/test routes |
 | Volumes/networks | list/detail/create routes and typed `POST .../{name}/actions` |
 | Compose | list/get/save/validate/action/status/log/history/rollback routes below `/compose` |
@@ -45,7 +46,7 @@ Long operations use the existing durable `package_jobs` queue and expose its nor
 
 ## Storage and migration
 
-No manual migration command is needed. On first access, `DockerManagerStore` creates `/var/lib/webnas/docker-manager/manager.sqlite3` and applies `PRAGMA user_version=2`, adding registry metadata/TLS state, seven-day statistics and artifact metadata/checksums. Version 2 moves any version-1 plaintext registry password into a dedicated `0600` secret file, clears the legacy database column, checkpoints WAL and vacuums the database. The manager and secret/artifact/input directories are mode `0700`; databases, Compose files, environment files, staged inputs and registry secret files are mode `0600`. The existing `/var/lib/webnas/package-center.sqlite3` continues to own jobs and job history.
+No manual migration command is needed. On first access, `DockerManagerStore` creates `/var/lib/webnas/docker-manager/manager.sqlite3` and applies `PRAGMA user_version=3`, adding registry metadata/TLS state, seven-day statistics, artifact metadata/checksums and per-container web-portal preferences. Version 2 moves any version-1 plaintext registry password into a dedicated `0600` secret file, clears the legacy database column, checkpoints WAL and vacuums the database; version 3 adds non-secret portal preferences. The manager and secret/artifact/input directories are mode `0700`; databases, Compose files, environment files, staged inputs and registry secret files are mode `0600`. The existing `/var/lib/webnas/package-center.sqlite3` continues to own jobs and job history.
 
 Compose projects live below `/var/lib/webnas/compose/<project>`. Secrets use a separate `.env.secrets`, are never returned, and are preserved when an edit does not submit replacements. Temporary create/restore/catalog secrets use one-time random references; the private input is consumed and deleted before execution. Registry passwords are returned only as `secret_configured`, live outside SQLite, and are sent to Docker through standard input rather than arguments. Optional CA files are installed only as `webnas-ca.crt` below the validated registry directory. Container inspection returns environment key names only. Logs, activity details and diagnostics pass through secret redaction.
 
