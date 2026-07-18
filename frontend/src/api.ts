@@ -170,7 +170,7 @@ export type HostInfo = {
   gpus: string[];
   storage: UsageMetric & { path: string } | null;
 };
-export type UpdateStatus = { branch: string; local: string; remote: string; update_available: boolean; available?: boolean; error?: string };
+export type UpdateStatus = { branch: string; local: string; remote: string; update_available: boolean; available?: boolean; error?: string; source?: string; source_url?: string; released_at?: number | null };
 export type UpdateStart = { ok: boolean; pid: number; log: string };
 export type AutoUpdateSettings = {
   enabled: boolean;

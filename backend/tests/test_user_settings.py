@@ -123,19 +123,30 @@ def test_update_status_uses_installed_revision_without_git_checkout(monkeypatch,
     (tmp_path / ".webnas-revision").write_text(revision + "\n", encoding="utf-8")
     monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)
     monkeypatch.setattr(settings, "_git_output", lambda args: f"{revision}\trefs/heads/main")
+    monkeypatch.setattr(settings, "_remote_release_timestamp", lambda value: 1_720_000_000)
 
     result = settings._update_status()
 
-    assert result == {"branch": "main", "local": revision, "remote": revision, "update_available": False, "available": True, "error": ""}
+    assert result == {"branch": "main", "local": revision, "remote": revision, "update_available": False, "available": True, "error": "", "source": settings.UPDATE_SOURCE, "source_url": settings.UPDATE_SOURCE_URL, "released_at": 1_720_000_000}
 
 
 def test_legacy_install_without_revision_offers_initial_update(monkeypatch, tmp_path):
     remote = "b" * 40
     monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)
     monkeypatch.setattr(settings, "_git_output", lambda args: f"{remote}\trefs/heads/main")
+    monkeypatch.setattr(settings, "_remote_release_timestamp", lambda value: None)
 
     result = settings._update_status()
 
     assert result["local"] == "unknown"
     assert result["remote"] == remote
     assert result["update_available"] is True
+
+
+def test_remote_release_timestamp_reads_github_commit_date(monkeypatch):
+    monkeypatch.setattr(settings, "_tool", lambda name: name)
+    monkeypatch.setattr(settings.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout='{"commit":{"committer":{"date":"2026-07-17T12:00:00Z"}}}'))
+
+    result = settings._remote_release_timestamp("a" * 40)
+
+    assert result == 1_784_289_600

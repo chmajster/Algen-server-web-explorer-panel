@@ -93,7 +93,7 @@ describe("settings application", () => {
 
   it("configures and runs automatic updates from administration settings", async () => {
     vi.spyOn(api, "systemStatus").mockResolvedValue({ service: "webnas", version: "1", port: 5000, data_dir: "/var/lib/webnas", log_dir: "/var/log/webnas", temp_dir: "/tmp" });
-    vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "a".repeat(40), remote: "b".repeat(40), update_available: true, available: true });
+    vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "a".repeat(40), remote: "b".repeat(40), update_available: true, available: true, source: "GitHub · example/repository", source_url: "https://github.com/example/repository", released_at: Math.floor((Date.now() - 2 * 86_400_000) / 1000) });
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ enabled: false, interval_hours: 24, update_config: true, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: null });
     vi.spyOn(api, "proxmoxSafety").mockResolvedValue({ is_proxmox: false, safe_mode_enabled: false, protected_paths: [], blocked_admin_features: [], allowed_roots_effective: [], service_user: "webnas", warnings: [] });
     const saveAuto = vi.spyOn(api, "saveAutoUpdate").mockResolvedValue({ enabled: true, interval_hours: 24, update_config: true, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 1 });
@@ -103,6 +103,8 @@ describe("settings application", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "settings.category.administration" }));
     await screen.findByText("settings.updateAvailable");
+    expect(screen.getByRole("link", { name: "GitHub · example/repository" })).toHaveAttribute("href", "https://github.com/example/repository");
+    expect(screen.getByText(/\(2 d 0 godz\. 0 min desktop\.timeAgo\)/)).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("settings.automaticUpdates"));
     await waitFor(() => expect(saveAuto).toHaveBeenCalledWith({ enabled: true, interval_hours: 24, update_config: true }));
     fireEvent.click(screen.getByRole("button", { name: /settings.updateNow/ }));

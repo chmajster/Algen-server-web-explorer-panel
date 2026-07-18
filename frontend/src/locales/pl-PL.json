@@ -761,6 +761,8 @@
   "settings.updateStarted": "Aktualizacja została uruchomiona w tle.",
   "settings.noUpdateAvailable": "Nie znaleziono nowszej aktualizacji.",
   "settings.updateBranch": "Gałąź",
+  "settings.updateSource": "Źródło aktualizacji",
+  "settings.releaseDate": "Data wydania",
   "settings.installedRevision": "Zainstalowana rewizja",
   "settings.availableRevision": "Dostępna rewizja",
   "settings.unknownRevision": "Nieznana — wymagane pierwsze odświeżenie",

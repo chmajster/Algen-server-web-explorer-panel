@@ -761,6 +761,8 @@
   "settings.updateStarted": "The update was started in the background.",
   "settings.noUpdateAvailable": "No newer update was found.",
   "settings.updateBranch": "Branch",
+  "settings.updateSource": "Update source",
+  "settings.releaseDate": "Release date",
   "settings.installedRevision": "Installed revision",
   "settings.availableRevision": "Available revision",
   "settings.unknownRevision": "Unknown — initial refresh required",

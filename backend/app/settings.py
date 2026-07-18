@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 from collections import defaultdict, deque
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -82,6 +83,8 @@ PROTECTED_LOCAL_USERS = {
     "pveproxy",
 }
 PROTECTED_LOCAL_GROUPS = {"root", "daemon", "sudo", "wheel", "shadow", "adm", "www-data", "backup", "pve", "pveadmin", "pveproxy", "pve-cluster"}
+UPDATE_SOURCE = "GitHub · chmajster/Algen-server-web-explorer-panel"
+UPDATE_SOURCE_URL = "https://github.com/chmajster/Algen-server-web-explorer-panel"
 
 
 class AdminRateLimiter:
@@ -530,6 +533,35 @@ def _git_output(args: list[str], *, timeout: int = 20) -> str:
     return result.stdout.strip()
 
 
+def _remote_release_timestamp(revision: str) -> int | None:
+    if not re.fullmatch(r"[0-9a-fA-F]{40,64}", revision):
+        return None
+    result = subprocess.run(
+        [
+            _tool("curl"), "-fsSL", "--max-time", "10",
+            "-H", "Accept: application/vnd.github+json",
+            "-H", "User-Agent: WebNAS-update-checker",
+            f"https://api.github.com/repos/chmajster/Algen-server-web-explorer-panel/commits/{revision}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if result.returncode != 0 or len(result.stdout) > 2 * 1024 * 1024:
+        return None
+    try:
+        payload = json.loads(result.stdout)
+        commit = payload.get("commit") if isinstance(payload, dict) else None
+        committer = commit.get("committer") if isinstance(commit, dict) else None
+        value = committer.get("date") if isinstance(committer, dict) else None
+        if not isinstance(value, str):
+            return None
+        return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
 def _update_status() -> dict:
     branch = "main"
     revision_file = _revision_path()
@@ -550,7 +582,8 @@ def _update_status() -> dict:
         remote_sha = remote[0]
     except (HTTPException, OSError, subprocess.SubprocessError) as error:
         message = str(error.detail) if isinstance(error, HTTPException) else str(error)
-        return {"branch": branch, "local": local, "remote": "", "update_available": False, "available": False, "error": message}
+        return {"branch": branch, "local": local, "remote": "", "update_available": False, "available": False, "error": message, "source": UPDATE_SOURCE, "source_url": UPDATE_SOURCE_URL, "released_at": None}
+    released_at = _remote_release_timestamp(remote_sha)
     return {
         "branch": branch,
         "local": local,
@@ -558,6 +591,9 @@ def _update_status() -> dict:
         "update_available": local == "unknown" or local != remote_sha,
         "available": True,
         "error": "",
+        "source": UPDATE_SOURCE,
+        "source_url": UPDATE_SOURCE_URL,
+        "released_at": released_at,
     }
 
 
