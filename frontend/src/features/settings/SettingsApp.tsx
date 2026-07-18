@@ -23,6 +23,10 @@ const categoryIcons: Record<SettingsCategory, ReactNode> = {
   identity: <Users />, network: <Network />, networkResources: <FolderOpen />, administration: <ShieldCheck />, about: <Info />,
 };
 
+export function isSettingsCategory(value: string | undefined): value is SettingsCategory {
+  return Boolean(value && Object.prototype.hasOwnProperty.call(categoryIcons, value));
+}
+
 const categorySettings: Record<SettingsCategory, string[]> = {
   system: ["hostInformation", "hostname", "operatingSystem", "cpuModel", "physicalCores", "logicalThreads", "totalMemory", "graphicsProcessors", "architecture", "ipAddresses", "applicationVersion", "systemUptime", "availableDiskSpace", "startupBehavior", "restoreWindows", "emptyDesktop", "showNotificationCenter", "showClockSeconds", "dateFormat", "welcomeWidget", "resetInterface"],
   personalization: ["theme", "accentColor", "wallpaper", "wallpaperUrl", "wallpaperFit", "windowTransparency", "animations", "taskbarAlignment", "desktopShortcuts", "desktopShortcutSize", "desktopWidgets"],
@@ -171,13 +175,14 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
   </div>;
 }
 
-export function SettingsAppView({ settings, initialSection = "system", t, toast, onSettingsChange, onOpenApp }: {
+export function SettingsAppView({ settings, initialSection = "system", t, toast, onSettingsChange, onOpenApp, onSectionChange }: {
   settings: SettingsMe;
   initialSection?: SettingsCategory;
   t: Translate;
   toast: ToastFn;
   onSettingsChange: (patch: SettingsPatch) => Promise<void>;
   onOpenApp: (app: AppId) => void;
+  onSectionChange?: (section: SettingsCategory) => void;
 }) {
   const [category, setCategory] = useState<SettingsCategory>(initialSection);
   const [query, setQuery] = useState("");
@@ -204,7 +209,7 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
     if (wallpaperTimer.current) window.clearTimeout(wallpaperTimer.current);
     wallpaperTimer.current = window.setTimeout(() => void save({ wallpaper: value }), 400);
   }
-  function choose(next: SettingsCategory) { setCategory(next); setQuery(""); }
+  function choose(next: SettingsCategory) { setCategory(next); setQuery(""); onSectionChange?.(next); }
   const yesNo = (key: keyof SettingsPatch, title: string, description?: string) => <SettingRow title={title} description={description}><Switch label={title} checked={Boolean(settings[key as keyof SettingsMe])} onChange={(value) => void save({ [key]: value })} /></SettingRow>;
 
   function content() {

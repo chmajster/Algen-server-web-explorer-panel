@@ -11,6 +11,7 @@ export type WindowAction =
   | { type: "close"; id: string }
   | { type: "focus"; id: string }
   | { type: "minimize"; id: string }
+  | { type: "setInitialPath"; id: string; initialPath: string }
   | { type: "commit"; id: string; rect: WindowRect; restoreRect?: WindowRect }
   | { type: "toggleMaximize"; id: string; viewport: { width: number; height: number } }
   | { type: "viewport"; viewport: { width: number; height: number } };
@@ -100,6 +101,9 @@ export function windowReducer(state: WindowState, action: WindowAction): WindowS
     const windows = state.windows.map((item) => item.id === action.id ? { ...item, minimized: true } : item);
     const next = windows.filter((item) => !item.minimized && item.id !== action.id).sort((a, b) => b.zIndex - a.zIndex)[0];
     return { ...state, windows, activeId: next?.id || "" };
+  }
+  if (action.type === "setInitialPath") {
+    return { ...state, windows: state.windows.map((item) => item.id === action.id ? { ...item, initialPath: action.initialPath } : item) };
   }
   if (action.type === "commit") {
     return { ...state, windows: state.windows.map((item) => item.id === action.id ? { ...item, rect: action.rect, restoreRect: action.restoreRect } : item) };

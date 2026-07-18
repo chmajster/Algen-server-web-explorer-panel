@@ -2,7 +2,7 @@ import { Bell, ShieldCheck, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
-import { LogsAppView, MonitorApp, ServicesApp, SettingsAppView } from "../features/admin/SystemApps";
+import { isSettingsCategory, LogsAppView, MonitorApp, ServicesApp, SettingsAppView } from "../features/admin/SystemApps";
 import { FileManager } from "../features/files/FileManager";
 import { TransferCenter } from "../features/transfers/TransferCenter";
 import { DesktopWidgets } from "../features/widgets/DesktopWidgets";
@@ -300,7 +300,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       case "services": return <ServicesApp t={t} toast={toast} />;
       case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
       case "logs": return <LogsAppView t={t} />;
-      case "settings": return <SettingsAppView settings={profile} initialSection={item.initialPath === "personalization" ? "personalization" : item.initialPath === "account" ? "account" : "system"} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} />;
+      case "settings": return <SettingsAppView settings={profile} initialSection={isSettingsCategory(item.initialPath) ? item.initialPath : "system"} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} onSectionChange={(section) => dispatch({ type: "setInitialPath", id: item.id, initialPath: section })} />;
       case "monitor": return <MonitorApp t={t} />;
       case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
     }

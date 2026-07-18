@@ -27,6 +27,14 @@ describe("window manager reducer", () => {
     expect(state.windows).toHaveLength(0);
   });
 
+  it("persists the active path independently for each application window", () => {
+    let state = windowReducer(initialWindowState, { type: "open", app: "settings", viewport });
+    state = windowReducer(state, { type: "setInitialPath", id: "settings-1", initialPath: "administration" });
+    const restored = restoreWindowState(JSON.stringify(state));
+
+    expect(restored.windows[0].initialPath).toBe("administration");
+  });
+
   it("maximizes and restores the previous rectangle", () => {
     let state = windowReducer(initialWindowState, { type: "open", app: "monitor", viewport });
     const previous = state.windows[0].rect;

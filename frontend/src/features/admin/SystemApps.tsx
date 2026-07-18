@@ -82,4 +82,4 @@ export function SambaAppView({ t, toast }: { t: Translate; toast: ToastFn }) {
 export function LogsAppView({ t }: { t: Translate }) { const state = useLoader<SystemLogs>(() => api.systemLogs(250)); return <Shell title={t("app.logs")} subtitle={t("logs.subtitle")} loading={state.loading} t={t} onRefresh={state.refresh}><DataState state={state} t={t}><pre className="log-view">{state.data?.lines.join("\n")}</pre></DataState></Shell>; }
 export { MonitorApp } from "./MonitorApp";
 function DataState<T>({ state, t, children }: { state: { data: T | null; loading: boolean; error: string }; t: Translate; children: React.ReactNode }) { if (state.loading && !state.data) return <div className="loading-state">{t("status.loading")}</div>; if (state.error) return <div className="error-state">{state.error}</div>; return <div className="data-list">{children}</div>; }
-export { SettingsAppView } from "../settings/SettingsApp";
+export { SettingsAppView, isSettingsCategory } from "../settings/SettingsApp";

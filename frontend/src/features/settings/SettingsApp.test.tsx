@@ -42,6 +42,15 @@ describe("settings application", () => {
     expect(screen.getByRole("heading", { name: "settings.category.personalization" })).toBeInTheDocument();
   });
 
+  it("reports the active settings section so the window can restore it", () => {
+    const onSectionChange = vi.fn();
+    render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} onSectionChange={onSectionChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.personalization" }));
+
+    expect(onSectionChange).toHaveBeenCalledWith("personalization");
+  });
+
   it("saves theme and taskbar alignment changes", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={save} onOpenApp={vi.fn()} />);
