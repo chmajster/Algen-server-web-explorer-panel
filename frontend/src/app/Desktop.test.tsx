@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { settingsFixture } from "../test/settings";
 import { Desktop } from "./Desktop";
 
@@ -7,6 +7,11 @@ vi.mock("../features/modules/ModuleApp", () => ({ ModuleApp: ({ onDirtyChange }:
 
 const controls = { add: vi.fn(() => []), pause: vi.fn(), resume: vi.fn(), cancel: vi.fn(), retry: vi.fn(), setPriority: vi.fn() };
 const t = (key: string) => key;
+
+beforeEach(() => {
+  localStorage.removeItem("webnas_windows_test");
+  sessionStorage.removeItem("webnas_windows_test_session");
+});
 
 function renderDesktop(overrides = {}) {
   const profile = settingsFixture(overrides);
@@ -93,6 +98,17 @@ describe("personalized desktop", () => {
     renderDesktop({ startup_windows: "last" });
     expect(screen.getByRole("dialog", { name: "app.monitor" })).toBeInTheDocument();
     localStorage.removeItem("webnas_windows_test");
+  });
+
+  it("restores windows from the current browser tab after F5 even with an empty-desktop startup preference", () => {
+    const first = renderDesktop({ startup_windows: "none" });
+    fireEvent.click(within(screen.getByLabelText("desktop.taskbar")).getByRole("button", { name: "app.monitor" }));
+    expect(screen.getByRole("dialog", { name: "app.monitor" })).toBeInTheDocument();
+    expect(sessionStorage.getItem("webnas_windows_test_session")).toContain('"app":"monitor"');
+
+    first.unmount();
+    renderDesktop({ startup_windows: "none" });
+    expect(screen.getByRole("dialog", { name: "app.monitor" })).toBeInTheDocument();
   });
 
   it("confirms before closing a module with unapplied changes", async () => {

@@ -48,6 +48,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   onLoggedOut: () => void;
 }) {
   const storageKey = `webnas_windows_${user.username}`;
+  const sessionWindowKey = `${storageKey}_session`;
   const [state, dispatch] = useReducer(windowReducer, initialWindowState);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -66,7 +67,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const migrateLegacyPins = useRef(localStorage.getItem(legacyPinnedKey) !== null);
   const [clock, setClock] = useState(new Date());
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
-  const restored = useRef(false);
+  const [windowsHydrated, setWindowsHydrated] = useState(false);
   const windowStateRef = useRef(state);
   const previousTaskStatus = useRef<Map<string, Task["status"]>>(new Map());
   const tasksInitialized = useRef(false);
@@ -84,20 +85,24 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   useEffect(() => { windowStateRef.current = state; }, [state]);
 
   useEffect(() => {
-    const restoredState = profile.startup_windows === "last" ? restoreWindowState(localStorage.getItem(storageKey)) : initialWindowState;
+    const sessionState = sessionStorage.getItem(sessionWindowKey);
+    const restoredState = restoreWindowState(sessionState || (profile.startup_windows === "last" ? localStorage.getItem(storageKey) : null));
     const windows = restoredState.windows.filter((item) => canUseApp(item.app));
     dispatch({ type: "hydrate", state: { ...restoredState, windows, activeId: windows.some((item) => item.id === restoredState.activeId) ? restoredState.activeId : "" } });
-    restored.current = true;
-  }, [canUseApp, profile.startup_windows, storageKey]);
+    setWindowsHydrated(true);
+  }, [canUseApp, profile.startup_windows, sessionWindowKey, storageKey]);
   useEffect(() => {
-    if (!restored.current) return;
-    const timer = window.setTimeout(() => localStorage.setItem(storageKey, JSON.stringify(state)), 240);
-    return () => window.clearTimeout(timer);
-  }, [state, storageKey]);
+    if (!windowsHydrated) return;
+    const serialized = JSON.stringify(state);
+    sessionStorage.setItem(sessionWindowKey, serialized);
+    if (profile.startup_windows === "last") localStorage.setItem(storageKey, serialized);
+  }, [profile.startup_windows, sessionWindowKey, state, storageKey, windowsHydrated]);
   useEffect(() => {
     const persistCurrentWindows = () => {
-      if (!restored.current) return;
-      localStorage.setItem(storageKey, JSON.stringify(windowStateRef.current));
+      if (!windowsHydrated) return;
+      const serialized = JSON.stringify(windowStateRef.current);
+      sessionStorage.setItem(sessionWindowKey, serialized);
+      if (profile.startup_windows === "last") localStorage.setItem(storageKey, serialized);
     };
     const persistWhenHidden = () => { if (document.visibilityState === "hidden") persistCurrentWindows(); };
     window.addEventListener("pagehide", persistCurrentWindows);
@@ -108,7 +113,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       window.removeEventListener("beforeunload", persistCurrentWindows);
       document.removeEventListener("visibilitychange", persistWhenHidden);
     };
-  }, [storageKey]);
+  }, [profile.startup_windows, sessionWindowKey, storageKey, windowsHydrated]);
   useEffect(() => {
     if (!migrateLegacyPins.current) return;
     migrateLegacyPins.current = false;
@@ -251,7 +256,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
     });
   }
-  function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); void logout().finally(onLoggedOut); }
+  function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); sessionStorage.removeItem(sessionWindowKey); void logout().finally(onLoggedOut); }
   function moduleDirty(item: WindowInstance, dirty: boolean) { setDirtyWindows((current) => { const next = new Set(current); if (dirty) next.add(item.id); else next.delete(item.id); return next; }); }
   function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !window.confirm(t("module.unsavedClose"))) return; const draftPrefix = `webnas_window_draft_${user.username}_${item.id}`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
   function taskbarWindow(item: WindowInstance, action: TaskbarWindowAction) {
