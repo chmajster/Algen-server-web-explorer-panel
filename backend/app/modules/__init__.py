@@ -8,6 +8,7 @@ BUILTIN_MODULE_IDS = (
     "samba",
     "linux-updates",
     "docker",
+    "ansible-controller",
     "pihole",
     "adguard-home",
     "postgresql",

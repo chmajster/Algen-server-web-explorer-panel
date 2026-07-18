@@ -4,6 +4,8 @@ Package Center is the administrator-only package and service manager built into 
 
 Installed modules now open in the shared module-management framework documented in [MODULES.md](MODULES.md). Package Center remains the catalog/install layer and keeps its original `/api/apps` compatibility routes; `/api/modules` adds provider status, configuration, logs, diagnostics, backups, and transactional module operations.
 
+The catalog includes the native `ansible-controller` module. Searching for Ansible, Tower or AWX finds **Ansible Automation Controller**. Package lifecycle remains in Package Center, while inventory, discovery, credentials, playbooks, templates, executions and schedules use the dedicated typed API described in [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md). Its long operations still use `package_jobs`, redacted logs, retry/cancellation and SSE; only stable domain IDs are placed in durable payloads.
+
 ## Architecture
 
 The backend is split into small components under `backend/app/package_center`:

@@ -179,7 +179,19 @@ def module_logs(module_id: str, user: SessionUser = Depends(current_user)):
 @router.post("/{module_id}/plan")
 def package_plan(module_id: str, action: PackageAction = PackageAction.install, remove_data: bool = False, user: SessionUser = Depends(mutating_user)):
     authorize(user, _package_permission(action))
-    return plan_operation(module_id, action, remove_data=remove_data)
+    if module_id == "ansible-controller" and action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
+        authorize(user, Permission.ANSIBLE_INSTALL)
+    plan = plan_operation(module_id, action, remove_data=remove_data)
+    if module_id == "ansible-controller" and action == PackageAction.uninstall:
+        from ..modules.providers import get_provider
+
+        provider = get_provider(module_id, user.username)
+        managed = [host for host in getattr(provider, "store").list_hosts() if host.get("managed_user_created")]
+        plan.warnings.append("Remote algen-ansible accounts are never removed automatically")
+        if managed:
+            names = ", ".join(f"{host['name']} ({host['address']})" for host in managed[:20])
+            plan.warnings.append(f"Remote hosts with a module-created managed account ({len(managed)}): {names}")
+    return plan
 
 
 def _package_permission(action: PackageAction) -> Permission:
@@ -197,6 +209,10 @@ def _enqueue_action(module_id: str, action: PackageAction, payload: AdminPackage
         api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker Engine package changes require the typed Containers Manager API and PAM confirmation")
     if not payload.confirm_plan:
         api_error(400, "PLAN_CONFIRMATION_REQUIRED", "The operation plan must be confirmed")
+    if module_id == "ansible-controller" and action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
+        authorize(user, Permission.ANSIBLE_INSTALL)
+    if module_id == "ansible-controller" and action == PackageAction.uninstall and payload.remove_data:
+        api_error(409, "TYPED_MODULE_API_REQUIRED", "Full Ansible controller data removal requires typing Ansible in the module application")
     plan = plan_operation(module_id, action, remove_data=payload.remove_data)
     return {"job": manager(repository()).enqueue(plan, user.username)}
 

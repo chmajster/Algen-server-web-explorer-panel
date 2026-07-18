@@ -351,7 +351,15 @@ def _package_action(module_id: str, action: PackageAction, payload: ModuleAdminR
     provider.assert_capability("update" if action == PackageAction.reinstall else action.value)
     if action == PackageAction.uninstall and payload.remove_data and module_id == "samba" and payload.confirm_name != "Samba":
         api_error(400, "MODULE_NAME_CONFIRMATION_REQUIRED", "Type Samba to confirm removal of module data")
+    if action == PackageAction.uninstall and payload.remove_data and module_id == "ansible-controller" and payload.confirm_name != "Ansible":
+        api_error(400, "MODULE_NAME_CONFIRMATION_REQUIRED", "Type Ansible to confirm removal of all local controller data")
     plan = plan_operation(module_id, action, remove_data=payload.remove_data)
+    if module_id == "ansible-controller" and action == PackageAction.uninstall:
+        managed = [host for host in getattr(provider, "store").list_hosts() if host.get("managed_user_created")]
+        plan.warnings.append("Remote algen-ansible accounts are never removed automatically")
+        if managed:
+            names = ", ".join(f"{host['name']} ({host['address']})" for host in managed[:20])
+            plan.warnings.append(f"Remote hosts with a module-created managed account ({len(managed)}): {names}")
     plan.payload["remove_config"] = payload.remove_config
     plan.create_backup = payload.create_backup and action in {PackageAction.reinstall, PackageAction.update, PackageAction.uninstall} and provider.manifest.capabilities.backups
     if payload.remove_config:

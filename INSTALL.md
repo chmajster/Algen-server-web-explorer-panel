@@ -153,6 +153,10 @@ Docker installation from Containers Manager configures Docker's official stable 
 
 Supported hosts are Debian, Ubuntu, Raspberry Pi OS, Fedora, RHEL, Rocky Linux, and AlmaLinux with systemd. Modules select `apt-get`, `dnf`, or `yum` from `/etc/os-release` and their validated manifest. A module is rejected before execution when its distribution, architecture, package manager, or Proxmox safety declaration is incompatible.
 
+### Ansible Automation Controller
+
+Install `ansible-controller` from Package Center after the base WebNAS installation. Its manifest installs the distribution's `ansible-core`, OpenSSH client, nmap, Git and Python packages; it never performs a global root `pip install`. The hook creates the non-login, non-sudo `webnas-ansible` system account and `/var/lib/webnas/ansible-controller` with private modes. The module is intentionally `proxmox_safe: false`; use a VM or LXC guest rather than a Proxmox host. No additional listening port is opened. Verify the account, tool versions and filesystem modes from the module Diagnostics section before onboarding hosts. Full operational and security instructions are in [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md).
+
 The package catalog ships with Samba, Squid Proxy, Nginx, and Syncthing. Before the first real operation, use a disposable VM/container and review the dry-run plan in the UI. The production systemd profile must retain `User=root`, `Group=root`, `NoNewPrivileges=false`, and `ProtectSystem=false`; changing those values makes package installation fail with a clear permission or read-only-filesystem error.
 
 Back up package metadata and module configuration before an OS migration:

@@ -51,6 +51,16 @@ def _write(assignments: dict[str, RoleAssignment]) -> None:
 
 
 def module_permission(module_id: str, operation: Literal["view", "operate", "configure", "install", "reinstall", "update", "uninstall", "backup", "restore", "backup_delete", "logs", "diagnostics"]) -> str:
+    if module_id == "ansible-controller":
+        if operation in {"view", "logs", "diagnostics"}:
+            return Permission.ANSIBLE_VIEW.value
+        if operation in {"install", "reinstall", "update", "uninstall"}:
+            return Permission.ANSIBLE_INSTALL.value
+        if operation == "backup":
+            return Permission.ANSIBLE_BACKUP.value
+        if operation == "restore":
+            return Permission.ANSIBLE_RESTORE.value
+        return Permission.ANSIBLE_CONFIGURE.value
     if operation in {"install", "reinstall", "update", "uninstall"}:
         return {"install": Permission.MODULES_INSTALL.value, "reinstall": Permission.MODULES_UPDATE.value, "update": Permission.MODULES_UPDATE.value, "uninstall": Permission.MODULES_UNINSTALL.value}[operation]
     if operation == "backup_delete":

@@ -78,9 +78,12 @@ class PackageJobManager:
                     result["backup"] = backup
                 execute(plan, manifest, log, progress, cancelled)
                 if plan.action == PackageAction.uninstall:
-                    from ..modules.providers import get_provider
+                    if plan.module_id == "ansible-controller" and plan.remove_data:
+                        result.update({"managed_config_removed": True, "remote_accounts_removed": False})
+                    else:
+                        from ..modules.providers import get_provider
 
-                    result.update(get_provider(plan.module_id, job["created_by"]).cleanup_after_uninstall(job["created_by"], bool(plan.payload.get("remove_config"))))
+                        result.update(get_provider(plan.module_id, job["created_by"]).cleanup_after_uninstall(job["created_by"], bool(plan.payload.get("remove_config"))))
             else:
                 from ..modules.providers import get_provider
 

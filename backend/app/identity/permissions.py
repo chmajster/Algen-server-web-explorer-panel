@@ -121,6 +121,24 @@ class Permission(StrEnum):
     DATABASES_RESTORE = "databases.restore"
     HOMEASSISTANT_VIEW = "homeassistant.view"
     HOMEASSISTANT_OPERATE = "homeassistant.operate"
+    ANSIBLE_VIEW = "ansible-controller.view"
+    ANSIBLE_INSTALL = "ansible-controller.install"
+    ANSIBLE_CONFIGURE = "ansible-controller.configure"
+    ANSIBLE_HOSTS_VIEW = "ansible-controller.hosts.view"
+    ANSIBLE_HOSTS_MANAGE = "ansible-controller.hosts.manage"
+    ANSIBLE_DISCOVERY = "ansible-controller.discovery"
+    ANSIBLE_CREDENTIALS_VIEW = "ansible-controller.credentials.view"
+    ANSIBLE_CREDENTIALS_MANAGE = "ansible-controller.credentials.manage"
+    ANSIBLE_PROJECTS_VIEW = "ansible-controller.projects.view"
+    ANSIBLE_PROJECTS_MANAGE = "ansible-controller.projects.manage"
+    ANSIBLE_PLAYBOOKS_VIEW = "ansible-controller.playbooks.view"
+    ANSIBLE_PLAYBOOKS_MANAGE = "ansible-controller.playbooks.manage"
+    ANSIBLE_JOBS_LAUNCH = "ansible-controller.jobs.launch"
+    ANSIBLE_JOBS_CANCEL = "ansible-controller.jobs.cancel"
+    ANSIBLE_SCHEDULES_MANAGE = "ansible-controller.schedules.manage"
+    ANSIBLE_AUDIT_VIEW = "ansible-controller.audit.view"
+    ANSIBLE_BACKUP = "ansible-controller.backup"
+    ANSIBLE_RESTORE = "ansible-controller.restore"
     SYSTEM_STATUS = "system.status"
     SYSTEM_LOGS = "system.logs"
     SYSTEM_RESTART = "system.restart"
@@ -144,13 +162,14 @@ _APPLICATIONS: dict[str, list[str]] = {
     "dns": ["module:pihole", "module:adguard-home"],
     "databases": ["module:postgresql", "module:mariadb", "module:redis"],
     "homeassistant": ["module:home-assistant"],
+    "ansible-controller": ["module:ansible-controller"],
     "system": ["monitor", "logs", "settings"],
 }
 
 
 def _metadata(permission: Permission) -> PermissionMetadata:
     category, operation = permission.value.split(".", 1)
-    mutating = operation not in _READ_OPERATIONS and not operation.startswith("view")
+    mutating = operation not in _READ_OPERATIONS and not operation.startswith("view") and not operation.endswith(".view")
     risk = PermissionRisk.critical if permission in _CRITICAL else PermissionRisk.high if mutating else PermissionRisk.low
     return PermissionMetadata(
         id=permission.value,
@@ -231,6 +250,11 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         *_DOCKER_OPERATOR,
         Permission.DNS_VIEW.value, Permission.DNS_CONFIGURE.value, Permission.DATABASES_VIEW.value, Permission.DATABASES_CONFIGURE.value, Permission.DATABASES_BACKUP.value, Permission.DATABASES_RESTORE.value,
         Permission.HOMEASSISTANT_VIEW.value, Permission.HOMEASSISTANT_OPERATE.value,
+        Permission.ANSIBLE_VIEW.value, Permission.ANSIBLE_CONFIGURE.value, Permission.ANSIBLE_HOSTS_VIEW.value, Permission.ANSIBLE_HOSTS_MANAGE.value,
+        Permission.ANSIBLE_DISCOVERY.value, Permission.ANSIBLE_CREDENTIALS_VIEW.value, Permission.ANSIBLE_CREDENTIALS_MANAGE.value,
+        Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PROJECTS_MANAGE.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value,
+        Permission.ANSIBLE_PLAYBOOKS_MANAGE.value, Permission.ANSIBLE_JOBS_LAUNCH.value, Permission.ANSIBLE_JOBS_CANCEL.value,
+        Permission.ANSIBLE_SCHEDULES_MANAGE.value, Permission.ANSIBLE_BACKUP.value,
     },
     Role.auditor: {
         Permission.FILES_VIEW.value, Permission.FILES_READ.value, Permission.FILES_DOWNLOAD.value, Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_VIEW_ALL.value,
@@ -240,6 +264,8 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.DOCKER_VIEW.value, Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_INSPECT_CONTAINER.value,
         Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value, Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_DIAGNOSTICS.value,
         Permission.DNS_VIEW.value, Permission.DATABASES_VIEW.value, Permission.HOMEASSISTANT_VIEW.value, Permission.SYSTEM_STATUS.value, Permission.SYSTEM_LOGS.value,
+        Permission.ANSIBLE_VIEW.value, Permission.ANSIBLE_HOSTS_VIEW.value, Permission.ANSIBLE_CREDENTIALS_VIEW.value,
+        Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value, Permission.ANSIBLE_AUDIT_VIEW.value,
     },
     Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.SYSTEM_STATUS.value},
 }

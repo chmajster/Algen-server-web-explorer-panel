@@ -8,7 +8,7 @@ import type { Translate, WindowInstance, WindowRect } from "./types";
 type Edge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 type Gesture = { mode: "move" | "resize"; edge?: Edge; startX: number; startY: number; rect: WindowRect; offsetX: number; offsetY: number };
 
-const moduleTitles: Record<string, string> = { samba: "Samba", docker: "Docker", pihole: "Pi-hole", "adguard-home": "AdGuard Home", postgresql: "PostgreSQL", mariadb: "MariaDB", redis: "Redis", "home-assistant": "Home Assistant" };
+const moduleTitles: Record<string, string> = { samba: "Samba", docker: "Docker", pihole: "Pi-hole", "adguard-home": "AdGuard Home", postgresql: "PostgreSQL", mariadb: "MariaDB", redis: "Redis", "home-assistant": "Home Assistant", "ansible-controller": "Ansible Automation Controller" };
 
 export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMinimize, onCommit, onToggleMaximize, children, animationsEnabled = false }: {
   window: WindowInstance;

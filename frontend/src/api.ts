@@ -380,6 +380,30 @@ export type ModuleDiagnostic = { status: "ok" | "info" | "warning" | "critical";
 export type ModuleBackup = { id: string; module_id: string; created_at: number; created_by: string; description: string; automatic: boolean; checksum: string; package_version: string; size: number; files: string[] };
 export type ModuleLogSource = { id: string; label: string };
 export type ModuleSummary = PackageModule & { module_status: ModuleStatus; capabilities: ModuleCapability; active_job?: ModuleJob | null };
+export type AnsibleDashboard = {
+  hosts: number; hosts_online: number; hosts_unreachable: number; host_key_errors: number; groups: number; projects: number;
+  playbooks: number; templates: number; active_jobs: number; failed_jobs: number; scheduled: number; ansible_version?: string;
+  controller_user_ready?: boolean; last_scan?: Record<string, unknown> | null; last_git_sync?: Record<string, unknown> | null;
+};
+export type AnsibleHost = {
+  id: string; name: string; address: string; port: number; ssh_user: string; credential_id?: string | null;
+  python_interpreter: string; connection_type: "ssh" | "paramiko"; environment: string; location: string; tags: string[];
+  variables: Record<string, unknown>; fingerprint_status: string; last_test_at?: number | null; last_facts_at?: number | null;
+  last_error: string; managed_user_created: boolean; active: boolean; groups?: Array<{ id: string; name: string }>;
+  facts?: Record<string, unknown>; created_at: number; updated_at: number;
+};
+export type AnsibleGroup = { id: string; name: string; description: string; parent_id?: string | null; variables: Record<string, unknown>; host_ids: string[]; active: boolean; created_at: number; updated_at: number };
+export type AnsibleCredential = { id: string; name: string; type: "ssh_private_key" | "ssh_password" | "become_password" | "git_private_key" | "awx_token" | "vault_secret"; username: string; description: string; secret_configured: boolean; active: boolean; created_at: number; updated_at: number };
+export type AnsibleProject = { id: string; name: string; source_type: "editor" | "git" | "archive" | "managed_directory"; repository_url: string; revision: string; credential_id?: string | null; sync_before_run: boolean; allow_submodules: boolean; last_commit: string; last_sync_at?: number | null; last_sync_status: string; active: boolean };
+export type AnsibleRisk = { code: string; message: string; path?: string; line?: number | null };
+export type AnsiblePlaybook = { id: string; project_id: string; name: string; filename: string; content: string; current_version: number; risk_status: string; warnings: AnsibleRisk[]; active: boolean; updated_at: number };
+export type AnsibleTemplate = { id: string; name: string; description: string; project_id: string; playbook_id: string; host_ids: string[]; group_ids: string[]; ssh_credential_id?: string | null; become_credential_id?: string | null; vault_credential_id?: string | null; limit_pattern: string; tags: string[]; skip_tags: string[]; check_mode: boolean; diff_mode: boolean; verbosity: number; forks: number; timeout_seconds: number; extra_vars: string; concurrency_policy: string; sync_before_run: boolean; confirmation_required: boolean; active: boolean };
+export type AnsibleHostResult = { id: string; host_id?: string | null; host_name: string; status: string; ok_count: number; changed_count: number; failed_count: number; unreachable_count: number; skipped_count: number; rescued_count: number; ignored_count: number; message: string };
+export type AnsibleExecution = { id: string; package_job_id?: string | null; template_id?: string | null; retry_of?: string | null; requested_by: string; status: string; stage: string; host_ids: string[]; warnings: AnsibleRisk[]; summary: Record<string, number>; stdout: string; stderr: string; exit_code?: number | null; started_at?: number | null; finished_at?: number | null; created_at: number; host_results?: AnsibleHostResult[] };
+export type AnsibleScanHost = { id: string; address: string; hostname: string; port: number; latency_ms?: number | null; ssh_status: string; imported_host_id?: string | null };
+export type AnsibleScan = { id: string; request: Record<string, unknown>; status: string; progress: number; discovered: number; package_job_id?: string | null; error: string; created_at: number; hosts?: AnsibleScanHost[] };
+export type AnsibleSchedule = { id: string; name: string; template_id: string; kind: "once" | "hourly" | "daily" | "weekly" | "monthly" | "cron"; expression: string; timezone: string; missed_policy: "skip" | "run_once"; next_run_at?: number | null; last_run_at?: number | null; active: boolean };
+export type AnsibleValidation = { ok: boolean; errors: AnsibleRisk[]; warnings: AnsibleRisk[]; blocked: AnsibleRisk[]; task_count: number; documents?: number };
 export type DockerPaged<T = Record<string, unknown>> = { items: T[]; total: number; page: number; page_size: number; pages: number };
 export type DockerDashboard = { status: ModuleStatus; counts: Record<string, number>; storage: Array<Record<string, unknown>>; security: Array<{ level: string; message: string }>; engine: Record<string, unknown>; usage: { cpu_percent?: number; memory_bytes?: number }; events: Array<Record<string, unknown>>; updates: Array<Record<string, unknown>>; prune_preview: { total?: number; estimated_reclaimable?: number } };
 export type DockerContainer = { ID?: string; Names?: string; Image?: string; State?: string; Status?: string; Ports?: string; Size?: string; [key: string]: unknown };
@@ -900,6 +924,51 @@ export const api = {
   restoreModuleBackup: (id: string, backupId: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}/restore`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   deleteModuleBackup: (id: string, backupId: string) => request(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
   moduleService: (id: string, action: "start" | "stop" | "restart" | "reload" | "enable" | "disable") => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/service/${action}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  ansibleDashboard: () => request<AnsibleDashboard>("/api/modules/ansible-controller/dashboard"),
+  ansibleConfig: () => request<Record<string, unknown>>("/api/modules/ansible-controller/config"),
+  saveAnsibleConfig: (payload: Record<string, unknown>) => request<{ job: ModuleJob }>("/api/modules/ansible-controller/config", { method: "PUT", body: JSON.stringify({ ...payload, confirm: true }) }),
+  ansibleHosts: () => request<AnsibleHost[]>("/api/modules/ansible-controller/hosts"),
+  ansibleHost: (id: string) => request<AnsibleHost>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}`),
+  saveAnsibleHost: (payload: Record<string, unknown>, id = "") => request<AnsibleHost>(id ? `/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/hosts", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  deleteAnsibleHost: (id: string) => request<{ ok: boolean }>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
+  scanAnsibleHostKey: (id: string) => request<{ host_id: string; keys: Array<{ key_type: string; public_key: string; fingerprint: string }>; existing_fingerprint?: string | null; changed: boolean; requires_acceptance: boolean }>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}/ssh-key/scan`, { method: "POST", body: "{}" }),
+  acceptAnsibleHostKey: (id: string, key: { public_key: string; fingerprint: string }, replace = false) => request<Record<string, unknown>>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}/ssh-key/accept`, { method: "POST", body: JSON.stringify({ ...key, replace, confirm: true }) }),
+  testAnsibleHost: (id: string) => request<{ job: ModuleJob }>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}/test`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  gatherAnsibleFacts: (id: string) => request<{ job: ModuleJob }>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}/facts`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  onboardAnsibleHost: (payload: Record<string, unknown>) => request<{ host: AnsibleHost; job: ModuleJob; onboarding_id: string }>("/api/modules/ansible-controller/onboarding", { method: "POST", body: JSON.stringify({ ...payload, confirm: true }) }),
+  ansibleGroups: () => request<AnsibleGroup[]>("/api/modules/ansible-controller/groups"),
+  saveAnsibleGroup: (payload: Record<string, unknown>, id = "") => request<AnsibleGroup>(id ? `/api/modules/ansible-controller/groups/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/groups", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  ansibleInventory: () => request<{ format: string; content: string }>("/api/modules/ansible-controller/inventory"),
+  importAnsibleInventory: (content: string, format: "yaml" | "ini", confirm = false) => request<Record<string, unknown>>("/api/modules/ansible-controller/inventory/import", { method: "POST", body: JSON.stringify({ content, format, confirm }) }),
+  ansibleScans: () => request<AnsibleScan[]>("/api/modules/ansible-controller/scans"),
+  ansibleScan: (id: string) => request<AnsibleScan>(`/api/modules/ansible-controller/scans/${encodeURIComponent(id)}`),
+  startAnsibleScan: (payload: Record<string, unknown>) => request<{ scan: AnsibleScan; job: ModuleJob; address_count: number }>("/api/modules/ansible-controller/scans", { method: "POST", body: JSON.stringify({ ...payload, confirm: true }) }),
+  importAnsibleScan: (id: string, hostIds: string[], groupName = "") => request<{ hosts: AnsibleHost[]; imported: number }>(`/api/modules/ansible-controller/scans/${encodeURIComponent(id)}/import`, { method: "POST", body: JSON.stringify({ host_ids: hostIds, group_name: groupName, confirm: true }) }),
+  ansibleCredentials: () => request<AnsibleCredential[]>("/api/modules/ansible-controller/credentials"),
+  saveAnsibleCredential: (payload: Record<string, unknown>, id = "") => request<AnsibleCredential>(id ? `/api/modules/ansible-controller/credentials/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/credentials", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  deleteAnsibleCredential: (id: string) => request<{ ok: boolean }>(`/api/modules/ansible-controller/credentials/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
+  ansibleProjects: () => request<AnsibleProject[]>("/api/modules/ansible-controller/projects"),
+  saveAnsibleProject: (payload: Record<string, unknown>, id = "") => request<AnsibleProject>(id ? `/api/modules/ansible-controller/projects/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/projects", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  syncAnsibleProject: (id: string) => request<{ job: ModuleJob }>(`/api/modules/ansible-controller/projects/${encodeURIComponent(id)}/sync`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  ansiblePlaybooks: () => request<AnsiblePlaybook[]>("/api/modules/ansible-controller/playbooks"),
+  validateAnsiblePlaybook: (payload: Record<string, unknown>) => request<AnsibleValidation>("/api/modules/ansible-controller/playbooks/validate", { method: "POST", body: JSON.stringify(payload) }),
+  saveAnsiblePlaybook: (payload: Record<string, unknown>, id = "") => request<AnsiblePlaybook>(id ? `/api/modules/ansible-controller/playbooks/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/playbooks", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  ansibleTemplates: () => request<AnsibleTemplate[]>("/api/modules/ansible-controller/templates"),
+  saveAnsibleTemplate: (payload: Record<string, unknown>, id = "") => request<AnsibleTemplate>(id ? `/api/modules/ansible-controller/templates/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/templates", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  ansibleLaunchPlan: (id: string) => request<Record<string, unknown>>(`/api/modules/ansible-controller/templates/${encodeURIComponent(id)}/plan`),
+  launchAnsibleTemplate: (id: string) => request<{ execution: AnsibleExecution; job: ModuleJob }>(`/api/modules/ansible-controller/templates/${encodeURIComponent(id)}/launch`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  ansibleJobs: () => request<AnsibleExecution[]>("/api/modules/ansible-controller/jobs"),
+  ansibleJob: (id: string) => request<AnsibleExecution>(`/api/modules/ansible-controller/jobs/${encodeURIComponent(id)}`),
+  cancelAnsibleJob: (id: string) => request<{ job: ModuleJob }>(`/api/modules/ansible-controller/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  retryAnsibleJob: (id: string) => request<{ execution: AnsibleExecution; job: ModuleJob }>(`/api/modules/ansible-controller/jobs/${encodeURIComponent(id)}/retry`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  ansibleSchedules: () => request<AnsibleSchedule[]>("/api/modules/ansible-controller/schedules"),
+  saveAnsibleSchedule: (payload: Record<string, unknown>, id = "") => request<AnsibleSchedule>(id ? `/api/modules/ansible-controller/schedules/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/schedules", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  ansibleFacts: (hostId = "") => request<Array<Record<string, unknown>>>(`/api/modules/ansible-controller/facts${hostId ? `?host_id=${encodeURIComponent(hostId)}` : ""}`),
+  ansibleDiagnostics: () => request<{ diagnostics: ModuleDiagnostic[] }>("/api/modules/ansible-controller/diagnostics"),
+  ansibleBackups: () => request<ModuleBackup[]>("/api/modules/ansible-controller/backups"),
+  createAnsibleBackup: (description = "", includeCredentials = false) => request<{ job: ModuleJob }>("/api/modules/ansible-controller/backups", { method: "POST", body: JSON.stringify({ description, include_credentials: includeCredentials, confirm: true }) }),
+  restoreAnsibleBackup: (id: string, checksum: string, includeCredentials = false) => request<{ job: ModuleJob }>(`/api/modules/ansible-controller/backups/${encodeURIComponent(id)}/restore`, { method: "POST", body: JSON.stringify({ checksum, include_credentials: includeCredentials, confirm: true }) }),
+  deleteAnsibleBackup: (id: string) => request<{ ok: boolean }>(`/api/modules/ansible-controller/backups/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
   dockerDashboard: () => request<DockerDashboard>("/api/modules/docker/dashboard"),
   dockerEngine: () => request<{ status: ModuleStatus; config: Record<string, unknown>; diagnostics: ModuleDiagnostic[] }>("/api/modules/docker/engine"),
   dockerEngineAction: (payload: DockerEngineAction) => request<{ job?: ModuleJob; diagnostics?: ModuleDiagnostic[] }>("/api/modules/docker/engine/actions", { method: "POST", body: JSON.stringify(payload) }),

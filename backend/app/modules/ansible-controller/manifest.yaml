@@ -1,0 +1,53 @@
+id: ansible-controller
+name: Ansible Automation Controller
+description: Native ansible-core controller compatible with Ansible Tower and AWX workflows.
+long_description: Secure local automation controller inspired by Ansible Tower and AWX, with inventory, playbooks, templates, schedules, live logs and optional external Automation Controller integration.
+category: system_tools
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://docs.ansible.com/ansible-core/
+icon: workflow
+screenshots: []
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [ansible-core, openssh-client, nmap, git, python3, python3-venv]
+  dnf: [ansible-core, openssh-clients, nmap, git, python3]
+  yum: [ansible-core, openssh-clients, nmap, git, python3]
+services: []
+config:
+  primary_file: /var/lib/webnas/ansible-controller/config/ansible.cfg
+  backup_paths: [/var/lib/webnas/ansible-controller]
+  validation_command: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: false
+  reload: false
+  logs: true
+  diagnostics: true
+  backups: true
+  import_export: true
+  healthcheck: true
+  resources: [hosts, groups, projects, playbooks, templates, jobs, schedules, credentials, facts, scans]
+  actions: [network_scan, onboard_host, test_host, gather_facts, sync_project, launch, retry, cancel, schedule_tick, backup, restore]
+ports: []
+dependencies: []
+conflicts: []
+permissions: [package_management, system_users, network_scan, ssh_client, process_isolation]
+config_paths: [/var/lib/webnas/ansible-controller/config/ansible.cfg]
+data_paths: [/var/lib/webnas/ansible-controller, /var/lib/webnas/secrets/ansible-controller.key]
+backup_paths: [/var/lib/webnas/ansible-controller]
+proxmox_safe: false
+requires_reboot: false
+requires_root: true
+configurable: true
+removable: true
+healthcheck: health.py
+ui:
+  hidden: false
+changelog:
+  - Native ansible-core automation controller with secure inventory and execution isolation.
