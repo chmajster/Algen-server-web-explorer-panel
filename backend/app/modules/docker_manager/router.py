@@ -51,6 +51,20 @@ from .storage import store
 router = APIRouter(prefix="/api/modules/docker", tags=["containers-manager"])
 PROJECT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 REVISION_RE = re.compile(r"^[0-9]{10,16}-[a-f0-9]{12}$")
+PUBLIC_DOCKER_HUB = {
+    "id": "docker-hub-public",
+    "name": "Docker Hub",
+    "provider": "docker_hub",
+    "server": "docker.io",
+    "username": "",
+    "tls": True,
+    "ca_certificate_configured": False,
+    "secret_configured": False,
+    "built_in": True,
+    "public_access": True,
+    "created_at": 0,
+    "updated_at": 0,
+}
 
 
 def _provider(user: SessionUser) -> DockerProvider:
@@ -427,7 +441,7 @@ async def import_image(file: UploadFile = File(...), user: SessionUser = Depends
 @router.get("/registries")
 def registries(user: SessionUser = Depends(current_user)):
     _allow(user, "docker.manage_registries")
-    return {"items": store().list_registries()}
+    return {"items": [PUBLIC_DOCKER_HUB, *store().list_registries()]}
 
 
 @router.post("/registries")

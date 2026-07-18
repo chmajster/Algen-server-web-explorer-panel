@@ -1,5 +1,5 @@
-import { ArrowLeft, ArrowRight, Boxes, FileJson, Plus, ScrollText, Trash2, Upload, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, Boxes, FileJson, Folder, FolderOpen, HardDrive, Minus, Plus, RefreshCw, ScrollText, Trash2, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type DockerContainerCreate, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
@@ -19,30 +19,69 @@ function pairs(value: string, invalidMessage: string): Record<string, string> {
   );
 }
 
-function mountLines(value: string, invalidMessage: string) {
-  return value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.split(":");
-      const type = parts[0];
-      if (type === "tmpfs" && parts.length >= 2)
-        return {
-          type: "tmpfs" as const,
-          source: "",
-          target: parts[1],
-          tmpfs_size_mb: parts[2] ? Number(parts[2]) : null,
-        };
-      if ((type === "bind" || type === "volume") && parts.length >= 3)
-        return {
-          type: type as "bind" | "volume",
-          source: parts[1],
-          target: parts[2],
-          read_only: parts[3] === "ro",
-        };
-      throw new Error(invalidMessage);
+type MountRow = {
+  id: number;
+  type: "bind" | "volume" | "tmpfs";
+  source: string;
+  target: string;
+  readOnly: boolean;
+  tmpfsSizeMb: string;
+};
+
+function DockerPathPicker({ initialPath, t, onClose, onSelect }: { initialPath: string; t: Translate; onClose: () => void; onSelect: (path: string) => void }) {
+  const [path, setPath] = useState(initialPath);
+  const [parent, setParent] = useState<string | null>(null);
+  const [folders, setFolders] = useState<Array<{ name: string; path: string }>>([]);
+  const [roots, setRoots] = useState<Array<{ name: string; path: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const open = useCallback(async (next?: string) => {
+    setLoading(true);
+    try {
+      const result = await api.list(next, { page_size: 200, sort: "name", direction: "asc" });
+      setPath(result.current_path);
+      setParent(result.parent_path);
+      setFolders(result.items.filter((item) => item.is_dir).map((item) => ({ name: item.name, path: item.path })));
+      setError("");
+    } catch (reason) {
+      setError(errorMessage(reason, t));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void open(initialPath || undefined);
+    void Promise.allSettled([api.localDisks(), api.mountRoots()]).then(([disks, mounts]) => {
+      setRoots([
+        ...(disks.status === "fulfilled" ? disks.value.map((item) => ({ name: item.name, path: item.mount_point })) : []),
+        ...(mounts.status === "fulfilled" ? mounts.value.map((item) => ({ name: item.name, path: item.mount_point })) : []),
+      ]);
     });
+  }, [initialPath, open]);
+
+  return createPortal(
+    <div className="modal-backdrop docker-path-picker-backdrop">
+      <section className="modal-panel docker-path-picker" role="dialog" aria-modal="true" aria-labelledby="docker-path-picker-title">
+        <header className="modal-header"><h2 id="docker-path-picker-title">{t("docker.chooseHostPath")}</h2><button className="icon-button" type="button" aria-label={t("action.close")} onClick={onClose}><X /></button></header>
+        <div className="docker-path-picker-toolbar">
+          <button type="button" aria-label={t("docker.parentFolder")} disabled={!parent || loading} onClick={() => void open(parent || undefined)}><ArrowLeft /></button>
+          <code title={path}>{path || t("status.loading")}</code>
+          <button type="button" aria-label={t("action.refresh")} disabled={loading} onClick={() => void open(path || undefined)}><RefreshCw /></button>
+        </div>
+        <div className="docker-path-picker-body">
+          {roots.length > 0 && <div className="docker-path-roots">{roots.map((item) => <button type="button" key={item.path} onClick={() => void open(item.path)}><HardDrive /><span>{item.name}</span><small>{item.path}</small></button>)}</div>}
+          {error ? <div className="error-state"><strong>{t("status.error")}</strong><span>{error}</span><button type="button" onClick={() => void open(path || undefined)}>{t("action.retry")}</button></div>
+            : loading ? <div className="loading-state">{t("status.loading")}</div>
+            : folders.length ? <div className="docker-path-folders">{folders.map((item) => <button type="button" key={item.path} onDoubleClick={() => void open(item.path)} onClick={() => void open(item.path)}><Folder /><span>{item.name}</span></button>)}</div>
+            : <div className="empty-state"><FolderOpen /><strong>{t("docker.noSubfolders")}</strong></div>}
+        </div>
+        <footer className="modal-footer"><button type="button" onClick={onClose}>{t("action.cancel")}</button><button className="button-primary" type="button" disabled={!path || loading} onClick={() => onSelect(path)}>{t("docker.chooseCurrentFolder")}</button></footer>
+      </section>
+    </div>,
+    document.body,
+  );
 }
 
 export function CreateContainerWizard({
@@ -70,7 +109,9 @@ export function CreateContainerWizard({
   const [ports, setPorts] = useState("");
   const [environment, setEnvironment] = useState("");
   const [secretRows, setSecretRows] = useState([{ key: "", value: "" }]);
-  const [mounts, setMounts] = useState("");
+  const [mounts, setMounts] = useState<MountRow[]>([]);
+  const [pathPickerMountId, setPathPickerMountId] = useState<number | null>(null);
+  const nextMountId = useRef(1);
   const [memory, setMemory] = useState("");
   const [memorySwap, setMemorySwap] = useState("");
   const [cpus, setCpus] = useState("");
@@ -102,6 +143,21 @@ export function CreateContainerWizard({
   const [networkFilterActive, setNetworkFilterActive] = useState(false);
   const configUpload = useRef<HTMLInputElement>(null);
   const composeUpload = useRef<HTMLInputElement>(null);
+
+  function addMount(values: Partial<Omit<MountRow, "id">> = {}) {
+    setMounts((current) => [...current, {
+      id: nextMountId.current++,
+      type: values.type || "bind",
+      source: values.source || "",
+      target: values.target || "",
+      readOnly: values.readOnly || false,
+      tmpfsSizeMb: values.tmpfsSizeMb || "",
+    }]);
+  }
+
+  function updateMount(id: number, values: Partial<Omit<MountRow, "id">>) {
+    setMounts((current) => current.map((item) => item.id === id ? { ...item, ...values } : item));
+  }
 
   useEffect(() => {
     if (!canViewLocalImages) return;
@@ -177,7 +233,14 @@ export function CreateContainerWizard({
       setEnvironment(lines(parsed.environment));
       setSecretRows(Object.entries(parsed.secret_environment || {}).map(([key, value]) => ({ key, value })).concat(Object.keys(parsed.secret_environment || {}).length ? [] : [{ key: "", value: "" }]));
       setPorts((parsed.ports || []).map((item) => `${item.published}:${item.target}/${item.protocol || "tcp"}`).join("\n"));
-      setMounts((parsed.mounts || []).map((item) => item.type === "tmpfs" ? `tmpfs:${item.target}${item.tmpfs_size_mb ? `:${item.tmpfs_size_mb}` : ""}` : `${item.type}:${item.source || ""}:${item.target}${item.read_only ? ":ro" : ""}`).join("\n"));
+      setMounts((parsed.mounts || []).map((item) => ({
+        id: nextMountId.current++,
+        type: item.type,
+        source: item.source || "",
+        target: item.target,
+        readOnly: Boolean(item.read_only),
+        tmpfsSizeMb: item.tmpfs_size_mb == null ? "" : String(item.tmpfs_size_mb),
+      })));
       setLabels(lines(parsed.labels));
       setMemory(parsed.limits?.memory_mb == null ? "" : String(parsed.limits.memory_mb));
       setMemorySwap(parsed.limits?.memory_swap_mb == null ? "" : String(parsed.limits.memory_swap_mb));
@@ -269,7 +332,20 @@ export function CreateContainerWizard({
           return [row.key, row.value];
         })),
         ports: mappedPorts,
-        mounts: mountLines(mounts, t("docker.invalidMounts")),
+        mounts: mounts.map((item) => {
+          if (!item.target || (item.type !== "tmpfs" && !item.source)) throw new Error(t("docker.invalidMounts"));
+          return item.type === "tmpfs" ? {
+            type: item.type,
+            source: "",
+            target: item.target,
+            tmpfs_size_mb: item.tmpfsSizeMb ? Number(item.tmpfsSizeMb) : null,
+          } : {
+            type: item.type,
+            source: item.source,
+            target: item.target,
+            read_only: item.readOnly,
+          };
+        }),
         limits: {
           memory_mb: memory ? Number(memory) : null,
           memory_swap_mb: memorySwap ? Number(memorySwap) : null,
@@ -470,10 +546,19 @@ export function CreateContainerWizard({
                 <button type="button" onClick={() => setSecretRows((current) => [...current, { key: "", value: "" }])}><Plus />{t("docker.addSecret")}</button>
               </fieldset>
               <p className="field-hint">{t("docker.secretsHint")}</p>
-              <label>
-                {t("docker.field.mounts")}
-                <textarea value={mounts} onChange={(event) => setMounts(event.target.value)} placeholder={t("docker.mountsHint")} />
-              </label>
+              <fieldset className="docker-mount-fields">
+                <legend>{t("docker.field.mounts")}</legend>
+                {mounts.length === 0 && <p className="field-hint">{t("docker.noMounts")}</p>}
+                {mounts.map((item) => <div className="docker-mount-row" key={item.id}>
+                  <label>{t("docker.mountType")}<select aria-label={t("docker.mountType")} value={item.type} onChange={(event) => updateMount(item.id, { type: event.target.value as MountRow["type"], source: event.target.value === "tmpfs" ? "" : item.source })}><option value="bind">bind</option><option value="volume">volume</option><option value="tmpfs">tmpfs</option></select></label>
+                  {item.type !== "tmpfs" && <label className="docker-mount-source">{t(item.type === "bind" ? "docker.hostPath" : "docker.volumeName")}<span><input aria-label={t("docker.mountSource")} value={item.source} onChange={(event) => updateMount(item.id, { source: event.target.value })} placeholder={item.type === "bind" ? "/srv/data" : "app-data"} />{item.type === "bind" && <button type="button" title={t("docker.chooseHostPath")} aria-label={t("docker.chooseHostPath")} onClick={() => setPathPickerMountId(item.id)}><FolderOpen /></button>}</span></label>}
+                  <label>{t("docker.mountTarget")}<input aria-label={t("docker.mountTarget")} value={item.target} onChange={(event) => updateMount(item.id, { target: event.target.value })} placeholder="/data" /></label>
+                  {item.type === "tmpfs" ? <label>{t("docker.tmpfsSizeMb")}<input aria-label={t("docker.tmpfsSizeMb")} type="number" min="1" value={item.tmpfsSizeMb} onChange={(event) => updateMount(item.id, { tmpfsSizeMb: event.target.value })} /></label>
+                    : <label className="check-row docker-mount-readonly"><input aria-label={t("files.readOnly")} type="checkbox" checked={item.readOnly} onChange={(event) => updateMount(item.id, { readOnly: event.target.checked })} />{t("files.readOnly")}</label>}
+                  <button className="docker-mount-remove" type="button" title={t("docker.removeMount")} aria-label={t("docker.removeMount")} onClick={() => setMounts((current) => current.filter((mount) => mount.id !== item.id))}><Minus /></button>
+                </div>)}
+                <button className="docker-add-mount" type="button" onClick={() => addMount()}><Plus />{t("docker.addMount")}</button>
+              </fieldset>
               <label>
                 {t("docker.field.labels")}
                 <textarea value={labels} onChange={(event) => setLabels(event.target.value)} placeholder={t("docker.labelsHint")} />
@@ -575,7 +660,7 @@ export function CreateContainerWizard({
               </div>
               <div>
                 <dt>{t("docker.field.mounts")}</dt>
-                <dd>{mounts || "—"}</dd>
+                <dd>{mounts.length ? mounts.map((item) => `${item.type}: ${item.type === "tmpfs" ? "" : `${item.source} → `}${item.target}${item.readOnly ? ` (${t("files.readOnly")})` : ""}`).join(", ") : "—"}</dd>
               </div>
               <div>
                 <dt>{t("docker.field.limits")}</dt>
@@ -613,6 +698,12 @@ export function CreateContainerWizard({
           )}
         </footer>
       </section>
+      {pathPickerMountId !== null && <DockerPathPicker
+        initialPath={mounts.find((item) => item.id === pathPickerMountId)?.source || ""}
+        t={t}
+        onClose={() => setPathPickerMountId(null)}
+        onSelect={(path) => { updateMount(pathPickerMountId, { source: path }); setPathPickerMountId(null); }}
+      />}
     </div>,
     document.body,
   );

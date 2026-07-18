@@ -87,13 +87,22 @@ export function RegistryManager({
             items={items}
             empty={t("docker.noRegistries")}
             columns={[
-              { key: "name", label: t("docker.field.name") },
+              {
+                key: "name",
+                label: t("docker.field.name"),
+                render: (value, row) => <span className="docker-registry-name">{String(value)}{Boolean(row.built_in) && <small>{t("docker.builtIn")}</small>}</span>,
+              },
               { key: "provider", label: t("docker.field.provider") },
               { key: "server", label: t("docker.field.server") },
-              { key: "username", label: t("settings.username") },
+              {
+                key: "username",
+                label: t("settings.username"),
+                render: (value, row) => row.public_access ? t("docker.publicAnonymous") : String(value || "—"),
+              },
               {
                 key: "secret_configured",
                 label: t("docker.field.secretConfigured"),
+                render: (value, row) => row.public_access ? t("docker.notRequired") : t(value ? "common.yes" : "common.no"),
               },
               { key: "tls", label: t("docker.field.tls") },
               {
@@ -103,6 +112,7 @@ export function RegistryManager({
             ]}
             actions={(row) => {
               const item = row as unknown as DockerRegistry;
+              if (item.built_in) return <span className="status-badge">{t("docker.defaultRegistry")}</span>;
               return (
                 <>
                   <button title={t("action.edit")} onClick={() => setDialog({ kind: "edit", item })}>

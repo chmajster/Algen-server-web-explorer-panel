@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from app.identity.models import Role
 from app.identity.permissions import ROLE_PERMISSIONS
 from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, ContainerSettingsRequest, MountSpec, NetworkCreateRequest, RegistryRequest
+from app.modules.docker_manager.router import PUBLIC_DOCKER_HUB
 from app.modules.docker_manager.storage import DockerManagerStore
 from app.modules import router as legacy_module_router
 from app.modules.providers.container_apps import CONTAINER_APPS
@@ -68,6 +69,23 @@ def test_container_settings_require_limits_and_a_published_port_selection():
         ContainerSettingsRequest(name="demo", resource_limits_enabled=True)
     with pytest.raises(ValidationError):
         ContainerSettingsRequest(name="demo", portal_enabled=True)
+
+
+def test_public_docker_hub_is_the_builtin_anonymous_registry():
+    assert PUBLIC_DOCKER_HUB == {
+        "id": "docker-hub-public",
+        "name": "Docker Hub",
+        "provider": "docker_hub",
+        "server": "docker.io",
+        "username": "",
+        "tls": True,
+        "ca_certificate_configured": False,
+        "secret_configured": False,
+        "built_in": True,
+        "public_access": True,
+        "created_at": 0,
+        "updated_at": 0,
+    }
 
 
 def test_private_store_never_returns_registry_password_and_consumes_inputs(tmp_path: Path):

@@ -393,7 +393,7 @@ export type DockerContainerSettingsUpdate = Pick<DockerContainerSettings, "name"
 export type DockerImage = { ID?: string; Repository?: string; Tag?: string; Digest?: string; Size?: string; CreatedSince?: string; consumers?: string[]; [key: string]: unknown };
 export type DockerApp = { id: string; name: string; description: string; image: string; container: string; category: string; panel_port: number; ports: string[]; version: string; required_secrets: string[]; architectures: string[]; healthcheck: string; dependencies: string[]; minimum_memory_mb: number; documentation_url: string; update_strategy: string; backup_strategy: string; uninstall_strategy: string; installed: boolean; running: boolean; managed: boolean; status: string };
 export type DockerArtifact = { id: string; kind: string; display_name: string; checksum: string; size: number; created_at: number; created_by: string; metadata: Record<string, unknown> };
-export type DockerRegistry = { id: string; name: string; provider: string; server: string; username: string; tls: boolean; ca_certificate_configured: boolean; secret_configured: boolean; created_at: number; updated_at: number };
+export type DockerRegistry = { id: string; name: string; provider: string; server: string; username: string; tls: boolean; ca_certificate_configured: boolean; secret_configured: boolean; built_in?: boolean; public_access?: boolean; created_at: number; updated_at: number };
 export type DockerPortMapping = { host_ip?: string | null; published: number; target: number; protocol?: "tcp" | "udp" };
 export type DockerMount = { type: "volume" | "bind" | "tmpfs"; source?: string; target: string; read_only?: boolean; tmpfs_size_mb?: number | null };
 export type DockerContainerCreate = {
@@ -926,7 +926,7 @@ export const api = {
   dockerVolumes: (search = "") => request<DockerPaged>(`/api/modules/docker/volumes?search=${encodeURIComponent(search)}`),
   createDockerVolume: (payload: DockerVolumeCreate) => request<{ job: ModuleJob }>("/api/modules/docker/volumes", { method: "POST", body: JSON.stringify(payload) }),
   dockerVolumeAction: (target: string, payload: DockerVolumeAction) => request<{ job: ModuleJob }>(`/api/modules/docker/volumes/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
-  dockerNetworks: (search = "") => request<DockerPaged>(`/api/modules/docker/networks?search=${encodeURIComponent(search)}`),
+  dockerNetworks: (search = "") => request<DockerPaged>(`/api/modules/docker/networks?page_size=200&search=${encodeURIComponent(search)}`),
   createDockerNetwork: (payload: DockerNetworkCreate) => request<{ job: ModuleJob }>("/api/modules/docker/networks", { method: "POST", body: JSON.stringify(payload) }),
   dockerNetworkAction: (target: string, payload: DockerNetworkAction) => request<{ job: ModuleJob }>(`/api/modules/docker/networks/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
   dockerComposeProjects: () => request<ModuleResource>("/api/modules/docker/compose"),

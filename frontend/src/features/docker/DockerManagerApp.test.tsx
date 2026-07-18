@@ -10,6 +10,7 @@ vi.mock("../../api", () => ({
     dockerContainerBackup: vi.fn(), dockerImages: vi.fn(), dockerImageAction: vi.fn(), importDockerImage: vi.fn(), dockerApps: vi.fn(),
     dockerComposeProjects: vi.fn(), validateDockerCompose: vi.fn(), saveDockerComposeProject: vi.fn(), dockerComposeAction: vi.fn(),
     dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerRegistries: vi.fn(), dockerBackups: vi.fn(),
+    list: vi.fn(), localDisks: vi.fn(), mountRoots: vi.fn(),
     dockerDaemonConfig: vi.fn(), dockerDiagnostics: vi.fn(), dockerEngineAction: vi.fn(), dockerPrune: vi.fn(),
   },
 }));
@@ -30,6 +31,10 @@ describe("DockerManagerApp", () => {
     vi.mocked(api.updateDockerContainerSettings).mockResolvedValue({ job: { id: "settings-job" } } as never);
     vi.mocked(api.dockerImages).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.dockerNetworks).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
+    vi.mocked(api.dockerRegistries).mockResolvedValue({ items: [{ id: "docker-hub-public", name: "Docker Hub", provider: "docker_hub", server: "docker.io", username: "", tls: true, ca_certificate_configured: false, secret_configured: false, built_in: true, public_access: true, created_at: 0, updated_at: 0 }] });
+    vi.mocked(api.localDisks).mockResolvedValue([]);
+    vi.mocked(api.mountRoots).mockResolvedValue([]);
+    vi.mocked(api.list).mockResolvedValue({ current_path: "/srv/media", parent_path: "/srv", items: [], page: 1, page_size: 200, total_items: 0, total_pages: 1 } as never);
     vi.mocked(api.createDockerContainer).mockResolvedValue({ job: { id: "job-1" } } as never);
   });
 
@@ -46,6 +51,14 @@ describe("DockerManagerApp", () => {
     render(<DockerManagerApp permissions={["docker.view"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     expect(await screen.findByRole("button", { name: "docker.section.dashboard" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "docker.section.registries" })).not.toBeInTheDocument();
+  });
+
+  it("shows public Docker Hub as the built-in default registry", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.manage_registries"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.registries" }));
+    expect(await screen.findByText("Docker Hub")).toBeInTheDocument();
+    expect(screen.getByText("docker.publicAnonymous")).toBeInTheDocument();
+    expect(screen.getByText("docker.defaultRegistry")).toBeInTheDocument();
   });
 
   it("opens the typed create wizard and submits secrets only in the request body", async () => {
@@ -123,6 +136,24 @@ describe("DockerManagerApp", () => {
     fireEvent.mouseDown(option);
     fireEvent.click(option);
     expect(networkInput).toHaveValue("app-network");
+  });
+
+  it("adds structured mounts and chooses a bind path in the graphical explorer", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "media" } });
+    fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "jellyfin:latest" } });
+    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
+    expect(screen.queryByRole("textbox", { name: "docker.field.mounts" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "docker.addMount" }));
+    fireEvent.click(screen.getByRole("button", { name: "docker.chooseHostPath" }));
+    expect(await screen.findByRole("heading", { name: "docker.chooseHostPath" })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "docker.chooseCurrentFolder" }));
+    expect(screen.getByLabelText("docker.mountSource")).toHaveValue("/srv/media");
+    fireEvent.change(screen.getByLabelText("docker.mountTarget"), { target: { value: "/media" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.removeMount" }));
+    expect(screen.getByText("docker.noMounts")).toBeInTheDocument();
   });
 
   it("validates, saves, and starts an imported Compose file", async () => {

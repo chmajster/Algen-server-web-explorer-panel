@@ -636,6 +636,20 @@
   color: var(--text-muted);
   font-size: 0.7rem;
 }
+.docker-registry-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+.docker-registry-name small {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--surface-selected);
+  font-size: 0.62rem;
+  font-weight: 600;
+}
 .docker-compose-import {
   display: grid;
   gap: 12px;
@@ -699,6 +713,143 @@
   grid-template-columns: minmax(120px, 1fr) minmax(150px, 2fr) auto;
   gap: 6px;
 }
+.docker-mount-fields {
+  min-width: 0;
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+.docker-mount-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 110px minmax(180px, 1.3fr) minmax(160px, 1fr) minmax(120px, auto) 36px;
+  align-items: end;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 7px;
+  background: var(--surface-secondary);
+}
+.docker-mount-source > span {
+  min-width: 0;
+  display: flex;
+  gap: 5px;
+}
+.docker-mount-source > span input {
+  min-width: 0;
+  flex: 1;
+}
+.docker-mount-source > span button,
+.docker-mount-remove {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+.docker-mount-source > span button svg,
+.docker-mount-remove svg {
+  width: 16px;
+}
+.docker-mount-readonly {
+  min-height: 36px;
+  white-space: nowrap;
+}
+.docker-add-mount {
+  width: max-content;
+}
+.docker-path-picker-backdrop {
+  z-index: 4200;
+}
+.docker-path-picker {
+  width: min(760px, 100%);
+  height: min(680px, calc(100dvh - 36px));
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.docker-path-picker-toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-secondary);
+}
+.docker-path-picker-toolbar button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+.docker-path-picker-toolbar code {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docker-path-picker-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+.docker-path-roots {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.docker-path-roots button {
+  min-width: 150px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  justify-items: start;
+  padding: 8px 10px;
+  text-align: left;
+}
+.docker-path-roots button svg {
+  grid-row: 1 / 3;
+  align-self: center;
+  margin-right: 7px;
+  color: var(--accent);
+}
+.docker-path-roots button small {
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+}
+.docker-path-folders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+.docker-path-folders button {
+  min-height: 92px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  overflow: hidden;
+  background: transparent;
+}
+.docker-path-folders button:hover {
+  background: var(--surface-hover);
+}
+.docker-path-folders button svg {
+  width: 34px;
+  height: 34px;
+  color: #d89b32;
+}
+.docker-path-folders button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .docker-wizard footer {
   min-height: 58px;
   display: flex;
@@ -739,6 +890,12 @@
   }
   .docker-dashboard-grid {
     grid-template-columns: 1fr;
+  }
+  .docker-mount-row {
+    grid-template-columns: 100px minmax(180px, 1fr) minmax(150px, 1fr) 36px;
+  }
+  .docker-mount-readonly {
+    grid-column: 2 / 4;
   }
 }
 @media (max-width: 620px) {
@@ -781,6 +938,19 @@
   }
   .docker-wizard .form-grid {
     grid-template-columns: 1fr;
+  }
+  .docker-mount-row {
+    grid-template-columns: 1fr 36px;
+  }
+  .docker-mount-row > label {
+    grid-column: 1 / -1;
+  }
+  .docker-mount-row > label:first-child {
+    grid-column: 1;
+  }
+  .docker-mount-remove {
+    grid-column: 2;
+    grid-row: 1;
   }
   .docker-wizard > header {
     align-items: flex-start;
