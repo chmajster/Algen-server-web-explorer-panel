@@ -14,9 +14,32 @@
 .widget-list div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .widget-list b { font-weight: 600; color: var(--text-muted); }
 .widget-list b.healthy { color: var(--success); }.widget-list b.degraded,.widget-list b.warning { color: var(--warning); }.widget-list b.failed,.widget-list b.critical { color: var(--danger); }
-.widget-edit-toggle { position: absolute; right: 0; top: 0; z-index: 3; display: flex; align-items: center; gap: 6px; pointer-events: auto; }
-.widget-picker { position: absolute; right: 0; top: 42px; z-index: 4; width: 190px; padding: 8px; display: grid; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-lg); pointer-events: auto; }
-.widget-picker button { justify-content: flex-start; }
+.widget-edit-toggle { position: absolute; right: 0; top: 0; z-index: 5; min-height: 38px; padding: 0 13px; display: flex; align-items: center; gap: 7px; border: 1px solid color-mix(in srgb, var(--border) 88%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: var(--shadow-sm); font-weight: 650; pointer-events: auto; backdrop-filter: blur(14px); transition: border-color .16s ease, background .16s ease, color .16s ease, transform .16s ease; }
+.widget-edit-toggle:hover { border-color: color-mix(in srgb, var(--accent) 52%, var(--border)); transform: translateY(-1px); }
+.widget-edit-toggle.is-active { border-color: color-mix(in srgb, var(--accent) 52%, var(--border)); background: var(--accent); color: var(--accent-contrast, #fff); }
+.widget-edit-toggle svg { width: 16px; height: 16px; }
+.widget-picker { position: absolute; right: 0; top: 48px; z-index: 4; width: min(300px, calc(100vw - 24px)); overflow: hidden; border: 1px solid color-mix(in srgb, var(--border) 90%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--surface) 97%, transparent); box-shadow: 0 16px 42px rgb(15 23 42 / 18%); pointer-events: auto; backdrop-filter: blur(20px); }
+.widget-picker-header { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 66px; padding: 11px 12px; border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface)); }
+.widget-picker-header-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); }
+.widget-picker-header-icon svg { width: 18px; height: 18px; }
+.widget-picker-heading { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.widget-picker-heading strong { color: var(--text); font-size: .78rem; line-height: 1.25; }
+.widget-picker-heading small { color: var(--text-muted); font-size: .64rem; line-height: 1.35; }
+.widget-picker-count { min-width: 36px; padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--accent); font-size: .66rem; font-weight: 700; text-align: center; }
+.widget-picker-list { display: grid; gap: 6px; padding: 8px; }
+.widget-picker-list > button { min-height: 52px; width: 100%; padding: 7px 9px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid transparent; border-radius: 10px; background: color-mix(in srgb, var(--surface-muted) 62%, transparent); color: var(--text); text-align: left; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.widget-picker-list > button:hover { border-color: color-mix(in srgb, var(--accent) 34%, var(--border)); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); transform: translateX(-1px); }
+.widget-picker-list > button.is-visible { border-color: color-mix(in srgb, var(--accent) 24%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.widget-picker-item-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: var(--surface); color: var(--text-muted); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 72%, transparent); }
+.widget-picker-list > button.is-visible .widget-picker-item-icon { background: color-mix(in srgb, var(--accent) 13%, var(--surface)); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 23%, transparent); }
+.widget-picker-item-icon svg { width: 16px; height: 16px; }
+.widget-picker-item-label { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.widget-picker-item-label strong { overflow: hidden; color: inherit; font-size: .73rem; font-weight: 650; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.widget-picker-item-label small { color: var(--text-muted); font-size: .62rem; line-height: 1.2; }
+.widget-picker-switch { position: relative; width: 32px; height: 18px; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 28%, var(--surface-muted)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent); transition: background .16s ease; }
+.widget-picker-switch i { position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px rgb(15 23 42 / 25%); transition: transform .16s ease; }
+.widget-picker-list > button.is-visible .widget-picker-switch { background: var(--accent); box-shadow: none; }
+.widget-picker-list > button.is-visible .widget-picker-switch i { transform: translateX(14px); }
 .desktop-widget-layer:not(.editing) .desktop-widget > header { cursor: default; }
 .desktop-widget-layer.editing .desktop-widget { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 .desktop-widget-layer.editing .desktop-widget > header { cursor: grab; background: color-mix(in srgb, var(--accent) 8%, transparent); }
@@ -24,3 +47,4 @@
 .widget-keyboard-controls { position: absolute; left: 4px; bottom: 4px; display: flex; gap: 2px; }
 .widget-keyboard-controls button { width: 24px; height: 24px; padding: 4px; }
 @media (max-width: 900px) { .desktop-widget-layer { inset: 8px 8px calc(var(--taskbar-height) + 8px); }.desktop-widget-grid { grid-template-columns: repeat(6,minmax(0,1fr)); grid-auto-flow: row; }.desktop-widget { grid-column: 1 / -1 !important; grid-row: auto / span 2 !important; position: relative; }.desktop-widget-layer:not(.editing) .desktop-widget:nth-child(n+4) { display: none; } }
+@media (max-width: 420px) { .widget-edit-toggle { min-height: 36px; }.widget-picker { top: 44px; width: calc(100vw - 16px); }.widget-picker-header { padding: 9px 10px; }.widget-picker-list { gap: 5px; padding: 6px; }.widget-picker-list > button { min-height: 48px; } }

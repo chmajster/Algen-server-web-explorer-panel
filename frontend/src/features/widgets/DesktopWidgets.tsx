@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Cpu, Grip, HardDrive, MemoryStick, Move, Network, Pin, PinOff, Settings2 } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Check, Cpu, Grip, HardDrive, MemoryStick, Move, Network, PinOff, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DesktopWidget, type DesktopWidgetId, type ModuleSummary, type ResourceDashboard, type SettingsMe, type SettingsPatch, type Task } from "../../api";
 import type { Toast, Translate } from "../../app/types";
@@ -49,9 +49,25 @@ export function DesktopWidgets({ profile, tasks, toasts, t, onSettingsChange }: 
     const alerts = [...(resources?.alerts || []).map((alert) => ({ id: `${alert.code}:${alert.target}`, text: `${alert.code}: ${alert.target}`, severity: alert.severity })), ...toasts.filter((item) => item.type === "error").map((item) => ({ id: `toast:${item.id}`, text: item.text, severity: "critical" }))];
     return <div className="widget-list">{alerts.slice(-5).reverse().map((alert) => <div key={alert.id}><AlertTriangle /><span>{alert.text}</span><b>{alert.severity}</b></div>)}{!alerts.length && <span>{t("widgets.noAlerts")}</span>}</div>;
   }
+  const visibleCount = layout.filter((item) => item.visible).length;
   return <section className={`desktop-widget-layer ${editing ? "editing" : ""}`} aria-label={t("widgets.title")}>
-    <button className="widget-edit-toggle" type="button" aria-pressed={editing} onClick={() => setEditing((value) => !value)}><Settings2 />{editing ? t("widgets.finish") : t("widgets.customize")}</button>
-    {editing && <aside className="widget-picker" aria-label={t("widgets.visibility")}>{IDS.map((id) => { const item = layout.find((widget) => widget.id === id); return <button type="button" key={id} aria-pressed={item?.visible} onClick={() => item && patchWidget(id, { visible: !item.visible })}>{item?.visible ? <Pin /> : <PinOff />}{t(`widgets.${id}`)}</button>; })}</aside>}
+    <button className={`widget-edit-toggle ${editing ? "is-active" : ""}`} type="button" aria-pressed={editing} onClick={() => setEditing((value) => !value)}>{editing ? <Check /> : <Settings2 />}{editing ? t("widgets.finish") : t("widgets.customize")}</button>
+    {editing && <aside className="widget-picker" aria-label={t("widgets.visibility")}>
+      <header className="widget-picker-header">
+        <span className="widget-picker-header-icon"><Settings2 /></span>
+        <span className="widget-picker-heading"><strong>{t("widgets.editorTitle")}</strong><small>{t("widgets.editorHint")}</small></span>
+        <span className="widget-picker-count" title={t("widgets.visibleCount")}>{visibleCount}/{IDS.length}</span>
+      </header>
+      <div className="widget-picker-list">{IDS.map((id) => {
+        const item = layout.find((widget) => widget.id === id);
+        const visible = Boolean(item?.visible);
+        return <button className={visible ? "is-visible" : ""} type="button" key={id} aria-label={t(`widgets.${id}`)} aria-pressed={visible} onClick={() => item && patchWidget(id, { visible: !item.visible })}>
+          <span className="widget-picker-item-icon">{icon(id)}</span>
+          <span className="widget-picker-item-label"><strong>{t(`widgets.${id}`)}</strong><small>{visible ? t("widgets.visible") : t("widgets.hidden")}</small></span>
+          <span className="widget-picker-switch" aria-hidden="true"><i /></span>
+        </button>;
+      })}</div>
+    </aside>}
     <div className="desktop-widget-grid" ref={board}>{layout.filter((item) => item.visible).map((item) => <article className="desktop-widget" key={item.id} style={{ gridColumn: `${item.x + 1} / span ${item.width}`, gridRow: `${item.y + 1} / span ${item.height}` }}>
       <header onPointerDown={(event) => begin(event, item, "move")}><span>{icon(item.id)}{t(`widgets.${item.id}`)}</span>{editing && <><Grip /><button type="button" title={t("widgets.hide")} onClick={() => patchWidget(item.id, { visible: false })}><PinOff /></button></>}</header>
       <div className="widget-content">{content(item.id)}</div>
