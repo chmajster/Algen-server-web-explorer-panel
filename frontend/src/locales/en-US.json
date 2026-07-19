@@ -721,6 +721,7 @@
   "settings.pageSize": "Items per page",
   "settings.passwordChanged": "Password changed",
   "settings.port": "Port",
+  "settings.publicationVersion": "Release version",
   "settings.proxmoxDetected": "Proxmox environment detected",
   "settings.proxmoxProtectionActive": "Proxmox Safe Mode protections are active.",
   "settings.proxmoxProtectionInactive": "Proxmox Safe Mode protections are not active.",

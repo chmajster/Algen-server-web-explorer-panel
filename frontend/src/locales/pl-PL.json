@@ -721,6 +721,7 @@
   "settings.pageSize": "Elementy na stronę",
   "settings.passwordChanged": "Hasło zostało zmienione",
   "settings.port": "Port",
+  "settings.publicationVersion": "Wersja publikacji",
   "settings.proxmoxDetected": "Wykryto środowisko Proxmox",
   "settings.proxmoxProtectionActive": "Zabezpieczenia Proxmox Safe Mode są aktywne.",
   "settings.proxmoxProtectionInactive": "Zabezpieczenia Proxmox Safe Mode nie są aktywne.",

@@ -567,6 +567,38 @@ def _remote_release_timestamp(revision: str) -> int | None:
         return None
 
 
+def _publication_version_from_pyproject(content: str) -> str | None:
+    project = re.search(r"(?ms)^\[project\]\s*(.*?)(?=^\[|\Z)", content)
+    if not project:
+        return None
+    version = re.search(r'^version\s*=\s*["\']([^"\']+)["\']\s*$', project.group(1), re.MULTILINE)
+    return version.group(1).strip() if version else None
+
+
+def _installed_publication_version() -> str | None:
+    path = _repo_root() / "pyproject.toml"
+    try:
+        return _publication_version_from_pyproject(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return None
+
+
+def _remote_publication_version(revision: str) -> str | None:
+    result = subprocess.run(
+        [
+            _tool("curl"), "-fsSL", "--max-time", "10",
+            f"https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/{revision}/pyproject.toml",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    if result.returncode != 0 or len(result.stdout) > 128 * 1024:
+        return None
+    return _publication_version_from_pyproject(result.stdout)
+
+
 def _update_status() -> dict:
     branch = "main"
     revision_file = _revision_path()
@@ -580,6 +612,7 @@ def _update_status() -> dict:
             local = "unknown"
     else:
         local = "unknown"
+    installed_version = _installed_publication_version()
     try:
         remote = _git_output(["ls-remote", "https://github.com/chmajster/Algen-server-web-explorer-panel.git", f"refs/heads/{branch}"]).split()
         if not remote:
@@ -587,12 +620,15 @@ def _update_status() -> dict:
         remote_sha = remote[0]
     except (HTTPException, OSError, subprocess.SubprocessError) as error:
         message = str(error.detail) if isinstance(error, HTTPException) else str(error)
-        return {"branch": branch, "local": local, "remote": "", "update_available": False, "available": False, "error": message, "source": UPDATE_SOURCE, "source_url": UPDATE_SOURCE_URL, "released_at": None}
+        return {"branch": branch, "local": local, "remote": "", "installed_version": installed_version, "available_version": None, "update_available": False, "available": False, "error": message, "source": UPDATE_SOURCE, "source_url": UPDATE_SOURCE_URL, "released_at": None}
     released_at = _remote_release_timestamp(remote_sha)
+    available_version = _remote_publication_version(remote_sha)
     return {
         "branch": branch,
         "local": local,
         "remote": remote_sha,
+        "installed_version": installed_version,
+        "available_version": available_version,
         "update_available": local == "unknown" or local != remote_sha,
         "available": True,
         "error": "",
