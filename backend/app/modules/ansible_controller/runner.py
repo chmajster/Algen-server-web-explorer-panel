@@ -389,21 +389,28 @@ rollback() {{
   exit "$rc"
 }}
 trap rollback EXIT HUP INT TERM
+current_user=$(id -un)
 if ! id "$managed_user" >/dev/null 2>&1; then
   useradd --create-home --shell "$managed_shell" --comment "$managed_comment" -- "$managed_user"
   created_user=1
 fi
-usermod --lock --shell "$managed_shell" --comment "$managed_comment" -- "$managed_user"
+if [ "$current_user" != "$managed_user" ]; then
+  usermod --lock --shell "$managed_shell" --comment "$managed_comment" -- "$managed_user"
+fi
 home_dir=$(getent passwd "$managed_user" | cut -d: -f6)
 test -n "$home_dir"
-install -d -m 0700 -o "$managed_user" -g "$managed_user" -- "$home_dir/.ssh"
+if [ "$current_user" = "$managed_user" ]; then
+  install -d -m 0700 -- "$home_dir/.ssh"
+else
+  install -d -m 0700 -o "$managed_user" -g "$managed_user" -- "$home_dir/.ssh"
+fi
 if [ "$append_key" -eq 1 ] && [ -f "$home_dir/.ssh/authorized_keys" ]; then
   cp -- "$home_dir/.ssh/authorized_keys" "$home_dir/.ssh/authorized_keys.new"
   grep -Fqx -- "$public_key" "$home_dir/.ssh/authorized_keys.new" || printf '%s\n' "$public_key" >> "$home_dir/.ssh/authorized_keys.new"
 else
   printf '%s\n' "$public_key" > "$home_dir/.ssh/authorized_keys.new"
 fi
-chown "$managed_user:$managed_user" "$home_dir/.ssh/authorized_keys.new"
+if [ "$current_user" != "$managed_user" ]; then chown "$managed_user:$managed_user" "$home_dir/.ssh/authorized_keys.new"; fi
 chmod 0600 "$home_dir/.ssh/authorized_keys.new"
 mv -f -- "$home_dir/.ssh/authorized_keys.new" "$home_dir/.ssh/authorized_keys"
 if [ -n "$sudo_policy" ]; then
@@ -411,6 +418,8 @@ if [ -n "$sudo_policy" ]; then
   chmod 0440 "$sudoers_file.new"
   visudo -cf "$sudoers_file.new"
   mv -f -- "$sudoers_file.new" "$sudoers_file"
+else
+  rm -f -- "$sudoers_file"
 fi
 trap - EXIT HUP INT TERM
 exit 0
@@ -428,15 +437,16 @@ def run_remote_user_setup(
     shell: str,
     comment: str,
     authorized_keys_mode: str,
+    public_key: str,
     log: LogCallback,
 ) -> None:
     credential = repository.credential_secret(credential_id)
     if credential["type"] not in {"ssh_private_key", "ssh_password"}:
         raise RuntimeError("remote account setup requires an SSH private-key or initial-password credential")
-    public_key_path = repository.root / "home" / ".ssh" / "id_ed25519.pub"
-    if not public_key_path.is_file():
-        raise RuntimeError("controller public key is missing")
-    script = build_managed_user_script(managed_username, public_key_path.read_text(encoding="utf-8").strip(), sudo_profile, sudoers_policy, shell, comment, authorized_keys_mode)
+    public_key_value = public_key.strip() if public_key else ""
+    if not public_key_value:
+        raise RuntimeError("host-specific public key is missing")
+    script = build_managed_user_script(managed_username, public_key_value, sudo_profile, sudoers_policy, shell, comment, authorized_keys_mode)
     with execution_directory(repository, "onboard") as directory:
         uid, gid, home = controller_identity()
         known_hosts = directory / "known_hosts"
@@ -458,7 +468,7 @@ def run_remote_user_setup(
         args = build_ssh_args(target, known_hosts, key_file=None if password_mode else key_path, probe="true", batch_mode=not password_mode)
         # Replace only the backend-owned fixed probe with a fixed script receiver.
         # Root can run it directly, while bootstrap administrator accounts use sudo.
-        if initial_username == "root":
+        if initial_username in {"root", managed_username}:
             receiver = ["sh", "-s"]
         else:
             receiver = ["sudo", "-S", "-p", "", "sh", "-s"] if password_mode else ["sudo", "-n", "sh", "-s"]

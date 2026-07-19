@@ -375,7 +375,7 @@ class AnsibleRepository:
         return self._get("projects", object_id) or {}
 
     def playbooks(self, project_id: str | None = None) -> list[dict[str, Any]]:
-        return self._list("playbooks", where="project_id=?" if project_id else "", values=(project_id,) if project_id else (), order="name", limit=5000)
+        return self._list("playbooks", where="project_id=? AND active=1" if project_id else "active=1", values=(project_id,) if project_id else (), order="name", limit=5000)
 
     def save_playbook(self, payload: PlaybookInput, actor: str, analysis: dict[str, Any], playbook_id: str | None = None) -> dict[str, Any]:
         import hashlib
@@ -396,6 +396,13 @@ class AnsibleRepository:
 
     def playbook_versions(self, playbook_id: str) -> list[dict[str, Any]]:
         return self._list("playbook_versions", where="playbook_id=?", values=(playbook_id,), order="version DESC", limit=1000)
+
+    def delete_playbook(self, playbook_id: str, actor: str) -> bool:
+        with self._lock, self.connect() as connection:
+            changed = connection.execute("DELETE FROM playbooks WHERE id=? AND active=1", (playbook_id,)).rowcount
+        if changed:
+            self.audit(actor, "playbook", playbook_id, "delete")
+        return bool(changed)
 
     def templates(self) -> list[dict[str, Any]]:
         return self._list("job_templates", order="name", limit=5000)

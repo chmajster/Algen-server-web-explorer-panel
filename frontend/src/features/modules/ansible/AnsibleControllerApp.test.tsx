@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnsibleControllerApp } from "./AnsibleControllerApp";
 
 const mocks = vi.hoisted(() => ({
-  module: vi.fn(), dashboard: vi.fn(), hosts: vi.fn(), groups: vi.fn(), credentials: vi.fn(), saveCredential: vi.fn(), config: vi.fn(), saveManagedAccount: vi.fn(), scans: vi.fn(), startScan: vi.fn(),
+  module: vi.fn(), dashboard: vi.fn(), hosts: vi.fn(), groups: vi.fn(), credentials: vi.fn(), saveCredential: vi.fn(), config: vi.fn(), saveManagedAccount: vi.fn(), scans: vi.fn(), startScan: vi.fn(), projects: vi.fn(), playbooks: vi.fn(), validatePlaybook: vi.fn(), savePlaybook: vi.fn(), deletePlaybook: vi.fn(),
 }));
 
 vi.mock("../../../api", async () => {
   const actual = await vi.importActual<typeof import("../../../api")>("../../../api");
-  return { ...actual, api: { ...actual.api, module: mocks.module, ansibleDashboard: mocks.dashboard, ansibleHosts: mocks.hosts, ansibleGroups: mocks.groups, ansibleCredentials: mocks.credentials, saveAnsibleCredential: mocks.saveCredential, ansibleConfig: mocks.config, saveAnsibleManagedAccount: mocks.saveManagedAccount, ansibleScans: mocks.scans, startAnsibleScan: mocks.startScan } };
+  return { ...actual, api: { ...actual.api, module: mocks.module, ansibleDashboard: mocks.dashboard, ansibleHosts: mocks.hosts, ansibleGroups: mocks.groups, ansibleCredentials: mocks.credentials, saveAnsibleCredential: mocks.saveCredential, ansibleConfig: mocks.config, saveAnsibleManagedAccount: mocks.saveManagedAccount, ansibleScans: mocks.scans, startAnsibleScan: mocks.startScan, ansibleProjects: mocks.projects, ansiblePlaybooks: mocks.playbooks, validateAnsiblePlaybook: mocks.validatePlaybook, saveAnsiblePlaybook: mocks.savePlaybook, deleteAnsiblePlaybook: mocks.deletePlaybook } };
 });
 
 const status = { installed: true, update_available: false, service_state: "ready", service_enabled: false, services: {}, health: "healthy", health_message: "ready", last_action: "", last_action_status: "", last_error: "", metrics: {} };
@@ -26,6 +26,11 @@ describe("AnsibleControllerApp", () => {
     mocks.config.mockResolvedValue({ managed_username: "algen-ansible", managed_sudo_profile: "none", managed_shell: "/bin/bash", managed_comment: "Algen Ansible automation", managed_authorized_keys_mode: "exclusive", allowed_networks: [] });
     mocks.saveManagedAccount.mockResolvedValue({ managed_username: "deploy-bot", managed_sudo_profile: "nopasswd", managed_shell: "/bin/sh", managed_comment: "Production automation", managed_authorized_keys_mode: "append" });
     mocks.startScan.mockResolvedValue({ scan: { id: "scan", status: "queued", progress: 0, discovered: 0, request: {}, error: "", created_at: 1 }, job: { id: "job" }, address_count: 254 });
+    mocks.projects.mockResolvedValue([{ id: "a".repeat(32), name: "Local", source_type: "editor", repository_url: "", revision: "main", credential_id: null, last_commit: "", last_sync_at: null, active: true }]);
+    mocks.playbooks.mockResolvedValue([{ id: "b".repeat(32), project_id: "a".repeat(32), name: "Deploy web", filename: "deploy-web.yml", content: "---\n- hosts: web\n  tasks: []\n", current_version: 2, risk_status: "safe", warnings: [], active: true, updated_at: 2 }]);
+    mocks.validatePlaybook.mockResolvedValue({ ok: true, task_count: 1, errors: [], blocked: [], warnings: [], runtime: { ok: true, checks: [] } });
+    mocks.savePlaybook.mockResolvedValue({ id: "b".repeat(32), project_id: "a".repeat(32), name: "Deploy web", filename: "deploy-web.yml", content: "---\n- hosts: web\n  tasks: []\n", current_version: 3, risk_status: "safe", warnings: [], active: true, updated_at: 3 });
+    mocks.deletePlaybook.mockResolvedValue({ ok: true });
   });
 
   it("shows a permission state without making controller requests", () => {
@@ -85,5 +90,36 @@ describe("AnsibleControllerApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /ansible.managedAccount.save/ }));
 
     await waitFor(() => expect(mocks.saveManagedAccount).toHaveBeenCalledWith({ username: "deploy-bot", sudo_profile: "nopasswd", shell: "/bin/sh", comment: "Production automation", authorized_keys_mode: "append" }));
+  });
+
+  it("lists, opens, edits, and deletes playbooks", async () => {
+    const playbookPermissions = [...permissions, "ansible-controller.playbooks.view", "ansible-controller.playbooks.manage"];
+    render(<AnsibleControllerApp permissions={playbookPermissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("ansible.dashboard.hosts");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.playbooks/ }));
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Deploy web/ }));
+    const content = screen.getByLabelText("ansible.playbook.content");
+    fireEvent.change(content, { target: { value: "---\n- hosts: all\n  tasks: []\n" } });
+    fireEvent.click(screen.getByRole("button", { name: /^action.save$/ }));
+    await waitFor(() => expect(mocks.savePlaybook).toHaveBeenCalledWith(expect.objectContaining({ name: "Deploy web", filename: "deploy-web.yml", content: expect.stringContaining("hosts: all") }), "b".repeat(32)));
+
+    fireEvent.click(screen.getByRole("button", { name: "action.delete Deploy web" }));
+    await waitFor(() => expect(mocks.deletePlaybook).toHaveBeenCalledWith("b".repeat(32)));
+  });
+
+  it("opens readable host details in a modal", async () => {
+    mocks.hosts.mockResolvedValue([{ id: "c".repeat(32), name: "node-01", address: "192.168.1.58", port: 22, ssh_user: "algen-ansible", credential_id: "credential", python_interpreter: "auto_silent", connection_type: "ssh", environment: "production", location: "rack-1", tags: [], variables: {}, fingerprint_status: "accepted", last_test_at: 2, last_facts_at: 3, last_error: "", managed_user_created: true, active: true, groups: [], facts: { ansible_distribution: "Debian", ansible_kernel: "6.1", ansible_architecture: "x86_64", ansible_processor_vcpus: 4, ansible_memtotal_mb: 8192 }, created_at: 1, updated_at: 4 }]);
+    render(<AnsibleControllerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("ansible.dashboard.hosts");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.hosts/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "node-01" }));
+
+    const dialog = screen.getByRole("dialog", { name: "ansible.host.details" });
+    expect(dialog).toHaveTextContent("192.168.1.58:22");
+    expect(dialog).toHaveTextContent("Debian");
+    expect(dialog).toHaveTextContent("production");
+    fireEvent.click(screen.getAllByRole("button", { name: "action.close" })[0]);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

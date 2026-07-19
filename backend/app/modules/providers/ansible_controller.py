@@ -80,7 +80,19 @@ def _run_cancellable(
             stdout, stderr = process.communicate(timeout=min(0.2, max(0.01, deadline - time.monotonic())))
         except subprocess.TimeoutExpired:
             continue
-        return subprocess.CompletedProcess(args, int(process.returncode or 0), stdout, stderr)
+    return subprocess.CompletedProcess(args, int(process.returncode or 0), stdout, stderr)
+
+
+def _generate_host_key(store: Any, host_id: str) -> tuple[str, str]:
+    keygen = shutil.which("ssh-keygen")
+    if not keygen:
+        raise RuntimeError("ssh-keygen is unavailable")
+    with execution_directory(store, "host-keygen") as directory:
+        key_path = directory / "id_ed25519"
+        result = subprocess.run([keygen, "-q", "-t", "ed25519", "-N", "", "-C", f"webnas-ansible:{host_id}", "-f", str(key_path)], capture_output=True, text=True, timeout=30, check=False, shell=False)
+        if result.returncode != 0 or not key_path.is_file() or not key_path.with_suffix(".pub").is_file():
+            raise RuntimeError("host-specific SSH key generation failed")
+        return key_path.read_text(encoding="utf-8"), key_path.with_suffix(".pub").read_text(encoding="utf-8").strip()
 
 
 class AnsibleControllerProvider(ModuleProvider):
@@ -130,6 +142,7 @@ class AnsibleControllerProvider(ModuleProvider):
             "managed_shell": value.get("managed_shell") or "/bin/bash",
             "managed_comment": value.get("managed_comment") if isinstance(value.get("managed_comment"), str) else "Algen Ansible automation",
             "managed_authorized_keys_mode": value.get("managed_authorized_keys_mode") or "exclusive",
+            "managed_key_rotation_days": min(max(int(value.get("managed_key_rotation_days") if value.get("managed_key_rotation_days") is not None else 90), 0), 365),
             "awx": awx,
         }
 
@@ -158,11 +171,17 @@ class AnsibleControllerProvider(ModuleProvider):
             errors.append("invalid managed account sudo profile")
         if (config.get("managed_shell") or "/bin/bash") not in {"/bin/bash", "/bin/sh"}:
             errors.append("invalid managed account shell")
-        comment = config.get("managed_comment")
+        comment = config.get("managed_comment") if isinstance(config.get("managed_comment"), str) else "Algen Ansible automation"
         if not isinstance(comment, str) or len(comment) > 100 or any(character in comment for character in ":\r\n"):
             errors.append("invalid managed account comment")
         if (config.get("managed_authorized_keys_mode") or "exclusive") not in {"exclusive", "append"}:
             errors.append("invalid managed account authorized keys mode")
+        try:
+            rotation_days = int(config.get("managed_key_rotation_days") if config.get("managed_key_rotation_days") is not None else 90)
+            if not 0 <= rotation_days <= 365:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append("invalid managed host key rotation interval")
         if isinstance(config.get("awx"), dict) and config["awx"].get("url"):
             try:
                 AwxSettingsInput.model_validate(config["awx"])
@@ -356,7 +375,7 @@ class AnsibleControllerProvider(ModuleProvider):
             return execute_template(self.store, str(payload.get("execution_id") or ""), actor, log, progress, cancelled)
         if operation == "gather_facts":
             return execute_ad_hoc(self.store, str(payload.get("host_id") or ""), actor, log, progress, cancelled, facts=not bool(payload.get("test_only")))
-        if operation == "onboard_host":
+        if operation in {"onboard_host", "rotate_host_key"}:
             host_id = str(payload.get("host_id") or "")
             host = self.store.host(host_id)
             if not host:
@@ -364,26 +383,26 @@ class AnsibleControllerProvider(ModuleProvider):
             if not self.store.known_key(str(host["address"]), int(host["port"])):
                 raise RuntimeError("SSH host key is not accepted")
             progress(10, "Verify accepted SSH host fingerprint")
-            credential_id = str(payload.get("credential_id") or host.get("credential_id") or "")
+            rotating = operation == "rotate_host_key"
+            credential_id = str(host.get("credential_id") or "") if rotating else str(payload.get("credential_id") or host.get("credential_id") or "")
             managed_username = str(payload.get("managed_username") or MANAGED_SSH_USERNAME)
+            private_key_value, public_key_value = _generate_host_key(self.store, host_id)
             run_remote_user_setup(
                 self.store,
                 host,
                 credential_id,
-                str(payload.get("initial_username") or "root"),
+                str(host.get("ssh_user") or managed_username) if rotating else str(payload.get("initial_username") or "root"),
                 managed_username,
                 str(payload.get("sudo_profile") or "none"),
                 str(payload.get("sudoers_policy") or ""),
                 str(payload.get("managed_shell") or "/bin/bash"),
                 str(payload.get("managed_comment") or "Algen Ansible automation"),
-                str(payload.get("authorized_keys_mode") or "exclusive"),
+                "exclusive" if rotating else str(payload.get("authorized_keys_mode") or "exclusive"),
+                public_key_value,
                 log,
             )
-            private_key = self.store.root / "home" / ".ssh" / "id_ed25519"
-            if not private_key.is_file():
-                raise RuntimeError("controller private key is missing")
-            existing = next((item for item in self.store.credentials() if item["name"] == "Controller managed-host key" and item["active"]), None)
-            credential_payload = CredentialInput(name="Controller managed-host key", type=CredentialType.ssh_private_key, username=managed_username, secret=private_key.read_text(encoding="utf-8"), description=f"Private key generated for {managed_username} managed accounts")
+            existing = next((item for item in self.store.credentials() if item["id"] == host.get("credential_id") and str(item.get("description") or "").startswith(f"managed-host:{host_id}")), None)
+            credential_payload = CredentialInput(name=f"Host key · {host['name']} · {host_id[:8]}", type=CredentialType.ssh_private_key, username=managed_username, secret=private_key_value, description=f"managed-host:{host_id}; unique Ed25519 key")
             managed_credential = self.store.save_credential(credential_payload, actor, existing["id"] if existing else None)
             updated = HostInput.model_validate({
                 "name": host["name"], "address": host["address"], "port": host["port"],
@@ -395,9 +414,9 @@ class AnsibleControllerProvider(ModuleProvider):
             self.store.save_host(updated, actor, host_id)
             with self.store._lock, self.store.connect() as connection:
                 connection.execute("UPDATE hosts SET managed_user_created=1,updated_at=?,updated_by=? WHERE id=?", (time.time(), actor, host_id))
-            progress(65, f"Managed {managed_username} account and controller key installed")
+            progress(65, f"Unique host key installed for {host['name']}")
             result = execute_ad_hoc(self.store, host_id, actor, log, progress, cancelled, facts=True)
-            self.store.audit(actor, "host", host_id, "onboard_complete", {"managed_user_created": True, "managed_username": managed_username})
+            self.store.audit(actor, "host", host_id, "key_rotated" if rotating else "onboard_complete", {"managed_user_created": True, "managed_username": managed_username, "credential_id": managed_credential["id"], "key_scope": "per_host"})
             return result
         if operation == "sync_project":
             project_id = str(payload.get("project_id") or "")

@@ -87,6 +87,7 @@ def _enqueue(operation: str, payload: dict[str, Any], actor: str) -> dict[str, A
     plan.steps = {
         "network_scan": ["Validate approved address range", "Run fixed TCP nmap scan", "Store selected discovery results"],
         "onboard_host": ["Verify accepted host key", "Test SSH", "Prepare managed account", "Test Ansible ping", "Collect facts"],
+        "rotate_host_key": ["Generate a unique Ed25519 key", "Connect with the current host key", "Replace authorized key", "Encrypt the new private key", "Verify Ansible connection"],
         "gather_facts": ["Generate private inventory", "Run Ansible setup", "Store redacted facts"],
         "sync_project": ["Validate repository origin", "Fetch fixed revision", "Verify project boundaries"],
         "launch": ["Create private snapshots", "Drop UID/GID", "Run ansible-playbook", "Parse per-host recap", "Clean credentials"],
@@ -132,10 +133,10 @@ def save_managed_account(payload: ManagedAccountConfigInput, user: SessionUser =
     config = provider.get_config()
     if isinstance(config.get("awx"), dict):
         config["awx"].pop("token_configured", None)
-    config.update({"managed_username": payload.username, "managed_sudo_profile": payload.sudo_profile, "managed_shell": payload.shell, "managed_comment": payload.comment, "managed_authorized_keys_mode": payload.authorized_keys_mode})
+    config.update({"managed_username": payload.username, "managed_sudo_profile": payload.sudo_profile, "managed_shell": payload.shell, "managed_comment": payload.comment, "managed_authorized_keys_mode": payload.authorized_keys_mode, "managed_key_rotation_days": payload.key_rotation_days})
     value = provider.save_config(config, user.username)
     _audit_api(user.username, "configure_managed_account", "settings", "managed-account", {"username": payload.username, "sudo_profile": payload.sudo_profile, "shell": payload.shell, "authorized_keys_mode": payload.authorized_keys_mode})
-    return {"managed_username": value.get("managed_username"), "managed_sudo_profile": value.get("managed_sudo_profile"), "managed_shell": value.get("managed_shell"), "managed_comment": value.get("managed_comment"), "managed_authorized_keys_mode": value.get("managed_authorized_keys_mode")}
+    return {"managed_username": value.get("managed_username"), "managed_sudo_profile": value.get("managed_sudo_profile"), "managed_shell": value.get("managed_shell"), "managed_comment": value.get("managed_comment"), "managed_authorized_keys_mode": value.get("managed_authorized_keys_mode"), "managed_key_rotation_days": value.get("managed_key_rotation_days")}
 
 
 @router.get("/hosts")
@@ -236,6 +237,20 @@ def gather_facts(host_id: str, payload: ConfirmationInput, user: SessionUser = D
     if not repository().host(host_id):
         api_error(404, "HOST_NOT_FOUND", "Host not found")
     return {"job": _enqueue("gather_facts", {"host_id": host_id}, user.username)}
+
+
+@router.post("/hosts/{host_id}/managed-key/rotate")
+def rotate_managed_key(host_id: str, payload: ConfirmationInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_CONFIGURE))):
+    _require_confirmation(payload.confirm)
+    host = repository().host(host_id)
+    if not host or not host.get("active"):
+        api_error(404, "HOST_NOT_FOUND", "Host not found")
+    if not host.get("managed_user_created") or not host.get("credential_id"):
+        api_error(409, "MANAGED_KEY_UNAVAILABLE", "Host must be onboarded before its key can be rotated")
+    config = AnsibleControllerProvider(user.username).get_config()
+    job = _enqueue("rotate_host_key", {"host_id": host_id, "managed_username": config.get("managed_username") or MANAGED_SSH_USERNAME, "sudo_profile": config.get("managed_sudo_profile") or "none", "sudoers_policy": "", "managed_shell": config.get("managed_shell") or "/bin/bash", "managed_comment": config.get("managed_comment") or "Algen Ansible automation", "authorized_keys_mode": "exclusive"}, user.username)
+    _audit_api(user.username, "rotate_managed_key", "host", host_id, {"job_id": job["id"], "key_scope": "per_host"})
+    return {"job": job}
 
 
 @router.post("/onboarding")
@@ -459,6 +474,16 @@ def update_playbook(playbook_id: str, payload: PlaybookInput, user: SessionUser 
     if not runtime["ok"]:
         api_error(422, "PLAYBOOK_ANSIBLE_INVALID", "ansible-playbook rejected the playbook", validation=runtime)
     return repository().save_playbook(payload, user.username, analysis, playbook_id)
+
+
+@router.delete("/playbooks/{playbook_id}")
+def delete_playbook(playbook_id: str, payload: ConfirmationInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_PLAYBOOKS_MANAGE))):
+    _require_confirmation(payload.confirm)
+    if repository()._list("job_templates", where="playbook_id=? AND active=1", values=(playbook_id,), limit=1):
+        api_error(409, "PLAYBOOK_IN_USE", "Playbook is used by an active job template")
+    if not repository().delete_playbook(playbook_id, user.username):
+        api_error(404, "PLAYBOOK_NOT_FOUND", "Playbook not found")
+    return {"ok": True}
 
 
 @router.get("/playbooks/{playbook_id}/versions")

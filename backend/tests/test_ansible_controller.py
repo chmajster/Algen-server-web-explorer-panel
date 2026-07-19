@@ -24,6 +24,7 @@ from app.modules.ansible_controller.models import (
     ManagedAccountConfigInput,
     NetworkScanInput,
     OnboardingInput,
+    PlaybookInput,
     ProjectInput,
     ScheduleInput,
 )
@@ -78,6 +79,22 @@ def test_credential_is_authenticated_encrypted_and_never_returned(tmp_path: Path
     assert raw is not None and "OPENSSH PRIVATE KEY" not in raw["encrypted_secret"]
     assert repository.credential_secret(created["id"])["secret"] == private_key
     assert repository.credential_secret(created["id"])["passphrase"] == "key-pass"
+
+
+def test_playbook_library_can_delete_a_playbook_and_its_versions(tmp_path: Path):
+    repository = store(tmp_path)
+    project = repository.save_project(ProjectInput(name="Local", source_type="editor"), "admin")
+    playbook = repository.save_playbook(
+        PlaybookInput(project_id=project["id"], name="Deploy web", filename="deploy-web.yml", content="---\n- hosts: web\n  tasks: []\n"),
+        "admin",
+        {"ok": True, "warnings": [], "blocked": []},
+    )
+
+    assert [item["id"] for item in repository.playbooks()] == [playbook["id"]]
+    assert repository.delete_playbook(playbook["id"], "admin") is True
+    assert repository.playbooks() == []
+    assert repository._get("playbooks", playbook["id"]) is None
+    assert repository.playbook_versions(playbook["id"]) == []
 
 
 def test_cipher_rejects_tampering(tmp_path: Path):
