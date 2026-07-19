@@ -79,6 +79,9 @@ describe("AnsibleControllerApp", () => {
     fireEvent.click(accountTab);
     expect(accountTab).toHaveAttribute("aria-current", "page");
     await screen.findByText("ansible.managedAccount.pageTitle");
+    expect(screen.getByText("Klucze SSH serwerów")).toBeInTheDocument();
+    expect(screen.getByText("Brak przygotowanych hostów")).toBeInTheDocument();
+    expect(screen.queryByText("ansible.managedAccount.hostKeys")).not.toBeInTheDocument();
 
     const username = await screen.findByLabelText("ansible.managedAccount.username");
     expect(username).toHaveValue("algen-ansible");

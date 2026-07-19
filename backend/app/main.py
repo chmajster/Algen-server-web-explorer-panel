@@ -42,6 +42,20 @@ from .write_policy import assert_write_allowed
 configure_logging()
 app = FastAPI(title="WebNAS", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def frontend_cache_policy(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if not path.startswith("/api/"):
+        if path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
 app.include_router(identity_router)
 app.include_router(settings_router)
 app.include_router(apps_router)
