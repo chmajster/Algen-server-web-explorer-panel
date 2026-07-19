@@ -14,6 +14,13 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, StringConstraints
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,127}$")]
 Identifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64, pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")]
 MANAGED_SSH_USERNAME = "algen-ansible"
+PROTECTED_MANAGED_USERNAMES = {"root", "daemon", "bin", "sys", "sync", "games", "man", "lp", "mail", "news", "uucp", "proxy", "www-data", "backup", "list", "irc", "gnats", "nobody", "systemd-network", "systemd-resolve", "messagebus", "_apt", "sshd"}
+
+
+def validate_managed_username(value: str) -> str:
+    if value.casefold() in PROTECTED_MANAGED_USERNAMES:
+        raise ValueError("a protected system account cannot be used for Ansible automation")
+    return value
 
 
 class StrictModel(BaseModel):
@@ -234,11 +241,16 @@ class OnboardingInput(StrictModel):
     initial_username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
     credential_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-f0-9]{24,64}$")
     create_managed_user: Literal[True] = True
-    managed_username: Literal["algen-ansible"] = MANAGED_SSH_USERNAME
+    managed_username: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
     sudo_profile: str = Field(default="none", pattern=r"^(none|password|nopasswd|custom)$")
     sudoers_policy: str = Field(default="", max_length=8192)
     confirm: bool = False
     confirm_host_name: str = Field(default="", max_length=253)
+
+    @field_validator("managed_username")
+    @classmethod
+    def safe_managed_username(cls, value: str) -> str:
+        return validate_managed_username(value)
 
     @model_validator(mode="after")
     def dangerous_sudo_confirmation(self) -> "OnboardingInput":
@@ -416,8 +428,26 @@ class ControllerConfigInput(StrictModel):
     allowed_networks: list[str] = Field(default_factory=list, max_length=100)
     max_scan_addresses: int = Field(default=4096, ge=1, le=4096)
     default_concurrency_policy: ConcurrencyPolicy = ConcurrencyPolicy.same_hosts
+    managed_username: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
+    managed_sudo_profile: str = Field(default="none", pattern=r"^(none|password)$")
     awx: AwxSettingsInput | None = None
     confirm: bool = False
+
+    @field_validator("managed_username")
+    @classmethod
+    def safe_managed_username(cls, value: str) -> str:
+        return validate_managed_username(value)
+
+
+class ManagedAccountConfigInput(StrictModel):
+    username: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
+    sudo_profile: str = Field(default="none", pattern=r"^(none|password)$")
+    confirm: bool = False
+
+    @field_validator("username")
+    @classmethod
+    def safe_managed_username(cls, value: str) -> str:
+        return validate_managed_username(value)
 
 
 class InventoryImportInput(StrictModel):

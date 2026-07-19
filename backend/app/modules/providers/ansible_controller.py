@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import shlex
 import shutil
@@ -12,7 +13,7 @@ from typing import Any
 from ...package_center.models import ModuleDiagnostic, ModuleHealth, ModuleStatus, ModuleValidationResult, PackageAction, api_error
 from ..ansible_controller.awx import AwxClient
 from ..ansible_controller.backup import create_backup, delete_backup as remove_backup, list_backups, restore_backup
-from ..ansible_controller.models import MANAGED_SSH_USERNAME, AwxSettingsInput, CredentialInput, CredentialType, HostInput, NetworkScanInput
+from ..ansible_controller.models import MANAGED_SSH_USERNAME, PROTECTED_MANAGED_USERNAMES, AwxSettingsInput, CredentialInput, CredentialType, HostInput, NetworkScanInput
 from ..ansible_controller.network import build_nmap_args, parse_nmap_xml, scan_addresses
 from ..ansible_controller.repository import repository
 from ..ansible_controller.runner import controller_identity, demote_preexec, execute_ad_hoc, execute_template, execution_directory, run_remote_user_setup
@@ -124,6 +125,8 @@ class AnsibleControllerProvider(ModuleProvider):
             "allowed_networks": list(value.get("allowed_networks") or []),
             "max_scan_addresses": min(int(value.get("max_scan_addresses") or 4096), 4096),
             "default_concurrency_policy": value.get("default_concurrency_policy") or "same_hosts",
+            "managed_username": value.get("managed_username") or MANAGED_SSH_USERNAME,
+            "managed_sudo_profile": value.get("managed_sudo_profile") or "none",
             "awx": awx,
         }
 
@@ -145,6 +148,11 @@ class AnsibleControllerProvider(ModuleProvider):
                     errors.append(f"Invalid allowed network: {str(raw)[:64]}")
         if (config.get("default_concurrency_policy") or "same_hosts") not in {"parallel", "same_hosts", "template", "single"}:
             errors.append("invalid default concurrency policy")
+        managed_username = str(config.get("managed_username") or MANAGED_SSH_USERNAME)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}", managed_username) or managed_username.casefold() in PROTECTED_MANAGED_USERNAMES:
+            errors.append("invalid managed account username")
+        if (config.get("managed_sudo_profile") or "none") not in {"none", "password"}:
+            errors.append("invalid managed account sudo profile")
         if isinstance(config.get("awx"), dict) and config["awx"].get("url"):
             try:
                 AwxSettingsInput.model_validate(config["awx"])
@@ -347,12 +355,13 @@ class AnsibleControllerProvider(ModuleProvider):
                 raise RuntimeError("SSH host key is not accepted")
             progress(10, "Verify accepted SSH host fingerprint")
             credential_id = str(payload.get("credential_id") or host.get("credential_id") or "")
+            managed_username = str(payload.get("managed_username") or MANAGED_SSH_USERNAME)
             run_remote_user_setup(
                 self.store,
                 host,
                 credential_id,
                 str(payload.get("initial_username") or "root"),
-                MANAGED_SSH_USERNAME,
+                managed_username,
                 str(payload.get("sudo_profile") or "none"),
                 str(payload.get("sudoers_policy") or ""),
                 log,
@@ -361,11 +370,11 @@ class AnsibleControllerProvider(ModuleProvider):
             if not private_key.is_file():
                 raise RuntimeError("controller private key is missing")
             existing = next((item for item in self.store.credentials() if item["name"] == "Controller managed-host key" and item["active"]), None)
-            credential_payload = CredentialInput(name="Controller managed-host key", type=CredentialType.ssh_private_key, username=MANAGED_SSH_USERNAME, secret=private_key.read_text(encoding="utf-8"), description="Private key generated for algen-ansible managed accounts")
+            credential_payload = CredentialInput(name="Controller managed-host key", type=CredentialType.ssh_private_key, username=managed_username, secret=private_key.read_text(encoding="utf-8"), description=f"Private key generated for {managed_username} managed accounts")
             managed_credential = self.store.save_credential(credential_payload, actor, existing["id"] if existing else None)
             updated = HostInput.model_validate({
                 "name": host["name"], "address": host["address"], "port": host["port"],
-                "ssh_user": MANAGED_SSH_USERNAME, "credential_id": managed_credential["id"],
+                "ssh_user": managed_username, "credential_id": managed_credential["id"],
                 "python_interpreter": host["python_interpreter"], "connection_type": host["connection_type"],
                 "environment": host["environment"], "location": host["location"], "tags": host.get("tags") or [],
                 "variables": host.get("variables") or {}, "active": host["active"],
@@ -373,9 +382,9 @@ class AnsibleControllerProvider(ModuleProvider):
             self.store.save_host(updated, actor, host_id)
             with self.store._lock, self.store.connect() as connection:
                 connection.execute("UPDATE hosts SET managed_user_created=1,updated_at=?,updated_by=? WHERE id=?", (time.time(), actor, host_id))
-            progress(65, "Managed algen-ansible account and controller key installed")
+            progress(65, f"Managed {managed_username} account and controller key installed")
             result = execute_ad_hoc(self.store, host_id, actor, log, progress, cancelled, facts=True)
-            self.store.audit(actor, "host", host_id, "onboard_complete", {"managed_user_created": True, "managed_username": MANAGED_SSH_USERNAME})
+            self.store.audit(actor, "host", host_id, "onboard_complete", {"managed_user_created": True, "managed_username": managed_username})
             return result
         if operation == "sync_project":
             project_id = str(payload.get("project_id") or "")

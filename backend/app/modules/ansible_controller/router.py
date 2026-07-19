@@ -32,6 +32,7 @@ from .models import (
     InventoryImportInput,
     LaunchInput,
     MANAGED_SSH_USERNAME,
+    ManagedAccountConfigInput,
     NetworkScanInput,
     OnboardingInput,
     PlaybookInput,
@@ -122,6 +123,19 @@ def save_config(payload: ControllerConfigInput, user: SessionUser = Depends(requ
     job = manager(package_repository()).enqueue(_provider_plan("ansible-controller", PackageAction.apply, {"config": value}), user.username)
     _audit_api(user.username, "configure", "settings", "controller")
     return {"job": job}
+
+
+@router.put("/managed-account")
+def save_managed_account(payload: ManagedAccountConfigInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_CONFIGURE))):
+    _require_confirmation(payload.confirm)
+    provider = AnsibleControllerProvider(user.username)
+    config = provider.get_config()
+    if isinstance(config.get("awx"), dict):
+        config["awx"].pop("token_configured", None)
+    config.update({"managed_username": payload.username, "managed_sudo_profile": payload.sudo_profile})
+    value = provider.save_config(config, user.username)
+    _audit_api(user.username, "configure_managed_account", "settings", "managed-account", {"username": payload.username, "sudo_profile": payload.sudo_profile})
+    return {"managed_username": value.get("managed_username"), "managed_sudo_profile": value.get("managed_sudo_profile")}
 
 
 @router.get("/hosts")
@@ -241,9 +255,12 @@ def onboarding(payload: OnboardingInput, user: SessionUser = Depends(require_per
     existing = repository().known_key(host_record["address"], int(host_record["port"]))
     if not existing:
         api_error(409, "HOST_KEY_NOT_ACCEPTED", "Scan and accept the host fingerprint before onboarding", host_id=host_record["id"])
+    controller_config = AnsibleControllerProvider(user.username).get_config()
+    managed_username = str(controller_config.get("managed_username") or MANAGED_SSH_USERNAME)
+    managed_sudo_profile = str(controller_config.get("managed_sudo_profile") or "none")
     # Only identifiers and validated policy metadata enter the durable queue.
-    job = _enqueue("onboard_host", {"host_id": host_record["id"], "initial_username": payload.initial_username, "credential_id": payload.credential_id, "create_managed_user": True, "managed_username": MANAGED_SSH_USERNAME, "sudo_profile": payload.sudo_profile, "sudoers_policy": payload.sudoers_policy}, user.username)
-    repository().audit(user.username, "host", host_record["id"], "onboard", {"job_id": job["id"], "create_managed_user": True, "managed_username": MANAGED_SSH_USERNAME, "sudo_profile": payload.sudo_profile})
+    job = _enqueue("onboard_host", {"host_id": host_record["id"], "initial_username": payload.initial_username, "credential_id": payload.credential_id, "create_managed_user": True, "managed_username": managed_username, "sudo_profile": managed_sudo_profile, "sudoers_policy": ""}, user.username)
+    repository().audit(user.username, "host", host_record["id"], "onboard", {"job_id": job["id"], "create_managed_user": True, "managed_username": managed_username, "sudo_profile": managed_sudo_profile})
     return {"host": host_record, "job": job, "onboarding_id": host_record["id"]}
 
 

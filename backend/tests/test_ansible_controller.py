@@ -21,6 +21,7 @@ from app.modules.ansible_controller.models import (
     CredentialInput,
     CredentialType,
     HostInput,
+    ManagedAccountConfigInput,
     NetworkScanInput,
     OnboardingInput,
     ProjectInput,
@@ -234,7 +235,7 @@ def test_passwordless_onboarding_requires_typed_host_confirmation():
     assert OnboardingInput.model_validate({**payload, "confirm_host_name": "192.168.1.4"}).sudo_profile == "nopasswd"
 
 
-def test_onboarding_always_provisions_the_fixed_managed_account():
+def test_onboarding_always_provisions_a_safe_configurable_managed_account():
     base = {
         "host": {"name": "node", "address": "192.168.1.4"},
         "initial_username": "root",
@@ -245,8 +246,19 @@ def test_onboarding_always_provisions_the_fixed_managed_account():
     assert payload.managed_username == "algen-ansible"
     with pytest.raises(ValueError):
         OnboardingInput.model_validate({**base, "create_managed_user": False})
+    assert OnboardingInput.model_validate({**base, "managed_username": "automation-user"}).managed_username == "automation-user"
+    with pytest.raises(ValueError, match="protected system account"):
+        OnboardingInput.model_validate({**base, "managed_username": "root"})
+
+
+def test_managed_account_configuration_validates_username_and_safe_sudo_profiles():
+    value = ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "sudo_profile": "password", "confirm": True})
+    assert value.username == "deploy-bot"
+    assert value.sudo_profile == "password"
     with pytest.raises(ValueError):
-        OnboardingInput.model_validate({**base, "managed_username": "custom-user"})
+        ManagedAccountConfigInput.model_validate({"username": "root", "sudo_profile": "none"})
+    with pytest.raises(ValueError):
+        ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "sudo_profile": "nopasswd"})
 
 
 def test_demote_preexec_drops_groups_gid_and_uid(monkeypatch):
