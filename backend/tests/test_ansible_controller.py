@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 import sys
 import tarfile
@@ -35,7 +36,7 @@ from app.modules.ansible_controller.runner import build_managed_user_script, bui
 from app.modules.ansible_controller.scheduler import next_run
 from app.modules.ansible_controller.security import CredentialCipher, redact, redact_text
 from app.modules.providers import get_provider
-from app.modules.providers.ansible_controller import _run_cancellable
+from app.modules.providers.ansible_controller import _generate_host_key, _run_cancellable
 from app.package_center.manifests import load_manifest
 from app.security import SessionUser
 
@@ -269,11 +270,12 @@ def test_onboarding_always_provisions_a_safe_configurable_managed_account():
 
 
 def test_managed_account_configuration_validates_username_and_safe_sudo_profiles():
-    value = ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "sudo_profile": "nopasswd", "shell": "/bin/sh", "comment": "Production automation", "authorized_keys_mode": "append", "confirm": True})
+    value = ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "sudo_profile": "nopasswd", "shell": "/bin/sh", "comment": "Production automation", "authorized_keys_mode": "exclusive", "key_rotation_days": 60, "confirm": True})
     assert value.username == "deploy-bot"
     assert value.sudo_profile == "nopasswd"
     assert value.shell == "/bin/sh"
-    assert value.authorized_keys_mode == "append"
+    assert value.authorized_keys_mode == "exclusive"
+    assert value.key_rotation_days == 60
     with pytest.raises(ValueError):
         ManagedAccountConfigInput.model_validate({"username": "root", "sudo_profile": "none"})
     with pytest.raises(ValueError):
@@ -282,6 +284,21 @@ def test_managed_account_configuration_validates_username_and_safe_sudo_profiles
         ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "shell": "/bin/zsh"})
     with pytest.raises(ValueError):
         ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "comment": "invalid:comment"})
+    with pytest.raises(ValueError):
+        ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "authorized_keys_mode": "append"})
+
+
+def test_each_managed_host_gets_a_distinct_ed25519_key(tmp_path: Path):
+    if not shutil.which("ssh-keygen"):
+        pytest.skip("ssh-keygen is unavailable")
+    repository = store(tmp_path)
+    first_private, first_public = _generate_host_key(repository, "host-a")
+    second_private, second_public = _generate_host_key(repository, "host-b")
+
+    assert first_private != second_private
+    assert first_public != second_public
+    assert first_public.endswith("webnas-ansible:host-a")
+    assert second_public.endswith("webnas-ansible:host-b")
 
 
 def test_demote_preexec_drops_groups_gid_and_uid(monkeypatch):
@@ -421,6 +438,35 @@ def test_ansible_read_is_csrf_free_and_mutation_requires_csrf(monkeypatch, tmp_p
     assert client.get("/api/modules/ansible-controller/scans").status_code == 200
     assert client.post("/api/modules/ansible-controller/hosts", json=payload).status_code == 403
     assert client.post("/api/modules/ansible-controller/hosts", json=payload, headers={"x-csrf-token": "csrf"}).status_code == 200
+
+
+def test_managed_key_can_only_be_assigned_to_its_own_host(monkeypatch, tmp_path: Path):
+    repository = store(tmp_path)
+    own_host = repository.save_host(HostInput(name="node-a", address="192.168.1.25"), "admin")
+    credential = repository.save_credential(
+        CredentialInput(
+            name="Host key - node-a",
+            type=CredentialType.ssh_private_key,
+            username="algen-ansible",
+            secret="-----BEGIN OPENSSH PRIVATE KEY-----\nQUJDREVGRw==\n-----END OPENSSH PRIVATE KEY-----",
+            description=f"managed-host:{own_host['id']}; unique Ed25519 key",
+        ),
+        "admin",
+    )
+    monkeypatch.setattr(ansible_router, "repository", lambda: repository)
+    monkeypatch.setattr(identity_permissions, "get_session_user", lambda _request: SessionUser(username="admin", csrf_token="csrf"))
+    monkeypatch.setattr(identity_permissions, "authorize", lambda _user, _permission: None)
+    app = FastAPI()
+    app.include_router(ansible_router.router)
+    client = TestClient(app)
+    headers = {"x-csrf-token": "csrf"}
+
+    own_update = {"name": "node-a", "address": "192.168.1.25", "credential_id": credential["id"]}
+    assert client.put(f"/api/modules/ansible-controller/hosts/{own_host['id']}", json=own_update, headers=headers).status_code == 200
+    other_host = {"name": "node-b", "address": "192.168.1.26", "credential_id": credential["id"]}
+    response = client.post("/api/modules/ansible-controller/hosts", json=other_host, headers=headers)
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "MANAGED_HOST_CREDENTIAL"
 
 
 def test_typed_router_generates_complete_openapi_schema():

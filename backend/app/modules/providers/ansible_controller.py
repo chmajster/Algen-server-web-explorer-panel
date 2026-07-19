@@ -141,7 +141,7 @@ class AnsibleControllerProvider(ModuleProvider):
             "managed_sudo_profile": value.get("managed_sudo_profile") or "none",
             "managed_shell": value.get("managed_shell") or "/bin/bash",
             "managed_comment": value.get("managed_comment") if isinstance(value.get("managed_comment"), str) else "Algen Ansible automation",
-            "managed_authorized_keys_mode": value.get("managed_authorized_keys_mode") or "exclusive",
+            "managed_authorized_keys_mode": "exclusive",
             "managed_key_rotation_days": min(max(int(value.get("managed_key_rotation_days") if value.get("managed_key_rotation_days") is not None else 90), 0), 365),
             "awx": awx,
         }
@@ -174,7 +174,7 @@ class AnsibleControllerProvider(ModuleProvider):
         comment = config.get("managed_comment") if isinstance(config.get("managed_comment"), str) else "Algen Ansible automation"
         if not isinstance(comment, str) or len(comment) > 100 or any(character in comment for character in ":\r\n"):
             errors.append("invalid managed account comment")
-        if (config.get("managed_authorized_keys_mode") or "exclusive") not in {"exclusive", "append"}:
+        if (config.get("managed_authorized_keys_mode") or "exclusive") != "exclusive":
             errors.append("invalid managed account authorized keys mode")
         try:
             rotation_days = int(config.get("managed_key_rotation_days") if config.get("managed_key_rotation_days") is not None else 90)
@@ -393,16 +393,16 @@ class AnsibleControllerProvider(ModuleProvider):
                 credential_id,
                 str(host.get("ssh_user") or managed_username) if rotating else str(payload.get("initial_username") or "root"),
                 managed_username,
-                str(payload.get("sudo_profile") or "none"),
+                "none" if rotating else str(payload.get("sudo_profile") or "none"),
                 str(payload.get("sudoers_policy") or ""),
                 str(payload.get("managed_shell") or "/bin/bash"),
                 str(payload.get("managed_comment") or "Algen Ansible automation"),
-                "exclusive" if rotating else str(payload.get("authorized_keys_mode") or "exclusive"),
+                "exclusive",
                 public_key_value,
                 log,
             )
             existing = next((item for item in self.store.credentials() if item["id"] == host.get("credential_id") and str(item.get("description") or "").startswith(f"managed-host:{host_id}")), None)
-            credential_payload = CredentialInput(name=f"Host key · {host['name']} · {host_id[:8]}", type=CredentialType.ssh_private_key, username=managed_username, secret=private_key_value, description=f"managed-host:{host_id}; unique Ed25519 key")
+            credential_payload = CredentialInput(name=f"Host key - {host['name']} - {host_id[:8]}", type=CredentialType.ssh_private_key, username=managed_username, secret=private_key_value, description=f"managed-host:{host_id}; unique Ed25519 key")
             managed_credential = self.store.save_credential(credential_payload, actor, existing["id"] if existing else None)
             updated = HostInput.model_validate({
                 "name": host["name"], "address": host["address"], "port": host["port"],

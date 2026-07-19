@@ -363,7 +363,7 @@ def build_managed_user_script(username: str, public_key: str, sudo_profile: str 
         raise ValueError("invalid managed account shell")
     if len(comment) > 100 or any(character in comment for character in ":\r\n"):
         raise ValueError("invalid managed account comment")
-    if authorized_keys_mode not in {"exclusive", "append"}:
+    if authorized_keys_mode != "exclusive":
         raise ValueError("invalid authorized keys mode")
     quoted_user = shlex.quote(username)
     quoted_key = shlex.quote(public_key.strip())
@@ -609,9 +609,46 @@ def execute_template(repository: AnsibleRepository, execution_id: str, actor: st
             extra_vars_path = directory / "extra-vars.yml"
             known_hosts = directory / "known_hosts"
             config_path = directory / "ansible.cfg"
+            credentials_dir = directory / "credentials"
+            credentials_dir.mkdir(mode=0o700)
+            if os.name != "nt":
+                os.chown(credentials_dir, uid, gid)
+            host_key_paths: dict[str, str] = {}
+            for host in hosts:
+                credential_id = str(host.get("credential_id") or "")
+                if not credential_id:
+                    raise RuntimeError(f"host {host['name']} has no host-specific SSH key")
+                credential = repository._get("credentials", credential_id)
+                if not credential or not str(credential.get("description") or "").startswith(f"managed-host:{host['id']};"):
+                    raise RuntimeError(f"host {host['name']} requires a unique managed SSH key")
+                secret = repository.credential_secret(credential_id)
+                if secret["type"] != "ssh_private_key":
+                    raise RuntimeError(f"host {host['name']} has an invalid managed SSH key")
+                key_path = credentials_dir / f"host-{host['id']}.key"
+                atomic_private_write(key_path, secret["secret"].encode())
+                if os.name != "nt":
+                    os.chown(key_path, uid, gid)
+                host_key_paths[str(host["name"])] = str(key_path)
             inventory_text = str(execution.get("inventory_snapshot") or "") if execution.get("retry_of") else ""
             if not inventory_text:
                 inventory_text = generate_inventory(hosts, groups, memberships)
+            inventory_value = yaml.safe_load(inventory_text) or {}
+
+            def attach_host_keys(node: Any) -> None:
+                if not isinstance(node, dict):
+                    return
+                inventory_hosts = node.get("hosts")
+                if isinstance(inventory_hosts, dict):
+                    for host_name, host_values in inventory_hosts.items():
+                        if str(host_name) in host_key_paths and isinstance(host_values, dict):
+                            host_values["ansible_ssh_private_key_file"] = host_key_paths[str(host_name)]
+                children = node.get("children")
+                if isinstance(children, dict):
+                    for child in children.values():
+                        attach_host_keys(child)
+
+            attach_host_keys(inventory_value.get("all", inventory_value) if isinstance(inventory_value, dict) else {})
+            inventory_text = yaml.safe_dump(inventory_value, sort_keys=True, default_flow_style=False)
             playbook_content = preflight_content
             for path, content in (
                 (inventory_path, inventory_text),
@@ -625,22 +662,7 @@ def execute_template(repository: AnsibleRepository, execution_id: str, actor: st
             write_known_hosts(repository, known_hosts)
             if os.name != "nt":
                 os.chown(known_hosts, uid, gid)
-            credentials_dir = directory / "credentials"
-            credentials_dir.mkdir(mode=0o700)
-            if os.name != "nt":
-                os.chown(credentials_dir, uid, gid)
             env = _safe_environment(home, directory)
-            ssh_credential = template.get("ssh_credential_id")
-            if ssh_credential:
-                credential = repository.credential_secret(str(ssh_credential))
-                if credential["type"] == "ssh_private_key":
-                    key_path = credentials_dir / "ssh_key"
-                    atomic_private_write(key_path, credential["secret"].encode())
-                    if os.name != "nt":
-                        os.chown(key_path, uid, gid)
-                    env["ANSIBLE_PRIVATE_KEY_FILE"] = str(key_path)
-                else:
-                    raise RuntimeError("playbook execution requires a private SSH key credential")
             become_credential = template.get("become_credential_id")
             vault_credential = template.get("vault_credential_id")
             secrets_payload: dict[str, str] = {}

@@ -432,7 +432,7 @@ class ControllerConfigInput(StrictModel):
     managed_sudo_profile: str = Field(default="none", pattern=r"^(none|nopasswd)$")
     managed_shell: str = Field(default="/bin/bash", pattern=r"^/bin/(?:ba)?sh$")
     managed_comment: str = Field(default="Algen Ansible automation", max_length=100, pattern=r"^[^:\r\n]*$")
-    managed_authorized_keys_mode: str = Field(default="exclusive", pattern=r"^(exclusive|append)$")
+    managed_authorized_keys_mode: str = Field(default="exclusive", pattern=r"^exclusive$")
     managed_key_rotation_days: int = Field(default=90, ge=0, le=365)
     awx: AwxSettingsInput | None = None
     confirm: bool = False
@@ -448,7 +448,7 @@ class ManagedAccountConfigInput(StrictModel):
     sudo_profile: str = Field(default="none", pattern=r"^(none|nopasswd)$")
     shell: str = Field(default="/bin/bash", pattern=r"^/bin/(?:ba)?sh$")
     comment: str = Field(default="Algen Ansible automation", max_length=100, pattern=r"^[^:\r\n]*$")
-    authorized_keys_mode: str = Field(default="exclusive", pattern=r"^(exclusive|append)$")
+    authorized_keys_mode: str = Field(default="exclusive", pattern=r"^exclusive$")
     key_rotation_days: int = Field(default=90, ge=0, le=365)
     confirm: bool = False
 

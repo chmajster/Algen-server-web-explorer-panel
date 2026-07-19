@@ -57,12 +57,15 @@ def _require_confirmation(confirm: bool, message: str = "Explicit confirmation i
         api_error(400, "CONFIRMATION_REQUIRED", message)
 
 
-def _require_credential_type(credential_id: str | None, allowed: set[str]) -> None:
+def _require_credential_type(credential_id: str | None, allowed: set[str], managed_host_id: str | None = None) -> None:
     if not credential_id:
         return
     credential = repository()._get("credentials", credential_id)
     if not credential or not credential.get("active"):
         api_error(422, "CREDENTIAL_NOT_FOUND", "Referenced credential is unavailable")
+    description = str(credential.get("description") or "")
+    if description.startswith("managed-host:") and not description.startswith(f"managed-host:{managed_host_id};"):
+        api_error(422, "MANAGED_HOST_CREDENTIAL", "Host-specific managed keys cannot be assigned to another host")
     if credential["type"] not in allowed:
         api_error(422, "CREDENTIAL_TYPE_INVALID", "Referenced credential has the wrong type", allowed_types=sorted(allowed))
 
@@ -121,6 +124,9 @@ def save_config(payload: ControllerConfigInput, user: SessionUser = Depends(requ
     if payload.awx:
         _require_credential_type(payload.awx.credential_id, {"awx_token"})
     value = payload.model_dump(mode="json", exclude={"confirm"}, exclude_none=True)
+    if "managed_key_rotation_days" not in payload.model_fields_set:
+        value["managed_key_rotation_days"] = AnsibleControllerProvider(user.username).get_config().get("managed_key_rotation_days", 90)
+    value["managed_authorized_keys_mode"] = "exclusive"
     job = manager(package_repository()).enqueue(_provider_plan("ansible-controller", PackageAction.apply, {"config": value}), user.username)
     _audit_api(user.username, "configure", "settings", "controller")
     return {"job": job}
@@ -162,7 +168,7 @@ def host(host_id: str, user: SessionUser = Depends(require_permission(Permission
 def update_host(host_id: str, payload: HostInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_HOSTS_MANAGE))):
     if not repository().host(host_id):
         api_error(404, "HOST_NOT_FOUND", "Host not found")
-    _require_credential_type(payload.credential_id, {"ssh_private_key", "ssh_password"})
+    _require_credential_type(payload.credential_id, {"ssh_private_key", "ssh_password"}, host_id)
     return repository().save_host(payload, user.username, host_id)
 
 
@@ -256,7 +262,6 @@ def rotate_managed_key(host_id: str, payload: ConfirmationInput, user: SessionUs
 @router.post("/onboarding")
 def onboarding(payload: OnboardingInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_HOSTS_MANAGE))):
     _require_confirmation(payload.confirm)
-    _require_credential_type(payload.credential_id or payload.host.credential_id, {"ssh_private_key", "ssh_password"})
     existing_host = next(
         (
             item
@@ -265,6 +270,11 @@ def onboarding(payload: OnboardingInput, user: SessionUser = Depends(require_per
             or (item["address"] == payload.host.address and int(item["port"]) == payload.host.port)
         ),
         None,
+    )
+    _require_credential_type(
+        payload.credential_id or payload.host.credential_id,
+        {"ssh_private_key", "ssh_password"},
+        existing_host["id"] if existing_host else None,
     )
     host_record = repository().save_host(payload.host, user.username, existing_host["id"] if existing_host else None)
     existing = repository().known_key(host_record["address"], int(host_record["port"]))
@@ -398,14 +408,20 @@ def create_credential(payload: CredentialInput, user: SessionUser = Depends(requ
 @router.put("/credentials/{credential_id}")
 def update_credential(credential_id: str, payload: CredentialInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_CREDENTIALS_MANAGE))):
     _require_confirmation(payload.confirm)
-    if not any(item["id"] == credential_id for item in repository().credentials()):
+    existing = next((item for item in repository().credentials() if item["id"] == credential_id), None)
+    if not existing:
         api_error(404, "CREDENTIAL_NOT_FOUND", "Credential not found")
+    if str(existing.get("description") or "").startswith("managed-host:"):
+        api_error(409, "MANAGED_CREDENTIAL_PROTECTED", "Managed host keys are rotated from the automation account page")
     return repository().save_credential(payload, user.username, credential_id)
 
 
 @router.delete("/credentials/{credential_id}")
 def delete_credential(credential_id: str, payload: ConfirmationInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_CREDENTIALS_MANAGE))):
     _require_confirmation(payload.confirm)
+    existing = next((item for item in repository().credentials() if item["id"] == credential_id), None)
+    if existing and str(existing.get("description") or "").startswith("managed-host:"):
+        api_error(409, "MANAGED_CREDENTIAL_PROTECTED", "Managed host keys cannot be deleted manually")
     if not repository().delete_credential(credential_id, user.username):
         api_error(404, "CREDENTIAL_NOT_FOUND", "Credential not found")
     return {"ok": True}
@@ -498,7 +514,8 @@ def templates(user: SessionUser = Depends(require_permission(Permission.ANSIBLE_
 
 @router.post("/templates")
 def create_template(payload: TemplateInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_PLAYBOOKS_MANAGE))):
-    _require_credential_type(payload.ssh_credential_id, {"ssh_private_key"})
+    if payload.ssh_credential_id:
+        api_error(422, "PER_HOST_KEYS_REQUIRED", "Template-wide SSH keys are disabled; hosts use their own managed keys")
     _require_credential_type(payload.become_credential_id, {"become_password"})
     _require_credential_type(payload.vault_credential_id, {"vault_secret"})
     return repository().save_template(payload, user.username)
@@ -508,7 +525,8 @@ def create_template(payload: TemplateInput, user: SessionUser = Depends(require_
 def update_template(template_id: str, payload: TemplateInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_PLAYBOOKS_MANAGE))):
     if not repository()._get("job_templates", template_id):
         api_error(404, "TEMPLATE_NOT_FOUND", "Job template not found")
-    _require_credential_type(payload.ssh_credential_id, {"ssh_private_key"})
+    if payload.ssh_credential_id:
+        api_error(422, "PER_HOST_KEYS_REQUIRED", "Template-wide SSH keys are disabled; hosts use their own managed keys")
     _require_credential_type(payload.become_credential_id, {"become_password"})
     _require_credential_type(payload.vault_credential_id, {"vault_secret"})
     return repository().save_template(payload, user.username, template_id)

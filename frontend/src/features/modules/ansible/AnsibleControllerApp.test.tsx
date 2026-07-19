@@ -23,8 +23,8 @@ describe("AnsibleControllerApp", () => {
     mocks.dashboard.mockResolvedValue({ hosts: 2, hosts_online: 1, hosts_unreachable: 1, host_key_errors: 0, groups: 1, projects: 0, playbooks: 0, templates: 0, active_jobs: 0, failed_jobs: 0, scheduled: 0, ansible_version: "ansible 2.18" });
     mocks.hosts.mockResolvedValue([]); mocks.groups.mockResolvedValue([]); mocks.credentials.mockResolvedValue([]); mocks.scans.mockResolvedValue([]);
     mocks.saveCredential.mockResolvedValue({ id: "credential" });
-    mocks.config.mockResolvedValue({ managed_username: "algen-ansible", managed_sudo_profile: "none", managed_shell: "/bin/bash", managed_comment: "Algen Ansible automation", managed_authorized_keys_mode: "exclusive", allowed_networks: [] });
-    mocks.saveManagedAccount.mockResolvedValue({ managed_username: "deploy-bot", managed_sudo_profile: "nopasswd", managed_shell: "/bin/sh", managed_comment: "Production automation", managed_authorized_keys_mode: "append" });
+    mocks.config.mockResolvedValue({ managed_username: "algen-ansible", managed_sudo_profile: "none", managed_shell: "/bin/bash", managed_comment: "Algen Ansible automation", managed_authorized_keys_mode: "exclusive", managed_key_rotation_days: 90, allowed_networks: [] });
+    mocks.saveManagedAccount.mockResolvedValue({ managed_username: "deploy-bot", managed_sudo_profile: "nopasswd", managed_shell: "/bin/sh", managed_comment: "Production automation", managed_authorized_keys_mode: "exclusive", managed_key_rotation_days: 60 });
     mocks.startScan.mockResolvedValue({ scan: { id: "scan", status: "queued", progress: 0, discovered: 0, request: {}, error: "", created_at: 1 }, job: { id: "job" }, address_count: 254 });
     mocks.projects.mockResolvedValue([{ id: "a".repeat(32), name: "Local", source_type: "editor", repository_url: "", revision: "main", credential_id: null, last_commit: "", last_sync_at: null, active: true }]);
     mocks.playbooks.mockResolvedValue([{ id: "b".repeat(32), project_id: "a".repeat(32), name: "Deploy web", filename: "deploy-web.yml", content: "---\n- hosts: web\n  tasks: []\n", current_version: 2, risk_status: "safe", warnings: [], active: true, updated_at: 2 }]);
@@ -86,10 +86,10 @@ describe("AnsibleControllerApp", () => {
     fireEvent.change(screen.getByLabelText("ansible.managedAccount.sudoProfile"), { target: { value: "nopasswd" } });
     fireEvent.change(screen.getByLabelText("ansible.managedAccount.shell"), { target: { value: "/bin/sh" } });
     fireEvent.change(screen.getByLabelText("ansible.managedAccount.comment"), { target: { value: "Production automation" } });
-    fireEvent.change(screen.getByLabelText("ansible.managedAccount.keysMode"), { target: { value: "append" } });
+    fireEvent.change(screen.getByLabelText("ansible.managedAccount.rotationInterval"), { target: { value: "60" } });
     fireEvent.click(screen.getByRole("button", { name: /ansible.managedAccount.save/ }));
 
-    await waitFor(() => expect(mocks.saveManagedAccount).toHaveBeenCalledWith({ username: "deploy-bot", sudo_profile: "nopasswd", shell: "/bin/sh", comment: "Production automation", authorized_keys_mode: "append" }));
+    await waitFor(() => expect(mocks.saveManagedAccount).toHaveBeenCalledWith({ username: "deploy-bot", sudo_profile: "nopasswd", shell: "/bin/sh", comment: "Production automation", authorized_keys_mode: "exclusive", key_rotation_days: 60 }));
   });
 
   it("lists, opens, edits, and deletes playbooks", async () => {

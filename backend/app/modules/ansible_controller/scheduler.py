@@ -19,6 +19,32 @@ _lock = threading.RLock()
 _started = False
 
 
+def _queue_due_key_rotations(store: object, current: float) -> int:
+    config = store.setting("controller")  # type: ignore[attr-defined]
+    days = int(config.get("managed_key_rotation_days") if config.get("managed_key_rotation_days") is not None else 90)
+    if days <= 0:
+        return 0
+    state = store.setting("managed_key_rotation_queue")  # type: ignore[attr-defined]
+    queued_at = dict(state.get("queued_at") or {})
+    queued = 0
+    cutoff = current - days * 86400
+    for host in store.list_hosts(active_only=True):  # type: ignore[attr-defined]
+        if not host.get("managed_user_created") or not host.get("credential_id"):
+            continue
+        credential = store._get("credentials", str(host["credential_id"]))  # type: ignore[attr-defined]
+        if not credential or not str(credential.get("description") or "").startswith(f"managed-host:{host['id']}") or float(credential.get("updated_at") or current) > cutoff:
+            continue
+        if current - float(queued_at.get(host["id"]) or 0) < 3600:
+            continue
+        payload = {"operation": "rotate_host_key", "host_id": host["id"], "managed_username": config.get("managed_username") or "algen-ansible", "sudo_profile": config.get("managed_sudo_profile") or "none", "sudoers_policy": "", "managed_shell": config.get("managed_shell") or "/bin/bash", "managed_comment": config.get("managed_comment") or "Algen Ansible automation", "authorized_keys_mode": "exclusive"}
+        manager(package_repository()).enqueue(_provider_plan("ansible-controller", PackageAction.manage, payload), "scheduler")
+        queued_at[host["id"]] = current
+        queued += 1
+    if queued:
+        store.save_setting("managed_key_rotation_queue", {"queued_at": queued_at}, "scheduler")  # type: ignore[attr-defined]
+    return queued
+
+
 def next_run(kind: str, expression: str, timezone: str, after: float | None = None) -> float | None:
     try:
         zone = ZoneInfo(timezone)
@@ -78,7 +104,7 @@ def scheduler_tick(now: float | None = None) -> int:
     current = now or time.time()
     store = repository()
     due = [item for item in store.schedules() if item.get("active") and item.get("next_run_at") is not None and float(item["next_run_at"]) <= current]
-    launched = 0
+    launched = _queue_due_key_rotations(store, current)
     for schedule in due:
         template = store._get("job_templates", str(schedule["template_id"]))
         execution_id: str | None = None
