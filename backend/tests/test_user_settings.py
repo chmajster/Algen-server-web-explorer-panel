@@ -121,13 +121,15 @@ def test_patch_persists_each_application_pin_destination(monkeypatch):
 def test_update_status_uses_installed_revision_without_git_checkout(monkeypatch, tmp_path):
     revision = "a" * 40
     (tmp_path / ".webnas-revision").write_text(revision + "\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "webnas"\nversion = "1.4.2"\n', encoding="utf-8")
     monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)
     monkeypatch.setattr(settings, "_git_output", lambda args: f"{revision}\trefs/heads/main")
     monkeypatch.setattr(settings, "_remote_release_timestamp", lambda value: 1_720_000_000)
+    monkeypatch.setattr(settings, "_remote_publication_version", lambda value: "1.5.0")
 
     result = settings._update_status()
 
-    assert result == {"branch": "main", "local": revision, "remote": revision, "update_available": False, "available": True, "error": "", "source": settings.UPDATE_SOURCE, "source_url": settings.UPDATE_SOURCE_URL, "released_at": 1_720_000_000}
+    assert result == {"branch": "main", "local": revision, "remote": revision, "installed_version": "1.4.2", "available_version": "1.5.0", "update_available": False, "available": True, "error": "", "source": settings.UPDATE_SOURCE, "source_url": settings.UPDATE_SOURCE_URL, "released_at": 1_720_000_000}
 
 
 def test_legacy_install_without_revision_offers_initial_update(monkeypatch, tmp_path):
@@ -135,6 +137,7 @@ def test_legacy_install_without_revision_offers_initial_update(monkeypatch, tmp_
     monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)
     monkeypatch.setattr(settings, "_git_output", lambda args: f"{remote}\trefs/heads/main")
     monkeypatch.setattr(settings, "_remote_release_timestamp", lambda value: None)
+    monkeypatch.setattr(settings, "_remote_publication_version", lambda value: "2.0.0")
 
     result = settings._update_status()
 
@@ -150,6 +153,15 @@ def test_remote_release_timestamp_reads_github_commit_date(monkeypatch):
     result = settings._remote_release_timestamp("a" * 40)
 
     assert result == 1_784_289_600
+
+
+def test_remote_publication_version_reads_exact_revision_pyproject(monkeypatch):
+    monkeypatch.setattr(settings, "_tool", lambda name: name)
+    monkeypatch.setattr(settings.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout='[project]\nname = "webnas"\nversion = "2.3.1"\n'))
+
+    result = settings._remote_publication_version("b" * 40)
+
+    assert result == "2.3.1"
 
 
 def test_update_progress_returns_persistent_state_and_bounded_log(monkeypatch, tmp_path):
