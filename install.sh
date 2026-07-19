@@ -492,7 +492,12 @@ install_dependencies() {
 node_version_ok() {
   command -v node >/dev/null 2>&1 || return 1
   local version major minor
-  version="$(node -p 'process.versions.node' 2>/dev/null || true)"
+  # Do not execute JavaScript just to detect the runtime version. Some hardened
+  # environments allow `node --version` while rejecting `node -p`, which used
+  # to make a compatible installation appear unsupported.
+  version="$(node --version 2>/dev/null || true)"
+  version="${version#v}"
+  version="${version#V}"
   major="${version%%.*}"
   minor="${version#*.}"
   minor="${minor%%.*}"

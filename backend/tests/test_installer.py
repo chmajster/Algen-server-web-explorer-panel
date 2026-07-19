@@ -48,6 +48,45 @@ def test_installer_has_valid_bash_syntax():
     assert result.returncode == 0, result.stderr
 
 
+def test_node_version_check_accepts_supported_node_22_without_evaluating_javascript(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        mkdir -p "$TEST_ROOT/bin"
+        cat > "$TEST_ROOT/bin/node" <<'NODE'
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf 'v22.23.1\n'
+  exit 0
+fi
+printf 'JavaScript execution is disabled\n' >&2
+exit 77
+NODE
+        chmod +x "$TEST_ROOT/bin/node"
+        PATH="$TEST_ROOT/bin:$PATH"
+        node_version_ok
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_node_version_check_rejects_node_22_before_minimum_version(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        mkdir -p "$TEST_ROOT/bin"
+        cat > "$TEST_ROOT/bin/node" <<'NODE'
+#!/bin/sh
+printf 'v22.11.0\n'
+NODE
+        chmod +x "$TEST_ROOT/bin/node"
+        PATH="$TEST_ROOT/bin:$PATH"
+        ! node_version_ok
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_installer_wires_usb_udev_events_to_a_device_bound_systemd_service():
     installer = INSTALLER.read_text(encoding="utf-8")
     uninstaller = UNINSTALLER.read_text(encoding="utf-8")
