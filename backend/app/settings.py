@@ -584,16 +584,19 @@ def _installed_publication_version() -> str | None:
 
 
 def _remote_publication_version(revision: str) -> str | None:
-    result = subprocess.run(
-        [
-            _tool("curl"), "-fsSL", "--max-time", "10",
-            f"https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/{revision}/pyproject.toml",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=15,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [
+                _tool("curl"), "-fsSL", "--max-time", "10",
+                f"https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/{revision}/pyproject.toml",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
     if result.returncode != 0 or len(result.stdout) > 128 * 1024:
         return None
     return _publication_version_from_pyproject(result.stdout)
@@ -664,26 +667,50 @@ def _start_update_process(update_config: bool, *, actor: str) -> dict:
     progress_path = _update_progress_path()
     runner = settings_dir / "update-runner.sh"
     started_at = time.time()
+    unit_name = f"webnas-self-update-{int(started_at)}.service"
+    log_path = Path(get_config().paths.log_dir) / "update.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     runner_content = "\n".join([
         "#!/usr/bin/env bash",
         "set +e",
+        f"exec >> {shlex.quote(str(log_path))} 2>&1",
+        f"printf '\\n=== WebNAS update started (%s) ===\\n' {shlex.quote(unit_name)}",
+        f"printf '{{\"running\":true,\"exit_code\":null,\"started_at\":{int(started_at)},\"finished_at\":null,\"pid\":%s,\"unit\":\"{unit_name}\"}}\\n' \"$$\" > {shlex.quote(str(progress_path))}.tmp",
+        f"mv -f -- {shlex.quote(str(progress_path))}.tmp {shlex.quote(str(progress_path))}",
         " ".join(shlex.quote(value) for value in command),
         "rc=$?",
-        f"finished=$(date +%s); printf '{{\"running\":false,\"exit_code\":%s,\"started_at\":{int(started_at)},\"finished_at\":%s}}\\n' \"$rc\" \"$finished\" > {shlex.quote(str(progress_path))}.tmp",
+        f"finished=$(date +%s); printf '{{\"running\":false,\"exit_code\":%s,\"started_at\":{int(started_at)},\"finished_at\":%s,\"pid\":%s,\"unit\":\"{unit_name}\"}}\\n' \"$rc\" \"$finished\" \"$$\" > {shlex.quote(str(progress_path))}.tmp",
         f"mv -f -- {shlex.quote(str(progress_path))}.tmp {shlex.quote(str(progress_path))}",
         "exit \"$rc\"",
         "",
     ])
     runner.write_text(runner_content, encoding="utf-8")
     os.chmod(runner, 0o700)
-    _write_json_atomic(progress_path, {"running": True, "exit_code": None, "started_at": started_at, "finished_at": None})
-    log_path = Path(get_config().paths.log_dir) / "update.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as log:
-        log.write("\n=== WebNAS update started ===\n")
-        process = subprocess.Popen([_tool("bash"), str(runner)], cwd=_repo_root(), stdout=log, stderr=subprocess.STDOUT, text=True, start_new_session=True)
-    _audit(actor, "download_update", f"pid={process.pid}")
-    return {"ok": True, "pid": process.pid, "log": str(log_path)}
+    _write_json_atomic(progress_path, {"running": True, "exit_code": None, "started_at": started_at, "finished_at": None, "pid": None, "unit": unit_name})
+    launch = subprocess.run(
+        [
+            _tool("systemd-run"), "--unit", unit_name, "--collect", "--no-block",
+            "--property=Type=exec", "--property=TimeoutStopSec=infinity", "--",
+            _tool("bash"), str(runner),
+        ],
+        cwd=_repo_root(), capture_output=True, text=True, timeout=20, check=False,
+    )
+    if launch.returncode != 0:
+        message = launch.stderr.strip() or launch.stdout.strip() or "Could not start the durable update service"
+        _write_json_atomic(progress_path, {"running": False, "exit_code": -1, "started_at": started_at, "finished_at": time.time(), "pid": None, "unit": unit_name})
+        raise HTTPException(503, message)
+    pid: int | None = None
+    for _ in range(20):
+        try:
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+            pid = int(progress["pid"]) if progress.get("pid") else None
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pid = None
+        if pid:
+            break
+        time.sleep(0.025)
+    _audit(actor, "download_update", f"unit={unit_name} pid={pid or 'pending'}")
+    return {"ok": True, "pid": pid, "unit": unit_name, "log": str(log_path)}
 
 
 def _write_json_atomic(path: Path, value: dict) -> None:
@@ -696,7 +723,7 @@ def _write_json_atomic(path: Path, value: dict) -> None:
 def _update_progress() -> dict:
     state = _read_auto_update_state()
     progress_path = _update_progress_path()
-    progress: dict = {"running": False, "exit_code": None, "started_at": None, "finished_at": None}
+    progress: dict = {"running": False, "exit_code": None, "started_at": None, "finished_at": None, "pid": None, "unit": None}
     try:
         if progress_path.exists():
             value = json.loads(progress_path.read_text(encoding="utf-8"))
@@ -704,6 +731,21 @@ def _update_progress() -> dict:
                 progress.update({key: value.get(key) for key in progress})
     except (OSError, json.JSONDecodeError):
         pass
+    if progress.get("running") and progress.get("unit"):
+        try:
+            active = subprocess.run(
+                [_tool("systemctl"), "is-active", "--quiet", str(progress["unit"])],
+                capture_output=True, timeout=5, check=False,
+            ).returncode == 0
+        except (HTTPException, OSError, subprocess.SubprocessError):
+            active = True
+        started_at = float(progress.get("started_at") or 0)
+        if not active and time.time() - started_at > 10:
+            progress.update({"running": False, "exit_code": -1, "finished_at": time.time()})
+            try:
+                _write_json_atomic(progress_path, progress)
+            except OSError:
+                pass
     log_path = Path(get_config().paths.log_dir) / "update.log"
     lines: list[str] = []
     try:
@@ -721,7 +763,7 @@ def _update_progress() -> dict:
         **progress,
         "running": running,
         "state": "running" if running else "completed" if exit_code == 0 else "failed" if exit_code is not None else "idle",
-        "pid": state.get("last_pid"),
+        "pid": progress.get("pid") or state.get("last_pid"),
         "log": str(log_path),
         "lines": lines,
     }

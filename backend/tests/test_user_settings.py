@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -162,6 +163,54 @@ def test_remote_publication_version_reads_exact_revision_pyproject(monkeypatch):
     result = settings._remote_publication_version("b" * 40)
 
     assert result == "2.3.1"
+
+
+def test_update_starts_in_a_separate_durable_systemd_unit(monkeypatch, tmp_path):
+    paths = SimpleNamespace(data_dir=str(tmp_path / "data"), log_dir=str(tmp_path / "log"))
+    calls: list[list[str]] = []
+    monkeypatch.setattr(settings, "get_config", lambda: SimpleNamespace(paths=paths))
+    monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(settings, "_tool", lambda name: name)
+    monkeypatch.setattr(settings, "_audit", lambda *args: None)
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[0] == "curl":
+            return SimpleNamespace(returncode=0, stdout=b"#!/usr/bin/env bash\nexit 0\n", stderr=b"")
+        progress_path = tmp_path / "data" / "settings" / "update_progress.json"
+        current = json.loads(progress_path.read_text(encoding="utf-8"))
+        current["pid"] = 456
+        progress_path.write_text(json.dumps(current), encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="Running as unit", stderr="")
+
+    monkeypatch.setattr(settings.subprocess, "run", run)
+
+    result = settings._start_update_process(False, actor="admin")
+
+    launch = next(args for args in calls if args[0] == "systemd-run")
+    assert "--collect" in launch
+    assert "--no-block" in launch
+    assert any(value.startswith("webnas-self-update-") for value in launch)
+    assert result["pid"] == 456
+    runner = (tmp_path / "data" / "settings" / "update-runner.sh").read_text(encoding="utf-8")
+    assert "exec >>" in runner
+    assert '"running":false' in runner
+
+
+def test_update_progress_reconnects_to_active_systemd_unit(monkeypatch, tmp_path):
+    progress_path = tmp_path / "update_progress.json"
+    progress_path.write_text('{"running":true,"exit_code":null,"started_at":10,"finished_at":null,"pid":456,"unit":"webnas-self-update-10.service"}', encoding="utf-8")
+    monkeypatch.setattr(settings, "_update_progress_path", lambda: progress_path)
+    monkeypatch.setattr(settings, "_read_auto_update_state", lambda: {"last_pid": None})
+    monkeypatch.setattr(settings, "get_config", lambda: SimpleNamespace(paths=SimpleNamespace(log_dir=str(tmp_path))))
+    monkeypatch.setattr(settings, "_tool", lambda name: name)
+    monkeypatch.setattr(settings.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0))
+
+    result = settings._update_progress()
+
+    assert result["state"] == "running"
+    assert result["pid"] == 456
+    assert result["unit"] == "webnas-self-update-10.service"
 
 
 def test_update_progress_returns_persistent_state_and_bounded_log(monkeypatch, tmp_path):

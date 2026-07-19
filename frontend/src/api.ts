@@ -172,7 +172,7 @@ export type HostInfo = {
 };
 export type UpdateStatus = { branch: string; local: string; remote: string; installed_version?: string | null; available_version?: string | null; update_available: boolean; available?: boolean; error?: string; source?: string; source_url?: string; released_at?: number | null };
 export type UpdateStart = { ok: boolean; pid: number; log: string };
-export type UpdateProgress = { state: "idle" | "running" | "completed" | "failed"; running: boolean; pid: number | null; exit_code: number | null; started_at: number | null; finished_at: number | null; log: string; lines: string[] };
+export type UpdateProgress = { state: "idle" | "running" | "completed" | "failed"; running: boolean; pid: number | null; unit?: string | null; exit_code: number | null; started_at: number | null; finished_at: number | null; log: string; lines: string[] };
 export type AutoUpdateSettings = {
   enabled: boolean;
   interval_hours: number;

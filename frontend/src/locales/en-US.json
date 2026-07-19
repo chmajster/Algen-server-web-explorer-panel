@@ -780,6 +780,7 @@
   "settings.updateCompletedDetails": "The installer finished successfully.",
   "settings.updateFailedDetails": "The installer exited with an error. Review the log below.",
   "settings.updateReconnecting": "The update is still running. Waiting to reconnect to the service…",
+  "settings.updateServiceUnit": "Update service unit",
   "settings.updateStartedAt": "Started",
   "settings.updateExitCode": "Exit code",
   "settings.updateLogPath": "Log file",

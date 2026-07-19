@@ -780,6 +780,7 @@
   "settings.updateCompletedDetails": "Instalator zakończył pracę pomyślnie.",
   "settings.updateFailedDetails": "Instalator zakończył pracę z błędem. Sprawdź log poniżej.",
   "settings.updateReconnecting": "Aktualizacja trwa. Oczekiwanie na ponowne połączenie z usługą…",
+  "settings.updateServiceUnit": "Jednostka aktualizacji",
   "settings.updateStartedAt": "Uruchomiono",
   "settings.updateExitCode": "Kod zakończenia",
   "settings.updateLogPath": "Plik logu",

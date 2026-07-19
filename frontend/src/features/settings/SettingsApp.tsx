@@ -16,6 +16,7 @@ import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSec
 export type SettingsCategory = "system" | "personalization" | "files" | "transfers" | "notifications" | "accessibility" | "language" | "account" | "identity" | "network" | "networkResources" | "administration" | "about";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type UpdateDialogState = { phase: "checking" | "running" | "completed" | "failed" | "no-update"; progress: UpdateProgress | null; message: string };
+const dismissedUpdateProgressKey = "webnas.dismissed-update-progress";
 
 const categoryIcons: Record<SettingsCategory, ReactNode> = {
   system: <MonitorCog />, personalization: <Palette />, files: <FileCog />, transfers: <RefreshCw />,
@@ -63,7 +64,7 @@ function UpdateProgressDialog({ value, t, onClose }: { value: UpdateDialogState;
     <div className="modal-body update-progress-body">
       <div className={`update-progress-state ${value.phase}`} aria-live="polite">{active ? <RefreshCw className="spin" /> : value.phase === "failed" ? <AlertTriangle /> : <CheckCircle2 />}<div><strong>{t(`settings.updatePhase.${value.phase}`)}</strong><span>{value.message}</span></div></div>
       <div className={`update-progress-meter ${active ? "active" : ""} ${value.phase === "failed" ? "failed" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={value.phase === "checking" ? 15 : value.phase === "running" ? undefined : 100}><span style={{ width: value.phase === "checking" ? "15%" : value.phase === "running" ? "62%" : "100%" }} /></div>
-      {value.progress && <dl className="update-progress-meta"><div><dt>PID</dt><dd>{value.progress.pid || "—"}</dd></div><div><dt>{t("settings.updateStartedAt")}</dt><dd>{value.progress.started_at ? new Date(value.progress.started_at * 1000).toLocaleString() : "—"}</dd></div><div><dt>{t("settings.updateExitCode")}</dt><dd>{value.progress.exit_code ?? "—"}</dd></div><div><dt>{t("settings.updateLogPath")}</dt><dd><code>{value.progress.log}</code></dd></div></dl>}
+      {value.progress && <dl className="update-progress-meta"><div><dt>PID</dt><dd>{value.progress.pid || "—"}</dd></div>{value.progress.unit && <div><dt>{t("settings.updateServiceUnit")}</dt><dd><code>{value.progress.unit}</code></dd></div>}<div><dt>{t("settings.updateStartedAt")}</dt><dd>{value.progress.started_at ? new Date(value.progress.started_at * 1000).toLocaleString() : "—"}</dd></div><div><dt>{t("settings.updateExitCode")}</dt><dd>{value.progress.exit_code ?? "—"}</dd></div><div><dt>{t("settings.updateLogPath")}</dt><dd><code>{value.progress.log}</code></dd></div></dl>}
       <section className="update-live-log"><header><Terminal /><strong>{t("settings.updateLiveLog")}</strong></header><pre ref={logRef}>{value.progress?.lines.length ? value.progress.lines.join("\n") : t(active ? "settings.updateWaitingForLog" : "settings.updateNoLog")}</pre></section>
     </div>
     <footer className="modal-footer"><button type="button" onClick={onClose}>{active ? t("settings.closeAndRunInBackground") : t("action.close")}</button></footer>
@@ -95,13 +96,23 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
   const [updateError, setUpdateError] = useState("");
   useEffect(() => {
     let live = true;
-    Promise.allSettled([api.systemStatus(), api.checkUpdates(), api.autoUpdate(), api.proxmoxSafety()]).then((results) => {
+    Promise.allSettled([api.systemStatus(), api.checkUpdates(), api.autoUpdate(), api.proxmoxSafety(), api.updateProgress()]).then((results) => {
       if (!live) return;
       if (results[0].status === "fulfilled") setStatus(results[0].value);
       if (results[1].status === "fulfilled") { setUpdates(results[1].value); setUpdateError(results[1].value.error || ""); }
       else setUpdateError(results[1].reason instanceof Error ? results[1].reason.message : t("settings.updateUnavailable"));
       if (results[2].status === "fulfilled") setAutomatic(results[2].value);
       if (results[3].status === "fulfilled") setProxmox(results[3].value);
+      if (results[4].status === "fulfilled") {
+        const progress = results[4].value;
+        const dismissed = Number(window.sessionStorage.getItem(dismissedUpdateProgressKey) || 0);
+        const recent = Boolean(progress.started_at && progress.started_at > Date.now() / 1000 - 86_400);
+        if (progress.state === "running" || (recent && progress.started_at !== dismissed && (progress.state === "completed" || progress.state === "failed"))) {
+          const phase = progress.state === "running" ? "running" : progress.state;
+          const message = phase === "running" ? t("settings.updateInstallerRunning") : phase === "completed" ? t("settings.updateCompletedDetails") : t("settings.updateFailedDetails");
+          setUpdateDialog({ phase, progress, message });
+        }
+      }
       setLoading(false);
     });
     return () => { live = false; };
@@ -138,7 +149,7 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
       try {
         const progress = await api.updateProgress();
         if (!live) return;
-        if (progress.state === "completed") setUpdateDialog({ phase: "completed", progress, message: t("settings.updateCompletedDetails") });
+        if (progress.state === "completed") { setUpdateDialog({ phase: "completed", progress, message: t("settings.updateCompletedDetails") }); void refreshUpdates(); }
         else if (progress.state === "failed") setUpdateDialog({ phase: "failed", progress, message: t("settings.updateFailedDetails") });
         else setUpdateDialog({ phase: "running", progress, message: t("settings.updateInstallerRunning") });
       } catch {
@@ -149,6 +160,10 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
     const timer = window.setInterval(() => void poll(), 1200);
     return () => { live = false; window.clearInterval(timer); };
   }, [updateDialog?.phase, t]);
+  const closeUpdateDialog = () => {
+    if (updateDialog?.progress?.started_at) window.sessionStorage.setItem(dismissedUpdateProgressKey, String(updateDialog.progress.started_at));
+    setUpdateDialog(null);
+  };
   const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
   const releaseDate = (value: number | null | undefined) => {
     if (!value) return "—";
@@ -191,7 +206,7 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
     </div>
     <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}{automatic && <div className="auto-update-settings"><SettingRow title={t("settings.automaticUpdates")} description={t("settings.automaticUpdatesHint")}><Switch label={t("settings.automaticUpdates")} checked={automatic.enabled} onChange={(value) => void saveAutomatic({ enabled: value })} /></SettingRow><SettingRow title={t("settings.updateInterval")}><Select label={t("settings.updateInterval")} value={automatic.interval_hours} onChange={(value) => void saveAutomatic({ interval_hours: Number(value) })}>{[1, 6, 12, 24, 48, 72, 168].map((hours) => <option key={hours} value={hours}>{hours < 24 ? `${hours} h` : `${hours / 24} d`}</option>)}</Select></SettingRow><SettingRow title={t("settings.updateConfiguration")} description={t("settings.updateConfigurationHint")}><Switch label={t("settings.updateConfiguration")} checked={automatic.update_config} onChange={(value) => void saveAutomatic({ update_config: value })} /></SettingRow><dl className="settings-details"><dt>{t("settings.lastChecked")}</dt><dd>{dateTime(automatic.last_checked)}</dd><dt>{t("settings.lastUpdateRun")}</dt><dd>{dateTime(automatic.last_run)}</dd><dt>{t("settings.nextCheck")}</dt><dd>{automatic.enabled ? dateTime(automatic.next_check) : t("common.disabled")}</dd></dl>{automatic.last_error && <p className="update-settings-error">{automatic.last_error}</p>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></div>}</Card>
     <Card title={t("settings.administrationApps")}><p className="admin-tools-intro">{t("settings.administrationAppsHint")}</p><div className="admin-tool-links">{adminApps.map((app) => <button key={app.id} type="button" onClick={() => onOpenApp(app.id)}><span className="admin-tool-icon">{app.icon}</span><span><strong>{t(`app.${app.id}`)}</strong><small>{app.hint}</small></span><span className="admin-tool-arrow" aria-hidden="true">›</span></button>)}</div></Card>
-    {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={() => setUpdateDialog(null)} />}
+    {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
   </div>;
 }
 

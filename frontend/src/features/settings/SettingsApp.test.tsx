@@ -15,7 +15,7 @@ const hostInfo: HostInfo = {
 
 describe("settings application", () => {
   beforeEach(() => { vi.spyOn(api, "hostInfo").mockResolvedValue(hostInfo); });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); window.sessionStorage.clear(); });
 
   it("loads host information and presents it in expandable panels", async () => {
     render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
@@ -125,6 +125,19 @@ describe("settings application", () => {
     await waitFor(() => expect(progress).toHaveBeenCalled());
     expect(await screen.findByText("settings.updatePhase.completed")).toBeInTheDocument();
     expect(screen.getByText(/Installation complete/)).toBeInTheDocument();
+  });
+
+  it("restores a persisted update result after the service reconnects", async () => {
+    vi.spyOn(api, "systemStatus").mockResolvedValue({ service: "webnas", version: "1", port: 5000, data_dir: "/var/lib/webnas", log_dir: "/var/log/webnas", temp_dir: "/tmp" });
+    vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "b".repeat(40), remote: "b".repeat(40), update_available: false, available: true });
+    vi.spyOn(api, "autoUpdate").mockResolvedValue({ enabled: false, interval_hours: 24, update_config: false, last_checked: null, last_run: 20, last_error: "", last_pid: 321, next_check: null });
+    vi.spyOn(api, "proxmoxSafety").mockResolvedValue({ is_proxmox: false, safe_mode_enabled: false, protected_paths: [], blocked_admin_features: [], allowed_roots_effective: [], service_user: "webnas", warnings: [] });
+    vi.spyOn(api, "updateProgress").mockResolvedValue({ state: "completed", running: false, pid: 321, unit: "webnas-self-update-20.service", exit_code: 0, started_at: Math.floor(Date.now() / 1000), finished_at: Math.floor(Date.now() / 1000), log: "/var/log/webnas/update.log", lines: ["Installation complete"] });
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="administration" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    expect(await screen.findByRole("dialog", { name: "settings.updateProgressTitle" })).toBeInTheDocument();
+    expect(screen.getByText("settings.updatePhase.completed")).toBeInTheDocument();
+    expect(screen.getByText("Installation complete")).toBeInTheDocument();
   });
 
   it("reports a failed automatic save", async () => {
