@@ -929,7 +929,7 @@ export const api = {
   ansibleDashboard: () => request<AnsibleDashboard>("/api/modules/ansible-controller/dashboard"),
   ansibleConfig: () => request<Record<string, unknown>>("/api/modules/ansible-controller/config"),
   saveAnsibleConfig: (payload: Record<string, unknown>) => request<{ job: ModuleJob }>("/api/modules/ansible-controller/config", { method: "PUT", body: JSON.stringify({ ...payload, confirm: true }) }),
-  saveAnsibleManagedAccount: (payload: { username: string; sudo_profile: "none" | "nopasswd" }) => request<{ managed_username: string; managed_sudo_profile: string }>("/api/modules/ansible-controller/managed-account", { method: "PUT", body: JSON.stringify({ ...payload, confirm: true }) }),
+  saveAnsibleManagedAccount: (payload: { username: string; sudo_profile: "none" | "nopasswd"; shell: "/bin/bash" | "/bin/sh"; comment: string; authorized_keys_mode: "exclusive" | "append" }) => request<{ managed_username: string; managed_sudo_profile: string; managed_shell: string; managed_comment: string; managed_authorized_keys_mode: string }>("/api/modules/ansible-controller/managed-account", { method: "PUT", body: JSON.stringify({ ...payload, confirm: true }) }),
   ansibleHosts: () => request<AnsibleHost[]>("/api/modules/ansible-controller/hosts"),
   ansibleHost: (id: string) => request<AnsibleHost>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}`),
   saveAnsibleHost: (payload: Record<string, unknown>, id = "") => request<AnsibleHost>(id ? `/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/hosts", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),

@@ -23,8 +23,8 @@ describe("AnsibleControllerApp", () => {
     mocks.dashboard.mockResolvedValue({ hosts: 2, hosts_online: 1, hosts_unreachable: 1, host_key_errors: 0, groups: 1, projects: 0, playbooks: 0, templates: 0, active_jobs: 0, failed_jobs: 0, scheduled: 0, ansible_version: "ansible 2.18" });
     mocks.hosts.mockResolvedValue([]); mocks.groups.mockResolvedValue([]); mocks.credentials.mockResolvedValue([]); mocks.scans.mockResolvedValue([]);
     mocks.saveCredential.mockResolvedValue({ id: "credential" });
-    mocks.config.mockResolvedValue({ managed_username: "algen-ansible", managed_sudo_profile: "none", allowed_networks: [] });
-    mocks.saveManagedAccount.mockResolvedValue({ managed_username: "deploy-bot", managed_sudo_profile: "nopasswd" });
+    mocks.config.mockResolvedValue({ managed_username: "algen-ansible", managed_sudo_profile: "none", managed_shell: "/bin/bash", managed_comment: "Algen Ansible automation", managed_authorized_keys_mode: "exclusive", allowed_networks: [] });
+    mocks.saveManagedAccount.mockResolvedValue({ managed_username: "deploy-bot", managed_sudo_profile: "nopasswd", managed_shell: "/bin/sh", managed_comment: "Production automation", managed_authorized_keys_mode: "append" });
     mocks.startScan.mockResolvedValue({ scan: { id: "scan", status: "queued", progress: 0, discovered: 0, request: {}, error: "", created_at: 1 }, job: { id: "job" }, address_count: 254 });
   });
 
@@ -69,14 +69,21 @@ describe("AnsibleControllerApp", () => {
   it("changes the default managed account used for host onboarding", async () => {
     const credentialPermissions = [...permissions, "ansible-controller.credentials.manage", "ansible-controller.configure"];
     render(<AnsibleControllerApp permissions={credentialPermissions} t={t} toast={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: /module.section.credentials/ }));
+    await screen.findByText("ansible.dashboard.hosts");
+    const accountTab = screen.getByRole("button", { name: /module.section.automation-account/ });
+    fireEvent.click(accountTab);
+    expect(accountTab).toHaveAttribute("aria-current", "page");
+    await screen.findByText("ansible.managedAccount.pageTitle");
 
     const username = await screen.findByLabelText("ansible.managedAccount.username");
     expect(username).toHaveValue("algen-ansible");
     fireEvent.change(username, { target: { value: "deploy-bot" } });
     fireEvent.change(screen.getByLabelText("ansible.managedAccount.sudoProfile"), { target: { value: "nopasswd" } });
+    fireEvent.change(screen.getByLabelText("ansible.managedAccount.shell"), { target: { value: "/bin/sh" } });
+    fireEvent.change(screen.getByLabelText("ansible.managedAccount.comment"), { target: { value: "Production automation" } });
+    fireEvent.change(screen.getByLabelText("ansible.managedAccount.keysMode"), { target: { value: "append" } });
     fireEvent.click(screen.getByRole("button", { name: /ansible.managedAccount.save/ }));
 
-    await waitFor(() => expect(mocks.saveManagedAccount).toHaveBeenCalledWith({ username: "deploy-bot", sudo_profile: "nopasswd" }));
+    await waitFor(() => expect(mocks.saveManagedAccount).toHaveBeenCalledWith({ username: "deploy-bot", sudo_profile: "nopasswd", shell: "/bin/sh", comment: "Production automation", authorized_keys_mode: "append" }));
   });
 });

@@ -127,6 +127,9 @@ class AnsibleControllerProvider(ModuleProvider):
             "default_concurrency_policy": value.get("default_concurrency_policy") or "same_hosts",
             "managed_username": value.get("managed_username") or MANAGED_SSH_USERNAME,
             "managed_sudo_profile": value.get("managed_sudo_profile") or "none",
+            "managed_shell": value.get("managed_shell") or "/bin/bash",
+            "managed_comment": value.get("managed_comment") if isinstance(value.get("managed_comment"), str) else "Algen Ansible automation",
+            "managed_authorized_keys_mode": value.get("managed_authorized_keys_mode") or "exclusive",
             "awx": awx,
         }
 
@@ -153,6 +156,13 @@ class AnsibleControllerProvider(ModuleProvider):
             errors.append("invalid managed account username")
         if (config.get("managed_sudo_profile") or "none") not in {"none", "nopasswd"}:
             errors.append("invalid managed account sudo profile")
+        if (config.get("managed_shell") or "/bin/bash") not in {"/bin/bash", "/bin/sh"}:
+            errors.append("invalid managed account shell")
+        comment = config.get("managed_comment")
+        if not isinstance(comment, str) or len(comment) > 100 or any(character in comment for character in ":\r\n"):
+            errors.append("invalid managed account comment")
+        if (config.get("managed_authorized_keys_mode") or "exclusive") not in {"exclusive", "append"}:
+            errors.append("invalid managed account authorized keys mode")
         if isinstance(config.get("awx"), dict) and config["awx"].get("url"):
             try:
                 AwxSettingsInput.model_validate(config["awx"])
@@ -364,6 +374,9 @@ class AnsibleControllerProvider(ModuleProvider):
                 managed_username,
                 str(payload.get("sudo_profile") or "none"),
                 str(payload.get("sudoers_policy") or ""),
+                str(payload.get("managed_shell") or "/bin/bash"),
+                str(payload.get("managed_comment") or "Algen Ansible automation"),
+                str(payload.get("authorized_keys_mode") or "exclusive"),
                 log,
             )
             private_key = self.store.root / "home" / ".ssh" / "id_ed25519"

@@ -430,6 +430,9 @@ class ControllerConfigInput(StrictModel):
     default_concurrency_policy: ConcurrencyPolicy = ConcurrencyPolicy.same_hosts
     managed_username: str = Field(default=MANAGED_SSH_USERNAME, min_length=2, max_length=32, pattern=r"^[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]$")
     managed_sudo_profile: str = Field(default="none", pattern=r"^(none|nopasswd)$")
+    managed_shell: str = Field(default="/bin/bash", pattern=r"^/bin/(?:ba)?sh$")
+    managed_comment: str = Field(default="Algen Ansible automation", max_length=100, pattern=r"^[^:\r\n]*$")
+    managed_authorized_keys_mode: str = Field(default="exclusive", pattern=r"^(exclusive|append)$")
     awx: AwxSettingsInput | None = None
     confirm: bool = False
 
@@ -442,6 +445,9 @@ class ControllerConfigInput(StrictModel):
 class ManagedAccountConfigInput(StrictModel):
     username: str = Field(default=MANAGED_SSH_USERNAME, min_length=2, max_length=32, pattern=r"^[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]$")
     sudo_profile: str = Field(default="none", pattern=r"^(none|nopasswd)$")
+    shell: str = Field(default="/bin/bash", pattern=r"^/bin/(?:ba)?sh$")
+    comment: str = Field(default="Algen Ansible automation", max_length=100, pattern=r"^[^:\r\n]*$")
+    authorized_keys_mode: str = Field(default="exclusive", pattern=r"^(exclusive|append)$")
     confirm: bool = False
 
     @field_validator("username")

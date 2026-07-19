@@ -132,10 +132,10 @@ def save_managed_account(payload: ManagedAccountConfigInput, user: SessionUser =
     config = provider.get_config()
     if isinstance(config.get("awx"), dict):
         config["awx"].pop("token_configured", None)
-    config.update({"managed_username": payload.username, "managed_sudo_profile": payload.sudo_profile})
+    config.update({"managed_username": payload.username, "managed_sudo_profile": payload.sudo_profile, "managed_shell": payload.shell, "managed_comment": payload.comment, "managed_authorized_keys_mode": payload.authorized_keys_mode})
     value = provider.save_config(config, user.username)
-    _audit_api(user.username, "configure_managed_account", "settings", "managed-account", {"username": payload.username, "sudo_profile": payload.sudo_profile})
-    return {"managed_username": value.get("managed_username"), "managed_sudo_profile": value.get("managed_sudo_profile")}
+    _audit_api(user.username, "configure_managed_account", "settings", "managed-account", {"username": payload.username, "sudo_profile": payload.sudo_profile, "shell": payload.shell, "authorized_keys_mode": payload.authorized_keys_mode})
+    return {"managed_username": value.get("managed_username"), "managed_sudo_profile": value.get("managed_sudo_profile"), "managed_shell": value.get("managed_shell"), "managed_comment": value.get("managed_comment"), "managed_authorized_keys_mode": value.get("managed_authorized_keys_mode")}
 
 
 @router.get("/hosts")
@@ -261,7 +261,7 @@ def onboarding(payload: OnboardingInput, user: SessionUser = Depends(require_per
     if managed_sudo_profile == "nopasswd" and payload.confirm_host_name != host_record["address"]:
         api_error(422, "HOST_CONFIRMATION_REQUIRED", "Full passwordless sudo requires typing the target host address")
     # Only identifiers and validated policy metadata enter the durable queue.
-    job = _enqueue("onboard_host", {"host_id": host_record["id"], "initial_username": payload.initial_username, "credential_id": payload.credential_id, "create_managed_user": True, "managed_username": managed_username, "sudo_profile": managed_sudo_profile, "sudoers_policy": ""}, user.username)
+    job = _enqueue("onboard_host", {"host_id": host_record["id"], "initial_username": payload.initial_username, "credential_id": payload.credential_id, "create_managed_user": True, "managed_username": managed_username, "sudo_profile": managed_sudo_profile, "sudoers_policy": "", "managed_shell": controller_config.get("managed_shell") or "/bin/bash", "managed_comment": controller_config.get("managed_comment") if isinstance(controller_config.get("managed_comment"), str) else "Algen Ansible automation", "authorized_keys_mode": controller_config.get("managed_authorized_keys_mode") or "exclusive"}, user.username)
     repository().audit(user.username, "host", host_record["id"], "onboard", {"job_id": job["id"], "create_managed_user": True, "managed_username": managed_username, "sudo_profile": managed_sudo_profile})
     return {"host": host_record, "job": job, "onboarding_id": host_record["id"]}
 

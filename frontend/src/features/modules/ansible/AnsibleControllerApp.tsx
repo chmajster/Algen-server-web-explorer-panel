@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, Eye, EyeOff, KeyRound, LockKeyhole, Maximize2, Play, Plus, Radar, RefreshCw, Save, Search, ShieldCheck, Square, Trash2, Upload, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Eye, EyeOff, KeyRound, LockKeyhole, Maximize2, Play, Plus, Radar, RefreshCw, Save, Search, ShieldCheck, Square, Terminal, Trash2, Upload, UserRoundCheck, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   api, type AnsibleCredential, type AnsibleDashboard, type AnsibleExecution, type AnsibleGroup, type AnsibleHost,
@@ -10,7 +10,7 @@ import { ModuleAppShell, ModuleHealthCard, type ModuleSection } from "../common/
 import { ModuleBackups, ModuleDiagnostics } from "../common/ModuleComponents";
 
 const emptyStatus: ModuleStatus = { installed: false, update_available: false, service_state: "unknown", service_enabled: false, services: {}, health: "unknown", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} };
-const sections: ModuleSection[] = ["overview", "hosts", "inventory", "discovery", "credentials", "projects", "playbooks", "templates", "jobs", "schedules", "facts", "configuration", "diagnostics", "backups"];
+const sections: ModuleSection[] = ["overview", "hosts", "inventory", "discovery", "credentials", "automation-account", "projects", "playbooks", "templates", "jobs", "schedules", "facts", "configuration", "diagnostics", "backups"];
 
 type Props = { permissions: string[]; t: Translate; toast: ToastFn };
 type HostForm = { name: string; address: string; port: string; ssh_user: string; credential_id: string };
@@ -47,7 +47,7 @@ export function AnsibleControllerApp({ permissions, t, toast }: Props) {
       if (section === "discovery") loaders.push(api.ansibleScans().then(setScans));
       if (section === "diagnostics") loaders.push(api.ansibleDiagnostics().then((value) => setDiagnostics(value.diagnostics)));
       if (section === "backups") loaders.push(api.ansibleBackups().then(setBackups));
-      if (["configuration", "credentials", "hosts"].includes(section)) loaders.push(api.ansibleConfig().then(setConfig));
+      if (["configuration", "automation-account", "hosts"].includes(section)) loaders.push(api.ansibleConfig().then(setConfig));
       await Promise.all(loaders);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : t("error.generic"); setError(message); toast(message, "error", "admin", "ansible-controller");
@@ -65,7 +65,8 @@ export function AnsibleControllerApp({ permissions, t, toast }: Props) {
   else if (section === "hosts") content = <Hosts hosts={hosts} credentials={credentials} config={config} canManage={can("ansible-controller.hosts.manage")} t={t} toast={toast} refresh={refresh} />;
   else if (section === "inventory") content = <Inventory content={inventory} canManage={can("ansible-controller.hosts.manage")} t={t} toast={toast} refresh={refresh} />;
   else if (section === "discovery") content = <Discovery scans={scans} canManage={can("ansible-controller.discovery")} t={t} toast={toast} refresh={refresh} />;
-  else if (section === "credentials") content = <Credentials items={credentials} config={config} canManage={can("ansible-controller.credentials.manage")} canConfigure={can("ansible-controller.configure")} t={t} toast={toast} refresh={refresh} />;
+  else if (section === "credentials") content = <Credentials items={credentials} canManage={can("ansible-controller.credentials.manage")} t={t} toast={toast} refresh={refresh} />;
+  else if (section === "automation-account") content = <AutomationAccount value={config} canManage={can("ansible-controller.configure")} t={t} toast={toast} refresh={refresh} />;
   else if (section === "projects") content = <Projects items={projects} credentials={credentials} canManage={can("ansible-controller.projects.manage")} t={t} toast={toast} refresh={refresh} />;
   else if (section === "playbooks") content = <Playbooks items={playbooks} projects={projects} canManage={can("ansible-controller.playbooks.manage")} t={t} toast={toast} refresh={refresh} />;
   else if (section === "templates") content = <Templates items={templates} hosts={hosts} groups={groups} projects={projects} playbooks={playbooks} credentials={credentials} canManage={can("ansible-controller.playbooks.manage")} canLaunch={can("ansible-controller.jobs.launch")} t={t} toast={toast} refresh={refresh} />;
@@ -108,7 +109,51 @@ function Inventory({ content, canManage, t, toast, refresh }: { content: string;
 
 function Discovery({ scans, canManage, t, toast, refresh }: { scans: AnsibleScan[]; canManage: boolean; t: Translate; toast: ToastFn; refresh: () => Promise<void> }) { const [cidr, setCidr] = useState("192.168.1.0/24"); const [port, setPort] = useState("22"); const [selectedScan, setSelectedScan] = useState<AnsibleScan | null>(null); const [selected, setSelected] = useState<string[]>([]); async function start(event: React.FormEvent) { event.preventDefault(); if (!window.confirm(t("ansible.discovery.confirmScan"))) return; try { const value = await api.startAnsibleScan({ cidr, port: Number(port), timeout_seconds: 2, concurrency: 32, group_name: "", method: "nmap", reverse_dns: true }); setSelectedScan(value.scan); toast(t("ansible.discovery.started"), "ok"); await refresh(); } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error"); } } async function importHosts() { if (!selectedScan || !selected.length) return; await api.importAnsibleScan(selectedScan.id, selected); setSelected([]); await refresh(); } const detail = selectedScan || scans[0]; return <section className="ansible-panel"><header><div><h3>{t("ansible.discovery.title")}</h3><p>{t("ansible.discovery.hint")}</p></div></header>{canManage && <form className="module-form-grid" onSubmit={start}><label>{t("ansible.discovery.cidr")}<input required value={cidr} onChange={(event) => setCidr(event.target.value)} /></label><label>{t("ansible.host.port")}<input type="number" min="1" max="65535" value={port} onChange={(event) => setPort(event.target.value)} /></label><button className="button-primary"><Search />{t("ansible.discovery.start")}</button></form>}<div className="ansible-scan-list" aria-label={t("ansible.discovery.scanHistory")}>{scans.map((scan) => <button className={detail?.id === scan.id ? "selected" : ""} key={scan.id} aria-pressed={detail?.id === scan.id} onClick={() => void api.ansibleScan(scan.id).then(setSelectedScan)}><span className={`ansible-scan-icon ${scan.status}`}><Radar /></span><span className="ansible-scan-copy"><span><Status state={scan.status} t={t} /><small>{new Date(scan.created_at * 1000).toLocaleString()}</small></span><code>{String(scan.request.cidr || t("common.none"))}</code></span><span className="ansible-scan-count"><strong>{scan.discovered}</strong><small>{t("ansible.discovery.hostsFound")}</small></span><ChevronRight className="ansible-scan-arrow" /></button>)}</div>{detail?.hosts && <><Table headers={[t("common.select"), t("ansible.host.address"), t("ansible.host.hostname"), t("ansible.host.port"), t("ansible.host.latency"), t("ansible.discovery.ssh")]} rows={detail.hosts.map((host) => [<input aria-label={`${t("common.select")} ${host.address}`} type="checkbox" checked={selected.includes(host.id)} onChange={(event) => setSelected((items) => event.target.checked ? [...items, host.id] : items.filter((id) => id !== host.id))} />, host.address, host.hostname || t("common.none"), host.port, host.latency_ms ?? t("common.none"), <Status state={host.ssh_status} t={t} />])} empty={t("ansible.discovery.empty")} />{canManage && <button className="button-primary" disabled={!selected.length} onClick={() => void importHosts()}>{t("ansible.discovery.importSelected")}</button>}</>}</section>; }
 
-function Credentials({ items, config, canManage, canConfigure, t, toast, refresh }: { items: AnsibleCredential[]; config: Record<string, unknown>; canManage: boolean; canConfigure: boolean; t: Translate; toast: ToastFn; refresh: () => Promise<void> }) {
+function AutomationAccount({ value, canManage, t, toast, refresh }: { value: Record<string, unknown>; canManage: boolean; t: Translate; toast: ToastFn; refresh: () => Promise<void> }) {
+  const [username, setUsername] = useState("algen-ansible");
+  const [sudoProfile, setSudoProfile] = useState<"none" | "nopasswd">("none");
+  const [shell, setShell] = useState<"/bin/bash" | "/bin/sh">("/bin/bash");
+  const [comment, setComment] = useState("Algen Ansible automation");
+  const [keysMode, setKeysMode] = useState<"exclusive" | "append">("exclusive");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setUsername(String(value.managed_username || "algen-ansible"));
+    setSudoProfile(value.managed_sudo_profile === "nopasswd" ? "nopasswd" : "none");
+    setShell(value.managed_shell === "/bin/sh" ? "/bin/sh" : "/bin/bash");
+    setComment(typeof value.managed_comment === "string" ? value.managed_comment : "Algen Ansible automation");
+    setKeysMode(value.managed_authorized_keys_mode === "append" ? "append" : "exclusive");
+  }, [value]);
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!window.confirm(t("ansible.managedAccount.confirmSave"))) return;
+    setSaving(true);
+    try {
+      await api.saveAnsibleManagedAccount({ username: username.trim(), sudo_profile: sudoProfile, shell, comment: comment.trim(), authorized_keys_mode: keysMode });
+      toast(t("ansible.managedAccount.saved"), "ok", "admin", "ansible-controller");
+      await refresh();
+    } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin", "ansible-controller"); }
+    finally { setSaving(false); }
+  }
+  return <section className="ansible-panel automation-account-page">
+    <header><div><h3>{t("ansible.managedAccount.pageTitle")}</h3><p>{t("ansible.managedAccount.pageHint")}</p></div><span className="automation-account-ready"><CheckCircle2 />{t("ansible.managedAccount.policyActive")}</span></header>
+    <div className="automation-account-hero"><span><UserRoundCheck /></span><div><small>{t("ansible.managedAccount.eyebrow")}</small><h4>{username || "algen-ansible"}</h4><p>{t("ansible.managedAccount.hint")}</p></div><dl><div><dt>{t("ansible.managedAccount.authentication")}</dt><dd><KeyRound />SSH Ed25519</dd></div><div><dt>{t("ansible.managedAccount.password")}</dt><dd><LockKeyhole />{t("ansible.managedAccount.passwordLocked")}</dd></div></dl></div>
+    <form className="automation-account-form" onSubmit={save}>
+      <fieldset><legend><UserRoundCheck />{t("ansible.managedAccount.identitySection")}</legend><p>{t("ansible.managedAccount.identityHint")}</p><div className="automation-account-fields">
+        <label>{t("ansible.managedAccount.username")}<input aria-label={t("ansible.managedAccount.username")} required minLength={2} maxLength={32} pattern="[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]" value={username} disabled={!canManage || saving} onChange={(event) => setUsername(event.target.value.toLowerCase())} /><small>{t("ansible.managedAccount.usernameHint")}</small></label>
+        <label>{t("ansible.managedAccount.comment")}<input aria-label={t("ansible.managedAccount.comment")} maxLength={100} value={comment} disabled={!canManage || saving} onChange={(event) => setComment(event.target.value.replace(/[:\r\n]/g, ""))} /><small>{t("ansible.managedAccount.commentHint")}</small></label>
+        <label>{t("ansible.managedAccount.shell")}<select aria-label={t("ansible.managedAccount.shell")} value={shell} disabled={!canManage || saving} onChange={(event) => setShell(event.target.value as "/bin/bash" | "/bin/sh")}><option value="/bin/bash">/bin/bash</option><option value="/bin/sh">/bin/sh</option></select><small>{t("ansible.managedAccount.shellHint")}</small></label>
+      </div></fieldset>
+      <fieldset><legend><ShieldCheck />{t("ansible.managedAccount.accessSection")}</legend><p>{t("ansible.managedAccount.accessHint")}</p><div className="automation-account-fields two-columns">
+        <label>{t("ansible.managedAccount.sudoProfile")}<select aria-label={t("ansible.managedAccount.sudoProfile")} value={sudoProfile} disabled={!canManage || saving} onChange={(event) => setSudoProfile(event.target.value as "none" | "nopasswd")}><option value="none">{t("ansible.managedAccount.sudo.none")}</option><option value="nopasswd">{t("ansible.managedAccount.sudo.nopasswd")}</option></select><small>{t("ansible.managedAccount.sudoHint")}</small></label>
+        <label>{t("ansible.managedAccount.keysMode")}<select aria-label={t("ansible.managedAccount.keysMode")} value={keysMode} disabled={!canManage || saving} onChange={(event) => setKeysMode(event.target.value as "exclusive" | "append")}><option value="exclusive">{t("ansible.managedAccount.keys.exclusive")}</option><option value="append">{t("ansible.managedAccount.keys.append")}</option></select><small>{t("ansible.managedAccount.keysHint")}</small></label>
+      </div>{sudoProfile === "nopasswd" && <div className="automation-account-warning"><AlertTriangle /><span>{t("ansible.managedAccount.sudoWarning")}</span></div>}</fieldset>
+      <div className="automation-account-policies"><article><KeyRound /><div><strong>{t("ansible.managedAccount.keyPolicy")}</strong><span>{t("ansible.managedAccount.keyHint")}</span></div></article><article><LockKeyhole /><div><strong>{t("ansible.managedAccount.lockPolicy")}</strong><span>{t("ansible.managedAccount.lockHint")}</span></div></article><article><Terminal /><div><strong>{t("ansible.managedAccount.applyPolicy")}</strong><span>{t("ansible.managedAccount.applyHint")}</span></div></article></div>
+      {canManage && <footer><span>{t("ansible.managedAccount.saveHint")}</span><button className="button-primary" type="submit" disabled={saving || !username.trim()}><Save />{saving ? t("status.saving") : t("ansible.managedAccount.save")}</button></footer>}
+    </form>
+  </section>;
+}
+
+function Credentials({ items, canManage, t, toast, refresh }: { items: AnsibleCredential[]; canManage: boolean; t: Translate; toast: ToastFn; refresh: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [name, setName] = useState("");
@@ -118,16 +163,9 @@ function Credentials({ items, config, canManage, canConfigure, t, toast, refresh
   const [passphrase, setPassphrase] = useState("");
   const [description, setDescription] = useState("");
   const [revealSecret, setRevealSecret] = useState(false);
-  const [managedUsername, setManagedUsername] = useState("algen-ansible");
-  const [managedSudoProfile, setManagedSudoProfile] = useState<"none" | "nopasswd">("none");
-  const [savingManagedAccount, setSavingManagedAccount] = useState(false);
   const privateKey = type === "ssh_private_key" || type === "git_private_key";
   const usernameVisible = ["ssh_private_key", "ssh_password", "become_password", "git_private_key"].includes(type);
   const usernameRequired = type === "ssh_password";
-  useEffect(() => {
-    setManagedUsername(String(config.managed_username || "algen-ansible"));
-    setManagedSudoProfile(config.managed_sudo_profile === "nopasswd" ? "nopasswd" : "none");
-  }, [config.managed_username, config.managed_sudo_profile]);
 
   function changeType(next: AnsibleCredential["type"]) {
     setType(next);
@@ -157,30 +195,11 @@ function Credentials({ items, config, canManage, canConfigure, t, toast, refresh
     }
   }
 
-  async function saveManagedAccount(event: React.FormEvent) {
-    event.preventDefault();
-    if (!window.confirm(t("ansible.managedAccount.confirmSave"))) return;
-    setSavingManagedAccount(true);
-    try {
-      const value = await api.saveAnsibleManagedAccount({ username: managedUsername.trim(), sudo_profile: managedSudoProfile });
-      setManagedUsername(value.managed_username); setManagedSudoProfile(value.managed_sudo_profile === "nopasswd" ? "nopasswd" : "none");
-      toast(t("ansible.managedAccount.saved"), "ok", "admin", "ansible-controller");
-    } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin", "ansible-controller"); }
-    finally { setSavingManagedAccount(false); }
-  }
-
   const secretLabel = t(`ansible.credential.secret.${type}`);
   const visible = items.filter((item) => `${item.name} ${item.type} ${item.username || ""}`.toLowerCase().includes(search.trim().toLowerCase()));
   const types: AnsibleCredential["type"][] = ["ssh_private_key", "ssh_password", "become_password", "git_private_key", "awx_token", "vault_secret"];
   return <section className="ansible-panel ansible-credentials">
     <header><div><h3>{t("ansible.credentials.title")}</h3><p>{t("ansible.credentials.hint")}</p></div>{canManage && <button type="button" onClick={beginCreate}><Plus />{t("ansible.credential.add")}</button>}</header>
-    <form className="managed-account-card" onSubmit={saveManagedAccount}>
-      <span className="managed-account-icon"><ShieldCheck /></span><div className="managed-account-copy"><small>{t("ansible.managedAccount.eyebrow")}</small><strong>{t("ansible.managedAccount.title")}</strong><p>{t("ansible.managedAccount.hint")}</p></div>
-      <label>{t("ansible.managedAccount.username")}<input required minLength={2} maxLength={32} pattern="[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]" value={managedUsername} disabled={!canConfigure || savingManagedAccount} onChange={(event) => setManagedUsername(event.target.value.toLowerCase())} /></label>
-      <label>{t("ansible.managedAccount.sudoProfile")}<select value={managedSudoProfile} disabled={!canConfigure || savingManagedAccount} onChange={(event) => setManagedSudoProfile(event.target.value as "none" | "nopasswd")}><option value="none">{t("ansible.managedAccount.sudo.none")}</option><option value="nopasswd">{t("ansible.managedAccount.sudo.nopasswd")}</option></select></label>
-      {canConfigure && <button className="button-primary" type="submit" disabled={savingManagedAccount || !managedUsername.trim()}><Save />{savingManagedAccount ? t("status.saving") : t("ansible.managedAccount.save")}</button>}
-      <div className="managed-account-note"><KeyRound /><span>{t("ansible.managedAccount.keyHint")}</span></div>
-    </form>
     <div className="credential-workspace">
       <aside className="credential-vault">
         <header><div><span className="credential-vault-icon"><LockKeyhole /></span><span><strong>{t("ansible.credentials.vaultTitle")}</strong><small>{items.length} · {t("ansible.credentials.stored")}</small></span></div>{items.length > 0 && <label className="credential-search"><Search /><input aria-label={t("action.search")} placeholder={t("ansible.credentials.search")} value={search} onChange={(event) => setSearch(event.target.value)} /></label>}</header>
@@ -227,7 +246,7 @@ function Schedules({ items, templates, canManage, t, toast, refresh }: { items: 
 
 function Facts({ hosts, t }: { hosts: AnsibleHost[]; t: Translate }) { const [selected, setSelected] = useState(hosts[0]?.id || ""); const host = hosts.find((item) => item.id === selected); useEffect(() => { if (!selected && hosts[0]) setSelected(hosts[0].id); }, [hosts, selected]); return <section className="ansible-panel"><header><div><h3>{t("ansible.facts.title")}</h3><p>{t("ansible.facts.hint")}</p></div><select aria-label={t("ansible.host.title")} value={selected} onChange={(event) => setSelected(event.target.value)}>{hosts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></header>{host ? <pre className="ansible-facts">{JSON.stringify(host.facts || {}, null, 2)}</pre> : <div className="empty-state">{t("ansible.facts.empty")}</div>}</section>; }
 
-function Configuration({ value, canManage, t, toast, refresh }: { value: Record<string, unknown>; canManage: boolean; t: Translate; toast: ToastFn; refresh: () => Promise<void> }) { const [networks, setNetworks] = useState(""); const [awxUrl, setAwxUrl] = useState(""); const [awxCredential, setAwxCredential] = useState(""); const [verifyTls, setVerifyTls] = useState(true); useEffect(() => { setNetworks(Array.isArray(value.allowed_networks) ? value.allowed_networks.join("\n") : ""); const awx = (value.awx || {}) as Record<string, unknown>; setAwxUrl(String(awx.url || "")); setAwxCredential(String(awx.credential_id || "")); setVerifyTls(awx.verify_tls !== false); }, [value]); async function save() { try { await api.saveAnsibleConfig({ allowed_networks: networks.split(/\s+/).filter(Boolean), max_scan_addresses: 4096, default_concurrency_policy: "same_hosts", managed_username: String(value.managed_username || "algen-ansible"), managed_sudo_profile: value.managed_sudo_profile === "nopasswd" ? "nopasswd" : "none", awx: awxUrl ? { url: awxUrl, credential_id: awxCredential || null, verify_tls: verifyTls, ca_certificate: "", timeout_seconds: 15 } : null }); toast(t("ansible.configuration.queued"), "ok"); await refresh(); } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error"); } } return <section className="ansible-panel"><header><div><h3>{t("ansible.configuration.title")}</h3><p>{t("ansible.configuration.hint")}</p></div></header><div className="module-form-grid"><label className="wide">{t("ansible.configuration.allowedNetworks")}<textarea value={networks} onChange={(event) => setNetworks(event.target.value)} readOnly={!canManage} /><small>{t("ansible.configuration.networkSafety")}</small></label><label>{t("ansible.configuration.awxUrl")}<input type="url" value={awxUrl} onChange={(event) => setAwxUrl(event.target.value)} readOnly={!canManage} /></label><label>{t("ansible.configuration.awxCredential")}<input value={awxCredential} onChange={(event) => setAwxCredential(event.target.value)} readOnly={!canManage} /></label><label className="check"><input type="checkbox" checked={verifyTls} onChange={(event) => setVerifyTls(event.target.checked)} disabled={!canManage} />{t("ansible.configuration.verifyTls")}</label></div>{canManage && <button className="button-primary" onClick={() => void save()}><Save />{t("action.save")}</button>}</section>; }
+function Configuration({ value, canManage, t, toast, refresh }: { value: Record<string, unknown>; canManage: boolean; t: Translate; toast: ToastFn; refresh: () => Promise<void> }) { const [networks, setNetworks] = useState(""); const [awxUrl, setAwxUrl] = useState(""); const [awxCredential, setAwxCredential] = useState(""); const [verifyTls, setVerifyTls] = useState(true); useEffect(() => { setNetworks(Array.isArray(value.allowed_networks) ? value.allowed_networks.join("\n") : ""); const awx = (value.awx || {}) as Record<string, unknown>; setAwxUrl(String(awx.url || "")); setAwxCredential(String(awx.credential_id || "")); setVerifyTls(awx.verify_tls !== false); }, [value]); async function save() { try { await api.saveAnsibleConfig({ allowed_networks: networks.split(/\s+/).filter(Boolean), max_scan_addresses: 4096, default_concurrency_policy: "same_hosts", managed_username: String(value.managed_username || "algen-ansible"), managed_sudo_profile: value.managed_sudo_profile === "nopasswd" ? "nopasswd" : "none", managed_shell: value.managed_shell === "/bin/sh" ? "/bin/sh" : "/bin/bash", managed_comment: typeof value.managed_comment === "string" ? value.managed_comment : "Algen Ansible automation", managed_authorized_keys_mode: value.managed_authorized_keys_mode === "append" ? "append" : "exclusive", awx: awxUrl ? { url: awxUrl, credential_id: awxCredential || null, verify_tls: verifyTls, ca_certificate: "", timeout_seconds: 15 } : null }); toast(t("ansible.configuration.queued"), "ok"); await refresh(); } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error"); } } return <section className="ansible-panel"><header><div><h3>{t("ansible.configuration.title")}</h3><p>{t("ansible.configuration.hint")}</p></div></header><div className="module-form-grid"><label className="wide">{t("ansible.configuration.allowedNetworks")}<textarea value={networks} onChange={(event) => setNetworks(event.target.value)} readOnly={!canManage} /><small>{t("ansible.configuration.networkSafety")}</small></label><label>{t("ansible.configuration.awxUrl")}<input type="url" value={awxUrl} onChange={(event) => setAwxUrl(event.target.value)} readOnly={!canManage} /></label><label>{t("ansible.configuration.awxCredential")}<input value={awxCredential} onChange={(event) => setAwxCredential(event.target.value)} readOnly={!canManage} /></label><label className="check"><input type="checkbox" checked={verifyTls} onChange={(event) => setVerifyTls(event.target.checked)} disabled={!canManage} />{t("ansible.configuration.verifyTls")}</label></div>{canManage && <button className="button-primary" onClick={() => void save()}><Save />{t("action.save")}</button>}</section>; }
 
 function Backups({ items, canManage, t, toast, refresh }: { items: ModuleBackup[]; canManage: boolean; t: Translate; toast: ToastFn; refresh: () => Promise<void> }) { async function create() { try { await api.createAnsibleBackup(t("ansible.backup.description"), false); toast(t("ansible.jobQueued"), "ok"); await refresh(); } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error"); } } async function restore(item: ModuleBackup) { if (!window.confirm(t("ansible.backup.confirmRestore"))) return; await api.restoreAnsibleBackup(item.id, item.checksum); toast(t("ansible.jobQueued"), "ok"); } async function remove(item: ModuleBackup) { if (!window.confirm(t("ansible.backup.confirmDelete"))) return; await api.deleteAnsibleBackup(item.id); await refresh(); } return <section className="ansible-panel">{canManage && <div className="module-section-toolbar"><button className="button-primary" onClick={() => void create()}><Plus />{t("module.createBackup")}</button></div>}<ModuleBackups backups={items} t={t} onCreate={() => void create()} onRestore={(item) => void restore(item)} onDelete={(item) => void remove(item)} /></section>; }
 

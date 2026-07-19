@@ -346,7 +346,7 @@ def parse_recap(stdout: str, host_map: dict[str, str] | None = None) -> list[dic
     return result
 
 
-def build_managed_user_script(username: str, public_key: str, sudo_profile: str = "none", sudoers_policy: str = "") -> str:
+def build_managed_user_script(username: str, public_key: str, sudo_profile: str = "none", sudoers_policy: str = "", shell: str = "/bin/bash", comment: str = "Algen Ansible automation", authorized_keys_mode: str = "exclusive") -> str:
     if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]", username):
         raise ValueError("invalid managed Linux username")
     if not re.fullmatch(r"ssh-(?:ed25519|rsa) [A-Za-z0-9+/=]+(?: [^\r\n]{0,200})?", public_key.strip()):
@@ -359,13 +359,25 @@ def build_managed_user_script(username: str, public_key: str, sudo_profile: str 
     }
     if sudo_profile not in policies or (sudo_profile == "custom" and not sudoers_policy):
         raise ValueError("invalid sudo profile")
+    if shell not in {"/bin/bash", "/bin/sh"}:
+        raise ValueError("invalid managed account shell")
+    if len(comment) > 100 or any(character in comment for character in ":\r\n"):
+        raise ValueError("invalid managed account comment")
+    if authorized_keys_mode not in {"exclusive", "append"}:
+        raise ValueError("invalid authorized keys mode")
     quoted_user = shlex.quote(username)
     quoted_key = shlex.quote(public_key.strip())
     quoted_policy = shlex.quote(policies[sudo_profile])
+    quoted_shell = shlex.quote(shell)
+    quoted_comment = shlex.quote(comment)
+    append_key = "1" if authorized_keys_mode == "append" else "0"
     return f"""set -eu
 managed_user={quoted_user}
 public_key={quoted_key}
 sudo_policy={quoted_policy}
+managed_shell={quoted_shell}
+managed_comment={quoted_comment}
+append_key={append_key}
 created_user=0
 sudoers_file=/etc/sudoers.d/$managed_user
 rollback() {{
@@ -378,14 +390,19 @@ rollback() {{
 }}
 trap rollback EXIT HUP INT TERM
 if ! id "$managed_user" >/dev/null 2>&1; then
-  useradd --create-home --shell /bin/bash -- "$managed_user"
+  useradd --create-home --shell "$managed_shell" --comment "$managed_comment" -- "$managed_user"
   created_user=1
 fi
-usermod --lock --shell /bin/bash -- "$managed_user"
+usermod --lock --shell "$managed_shell" --comment "$managed_comment" -- "$managed_user"
 home_dir=$(getent passwd "$managed_user" | cut -d: -f6)
 test -n "$home_dir"
 install -d -m 0700 -o "$managed_user" -g "$managed_user" -- "$home_dir/.ssh"
-printf '%s\n' "$public_key" > "$home_dir/.ssh/authorized_keys.new"
+if [ "$append_key" -eq 1 ] && [ -f "$home_dir/.ssh/authorized_keys" ]; then
+  cp -- "$home_dir/.ssh/authorized_keys" "$home_dir/.ssh/authorized_keys.new"
+  grep -Fqx -- "$public_key" "$home_dir/.ssh/authorized_keys.new" || printf '%s\n' "$public_key" >> "$home_dir/.ssh/authorized_keys.new"
+else
+  printf '%s\n' "$public_key" > "$home_dir/.ssh/authorized_keys.new"
+fi
 chown "$managed_user:$managed_user" "$home_dir/.ssh/authorized_keys.new"
 chmod 0600 "$home_dir/.ssh/authorized_keys.new"
 mv -f -- "$home_dir/.ssh/authorized_keys.new" "$home_dir/.ssh/authorized_keys"
@@ -408,6 +425,9 @@ def run_remote_user_setup(
     managed_username: str,
     sudo_profile: str,
     sudoers_policy: str,
+    shell: str,
+    comment: str,
+    authorized_keys_mode: str,
     log: LogCallback,
 ) -> None:
     credential = repository.credential_secret(credential_id)
@@ -416,7 +436,7 @@ def run_remote_user_setup(
     public_key_path = repository.root / "home" / ".ssh" / "id_ed25519.pub"
     if not public_key_path.is_file():
         raise RuntimeError("controller public key is missing")
-    script = build_managed_user_script(managed_username, public_key_path.read_text(encoding="utf-8").strip(), sudo_profile, sudoers_policy)
+    script = build_managed_user_script(managed_username, public_key_path.read_text(encoding="utf-8").strip(), sudo_profile, sudoers_policy, shell, comment, authorized_keys_mode)
     with execution_directory(repository, "onboard") as directory:
         uid, gid, home = controller_identity()
         known_hosts = directory / "known_hosts"
