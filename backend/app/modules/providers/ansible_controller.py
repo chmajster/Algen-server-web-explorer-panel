@@ -149,7 +149,7 @@ class AnsibleControllerProvider(ModuleProvider):
         if (config.get("default_concurrency_policy") or "same_hosts") not in {"parallel", "same_hosts", "template", "single"}:
             errors.append("invalid default concurrency policy")
         managed_username = str(config.get("managed_username") or MANAGED_SSH_USERNAME)
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}", managed_username) or managed_username.casefold() in PROTECTED_MANAGED_USERNAMES:
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]", managed_username) or managed_username.casefold() in PROTECTED_MANAGED_USERNAMES:
             errors.append("invalid managed account username")
         if (config.get("managed_sudo_profile") or "none") not in {"none", "nopasswd"}:
             errors.append("invalid managed account sudo profile")

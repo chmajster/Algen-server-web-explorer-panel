@@ -241,7 +241,7 @@ class OnboardingInput(StrictModel):
     initial_username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
     credential_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-f0-9]{24,64}$")
     create_managed_user: Literal[True] = True
-    managed_username: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
+    managed_username: str = Field(default=MANAGED_SSH_USERNAME, min_length=2, max_length=32, pattern=r"^[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]$")
     sudo_profile: str = Field(default="none", pattern=r"^(none|password|nopasswd|custom)$")
     sudoers_policy: str = Field(default="", max_length=8192)
     confirm: bool = False
@@ -428,7 +428,7 @@ class ControllerConfigInput(StrictModel):
     allowed_networks: list[str] = Field(default_factory=list, max_length=100)
     max_scan_addresses: int = Field(default=4096, ge=1, le=4096)
     default_concurrency_policy: ConcurrencyPolicy = ConcurrencyPolicy.same_hosts
-    managed_username: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
+    managed_username: str = Field(default=MANAGED_SSH_USERNAME, min_length=2, max_length=32, pattern=r"^[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]$")
     managed_sudo_profile: str = Field(default="none", pattern=r"^(none|nopasswd)$")
     awx: AwxSettingsInput | None = None
     confirm: bool = False
@@ -440,7 +440,7 @@ class ControllerConfigInput(StrictModel):
 
 
 class ManagedAccountConfigInput(StrictModel):
-    username: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
+    username: str = Field(default=MANAGED_SSH_USERNAME, min_length=2, max_length=32, pattern=r"^[a-z_][a-z0-9_-]{0,30}[a-z0-9_$]$")
     sudo_profile: str = Field(default="none", pattern=r"^(none|nopasswd)$")
     confirm: bool = False
 
