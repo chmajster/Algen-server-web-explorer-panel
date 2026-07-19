@@ -429,7 +429,7 @@ class ControllerConfigInput(StrictModel):
     max_scan_addresses: int = Field(default=4096, ge=1, le=4096)
     default_concurrency_policy: ConcurrencyPolicy = ConcurrencyPolicy.same_hosts
     managed_username: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
-    managed_sudo_profile: str = Field(default="none", pattern=r"^(none|password)$")
+    managed_sudo_profile: str = Field(default="none", pattern=r"^(none|nopasswd)$")
     awx: AwxSettingsInput | None = None
     confirm: bool = False
 
@@ -441,7 +441,7 @@ class ControllerConfigInput(StrictModel):
 
 class ManagedAccountConfigInput(StrictModel):
     username: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
-    sudo_profile: str = Field(default="none", pattern=r"^(none|password)$")
+    sudo_profile: str = Field(default="none", pattern=r"^(none|nopasswd)$")
     confirm: bool = False
 
     @field_validator("username")

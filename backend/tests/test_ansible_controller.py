@@ -252,13 +252,13 @@ def test_onboarding_always_provisions_a_safe_configurable_managed_account():
 
 
 def test_managed_account_configuration_validates_username_and_safe_sudo_profiles():
-    value = ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "sudo_profile": "password", "confirm": True})
+    value = ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "sudo_profile": "nopasswd", "confirm": True})
     assert value.username == "deploy-bot"
-    assert value.sudo_profile == "password"
+    assert value.sudo_profile == "nopasswd"
     with pytest.raises(ValueError):
         ManagedAccountConfigInput.model_validate({"username": "root", "sudo_profile": "none"})
     with pytest.raises(ValueError):
-        ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "sudo_profile": "nopasswd"})
+        ManagedAccountConfigInput.model_validate({"username": "deploy-bot", "sudo_profile": "password"})
 
 
 def test_demote_preexec_drops_groups_gid_and_uid(monkeypatch):

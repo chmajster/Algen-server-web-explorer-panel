@@ -24,7 +24,7 @@ describe("AnsibleControllerApp", () => {
     mocks.hosts.mockResolvedValue([]); mocks.groups.mockResolvedValue([]); mocks.credentials.mockResolvedValue([]); mocks.scans.mockResolvedValue([]);
     mocks.saveCredential.mockResolvedValue({ id: "credential" });
     mocks.config.mockResolvedValue({ managed_username: "algen-ansible", managed_sudo_profile: "none", allowed_networks: [] });
-    mocks.saveManagedAccount.mockResolvedValue({ managed_username: "deploy-bot", managed_sudo_profile: "password" });
+    mocks.saveManagedAccount.mockResolvedValue({ managed_username: "deploy-bot", managed_sudo_profile: "nopasswd" });
     mocks.startScan.mockResolvedValue({ scan: { id: "scan", status: "queued", progress: 0, discovered: 0, request: {}, error: "", created_at: 1 }, job: { id: "job" }, address_count: 254 });
   });
 
@@ -74,9 +74,9 @@ describe("AnsibleControllerApp", () => {
     const username = await screen.findByLabelText("ansible.managedAccount.username");
     expect(username).toHaveValue("algen-ansible");
     fireEvent.change(username, { target: { value: "deploy-bot" } });
-    fireEvent.change(screen.getByLabelText("ansible.managedAccount.sudoProfile"), { target: { value: "password" } });
+    fireEvent.change(screen.getByLabelText("ansible.managedAccount.sudoProfile"), { target: { value: "nopasswd" } });
     fireEvent.click(screen.getByRole("button", { name: /ansible.managedAccount.save/ }));
 
-    await waitFor(() => expect(mocks.saveManagedAccount).toHaveBeenCalledWith({ username: "deploy-bot", sudo_profile: "password" }));
+    await waitFor(() => expect(mocks.saveManagedAccount).toHaveBeenCalledWith({ username: "deploy-bot", sudo_profile: "nopasswd" }));
   });
 });

@@ -151,7 +151,7 @@ class AnsibleControllerProvider(ModuleProvider):
         managed_username = str(config.get("managed_username") or MANAGED_SSH_USERNAME)
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]{0,63}", managed_username) or managed_username.casefold() in PROTECTED_MANAGED_USERNAMES:
             errors.append("invalid managed account username")
-        if (config.get("managed_sudo_profile") or "none") not in {"none", "password"}:
+        if (config.get("managed_sudo_profile") or "none") not in {"none", "nopasswd"}:
             errors.append("invalid managed account sudo profile")
         if isinstance(config.get("awx"), dict) and config["awx"].get("url"):
             try:

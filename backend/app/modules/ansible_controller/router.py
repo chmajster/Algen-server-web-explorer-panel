@@ -258,6 +258,8 @@ def onboarding(payload: OnboardingInput, user: SessionUser = Depends(require_per
     controller_config = AnsibleControllerProvider(user.username).get_config()
     managed_username = str(controller_config.get("managed_username") or MANAGED_SSH_USERNAME)
     managed_sudo_profile = str(controller_config.get("managed_sudo_profile") or "none")
+    if managed_sudo_profile == "nopasswd" and payload.confirm_host_name != host_record["address"]:
+        api_error(422, "HOST_CONFIRMATION_REQUIRED", "Full passwordless sudo requires typing the target host address")
     # Only identifiers and validated policy metadata enter the durable queue.
     job = _enqueue("onboard_host", {"host_id": host_record["id"], "initial_username": payload.initial_username, "credential_id": payload.credential_id, "create_managed_user": True, "managed_username": managed_username, "sudo_profile": managed_sudo_profile, "sudoers_policy": ""}, user.username)
     repository().audit(user.username, "host", host_record["id"], "onboard", {"job_id": job["id"], "create_managed_user": True, "managed_username": managed_username, "sudo_profile": managed_sudo_profile})
