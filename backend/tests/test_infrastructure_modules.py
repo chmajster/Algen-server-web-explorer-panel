@@ -34,7 +34,7 @@ NEW_MODULES = {"linux-updates", "docker", "pihole", "adguard-home", "postgresql"
 def test_infrastructure_manifests_declare_only_supported_resources_and_actions():
     manifests = {module_id: load_manifest(module_id) for module_id in NEW_MODULES}
 
-    assert manifests["linux-updates"].capabilities.actions == ["refresh", "upgrade_all", "upgrade_security"]
+    assert manifests["linux-updates"].capabilities.actions == ["refresh", "upgrade_all", "upgrade_security", "repository_add", "repository_update", "repository_enable", "repository_disable", "repository_delete"]
     assert {"containers", "images", "networks", "volumes", "stats", "compose"} <= set(manifests["docker"].capabilities.resources)
     assert manifests["docker"].packages.apt == ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
     assert manifests["postgresql"].capabilities.backups is True
@@ -172,6 +172,48 @@ def test_linux_updates_accepts_dnf_update_available_exit_code(monkeypatch):
     packages = provider.list_resources("packages")["items"]
 
     assert packages == [{"name": "openssl", "architecture": "x86_64", "current_version": "", "available_version": "3.2.1", "security": False, "origin": "updates"}]
+
+
+def test_linux_updates_manages_apt_repositories_atomically(monkeypatch, tmp_path: Path):
+    root = tmp_path / "apt"
+    (root / "sources.list.d").mkdir(parents=True)
+    (root / "sources.list").write_text("deb http://deb.debian.org/debian bookworm main\n", encoding="utf-8")
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(LinuxUpdatesProvider, "apt_sources_root", property(lambda self: root))
+    monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
+    def callback(*_):
+        return None
+
+    provider.manage("repository_add", {"name": "example", "type": "deb", "uri": "https://packages.example.test/debian", "suite": "stable", "components": "main contrib", "options": "signed-by=/usr/share/keyrings/example.gpg", "enabled": True}, "admin", callback, callback, lambda: False)
+    repositories = provider.list_resources("repositories")["items"]
+    added = next(item for item in repositories if item["name"] == "webnas-example")
+    assert added["enabled"] is True
+    assert added["components"] == ["main", "contrib"]
+
+    provider.manage("repository_disable", {"repository_id": added["id"]}, "admin", callback, callback, lambda: False)
+    disabled = next(item for item in provider.list_resources("repositories")["items"] if item["name"] == "webnas-example")
+    assert disabled["enabled"] is False
+
+    provider.manage("repository_update", {"repository_id": disabled["id"], "type": "deb", "uri": "https://mirror.example.test/debian", "suite": "testing", "components": "main", "options": "", "enabled": True}, "admin", callback, callback, lambda: False)
+    updated = next(item for item in provider.list_resources("repositories")["items"] if item["name"] == "webnas-example")
+    assert updated["uri"] == "https://mirror.example.test/debian"
+    assert updated["suite"] == "testing"
+
+    provider.manage("repository_delete", {"repository_id": updated["id"]}, "admin", callback, callback, lambda: False)
+    assert all(item["name"] != "webnas-example" for item in provider.list_resources("repositories")["items"])
+
+
+def test_linux_repository_operations_reject_unknown_ids_and_unsafe_urls(monkeypatch, tmp_path: Path):
+    root = tmp_path / "apt"
+    (root / "sources.list.d").mkdir(parents=True)
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(LinuxUpdatesProvider, "apt_sources_root", property(lambda self: root))
+    monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
+
+    with pytest.raises(RuntimeError, match="http, https, or file"):
+        provider.manage("repository_add", {"name": "bad", "uri": "ssh://example.test/repo", "suite": "stable", "components": "main"}, "admin", lambda *_: None, lambda *_: None, lambda: False)
+    with pytest.raises(RuntimeError, match="Invalid repository identifier"):
+        provider.manage("repository_delete", {"repository_id": "../../shadow"}, "admin", lambda *_: None, lambda *_: None, lambda: False)
 
 
 def test_linux_update_refresh_retries_without_unsubscribed_proxmox_enterprise(monkeypatch, tmp_path: Path):

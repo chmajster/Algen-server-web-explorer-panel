@@ -162,4 +162,20 @@ describe("ManagedModuleApp", () => {
 
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "refresh", {}));
   });
+
+  it("lists and edits Linux package repositories", async () => {
+    vi.mocked(api.module).mockResolvedValue({ ...linuxSummary, capabilities: { ...linuxSummary.capabilities, resources: [...linuxSummary.capabilities.resources, "repositories"], actions: [...linuxSummary.capabilities.actions, "repository_add", "repository_update", "repository_enable", "repository_disable", "repository_delete"] } });
+    vi.mocked(api.moduleResource).mockResolvedValue({ resource: "repositories", items: [{ id: "a".repeat(24), name: "debian", type: "deb", uri: "http://deb.debian.org/debian", suite: "bookworm", components: ["main"], options: "", enabled: true, file: "/etc/apt/sources.list", format: "apt-list", managed: false }], total: 1 });
+    render(<ManagedModuleApp moduleId="linux-updates" permissions={["modules.view", "updates.view", "updates.apply"]} t={(key) => key} toast={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /managed.repositories/ }));
+    expect(await screen.findByText("http://deb.debian.org/debian")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "managed.addRepository" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("action.edit"));
+    expect(screen.getByLabelText("managed.repositorySuite")).toHaveValue("bookworm");
+    fireEvent.change(screen.getByLabelText("managed.repositoryUrl"), { target: { value: "https://mirror.example.test/debian" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+
+    await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "repository_update", { repository_id: "a".repeat(24), name: "debian", type: "deb", uri: "https://mirror.example.test/debian", suite: "bookworm", components: "main", options: "", enabled: true }));
+  });
 });

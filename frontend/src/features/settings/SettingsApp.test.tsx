@@ -135,7 +135,7 @@ describe("settings application", () => {
     expect(await screen.findByText("settings.policyCategoryChecking")).toBeInTheDocument();
     expect(screen.getAllByText("updates.check_enabled")).toHaveLength(2);
     fireEvent.click(screen.getByText("updates.check_interval_hours").closest("button")!);
-    expect(screen.getByText("12 h")).toBeInTheDocument();
+    expect(screen.getAllByText("12 h")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
     expect(screen.getByLabelText("settings.updateInterval")).toHaveValue("12");
     fireEvent.change(screen.getByLabelText("settings.updateInterval"), { target: { value: "24" } });

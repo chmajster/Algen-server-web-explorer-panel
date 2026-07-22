@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import re
 import secrets
 import shutil
@@ -9,6 +10,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from ...config import get_config
 from ...package_center.detached_updates import SESSION_ID_RE, read_update_state, update_session_directory, write_update_state
@@ -20,6 +22,9 @@ from .infrastructure import CommandProvider
 
 
 APT_INST_RE = re.compile(r"^Inst\s+(?P<name>[A-Za-z0-9][A-Za-z0-9+._:-]*)\s+(?:\[(?P<current>[^]]+)\]\s+)?\((?P<version>\S+)(?:\s+(?P<origin>[^)]+))?\)")
+APT_SOURCE_RE = re.compile(r"^\s*(?P<disabled>#\s*)?(?P<kind>deb(?:-src)?)\s+(?:\[(?P<options>[^]]+)\]\s+)?(?P<uri>\S+)\s+(?P<suite>\S+)(?:\s+(?P<components>.*?))?\s*$")
+REPOSITORY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+REPOSITORY_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._:/=@,-]{0,511}$")
 
 
 class LinuxUpdatesProvider(CommandProvider):
@@ -28,6 +33,211 @@ class LinuxUpdatesProvider(CommandProvider):
     @property
     def update_state_root(self) -> Path:
         return Path(get_config().paths.data_dir)
+
+    @property
+    def apt_sources_root(self) -> Path:
+        return Path("/etc/apt")
+
+    @property
+    def dnf_repositories_root(self) -> Path:
+        return Path("/etc/yum.repos.d")
+
+    @staticmethod
+    def _repository_id(manager: str, path: Path, marker: str) -> str:
+        return hashlib.sha256(f"{manager}\0{path}\0{marker}".encode()).hexdigest()[:24]
+
+    @staticmethod
+    def _repository_value(payload: dict[str, Any], key: str, *, required: bool = True, maximum: int = 512) -> str:
+        value = payload.get(key)
+        if not isinstance(value, str):
+            if required:
+                raise RuntimeError(f"Repository {key} is required")
+            return ""
+        value = value.strip()
+        if (required and not value) or len(value) > maximum or "\n" in value or "\r" in value:
+            raise RuntimeError(f"Invalid repository {key}")
+        return value
+
+    @classmethod
+    def _repository_uri(cls, payload: dict[str, Any]) -> str:
+        uri = cls._repository_value(payload, "uri")
+        parsed = urlparse(uri)
+        if parsed.scheme not in {"http", "https", "file"} or parsed.scheme != "file" and not parsed.netloc:
+            raise RuntimeError("Repository URL must use http, https, or file")
+        return uri
+
+    @staticmethod
+    def _safe_repository_path(path: Path, root: Path) -> None:
+        if path.is_symlink():
+            raise RuntimeError("Repository files cannot be symbolic links")
+        resolved_root = root.resolve()
+        resolved = path.resolve(strict=False)
+        if resolved != resolved_root and resolved_root not in resolved.parents:
+            raise RuntimeError("Repository file is outside the package manager configuration directory")
+
+    @classmethod
+    def _atomic_repository_write(cls, path: Path, content: str, root: Path) -> None:
+        cls._safe_repository_path(path, root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{secrets.token_hex(6)}.tmp")
+        try:
+            temporary.write_text(content, encoding="utf-8")
+            os.chmod(temporary, 0o644)
+            os.replace(temporary, path)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
+    def _apt_repositories(self) -> list[dict[str, Any]]:
+        root = self.apt_sources_root
+        paths = [root / "sources.list", *sorted((root / "sources.list.d").glob("*.list"))]
+        repositories: list[dict[str, Any]] = []
+        for path in paths:
+            if not path.is_file() or path.is_symlink():
+                continue
+            self._safe_repository_path(path, root)
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            occurrences: dict[str, int] = {}
+            for index, line in enumerate(lines):
+                match = APT_SOURCE_RE.match(line)
+                if not match:
+                    continue
+                raw_key = line.strip()
+                occurrence = occurrences.get(raw_key, 0)
+                occurrences[raw_key] = occurrence + 1
+                marker = f"{raw_key}\0{occurrence}"
+                repositories.append({
+                    "id": self._repository_id("apt", path, marker), "name": path.stem if path.name != "sources.list" else f"sources.list:{index + 1}",
+                    "type": match.group("kind"), "uri": match.group("uri"), "suite": match.group("suite"),
+                    "components": (match.group("components") or "").split(), "options": match.group("options") or "",
+                    "enabled": not bool(match.group("disabled")), "file": str(path), "format": "apt-list", "managed": path.name.startswith("webnas-"),
+                    "_path": path, "_line": index, "_marker": marker,
+                })
+        return repositories
+
+    def _dnf_repositories(self) -> list[dict[str, Any]]:
+        root = self.dnf_repositories_root
+        repositories: list[dict[str, Any]] = []
+        for path in sorted(root.glob("*.repo")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            self._safe_repository_path(path, root)
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            starts = [(index, match.group(1).strip()) for index, line in enumerate(lines) if (match := re.match(r"^\s*\[([^]]+)]\s*$", line))]
+            for position, (start, section) in enumerate(starts):
+                end = starts[position + 1][0] if position + 1 < len(starts) else len(lines)
+                values: dict[str, str] = {}
+                for line in lines[start + 1:end]:
+                    match = re.match(r"^\s*([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(.*?)\s*$", line)
+                    if match:
+                        values[match.group(1).lower()] = match.group(2)
+                source_key = next((key for key in ("baseurl", "metalink", "mirrorlist") if values.get(key)), "baseurl")
+                repositories.append({
+                    "id": self._repository_id("dnf", path, section), "name": values.get("name", section), "repository_id": section,
+                    "type": source_key, "uri": values.get(source_key, ""), "suite": "", "components": [], "options": "",
+                    "enabled": values.get("enabled", "1").lower() not in {"0", "false", "no"}, "gpgcheck": values.get("gpgcheck", "1").lower() not in {"0", "false", "no"},
+                    "gpgkey": values.get("gpgkey", ""), "file": str(path), "format": "dnf-repo", "managed": path.name.startswith("webnas-"),
+                    "_path": path, "_start": start, "_end": end, "_section": section, "_values": values,
+                })
+        return repositories
+
+    def _repositories(self, manager: str | None = None) -> list[dict[str, Any]]:
+        selected = manager or self._manager()
+        return self._apt_repositories() if selected == "apt-get" else self._dnf_repositories() if selected in {"dnf", "yum"} else []
+
+    def _repository(self, repository_id: Any, manager: str) -> dict[str, Any]:
+        if not isinstance(repository_id, str) or not re.fullmatch(r"[0-9a-f]{24}", repository_id):
+            raise RuntimeError("Invalid repository identifier")
+        repository = next((item for item in self._repositories(manager) if item["id"] == repository_id), None)
+        if not repository:
+            raise RuntimeError("Repository no longer exists; reload the list")
+        return repository
+
+    def _apt_source_line(self, payload: dict[str, Any], *, enabled: bool, fallback: dict[str, Any] | None = None) -> str:
+        fallback = fallback or {}
+        kind = str(payload.get("type", fallback.get("type", "deb"))).strip()
+        if kind not in {"deb", "deb-src"}:
+            raise RuntimeError("APT repository type must be deb or deb-src")
+        uri = self._repository_uri({"uri": payload.get("uri", fallback.get("uri"))})
+        suite = self._repository_value({"suite": payload.get("suite", fallback.get("suite"))}, "suite")
+        if not REPOSITORY_TOKEN_RE.fullmatch(suite):
+            raise RuntimeError("Invalid APT distribution/suite")
+        raw_components = payload.get("components", fallback.get("components", []))
+        components = raw_components.split() if isinstance(raw_components, str) else raw_components
+        if not isinstance(components, list) or any(not isinstance(value, str) or not REPOSITORY_TOKEN_RE.fullmatch(value) for value in components):
+            raise RuntimeError("Invalid APT repository components")
+        options = str(payload.get("options", fallback.get("options", ""))).strip()
+        if options and (len(options) > 512 or "[" in options or "]" in options or "\n" in options):
+            raise RuntimeError("Invalid APT repository options")
+        body = f"{kind} {'[' + options + '] ' if options else ''}{uri} {suite}{' ' + ' '.join(components) if components else ''}"
+        return body if enabled else f"# {body}"
+
+    def _write_apt_repository(self, operation: str, payload: dict[str, Any], manager: str) -> dict[str, Any]:
+        if operation == "repository_add":
+            name = self._repository_value(payload, "name", maximum=64)
+            if not REPOSITORY_NAME_RE.fullmatch(name):
+                raise RuntimeError("Repository name may contain only letters, numbers, dots, dashes, and underscores")
+            path = self.apt_sources_root / "sources.list.d" / f"webnas-{name.lower()}.list"
+            if path.exists():
+                raise RuntimeError("A repository with this name already exists")
+            content = self._apt_source_line(payload, enabled=bool(payload.get("enabled", True))) + "\n"
+            self._atomic_repository_write(path, content, self.apt_sources_root)
+            return {"name": name, "file": str(path)}
+        repository = self._repository(payload.get("repository_id"), manager)
+        path = repository["_path"]
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        index = int(repository["_line"])
+        if operation == "repository_delete":
+            del lines[index]
+        elif operation in {"repository_enable", "repository_disable"}:
+            lines[index] = self._apt_source_line({}, enabled=operation == "repository_enable", fallback=repository)
+        elif operation == "repository_update":
+            lines[index] = self._apt_source_line(payload, enabled=bool(payload.get("enabled", repository["enabled"])), fallback=repository)
+        else:
+            raise RuntimeError("Unsupported repository operation")
+        self._atomic_repository_write(path, "\n".join(lines) + ("\n" if lines else ""), self.apt_sources_root)
+        return {"name": repository["name"], "file": str(path)}
+
+    def _write_dnf_repository(self, operation: str, payload: dict[str, Any], manager: str) -> dict[str, Any]:
+        if operation == "repository_add":
+            repository_name = self._repository_value(payload, "name", maximum=64)
+            if not REPOSITORY_NAME_RE.fullmatch(repository_name):
+                raise RuntimeError("Invalid repository name")
+            path = self.dnf_repositories_root / f"webnas-{repository_name.lower()}.repo"
+            if path.exists():
+                raise RuntimeError("A repository with this name already exists")
+            uri = self._repository_uri(payload)
+            content = f"[{repository_name}]\nname={repository_name}\nbaseurl={uri}\nenabled={'1' if payload.get('enabled', True) else '0'}\ngpgcheck={'1' if payload.get('gpgcheck', True) else '0'}\n"
+            gpgkey = self._repository_value(payload, "gpgkey", required=False)
+            if gpgkey:
+                content += f"gpgkey={gpgkey}\n"
+            self._atomic_repository_write(path, content, self.dnf_repositories_root)
+            return {"name": repository_name, "file": str(path)}
+        repository = self._repository(payload.get("repository_id"), manager)
+        path = repository["_path"]
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        start, end = int(repository["_start"]), int(repository["_end"])
+        if operation == "repository_delete":
+            replacement: list[str] = []
+        else:
+            values = dict(repository["_values"])
+            if operation in {"repository_enable", "repository_disable"}:
+                values["enabled"] = "1" if operation == "repository_enable" else "0"
+            elif operation == "repository_update":
+                values.update({"name": self._repository_value(payload, "name"), "baseurl": self._repository_uri(payload), "enabled": "1" if payload.get("enabled", repository["enabled"]) else "0", "gpgcheck": "1" if payload.get("gpgcheck", repository["gpgcheck"]) else "0"})
+                values.pop("metalink", None)
+                values.pop("mirrorlist", None)
+                gpgkey = self._repository_value(payload, "gpgkey", required=False)
+                if gpgkey:
+                    values["gpgkey"] = gpgkey
+                else:
+                    values.pop("gpgkey", None)
+            else:
+                raise RuntimeError("Unsupported repository operation")
+            replacement = [f"[{repository['_section']}]", *[f"{key}={value}" for key, value in values.items()]]
+        lines[start:end] = replacement
+        self._atomic_repository_write(path, "\n".join(lines) + ("\n" if lines else ""), self.dnf_repositories_root)
+        return {"name": repository["name"], "file": str(path)}
 
     @staticmethod
     def _process_alive(pid: Any) -> bool:
@@ -211,6 +421,12 @@ class LinuxUpdatesProvider(CommandProvider):
         )
 
     def list_resources(self, resource: str, *, limit: int = 200, search: str = "") -> dict[str, Any]:
+        if resource == "repositories":
+            items = [{key: value for key, value in item.items() if not key.startswith("_")} for item in self._repositories()]
+            needle = search.lower().strip()
+            if needle:
+                items = [item for item in items if needle in " ".join(str(item.get(key, "")) for key in ("name", "uri", "suite", "file")).lower()]
+            return {"resource": resource, "items": items[:limit], "total": len(items)}
         if resource in {"packages", "security"}:
             items = self._packages()
             if resource == "security":
@@ -237,6 +453,14 @@ class LinuxUpdatesProvider(CommandProvider):
         manager = self._manager()
         if not manager:
             raise RuntimeError("A supported package manager is unavailable")
+        if operation in {"repository_add", "repository_update", "repository_enable", "repository_disable", "repository_delete"}:
+            progress(20, "Validating repository configuration")
+            if cancelled():
+                raise InterruptedError("Repository operation cancelled before execution")
+            changed = self._write_apt_repository(operation, payload, manager) if manager == "apt-get" else self._write_dnf_repository(operation, payload, manager)
+            log("stdout", f"Repository operation {operation} completed for {changed['name']}")
+            progress(95, "Repository configuration saved")
+            return {"operation": operation, "repository": changed}
         requested_session = payload.get("screen_session")
         if requested_session is not None and (not isinstance(requested_session, str) or not SESSION_ID_RE.fullmatch(requested_session)):
             raise RuntimeError("Invalid detached update session identifier")
