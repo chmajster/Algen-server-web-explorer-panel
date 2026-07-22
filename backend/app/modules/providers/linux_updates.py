@@ -28,7 +28,7 @@ REPOSITORY_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._:/=@,-]{0,511}$")
 
 
 class LinuxUpdatesProvider(CommandProvider):
-    allowed_tools = {"apt-get", "dnf", "yum"}
+    allowed_tools = {"apt-get", "apt-cache", "dnf", "yum"}
 
     @property
     def update_state_root(self) -> Path:
@@ -129,29 +129,61 @@ class LinuxUpdatesProvider(CommandProvider):
                     end += 1
                 raw_lines = lines[start:end]
                 fields: dict[str, str] = {}
+                field_comments: list[bool] = []
                 current_key = ""
                 for line in raw_lines:
-                    if line.lstrip().startswith("#"):
+                    body = line.lstrip()
+                    commented = body.startswith("#")
+                    if commented:
+                        body = body[1:].lstrip()
+                    if body[:1].isspace() and current_key:
+                        fields[current_key] = f"{fields[current_key]} {body.strip()}".strip()
                         continue
-                    if line[:1].isspace() and current_key:
-                        fields[current_key] = f"{fields[current_key]} {line.strip()}".strip()
-                        continue
-                    match = re.match(r"^([A-Za-z][A-Za-z0-9-]*):\s*(.*)$", line)
+                    match = re.match(r"^([A-Za-z][A-Za-z0-9-]*):\s*(.*)$", body)
                     if match:
                         current_key = match.group(1).lower()
                         fields[current_key] = match.group(2).strip()
-                if fields.get("uris") and fields.get("suites"):
+                        field_comments.append(commented)
+                uri_value = fields.get("uris") or fields.get("uri")
+                suite_value = fields.get("suites") or fields.get("suite")
+                if uri_value and suite_value:
                     marker = "\n".join(raw_lines)
                     signed_by = fields.get("signed-by", "")
                     repositories.append({
                         "id": self._repository_id("apt", path, marker), "name": f"{path.stem}:{start + 1}",
-                        "type": (fields.get("types") or "deb").split()[0], "uri": fields["uris"], "suite": fields["suites"],
+                        "type": (fields.get("types") or fields.get("type") or "deb").split()[0], "uri": uri_value, "suite": suite_value,
                         "components": fields.get("components", "").split(), "options": f"signed-by={signed_by}" if signed_by else "",
-                        "enabled": fields.get("enabled", "yes").lower() not in {"no", "false", "0"}, "file": str(path), "format": "apt-deb822", "managed": path.name.startswith("webnas-"),
+                        "enabled": not field_comments or not all(field_comments) and fields.get("enabled", "yes").lower() not in {"no", "false", "0"}, "file": str(path), "format": "apt-deb822", "managed": path.name.startswith("webnas-"),
                         "_path": path, "_start": start, "_end": end, "_fields": fields,
                     })
                 start = end + 1
+        repositories.extend(self._apt_index_repositories(repositories))
         return repositories
+
+    def _apt_index_repositories(self, known: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        result = self._run(["apt-cache", "policy"], timeout=30)
+        if result.returncode != 0:
+            return []
+        existing = {(str(item.get("uri", "")).rstrip("/"), str(item.get("suite", "")).split()[0], component) for item in known for component in (item.get("components") or [""])}
+        discovered: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        pattern = re.compile(r"^\s*\d+\s+((?:https?|file):\S+)\s+(\S+?)(?:/(\S+))?\s+\S+\s+Packages\s*$")
+        for line in result.stdout.splitlines():
+            match = pattern.match(line)
+            if not match:
+                continue
+            uri, suite, component = match.group(1).rstrip("/"), match.group(2), match.group(3) or ""
+            key = (uri, suite, component)
+            if key in seen or key in existing:
+                continue
+            seen.add(key)
+            host = urlparse(uri).hostname or uri
+            discovered.append({
+                "id": self._repository_id("apt-index", Path("/var/lib/apt/lists"), "\0".join(key)), "name": f"{host}/{suite}",
+                "type": "deb", "uri": uri, "suite": suite, "components": [component] if component else [], "options": "",
+                "enabled": True, "file": "", "format": "apt-index", "managed": False, "read_only": True,
+            })
+        return discovered
 
     def _dnf_repositories(self) -> list[dict[str, Any]]:
         root = self.dnf_repositories_root
