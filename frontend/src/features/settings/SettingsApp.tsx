@@ -84,6 +84,46 @@ function PasswordSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   return <Card title={t("settings.changePassword")}><form className="password-settings" onSubmit={(event) => void submit(event)}><label>{t("settings.currentPassword")}<input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} /></label><label>{t("settings.newPassword")}<input type="password" autoComplete="new-password" required minLength={8} value={next} onChange={(event) => setNext(event.target.value)} /></label><button className="button-primary" type="submit" disabled={saving}>{saving ? t("settings.saving") : t("settings.changePassword")}</button></form></Card>;
 }
 
+function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
+  const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    api.autoUpdate().then((value) => { if (live) setPolicy(value); }).catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
+    return () => { live = false; };
+  }, [t]);
+  async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "update_config">>) {
+    if (!policy) return;
+    const before = policy;
+    const next = { ...policy, ...patch };
+    setPolicy(next); setError("");
+    try {
+      setPolicy(await api.saveAutoUpdate({ check_enabled: next.check_enabled, enabled: next.enabled, interval_hours: next.interval_hours, update_config: next.update_config }));
+      toast(t("settings.saved"), "ok", "admin");
+    } catch (reason) {
+      setPolicy(before);
+      const message = reason instanceof Error ? reason.message : t("error.generic");
+      setError(message); toast(message, "error", "admin");
+    }
+  }
+  const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
+  if (!policy && !error) return <div className="loading-state">{t("status.loading")}</div>;
+  if (!policy) return <div className="error-state" role="alert">{error}</div>;
+  return <div className="settings-card-stack">
+    <Card title={t("settings.updateCheckPolicy")}>
+      <SettingRow title={t("settings.automaticUpdateChecks")} description={t("settings.automaticUpdateChecksHint")}><Switch label={t("settings.automaticUpdateChecks")} checked={policy.check_enabled} onChange={(value) => void savePolicy({ check_enabled: value })} /></SettingRow>
+      <SettingRow title={t("settings.updateInterval")} description={t("settings.updateIntervalHint")}><Select label={t("settings.updateInterval")} value={policy.interval_hours} onChange={(value) => void savePolicy({ interval_hours: Number(value) })}>{[1, 6, 12, 24, 48, 72, 168].map((hours) => <option key={hours} value={hours}>{hours < 24 ? `${hours} h` : `${hours / 24} d`}</option>)}</Select></SettingRow>
+      <dl className="settings-details"><dt>{t("settings.lastChecked")}</dt><dd>{dateTime(policy.last_checked)}</dd><dt>{t("settings.nextCheck")}</dt><dd>{policy.check_enabled ? dateTime(policy.next_check) : t("common.disabled")}</dd></dl>
+    </Card>
+    <Card title={t("settings.updateInstallPolicy")}>
+      <SettingRow title={t("settings.automaticUpdates")} description={t("settings.automaticInstallUpdatesHint")}><Switch label={t("settings.automaticUpdates")} checked={policy.enabled} onChange={(value) => void savePolicy({ enabled: value })} /></SettingRow>
+      <SettingRow title={t("settings.updateConfiguration")} description={t("settings.updateConfigurationHint")}><Switch label={t("settings.updateConfiguration")} checked={policy.update_config} onChange={(value) => void savePolicy({ update_config: value })} /></SettingRow>
+      <dl className="settings-details"><dt>{t("settings.lastUpdateRun")}</dt><dd>{dateTime(policy.last_run)}</dd></dl>
+      {policy.last_error && <p className="update-settings-error">{policy.last_error}</p>}{error && <p className="update-settings-error">{error}</p>}
+    </Card>
+  </div>;
+}
+
 function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL" | "en-US"; t: Translate; toast: ToastFn; onOpenApp: (app: AppId) => void }) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [updates, setUpdates] = useState<UpdateStatus | null>(null);
@@ -122,12 +162,6 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
     try { const value = await api.checkUpdates(); setUpdates(value); setUpdateError(value.error || ""); }
     catch (error) { setUpdateError(error instanceof Error ? error.message : t("settings.updateUnavailable")); }
     finally { setChecking(false); }
-  }
-  async function saveAutomatic(patch: Partial<Pick<AutoUpdateSettings, "enabled" | "interval_hours" | "update_config">>) {
-    if (!automatic) return;
-    const before = automatic; const next = { ...automatic, ...patch }; setAutomatic(next);
-    try { setAutomatic(await api.saveAutoUpdate({ enabled: next.enabled, interval_hours: next.interval_hours, update_config: next.update_config })); toast(t("settings.saved"), "ok", "admin"); }
-    catch (error) { setAutomatic(before); toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin"); }
   }
   async function runUpdateNow() {
     if (!window.confirm(t("settings.confirmUpdateNow"))) return;
@@ -197,14 +231,14 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
     <section className="admin-summary-grid" aria-label={t("settings.administrationOverview")}>
       <article><span className="admin-summary-icon service"><Server /></span><div><small>{t("settings.service")}</small><strong>{status?.service || "WebNAS"}</strong><span>{t("settings.version")} {status?.version || "—"}</span></div></article>
       <article><span className={`admin-summary-icon ${updateState}`}><RefreshCw /></span><div><small>{t("settings.updateStatus")}</small><strong>{updates?.update_available ? `${t("settings.updateAvailable")}: ${updates.remote?.slice(0, 12) || "—"}` : updateLabel}</strong><span>{updates?.source || t("settings.updateUnavailable")}</span></div></article>
-      <article><span className={`admin-summary-icon ${automatic?.enabled ? "success" : "neutral"}`}><CalendarClock /></span><div><small>{t("settings.automaticUpdates")}</small><strong>{automatic?.enabled ? t("common.enabled") : t("common.disabled")}</strong><span>{automatic?.enabled ? `${t("settings.nextCheck")}: ${dateTime(automatic.next_check)}` : t("settings.automaticUpdatesHint")}</span></div></article>
+      <article><span className={`admin-summary-icon ${automatic?.check_enabled ? "success" : "neutral"}`}><CalendarClock /></span><div><small>{t("settings.automaticUpdateChecks")}</small><strong>{automatic?.check_enabled ? t("common.enabled") : t("common.disabled")}</strong><span>{automatic?.check_enabled ? `${t("settings.nextCheck")}: ${dateTime(automatic.next_check)}` : t("settings.automaticUpdateChecksHint")}</span></div></article>
       <article><span className={`admin-summary-icon ${proxmox?.safe_mode_enabled ? "success" : "neutral"}`}><ShieldCheck /></span><div><small>{t("settings.proxmoxSafeMode")}</small><strong>{proxmox?.safe_mode_enabled ? t("common.enabled") : t("common.disabled")}</strong><span>{proxmox?.safe_mode_enabled ? t("settings.proxmoxProtectionActive") : t("settings.proxmoxProtectionInactive")}</span></div></article>
     </section>
     <div className="admin-content-grid">
       <Card title={t("settings.serviceInformation")}><dl className="settings-details"><dt>{t("settings.service")}</dt><dd>{status?.service || "WebNAS"}</dd><dt>{t("settings.version")}</dt><dd>{status?.version || "—"}</dd><dt>{t("settings.port")}</dt><dd>{status?.port || "—"}</dd><dt>{t("settings.dataDirectory")}</dt><dd>{status?.data_dir || "—"}</dd></dl></Card>
       <Card title={t("settings.proxmoxSafeMode")}><SettingRow title={t("settings.proxmoxDetected")} description={proxmox?.safe_mode_enabled ? t("settings.proxmoxProtectionActive") : t("settings.proxmoxProtectionInactive")}><span className={`settings-status-pill ${proxmox?.safe_mode_enabled ? "success" : "neutral"}`}>{proxmox?.is_proxmox ? t("common.yes") : t("common.no")}</span></SettingRow></Card>
     </div>
-    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}{automatic && <div className="auto-update-settings"><SettingRow title={t("settings.automaticUpdates")} description={t("settings.automaticUpdatesHint")}><Switch label={t("settings.automaticUpdates")} checked={automatic.enabled} onChange={(value) => void saveAutomatic({ enabled: value })} /></SettingRow><SettingRow title={t("settings.updateInterval")}><Select label={t("settings.updateInterval")} value={automatic.interval_hours} onChange={(value) => void saveAutomatic({ interval_hours: Number(value) })}>{[1, 6, 12, 24, 48, 72, 168].map((hours) => <option key={hours} value={hours}>{hours < 24 ? `${hours} h` : `${hours / 24} d`}</option>)}</Select></SettingRow><SettingRow title={t("settings.updateConfiguration")} description={t("settings.updateConfigurationHint")}><Switch label={t("settings.updateConfiguration")} checked={automatic.update_config} onChange={(value) => void saveAutomatic({ update_config: value })} /></SettingRow><dl className="settings-details"><dt>{t("settings.lastChecked")}</dt><dd>{dateTime(automatic.last_checked)}</dd><dt>{t("settings.lastUpdateRun")}</dt><dd>{dateTime(automatic.last_run)}</dd><dt>{t("settings.nextCheck")}</dt><dd>{automatic.enabled ? dateTime(automatic.next_check) : t("common.disabled")}</dd></dl>{automatic.last_error && <p className="update-settings-error">{automatic.last_error}</p>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></div>}</Card>
+    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
     <Card title={t("settings.administrationApps")}><p className="admin-tools-intro">{t("settings.administrationAppsHint")}</p><div className="admin-tool-links">{adminApps.map((app) => <button key={app.id} type="button" onClick={() => onOpenApp(app.id)}><span className="admin-tool-icon">{app.icon}</span><span><strong>{t(`app.${app.id}`)}</strong><small>{app.hint}</small></span><span className="admin-tool-arrow" aria-hidden="true">›</span></button>)}</div></Card>
     {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
   </div>;
@@ -226,7 +260,7 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
   const [wallpaperDraft, setWallpaperDraft] = useState(settings.wallpaper);
   const wallpaperTimer = useRef<number | null>(null);
   const saveStatusTimer = useRef<number | null>(null);
-  const categories = useMemo(() => (Object.keys(categoryIcons) as SettingsCategory[]).filter((item) => settings.is_admin || !["identity", "network", "networkResources", "administration"].includes(item)), [settings.is_admin]);
+  const categories = useMemo(() => (Object.keys(categoryIcons) as SettingsCategory[]).filter((item) => settings.is_admin || !["identity", "network", "networkResources", "policies", "administration"].includes(item)), [settings.is_admin]);
   const normalizedQuery = query.trim().toLocaleLowerCase(settings.language);
   const searchResults = useMemo(() => normalizedQuery ? categories.flatMap((item) => categorySettings[item].map((key) => ({ category: item, key, label: t(`settings.${key}`) })).filter((entry) => entry.label.toLocaleLowerCase(settings.language).includes(normalizedQuery) || t(`settings.category.${item}`).toLocaleLowerCase(settings.language).includes(normalizedQuery))) : [], [categories, normalizedQuery, settings.language, t]);
 
@@ -259,6 +293,7 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
     if (category === "identity") return <Card title={t("app.identity")}><SettingRow title={t("settings.usersAndGroups")} description={t("settings.usersAndGroupsHint")}><div className="settings-app-links"><button type="button" onClick={() => onOpenApp("identity")}><Users />{t("settings.openUsersAndGroups")}</button></div></SettingRow></Card>;
     if (category === "network") return <NetworkSettingsSection isAdmin={settings.is_admin} t={t} />;
     if (category === "networkResources") return <NetworkMountsSettingsSection isAdmin={settings.is_admin} t={t} toast={toast} />;
+    if (category === "policies") return <UpdatePoliciesSection t={t} toast={toast} />;
     if (category === "administration") return <AdministrationSection locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
     return <div className="settings-card-stack"><Card title="WebNAS"><dl className="settings-details"><dt>{t("settings.applicationName")}</dt><dd>WebNAS</dd><dt>{t("settings.version")}</dt><dd>0.1.0</dd><dt>{t("settings.frontendEnvironment")}</dt><dd>{window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "development" : "production"}</dd><dt>{t("settings.backendEnvironment")}</dt><dd>FastAPI / Linux</dd><dt>{t("settings.technologies")}</dt><dd>React · TypeScript · FastAPI · lucide-react</dd><dt>{t("settings.license")}</dt><dd>{t("settings.licenseInfo")}</dd></dl><a className="settings-repository" href="https://github.com/chmajster/Algen-server-web-explorer-panel" target="_blank" rel="noreferrer">{t("settings.repository")}</a></Card></div>;
   }
