@@ -26,6 +26,29 @@ def test_defaults_cover_every_user_preference():
     assert values["animations_enabled"] is True
 
 
+def test_update_policy_checks_every_twelve_hours_by_default():
+    state = settings._default_auto_update_state()
+
+    assert state["check_enabled"] is True
+    assert state["enabled"] is False
+    assert state["interval_hours"] == 12
+
+
+def test_scheduled_update_check_does_not_install_when_policy_requires_approval(monkeypatch):
+    state = settings._default_auto_update_state()
+    written = []
+    monkeypatch.setattr(settings, "_read_auto_update_state", lambda: dict(state))
+    monkeypatch.setattr(settings, "_update_status", lambda: {"available": True, "update_available": True})
+    monkeypatch.setattr(settings, "_write_auto_update_state", lambda value: written.append(dict(value)) or value)
+    monkeypatch.setattr(settings, "_start_update_process", lambda *args, **kwargs: pytest.fail("automatic installation must remain disabled"))
+
+    result = settings._run_auto_update_once()
+
+    assert result["update_available"] is True
+    assert result["updated"] is False
+    assert written[-1]["next_check"] - written[-1]["last_checked"] == 12 * 3600
+
+
 def test_old_settings_file_keeps_valid_fields_and_repairs_invalid_fields(monkeypatch):
     monkeypatch.setattr(settings, "_read_settings", lambda username: {
         "language": "pl-PL",
