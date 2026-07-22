@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ModuleSummary } from "../../api";
 import { ManagedModuleApp } from "./ManagedModuleApp";
@@ -109,6 +109,28 @@ describe("ManagedModuleApp", () => {
 
     expect(await screen.findByText("managed.noSecurityUpdates")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "managed.updateNow" })).toBeDisabled();
+  });
+
+  it("does not reload the visible resource during periodic status polling", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.module).mockResolvedValue(linuxSummary);
+      vi.mocked(api.moduleResource).mockResolvedValue({ resource: "packages", items: [{ name: "curl", available_version: "8.1" }], total: 1 });
+
+      render(<ManagedModuleApp moduleId="linux-updates" permissions={["modules.view", "updates.view"]} t={(key) => key} toast={vi.fn()} />);
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.click(screen.getByRole("button", { name: /managed.packages/ }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.getByText("curl")).toBeInTheDocument();
+      expect(api.moduleResource).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+      expect(api.module).toHaveBeenCalledTimes(2);
+      expect(api.moduleResource).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("curl")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("exposes resource failures with a retry instead of leaving the module loading forever", async () => {

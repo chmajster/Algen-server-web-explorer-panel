@@ -1,6 +1,6 @@
 import {
   Accessibility, AlertTriangle, Bell, CalendarClock, CheckCircle2, CircleUserRound, FileCog, FolderOpen, Info, Languages,
-  MonitorCog, Network, Palette, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal, Terminal, Users, X
+  MonitorCog, Network, Palette, RefreshCw, ScrollText, Search, Server, Settings, ShieldCheck, SlidersHorizontal, Terminal, Users, X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -13,7 +13,7 @@ import { HostInformationSection } from "./HostInformationSection";
 import { NetworkSettingsSection } from "./NetworkSettingsSection";
 import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSection";
 
-export type SettingsCategory = "system" | "personalization" | "files" | "transfers" | "notifications" | "accessibility" | "language" | "account" | "identity" | "network" | "networkResources" | "administration" | "about";
+export type SettingsCategory = "system" | "personalization" | "files" | "transfers" | "notifications" | "accessibility" | "language" | "account" | "identity" | "network" | "networkResources" | "policies" | "administration" | "about";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type UpdateDialogState = { phase: "checking" | "running" | "completed" | "failed" | "no-update"; progress: UpdateProgress | null; message: string };
 const dismissedUpdateProgressKey = "webnas.dismissed-update-progress";
@@ -21,7 +21,7 @@ const dismissedUpdateProgressKey = "webnas.dismissed-update-progress";
 const categoryIcons: Record<SettingsCategory, ReactNode> = {
   system: <MonitorCog />, personalization: <Palette />, files: <FileCog />, transfers: <RefreshCw />,
   notifications: <Bell />, accessibility: <Accessibility />, language: <Languages />, account: <CircleUserRound />,
-  identity: <Users />, network: <Network />, networkResources: <FolderOpen />, administration: <ShieldCheck />, about: <Info />,
+  identity: <Users />, network: <Network />, networkResources: <FolderOpen />, policies: <ScrollText />, administration: <ShieldCheck />, about: <Info />,
 };
 
 export function isSettingsCategory(value: string | undefined): value is SettingsCategory {
@@ -36,7 +36,7 @@ const categorySettings: Record<SettingsCategory, string[]> = {
   notifications: ["notificationsEnabled", "transferNotifications", "errorNotifications", "adminNotifications", "notificationLimit", "notificationAutoHide"],
   accessibility: ["interfaceScale", "largerText", "reduceMotion", "highContrast", "strongActiveBorders", "alwaysShowFocus"],
   language: ["language", "dateFormat", "timeFormat", "firstDayOfWeek"], account: ["username", "groups", "changePassword"],
-  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], administration: ["serviceInformation", "updates", "automaticUpdates", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
+  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration"], administration: ["serviceInformation", "updates", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
 };
 
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {

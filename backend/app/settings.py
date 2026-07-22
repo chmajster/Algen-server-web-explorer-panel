@@ -303,8 +303,9 @@ class UpdateAction(AdminSessionAction):
 
 
 class AutoUpdatePatch(AdminSessionAction):
+    check_enabled: bool = True
     enabled: bool
-    interval_hours: int = Field(default=24, ge=1, le=168)
+    interval_hours: int = Field(default=12, ge=1, le=168)
     update_config: bool = False
 
 
@@ -499,8 +500,9 @@ def _update_progress_path() -> Path:
 
 def _default_auto_update_state() -> dict:
     return {
+        "check_enabled": True,
         "enabled": False,
-        "interval_hours": 24,
+        "interval_hours": 12,
         "update_config": False,
         "last_checked": None,
         "last_run": None,
@@ -774,7 +776,7 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
         state = _read_auto_update_state()
         now = time.time()
         if not force:
-            if not state.get("enabled"):
+            if not state.get("check_enabled"):
                 return {"ok": True, "skipped": True, "reason": "disabled"}
             next_check = state.get("next_check")
             if next_check and float(next_check) > now:
@@ -782,7 +784,7 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
         state["last_checked"] = now
         try:
             status = _update_status()
-            interval = max(1, int(state.get("interval_hours") or 24))
+            interval = max(1, int(state.get("interval_hours") or 12))
             if not status.get("available", True):
                 state.update({"last_error": status.get("error") or "Update status unavailable", "next_check": now + 3600})
                 _write_auto_update_state(state)
@@ -793,6 +795,10 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
                 state.update({"last_error": "", "next_check": now + interval * 3600})
                 _write_auto_update_state(state)
                 return {"ok": True, "updated": False, "status": status}
+            if not force and not state.get("enabled"):
+                state.update({"last_error": "", "next_check": now + interval * 3600})
+                _write_auto_update_state(state)
+                return {"ok": True, "updated": False, "update_available": True, "status": status}
             result = _start_update_process(bool(state.get("update_config") if update_config is None else update_config), actor=actor)
             state.update({
                 "last_run": now,
@@ -1282,13 +1288,14 @@ def admin_auto_update_patch(payload: AutoUpdatePatch, request: Request, user: Se
     now = time.time()
     state = _read_auto_update_state()
     state.update({
+        "check_enabled": payload.check_enabled,
         "enabled": payload.enabled,
         "interval_hours": payload.interval_hours,
         "update_config": payload.update_config,
-        "next_check": now + payload.interval_hours * 3600 if payload.enabled else None,
+        "next_check": now + payload.interval_hours * 3600 if payload.check_enabled else None,
         "last_error": "",
     })
-    _audit(user.username, "configure_auto_update", f"enabled={payload.enabled}")
+    _audit(user.username, "configure_auto_update", f"checking={payload.check_enabled} install={payload.enabled} interval={payload.interval_hours}h")
     return _write_auto_update_state(state)
 
 

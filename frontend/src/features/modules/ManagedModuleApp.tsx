@@ -32,6 +32,9 @@ export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId
   const resourceRequest = useRef(0);
   const canOperate = useMemo(() => moduleId === "linux-updates" ? permissions.includes("updates.apply") : moduleId === "docker" ? permissions.includes("docker.manage_containers") : ["pihole", "adguard-home"].includes(moduleId) ? permissions.includes("dns.configure") : moduleId === "home-assistant" ? permissions.includes("homeassistant.operate") : permissions.includes("modules.configure") || permissions.includes("databases.backup"), [moduleId, permissions]);
   const canConfigure = moduleId === "docker" ? permissions.includes("docker.manage_compose") : canOperate;
+  const requestedResource = section === "security_config" ? "security" : section;
+  const summaryReady = summary !== null;
+  const requestedResourceSupported = summary?.capabilities.resources.includes(requestedResource) ?? false;
   const refresh = useCallback(async () => { try { const data = await api.module(moduleId); setSummary(data); setStatus(data.module_status); setJob(data.active_job || null); } catch (error) { toast(message(error, t), "error", "admin"); } }, [moduleId, t, toast]);
   const loadResource = useCallback(async (name: string, query = "") => {
     const request = ++resourceRequest.current;
@@ -48,16 +51,15 @@ export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId
   }, [moduleId, t, toast]);
   useEffect(() => { void refresh(); const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 4000); return () => window.clearInterval(timer); }, [refresh]);
   useEffect(() => {
-    if (!summary) return;
-    const requested = section === "security_config" ? "security" : section;
-    if (moduleId === "docker" && requested === "logs" && !search) { setResource({ resource: "logs", items: [], total: 0 }); setResourceLoading(false); setResourceError(""); return; }
-    if (summary.capabilities.resources.includes(requested)) {
-      const timer = window.setTimeout(() => void loadResource(requested, search), search ? 300 : 0);
+    if (!summaryReady) return;
+    if (moduleId === "docker" && requestedResource === "logs" && !search) { setResource({ resource: "logs", items: [], total: 0 }); setResourceLoading(false); setResourceError(""); return; }
+    if (requestedResourceSupported) {
+      const timer = window.setTimeout(() => void loadResource(requestedResource, search), search ? 300 : 0);
       return () => window.clearTimeout(timer);
     }
     if (section === "diagnostics") void api.moduleDiagnostics(moduleId).then((data) => setDiagnostics(data.diagnostics));
     else if (section === "backups") void api.moduleBackups(moduleId).then(setBackups);
-  }, [loadResource, moduleId, search, section, summary]);
+  }, [loadResource, moduleId, requestedResource, requestedResourceSupported, search, section, summaryReady]);
   if (!summary) return <div className="loading-state">{t("status.loading")}</div>;
   const resourceNames = summary.capabilities.resources.map((name) => name === "security" && moduleId === "redis" ? "security_config" : name);
   const sections = ["overview", ...resourceNames, ...(summary.capabilities.service_control ? ["service"] : []), ...(summary.capabilities.logs ? ["journal"] : []), ...(summary.capabilities.diagnostics ? ["diagnostics"] : []), ...(summary.capabilities.backups ? ["backups"] : []), ...(["pihole", "adguard-home", "home-assistant"].includes(moduleId) ? ["connection"] : [])];

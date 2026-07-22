@@ -174,6 +174,7 @@ export type UpdateStatus = { branch: string; local: string; remote: string; inst
 export type UpdateStart = { ok: boolean; pid: number; log: string };
 export type UpdateProgress = { state: "idle" | "running" | "completed" | "failed"; running: boolean; pid: number | null; unit?: string | null; exit_code: number | null; started_at: number | null; finished_at: number | null; log: string; lines: string[] };
 export type AutoUpdateSettings = {
+  check_enabled: boolean;
   enabled: boolean;
   interval_hours: number;
   update_config: boolean;
@@ -884,7 +885,7 @@ export const api = {
   updateProgress: () => request<UpdateProgress>("/api/admin/system/updates/progress"),
   downloadUpdates: (update_config = false) => request<UpdateStart>("/api/admin/system/updates/download", { method: "POST", body: JSON.stringify({ update_config }) }),
   autoUpdate: () => request<AutoUpdateSettings>("/api/admin/system/updates/auto"),
-  saveAutoUpdate: (payload: { enabled: boolean; interval_hours: number; update_config: boolean }) => request<AutoUpdateSettings>("/api/admin/system/updates/auto", { method: "PATCH", body: JSON.stringify(payload) }),
+  saveAutoUpdate: (payload: { check_enabled: boolean; enabled: boolean; interval_hours: number; update_config: boolean }) => request<AutoUpdateSettings>("/api/admin/system/updates/auto", { method: "PATCH", body: JSON.stringify(payload) }),
   runAutoUpdate: (update_config = false) => request<UpdateStart & { updated?: boolean; skipped?: boolean; reason?: string }>("/api/admin/system/updates/auto/run", { method: "POST", body: JSON.stringify({ update_config }) }),
   systemdServices: () => request<SystemdService[]>("/api/admin/system/services"),
   systemdServiceAction: (service: string, action: "start" | "stop" | "restart" | "enable" | "disable", confirm_restart = false) => request<SystemdService>(`/api/admin/system/services/${encodeURIComponent(service)}/${action}`, { method: "POST", body: JSON.stringify({ confirm_restart }) }),
