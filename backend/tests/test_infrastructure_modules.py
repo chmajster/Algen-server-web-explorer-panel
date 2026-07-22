@@ -253,6 +253,19 @@ def test_linux_updates_manages_dnf_repository_sections(monkeypatch, tmp_path: Pa
     assert "enabled=0" in source.read_text(encoding="utf-8")
 
 
+def test_linux_updates_falls_back_to_repositories_reported_by_apt(monkeypatch, tmp_path: Path):
+    root = tmp_path / "apt"
+    (root / "sources.list.d").mkdir(parents=True)
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(LinuxUpdatesProvider, "apt_sources_root", property(lambda self: root))
+    monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
+    monkeypatch.setattr(provider, "_run", lambda args, **kwargs: subprocess.CompletedProcess(args, 0, " 500 https://packages.example.test/debian stable/main amd64 Packages\n", ""))
+
+    repositories = provider.list_resources("repositories")["items"]
+
+    assert repositories == [{"id": repositories[0]["id"], "name": "packages.example.test/stable", "type": "deb", "uri": "https://packages.example.test/debian", "suite": "stable", "components": ["main"], "options": "", "enabled": True, "file": "", "format": "apt-index", "managed": False, "read_only": True}]
+
+
 def test_linux_update_refresh_retries_without_unsubscribed_proxmox_enterprise(monkeypatch, tmp_path: Path):
     source_root = tmp_path / "apt"
     parts = source_root / "sources.list.d"

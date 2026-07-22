@@ -132,11 +132,12 @@ class LinuxUpdatesProvider(CommandProvider):
                 field_comments: list[bool] = []
                 current_key = ""
                 for line in raw_lines:
+                    continuation = bool(line[:1].isspace())
                     body = line.lstrip()
                     commented = body.startswith("#")
                     if commented:
                         body = body[1:].lstrip()
-                    if body[:1].isspace() and current_key:
+                    if continuation and not commented and current_key:
                         fields[current_key] = f"{fields[current_key]} {body.strip()}".strip()
                         continue
                     match = re.match(r"^([A-Za-z][A-Za-z0-9-]*):\s*(.*)$", body)
@@ -537,7 +538,7 @@ class LinuxUpdatesProvider(CommandProvider):
             needle = search.lower().strip()
             if needle:
                 items = [item for item in items if needle in " ".join(str(item.get(key, "")) for key in ("name", "uri", "suite", "file")).lower()]
-            return {"resource": resource, "items": items[:limit], "total": len(items)}
+            return {"resource": resource, "items": items[:limit], "total": len(items), "package_manager": self._manager(), "scanned_paths": [str(self.apt_sources_root / "sources.list"), str(self.apt_sources_root / "sources.list.d")] if self._manager() == "apt-get" else [str(self.dnf_repositories_root)]}
         if resource in {"packages", "security"}:
             items = self._packages()
             if resource == "security":
