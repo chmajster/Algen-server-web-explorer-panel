@@ -221,7 +221,7 @@ def test_linux_updates_manages_deb822_repository_stanzas(monkeypatch, tmp_path: 
     parts = root / "sources.list.d"
     parts.mkdir(parents=True)
     source = parts / "debian.sources"
-    source.write_text("Types: deb\nURIs: https://deb.debian.org/debian\nSuites: bookworm bookworm-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\n", encoding="utf-8")
+    source.write_text("Types: deb\nURIs: https://deb.debian.org/debian\nSuites: bookworm bookworm-updates\nComponents: main\nArchitectures: amd64 arm64\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\n", encoding="utf-8")
     provider = LinuxUpdatesProvider("linux-updates")
     monkeypatch.setattr(LinuxUpdatesProvider, "apt_sources_root", property(lambda self: root))
     monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
@@ -234,6 +234,7 @@ def test_linux_updates_manages_deb822_repository_stanzas(monkeypatch, tmp_path: 
     disabled = provider.list_resources("repositories")["items"][0]
     assert disabled["enabled"] is False
     assert "Enabled: no" in source.read_text(encoding="utf-8")
+    assert "Architectures: amd64 arm64" in source.read_text(encoding="utf-8")
 
 
 def test_linux_updates_manages_dnf_repository_sections(monkeypatch, tmp_path: Path):
@@ -253,17 +254,25 @@ def test_linux_updates_manages_dnf_repository_sections(monkeypatch, tmp_path: Pa
     assert "enabled=0" in source.read_text(encoding="utf-8")
 
 
-def test_linux_updates_falls_back_to_repositories_reported_by_apt(monkeypatch, tmp_path: Path):
-    root = tmp_path / "apt"
-    (root / "sources.list.d").mkdir(parents=True)
+def test_linux_updates_manages_repositories_from_apt_configured_locations(monkeypatch, tmp_path: Path):
+    source_list = tmp_path / "custom" / "main.list"
+    source_parts = tmp_path / "custom" / "fragments"
+    source_parts.mkdir(parents=True)
+    source_list.write_text("deb https://packages.example.test/debian stable main\n", encoding="utf-8")
     provider = LinuxUpdatesProvider("linux-updates")
-    monkeypatch.setattr(LinuxUpdatesProvider, "apt_sources_root", property(lambda self: root))
+    monkeypatch.setattr(LinuxUpdatesProvider, "apt_sources_root", property(lambda self: Path("/etc/apt")))
     monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
-    monkeypatch.setattr(provider, "_run", lambda args, **kwargs: subprocess.CompletedProcess(args, 0, " 500 https://packages.example.test/debian stable/main amd64 Packages\n", ""))
+    monkeypatch.setattr("app.modules.providers.linux_updates.shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(provider, "_run", lambda args, **kwargs: subprocess.CompletedProcess(args, 0, f"WEBNAS_SOURCE_LIST='{source_list}'\nWEBNAS_SOURCE_PARTS='{source_parts}'\n", ""))
 
     repositories = provider.list_resources("repositories")["items"]
+    repository = repositories[0]
+    assert repository["file"] == str(source_list)
+    assert repository["uri"] == "https://packages.example.test/debian"
 
-    assert repositories == [{"id": repositories[0]["id"], "name": "packages.example.test/stable", "type": "deb", "uri": "https://packages.example.test/debian", "suite": "stable", "components": ["main"], "options": "", "enabled": True, "file": "", "format": "apt-index", "managed": False, "read_only": True}]
+    provider.manage("repository_disable", {"repository_id": repository["id"]}, "admin", lambda *_: None, lambda *_: None, lambda: False)
+
+    assert source_list.read_text(encoding="utf-8").startswith("# deb ")
 
 
 def test_linux_update_refresh_retries_without_unsubscribed_proxmox_enterprise(monkeypatch, tmp_path: Path):

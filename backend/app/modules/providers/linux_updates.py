@@ -28,7 +28,7 @@ REPOSITORY_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._:/=@,-]{0,511}$")
 
 
 class LinuxUpdatesProvider(CommandProvider):
-    allowed_tools = {"apt-get", "apt-cache", "dnf", "yum"}
+    allowed_tools = {"apt-get", "apt-config", "dnf", "yum"}
 
     @property
     def update_state_root(self) -> Path:
@@ -88,14 +88,35 @@ class LinuxUpdatesProvider(CommandProvider):
             if temporary.exists():
                 temporary.unlink()
 
-    def _apt_repositories(self) -> list[dict[str, Any]]:
+    def _apt_source_locations(self) -> tuple[Path, Path]:
+        """Return the source file and fragments directory actually used by APT."""
         root = self.apt_sources_root
-        paths = [root / "sources.list", *sorted((root / "sources.list.d").glob("*.list"))]
+        if root != Path("/etc/apt") or not shutil.which("apt-config"):
+            return root / "sources.list", root / "sources.list.d"
+        result = self._run([
+            "apt-config", "shell",
+            "WEBNAS_SOURCE_LIST", "Dir::Etc::sourcelist/f",
+            "WEBNAS_SOURCE_PARTS", "Dir::Etc::sourceparts/d",
+        ], timeout=10)
+        values: dict[str, str] = {}
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                match = re.fullmatch(r"([A-Z_]+)='([^'\r\n]*)'", line.strip())
+                if match:
+                    values[match.group(1)] = match.group(2)
+        source_list = Path(values.get("WEBNAS_SOURCE_LIST", str(root / "sources.list")))
+        source_parts = Path(values.get("WEBNAS_SOURCE_PARTS", str(root / "sources.list.d")))
+        return source_list, source_parts
+
+    def _apt_repositories(self) -> list[dict[str, Any]]:
+        source_list, source_parts = self._apt_source_locations()
+        paths = [source_list, *sorted(source_parts.glob("*.list"))]
         repositories: list[dict[str, Any]] = []
         for path in paths:
             if not path.is_file() or path.is_symlink():
                 continue
-            self._safe_repository_path(path, root)
+            safe_root = path.parent if path == source_list else source_parts
+            self._safe_repository_path(path, safe_root)
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
             occurrences: dict[str, int] = {}
             for index, line in enumerate(lines):
@@ -111,12 +132,12 @@ class LinuxUpdatesProvider(CommandProvider):
                     "type": match.group("kind"), "uri": match.group("uri"), "suite": match.group("suite"),
                     "components": (match.group("components") or "").split(), "options": match.group("options") or "",
                     "enabled": not bool(match.group("disabled")), "file": str(path), "format": "apt-list", "managed": path.name.startswith("webnas-"),
-                    "_path": path, "_line": index, "_marker": marker,
+                    "_path": path, "_root": safe_root, "_line": index, "_marker": marker,
                 })
-        for path in sorted((root / "sources.list.d").glob("*.sources")):
+        for path in sorted(source_parts.glob("*.sources")):
             if not path.is_file() or path.is_symlink():
                 continue
-            self._safe_repository_path(path, root)
+            self._safe_repository_path(path, source_parts)
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
             start = 0
             while start < len(lines):
@@ -155,36 +176,10 @@ class LinuxUpdatesProvider(CommandProvider):
                         "type": (fields.get("types") or fields.get("type") or "deb").split()[0], "uri": uri_value, "suite": suite_value,
                         "components": fields.get("components", "").split(), "options": f"signed-by={signed_by}" if signed_by else "",
                         "enabled": not field_comments or not all(field_comments) and fields.get("enabled", "yes").lower() not in {"no", "false", "0"}, "file": str(path), "format": "apt-deb822", "managed": path.name.startswith("webnas-"),
-                        "_path": path, "_start": start, "_end": end, "_fields": fields,
+                        "_path": path, "_root": source_parts, "_start": start, "_end": end, "_fields": fields,
                     })
                 start = end + 1
-        repositories.extend(self._apt_index_repositories(repositories))
         return repositories
-
-    def _apt_index_repositories(self, known: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        result = self._run(["apt-cache", "policy"], timeout=30)
-        if result.returncode != 0:
-            return []
-        existing = {(str(item.get("uri", "")).rstrip("/"), str(item.get("suite", "")).split()[0], component) for item in known for component in (item.get("components") or [""])}
-        discovered: list[dict[str, Any]] = []
-        seen: set[tuple[str, str, str]] = set()
-        pattern = re.compile(r"^\s*\d+\s+((?:https?|file):\S+)\s+(\S+?)(?:/(\S+))?\s+\S+\s+Packages\s*$")
-        for line in result.stdout.splitlines():
-            match = pattern.match(line)
-            if not match:
-                continue
-            uri, suite, component = match.group(1).rstrip("/"), match.group(2), match.group(3) or ""
-            key = (uri, suite, component)
-            if key in seen or key in existing:
-                continue
-            seen.add(key)
-            host = urlparse(uri).hostname or uri
-            discovered.append({
-                "id": self._repository_id("apt-index", Path("/var/lib/apt/lists"), "\0".join(key)), "name": f"{host}/{suite}",
-                "type": "deb", "uri": uri, "suite": suite, "components": [component] if component else [], "options": "",
-                "enabled": True, "file": "", "format": "apt-index", "managed": False, "read_only": True,
-            })
-        return discovered
 
     def _dnf_repositories(self) -> list[dict[str, Any]]:
         root = self.dnf_repositories_root
@@ -263,24 +258,37 @@ class LinuxUpdatesProvider(CommandProvider):
         signed_by = raw_options.removeprefix("signed-by=").strip() if raw_options else ""
         if signed_by and (not signed_by.startswith(("/etc/apt/keyrings/", "/usr/share/keyrings/")) or any(value in signed_by for value in ("\n", "\r", ".."))):
             raise RuntimeError("APT Signed-By must reference /etc/apt/keyrings or /usr/share/keyrings")
-        lines = [f"Types: {kind}", f"URIs: {' '.join(raw_uris)}", f"Suites: {' '.join(suites)}"]
+        fields = dict(fallback.get("_fields", {}))
+        fields.pop("type", None)
+        fields.pop("uri", None)
+        fields.pop("suite", None)
+        fields.update({"types": kind, "uris": " ".join(raw_uris), "suites": " ".join(suites)})
         if components:
-            lines.append(f"Components: {' '.join(components)}")
+            fields["components"] = " ".join(components)
+        else:
+            fields.pop("components", None)
         if signed_by:
-            lines.append(f"Signed-By: {signed_by}")
-        lines.append(f"Enabled: {'yes' if enabled else 'no'}")
-        return lines
+            fields["signed-by"] = signed_by
+        elif "options" in payload:
+            fields.pop("signed-by", None)
+        fields["enabled"] = "yes" if enabled else "no"
+        labels = {"types": "Types", "uris": "URIs", "suites": "Suites", "components": "Components", "signed-by": "Signed-By", "enabled": "Enabled"}
+        ordered = [key for key in ("types", "uris", "suites", "components", "signed-by") if key in fields]
+        ordered.extend(key for key in fields if key not in ordered and key != "enabled")
+        ordered.append("enabled")
+        return [f"{labels.get(key, '-'.join(part.capitalize() for part in key.split('-')))}: {fields[key]}" for key in ordered]
 
     def _write_apt_repository(self, operation: str, payload: dict[str, Any], manager: str) -> dict[str, Any]:
         if operation == "repository_add":
             name = self._repository_value(payload, "name", maximum=64)
             if not REPOSITORY_NAME_RE.fullmatch(name):
                 raise RuntimeError("Repository name may contain only letters, numbers, dots, dashes, and underscores")
-            path = self.apt_sources_root / "sources.list.d" / f"webnas-{name.lower()}.list"
+            _, source_parts = self._apt_source_locations()
+            path = source_parts / f"webnas-{name.lower()}.list"
             if path.exists():
                 raise RuntimeError("A repository with this name already exists")
             content = self._apt_source_line(payload, enabled=bool(payload.get("enabled", True))) + "\n"
-            self._atomic_repository_write(path, content, self.apt_sources_root)
+            self._atomic_repository_write(path, content, source_parts)
             return {"name": name, "file": str(path)}
         repository = self._repository(payload.get("repository_id"), manager)
         path = repository["_path"]
@@ -296,7 +304,7 @@ class LinuxUpdatesProvider(CommandProvider):
             else:
                 raise RuntimeError("Unsupported repository operation")
             lines[start:end] = replacement
-            self._atomic_repository_write(path, "\n".join(lines) + ("\n" if lines else ""), self.apt_sources_root)
+            self._atomic_repository_write(path, "\n".join(lines) + ("\n" if lines else ""), repository["_root"])
             return {"name": repository["name"], "file": str(path)}
         index = int(repository["_line"])
         if operation == "repository_delete":
@@ -307,7 +315,7 @@ class LinuxUpdatesProvider(CommandProvider):
             lines[index] = self._apt_source_line(payload, enabled=bool(payload.get("enabled", repository["enabled"])), fallback=repository)
         else:
             raise RuntimeError("Unsupported repository operation")
-        self._atomic_repository_write(path, "\n".join(lines) + ("\n" if lines else ""), self.apt_sources_root)
+        self._atomic_repository_write(path, "\n".join(lines) + ("\n" if lines else ""), repository["_root"])
         return {"name": repository["name"], "file": str(path)}
 
     def _write_dnf_repository(self, operation: str, payload: dict[str, Any], manager: str) -> dict[str, Any]:
@@ -538,7 +546,13 @@ class LinuxUpdatesProvider(CommandProvider):
             needle = search.lower().strip()
             if needle:
                 items = [item for item in items if needle in " ".join(str(item.get(key, "")) for key in ("name", "uri", "suite", "file")).lower()]
-            return {"resource": resource, "items": items[:limit], "total": len(items), "package_manager": self._manager(), "scanned_paths": [str(self.apt_sources_root / "sources.list"), str(self.apt_sources_root / "sources.list.d")] if self._manager() == "apt-get" else [str(self.dnf_repositories_root)]}
+            manager = self._manager()
+            if manager == "apt-get":
+                source_list, source_parts = self._apt_source_locations()
+                scanned_paths = [str(source_list), str(source_parts)]
+            else:
+                scanned_paths = [str(self.dnf_repositories_root)]
+            return {"resource": resource, "items": items[:limit], "total": len(items), "package_manager": manager, "scanned_paths": scanned_paths}
         if resource in {"packages", "security"}:
             items = self._packages()
             if resource == "security":
