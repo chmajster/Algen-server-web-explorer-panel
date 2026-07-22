@@ -216,6 +216,43 @@ def test_linux_repository_operations_reject_unknown_ids_and_unsafe_urls(monkeypa
         provider.manage("repository_delete", {"repository_id": "../../shadow"}, "admin", lambda *_: None, lambda *_: None, lambda: False)
 
 
+def test_linux_updates_manages_deb822_repository_stanzas(monkeypatch, tmp_path: Path):
+    root = tmp_path / "apt"
+    parts = root / "sources.list.d"
+    parts.mkdir(parents=True)
+    source = parts / "debian.sources"
+    source.write_text("Types: deb\nURIs: https://deb.debian.org/debian\nSuites: bookworm bookworm-updates\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\n", encoding="utf-8")
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(LinuxUpdatesProvider, "apt_sources_root", property(lambda self: root))
+    monkeypatch.setattr(provider, "_manager", lambda: "apt-get")
+
+    repository = provider.list_resources("repositories")["items"][0]
+    assert repository["format"] == "apt-deb822"
+    assert repository["suite"] == "bookworm bookworm-updates"
+    provider.manage("repository_disable", {"repository_id": repository["id"]}, "admin", lambda *_: None, lambda *_: None, lambda: False)
+
+    disabled = provider.list_resources("repositories")["items"][0]
+    assert disabled["enabled"] is False
+    assert "Enabled: no" in source.read_text(encoding="utf-8")
+
+
+def test_linux_updates_manages_dnf_repository_sections(monkeypatch, tmp_path: Path):
+    root = tmp_path / "repos"
+    root.mkdir()
+    source = root / "fedora.repo"
+    source.write_text("[updates]\nname=Fedora Updates\nmetalink=https://mirrors.fedoraproject.org/metalink\nenabled=1\ngpgcheck=1\n", encoding="utf-8")
+    provider = LinuxUpdatesProvider("linux-updates")
+    monkeypatch.setattr(LinuxUpdatesProvider, "dnf_repositories_root", property(lambda self: root))
+    monkeypatch.setattr(provider, "_manager", lambda: "dnf")
+
+    repository = provider.list_resources("repositories")["items"][0]
+    assert repository["type"] == "metalink"
+    provider.manage("repository_disable", {"repository_id": repository["id"]}, "admin", lambda *_: None, lambda *_: None, lambda: False)
+
+    assert provider.list_resources("repositories")["items"][0]["enabled"] is False
+    assert "enabled=0" in source.read_text(encoding="utf-8")
+
+
 def test_linux_update_refresh_retries_without_unsubscribed_proxmox_enterprise(monkeypatch, tmp_path: Path):
     source_root = tmp_path / "apt"
     parts = source_root / "sources.list.d"

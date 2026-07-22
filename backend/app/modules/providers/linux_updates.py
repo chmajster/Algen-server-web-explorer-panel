@@ -113,6 +113,44 @@ class LinuxUpdatesProvider(CommandProvider):
                     "enabled": not bool(match.group("disabled")), "file": str(path), "format": "apt-list", "managed": path.name.startswith("webnas-"),
                     "_path": path, "_line": index, "_marker": marker,
                 })
+        for path in sorted((root / "sources.list.d").glob("*.sources")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            self._safe_repository_path(path, root)
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            start = 0
+            while start < len(lines):
+                while start < len(lines) and not lines[start].strip():
+                    start += 1
+                if start >= len(lines):
+                    break
+                end = start
+                while end < len(lines) and lines[end].strip():
+                    end += 1
+                raw_lines = lines[start:end]
+                fields: dict[str, str] = {}
+                current_key = ""
+                for line in raw_lines:
+                    if line.lstrip().startswith("#"):
+                        continue
+                    if line[:1].isspace() and current_key:
+                        fields[current_key] = f"{fields[current_key]} {line.strip()}".strip()
+                        continue
+                    match = re.match(r"^([A-Za-z][A-Za-z0-9-]*):\s*(.*)$", line)
+                    if match:
+                        current_key = match.group(1).lower()
+                        fields[current_key] = match.group(2).strip()
+                if fields.get("uris") and fields.get("suites"):
+                    marker = "\n".join(raw_lines)
+                    signed_by = fields.get("signed-by", "")
+                    repositories.append({
+                        "id": self._repository_id("apt", path, marker), "name": f"{path.stem}:{start + 1}",
+                        "type": (fields.get("types") or "deb").split()[0], "uri": fields["uris"], "suite": fields["suites"],
+                        "components": fields.get("components", "").split(), "options": f"signed-by={signed_by}" if signed_by else "",
+                        "enabled": fields.get("enabled", "yes").lower() not in {"no", "false", "0"}, "file": str(path), "format": "apt-deb822", "managed": path.name.startswith("webnas-"),
+                        "_path": path, "_start": start, "_end": end, "_fields": fields,
+                    })
+                start = end + 1
         return repositories
 
     def _dnf_repositories(self) -> list[dict[str, Any]]:
@@ -172,6 +210,34 @@ class LinuxUpdatesProvider(CommandProvider):
         body = f"{kind} {'[' + options + '] ' if options else ''}{uri} {suite}{' ' + ' '.join(components) if components else ''}"
         return body if enabled else f"# {body}"
 
+    def _apt_deb822_lines(self, payload: dict[str, Any], *, enabled: bool, fallback: dict[str, Any]) -> list[str]:
+        kind = str(payload.get("type", fallback.get("type", "deb"))).strip()
+        if kind not in {"deb", "deb-src"}:
+            raise RuntimeError("APT repository type must be deb or deb-src")
+        raw_uris = str(payload.get("uri", fallback.get("uri", ""))).split()
+        if not raw_uris:
+            raise RuntimeError("Repository uri is required")
+        for uri in raw_uris:
+            self._repository_uri({"uri": uri})
+        suites = str(payload.get("suite", fallback.get("suite", ""))).split()
+        if not suites or any(not REPOSITORY_TOKEN_RE.fullmatch(value) for value in suites):
+            raise RuntimeError("Invalid APT distribution/suite")
+        raw_components = payload.get("components", fallback.get("components", []))
+        components = raw_components.split() if isinstance(raw_components, str) else raw_components
+        if not isinstance(components, list) or any(not isinstance(value, str) or not REPOSITORY_TOKEN_RE.fullmatch(value) for value in components):
+            raise RuntimeError("Invalid APT repository components")
+        raw_options = str(payload.get("options", fallback.get("options", ""))).strip()
+        signed_by = raw_options.removeprefix("signed-by=").strip() if raw_options else ""
+        if signed_by and (not signed_by.startswith(("/etc/apt/keyrings/", "/usr/share/keyrings/")) or any(value in signed_by for value in ("\n", "\r", ".."))):
+            raise RuntimeError("APT Signed-By must reference /etc/apt/keyrings or /usr/share/keyrings")
+        lines = [f"Types: {kind}", f"URIs: {' '.join(raw_uris)}", f"Suites: {' '.join(suites)}"]
+        if components:
+            lines.append(f"Components: {' '.join(components)}")
+        if signed_by:
+            lines.append(f"Signed-By: {signed_by}")
+        lines.append(f"Enabled: {'yes' if enabled else 'no'}")
+        return lines
+
     def _write_apt_repository(self, operation: str, payload: dict[str, Any], manager: str) -> dict[str, Any]:
         if operation == "repository_add":
             name = self._repository_value(payload, "name", maximum=64)
@@ -186,6 +252,19 @@ class LinuxUpdatesProvider(CommandProvider):
         repository = self._repository(payload.get("repository_id"), manager)
         path = repository["_path"]
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if repository["format"] == "apt-deb822":
+            start, end = int(repository["_start"]), int(repository["_end"])
+            if operation == "repository_delete":
+                replacement: list[str] = []
+            elif operation in {"repository_enable", "repository_disable"}:
+                replacement = self._apt_deb822_lines({}, enabled=operation == "repository_enable", fallback=repository)
+            elif operation == "repository_update":
+                replacement = self._apt_deb822_lines(payload, enabled=bool(payload.get("enabled", repository["enabled"])), fallback=repository)
+            else:
+                raise RuntimeError("Unsupported repository operation")
+            lines[start:end] = replacement
+            self._atomic_repository_write(path, "\n".join(lines) + ("\n" if lines else ""), self.apt_sources_root)
+            return {"name": repository["name"], "file": str(path)}
         index = int(repository["_line"])
         if operation == "repository_delete":
             del lines[index]
