@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ModuleSummary } from "../../api";
 import { ManagedModuleApp } from "./ManagedModuleApp";
@@ -84,8 +84,12 @@ describe("ManagedModuleApp", () => {
     await screen.findByText("openssl");
     expect(screen.getByText("managed.detachedUpdateHint")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "managed.updateNow" }));
+    expect(screen.getByText("managed.confirm.securityTitle")).toBeInTheDocument();
+    expect(screen.getByText("managed.confirm.scopeSecurity")).toBeInTheDocument();
+    expect(screen.getByText("managed.confirm.background")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("1")).toBeInTheDocument();
     expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "managed.confirm.installSecurity" }));
 
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "upgrade_security", {}));
   });
@@ -153,7 +157,8 @@ describe("ManagedModuleApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: /managed.packages/ }));
     await screen.findByText("curl");
     fireEvent.click(screen.getByRole("button", { name: "managed.refreshMetadata" }));
-    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+    expect(screen.getByText("managed.confirm.refreshIntro")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "managed.confirm.checkRepositories" }));
 
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "refresh", {}));
   });

@@ -246,6 +246,19 @@
 .managed-actions button, .module-hub button { display: inline-flex; align-items: center; gap: 6px; }
 .detached-update-hint { display: flex; align-items: center; gap: 7px; margin: 8px 0 12px; color: var(--text-muted); font-size: .82rem; }
 .detached-update-hint svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--accent); }
+.linux-update-confirmation { display: grid; gap: 14px; }
+.linux-update-confirmation-intro { display: flex; align-items: flex-start; gap: 11px; padding: 13px; border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-subtle)); border-radius: 8px; background: color-mix(in srgb, var(--accent) 7%, var(--surface-secondary)); }
+.linux-update-confirmation-intro > svg { width: 21px; height: 21px; flex: 0 0 auto; color: var(--accent); }
+.linux-update-confirmation-intro > div { min-width: 0; display: grid; gap: 4px; }
+.linux-update-confirmation-intro strong { font-size: .82rem; }
+.linux-update-confirmation-intro p { margin: 0; color: var(--text-secondary); font-size: .72rem; line-height: 1.45; }
+.linux-update-confirmation dl { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 0; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--border-subtle); }
+.linux-update-confirmation dl > div { min-width: 0; display: grid; gap: 3px; padding: 10px 12px; background: var(--surface-secondary); }
+.linux-update-confirmation dt { color: var(--text-muted); font-size: .64rem; }
+.linux-update-confirmation dd { margin: 0; font-size: .75rem; font-weight: 600; overflow-wrap: anywhere; }
+.linux-update-confirmation-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 7px; color: var(--warning); background: color-mix(in srgb, var(--warning) 9%, transparent); font-size: .7rem; line-height: 1.4; }
+.linux-update-confirmation-note svg { width: 16px; height: 16px; flex: 0 0 auto; }
+@media (max-width: 520px) { .linux-update-confirmation dl { grid-template-columns: 1fr; } }
 .module-health-message { margin: 10px 0 0; padding: 9px 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-secondary); color: var(--text-secondary); font-size: .8rem; }
 .module-health-message.error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border-subtle)); color: var(--danger); }
 .managed-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 9px; margin-top: 12px; }
