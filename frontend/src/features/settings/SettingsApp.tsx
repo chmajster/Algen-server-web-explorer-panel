@@ -87,41 +87,60 @@ function PasswordSection({ t, toast }: { t: Translate; toast: ToastFn }) {
 function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
   const [error, setError] = useState("");
+  const [group, setGroup] = useState<"checking" | "installation">("checking");
+  const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     let live = true;
     api.autoUpdate().then((value) => { if (live) setPolicy(value); }).catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
     return () => { live = false; };
   }, [t]);
   async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "update_config">>) {
-    if (!policy) return;
+    if (!policy) return false;
     const before = policy;
     const next = { ...policy, ...patch };
     setPolicy(next); setError("");
     try {
       setPolicy(await api.saveAutoUpdate({ check_enabled: next.check_enabled, enabled: next.enabled, interval_hours: next.interval_hours, update_config: next.update_config }));
       toast(t("settings.saved"), "ok", "admin");
+      return true;
     } catch (reason) {
       setPolicy(before);
       const message = reason instanceof Error ? reason.message : t("error.generic");
       setError(message); toast(message, "error", "admin");
+      return false;
     }
   }
   const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
   if (!policy && !error) return <div className="loading-state">{t("status.loading")}</div>;
   if (!policy) return <div className="error-state" role="alert">{error}</div>;
-  return <div className="settings-card-stack">
-    <Card title={t("settings.updateCheckPolicy")}>
-      <SettingRow title={t("settings.automaticUpdateChecks")} description={t("settings.automaticUpdateChecksHint")}><Switch label={t("settings.automaticUpdateChecks")} checked={policy.check_enabled} onChange={(value) => void savePolicy({ check_enabled: value })} /></SettingRow>
-      <SettingRow title={t("settings.updateInterval")} description={t("settings.updateIntervalHint")}><Select label={t("settings.updateInterval")} value={policy.interval_hours} onChange={(value) => void savePolicy({ interval_hours: Number(value) })}>{[1, 6, 12, 24, 48, 72, 168].map((hours) => <option key={hours} value={hours}>{hours < 24 ? `${hours} h` : `${hours / 24} d`}</option>)}</Select></SettingRow>
-      <dl className="settings-details"><dt>{t("settings.lastChecked")}</dt><dd>{dateTime(policy.last_checked)}</dd><dt>{t("settings.nextCheck")}</dt><dd>{policy.check_enabled ? dateTime(policy.next_check) : t("common.disabled")}</dd></dl>
-    </Card>
-    <Card title={t("settings.updateInstallPolicy")}>
-      <SettingRow title={t("settings.automaticUpdates")} description={t("settings.automaticInstallUpdatesHint")}><Switch label={t("settings.automaticUpdates")} checked={policy.enabled} onChange={(value) => void savePolicy({ enabled: value })} /></SettingRow>
-      <SettingRow title={t("settings.updateConfiguration")} description={t("settings.updateConfigurationHint")}><Switch label={t("settings.updateConfiguration")} checked={policy.update_config} onChange={(value) => void savePolicy({ update_config: value })} /></SettingRow>
-      <dl className="settings-details"><dt>{t("settings.lastUpdateRun")}</dt><dd>{dateTime(policy.last_run)}</dd></dl>
-      {policy.last_error && <p className="update-settings-error">{policy.last_error}</p>}{error && <p className="update-settings-error">{error}</p>}
-    </Card>
-  </div>;
+  const definitions = {
+    check_enabled: { group: "checking" as const, label: t("settings.automaticUpdateChecks"), id: "updates.check_enabled", description: t("settings.automaticUpdateChecksHint"), defaultValue: t("common.enabled") },
+    interval_hours: { group: "checking" as const, label: t("settings.updateInterval"), id: "updates.check_interval_hours", description: t("settings.updateIntervalHint"), defaultValue: "12 h" },
+    enabled: { group: "installation" as const, label: t("settings.automaticUpdates"), id: "updates.auto_install", description: t("settings.automaticInstallUpdatesHint"), defaultValue: t("common.disabled") },
+    update_config: { group: "installation" as const, label: t("settings.updateConfiguration"), id: "updates.update_config", description: t("settings.updateConfigurationHint"), defaultValue: t("common.disabled") },
+  };
+  const keys = (Object.keys(definitions) as Array<keyof typeof definitions>).filter((key) => definitions[key].group === group);
+  const current = definitions[selected];
+  const currentValue = selected === "interval_hours" ? `${policy.interval_hours} h` : policy[selected] ? t("common.enabled") : t("common.disabled");
+  const currentEnabled = selected === "interval_hours" || Boolean(policy[selected]);
+  async function updateCurrent(value: boolean | number) {
+    const saved = await savePolicy({ [selected]: value });
+    if (saved) setEditing(false);
+  }
+  function chooseGroup(next: "checking" | "installation") {
+    setGroup(next); setSelected(next === "checking" ? "check_enabled" : "enabled"); setEditing(false);
+  }
+  return <section className="policy-browser">
+    <aside className="policy-groups"><header><FolderOpen />{t("settings.policyCategories")}</header><button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button><button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button></aside>
+    <section className="policy-list"><header><SlidersHorizontal />{t("settings.policies")}<b>{keys.length}</b></header>{keys.map((key) => <button key={key} className={selected === key ? "active" : ""} onClick={() => { setSelected(key); setEditing(false); }}><span><strong>{definitions[key].label}</strong><small>{definitions[key].id}</small></span><b>{t("settings.oneActiveRule")}</b></button>)}</section>
+    <article className="policy-detail"><header><h3>{current.label}</h3><p>{current.description}</p><div><span><b>ID</b><code>{current.id}</code></span><span><b>{t("settings.defaultValue")}</b><code>{current.defaultValue}</code></span></div></header>
+      <div className="policy-rules-heading"><strong>{t("settings.configuredRules")}</strong><button className="button-primary" onClick={() => setEditing(true)}>+ {t("settings.editRule")}</button></div>
+      <section className="policy-rule-card"><header><span className={currentEnabled ? "enabled" : "disabled"}>{t(currentEnabled ? "common.enabled" : "common.disabled")}</span><b>{t("settings.priority")}: 100</b></header><dl><div><dt>{t("settings.scope")}</dt><dd>{t("settings.globalScope")}</dd></div><div><dt>{t("settings.value")}</dt><dd><code>{currentValue}</code></dd></div>{selected === "check_enabled" && <><div><dt>{t("settings.lastChecked")}</dt><dd>{dateTime(policy.last_checked)}</dd></div><div><dt>{t("settings.nextCheck")}</dt><dd>{policy.check_enabled ? dateTime(policy.next_check) : t("common.disabled")}</dd></div></>}{selected === "enabled" && <div><dt>{t("settings.lastUpdateRun")}</dt><dd>{dateTime(policy.last_run)}</dd></div>}</dl><p>{current.description}</p>
+        {editing && <div className="policy-rule-editor"><strong>{t("settings.ruleValue")}</strong>{selected === "interval_hours" ? <Select label={current.label} value={policy.interval_hours} onChange={(value) => void updateCurrent(Number(value))}>{[1, 6, 12, 24, 48, 72, 168].map((hours) => <option key={hours} value={hours}>{hours < 24 ? `${hours} h` : `${hours / 24} d`}</option>)}</Select> : <Switch label={current.label} checked={Boolean(policy[selected])} onChange={(value) => void updateCurrent(value)} />}<button onClick={() => setEditing(false)}>{t("action.cancel")}</button></div>}
+      </section>{policy.last_error && <p className="update-settings-error">{policy.last_error}</p>}{error && <p className="update-settings-error">{error}</p>}
+    </article>
+  </section>;
 }
 
 function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL" | "en-US"; t: Translate; toast: ToastFn; onOpenApp: (app: AppId) => void }) {
@@ -300,6 +319,6 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
 
   return <section className="settings-app">
     <aside className="settings-sidebar"><div className="settings-profile"><Settings /><span><strong>{t("app.settings")}</strong><small>{settings.username}</small></span></div><div className="settings-search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("settings.search")} aria-label={t("settings.search")} />{query && <button type="button" aria-label={t("action.clear")} onClick={() => setQuery("")}><X /></button>}</div><nav aria-label={t("settings.categories")}>{categories.map((item) => <button key={item} type="button" className={category === item ? "active" : ""} aria-current={category === item ? "page" : undefined} onClick={() => choose(item)}>{categoryIcons[item]}<span>{t(`settings.category.${item}`)}</span></button>)}</nav></aside>
-    <main className="settings-main"><header className="settings-header"><div><small>{t("app.settings")}</small><h2>{normalizedQuery ? t("settings.searchResults") : t(`settings.category.${category}`)}</h2></div><div className={`settings-save-state ${saveState}`} role="status" aria-live="polite">{saveState === "saving" ? t("settings.saving") : saveState === "saved" ? t("settings.saved") : saveState === "error" ? `${t("settings.saveError")}: ${saveError}` : ""}</div><Select label={t("settings.categories")} value={category} onChange={(value) => choose(value as SettingsCategory)}>{categories.map((item) => <option key={item} value={item}>{t(`settings.category.${item}`)}</option>)}</Select></header><div className="settings-content">{!normalizedQuery && category === "system" && <HostInformationSection language={settings.language} t={t} />}{normalizedQuery ? <div className="settings-search-results">{searchResults.length ? searchResults.map((result) => <button key={`${result.category}:${result.key}`} type="button" onClick={() => choose(result.category)}>{categoryIcons[result.category]}<span><strong>{result.label}</strong><small>{t(`settings.category.${result.category}`)}</small></span></button>) : <div className="empty-state">{t("settings.noSearchResults")}</div>}</div> : content()}</div></main>
+    <main className="settings-main"><header className="settings-header"><div><small>{t("app.settings")}</small><h2>{normalizedQuery ? t("settings.searchResults") : t(`settings.category.${category}`)}</h2></div><div className={`settings-save-state ${saveState}`} role="status" aria-live="polite">{saveState === "saving" ? t("settings.saving") : saveState === "saved" ? t("settings.saved") : saveState === "error" ? `${t("settings.saveError")}: ${saveError}` : ""}</div><Select label={t("settings.categories")} value={category} onChange={(value) => choose(value as SettingsCategory)}>{categories.map((item) => <option key={item} value={item}>{t(`settings.category.${item}`)}</option>)}</Select></header><div className={`settings-content ${category === "policies" && !normalizedQuery ? "policy-content" : ""}`}>{!normalizedQuery && category === "system" && <HostInformationSection language={settings.language} t={t} />}{normalizedQuery ? <div className="settings-search-results">{searchResults.length ? searchResults.map((result) => <button key={`${result.category}:${result.key}`} type="button" onClick={() => choose(result.category)}>{categoryIcons[result.category]}<span><strong>{result.label}</strong><small>{t(`settings.category.${result.category}`)}</small></span></button>) : <div className="empty-state">{t("settings.noSearchResults")}</div>}</div> : content()}</div></main>
   </section>;
 }
