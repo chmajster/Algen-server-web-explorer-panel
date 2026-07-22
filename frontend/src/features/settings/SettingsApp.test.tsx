@@ -132,9 +132,16 @@ describe("settings application", () => {
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "settings.category.policies" }));
-    expect(await screen.findByLabelText("settings.updateInterval")).toHaveValue("12");
+    expect(await screen.findByText("settings.policyCategoryChecking")).toBeInTheDocument();
+    expect(screen.getAllByText("updates.check_enabled")).toHaveLength(2);
+    fireEvent.click(screen.getByText("updates.check_interval_hours").closest("button")!);
+    expect(screen.getByText("12 h")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
+    expect(screen.getByLabelText("settings.updateInterval")).toHaveValue("12");
     fireEvent.change(screen.getByLabelText("settings.updateInterval"), { target: { value: "24" } });
     await waitFor(() => expect(saveAuto).toHaveBeenCalledWith({ check_enabled: true, enabled: false, interval_hours: 24, update_config: false }));
+    fireEvent.click(screen.getByRole("button", { name: /settings.policyCategoryInstallation/ }));
+    fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
     fireEvent.click(screen.getByLabelText("settings.automaticUpdates"));
     await waitFor(() => expect(saveAuto).toHaveBeenLastCalledWith({ check_enabled: true, enabled: true, interval_hours: 24, update_config: false }));
   });
