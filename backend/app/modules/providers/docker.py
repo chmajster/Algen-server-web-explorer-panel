@@ -38,6 +38,7 @@ SYSTEM_NETWORKS = {"bridge", "host", "none"}
 DAEMON_CONFIG_FIELDS = {
     "log-driver", "log-opts", "live-restore", "default-address-pools", "dns", "insecure-registries",
     "registry-mirrors", "ipv6", "fixed-cidr-v6", "userland-proxy", "experimental", "features",
+    "bip", "fixed-cidr", "default-gateway", "default-gateway-v6", "ip-masq",
 }
 
 
@@ -135,6 +136,19 @@ class DockerProvider(PrivateBackupProvider):
 
     def _docker(self, args: list[str], *, timeout: int = 60) -> str:
         return self._result(self._run(["docker", *args], timeout=timeout), "Docker operation failed")
+
+    def named_resource_exists(self, kind: str, name: str) -> bool:
+        commands = {
+            "volume": ["volume", "ls", "--format", "{{json .}}"],
+            "network": ["network", "ls", "--format", "{{json .}}"],
+        }
+        if kind not in commands:
+            api_error(400, "INVALID_DOCKER_RESOURCE", "Invalid Docker resource type")
+        normalized = self._checked_identifier(name, kind)
+        return any(
+            str(item.get("Name") or "") == normalized
+            for item in self._json_lines(self._docker(commands[kind], timeout=30))
+        )
 
     def _compose_tool(self) -> list[str]:
         plugin = self._run(["docker", "compose", "version"], timeout=15)
@@ -847,7 +861,56 @@ class DockerProvider(PrivateBackupProvider):
 
     def networks(self, *, page: int = 1, page_size: int = 50, search: str = "", sort: str = "Name", direction: str = "asc") -> dict[str, Any]:
         items = self._json_lines(self._docker(["network", "ls", "--no-trunc", "--format", "{{json .}}"], timeout=30))
-        return self._paginate(items, page=page, page_size=page_size, search=search, sort=sort, direction=direction)
+        ids = [str(item.get("ID") or item.get("Name") or "") for item in items[:500] if item.get("ID") or item.get("Name")]
+        inspections: list[dict[str, Any]] = []
+        if ids:
+            inspected = self._run(["docker", "network", "inspect", *ids], timeout=60)
+            if inspected.returncode == 0:
+                try:
+                    value = json.loads(inspected.stdout)
+                    inspections = value if isinstance(value, list) else []
+                except json.JSONDecodeError:
+                    inspections = []
+        inspection_by_id = {str(item.get("Id") or ""): item for item in inspections}
+        inspection_by_name = {str(item.get("Name") or ""): item for item in inspections}
+        enriched: list[dict[str, Any]] = []
+        for item in items:
+            detail = inspection_by_id.get(str(item.get("ID") or "")) or inspection_by_name.get(str(item.get("Name") or "")) or {}
+            ipam = detail.get("IPAM") if isinstance(detail.get("IPAM"), dict) else {}
+            configs = ipam.get("Config") if isinstance(ipam, dict) and isinstance(ipam.get("Config"), list) else []
+            containers = detail.get("Containers") if isinstance(detail.get("Containers"), dict) else {}
+            attached = [
+                {
+                    "id": str(container_id),
+                    "name": str(value.get("Name") or ""),
+                    "endpoint_id": str(value.get("EndpointID") or ""),
+                    "mac_address": str(value.get("MacAddress") or ""),
+                    "ipv4_address": str(value.get("IPv4Address") or ""),
+                    "ipv6_address": str(value.get("IPv6Address") or ""),
+                }
+                for container_id, value in containers.items()
+                if isinstance(value, dict)
+            ]
+            name = str(detail.get("Name") or item.get("Name") or "")
+            enriched.append({
+                **item,
+                "Name": name,
+                "ID": str(detail.get("Id") or item.get("ID") or ""),
+                "Driver": str(detail.get("Driver") or item.get("Driver") or ""),
+                "Scope": str(detail.get("Scope") or item.get("Scope") or ""),
+                "IPv6": bool(detail.get("EnableIPv6")),
+                "subnets": [str(config.get("Subnet")) for config in configs if isinstance(config, dict) and config.get("Subnet")],
+                "gateways": [str(config.get("Gateway")) for config in configs if isinstance(config, dict) and config.get("Gateway")],
+                "ip_ranges": [str(config.get("IPRange")) for config in configs if isinstance(config, dict) and config.get("IPRange")],
+                "container_count": len(attached),
+                "containers": attached,
+                "internal": bool(detail.get("Internal")),
+                "attachable": bool(detail.get("Attachable")),
+                "system": name in SYSTEM_NETWORKS,
+                "options": detail.get("Options") if isinstance(detail.get("Options"), dict) else {},
+                "labels": detail.get("Labels") if isinstance(detail.get("Labels"), dict) else {},
+            })
+        return self._paginate(enriched, page=page, page_size=page_size, search=search, sort=sort, direction=direction)
 
     def network_details(self, target: str) -> dict[str, Any]:
         inspect = self._inspect("network", target)
@@ -859,6 +922,90 @@ class DockerProvider(PrivateBackupProvider):
             "containers": [{"id": key, **(value if isinstance(value, dict) else {})} for key, value in containers.items()],
             "system": str(inspect.get("Name") or "") in SYSTEM_NETWORKS,
         })
+
+    def network_container_candidates(self, target: str) -> dict[str, Any]:
+        network = self._checked_identifier(target, "network")
+        if network in SYSTEM_NETWORKS:
+            api_error(403, "SYSTEM_NETWORK_PROTECTED", "Docker system networks cannot be modified")
+        detail = self._inspect("network", network)
+        attached = detail.get("Containers") if isinstance(detail.get("Containers"), dict) else {}
+        attached_ids = {str(value) for value in attached}
+        containers = self._json_lines(
+            self._docker(["ps", "-a", "--no-trunc", "--format", "{{json .}}"], timeout=30)
+        )
+        items = [
+            {
+                "id": str(item.get("ID") or ""),
+                "name": str(item.get("Names") or ""),
+                "state": str(item.get("State") or ""),
+                "connected": any(
+                    identifier and (
+                        identifier == str(item.get("ID") or "")
+                        or str(item.get("ID") or "").startswith(identifier)
+                        or identifier.startswith(str(item.get("ID") or ""))
+                    )
+                    for identifier in attached_ids
+                ),
+            }
+            for item in containers
+            if item.get("ID") and item.get("Names")
+        ]
+        items.sort(key=lambda item: item["name"].lower())
+        return {"items": items, "total": len(items), "network": network}
+
+    def default_bridge_config(self) -> dict[str, Any]:
+        config = self.get_config().get("config") or {}
+        if not isinstance(config, dict):
+            config = {}
+        bip = str(config.get("bip") or "")
+        ipv4_subnet: str | None = None
+        ipv4_gateway: str | None = None
+        if bip:
+            try:
+                interface = ipaddress.ip_interface(bip)
+                if interface.version == 4:
+                    ipv4_subnet = str(interface.network)
+                    ipv4_gateway = str(interface.ip)
+            except ValueError:
+                pass
+        return {
+            "ipv4_mode": "manual" if ipv4_subnet and ipv4_gateway else "auto",
+            "ipv4_subnet": ipv4_subnet,
+            "ipv4_ip_range": str(config.get("fixed-cidr") or "") or None,
+            "ipv4_gateway": ipv4_gateway or (str(config.get("default-gateway") or "") or None),
+            "ipv6_mode": "manual" if config.get("ipv6") and config.get("fixed-cidr-v6") else "none",
+            "ipv6_subnet": str(config.get("fixed-cidr-v6") or "") or None,
+            "ipv6_gateway": str(config.get("default-gateway-v6") or "") or None,
+            "disable_ip_masquerade": config.get("ip-masq") is False,
+        }
+
+    def merge_default_bridge_config(self, settings: dict[str, Any]) -> dict[str, Any]:
+        from ..docker_manager.models import DefaultBridgeConfigRequest
+
+        request = DefaultBridgeConfigRequest.model_validate(settings)
+        current = self.get_config()
+        if not current.get("valid", False):
+            api_error(409, "INVALID_EXISTING_DAEMON_CONFIG", "The existing daemon.json must be repaired before changing the default bridge")
+        config = dict(current.get("config") or {})
+        managed = {
+            "bip", "fixed-cidr", "default-gateway", "ipv6", "fixed-cidr-v6",
+            "default-gateway-v6", "ip-masq",
+        }
+        for key in managed:
+            config.pop(key, None)
+        if request.ipv4_mode == "manual":
+            network = ipaddress.ip_network(str(request.ipv4_subnet), strict=False)
+            config["bip"] = f"{request.ipv4_gateway}/{network.prefixlen}"
+            if request.ipv4_ip_range:
+                config["fixed-cidr"] = request.ipv4_ip_range
+        if request.ipv6_mode == "manual":
+            config["ipv6"] = True
+            config["fixed-cidr-v6"] = request.ipv6_subnet
+            if request.ipv6_gateway:
+                config["default-gateway-v6"] = request.ipv6_gateway
+        if request.disable_ip_masquerade:
+            config["ip-masq"] = False
+        return config
 
     def prune_plan(self, resources: list[str]) -> dict[str, Any]:
         allowed = {"containers", "images", "networks", "volumes", "build_cache"}
@@ -1439,23 +1586,47 @@ class DockerProvider(PrivateBackupProvider):
             from ..docker_manager.models import NetworkCreateRequest
 
             network_request = NetworkCreateRequest.model_validate(payload.get("definition") or {})
-            if network_request.subnet:
-                requested = ipaddress.ip_network(network_request.subnet, strict=False)
-                for network_item in self._json_lines(self._docker(["network", "ls", "--format", "{{json .}}"], timeout=30)):
+            network_items = self._json_lines(self._docker(["network", "ls", "--format", "{{json .}}"], timeout=30))
+            if any(str(item.get("Name") or "") == network_request.name for item in network_items):
+                api_error(409, "NETWORK_NAME_EXISTS", "A Docker network with this name already exists")
+            requested_networks = [
+                ipaddress.ip_network(value, strict=False)
+                for value in (network_request.ipv4_subnet, network_request.ipv6_subnet)
+                if value
+            ]
+            if requested_networks:
+                for network_item in network_items:
                     detail = self._inspect("network", str(network_item.get("ID") or network_item.get("Name")))
                     for config in (detail.get("IPAM") or {}).get("Config") or []:
                         existing = config.get("Subnet") if isinstance(config, dict) else None
-                        if existing and requested.overlaps(ipaddress.ip_network(existing, strict=False)):
+                        if not existing:
+                            continue
+                        try:
+                            existing_network = ipaddress.ip_network(existing, strict=False)
+                        except ValueError:
+                            continue
+                        if any(
+                            requested.version == existing_network.version and requested.overlaps(existing_network)
+                            for requested in requested_networks
+                        ):
                             api_error(409, "NETWORK_SUBNET_CONFLICT", "Requested subnet overlaps an existing Docker network")
             command = ["network", "create", "--driver", "bridge"]
             if network_request.internal:
                 command.append("--internal")
-            if network_request.ipv6:
+            if network_request.ipv6_mode == "manual":
                 command.append("--ipv6")
-            if network_request.subnet:
-                command += ["--subnet", network_request.subnet]
-            if network_request.gateway:
-                command += ["--gateway", network_request.gateway]
+            if network_request.disable_ip_masquerade:
+                command += ["--opt", "com.docker.network.bridge.enable_ip_masquerade=false"]
+            for subnet, ip_range, gateway in (
+                (network_request.ipv4_subnet, network_request.ipv4_ip_range, network_request.ipv4_gateway),
+                (network_request.ipv6_subnet, network_request.ipv6_ip_range, network_request.ipv6_gateway),
+            ):
+                if subnet:
+                    command += ["--subnet", subnet]
+                if ip_range:
+                    command += ["--ip-range", ip_range]
+                if gateway:
+                    command += ["--gateway", gateway]
             for key, value in network_request.labels.items():
                 command += ["--label", f"{key}={value}"]
             command.append(network_request.name)
@@ -1468,6 +1639,9 @@ class DockerProvider(PrivateBackupProvider):
                 if network in SYSTEM_NETWORKS:
                     api_error(403, "SYSTEM_NETWORK_PROTECTED", "Docker system networks cannot be modified")
                 if operation == "network_remove":
+                    detail = self._inspect("network", network)
+                    if detail.get("Containers"):
+                        api_error(409, "NETWORK_IN_USE", "Disconnect all containers before removing the Docker network")
                     result = self._run(["docker", "network", "rm", network], timeout=300)
                 else:
                     container = self._checked_identifier(payload.get("container"), "container")
@@ -1584,6 +1758,31 @@ class DockerProvider(PrivateBackupProvider):
         for key in ("live-restore", "ipv6", "userland-proxy", "experimental"):
             if key in config and not isinstance(config[key], bool):
                 errors.append(f"{key} must be a boolean")
+        if "ip-masq" in config and not isinstance(config["ip-masq"], bool):
+            errors.append("ip-masq must be a boolean")
+        for key, version in (("fixed-cidr", 4), ("fixed-cidr-v6", 6)):
+            if key in config:
+                try:
+                    network = ipaddress.ip_network(str(config[key]), strict=False)
+                    if network.version != version or network.is_multicast or network.prefixlen == 0:
+                        raise ValueError
+                except ValueError:
+                    errors.append(f"{key} must be a valid IPv{version} network")
+        if "bip" in config:
+            try:
+                bridge = ipaddress.ip_interface(str(config["bip"]))
+                if bridge.version != 4 or bridge.network.is_multicast or bridge.network.prefixlen == 0:
+                    raise ValueError
+            except ValueError:
+                errors.append("bip must be a valid IPv4 interface with prefix")
+        for key, version in (("default-gateway", 4), ("default-gateway-v6", 6)):
+            if key in config:
+                try:
+                    gateway = ipaddress.ip_address(str(config[key]))
+                    if gateway.version != version or gateway.is_multicast:
+                        raise ValueError
+                except ValueError:
+                    errors.append(f"{key} must be a valid IPv{version} address")
         dns = config.get("dns")
         if dns is not None:
             if not isinstance(dns, list) or len(dns) > 16:
@@ -1632,13 +1831,6 @@ class DockerProvider(PrivateBackupProvider):
                             raise ValueError
                     except (TypeError, ValueError):
                         errors.append("A default address pool is invalid")
-        if "fixed-cidr-v6" in config:
-            try:
-                network = ipaddress.ip_network(str(config["fixed-cidr-v6"]), strict=False)
-                if network.version != 6 or network.is_multicast:
-                    raise ValueError
-            except ValueError:
-                errors.append("fixed-cidr-v6 must be a valid IPv6 network")
         features = config.get("features")
         if features is not None and (not isinstance(features, dict) or set(features) - {"containerd-snapshotter"} or not all(isinstance(value, bool) for value in features.values())):
             errors.append("features supports only the boolean containerd-snapshotter setting")

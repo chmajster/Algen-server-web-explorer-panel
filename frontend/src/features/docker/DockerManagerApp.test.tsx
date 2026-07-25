@@ -9,7 +9,7 @@ vi.mock("../../api", () => ({
     dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(),
     dockerContainerBackup: vi.fn(), dockerImages: vi.fn(), dockerImageAction: vi.fn(), importDockerImage: vi.fn(), dockerApps: vi.fn(),
     dockerComposeProjects: vi.fn(), validateDockerCompose: vi.fn(), saveDockerComposeProject: vi.fn(), dockerComposeAction: vi.fn(),
-    dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerRegistries: vi.fn(), dockerBackups: vi.fn(),
+    dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerNetworkContainers: vi.fn(), dockerDefaultBridge: vi.fn(), saveDockerDefaultBridge: vi.fn(), createDockerNetwork: vi.fn(), dockerNetworkAction: vi.fn(), dockerPrunePlan: vi.fn(), dockerRegistries: vi.fn(), dockerBackups: vi.fn(),
     list: vi.fn(), localDisks: vi.fn(), mountRoots: vi.fn(),
     dockerDaemonConfig: vi.fn(), dockerDiagnostics: vi.fn(), dockerEngineAction: vi.fn(), dockerPrune: vi.fn(),
   },

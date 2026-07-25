@@ -4,6 +4,7 @@ import json
 import sqlite3
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -11,7 +12,7 @@ from pydantic import ValidationError
 
 from app.identity.models import Role
 from app.identity.permissions import ROLE_PERMISSIONS
-from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, ContainerSettingsRequest, MountSpec, NetworkCreateRequest, RegistryRequest
+from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, ContainerSettingsRequest, DefaultBridgeConfigRequest, MountSpec, NetworkCreateRequest, RegistryRequest, VolumeActionRequest, VolumeCreateRequest
 from app.modules.docker_manager.router import PUBLIC_DOCKER_HUB
 from app.modules.docker_manager.storage import DockerManagerStore
 from app.modules import router as legacy_module_router
@@ -40,7 +41,41 @@ def test_network_contract_rejects_system_names_and_conflicting_gateway():
     with pytest.raises(ValidationError):
         NetworkCreateRequest(name="bridge")
     with pytest.raises(ValidationError):
-        NetworkCreateRequest(name="private", subnet="10.20.0.0/24", gateway="10.21.0.1")
+        NetworkCreateRequest(name="private", ipv4_mode="manual", ipv4_subnet="10.20.0.0/24", ipv4_gateway="10.21.0.1")
+
+
+def test_volume_contract_rejects_names_that_docker_would_reject():
+    for name in ("", "0", "a", "-data", "bad/name", "bad name"):
+        with pytest.raises(ValidationError):
+            VolumeCreateRequest(name=name)
+    with pytest.raises(ValidationError):
+        VolumeActionRequest(action="clone", target_name="0")
+    assert VolumeCreateRequest(name=" data-01 ").name == "data-01"
+
+
+def test_network_contract_validates_dual_stack_modes_ranges_and_labels():
+    request = NetworkCreateRequest(
+        name="private",
+        ipv4_mode="manual",
+        ipv4_subnet="172.20.1.4/16",
+        ipv4_ip_range="172.20.10.0/24",
+        ipv4_gateway="172.20.0.1",
+        ipv6_mode="manual",
+        ipv6_subnet="fd42:20::123/64",
+        ipv6_ip_range="fd42:20::1000/80",
+        ipv6_gateway="fd42:20::1",
+        labels={"app.role": "private"},
+    )
+    assert request.ipv4_subnet == "172.20.0.0/16"
+    assert request.ipv6_subnet == "fd42:20::/64"
+    with pytest.raises(ValidationError):
+        NetworkCreateRequest(name="auto-with-subnet", ipv4_subnet="10.0.0.0/24")
+    with pytest.raises(ValidationError):
+        NetworkCreateRequest(name="wrong-family", ipv4_mode="manual", ipv4_subnet="fd42::/64")
+    with pytest.raises(ValidationError):
+        NetworkCreateRequest(name="range-outside", ipv4_mode="manual", ipv4_subnet="10.0.0.0/24", ipv4_ip_range="10.0.1.0/24")
+    with pytest.raises(ValidationError):
+        NetworkCreateRequest(name="invalid-label", labels={"bad key": "value"})
 
 
 def test_secret_contracts_preserve_spaces_and_reject_line_injection():
@@ -155,9 +190,106 @@ def test_compose_policy_rejects_executable_and_privileged_fields():
 
 def test_daemon_policy_allows_bounded_settings_and_rejects_remote_or_arbitrary_configuration():
     assert DockerProvider._daemon_policy_errors({"log-driver": "local", "log-opts": {"max-size": "10m", "max-file": "3"}, "live-restore": True}) == []
+    assert DockerProvider._daemon_policy_errors({"bip": "172.30.0.1/16", "fixed-cidr": "172.30.10.0/24", "ipv6": True, "fixed-cidr-v6": "fd42:30::/64", "ip-masq": False}) == []
     assert DockerProvider._daemon_policy_errors({"data-root": "/tmp/docker"})
     assert DockerProvider._daemon_policy_errors({"insecure-registries": ["0.0.0.0/0"]})
     assert DockerProvider._daemon_policy_errors({"registry-mirrors": ["http://user:password@example.test"]})
+
+
+def test_default_bridge_contract_and_merge_preserve_unrelated_daemon_settings(monkeypatch):
+    request = DefaultBridgeConfigRequest(
+        ipv4_mode="manual",
+        ipv4_subnet="172.30.0.0/16",
+        ipv4_ip_range="172.30.10.0/24",
+        ipv4_gateway="172.30.0.1",
+        ipv6_mode="manual",
+        ipv6_subnet="fd42:30::/64",
+        ipv6_gateway="fd42:30::1",
+        disable_ip_masquerade=True,
+    )
+    provider = DockerProvider("alice")
+    monkeypatch.setattr(provider, "get_config", lambda: {"config": {"live-restore": True, "bip": "10.0.0.1/24"}, "valid": True})
+    merged = provider.merge_default_bridge_config(request.model_dump(exclude={"confirmation", "pam_password"}))
+    assert merged == {
+        "live-restore": True,
+        "bip": "172.30.0.1/16",
+        "fixed-cidr": "172.30.10.0/24",
+        "ipv6": True,
+        "fixed-cidr-v6": "fd42:30::/64",
+        "default-gateway-v6": "fd42:30::1",
+        "ip-masq": False,
+    }
+
+
+def test_network_listing_enriches_ipam_and_searches_attached_container_names(monkeypatch):
+    provider = DockerProvider("alice")
+    listing = json.dumps({"ID": "network-id", "Name": "private-net", "Driver": "bridge", "Scope": "local"}) + "\n"
+    inspection = json.dumps([{
+        "Id": "network-id",
+        "Name": "private-net",
+        "Driver": "bridge",
+        "Scope": "local",
+        "EnableIPv6": True,
+        "Internal": False,
+        "Attachable": False,
+        "IPAM": {"Config": [
+            {"Subnet": "172.20.0.0/16", "IPRange": "172.20.10.0/24", "Gateway": "172.20.0.1"},
+            {"Subnet": "fd42:20::/64", "Gateway": "fd42:20::1"},
+        ]},
+        "Containers": {"container-id": {"Name": "web", "IPv4Address": "172.20.10.2/16"}},
+        "Options": {"com.docker.network.bridge.name": "br-private"},
+        "Labels": {"app.role": "private"},
+    }])
+
+    def run(args, *, timeout=30, input_text=None, env=None):
+        output = listing if args[:3] == ["docker", "network", "ls"] else inspection if args[:3] == ["docker", "network", "inspect"] else ""
+        return subprocess.CompletedProcess(args, 0, output, "")
+
+    monkeypatch.setattr(provider, "_run", run)
+    result = provider.networks(search="web")
+
+    assert result["total"] == 1
+    item = result["items"][0]
+    assert item["subnets"] == ["172.20.0.0/16", "fd42:20::/64"]
+    assert item["gateways"] == ["172.20.0.1", "fd42:20::1"]
+    assert item["ip_ranges"] == ["172.20.10.0/24"]
+    assert item["container_count"] == 1 and item["containers"][0]["name"] == "web"
+    assert item["IPv6"] is True and item["system"] is False
+
+
+def test_network_creation_uses_fixed_dual_stack_cli_arguments(monkeypatch):
+    provider = DockerProvider("alice")
+    calls: list[list[str]] = []
+
+    def run(args, *, timeout=30, input_text=None, env=None):
+        calls.append(list(args))
+        return subprocess.CompletedProcess(args, 0, "" if args[:3] == ["docker", "network", "ls"] else "network-id\n", "")
+
+    monkeypatch.setattr(provider, "_run", run)
+    monkeypatch.setattr(provider, "get_status", lambda: SimpleNamespace(model_dump=lambda mode: {}))
+    definition = NetworkCreateRequest(
+        name="private-net",
+        ipv4_mode="manual",
+        ipv4_subnet="172.20.0.0/16",
+        ipv4_ip_range="172.20.10.0/24",
+        ipv4_gateway="172.20.0.1",
+        ipv6_mode="manual",
+        ipv6_subnet="fd42:20::/64",
+        ipv6_ip_range="fd42:20:0:0:10::/80",
+        ipv6_gateway="fd42:20::1",
+        internal=True,
+        disable_ip_masquerade=True,
+        labels={"app.role": "private"},
+    ).model_dump(mode="json")
+
+    provider.manage("network_create", {"definition": definition}, "alice", lambda *_: None, lambda *_: None, lambda: False)
+
+    command = next(call for call in calls if call[:3] == ["docker", "network", "create"])
+    assert command[:5] == ["docker", "network", "create", "--driver", "bridge"]
+    assert "--internal" in command and "--ipv6" in command
+    assert ["--opt", "com.docker.network.bridge.enable_ip_masquerade=false"] == command[command.index("--opt"):command.index("--opt") + 2]
+    assert command.count("--subnet") == 2 and command.count("--ip-range") == 2 and command.count("--gateway") == 2
+    assert command[-1] == "private-net"
 
 
 def test_compose_edit_preserves_unsubmitted_secret_environment(monkeypatch, tmp_path: Path):
@@ -185,6 +317,24 @@ def test_registry_search_uses_fixed_docker_cli_arguments(monkeypatch):
     assert result["items"][0]["repository"] == "library/nginx"
     with pytest.raises(Exception):
         DockerProvider("alice").search_registry("$(id)", 10)
+
+
+def test_docker_resource_duplicate_check_uses_fixed_list_arguments(monkeypatch):
+    provider = DockerProvider("alice")
+    calls: list[list[str]] = []
+
+    def run(args, *, timeout=30, input_text=None, env=None):
+        calls.append(list(args))
+        output = json.dumps({"Name": "data-01"}) + "\n"
+        return subprocess.CompletedProcess(args, 0, output, "")
+
+    monkeypatch.setattr(provider, "_run", run)
+    assert provider.named_resource_exists("volume", "data-01") is True
+    assert provider.named_resource_exists("network", "private-net") is False
+    assert calls == [
+        ["docker", "volume", "ls", "--format", "{{json .}}"],
+        ["docker", "network", "ls", "--format", "{{json .}}"],
+    ]
 
 
 def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, tmp_path: Path):
@@ -330,6 +480,8 @@ def test_docker_manager_routes_are_registered():
     assert "/api/modules/docker/containers/{target}/actions" in paths
     assert "/api/modules/docker/images/actions" in paths
     assert "/api/modules/docker/images/search" in paths
+    assert "/api/modules/docker/networks/default-bridge" in paths
+    assert "/api/modules/docker/networks/{target}/containers" in paths
     assert "/api/modules/docker/compose/{project}" in paths
     assert "/api/modules/docker/compose/{project}/history/{revision}/rollback" in paths
     assert "/api/modules/docker/compose/{project}/status" in paths

@@ -36,6 +36,7 @@ from .models import (
     ContainerRestoreRequest,
     ContainerSettingsRequest,
     DaemonConfigRequest,
+    DefaultBridgeConfigRequest,
     EngineActionRequest,
     ImageActionRequest,
     NetworkActionRequest,
@@ -503,6 +504,8 @@ def volumes(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200)
 @router.post("/volumes")
 def create_volume(payload: VolumeCreateRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, "docker.manage_volumes")
+    if _provider(user).named_resource_exists("volume", payload.name):
+        api_error(409, "VOLUME_NAME_EXISTS", "A Docker volume with this name already exists")
     return _enqueue("volume_create", {"definition": payload.model_dump(mode="json")}, user)
 
 
@@ -515,6 +518,8 @@ def volume_detail(target: str, user: SessionUser = Depends(current_user)):
 @router.post("/volumes/{target}/actions")
 def volume_action(target: str, payload: VolumeActionRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, "docker.manage_volumes")
+    if payload.action == "clone" and payload.target_name and _provider(user).named_resource_exists("volume", payload.target_name):
+        api_error(409, "VOLUME_NAME_EXISTS", "A Docker volume with this name already exists")
     if payload.action in {"remove", "prune", "restore"}:
         expected = "volumes" if payload.action == "prune" else target
         _critical(user, password=payload.pam_password, confirmation=payload.confirmation, expected=expected, permission="docker.prune" if payload.action == "prune" else "docker.restore_backup" if payload.action == "restore" else "docker.high_risk")
@@ -528,9 +533,51 @@ def networks(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200
     return _provider(user).networks(page=page, page_size=page_size, search=search[:200])
 
 
+@router.get("/networks/default-bridge")
+def default_bridge_network(user: SessionUser = Depends(current_user)):
+    _allow(user, "docker.manage_networks")
+    return _provider(user).default_bridge_config()
+
+
+@router.put("/networks/default-bridge")
+def save_default_bridge_network(payload: DefaultBridgeConfigRequest, user: SessionUser = Depends(mutating_user)):
+    _assert_mutation_allowed()
+    _critical(
+        user,
+        password=payload.pam_password,
+        confirmation=payload.confirmation,
+        expected="bridge",
+        permission="docker.update_engine",
+    )
+    provider = _provider(user)
+    config = provider.merge_default_bridge_config(
+        payload.model_dump(mode="json", exclude={"confirmation", "pam_password"})
+    )
+    validation = provider.validate_config(config)
+    if not validation.ok:
+        api_error(422, "CONFIG_VALIDATION_FAILED", "Docker default bridge configuration is invalid", errors=validation.errors)
+    module = get_module("docker")
+    plan = PackagePlan(
+        module_id="docker",
+        action=PackageAction.apply,
+        distribution=module["distribution"],
+        compatible=bool(module["compatible"]),
+        blocked_by_proxmox=bool(module["blocked_by_proxmox"]),
+        services=["docker"],
+        config_paths=["/etc/docker/daemon.json"],
+        steps=["Validate default bridge settings", "Create backup", "Write daemon.json atomically", "Restart Docker", "Verify or roll back"],
+        warnings=["Changing the default bridge configuration restarts Docker and can interrupt containers"],
+        payload={"config": config},
+        create_backup=True,
+    )
+    return {"job": manager(repository()).enqueue(plan, user.username), "validation": validation}
+
+
 @router.post("/networks")
 def create_network(payload: NetworkCreateRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, "docker.manage_networks")
+    if _provider(user).named_resource_exists("network", payload.name):
+        api_error(409, "NETWORK_NAME_EXISTS", "A Docker network with this name already exists")
     return _enqueue("network_create", {"definition": payload.model_dump(mode="json")}, user)
 
 
@@ -538,6 +585,12 @@ def create_network(payload: NetworkCreateRequest, user: SessionUser = Depends(mu
 def network_detail(target: str, user: SessionUser = Depends(current_user)):
     _allow(user, "docker.manage_networks")
     return _provider(user).network_details(target)
+
+
+@router.get("/networks/{target}/containers")
+def network_containers(target: str, user: SessionUser = Depends(current_user)):
+    _allow(user, "docker.manage_networks")
+    return _provider(user).network_container_candidates(target)
 
 
 @router.post("/networks/{target}/actions")

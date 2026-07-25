@@ -417,6 +417,15 @@ export type DockerContainerSettings = {
 };
 export type DockerContainerSettingsUpdate = Pick<DockerContainerSettings, "name" | "resource_limits_enabled" | "cpu_priority" | "memory_mb" | "auto_restart" | "portal_enabled" | "portal_port" | "portal_protocol"> & { confirmation: string };
 export type DockerImage = { ID?: string; Repository?: string; Tag?: string; Digest?: string; Size?: string; CreatedSince?: string; consumers?: string[]; [key: string]: unknown };
+export type DockerNetworkContainer = { id: string; name: string; endpoint_id?: string; mac_address?: string; ipv4_address?: string; ipv6_address?: string; state?: string; connected?: boolean };
+export type DockerNetwork = {
+  Name: string; ID?: string; Driver: string; Scope?: string; IPv6?: boolean;
+  subnets?: string[]; gateways?: string[]; ip_ranges?: string[];
+  container_count?: number; containers?: DockerNetworkContainer[];
+  internal?: boolean; attachable?: boolean; system?: boolean;
+  options?: Record<string, string>; labels?: Record<string, string>;
+  [key: string]: unknown;
+};
 export type DockerApp = { id: string; name: string; description: string; image: string; container: string; category: string; panel_port: number; ports: string[]; version: string; required_secrets: string[]; architectures: string[]; healthcheck: string; dependencies: string[]; minimum_memory_mb: number; documentation_url: string; update_strategy: string; backup_strategy: string; uninstall_strategy: string; installed: boolean; running: boolean; managed: boolean; status: string };
 export type DockerArtifact = { id: string; kind: string; display_name: string; checksum: string; size: number; created_at: number; created_by: string; metadata: Record<string, unknown> };
 export type DockerRegistry = { id: string; name: string; provider: string; server: string; username: string; tls: boolean; ca_certificate_configured: boolean; secret_configured: boolean; built_in?: boolean; public_access?: boolean; created_at: number; updated_at: number };
@@ -445,7 +454,19 @@ export type DockerNetworkAction = { action: "remove" | "prune" | "connect" | "di
 export type DockerEngineAction = { action: "install" | "reinstall" | "update" | "start" | "stop" | "restart" | "enable" | "disable" | "test"; confirmation?: string; pam_password?: string | null };
 export type DockerRegistrySave = { name: string; provider: "docker_hub" | "ghcr" | "gitlab" | "quay" | "custom"; server: string; username: string; password?: string | null; tls?: boolean; ca_certificate?: string | null };
 export type DockerVolumeCreate = { name: string; labels?: Record<string, string> };
-export type DockerNetworkCreate = { name: string; driver?: "bridge"; subnet?: string | null; gateway?: string | null; internal?: boolean; ipv6?: boolean; labels?: Record<string, string> };
+export type DockerNetworkCreate = {
+  name: string; driver: "bridge";
+  ipv4_mode: "auto" | "manual"; ipv4_subnet: string | null; ipv4_ip_range: string | null; ipv4_gateway: string | null;
+  ipv6_mode: "none" | "manual"; ipv6_subnet: string | null; ipv6_ip_range: string | null; ipv6_gateway: string | null;
+  internal: boolean; disable_ip_masquerade: boolean; labels: Record<string, string>;
+};
+export type DockerDefaultBridgeConfig = {
+  ipv4_mode: "auto" | "manual"; ipv4_subnet: string | null; ipv4_ip_range: string | null; ipv4_gateway: string | null;
+  ipv6_mode: "none" | "manual"; ipv6_subnet: string | null; ipv6_gateway: string | null;
+  disable_ip_masquerade: boolean;
+};
+export type DockerDefaultBridgeSave = DockerDefaultBridgeConfig & { confirmation: string; pam_password: string };
+export type DockerPrunePlan = { resources: string[]; items: Array<{ type: string; id?: string; name?: string; size?: string | number | null }>; total: number; estimated_reclaimable: number };
 export type DockerAppInstall = { secret_environment?: Record<string, string>; timezone?: string; hostname?: string; panel_port?: number; dns_port?: number; network?: string; confirmation?: string };
 export type DockerAppAction = { confirmation?: string; pam_password?: string | null };
 export type DockerBackupRestore = { new_name: string; secret_environment?: Record<string, string>; confirmation?: string; pam_password?: string | null };
@@ -1001,7 +1022,10 @@ export const api = {
   dockerVolumes: (search = "") => request<DockerPaged>(`/api/modules/docker/volumes?search=${encodeURIComponent(search)}`),
   createDockerVolume: (payload: DockerVolumeCreate) => request<{ job: ModuleJob }>("/api/modules/docker/volumes", { method: "POST", body: JSON.stringify(payload) }),
   dockerVolumeAction: (target: string, payload: DockerVolumeAction) => request<{ job: ModuleJob }>(`/api/modules/docker/volumes/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
-  dockerNetworks: (search = "") => request<DockerPaged>(`/api/modules/docker/networks?page_size=200&search=${encodeURIComponent(search)}`),
+  dockerNetworks: (search = "") => request<DockerPaged<DockerNetwork>>(`/api/modules/docker/networks?page_size=200&search=${encodeURIComponent(search)}`),
+  dockerNetworkContainers: (target: string) => request<{ items: DockerNetworkContainer[]; total: number; network: string }>(`/api/modules/docker/networks/${encodeURIComponent(target)}/containers`),
+  dockerDefaultBridge: () => request<DockerDefaultBridgeConfig>("/api/modules/docker/networks/default-bridge"),
+  saveDockerDefaultBridge: (payload: DockerDefaultBridgeSave) => request<{ job: ModuleJob; validation: ModuleValidationResult }>("/api/modules/docker/networks/default-bridge", { method: "PUT", body: JSON.stringify(payload) }),
   createDockerNetwork: (payload: DockerNetworkCreate) => request<{ job: ModuleJob }>("/api/modules/docker/networks", { method: "POST", body: JSON.stringify(payload) }),
   dockerNetworkAction: (target: string, payload: DockerNetworkAction) => request<{ job: ModuleJob }>(`/api/modules/docker/networks/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
   dockerComposeProjects: () => request<ModuleResource>("/api/modules/docker/compose"),
@@ -1025,6 +1049,7 @@ export const api = {
   dockerDiagnostics: () => request<{ generated_at: number; status: ModuleStatus; checks: ModuleDiagnostic[]; config: Record<string, unknown>; prune: Record<string, unknown> }>("/api/modules/docker/diagnostics"),
   dockerEvents: () => request<{ items: Array<Record<string, unknown>>; total: number }>("/api/modules/docker/events?since_seconds=3600&limit=500"),
   dockerPrune: (payload: DockerPrune) => request<{ job: ModuleJob }>("/api/modules/docker/prune", { method: "POST", body: JSON.stringify(payload) }),
+  dockerPrunePlan: (resources: DockerPrune["resources"]) => request<DockerPrunePlan>(`/api/modules/docker/prune/plan?resources=${encodeURIComponent(resources.join(","))}`),
   sambaModuleUsers: () => request<SambaModuleUser[]>("/api/modules/samba/users"),
   sambaModuleUserAction: (username: string, action: "add" | "password" | "enable" | "disable" | "remove", password = "") => request("/api/modules/samba/users/" + encodeURIComponent(username) + "/" + action, { method: "POST", body: JSON.stringify({ password, confirm: true }) }),
   sambaSessions: () => request<SambaSession[]>("/api/modules/samba/sessions"),

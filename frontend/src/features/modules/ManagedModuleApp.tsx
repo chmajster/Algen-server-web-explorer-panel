@@ -106,7 +106,18 @@ export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId
   else content = <ConnectionPanel moduleId={moduleId} canConfigure={canConfigure} t={t} onEdit={(connection) => setDialog({ kind: "connection", connection })} />;
 
   const packageActionDialog = dialog?.kind === "action" && moduleId === "linux-updates" && ["refresh", "upgrade_security", "upgrade_all"].includes(dialog.action);
-  return <><section className="module-app managed-module"><ModuleHeader name={moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : summary.manifest.name} status={status} healthMessage={healthMessage} stateLabel={stateLabel} stateValue={stateValue} activeJob={job ? { operation: job.operation || job.action, progress: job.progress } : null} t={t} actions={<button onClick={() => void reloadVisible()}><RefreshCw />{t("action.refresh")}</button>} /><div className="module-layout"><nav className="module-navigation" aria-label={t("module.sections")}>{sections.map((name) => <button key={name} className={section === name ? "active" : ""} onClick={() => setSection(name)}>{navIcon(name)}<span>{t(RESOURCE_LABELS[name] || `managed.${name}`)}</span></button>)}</nav><main className="module-content">{content}</main></div></section>{liveJob && <PackageJobDialog initialJob={liveJob} moduleName={moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : summary.manifest.name} t={t} onClose={() => { setLiveJob(null); void reloadVisible(); }} />}{dialog && <AdminActionDialog title={dialogTitle(dialog, t)} fields={dialogFields(dialog, t)} description={packageActionDialog && dialog.kind === "action" ? <LinuxUpdateConfirmation action={dialog.action} status={status} resource={resource} t={t} /> : undefined} submitLabel={packageActionDialog && dialog.kind === "action" ? linuxUpdateSubmitLabel(dialog.action, t) : undefined} danger={"danger" in dialog ? dialog.danger : dialog.kind === "restore" || dialog.kind === "delete"} t={t} onClose={() => setDialog(null)} onSubmit={submit} />}</>;
+  const repositoryToggleDialog = dialog?.kind === "action" && moduleId === "linux-updates" && ["repository_enable", "repository_disable"].includes(dialog.action);
+  const dialogDescription = packageActionDialog && dialog.kind === "action"
+    ? <LinuxUpdateConfirmation action={dialog.action} status={status} resource={resource} t={t} />
+    : repositoryToggleDialog && dialog.kind === "action"
+      ? <RepositoryToggleConfirmation action={dialog.action} repository={dialog.payload || {}} t={t} />
+      : undefined;
+  const submitLabel = packageActionDialog && dialog.kind === "action"
+    ? linuxUpdateSubmitLabel(dialog.action, t)
+    : repositoryToggleDialog && dialog.kind === "action"
+      ? t(dialog.action === "repository_disable" ? "managed.disableRepository" : "managed.enableRepository")
+      : undefined;
+  return <><section className="module-app managed-module"><ModuleHeader name={moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : summary.manifest.name} status={status} healthMessage={healthMessage} stateLabel={stateLabel} stateValue={stateValue} activeJob={job ? { operation: job.operation || job.action, progress: job.progress } : null} t={t} actions={<button onClick={() => void reloadVisible()}><RefreshCw />{t("action.refresh")}</button>} /><div className="module-layout"><nav className="module-navigation" aria-label={t("module.sections")}>{sections.map((name) => <button key={name} className={section === name ? "active" : ""} onClick={() => setSection(name)}>{navIcon(name)}<span>{t(RESOURCE_LABELS[name] || `managed.${name}`)}</span></button>)}</nav><main className="module-content">{content}</main></div></section>{liveJob && <PackageJobDialog initialJob={liveJob} moduleName={moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : summary.manifest.name} t={t} onClose={() => { setLiveJob(null); void reloadVisible(); }} />}{dialog && <AdminActionDialog title={dialogTitle(dialog, t)} fields={dialogFields(dialog, t)} description={dialogDescription} submitLabel={submitLabel} danger={"danger" in dialog ? dialog.danger : dialog.kind === "restore" || dialog.kind === "delete"} t={t} onClose={() => setDialog(null)} onSubmit={submit} />}</>;
 }
 
 function LinuxUpdateConfirmation({ action, status, resource, t }: { action: string; status: ModuleStatus; resource: ModuleResource | null; t: Translate }) {
@@ -126,6 +137,38 @@ function linuxUpdateSubmitLabel(action: string, t: Translate): string {
   return t("managed.confirm.installAll");
 }
 
+function RepositoryToggleConfirmation({ action, repository, t }: { action: string; repository: Record<string, unknown>; t: Translate }) {
+  const disabling = action === "repository_disable";
+  const name = String(repository.name || repository.repository_id || t("managed.repository"));
+  const uri = String(repository.uri || "—");
+  const components = Array.isArray(repository.components) ? repository.components.join(" ") : String(repository.components || "");
+  const definition = [String(repository.type || ""), String(repository.suite || ""), components].filter(Boolean).join(" · ") || "—";
+  const file = String(repository.file || "—");
+  return <section className="repository-toggle-confirmation">
+    <div className={`repository-toggle-intro ${disabling ? "disable" : "enable"}`}>
+      <Power />
+      <div>
+        <strong>{t(disabling ? "managed.repositoryConfirm.disableTitle" : "managed.repositoryConfirm.enableTitle")}</strong>
+        <p>{t(disabling ? "managed.repositoryConfirm.disableIntro" : "managed.repositoryConfirm.enableIntro")}</p>
+      </div>
+    </div>
+    <dl>
+      <div><dt>{t("managed.repositoryName")}</dt><dd>{name}</dd></div>
+      <div><dt>{t("managed.repositoryUrl")}</dt><dd>{uri}</dd></div>
+      <div><dt>{t("managed.repositoryConfirm.definition")}</dt><dd>{definition}</dd></div>
+      <div><dt>{t("managed.repositoryConfirm.sourceFile")}</dt><dd>{file}</dd></div>
+    </dl>
+    <div className="repository-toggle-effects">
+      <strong>{t("managed.repositoryConfirm.effects")}</strong>
+      <ul>
+        <li>{t(disabling ? "managed.repositoryConfirm.disableEffect" : "managed.repositoryConfirm.enableEffect")}</li>
+        <li>{t(disabling ? "managed.repositoryConfirm.packagesStay" : "managed.repositoryConfirm.noImmediateUpdate")}</li>
+        <li>{t(disabling ? "managed.repositoryConfirm.reversible" : "managed.repositoryConfirm.refreshRecommended")}</li>
+      </ul>
+    </div>
+  </section>;
+}
+
 function moduleActionVisible(action: string, status: ModuleStatus): boolean {
   if (action === "install_container") return !status.installed;
   if (action === "container_start") return status.installed && status.service_state !== "active";
@@ -141,7 +184,7 @@ function RepositoryCatalog({ resource, loading, error, canOperate, t, onRetry, o
   return <div className="repository-list">{resource.items.map((item) => {
     const id = String(item.id || ""); const enabled = item.enabled === true; const components = Array.isArray(item.components) ? item.components.join(" ") : String(item.components || "");
     const payload = { ...item, repository_id: id, components };
-    return <article className="repository-card" key={id}><span className={`repository-state ${enabled ? "enabled" : "disabled"}`}><Database /></span><div className="repository-main"><header><strong>{String(item.name || item.repository_id || t("managed.repository"))}</strong><span className={`status-badge ${enabled ? "completed" : "cancelled"}`}>{t(enabled ? "common.enabled" : "common.disabled")}</span>{item.managed === true && <span className="repository-managed">WebNAS</span>}</header><code>{String(item.uri || "—")}</code><small>{[String(item.type || ""), String(item.suite || ""), components].filter(Boolean).join(" · ") || String(item.format || "")}</small><small title={String(item.file || "")}>{String(item.file || "—")}</small></div>{canOperate && <div className="repository-actions"><button title={t("action.edit")} onClick={() => onAction("repository_update", payload)}><Pencil /></button><button title={t(enabled ? "managed.disableRepository" : "managed.enableRepository")} onClick={() => onAction(enabled ? "repository_disable" : "repository_enable", { repository_id: id, name: item.name })}><Power /></button><button className="danger" title={t("action.delete")} onClick={() => onAction("repository_delete", { repository_id: id, name: item.name })}><Trash2 /></button></div>}</article>;
+    return <article className="repository-card" key={id}><span className={`repository-state ${enabled ? "enabled" : "disabled"}`}><Database /></span><div className="repository-main"><header><strong>{String(item.name || item.repository_id || t("managed.repository"))}</strong><span className={`status-badge ${enabled ? "completed" : "cancelled"}`}>{t(enabled ? "common.enabled" : "common.disabled")}</span>{item.managed === true && <span className="repository-managed">WebNAS</span>}</header><code>{String(item.uri || "—")}</code><small>{[String(item.type || ""), String(item.suite || ""), components].filter(Boolean).join(" · ") || String(item.format || "")}</small><small title={String(item.file || "")}>{String(item.file || "—")}</small></div>{canOperate && <div className="repository-actions"><button title={t("action.edit")} onClick={() => onAction("repository_update", payload)}><Pencil /></button><button title={t(enabled ? "managed.disableRepository" : "managed.enableRepository")} onClick={() => onAction(enabled ? "repository_disable" : "repository_enable", payload)}><Power /></button><button className="danger" title={t("action.delete")} onClick={() => onAction("repository_delete", { repository_id: id, name: item.name })}><Trash2 /></button></div>}</article>;
   })}</div>;
 }
 
@@ -228,6 +271,7 @@ function actionPayload(action: string, values: Record<string, string>, initial: 
     if (values.gpgcheck !== undefined) Object.assign(result, { gpgcheck: values.gpgcheck === "true", gpgkey: values.gpgkey });
     return result;
   }
+  if (["repository_enable", "repository_disable"].includes(action)) return { repository_id: initial.repository_id };
   return initial;
 }
 function dialogFields(dialog: ActionDialog, t: Translate): AdminField[] { if (dialog.kind === "action") return dialog.fields || []; if (dialog.kind === "connection") return [{ name: "base_url", label: t("managed.apiUrl"), value: dialog.connection?.base_url || "http://127.0.0.1", required: true }, { name: "username", label: t("settings.username"), value: dialog.connection?.username || "" }, { name: "secret", label: t("managed.apiSecret"), type: "password" }]; if (dialog.kind === "compose") return [{ name: "project", label: t("managed.project"), value: dialog.project || "", required: true }, { name: "content", label: t("managed.composeYaml"), type: "textarea", value: dialog.content || "services:\n  app:\n    image: nginx:stable\n    restart: unless-stopped\n", required: true }]; if (dialog.kind === "backup") return [{ name: "description", label: t("module.backupDescription") }]; return []; }

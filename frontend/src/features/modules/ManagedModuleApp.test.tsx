@@ -178,4 +178,25 @@ describe("ManagedModuleApp", () => {
 
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "repository_update", { repository_id: "a".repeat(24), name: "debian", type: "deb", uri: "https://mirror.example.test/debian", suite: "bookworm", components: "main", options: "", enabled: true }));
   });
+
+  it("explains repository disabling and sends only its identifier", async () => {
+    const repositoryId = "a".repeat(24);
+    vi.mocked(api.module).mockResolvedValue({ ...linuxSummary, capabilities: { ...linuxSummary.capabilities, resources: [...linuxSummary.capabilities.resources, "repositories"], actions: [...linuxSummary.capabilities.actions, "repository_enable", "repository_disable"] } });
+    vi.mocked(api.moduleResource).mockResolvedValue({ resource: "repositories", items: [{ id: repositoryId, name: "debian", type: "deb", uri: "http://deb.debian.org/debian", suite: "bookworm", components: ["main"], enabled: true, file: "/etc/apt/sources.list" }], total: 1 });
+
+    render(<ManagedModuleApp moduleId="linux-updates" permissions={["modules.view", "updates.view", "updates.apply"]} t={(key) => key} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /managed.repositories/ }));
+    fireEvent.click(await screen.findByTitle("managed.disableRepository"));
+
+    const dialog = screen.getByRole("dialog", { name: "managed.action.repository_disable" });
+    expect(within(dialog).getByText("managed.repositoryConfirm.disableIntro")).toBeInTheDocument();
+    expect(within(dialog).getByText("debian")).toBeInTheDocument();
+    expect(within(dialog).getByText("http://deb.debian.org/debian")).toBeInTheDocument();
+    expect(within(dialog).getByText("deb · bookworm · main")).toBeInTheDocument();
+    expect(within(dialog).getByText("/etc/apt/sources.list")).toBeInTheDocument();
+    expect(within(dialog).getByText("managed.repositoryConfirm.packagesStay")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "managed.disableRepository" }));
+
+    await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("linux-updates", "repository_disable", { repository_id: repositoryId }));
+  });
 });

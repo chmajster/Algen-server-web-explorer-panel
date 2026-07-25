@@ -75,6 +75,7 @@ export function DockerManagerApp({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [job, setJob] = useState<ModuleJob | null>(null);
+  const [resourceRefresh, setResourceRefresh] = useState(0);
   const [engineAction, setEngineAction] = useState<DockerEngineAction["action"] | null>(null);
   const [prune, setPrune] = useState(false);
   const can = useCallback(
@@ -221,7 +222,7 @@ export function DockerManagerApp({
   else if (section === "volumes")
     content = <VolumesManager permissions={permissions} t={t} toast={toast} onJob={started} />;
   else if (section === "networks")
-    content = <NetworksManager permissions={permissions} t={t} toast={toast} onJob={started} />;
+    content = <NetworksManager permissions={permissions} refreshToken={resourceRefresh} t={t} toast={toast} onJob={started} />;
   else if (section === "registries")
     content = <RegistryManager t={t} toast={toast} onJob={started} />;
   else if (section === "events")
@@ -299,6 +300,7 @@ export function DockerManagerApp({
           t={t}
           onClose={() => {
             setJob(null);
+            setResourceRefresh((current) => current + 1);
             void load();
           }}
         />

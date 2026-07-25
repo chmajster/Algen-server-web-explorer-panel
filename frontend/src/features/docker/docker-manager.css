@@ -204,6 +204,168 @@
   min-width: 34px;
   padding: 6px;
 }
+.docker-network-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.docker-network-name small {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--surface-secondary);
+  font-size: 0.65rem;
+}
+.docker-network-tags {
+  max-width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+}
+.docker-network-tags code {
+  max-width: 135px;
+  padding: 3px 6px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--surface-secondary);
+  text-overflow: ellipsis;
+}
+.docker-network-tags > span {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+.docker-empty-value {
+  color: var(--text-muted);
+}
+.docker-network-form,
+.docker-network-action-form {
+  display: grid;
+  gap: 14px;
+}
+.docker-network-form fieldset {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+  padding: 13px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+  background: var(--surface-secondary);
+}
+.docker-network-form legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+.docker-network-basics,
+.docker-network-ipam {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+.docker-network-ipam label,
+.docker-network-label-row label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+.docker-network-ipam label:first-child {
+  grid-column: 1 / -1;
+}
+.docker-network-modes {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.docker-network-modes label,
+.docker-network-form .check-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.docker-network-modes input,
+.docker-network-form .check-row input {
+  min-height: auto;
+}
+.docker-form-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+.docker-field-error {
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+.docker-network-advanced {
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+}
+.docker-network-advanced summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.docker-network-advanced[open] summary {
+  margin-bottom: 13px;
+}
+.docker-network-labels {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.docker-network-labels > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.docker-network-label-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(160px, 1.5fr) 36px;
+  align-items: end;
+  gap: 7px;
+  padding: 9px;
+  border-radius: var(--radius-small);
+  background: var(--surface-secondary);
+}
+.docker-network-label-row > button {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+}
+.docker-network-label-row .docker-field-error {
+  grid-column: 1 / -1;
+}
+.docker-prune-preview {
+  max-height: 280px;
+  padding: 12px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+  background: var(--surface-secondary);
+}
+.docker-prune-preview h3 {
+  margin: 0 0 8px;
+}
+.docker-prune-preview ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.docker-prune-preview li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.docker-prune-preview code {
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+}
 .docker-status {
   display: inline-flex;
   padding: 3px 8px;
@@ -964,8 +1126,23 @@
     margin: 8px 0 0;
   }
   .docker-container-settings > label:not(.check-row),
-  .docker-settings-fields {
+  .docker-settings-fields,
+  .docker-network-basics,
+  .docker-network-ipam {
     grid-template-columns: 1fr;
+  }
+  .docker-network-ipam label:first-child {
+    grid-column: auto;
+  }
+  .docker-network-label-row {
+    grid-template-columns: 1fr 36px;
+  }
+  .docker-network-label-row label {
+    grid-column: 1 / -1;
+  }
+  .docker-network-label-row > button {
+    grid-column: 2;
+    grid-row: 1;
   }
   .docker-settings-fields {
     padding-left: 0;

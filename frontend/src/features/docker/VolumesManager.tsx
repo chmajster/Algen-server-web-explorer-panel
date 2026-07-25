@@ -43,10 +43,10 @@ export function VolumesManager({
     try {
       const result =
         dialog.action === "create"
-          ? await api.createDockerVolume({ name: values.name, labels: {} })
+          ? await api.createDockerVolume({ name: values.name.trim(), labels: {} })
           : await api.dockerVolumeAction(dialog.target || "all", {
               action: dialog.action,
-              target_name: values.target_name || null,
+              target_name: values.target_name?.trim() || null,
               backup_id: values.backup_id || null,
               confirmation: dialog.action === "prune" ? "volumes" : dialog.target || "",
               pam_password: values.pam_password || null,
@@ -150,6 +150,17 @@ export function VolumesManager({
                     name: "name",
                     label: t("docker.field.name"),
                     required: true,
+                    minLength: 2,
+                    maxLength: 128,
+                    pattern: "[A-Za-z0-9][A-Za-z0-9_.-]+",
+                    validate: (value) => {
+                      const name = value.trim();
+                      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{1,127}$/.test(name))
+                        return t("docker.volumeValidation.nameInvalid");
+                      if (items.some((item) => String(item.Name || "") === name))
+                        return t("docker.volumeValidation.nameDuplicate");
+                      return "";
+                    },
                   },
                 ]
               : dialog.action === "clone"
@@ -158,6 +169,17 @@ export function VolumesManager({
                       name: "target_name",
                       label: t("docker.cloneName"),
                       required: true,
+                      minLength: 2,
+                      maxLength: 128,
+                      pattern: "[A-Za-z0-9][A-Za-z0-9_.-]+",
+                      validate: (value) => {
+                        const name = value.trim();
+                        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{1,127}$/.test(name))
+                          return t("docker.volumeValidation.nameInvalid");
+                        if (items.some((item) => String(item.Name || "") === name))
+                          return t("docker.volumeValidation.nameDuplicate");
+                        return "";
+                      },
                     },
                   ]
                 : dialog.action === "restore"

@@ -15,6 +15,7 @@ LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 PATH_RE = re.compile(r"^/[A-Za-z0-9._~!$&'()+,;=:@%/-]{0,1023}$")
 PROJECT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 REGISTRY_RE = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::[1-9][0-9]{0,4})?$", re.ASCII)
+VOLUME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,127}$")
 
 
 def _identifier(value: str, label: str = "identifier") -> str:
@@ -31,6 +32,13 @@ def _image(value: str) -> str:
     return value
 
 
+def _volume_name(value: str) -> str:
+    value = value.strip()
+    if not VOLUME_RE.fullmatch(value):
+        raise ValueError("volume name must contain 2-128 letters, numbers, dots, dashes or underscores")
+    return value
+
+
 def _environment(value: dict[str, str], message: str) -> dict[str, str]:
     if any(
         not ENV_RE.fullmatch(key)
@@ -41,6 +49,17 @@ def _environment(value: dict[str, str], message: str) -> dict[str, str]:
         for key, item in value.items()
     ):
         raise ValueError(message)
+    return value
+
+
+def _labels(value: dict[str, str]) -> dict[str, str]:
+    if any(
+        not LABEL_RE.fullmatch(key)
+        or len(item) > 512
+        or any(character in item for character in "\x00\r\n")
+        for key, item in value.items()
+    ):
+        raise ValueError("invalid label")
     return value
 
 
@@ -205,9 +224,7 @@ class ContainerCreateRequest(DockerModel):
     @field_validator("labels")
     @classmethod
     def valid_labels(cls, value: dict[str, str]) -> dict[str, str]:
-        if any(not LABEL_RE.fullmatch(key) or len(item) > 512 or any(character in item for character in "\x00\r\n") for key, item in value.items()):
-            raise ValueError("invalid label")
-        return value
+        return _labels(value)
 
     @model_validator(mode="after")
     def distinct_ports_and_mounts(self) -> "ContainerCreateRequest":
@@ -355,7 +372,12 @@ class VolumeCreateRequest(DockerModel):
     @field_validator("name")
     @classmethod
     def valid_name(cls, value: str) -> str:
-        return _identifier(value, "volume name")
+        return _volume_name(value)
+
+    @field_validator("labels")
+    @classmethod
+    def valid_labels(cls, value: dict[str, str]) -> dict[str, str]:
+        return _labels(value)
 
 
 class VolumeActionRequest(DockerModel):
@@ -369,7 +391,7 @@ class VolumeActionRequest(DockerModel):
     @field_validator("target_name")
     @classmethod
     def valid_target_name(cls, value: str | None) -> str | None:
-        return _identifier(value, "volume name") if value else None
+        return _volume_name(value) if value else None
 
     @model_validator(mode="after")
     def required_action_fields(self) -> "VolumeActionRequest":
@@ -383,10 +405,16 @@ class VolumeActionRequest(DockerModel):
 class NetworkCreateRequest(DockerModel):
     name: str
     driver: Literal["bridge"] = "bridge"
-    subnet: str | None = None
-    gateway: str | None = None
+    ipv4_mode: Literal["auto", "manual"] = "auto"
+    ipv4_subnet: str | None = None
+    ipv4_ip_range: str | None = None
+    ipv4_gateway: str | None = None
+    ipv6_mode: Literal["none", "manual"] = "none"
+    ipv6_subnet: str | None = None
+    ipv6_ip_range: str | None = None
+    ipv6_gateway: str | None = None
     internal: bool = False
-    ipv6: bool = False
+    disable_ip_masquerade: bool = False
     labels: dict[str, str] = Field(default_factory=dict, max_length=100)
 
     @field_validator("name")
@@ -397,18 +425,61 @@ class NetworkCreateRequest(DockerModel):
             raise ValueError("system networks cannot be replaced")
         return value
 
+    @field_validator("labels")
+    @classmethod
+    def valid_labels(cls, value: dict[str, str]) -> dict[str, str]:
+        return _labels(value)
+
     @model_validator(mode="after")
     def valid_ipam(self) -> "NetworkCreateRequest":
-        network = ipaddress.ip_network(self.subnet, strict=False) if self.subnet else None
-        gateway = ipaddress.ip_address(self.gateway) if self.gateway else None
-        if gateway and not network:
-            raise ValueError("gateway requires a subnet")
-        if network and gateway and gateway not in network:
-            raise ValueError("gateway must belong to subnet")
-        if network and network.is_multicast:
-            raise ValueError("multicast subnet is forbidden")
-        self.subnet = str(network) if network else None
-        self.gateway = str(gateway) if gateway else None
+        def normalize(
+            version: Literal[4, 6],
+            mode: str,
+            subnet_value: str | None,
+            range_value: str | None,
+            gateway_value: str | None,
+        ) -> tuple[str | None, str | None, str | None]:
+            values = (subnet_value, range_value, gateway_value)
+            if mode in {"auto", "none"}:
+                if any(value is not None for value in values):
+                    raise ValueError(f"IPv{version} {mode} mode does not accept manual IPAM fields")
+                return None, None, None
+            if not subnet_value:
+                raise ValueError(f"IPv{version} manual mode requires a subnet")
+            try:
+                network = ipaddress.ip_network(subnet_value, strict=False)
+                ip_range = ipaddress.ip_network(range_value, strict=False) if range_value else None
+                gateway = ipaddress.ip_address(gateway_value) if gateway_value else None
+            except ValueError as error:
+                raise ValueError(f"invalid IPv{version} IPAM value") from error
+            if network.version != version or network.is_multicast or network.prefixlen == 0:
+                raise ValueError(f"invalid IPv{version} subnet")
+            if ip_range and (
+                ip_range.version != version
+                or ip_range.is_multicast
+                or not ip_range.subnet_of(network)
+            ):
+                raise ValueError(f"IPv{version} IP range must belong to the subnet")
+            if gateway and (gateway.version != version or gateway not in network):
+                raise ValueError(f"IPv{version} gateway must belong to the subnet")
+            if version == 4 and gateway and gateway in {network.network_address, network.broadcast_address}:
+                raise ValueError("IPv4 gateway must be a usable host address")
+            return str(network), str(ip_range) if ip_range else None, str(gateway) if gateway else None
+
+        self.ipv4_subnet, self.ipv4_ip_range, self.ipv4_gateway = normalize(
+            4,
+            self.ipv4_mode,
+            self.ipv4_subnet,
+            self.ipv4_ip_range,
+            self.ipv4_gateway,
+        )
+        self.ipv6_subnet, self.ipv6_ip_range, self.ipv6_gateway = normalize(
+            6,
+            self.ipv6_mode,
+            self.ipv6_subnet,
+            self.ipv6_ip_range,
+            self.ipv6_gateway,
+        )
         return self
 
 
@@ -428,6 +499,61 @@ class NetworkActionRequest(DockerModel):
     def container_required(self) -> "NetworkActionRequest":
         if self.action in {"connect", "disconnect"} and not self.container:
             raise ValueError("container is required")
+        return self
+
+
+class DefaultBridgeConfigRequest(DockerModel):
+    ipv4_mode: Literal["auto", "manual"] = "auto"
+    ipv4_subnet: str | None = None
+    ipv4_ip_range: str | None = None
+    ipv4_gateway: str | None = None
+    ipv6_mode: Literal["none", "manual"] = "none"
+    ipv6_subnet: str | None = None
+    ipv6_gateway: str | None = None
+    disable_ip_masquerade: bool = False
+    confirmation: str = ""
+    pam_password: str | None = Field(default=None, max_length=1024)
+
+    @model_validator(mode="after")
+    def valid_bridge_ipam(self) -> "DefaultBridgeConfigRequest":
+        if self.ipv4_mode == "auto":
+            if any(value is not None for value in (self.ipv4_subnet, self.ipv4_ip_range, self.ipv4_gateway)):
+                raise ValueError("IPv4 auto mode does not accept manual IPAM fields")
+        else:
+            if not self.ipv4_subnet or not self.ipv4_gateway:
+                raise ValueError("manual default bridge IPv4 requires a subnet and gateway")
+            try:
+                network = ipaddress.ip_network(self.ipv4_subnet, strict=False)
+                ip_range = ipaddress.ip_network(self.ipv4_ip_range, strict=False) if self.ipv4_ip_range else None
+                gateway = ipaddress.ip_address(self.ipv4_gateway)
+            except ValueError as error:
+                raise ValueError("invalid default bridge IPv4 configuration") from error
+            if network.version != 4 or network.is_multicast or network.prefixlen == 0:
+                raise ValueError("invalid default bridge IPv4 subnet")
+            if ip_range and (ip_range.version != 4 or not ip_range.subnet_of(network)):
+                raise ValueError("default bridge IPv4 range must belong to the subnet")
+            if gateway.version != 4 or gateway not in network or gateway in {network.network_address, network.broadcast_address}:
+                raise ValueError("default bridge IPv4 gateway must be a usable address in the subnet")
+            self.ipv4_subnet = str(network)
+            self.ipv4_ip_range = str(ip_range) if ip_range else None
+            self.ipv4_gateway = str(gateway)
+        if self.ipv6_mode == "none":
+            if self.ipv6_subnet is not None or self.ipv6_gateway is not None:
+                raise ValueError("IPv6 none mode does not accept manual IPAM fields")
+        else:
+            if not self.ipv6_subnet:
+                raise ValueError("manual default bridge IPv6 requires a subnet")
+            try:
+                network6 = ipaddress.ip_network(self.ipv6_subnet, strict=False)
+                gateway6 = ipaddress.ip_address(self.ipv6_gateway) if self.ipv6_gateway else None
+            except ValueError as error:
+                raise ValueError("invalid default bridge IPv6 configuration") from error
+            if network6.version != 6 or network6.is_multicast or network6.prefixlen == 0:
+                raise ValueError("invalid default bridge IPv6 subnet")
+            if gateway6 and (gateway6.version != 6 or gateway6 not in network6):
+                raise ValueError("default bridge IPv6 gateway must belong to the subnet")
+            self.ipv6_subnet = str(network6)
+            self.ipv6_gateway = str(gateway6) if gateway6 else None
         return self
 
 

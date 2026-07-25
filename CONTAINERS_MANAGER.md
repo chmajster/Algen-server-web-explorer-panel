@@ -20,6 +20,8 @@ The desktop application is split into independently maintained views:
 - registries with password/token files outside SQLite, TLS/custom-CA metadata, login tests, logout and `docker login --password-stdin`;
 - Compose projects with static allowlist checks plus mandatory `docker compose config`, separate public and secret `.env` values, service status/logs, revision history, rollback, lifecycle actions and typed service scaling;
 - volumes and networks with consumers, protected system networks, subnet-conflict checks, volume backup/restore/clone and destructive previews;
+- a dedicated bridge-network editor with automatic or manual IPv4, optional manual IPv6, contained allocation ranges, gateways, internal mode, labels and an explicit IP-masquerade override; the same screen can safely configure Docker's default `bridge` through the existing validated, backed-up and rollback-capable `daemon.json` workflow;
+- typed container pickers for connecting and disconnecting networks, exact-confirmation/PAM removal that refuses networks with attached containers, and a prune preview listing every unused custom network before deletion;
 - versioned one-click templates for Pi-hole, AdGuard Home, Home Assistant, Uptime Kuma, Nginx Proxy Manager, Jellyfin, Syncthing, Nextcloud, MariaDB, PostgreSQL and Redis;
 - container creation from the typed wizard, an editable JSON container configuration, or an imported Compose YAML file that is validated before it is saved and optionally started;
 - WebNAS container/volume/image backup artifacts and restore to a new container name;
@@ -36,7 +38,7 @@ All routes are under `/api/modules/docker`:
 | Dashboard/engine | `GET /dashboard`, `GET /engine`, `POST /engine/actions`, `GET/PUT /daemon-config` |
 | Containers | `GET/POST /containers`, `POST /containers/import`, `GET /containers/{name}`, `GET/PUT /containers/{name}/settings`, `POST /containers/{name}/actions`, `/logs`, `/logs/stream`, `/stats`, `/processes`, `/compose`, `/export`, `/backup` |
 | Images/registries | `GET /images`, `GET /images/search`, `POST /images/actions`, `POST /images/import`, registry CRUD/test routes |
-| Volumes/networks | list/detail/create routes and typed `POST .../{name}/actions` |
+| Volumes/networks | list/detail/create routes, `GET/PUT /networks/default-bridge`, `GET /networks/{name}/containers`, and typed `POST .../{name}/actions` |
 | Compose | list/get/save/validate/action/status/log/history/rollback routes below `/compose` |
 | Catalog/events | `GET /apps`, app install/action routes, `GET /events` |
 | Cleanup/backups | `GET /prune/plan`, `POST /prune`, `GET /backups`, restore and checksummed artifact download routes |
