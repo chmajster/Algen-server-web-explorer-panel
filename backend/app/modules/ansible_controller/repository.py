@@ -745,12 +745,13 @@ class AnsibleRepository:
 
             latest_scan = connection.execute("SELECT id,status,created_at,discovered FROM network_scans ORDER BY created_at DESC LIMIT 1").fetchone()
             latest_sync = connection.execute("SELECT id,name,last_sync_at,last_sync_status,last_commit FROM projects WHERE last_sync_at IS NOT NULL ORDER BY last_sync_at DESC LIMIT 1").fetchone()
+            central_hosts = self.list_hosts(active_only=True) if self.centralized_hosts else []
             return {
-                "hosts": scalar("SELECT count(*) FROM hosts WHERE active=1"),
-                "hosts_online": scalar("SELECT count(*) FROM hosts WHERE active=1 AND last_error='' AND last_test_at IS NOT NULL"),
-                "hosts_unreachable": scalar("SELECT count(*) FROM hosts WHERE active=1 AND last_error<>''"),
-                "host_key_errors": scalar("SELECT count(*) FROM hosts WHERE active=1 AND fingerprint_status='changed'"),
-                "groups": scalar("SELECT count(*) FROM inventory_groups WHERE active=1"),
+                "hosts": len(central_hosts) if self.centralized_hosts else scalar("SELECT count(*) FROM hosts WHERE active=1"),
+                "hosts_online": sum(item["connection_status"] == "online" for item in central_hosts) if self.centralized_hosts else scalar("SELECT count(*) FROM hosts WHERE active=1 AND last_error='' AND last_test_at IS NOT NULL"),
+                "hosts_unreachable": sum(item["connection_status"] == "offline" for item in central_hosts) if self.centralized_hosts else scalar("SELECT count(*) FROM hosts WHERE active=1 AND last_error<>''"),
+                "host_key_errors": sum(item["fingerprint_status"] == "changed" for item in central_hosts) if self.centralized_hosts else scalar("SELECT count(*) FROM hosts WHERE active=1 AND fingerprint_status='changed'"),
+                "groups": len([item for item in self.list_groups() if item["active"]]) if self.centralized_hosts else scalar("SELECT count(*) FROM inventory_groups WHERE active=1"),
                 "projects": scalar("SELECT count(*) FROM projects WHERE active=1"),
                 "playbooks": scalar("SELECT count(*) FROM playbooks WHERE active=1"),
                 "templates": scalar("SELECT count(*) FROM job_templates WHERE active=1"),

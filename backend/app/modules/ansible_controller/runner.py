@@ -548,8 +548,12 @@ def execute_ad_hoc(
         progress(20, "Run controlled Ansible host test")
         code, stdout, stderr = _run_process(args, cwd=directory, env=_safe_environment(home, directory), timeout=120, log=log, cancelled=cancelled, uid=uid, gid=gid)
         now = time.time()
-        with repository._lock, repository.connect() as connection:
-            connection.execute("UPDATE hosts SET last_test_at=?,last_error=?,updated_at=?,updated_by=? WHERE id=?", (now, "" if code == 0 else redact_text(stderr)[:2000], now, actor, host_id))
+        if repository.centralized_hosts:
+            from ..hosts_manager.service import registry
+            registry()._update_host(host_id, actor, last_test_at=now, last_seen_at=now if code == 0 else None, connection_status="online" if code == 0 else "offline", last_error="" if code == 0 else redact_text(stderr)[:2000])
+        else:
+            with repository._lock, repository.connect() as connection:
+                connection.execute("UPDATE hosts SET last_test_at=?,last_error=?,updated_at=?,updated_by=? WHERE id=?", (now, "" if code == 0 else redact_text(stderr)[:2000], now, actor, host_id))
         if code != 0:
             raise RuntimeError("Ansible host test failed")
         stored: dict[str, Any] = {}

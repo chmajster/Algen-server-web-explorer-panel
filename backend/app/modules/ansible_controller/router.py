@@ -63,7 +63,7 @@ def _require_confirmation(confirm: bool, message: str = "Explicit confirmation i
 def _require_credential_type(credential_id: str | None, allowed: set[str], managed_host_id: str | None = None) -> None:
     if not credential_id:
         return
-    credential = repository()._get("credentials", credential_id)
+    credential = next((item for item in repository().credentials() if item["id"] == credential_id), None)
     if not credential or not credential.get("active"):
         api_error(422, "CREDENTIAL_NOT_FOUND", "Referenced credential is unavailable")
     description = str(credential.get("description") or "")
@@ -172,6 +172,12 @@ def enroll_host(payload: EnrollmentClaimInput, authorization: str = Header(defau
     token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else ""
     if len(token) < 32 or len(token) > 128:
         api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token is invalid, expired, already used, or does not allow this hostname")
+    if repository().centralized_hosts:
+        from ..hosts_manager.service import registry as host_registry
+        saved = host_registry().claim_enrollment_token(token, {"hostname": payload.hostname, "address": payload.address})
+        if not saved:
+            api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token is invalid, expired, already used, or does not allow this hostname")
+        return {"host": saved, "fingerprint_verification_required": True, "approval_required": not saved["approved"]}
     policy = repository().claim_enrollment_token(token, payload.hostname)
     if not policy:
         api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token is invalid, expired, already used, or does not allow this hostname")
@@ -240,8 +246,12 @@ def scan_host_key(host_id: str, user: SessionUser = Depends(require_permission(P
     existing = repository().known_key(item["address"], int(item["port"]))
     changed = bool(existing and all(existing["fingerprint"] != key["fingerprint"] for key in keys))
     if changed:
-        with repository()._lock, repository().connect() as connection:
-            connection.execute("UPDATE hosts SET fingerprint_status='changed',last_error='SSH host key changed',updated_at=?,updated_by=? WHERE id=?", (time.time(), user.username, host_id))
+        if repository().centralized_hosts:
+            from ..hosts_manager.service import registry as host_registry
+            host_registry()._update_host(host_id, user.username, fingerprint_status="changed", last_error="SSH host key changed")
+        else:
+            with repository()._lock, repository().connect() as connection:
+                connection.execute("UPDATE hosts SET fingerprint_status='changed',last_error='SSH host key changed',updated_at=?,updated_by=? WHERE id=?", (time.time(), user.username, host_id))
         repository().audit(user.username, "host_key", host_id, "change_detected", {"address": item["address"]}, result="failure")
     return {"host_id": host_id, "keys": keys, "existing_fingerprint": existing.get("fingerprint") if existing else None, "changed": changed, "requires_acceptance": not existing or changed}
 

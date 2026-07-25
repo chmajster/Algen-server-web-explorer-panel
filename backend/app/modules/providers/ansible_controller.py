@@ -412,8 +412,12 @@ class AnsibleControllerProvider(ModuleProvider):
                 "variables": host.get("variables") or {}, "active": host["active"],
             })
             self.store.save_host(updated, actor, host_id)
-            with self.store._lock, self.store.connect() as connection:
-                connection.execute("UPDATE hosts SET managed_user_created=1,updated_at=?,updated_by=? WHERE id=?", (time.time(), actor, host_id))
+            if self.store.centralized_hosts:
+                from ..hosts_manager.service import registry
+                registry()._update_host(host_id, actor, managed_user_created=1)
+            else:
+                with self.store._lock, self.store.connect() as connection:
+                    connection.execute("UPDATE hosts SET managed_user_created=1,updated_at=?,updated_by=? WHERE id=?", (time.time(), actor, host_id))
             progress(65, f"Unique host key installed for {host['name']}")
             result = execute_ad_hoc(self.store, host_id, actor, log, progress, cancelled, facts=True)
             self.store.audit(actor, "host", host_id, "key_rotated" if rotating else "onboard_complete", {"managed_user_created": True, "managed_username": managed_username, "credential_id": managed_credential["id"], "key_scope": "per_host"})

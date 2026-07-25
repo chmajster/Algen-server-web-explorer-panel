@@ -548,6 +548,9 @@ def create_backup(payload: BackupInput, user: SessionUser = Depends(require_perm
     snapshot = _service().backups_root / f".{backup_id}.sqlite3"
     with _service().connect() as source, sqlite3.connect(snapshot) as destination:
         source.backup(destination)
+    if not payload.include_credentials:
+        with sqlite3.connect(snapshot) as connection:
+            connection.execute("UPDATE credentials SET encrypted_secret=''")
     manifest = json.dumps({"module": "hosts-manager", "schema_version": 1, "created_at": time.time(), "description": payload.description, "includes_credentials": payload.include_credentials})
     with tarfile.open(target, "w:gz") as archive:
         info = tarfile.TarInfo("manifest.json")
@@ -555,6 +558,10 @@ def create_backup(payload: BackupInput, user: SessionUser = Depends(require_perm
         info.size = len(encoded)
         archive.addfile(info, io.BytesIO(encoded))
         archive.add(snapshot, arcname="hosts.sqlite3")
+        if payload.include_repositories:
+            for repository_path in _service().repositories_root.iterdir():
+                if repository_path.is_dir() and not repository_path.is_symlink():
+                    archive.add(repository_path, arcname=f"repositories/{repository_path.name}", recursive=True, filter=lambda item: None if item.issym() or item.islnk() else item)
     snapshot.unlink(missing_ok=True)
     os.chmod(target, 0o600)
     item = {"id": backup_id, "filename": target.name, "size": target.stat().st_size, "created_at": target.stat().st_mtime, "checksum": _backup_checksum(target)}

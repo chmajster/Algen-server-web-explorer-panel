@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...audit import logger
@@ -47,7 +47,7 @@ def _queue_due_key_rotations(store: object, current: float) -> int:
 
 def next_run(kind: str, expression: str, timezone: str, after: float | None = None) -> float | None:
     try:
-        zone = ZoneInfo(timezone)
+        zone = UTC if timezone in {"UTC", "Etc/UTC"} else ZoneInfo(timezone)
     except ZoneInfoNotFoundError as error:
         raise ValueError("unknown schedule timezone") from error
     current = datetime.fromtimestamp(after or time.time(), zone)
