@@ -91,6 +91,48 @@ describe("DockerManagerApp", () => {
     expect(vi.mocked(api.createDockerContainer).mock.calls[0][0]).toMatchObject({ name: "safe-web", image: "nginx:stable", secret_environment: { APP_PASSWORD: "private" } });
   });
 
+  it("blocks incomplete steps and allows keyboard-accessible navigation to completed steps", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+
+    const dialog = screen.getByRole("dialog", { name: "docker.createContainer" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog.querySelector(".docker-wizard-workspace")).toBeInTheDocument();
+    expect(dialog.querySelector(".docker-wizard-footer")).toBeInTheDocument();
+    const basicStep = within(dialog).getByRole("button", { name: /docker.wizard.basic/ });
+    expect(basicStep).toHaveAttribute("aria-current", "step");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /action.next/ }));
+    expect(screen.getByRole("alert")).toHaveTextContent("docker.wizard.validation.name");
+    expect(screen.getByLabelText("docker.field.name")).toHaveAttribute("aria-invalid", "true");
+
+    fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "guided-web" } });
+    fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "nginx:stable" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /action.next/ }));
+    expect(screen.getByLabelText("docker.field.ports")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /docker.wizard.basic/ }));
+    expect(screen.getByLabelText("docker.field.name")).toHaveValue("guided-web");
+    fireEvent.click(within(dialog).getByRole("button", { name: /docker.wizard.connectivity/ }));
+    expect(screen.getByLabelText("docker.field.ports")).toBeInTheDocument();
+  });
+
+  it("returns from a review summary card to the related edit step", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "review-web" } });
+    fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "nginx:stable" } });
+    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
+
+    expect(screen.getByText("docker.wizard.preflightPassed")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "action.edit" })[0]);
+    expect(screen.getByLabelText("docker.field.name")).toHaveValue("review-web");
+  });
+
   it("restores a create-container draft after reload without persisting secret fields", async () => {
     const draftKey = "test-window:create-container";
     sessionStorage.removeItem(draftKey);

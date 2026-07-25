@@ -1,9 +1,43 @@
-import { ArrowLeft, ArrowRight, Boxes, FileJson, Folder, FolderOpen, HardDrive, Minus, Plus, RefreshCw, ScrollText, Trash2, Upload, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Box,
+  Boxes,
+  CircleAlert,
+  CircleCheck,
+  Cpu,
+  Database,
+  Folder,
+  FolderOpen,
+  Gauge,
+  HardDrive,
+  HeartPulse,
+  KeyRound,
+  Minus,
+  Network,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  ScrollText,
+  ShieldCheck,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type DockerContainerCreate, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { errorMessage } from "./shared";
+import {
+  FormSection,
+  SummaryCard,
+  SwitchField,
+  WizardFooter,
+  WizardHeader,
+  WizardHelpPanel,
+  WizardStepper,
+  type WizardStep,
+} from "./create-container/WizardChrome";
 
 function pairs(value: string, invalidMessage: string): Record<string, string> {
   return Object.fromEntries(
@@ -27,6 +61,33 @@ type MountRow = {
   readOnly: boolean;
   tmpfsSizeMb: string;
 };
+
+type PortRow = {
+  id: number;
+  published: string;
+  target: string;
+  protocol: "tcp" | "udp";
+};
+
+type EditablePair = { id: number; key: string; value: string };
+
+function portRows(value: string): PortRow[] {
+  return value.split("\n").map((line) => line.trim()).filter(Boolean).map((line, index) => {
+    const match = /^(\d*):(\d*)(?:\/(tcp|udp))?$/.exec(line);
+    return { id: index + 1, published: match?.[1] || "", target: match?.[2] || "", protocol: (match?.[3] || "tcp") as "tcp" | "udp" };
+  });
+}
+
+function editablePairs(value: string): EditablePair[] {
+  return value.split("\n").map((line) => line.trim()).filter(Boolean).map((line, index) => {
+    const separator = line.indexOf("=");
+    return { id: index + 1, key: separator < 0 ? line : line.slice(0, separator), value: separator < 0 ? "" : line.slice(separator + 1) };
+  });
+}
+
+function pairLines(rows: EditablePair[]): string {
+  return rows.filter((row) => row.key || row.value).map((row) => `${row.key}=${row.value}`).join("\n");
+}
 
 type ContainerWizardDraft = {
   step?: number; name?: string; image?: string; network?: string; ports?: string; environment?: string; mounts?: MountRow[];
@@ -122,14 +183,19 @@ export function CreateContainerWizard({
   canViewLocalNetworks: boolean;
 }) {
   const [draft] = useState(() => readContainerDraft(draftKey));
-  const [step, setStep] = useState(() => Math.max(0, Math.min(3, Number(draft.step) || 0)));
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(draft.name || "");
   const [image, setImage] = useState(draft.image || "");
   const [network, setNetwork] = useState(draft.network || "bridge");
   const [ports, setPorts] = useState(draft.ports || "");
+  const [portEntries, setPortEntries] = useState<PortRow[]>(() => portRows(draft.ports || ""));
+  const nextPortId = useRef(Math.max(0, ...portRows(draft.ports || "").map((row) => row.id)) + 1);
   const [environment, setEnvironment] = useState(draft.environment || "");
-  const [secretRows, setSecretRows] = useState([{ key: "", value: "" }]);
+  const [environmentRows, setEnvironmentRows] = useState<EditablePair[]>(() => editablePairs(draft.environment || ""));
+  const [environmentTextMode, setEnvironmentTextMode] = useState(false);
+  const nextEnvironmentId = useRef(Math.max(0, ...editablePairs(draft.environment || "").map((row) => row.id)) + 1);
+  const [secretRows, setSecretRows] = useState<EditablePair[]>([{ id: 1, key: "", value: "" }]);
+  const nextSecretId = useRef(2);
   const [mounts, setMounts] = useState<MountRow[]>(() => Array.isArray(draft.mounts) ? draft.mounts : []);
   const [pathPickerMountId, setPathPickerMountId] = useState<number | null>(null);
   const nextMountId = useRef(Math.max(0, ...(draft.mounts || []).map((item) => Number(item.id) || 0)) + 1);
@@ -143,12 +209,16 @@ export function CreateContainerWizard({
   const [networkAliases, setNetworkAliases] = useState(draft.networkAliases || "");
   const [restartPolicy, setRestartPolicy] = useState<"no" | "always" | "unless-stopped" | "on-failure">(draft.restartPolicy || "unless-stopped");
   const [labels, setLabels] = useState(draft.labels || "");
+  const [labelRows, setLabelRows] = useState<EditablePair[]>(() => editablePairs(draft.labels || ""));
+  const [labelsTextMode, setLabelsTextMode] = useState(false);
+  const nextLabelId = useRef(Math.max(0, ...editablePairs(draft.labels || "").map((row) => row.id)) + 1);
   const [healthType, setHealthType] = useState<"none" | "http" | "tcp">(draft.healthType || "none");
   const [healthPort, setHealthPort] = useState(draft.healthPort || "");
   const [healthPath, setHealthPath] = useState(draft.healthPath || "/");
   const [readOnly, setReadOnly] = useState(draft.readOnly || false);
   const [init, setInit] = useState(draft.init ?? true);
   const [autoStart, setAutoStart] = useState(draft.autoStart ?? true);
+  const [limitsEnabled, setLimitsEnabled] = useState(Boolean(draft.memory || draft.memorySwap || draft.cpus || draft.pids));
   const [composeMode, setComposeMode] = useState(draft.composeMode || false);
   const [composeProject, setComposeProject] = useState(draft.composeProject || "");
   const [composeContent, setComposeContent] = useState(draft.composeContent || "");
@@ -164,6 +234,14 @@ export function CreateContainerWizard({
   const [networkFilterActive, setNetworkFilterActive] = useState(false);
   const configUpload = useRef<HTMLInputElement>(null);
   const composeUpload = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && pathPickerMountId === null) onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose, pathPickerMountId]);
 
   function addMount(values: Partial<Omit<MountRow, "id">> = {}) {
     setMounts((current) => [...current, {
@@ -241,6 +319,69 @@ export function CreateContainerWizard({
     const needle = networkFilterActive ? network.trim().toLowerCase() : "";
     return localNetworks.filter((item) => !needle || item.toLowerCase().includes(needle)).slice(0, 12);
   }, [localNetworks, network, networkFilterActive]);
+
+  const portAnalysis = useMemo(() => {
+    const entered = ports.split("\n").map((line) => line.trim()).filter(Boolean);
+    const valid = entered.filter((line) => /^(\d+):(\d+)(?:\/(tcp|udp))?$/.test(line));
+    return { total: entered.length, valid: valid.length, invalid: entered.filter((line) => !valid.includes(line)) };
+  }, [ports]);
+  const invalidEnvironmentLines = useMemo(
+    () => environment.split("\n").map((line) => line.trim()).filter(Boolean).filter((line) => line.indexOf("=") < 1),
+    [environment],
+  );
+  const incompleteMounts = useMemo(
+    () => mounts.filter((item) => !item.target.trim() || (item.type !== "tmpfs" && !item.source.trim())),
+    [mounts],
+  );
+  const incompleteSecrets = secretRows.some((row) => Boolean(row.key) !== Boolean(row.value));
+  const basicIssues = [
+    !name.trim() ? t("docker.wizard.validation.name") : "",
+    !image.trim() ? t("docker.wizard.validation.image") : "",
+  ].filter(Boolean);
+  const connectivityIssues = [
+    portAnalysis.invalid.length ? t("docker.wizard.validation.ports") : "",
+    invalidEnvironmentLines.length ? t("docker.wizard.validation.environment") : "",
+    incompleteSecrets ? t("docker.wizard.validation.secrets") : "",
+    incompleteMounts.length ? t("docker.wizard.validation.mounts") : "",
+  ].filter(Boolean);
+  const resourceIssues = [
+    healthType !== "none" && (!healthPort || Number(healthPort) < 1 || Number(healthPort) > 65535)
+      ? t("docker.wizard.validation.healthPort")
+      : "",
+  ].filter(Boolean);
+  const reviewIssues = [...basicIssues, ...connectivityIssues, ...resourceIssues];
+  const currentIssues = step === 0 ? basicIssues : step === 1 ? connectivityIssues : step === 2 ? resourceIssues : reviewIssues;
+  const imageStatus = imagesLoading
+    ? t("docker.wizard.imageChecking")
+    : localImages.includes(image.trim())
+      ? t("docker.wizard.imageLocal")
+      : image.trim()
+        ? t("docker.wizard.imagePull")
+        : "";
+  const wizardSteps: WizardStep[] = [
+    { key: "basic", label: t("docker.wizard.basic"), description: t("docker.wizard.basicDescription") },
+    { key: "connectivity", label: t("docker.wizard.connectivity"), description: t("docker.wizard.connectivityDescription") },
+    { key: "resources", label: t("docker.wizard.resources"), description: t("docker.wizard.resourcesDescription") },
+    { key: "review", label: t("docker.wizard.review"), description: t("docker.wizard.reviewDescription") },
+  ];
+
+  function goToStep(target: number) {
+    if (target <= furthestStep) {
+      setStep(target);
+      setShowValidation(false);
+    }
+  }
+
+  function nextStep() {
+    if (currentIssues.length) {
+      setShowValidation(true);
+      return;
+    }
+    const next = Math.min(step + 1, 3);
+    setFurthestStep((current) => Math.max(current, next));
+    setStep(next);
+    setShowValidation(false);
+  }
 
   function lines(value: Record<string, string> | undefined) {
     return Object.entries(value || {}).map(([key, item]) => `${key}=${item}`).join("\n");
@@ -404,7 +545,7 @@ export function CreateContainerWizard({
   }
   if (composeMode) return createPortal(
     <div className="modal-backdrop docker-wizard-backdrop">
-      <section className="modal-panel docker-wizard" role="dialog" aria-modal="true" aria-labelledby="docker-compose-import-title">
+      <section className="modal-panel docker-wizard docker-compose-wizard" role="dialog" aria-modal="true" aria-labelledby="docker-compose-import-title">
         <header>
           <div><ScrollText /><h2 id="docker-compose-import-title">{t("docker.importComposeAndRun")}</h2></div>
           <button aria-label={t("action.close")} onClick={onClose}><X /></button>
@@ -435,136 +576,104 @@ export function CreateContainerWizard({
         aria-modal="true"
         aria-labelledby="docker-create-title"
       >
-        <header>
-          <div>
-            <Boxes />
-            <h2 id="docker-create-title">{t("docker.createContainer")}</h2>
-          </div>
-          <div className="docker-wizard-imports">
-            <input ref={configUpload} className="visually-hidden" type="file" accept=".json,application/json" onChange={(event) => void importConfig(event.target.files?.[0])} />
-            <button type="button" onClick={() => configUpload.current?.click()}><FileJson />{t("docker.importContainerConfig")}</button>
-            {canImportCompose && <>
-              <input ref={composeUpload} className="visually-hidden" type="file" accept=".yaml,.yml,application/yaml,text/yaml" onChange={(event) => void importCompose(event.target.files?.[0])} />
-              <button type="button" onClick={() => composeUpload.current?.click()}><ScrollText />{t("docker.importCompose")}</button>
-            </>}
-          </div>
-          <button aria-label={t("action.close")} onClick={onClose}>
-            <X />
-          </button>
-        </header>
-        <ol className="docker-wizard-steps">
-          {["basic", "connectivity", "resources", "review"].map(
-            (key, index) => (
-              <li
-                className={
-                  step === index ? "active" : step > index ? "done" : ""
-                }
-                key={key}
-              >
-                {t(`docker.wizard.${key}`)}
-              </li>
-            ),
-          )}
-        </ol>
+        <input ref={configUpload} className="visually-hidden" type="file" accept=".json,application/json" onChange={(event) => void importConfig(event.target.files?.[0])} />
+        {canImportCompose && <input ref={composeUpload} className="visually-hidden" type="file" accept=".yaml,.yml,application/yaml,text/yaml" onChange={(event) => void importCompose(event.target.files?.[0])} />}
+        <WizardHeader
+          canImportCompose={canImportCompose}
+          t={t}
+          onClose={onClose}
+          onImportConfig={() => configUpload.current?.click()}
+          onImportCompose={() => composeUpload.current?.click()}
+        />
+        <WizardStepper current={step} furthest={furthestStep} steps={wizardSteps} t={t} onStep={goToStep} />
         <div className="docker-wizard-body">
+          <div className="docker-wizard-workspace">
+            <main className="docker-wizard-form">
           {step === 0 && (
-            <div className="form-grid">
-              <label>
-                {t("docker.field.name")}
-                <input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  autoFocus
-                  required
-                />
-              </label>
-              <label>
-                {t("docker.field.image")}
-                <div className="docker-resource-picker">
-                  <input
-                    value={image}
-                    onChange={(event) => setImage(event.target.value)}
-                    onFocus={() => setImagePickerOpen(true)}
-                    onBlur={() => setImagePickerOpen(false)}
-                    placeholder="nginx:stable"
-                    role="combobox"
-                    aria-label={t("docker.field.image")}
-                    aria-autocomplete="list"
-                    aria-expanded={imagePickerOpen && canViewLocalImages}
-                    aria-controls="docker-local-image-options"
-                    required
-                  />
-                  {imagePickerOpen && canViewLocalImages && (
-                    <div id="docker-local-image-options" className="docker-resource-options" role="listbox" aria-label={t("docker.localImages")}>
-                      {imageSuggestions.map((item) => <button key={item} type="button" role="option" aria-selected={image === item} onMouseDown={(event) => event.preventDefault()} onClick={() => { setImage(item); setImagePickerOpen(false); }}>{item}</button>)}
-                      {!imageSuggestions.length && <span>{imagesLoading ? t("status.loading") : t("docker.noLocalImages")}</span>}
+            <div className="docker-wizard-step">
+              <FormSection title={t("docker.wizard.identification")} description={t("docker.wizard.identificationHint")} icon={Box}>
+                <div className="docker-wizard-fields single">
+                  <label>
+                    <span>{t("docker.field.name")}</span>
+                    <input
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      autoFocus
+                      required
+                      aria-label={t("docker.field.name")}
+                      aria-invalid={showValidation && !name.trim()}
+                      aria-describedby="docker-container-name-hint"
+                    />
+                    <small id="docker-container-name-hint">{t("docker.wizard.nameHint")}</small>
+                  </label>
+                  <label>
+                    <span>{t("docker.field.image")}</span>
+                    <div className="docker-resource-picker">
+                      <input
+                        value={image}
+                        onChange={(event) => setImage(event.target.value)}
+                        onFocus={() => setImagePickerOpen(true)}
+                        onBlur={() => setImagePickerOpen(false)}
+                        placeholder="nginx:stable"
+                        role="combobox"
+                        aria-label={t("docker.field.image")}
+                        aria-autocomplete="list"
+                        aria-expanded={imagePickerOpen && canViewLocalImages}
+                        aria-controls="docker-local-image-options"
+                        aria-invalid={showValidation && !image.trim()}
+                        aria-describedby="docker-container-image-hint"
+                        required
+                      />
+                      {imagePickerOpen && canViewLocalImages && (
+                        <div id="docker-local-image-options" className="docker-resource-options" role="listbox" aria-label={t("docker.localImages")}>
+                          {imageSuggestions.map((item) => <button key={item} type="button" role="option" aria-selected={image === item} onMouseDown={(event) => event.preventDefault()} onClick={() => { setImage(item); setImagePickerOpen(false); }}>{item}</button>)}
+                          {!imageSuggestions.length && <span>{imagesLoading ? t("status.loading") : t("docker.noLocalImages")}</span>}
+                        </div>
+                      )}
                     </div>
-                  )}
+                    <span className="docker-field-meta"><small id="docker-container-image-hint">{t("docker.wizard.imageHint")}</small>{imageStatus && <em className={localImages.includes(image.trim()) ? "success" : ""}>{imageStatus}</em>}</span>
+                  </label>
                 </div>
-                {canViewLocalImages && <small className="field-hint">{t("docker.localImageSearchHint")}</small>}
-              </label>
-              <label>
-                {t("docker.field.network")}
-                <div className="docker-resource-picker">
-                  <input
-                    value={network}
-                    onChange={(event) => { setNetwork(event.target.value); setNetworkFilterActive(true); }}
-                    onFocus={(event) => { setNetworkFilterActive(false); setNetworkPickerOpen(true); event.currentTarget.select(); }}
-                    onBlur={() => setNetworkPickerOpen(false)}
-                    role="combobox"
-                    aria-label={t("docker.field.network")}
-                    aria-autocomplete="list"
-                    aria-expanded={networkPickerOpen && canViewLocalNetworks}
-                    aria-controls="docker-local-network-options"
-                    required
-                  />
-                  {networkPickerOpen && canViewLocalNetworks && (
-                    <div id="docker-local-network-options" className="docker-resource-options" role="listbox" aria-label={t("docker.localNetworks")}>
-                      {networkSuggestions.map((item) => <button key={item} type="button" role="option" aria-selected={network === item} onMouseDown={(event) => event.preventDefault()} onClick={() => { setNetwork(item); setNetworkFilterActive(false); setNetworkPickerOpen(false); }}>{item}</button>)}
-                      {!networkSuggestions.length && <span>{networksLoading ? t("status.loading") : t("docker.noLocalNetworks")}</span>}
+              </FormSection>
+              <FormSection title={t("docker.wizard.startup")} description={t("docker.wizard.startupHint")} icon={RotateCw}>
+                <div className="docker-wizard-fields">
+                  <label><span>{t("docker.field.restartPolicy")}</span><select value={restartPolicy} onChange={(event) => setRestartPolicy(event.target.value as typeof restartPolicy)}>{(["no", "always", "unless-stopped", "on-failure"] as const).map((value) => <option value={value} key={value}>{value}</option>)}</select><small>{t("docker.wizard.restartHint")}</small></label>
+                  <label><span>{t("docker.field.hostname")}</span><input value={hostname} onChange={(event) => setHostname(event.target.value)} placeholder="app-host" /></label>
+                  <SwitchField checked={autoStart} label={t("docker.field.autoStart")} description={t("docker.wizard.autoStartHint")} onChange={setAutoStart} />
+                </div>
+              </FormSection>
+              <FormSection title={t("docker.wizard.basicNetwork")} description={t("docker.wizard.basicNetworkHint")} icon={Network}>
+                <div className="docker-wizard-fields">
+                  <label>
+                    <span>{t("docker.field.network")}</span>
+                    <div className="docker-resource-picker">
+                      <input value={network} onChange={(event) => { setNetwork(event.target.value); setNetworkFilterActive(true); }} onFocus={(event) => { setNetworkFilterActive(false); setNetworkPickerOpen(true); event.currentTarget.select(); }} onBlur={() => setNetworkPickerOpen(false)} role="combobox" aria-label={t("docker.field.network")} aria-autocomplete="list" aria-expanded={networkPickerOpen && canViewLocalNetworks} aria-controls="docker-local-network-options" required />
+                      {networkPickerOpen && canViewLocalNetworks && <div id="docker-local-network-options" className="docker-resource-options" role="listbox" aria-label={t("docker.localNetworks")}>{networkSuggestions.map((item) => <button key={item} type="button" role="option" aria-selected={network === item} onMouseDown={(event) => event.preventDefault()} onClick={() => { setNetwork(item); setNetworkFilterActive(false); setNetworkPickerOpen(false); }}>{item}</button>)}{!networkSuggestions.length && <span>{networksLoading ? t("status.loading") : t("docker.noLocalNetworks")}</span>}</div>}
                     </div>
-                  )}
+                  </label>
+                  <label><span>{t("docker.field.networkAliases")}</span><input value={networkAliases} onChange={(event) => setNetworkAliases(event.target.value)} placeholder={t("docker.networkAliasesHint")} /></label>
                 </div>
-                {canViewLocalNetworks && <small className="field-hint">{t("docker.localNetworkSearchHint")}</small>}
-              </label>
-              <label>
-                {t("docker.field.networkAliases")}
-                <input value={networkAliases} onChange={(event) => setNetworkAliases(event.target.value)} placeholder={t("docker.networkAliasesHint")} />
-              </label>
-              <label>
-                {t("docker.field.hostname")}
-                <input value={hostname} onChange={(event) => setHostname(event.target.value)} />
-              </label>
-              <label>
-                {t("docker.field.restartPolicy")}
-                <select value={restartPolicy} onChange={(event) => setRestartPolicy(event.target.value as typeof restartPolicy)}>
-                  {(["no", "always", "unless-stopped", "on-failure"] as const).map((value) => <option value={value} key={value}>{value}</option>)}
-                </select>
-              </label>
-              <label className="check-row">
-                <input type="checkbox" checked={autoStart} onChange={(event) => setAutoStart(event.target.checked)} />
-                {t("docker.field.autoStart")}
-              </label>
+              </FormSection>
+              {showValidation && basicIssues.length > 0 && <div className="docker-wizard-validation" role="alert"><CircleAlert />{basicIssues.join(" ")}</div>}
             </div>
           )}
           {step === 1 && (
-            <div className="form-grid">
-              <label>
-                {t("docker.field.ports")}
-                <textarea
-                  value={ports}
-                  onChange={(event) => setPorts(event.target.value)}
-                  placeholder="8080:80/tcp"
-                />
-              </label>
-              <label>
-                {t("docker.field.environment")}
-                <textarea
-                  value={environment}
-                  onChange={(event) => setEnvironment(event.target.value)}
-                  placeholder="TZ=Europe/Warsaw"
-                />
-              </label>
+            <div className="docker-wizard-step">
+              <FormSection title={t("docker.field.ports")} description={t("docker.wizard.portsHint")} icon={Network}>
+                <label>
+                  <span>{t("docker.field.ports")}</span>
+                  <textarea className="docker-config-textarea" value={ports} onChange={(event) => setPorts(event.target.value)} placeholder="8080:80/tcp" aria-label={t("docker.field.ports")} aria-invalid={showValidation && portAnalysis.invalid.length > 0} aria-describedby="docker-port-analysis" />
+                  <span id="docker-port-analysis" className={`docker-field-counter ${portAnalysis.invalid.length ? "invalid" : ""}`}>{t("docker.wizard.validPorts").replace("{valid}", String(portAnalysis.valid)).replace("{total}", String(portAnalysis.total))}</span>
+                  {portAnalysis.invalid.map((line) => <code className="docker-invalid-line" key={line}>{line}</code>)}
+                </label>
+              </FormSection>
+              <FormSection title={t("docker.wizard.environment")} description={t("docker.wizard.environmentHint")} icon={KeyRound}>
+                <div className="docker-wizard-fields single">
+                  <label>
+                    <span>{t("docker.field.environment")}</span>
+                    <textarea className="docker-config-textarea" value={environment} onChange={(event) => setEnvironment(event.target.value)} placeholder="TZ=Europe/Warsaw" aria-label={t("docker.field.environment")} aria-invalid={showValidation && invalidEnvironmentLines.length > 0} />
+                    <small>{t("docker.wizard.publicEnvironmentHint")}</small>
+                  </label>
               <fieldset className="docker-secret-fields">
                 <legend>{t("docker.field.secrets")}</legend>
                 {secretRows.map((row, index) => (
@@ -577,10 +686,12 @@ export function CreateContainerWizard({
                 <button type="button" onClick={() => setSecretRows((current) => [...current, { key: "", value: "" }])}><Plus />{t("docker.addSecret")}</button>
               </fieldset>
               <p className="field-hint">{t("docker.secretsHint")}</p>
+                </div>
+              </FormSection>
+              <FormSection title={t("docker.field.mounts")} description={t("docker.wizard.mountsHint")} icon={Database}>
               <fieldset className="docker-mount-fields">
-                <legend>{t("docker.field.mounts")}</legend>
                 {mounts.length === 0 && <p className="field-hint">{t("docker.noMounts")}</p>}
-                {mounts.map((item) => <div className="docker-mount-row" key={item.id}>
+                {mounts.map((item) => <div className={`docker-mount-row ${showValidation && incompleteMounts.some((mount) => mount.id === item.id) ? "invalid" : ""}`} key={item.id}>
                   <label>{t("docker.mountType")}<select aria-label={t("docker.mountType")} value={item.type} onChange={(event) => updateMount(item.id, { type: event.target.value as MountRow["type"], source: event.target.value === "tmpfs" ? "" : item.source })}><option value="bind">bind</option><option value="volume">volume</option><option value="tmpfs">tmpfs</option></select></label>
                   {item.type !== "tmpfs" && <label className="docker-mount-source">{t(item.type === "bind" ? "docker.hostPath" : "docker.volumeName")}<span><input aria-label={t("docker.mountSource")} value={item.source} onChange={(event) => updateMount(item.id, { source: event.target.value })} placeholder={item.type === "bind" ? "/srv/data" : "app-data"} />{item.type === "bind" && <button type="button" title={t("docker.chooseHostPath")} aria-label={t("docker.chooseHostPath")} onClick={() => setPathPickerMountId(item.id)}><FolderOpen /></button>}</span></label>}
                   <label>{t("docker.mountTarget")}<input aria-label={t("docker.mountTarget")} value={item.target} onChange={(event) => updateMount(item.id, { target: event.target.value })} placeholder="/data" /></label>
@@ -590,144 +701,78 @@ export function CreateContainerWizard({
                 </div>)}
                 <button className="docker-add-mount" type="button" onClick={() => addMount()}><Plus />{t("docker.addMount")}</button>
               </fieldset>
-              <label>
-                {t("docker.field.labels")}
-                <textarea value={labels} onChange={(event) => setLabels(event.target.value)} placeholder={t("docker.labelsHint")} />
-              </label>
+              </FormSection>
+              <FormSection title={t("docker.field.labels")} description={t("docker.labelsHint")} icon={Gauge}>
+                <label><span>{t("docker.field.labels")}</span><textarea className="docker-config-textarea" value={labels} onChange={(event) => setLabels(event.target.value)} placeholder={t("docker.labelsHint")} /></label>
+              </FormSection>
+              {showValidation && connectivityIssues.length > 0 && <div className="docker-wizard-validation" role="alert"><CircleAlert />{connectivityIssues.join(" ")}</div>}
             </div>
           )}
           {step === 2 && (
-            <div className="form-grid">
-              <label>
-                {t("docker.field.memoryMb")}
-                <input
-                  type="number"
-                  min="16"
-                  value={memory}
-                  onChange={(event) => setMemory(event.target.value)}
-                />
-              </label>
-              <label>
-                {t("docker.field.cpus")}
-                <input
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={cpus}
-                  onChange={(event) => setCpus(event.target.value)}
-                />
-              </label>
-              <label>
-                {t("docker.field.memorySwapMb")}
-                <input type="number" min="16" value={memorySwap} onChange={(event) => setMemorySwap(event.target.value)} />
-              </label>
-              <label>
-                {t("docker.field.pids")}
-                <input type="number" min="16" value={pids} onChange={(event) => setPids(event.target.value)} />
-              </label>
-              <label>
-                {t("docker.field.userUidGid")}
-                <input value={containerUser} onChange={(event) => setContainerUser(event.target.value)} placeholder="1000:1000" />
-              </label>
-              <label>
-                {t("docker.field.workingDir")}
-                <input value={workingDir} onChange={(event) => setWorkingDir(event.target.value)} placeholder="/app" />
-              </label>
-              <label>
-                {t("docker.field.healthcheck")}
-                <select value={healthType} onChange={(event) => setHealthType(event.target.value as typeof healthType)}>
-                  <option value="none">{t("common.none")}</option>
-                  <option value="http">HTTP</option>
-                  <option value="tcp">TCP</option>
-                </select>
-              </label>
-              {healthType !== "none" && (
-                <>
-                  <label>
-                    {t("docker.field.healthPort")}
-                    <input type="number" min="1" max="65535" value={healthPort} onChange={(event) => setHealthPort(event.target.value)} required />
-                  </label>
-                  {healthType === "http" && <label>{t("docker.field.healthPath")}<input value={healthPath} onChange={(event) => setHealthPath(event.target.value)} /></label>}
-                </>
-              )}
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={readOnly}
-                  onChange={(event) => setReadOnly(event.target.checked)}
-                />
-                {t("docker.field.readOnly")}
-              </label>
-              <label className="check-row">
-                <input type="checkbox" checked={init} onChange={(event) => setInit(event.target.checked)} />
-                {t("docker.field.init")}
-              </label>
-              <p className="docker-notice info">
-                {t("docker.highRiskBlocked")}
-              </p>
+            <div className="docker-wizard-step">
+              <FormSection title={t("docker.wizard.limits")} description={t("docker.wizard.limitsHint")} icon={Cpu}>
+                <div className="docker-wizard-fields">
+                  <label><span>{t("docker.field.memoryMb")}</span><div className="docker-unit-field"><input type="number" min="16" value={memory} onChange={(event) => setMemory(event.target.value)} /><span>MB</span></div></label>
+                  <label><span>{t("docker.field.memorySwapMb")}</span><div className="docker-unit-field"><input type="number" min="16" value={memorySwap} onChange={(event) => setMemorySwap(event.target.value)} /><span>MB</span></div></label>
+                  <label><span>{t("docker.field.cpus")}</span><div className="docker-unit-field"><input type="number" min="0.1" step="0.1" value={cpus} onChange={(event) => setCpus(event.target.value)} /><span>CPU</span></div></label>
+                  <label><span>{t("docker.field.pids")}</span><div className="docker-unit-field"><input type="number" min="16" value={pids} onChange={(event) => setPids(event.target.value)} /><span>{t("docker.wizard.processesUnit")}</span></div></label>
+                </div>
+              </FormSection>
+              <FormSection title={t("docker.wizard.processConfig")} description={t("docker.wizard.processConfigHint")} icon={Gauge}>
+                <div className="docker-wizard-fields">
+                  <label><span>{t("docker.field.userUidGid")}</span><input value={containerUser} onChange={(event) => setContainerUser(event.target.value)} placeholder="1000:1000" /></label>
+                  <label><span>{t("docker.field.workingDir")}</span><input value={workingDir} onChange={(event) => setWorkingDir(event.target.value)} placeholder="/app" /></label>
+                  <SwitchField checked={init} label={t("docker.field.init")} description={t("docker.wizard.initHint")} onChange={setInit} />
+                </div>
+              </FormSection>
+              <FormSection title={t("docker.wizard.security")} description={t("docker.wizard.securityHint")} icon={ShieldCheck}>
+                <SwitchField checked={readOnly} label={t("docker.field.readOnly")} description={t("docker.wizard.readOnlyHint")} onChange={setReadOnly} />
+                <p className="docker-notice info">{t("docker.highRiskBlocked")}</p>
+              </FormSection>
+              <FormSection title={t("docker.field.healthcheck")} description={t("docker.wizard.healthHint")} icon={HeartPulse}>
+                <div className="docker-wizard-fields">
+                  <label><span>{t("docker.field.healthcheck")}</span><select value={healthType} onChange={(event) => setHealthType(event.target.value as typeof healthType)}><option value="none">{t("common.none")}</option><option value="http">HTTP</option><option value="tcp">TCP</option></select></label>
+                  {healthType !== "none" && <label><span>{t("docker.field.healthPort")}</span><input type="number" min="1" max="65535" value={healthPort} onChange={(event) => setHealthPort(event.target.value)} aria-invalid={showValidation && resourceIssues.length > 0} required /></label>}
+                  {healthType === "http" && <label><span>{t("docker.field.healthPath")}</span><input value={healthPath} onChange={(event) => setHealthPath(event.target.value)} placeholder="/health" /></label>}
+                </div>
+              </FormSection>
+              {showValidation && resourceIssues.length > 0 && <div className="docker-wizard-validation" role="alert"><CircleAlert />{resourceIssues.join(" ")}</div>}
             </div>
           )}
           {step === 3 && (
-            <dl className="docker-review">
-              <div>
-                <dt>{t("docker.field.name")}</dt>
-                <dd>{name}</dd>
+            <div className="docker-wizard-step docker-review">
+              <div className="docker-summary-grid">
+                <SummaryCard icon={Box} title={t("docker.wizard.summary.container")} t={t} onEdit={() => goToStep(0)} rows={[[t("docker.field.name"), name], [t("docker.field.hostname"), hostname || "—"]]} />
+                <SummaryCard icon={Boxes} title={t("docker.wizard.summary.image")} t={t} onEdit={() => goToStep(0)} rows={[[t("docker.field.image"), image], [t("docker.wizard.imageStatus"), imageStatus || "—"]]} />
+                <SummaryCard icon={Network} title={t("docker.wizard.summary.network")} t={t} onEdit={() => goToStep(1)} rows={[[t("docker.field.network"), network], [t("docker.field.ports"), ports || "—"]]} />
+                <SummaryCard icon={Database} title={t("docker.wizard.summary.volumes")} t={t} onEdit={() => goToStep(1)} rows={[[t("docker.field.mounts"), mounts.length ? mounts.map((item) => `${item.type}: ${item.type === "tmpfs" ? "" : `${item.source} → `}${item.target}`).join(", ") : "—"], [t("docker.field.secrets"), secretRows.some((row) => row.value) ? t("docker.secretValuesHidden") : "—"]]} />
+                <SummaryCard icon={Cpu} title={t("docker.wizard.summary.resources")} t={t} onEdit={() => goToStep(2)} rows={[[t("docker.field.limits"), [cpus && `${cpus} CPU`, memory && `${memory} MB`, memorySwap && `${memorySwap} MB + swap`, pids && `${pids} PID`].filter(Boolean).join(", ") || "—"]]} />
+                <SummaryCard icon={HeartPulse} title={t("docker.wizard.summary.lifecycle")} t={t} onEdit={() => goToStep(2)} rows={[[t("docker.field.restartPolicy"), restartPolicy], [t("docker.field.healthcheck"), healthType === "none" ? t("common.none") : `${healthType.toUpperCase()} :${healthPort}${healthType === "http" ? healthPath : ""}`]]} />
+                <SummaryCard icon={ShieldCheck} title={t("docker.wizard.summary.security")} t={t} onEdit={() => goToStep(2)} rows={[[t("docker.field.readOnly"), t(readOnly ? "common.yes" : "common.no")], [t("docker.field.init"), t(init ? "common.yes" : "common.no")]]} />
               </div>
-              <div>
-                <dt>{t("docker.field.image")}</dt>
-                <dd>{image}</dd>
-              </div>
-              <div>
-                <dt>{t("docker.field.network")}</dt>
-                <dd>{network}</dd>
-              </div>
-              <div>
-                <dt>{t("docker.field.ports")}</dt>
-                <dd>{ports || "—"}</dd>
-              </div>
-              <div>
-                <dt>{t("docker.field.secrets")}</dt>
-                <dd>{secretRows.some((row) => row.value) ? t("docker.secretValuesHidden") : "—"}</dd>
-              </div>
-              <div>
-                <dt>{t("docker.field.mounts")}</dt>
-                <dd>{mounts.length ? mounts.map((item) => `${item.type}: ${item.type === "tmpfs" ? "" : `${item.source} → `}${item.target}${item.readOnly ? ` (${t("files.readOnly")})` : ""}`).join(", ") : "—"}</dd>
-              </div>
-              <div>
-                <dt>{t("docker.field.limits")}</dt>
-                <dd>{[cpus && `${cpus} CPU`, memory && `${memory} MiB`, pids && `${pids} PID`].filter(Boolean).join(", ") || "—"}</dd>
-              </div>
-            </dl>
+              <section className={`docker-preflight ${reviewIssues.length ? "invalid" : "valid"}`}>
+                <header>{reviewIssues.length ? <CircleAlert /> : <CircleCheck />}<div><h3>{t("docker.wizard.preflight")}</h3><p>{t(reviewIssues.length ? "docker.wizard.preflightFailed" : "docker.wizard.preflightPassed")}</p></div></header>
+                {reviewIssues.length > 0 && <ul>{reviewIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
+              </section>
+            </div>
           )}
+            </main>
+            <WizardHelpPanel
+              t={t}
+              title={t(`docker.wizard.help.${wizardSteps[step].key}.title`)}
+              text={t(`docker.wizard.help.${wizardSteps[step].key}.text`)}
+              issues={currentIssues}
+              examples={step === 0 ? ["nginx:stable", "registry.example.com/team/app:1.2"] : step === 1 ? ["8080:80/tcp", "/srv/app → /data"] : step === 2 ? ["512 MB", "0.5 CPU"] : undefined}
+              summary={[
+                [t("docker.field.name"), name || "—"],
+                [t("docker.field.image"), image || "—"],
+                [t("docker.field.network"), network || "—"],
+                [t("docker.field.mounts"), String(mounts.length)],
+              ]}
+            />
+          </div>
         </div>
-        <footer>
-          {step > 0 && (
-            <button onClick={() => setStep((value) => value - 1)}>
-              <ArrowLeft />
-              {t("action.back")}
-            </button>
-          )}
-          <span />
-          {step < 3 ? (
-            <button
-              className="button-primary"
-              disabled={step === 0 && (!name || !image)}
-              onClick={() => setStep((value) => value + 1)}
-            >
-              {t("action.next")}
-              <ArrowRight />
-            </button>
-          ) : (
-            <button
-              className="button-primary"
-              disabled={busy || !name || !image}
-              onClick={() => void submit()}
-            >
-              <Boxes />
-              {t("docker.createContainer")}
-            </button>
-          )}
-        </footer>
+        <WizardFooter busy={busy} createBlockedReason={reviewIssues[0]} current={step} total={wizardSteps.length} t={t} onBack={() => goToStep(step - 1)} onNext={nextStep} onSubmit={() => void submit()} />
       </section>
       {pathPickerMountId !== null && <DockerPathPicker
         initialPath={mounts.find((item) => item.id === pathPickerMountId)?.source || ""}
