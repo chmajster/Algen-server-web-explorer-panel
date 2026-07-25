@@ -1,5 +1,5 @@
 import {
-  AlertTriangle, CheckCircle2, ChevronDown, CircleOff, Cloud, Copy, Database, FilePenLine, FileText,
+  AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleOff, Cloud, Copy, Database, FilePenLine, FileText,
   HardDrive, LoaderCircle, MoreHorizontal, Network, Plus, RefreshCw, RotateCcw, Search, Server,
   TestTube2, Trash2, Unplug,
 } from "lucide-react";
@@ -159,32 +159,41 @@ function MountActionsMenu({ mount, busy, t, onAction, onLogs }: { mount: Network
 }
 
 function NetworkMountCard({ mount, t, toast, onEdit, onAction, onLogs }: { mount: NetworkMount; t: Translate; toast: ToastFn; onEdit: () => void; onAction: (action: MountAction) => void; onLogs: () => void }) {
+  const [collapsed, setCollapsed] = useState(false);
   const busy = isBusy(mount);
   const activeJob = mount.jobs.find((job) => ["queued", "running"].includes(job.status));
   const operation = BUSY_STATUSES.has(mount.status) ? mount.status : activeJob?.action;
-  return <article className={`network-mount-card ${mount.actual_mounted ? "is-mounted" : "is-unmounted"} ${needsAttention(mount) ? "needs-attention" : ""}`} aria-busy={busy}>
+  return <article className={`network-mount-card ${collapsed ? "is-collapsed" : ""} ${mount.actual_mounted ? "is-mounted" : "is-unmounted"} ${needsAttention(mount) ? "needs-attention" : ""}`} aria-busy={busy}>
     <header>
-      <div className="mount-card-identity"><span><ProtocolIcon protocol={mount.type} /></span><div><div><h4>{mount.name}</h4><b>{mount.type.toUpperCase()}</b></div><small>{mount.host}</small></div></div>
-      <MountStatusBadge mount={mount} t={t} />
+      <button type="button" className="mount-card-collapse-toggle" aria-expanded={!collapsed} aria-label={`${t(collapsed ? "mounts.expandResource" : "mounts.collapseResource")}: ${mount.name}`} onClick={() => setCollapsed((value) => !value)}>
+        {collapsed ? <ChevronRight aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+        <div className="mount-card-identity">
+          {!collapsed && <span><ProtocolIcon protocol={mount.type} /></span>}
+          <div><div><h4>{mount.name}</h4>{!collapsed && <b>{mount.type.toUpperCase()}</b>}</div>{!collapsed && <small>{mount.host}</small>}</div>
+        </div>
+        {!collapsed && <MountStatusBadge mount={mount} t={t} />}
+      </button>
     </header>
-    {busy && <p className="mount-operation-state" role="status"><LoaderCircle className="spin" aria-hidden="true" />{t(`mounts.operation.${operation || "running"}`)}</p>}
-    <dl className="mount-card-details">
-      <MountPathField value={mount.remote} label={t("mounts.remote")} copyLabel={t("mounts.copyRemote")} t={t} toast={toast} />
-      <MountPathField value={mount.mount_point} label={t("mounts.mountPoint")} copyLabel={t("mounts.copyMountPoint")} t={t} toast={toast} />
-      <div><dt>{t("mounts.owner")}</dt><dd>{mount.owner}</dd></div>
-      <div><dt>{t("mounts.access")}</dt><dd>{[...mount.allowed_users, ...mount.allowed_groups.map((group) => `@${group}`)].join(", ") || t("mounts.allAuthenticated")}</dd></div>
-      <div><dt>{t("mounts.mode")}</dt><dd>{mount.read_only ? t("mounts.readOnly") : t("mounts.readWrite")}</dd></div>
-      <div><dt>{t("mounts.persistence")}</dt><dd>{mount.persistent ? t("mounts.persistent") : t("mounts.temporary")}</dd></div>
-      <div><dt>{t("mounts.lastOperation")}</dt><dd>{mount.last_operation || t("common.none")}{mount.last_operation_at ? <small>{new Date(mount.last_operation_at * 1000).toLocaleString()}</small> : null}</dd></div>
-    </dl>
-    <MountStorageMeter mount={mount} t={t} />
-    <MountAlert mount={mount} t={t} />
-    <footer>
-      <button type="button" className="button-primary mount-primary-action" disabled={busy} onClick={() => onAction(mount.actual_mounted ? "unmount" : "mount")}>{mount.actual_mounted ? <Unplug aria-hidden="true" /> : <Network aria-hidden="true" />}{t(mount.actual_mounted ? "mounts.unmount" : "mounts.mount")}</button>
-      <button type="button" disabled={busy} onClick={() => onAction("test")}><TestTube2 aria-hidden="true" />{t("mounts.test")}</button>
-      <button type="button" disabled={busy} onClick={onEdit}><FilePenLine aria-hidden="true" />{t("action.edit")}</button>
-      <MountActionsMenu mount={mount} busy={busy} t={t} onAction={onAction} onLogs={onLogs} />
-    </footer>
+    {!collapsed && <>
+      {busy && <p className="mount-operation-state" role="status"><LoaderCircle className="spin" aria-hidden="true" />{t(`mounts.operation.${operation || "running"}`)}</p>}
+      <dl className="mount-card-details">
+        <MountPathField value={mount.remote} label={t("mounts.remote")} copyLabel={t("mounts.copyRemote")} t={t} toast={toast} />
+        <MountPathField value={mount.mount_point} label={t("mounts.mountPoint")} copyLabel={t("mounts.copyMountPoint")} t={t} toast={toast} />
+        <div><dt>{t("mounts.owner")}</dt><dd>{mount.owner}</dd></div>
+        <div><dt>{t("mounts.access")}</dt><dd>{[...mount.allowed_users, ...mount.allowed_groups.map((group) => `@${group}`)].join(", ") || t("mounts.allAuthenticated")}</dd></div>
+        <div><dt>{t("mounts.mode")}</dt><dd>{mount.read_only ? t("mounts.readOnly") : t("mounts.readWrite")}</dd></div>
+        <div><dt>{t("mounts.persistence")}</dt><dd>{mount.persistent ? t("mounts.persistent") : t("mounts.temporary")}</dd></div>
+        <div><dt>{t("mounts.lastOperation")}</dt><dd>{mount.last_operation || t("common.none")}{mount.last_operation_at ? <small>{new Date(mount.last_operation_at * 1000).toLocaleString()}</small> : null}</dd></div>
+      </dl>
+      <MountStorageMeter mount={mount} t={t} />
+      <MountAlert mount={mount} t={t} />
+      <footer>
+        <button type="button" className="button-primary mount-primary-action" disabled={busy} onClick={() => onAction(mount.actual_mounted ? "unmount" : "mount")}>{mount.actual_mounted ? <Unplug aria-hidden="true" /> : <Network aria-hidden="true" />}{t(mount.actual_mounted ? "mounts.unmount" : "mounts.mount")}</button>
+        <button type="button" disabled={busy} onClick={() => onAction("test")}><TestTube2 aria-hidden="true" />{t("mounts.test")}</button>
+        <button type="button" disabled={busy} onClick={onEdit}><FilePenLine aria-hidden="true" />{t("action.edit")}</button>
+        <MountActionsMenu mount={mount} busy={busy} t={t} onAction={onAction} onLogs={onLogs} />
+      </footer>
+    </>}
   </article>;
 }
 

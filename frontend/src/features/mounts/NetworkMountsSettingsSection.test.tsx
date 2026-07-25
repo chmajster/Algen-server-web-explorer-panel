@@ -150,6 +150,27 @@ describe("network mount settings", () => {
     expect(within(mediaCard).getByRole("menuitem", { name: "action.delete" })).toBeInTheDocument();
   });
 
+  it("collapses resources independently to compact name-only rows", async () => {
+    vi.mocked(api.mounts).mockResolvedValue([
+      mount(),
+      mount({ id: "mount-2", name: "backup", host: "backup.local", actual_mounted: false, status: "unmounted" }),
+    ] as never);
+    render(<NetworkMountsSettingsSection isAdmin t={t} toast={vi.fn()} />);
+    const mediaCard = (await screen.findByRole("heading", { name: "media" })).closest("article")!;
+    const backupCard = screen.getByRole("heading", { name: "backup" }).closest("article")!;
+
+    fireEvent.click(within(mediaCard).getByRole("button", { name: "mounts.collapseResource: media" }));
+    expect(mediaCard).toHaveClass("is-collapsed");
+    expect(within(mediaCard).getByRole("heading", { name: "media" })).toBeInTheDocument();
+    expect(within(mediaCard).queryByText("nas.local")).not.toBeInTheDocument();
+    expect(within(mediaCard).queryByRole("button", { name: "mounts.unmount" })).not.toBeInTheDocument();
+    expect(within(backupCard).getByRole("button", { name: "mounts.mount" })).toBeInTheDocument();
+
+    fireEvent.click(within(mediaCard).getByRole("button", { name: "mounts.expandResource: media" }));
+    expect(mediaCard).not.toHaveClass("is-collapsed");
+    expect(within(mediaCard).getByText("nas.local")).toBeInTheDocument();
+  });
+
   it("disables mutable card actions while an operation is running", async () => {
     vi.mocked(api.mounts).mockResolvedValue([mount({ status: "mounting", actual_mounted: false })] as never);
     render(<NetworkMountsSettingsSection isAdmin t={t} toast={vi.fn()} />);

@@ -415,6 +415,8 @@
   "mounts.pathCopied": "Ścieżka skopiowana",
   "mounts.copyFailed": "Nie udało się skopiować ścieżki",
   "mounts.moreActions": "Więcej",
+  "mounts.collapseResource": "Zwiń zasób",
+  "mounts.expandResource": "Rozwiń zasób",
   "mounts.noFilterResults": "Brak pasujących zasobów",
   "mounts.noFilterResultsHint": "Zmień wyszukiwaną frazę lub wybrane filtry.",
   "mounts.clearFilters": "Wyczyść filtry",

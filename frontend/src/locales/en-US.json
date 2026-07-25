@@ -415,6 +415,8 @@
   "mounts.pathCopied": "Path copied",
   "mounts.copyFailed": "Could not copy path",
   "mounts.moreActions": "More",
+  "mounts.collapseResource": "Collapse resource",
+  "mounts.expandResource": "Expand resource",
   "mounts.noFilterResults": "No matching resources",
   "mounts.noFilterResultsHint": "Change the search query or selected filters.",
   "mounts.clearFilters": "Clear filters",
