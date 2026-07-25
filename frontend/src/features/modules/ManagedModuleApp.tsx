@@ -97,7 +97,13 @@ export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId
   function openResource(name: string, query = "") { setSearch(query); setSection(name); }
 
   let content: React.ReactNode;
-  if (section === "overview") content = <><div className="module-health-grid"><ModuleHealthCard title={t("module.health")} value={t(`module.health.${status.health}`)} /><ModuleHealthCard title={stateLabel} value={stateValue} /><ModuleHealthCard title={t("module.version")} value={status.package_version || "—"} /><ModuleHealthCard title={t("managed.updateAvailable")} value={status.update_available ? t("common.yes") : t("common.no")} /></div>{status.health === "failed" && <p className="module-health-message error">{healthMessage}</p>}<Metrics value={status.metrics} t={t} />{job && <ModuleJobProgress job={job} t={t} />}{canOperate && <div className="managed-actions">{(ACTIONS[moduleId] || []).filter((action) => moduleActionVisible(action, status)).map((action) => <button className={["upgrade_all", "remove_container"].includes(action) ? "danger" : ""} key={action} onClick={() => openAction(action)}><Wrench />{t(`managed.action.${action}`)}</button>)}</div>}</>;
+  if (section === "overview") content = <><div className="module-health-grid"><ModuleHealthCard title={t("module.health")} value={t(`module.health.${status.health}`)} /><ModuleHealthCard title={stateLabel} value={stateValue} /><ModuleHealthCard title={t("module.version")} value={status.package_version || "—"} /><ModuleHealthCard title={t("managed.updateAvailable")} value={status.update_available ? t("common.yes") : t("common.no")} /></div>{status.health === "failed" && <p className="module-health-message error">{healthMessage}</p>}<Metrics value={status.metrics} t={t} />{job && <ModuleJobProgress job={job} t={t} />}{canOperate && <div className={`managed-actions ${moduleId === "linux-updates" ? "update-actions" : ""}`}>{(ACTIONS[moduleId] || []).filter((action) => moduleActionVisible(action, status)).map((action) => {
+    const description = moduleId === "linux-updates" ? managedActionDescription(action, t) : "";
+    return <button className={`managed-action-button ${managedActionTone(action)}`} key={action} onClick={() => openAction(action)}>
+      <span className="managed-action-icon">{managedActionIcon(action)}</span>
+      <span className="managed-action-copy"><strong>{t(`managed.action.${action}`)}</strong>{description && <small>{description}</small>}</span>
+    </button>;
+  })}</div>}</>;
   else if (resourceNames.includes(section)) content = <><div className="module-section-toolbar"><input aria-label={t("action.search")} placeholder={t("action.search")} value={search} onChange={(event) => setSearch(event.target.value)} /><button disabled={resourceLoading} onClick={() => void loadResource(selectedResource, search)}><RefreshCw className={resourceLoading ? "spin" : ""} />{t("managed.reloadList")}</button>{moduleId === "linux-updates" && section === "repositories" && canOperate && <button className="button-primary" disabled={updateJobActive} onClick={() => openAction("repository_add", { enabled: true, gpgcheck: true })}><Plus />{t("managed.addRepository")}</button>}{moduleId === "linux-updates" && ["packages", "security"].includes(section) && canOperate && <button disabled={updateJobActive} onClick={() => openAction("refresh")}><RefreshCw />{t("managed.refreshMetadata")}</button>}{moduleId === "linux-updates" && ["packages", "security"].includes(section) && canOperate && <button className="button-primary" disabled={updateJobActive || screenUnavailable || selectedResourceEmpty || resourceLoading || Boolean(resourceError)} title={screenUnavailable ? t("managed.screenRequired") : selectedResourceEmpty ? t(section === "security" ? "managed.noSecurityUpdates" : "managed.noPackageUpdates") : undefined} onClick={() => openAction(section === "security" ? "upgrade_security" : "upgrade_all")}><Download />{t("managed.updateNow")}</button>}{moduleId === "docker" && section === "compose" && canConfigure && <button onClick={() => setDialog({ kind: "compose" })}><Save />{t("managed.newCompose")}</button>}</div>{moduleId === "linux-updates" && ["packages", "security"].includes(section) && <p className="detached-update-hint"><Shield />{t(screenUnavailable ? "managed.screenRequired" : "managed.detachedUpdateHint")}</p>}{job && moduleId === "linux-updates" && <ModuleJobProgress job={job} t={t} />}{moduleId === "linux-updates" && section === "repositories" ? <RepositoryCatalog resource={resource} loading={resourceLoading} error={resourceError} canOperate={canOperateResource} t={t} onRetry={() => void loadResource(selectedResource, search)} onAction={openAction} /> : moduleId === "docker" && section === "apps" ? <DockerAppCatalog resource={resource} loading={resourceLoading} error={resourceError} canOperate={canOperateResource} t={t} onRetry={() => void loadResource(selectedResource, search)} onAction={openAction} /> : <ResourceTable resource={resource} loading={resourceLoading} error={resourceError} moduleId={moduleId} section={section} onRetry={() => void loadResource(selectedResource, search)} t={t} actions={(item) => resourceActions(moduleId, section, item, canOperateResource, canConfigure, t, openAction, openResource, editCompose)} />}</>;
   else if (section === "service") content = <div className="managed-actions"><button disabled={!canOperate || status.service_state === "active"} onClick={() => setDialog({ kind: "service", action: "start" })}><Play />{t("module.start")}</button><button disabled={!canOperate || status.service_state !== "active"} onClick={() => setDialog({ kind: "service", action: "stop" })}><Square />{t("module.stop")}</button><button disabled={!canOperate} onClick={() => setDialog({ kind: "service", action: "restart" })}><RotateCcw />{t("module.restart")}</button></div>;
   else if (section === "journal") content = <ModuleLogs moduleId={moduleId} t={t} toast={toast} />;
@@ -135,6 +141,27 @@ function linuxUpdateSubmitLabel(action: string, t: Translate): string {
   if (action === "refresh") return t("managed.confirm.checkRepositories");
   if (action === "upgrade_security") return t("managed.confirm.installSecurity");
   return t("managed.confirm.installAll");
+}
+
+function managedActionIcon(action: string) {
+  if (action === "refresh") return <RefreshCw />;
+  if (action === "upgrade_security") return <Shield />;
+  if (action === "upgrade_all") return <Download />;
+  return <Wrench />;
+}
+
+function managedActionTone(action: string): string {
+  if (action === "upgrade_security") return "security";
+  if (action === "upgrade_all") return "primary";
+  if (action === "remove_container") return "danger";
+  return "";
+}
+
+function managedActionDescription(action: string, t: Translate): string {
+  if (action === "refresh") return t("managed.confirm.refreshIntro");
+  if (action === "upgrade_security") return t("managed.confirm.securityIntro");
+  if (action === "upgrade_all") return t("managed.confirm.allIntro");
+  return "";
 }
 
 function RepositoryToggleConfirmation({ action, repository, t }: { action: string; repository: Record<string, unknown>; t: Translate }) {
