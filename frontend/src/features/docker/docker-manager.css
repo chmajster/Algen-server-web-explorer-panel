@@ -138,12 +138,12 @@
 .docker-search svg {
   position: absolute;
   left: 10px;
-  top: 9px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
   color: var(--text-muted);
-}
-.docker-search input {
-  width: 100%;
-  padding-left: 36px;
+  pointer-events: none;
 }
 .docker-manager input,
 .docker-manager select,
@@ -157,6 +157,10 @@
   border-radius: var(--radius-small);
   background: var(--surface-elevated);
   color: inherit;
+}
+.docker-manager .docker-search input {
+  width: 100%;
+  padding-left: 34px;
 }
 .docker-table-wrap {
   max-width: 100%;
