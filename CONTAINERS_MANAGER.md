@@ -17,7 +17,7 @@ The desktop application is split into independently maintained views:
 - dashboard with engine/Compose/package versions, service state and uptime, container/image/volume/network counts, CPU/RAM/storage summaries, update availability, security information and prune preview;
 - containers list, details, bounded logs, SSE log delivery, live/current statistics plus seven-day sampled history, processes, typed creation wizard, live name/resource/restart/web-portal settings, and lifecycle/update/duplicate/recreate/export/backup actions;
 - local images, Docker Hub search, pull/update/remove/prune, checksummed save artifacts and bounded tar upload/load;
-- a registry image catalog with Docker Hub search, Registry V2 catalog/tag discovery, tag/platform-aware pulls and paginated bounded responses;
+- an Applications image catalog with Docker Hub search, Registry V2 catalog/tag discovery, tag/platform-aware pulls and paginated bounded responses;
 - registry connections with password/token files outside SQLite, TLS/custom-CA metadata, login tests, logout and `docker login --password-stdin`;
 - Compose projects with static allowlist checks plus mandatory `docker compose config`, separate public and secret `.env` values, service status/logs, revision history, rollback, lifecycle actions and typed service scaling;
 - volumes and networks with consumers, protected system networks, subnet-conflict checks, volume backup/restore/clone and destructive previews;

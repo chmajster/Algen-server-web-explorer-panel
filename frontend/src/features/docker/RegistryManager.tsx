@@ -1,9 +1,8 @@
-import { Images, LogOut, Pencil, Plug, Plus, RefreshCw, TestTube2, Trash2 } from "lucide-react";
+import { LogOut, Pencil, Plus, RefreshCw, TestTube2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, type DockerRegistry, type DockerRegistrySave, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
-import { RegistryCatalog } from "./RegistryCatalog";
 import { DockerTable, LoadState, errorMessage } from "./shared";
 
 type RegistryDialog =
@@ -12,42 +11,6 @@ type RegistryDialog =
   | { kind: "delete"; item: DockerRegistry };
 
 export function RegistryManager({
-  permissions,
-  t,
-  toast,
-  onJob,
-}: {
-  permissions: string[];
-  t: Translate;
-  toast: ToastFn;
-  onJob: (job: ModuleJob) => void;
-}) {
-  const canManage = permissions.includes("docker.manage_registries");
-  const [tab, setTab] = useState<"catalog" | "connections">("catalog");
-  return (
-    <section className="registry-manager">
-      <div className="registry-tabs" role="tablist" aria-label={t("docker.registry.tabs")}>
-        <button type="button" role="tab" aria-selected={tab === "catalog"} className={tab === "catalog" ? "active" : ""} onClick={() => setTab("catalog")}>
-          <Images />
-          {t("docker.registry.catalogTab")}
-        </button>
-        {canManage && (
-          <button type="button" role="tab" aria-selected={tab === "connections"} className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}>
-            <Plug />
-            {t("docker.registry.connectionsTab")}
-          </button>
-        )}
-      </div>
-      <div role="tabpanel">
-        {tab === "catalog"
-          ? <RegistryCatalog permissions={permissions} t={t} toast={toast} onJob={onJob} />
-          : <RegistryConnections t={t} toast={toast} onJob={onJob} />}
-      </div>
-    </section>
-  );
-}
-
-function RegistryConnections({
   t,
   toast,
   onJob,

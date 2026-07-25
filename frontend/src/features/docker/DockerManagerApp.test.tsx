@@ -57,11 +57,19 @@ describe("DockerManagerApp", () => {
   it("shows public Docker Hub as the built-in default registry", async () => {
     render(<DockerManagerApp permissions={["docker.view", "docker.view_images", "docker.manage_registries"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.registries" }));
-    expect(await screen.findByRole("tab", { name: "docker.registry.catalogTab" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.click(screen.getByRole("tab", { name: "docker.registry.connectionsTab" }));
     expect(await screen.findByText("Docker Hub")).toBeInTheDocument();
     expect(screen.getByText("docker.publicAnonymous")).toBeInTheDocument();
     expect(screen.getByText("docker.defaultRegistry")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "docker.registry.chooseRegistry" })).not.toBeInTheDocument();
+  });
+
+  it("opens the registry image search in Applications without preset cards", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_images"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.apps" }));
+
+    expect(await screen.findByRole("textbox", { name: "docker.registry.searchImages" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "docker.registry.chooseRegistry" })).toBeInTheDocument();
+    expect(api.dockerApps).not.toHaveBeenCalled();
   });
 
   it("opens the typed create wizard and submits secrets only in the request body", async () => {

@@ -25,7 +25,6 @@ import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { PackageJobDialog } from "../package-center/PackageJobDialog";
 import { ComposeManager } from "./ComposeManager";
-import { ContainerAppsCatalog } from "./ContainerAppsCatalog";
 import { ContainersList } from "./ContainersList";
 import { DockerBackups } from "./DockerBackups";
 import { DockerDashboard } from "./DockerDashboard";
@@ -33,6 +32,7 @@ import { DockerDiagnostics } from "./DockerDiagnostics";
 import { DockerEngineSettings } from "./DockerEngineSettings";
 import { ImagesManager } from "./ImagesManager";
 import { NetworksManager } from "./NetworksManager";
+import { RegistryCatalog } from "./RegistryCatalog";
 import { RegistryManager } from "./RegistryManager";
 import { VolumesManager } from "./VolumesManager";
 import { DockerTable, LoadState, errorMessage } from "./shared";
@@ -151,17 +151,17 @@ export function DockerManagerApp({
     ["dashboard", <Gauge />, "docker.view"],
     ["containers", <Boxes />, "docker.view_containers"],
     ["images", <Images />, "docker.view_images"],
-    ["apps", <Store />, "docker.view_containers"],
+    ["apps", <Store />, "docker.view_images"],
     ["compose", <ScrollText />, "docker.manage_compose"],
     ["volumes", <Database />, "docker.manage_volumes"],
     ["networks", <Network />, "docker.manage_networks"],
-    ["registries", <HardDrive />, "docker.view_images"],
+    ["registries", <HardDrive />, "docker.manage_registries"],
     ["events", <History />, "docker.view"],
     ["backups", <Archive />, "docker.export_backup"],
     ["engine", <Settings />, "docker.view"],
     ["diagnostics", <Stethoscope />, "docker.diagnostics"],
   ];
-  const sections = allSections.filter(([name, , permission]) => name === "registries" ? can("docker.view_images") || can("docker.manage_registries") : can(permission));
+  const sections = allSections.filter(([, , permission]) => can(permission));
   const started = (next: ModuleJob) => setJob(next);
   let content: React.ReactNode = null;
   if (section === "dashboard" && dashboard)
@@ -202,7 +202,7 @@ export function DockerManagerApp({
     );
   else if (section === "apps")
     content = (
-      <ContainerAppsCatalog
+      <RegistryCatalog
         permissions={permissions}
         t={t}
         toast={toast}
@@ -224,7 +224,7 @@ export function DockerManagerApp({
   else if (section === "networks")
     content = <NetworksManager permissions={permissions} refreshToken={resourceRefresh} t={t} toast={toast} onJob={started} />;
   else if (section === "registries")
-    content = <RegistryManager permissions={permissions} t={t} toast={toast} onJob={started} />;
+    content = <RegistryManager t={t} toast={toast} onJob={started} />;
   else if (section === "events")
     content = (
       <DockerTable

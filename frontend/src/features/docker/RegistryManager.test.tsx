@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError, type DockerRegistryCatalogResult } from "../../api";
+import { RegistryCatalog } from "./RegistryCatalog";
 import { RegistryManager } from "./RegistryManager";
 
 vi.mock("../../api", async () => {
@@ -58,19 +59,15 @@ describe("RegistryManager", () => {
     }] });
   });
 
-  it("switches between the image catalog and registry connections", async () => {
-    render(<RegistryManager permissions={["docker.view_images", "docker.manage_registries"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
-
-    expect(screen.getByRole("tab", { name: "docker.registry.catalogTab" })).toHaveAttribute("aria-selected", "true");
-    expect(await screen.findByRole("combobox", { name: "docker.registry.chooseRegistry" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "docker.registry.connectionsTab" }));
-
+  it("shows registry connections without the image catalog", async () => {
+    render(<RegistryManager t={t} toast={vi.fn()} onJob={vi.fn()} />);
     expect(await screen.findByText("docker.publicAnonymous")).toBeInTheDocument();
     expect(api.dockerRegistries).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("combobox", { name: "docker.registry.chooseRegistry" })).not.toBeInTheDocument();
   });
 
   it("searches with Enter and the search button using selected filters", async () => {
-    render(<RegistryManager permissions={["docker.view_images"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
+    render(<RegistryCatalog permissions={["docker.view_images"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
     const search = await screen.findByRole("textbox", { name: "docker.registry.searchImages" });
     fireEvent.change(search, { target: { value: "nginx" } });
     fireEvent.keyDown(search, { key: "Enter" });
@@ -97,7 +94,7 @@ describe("RegistryManager", () => {
 
   it("opens image details, selects a tag and platform, and starts the existing pull job", async () => {
     const onJob = vi.fn();
-    render(<RegistryManager permissions={["docker.view_images", "docker.pull_image"]} t={t} toast={vi.fn()} onJob={onJob} />);
+    render(<RegistryCatalog permissions={["docker.view_images", "docker.pull_image"]} t={t} toast={vi.fn()} onJob={onJob} />);
     const search = await screen.findByRole("textbox", { name: "docker.registry.searchImages" });
     fireEvent.change(search, { target: { value: "nginx" } });
     fireEvent.click(screen.getByRole("button", { name: "action.search" }));
@@ -115,7 +112,7 @@ describe("RegistryManager", () => {
   });
 
   it("does not expose pulling without docker.pull_image", async () => {
-    render(<RegistryManager permissions={["docker.view_images"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
+    render(<RegistryCatalog permissions={["docker.view_images"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
     const search = await screen.findByRole("textbox", { name: "docker.registry.searchImages" });
     fireEvent.change(search, { target: { value: "nginx" } });
     fireEvent.click(screen.getByRole("button", { name: "action.search" }));
@@ -127,7 +124,7 @@ describe("RegistryManager", () => {
   });
 
   it("shows short-query, empty, and unsupported-catalog states", async () => {
-    render(<RegistryManager permissions={["docker.view_images"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
+    render(<RegistryCatalog permissions={["docker.view_images"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
     const search = await screen.findByRole("textbox", { name: "docker.registry.searchImages" });
     fireEvent.change(search, { target: { value: "n" } });
     fireEvent.click(screen.getByRole("button", { name: "action.search" }));
