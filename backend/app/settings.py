@@ -143,6 +143,7 @@ class UserSettings(BaseModel):
     wallpaper_fit: Literal["cover", "contain", "stretch", "center"] = "cover"
     taskbar_alignment: Literal["left", "center"] = "center"
     pinned_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
+    pinned_modules: list[str] = Field(default_factory=list, max_length=16)
     start_pinned_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
     desktop_shortcut_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
     show_desktop_shortcuts: bool = True
@@ -198,6 +199,15 @@ class UserSettings(BaseModel):
             raise ValueError("pinned application identifiers must be unique")
         return values
 
+    @field_validator("pinned_modules")
+    @classmethod
+    def valid_pinned_modules(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("pinned module identifiers must be unique")
+        if any(not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", value) for value in values):
+            raise ValueError("pinned module identifiers are invalid")
+        return values
+
     @field_validator("wallpaper")
     @classmethod
     def validate_wallpaper(cls, value: str) -> str:
@@ -216,6 +226,7 @@ class MePatch(BaseModel):
     wallpaper_fit: Literal["cover", "contain", "stretch", "center"] | None = None
     taskbar_alignment: Literal["left", "center"] | None = None
     pinned_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
+    pinned_modules: list[str] | None = Field(default=None, max_length=16)
     start_pinned_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
     desktop_shortcut_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
     show_desktop_shortcuts: bool | None = None
@@ -268,6 +279,15 @@ class MePatch(BaseModel):
     def unique_pinned_apps(cls, values: list[PinnedAppId] | None) -> list[PinnedAppId] | None:
         if values is not None and len(values) != len(set(values)):
             raise ValueError("pinned application identifiers must be unique")
+        return values
+
+    @field_validator("pinned_modules")
+    @classmethod
+    def valid_pinned_modules(cls, values: list[str] | None) -> list[str] | None:
+        if values is not None and len(values) != len(set(values)):
+            raise ValueError("pinned module identifiers must be unique")
+        if values is not None and any(not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", value) for value in values):
+            raise ValueError("pinned module identifiers are invalid")
         return values
 
     @field_validator("wallpaper")

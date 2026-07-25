@@ -87,6 +87,7 @@ export type UserPreferences = {
   wallpaper_fit: "cover" | "contain" | "stretch" | "center";
   taskbar_alignment: "left" | "center";
   pinned_apps: PinnedAppId[];
+  pinned_modules: string[];
   start_pinned_apps: PinnedAppId[];
   desktop_shortcut_apps: PinnedAppId[];
   show_desktop_shortcuts: boolean;

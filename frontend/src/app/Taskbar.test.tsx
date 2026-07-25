@@ -7,12 +7,12 @@ import type { WindowInstance } from "./types";
 
 const runningFile: WindowInstance = { id: "files-1", app: "files", rect: { x: 20, y: 20, width: 800, height: 600 }, minimized: false, zIndex: 12 };
 const handlers = () => ({
-  onToggleLauncher: vi.fn(), onToggleNotifications: vi.fn(), onToggleTheme: vi.fn(), onApp: vi.fn(), onOpenNew: vi.fn(), onTogglePin: vi.fn(), onWindow: vi.fn(), onCloseApp: vi.fn(), onTaskbarSettings: vi.fn(), onAlignment: vi.fn(), onLogout: vi.fn(),
+  onToggleLauncher: vi.fn(), onToggleNotifications: vi.fn(), onToggleTheme: vi.fn(), onApp: vi.fn(), onModule: vi.fn(), onOpenNew: vi.fn(), onOpenModuleNew: vi.fn(), onTogglePin: vi.fn(), onToggleModulePin: vi.fn(), onWindow: vi.fn(), onCloseApp: vi.fn(), onCloseModule: vi.fn(), onTaskbarSettings: vi.fn(), onAlignment: vi.fn(), onLogout: vi.fn(),
 });
 
-function renderTaskbar(overrides: { pinned?: Set<"files" | "monitor">; windows?: WindowInstance[]; activeId?: string } = {}) {
+function renderTaskbar(overrides: { pinned?: Set<"files" | "monitor">; pinnedModules?: Set<string>; moduleNames?: Map<string, string>; windows?: WindowInstance[]; activeId?: string } = {}) {
   const events = handlers();
-  render(<Taskbar apps={apps.filter((app) => ["files", "monitor", "settings"].includes(app.id))} pinned={overrides.pinned || new Set(["monitor"])} windows={overrides.windows || [runningFile]} activeId={overrides.activeId ?? runningFile.id} profile={settingsFixture()} resolvedTheme="light" clockText="12:00" dateText="17.07.2026" activeTransfers={0} launcherOpen={false} notificationsOpen={false} t={(key) => key} {...events} />);
+  render(<Taskbar apps={apps.filter((app) => ["files", "monitor", "settings", "module"].includes(app.id))} pinned={overrides.pinned || new Set(["monitor"])} pinnedModules={overrides.pinnedModules || new Set()} moduleNames={overrides.moduleNames || new Map()} windows={overrides.windows || [runningFile]} activeId={overrides.activeId ?? runningFile.id} profile={settingsFixture()} resolvedTheme="light" clockText="12:00" dateText="17.07.2026" activeTransfers={0} launcherOpen={false} notificationsOpen={false} t={(key) => key} {...events} />);
   return events;
 }
 
@@ -61,5 +61,17 @@ describe("Windows-like taskbar", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.minimizeAll" }));
     expect(events.onWindow).toHaveBeenCalledWith(second, "minimize");
     expect(events.onWindow).toHaveBeenCalledWith(runningFile, "minimize");
+  });
+
+  it("pins a specific dynamic module and keeps it as a separate taskbar launcher", () => {
+    const moduleWindow: WindowInstance = { ...runningFile, id: "module-1", app: "module", moduleId: "linux-updates" };
+    const events = renderTaskbar({ windows: [moduleWindow], activeId: moduleWindow.id, moduleNames: new Map([["linux-updates", "Aktualizacje systemu"]]) });
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Aktualizacje systemu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
+    expect(events.onToggleModulePin).toHaveBeenCalledWith("linux-updates");
+
+    fireEvent.click(screen.getByRole("button", { name: "Aktualizacje systemu" }));
+    expect(events.onModule).toHaveBeenCalledWith("linux-updates");
   });
 });

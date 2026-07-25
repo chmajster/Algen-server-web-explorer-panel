@@ -19,6 +19,7 @@ def test_defaults_cover_every_user_preference():
     assert values["theme"] == "system"
     assert values["taskbar_alignment"] == "center"
     assert values["pinned_apps"] == ["files", "transfers", "monitor", "settings"]
+    assert values["pinned_modules"] == []
     assert values["start_pinned_apps"] == values["pinned_apps"]
     assert values["desktop_shortcut_apps"] == values["pinned_apps"]
     assert values["file_page_size"] == 50
@@ -80,6 +81,8 @@ def test_old_settings_file_keeps_valid_fields_and_repairs_invalid_fields(monkeyp
         ("wallpaper", "javascript:alert(1)"),
         ("pinned_apps", ["files", "unknown-app"]),
         ("pinned_apps", ["files", "files"]),
+        ("pinned_modules", ["linux-updates", "linux-updates"]),
+        ("pinned_modules", ["../../invalid"]),
         ("start_pinned_apps", ["files", "files"]),
         ("desktop_shortcut_apps", ["unknown-app"]),
     ],
@@ -131,6 +134,7 @@ def test_patch_persists_each_application_pin_destination(monkeypatch):
     settings.settings_patch(
         settings.MePatch(
             pinned_apps=["files"],
+            pinned_modules=["linux-updates", "pihole"],
             start_pinned_apps=["monitor"],
             desktop_shortcut_apps=["settings"],
         ),
@@ -138,6 +142,7 @@ def test_patch_persists_each_application_pin_destination(monkeypatch):
     )
 
     assert written["pinned_apps"] == ["files"]
+    assert written["pinned_modules"] == ["linux-updates", "pihole"]
     assert written["start_pinned_apps"] == ["monitor"]
     assert written["desktop_shortcut_apps"] == ["settings"]
 

@@ -5,11 +5,14 @@ import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import type { AppDefinition, AppId, Translate, WindowInstance } from "./types";
 
 export type TaskbarWindowAction = "focus" | "minimize" | "toggleMaximize" | "close";
-type TaskbarContext = { x: number; y: number; app: AppDefinition | null; portalTarget: Element | null };
+type TaskbarContext = { x: number; y: number; app: AppDefinition | null; moduleId?: string; portalTarget: Element | null };
+type TaskbarItem = { key: string; app: AppDefinition; moduleId?: string };
 
-export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedTheme, clockText, dateText, activeTransfers, launcherOpen, notificationsOpen, t, onToggleLauncher, onToggleNotifications, onToggleTheme, onApp, onOpenNew, onTogglePin, onWindow, onCloseApp, onTaskbarSettings, onAlignment, onLogout }: {
+export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, activeId, profile, resolvedTheme, clockText, dateText, activeTransfers, launcherOpen, notificationsOpen, t, onToggleLauncher, onToggleNotifications, onToggleTheme, onApp, onModule, onOpenNew, onOpenModuleNew, onTogglePin, onToggleModulePin, onWindow, onCloseApp, onCloseModule, onTaskbarSettings, onAlignment, onLogout }: {
   apps: AppDefinition[];
   pinned: Set<AppId>;
+  pinnedModules: Set<string>;
+  moduleNames: Map<string, string>;
   windows: WindowInstance[];
   activeId: string;
   profile: SettingsMe;
@@ -24,10 +27,14 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
   onToggleNotifications: () => void;
   onToggleTheme: () => void;
   onApp: (app: AppId) => void;
+  onModule: (moduleId: string) => void;
   onOpenNew: (app: AppId) => void;
+  onOpenModuleNew: (moduleId: string) => void;
   onTogglePin: (app: AppId) => void;
+  onToggleModulePin: (moduleId: string) => void;
   onWindow: (item: WindowInstance, action: TaskbarWindowAction) => void;
   onCloseApp: (app: AppId) => void;
+  onCloseModule: (moduleId: string) => void;
   onTaskbarSettings: () => void;
   onAlignment: (alignment: "left" | "center") => void;
   onLogout: () => void;
@@ -35,20 +42,28 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
   const [sessionOpen, setSessionOpen] = useState(false);
   const [context, setContext] = useState<TaskbarContext | null>(null);
   const sessionRef = useRef<HTMLDivElement>(null);
-  const visibleApps = useMemo(() => {
+  const visibleItems = useMemo(() => {
     const byId = new Map(apps.map((app) => [app.id, app]));
-    const result: AppDefinition[] = [];
-    const seen = new Set<AppId>();
+    const result: TaskbarItem[] = [];
+    const seen = new Set<string>();
     for (const id of pinned) {
       const app = byId.get(id);
-      if (app && !app.hidden && !seen.has(id)) { result.push(app); seen.add(id); }
+      if (app && !app.hidden && !seen.has(id)) { result.push({ key: id, app }); seen.add(id); }
+    }
+    const moduleApp = byId.get("module");
+    if (moduleApp) {
+      for (const moduleId of pinnedModules) {
+        const key = `module:${moduleId}`;
+        if (moduleNames.has(moduleId) && !seen.has(key)) { result.push({ key, app: moduleApp, moduleId }); seen.add(key); }
+      }
     }
     for (const item of [...windows].sort((left, right) => left.zIndex - right.zIndex)) {
       const app = byId.get(item.app);
-      if (app && !seen.has(app.id)) { result.push(app); seen.add(app.id); }
+      const key = item.app === "module" && item.moduleId ? `module:${item.moduleId}` : item.app;
+      if (app && !seen.has(key)) { result.push({ key, app, moduleId: item.app === "module" ? item.moduleId : undefined }); seen.add(key); }
     }
     return result;
-  }, [apps, pinned, windows]);
+  }, [apps, moduleNames, pinned, pinnedModules, windows]);
   const activeWindow = windows.find((item) => item.id === activeId);
 
   useEffect(() => {
@@ -59,23 +74,29 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key); };
   }, []);
 
-  function appMenu(app: AppDefinition): ContextMenuItem[] {
-    const appWindows = windows.filter((item) => item.app === app.id).sort((left, right) => right.zIndex - left.zIndex);
+  function appMenu(app: AppDefinition, moduleId?: string): ContextMenuItem[] {
+    const appWindows = windows.filter((item) => item.app === app.id && (!moduleId || item.moduleId === moduleId)).sort((left, right) => right.zIndex - left.zIndex);
     const single = appWindows.length === 1 ? appWindows[0] : null;
     const items: ContextMenuItem[] = [];
-    if (!app.hidden) items.push({ label: t("taskbar.openNewWindow"), icon: <AppWindow />, action: () => onOpenNew(app.id) });
+    const pinnable = !app.hidden || Boolean(moduleId);
+    const isPinned = moduleId ? pinnedModules.has(moduleId) : pinned.has(app.id);
+    if (pinnable) items.push({ label: t("taskbar.openNewWindow"), icon: <AppWindow />, action: () => moduleId ? onOpenModuleNew(moduleId) : onOpenNew(app.id) });
     if (appWindows.length > 1) {
-      appWindows.forEach((item, index) => items.push({ label: item.moduleId ? `${t(app.labelKey)} — ${item.moduleId}` : `${t(app.labelKey)} (${appWindows.length - index})`, icon: app.icon, action: () => onWindow(item, "focus") }));
+      appWindows.forEach((item, index) => items.push({ label: moduleId ? `${moduleLabel(moduleId)} (${appWindows.length - index})` : `${t(app.labelKey)} (${appWindows.length - index})`, icon: app.icon, action: () => onWindow(item, "focus") }));
       items.push({ label: t("taskbar.minimizeAll"), icon: <Minimize2 />, separator: true, action: () => appWindows.forEach((item) => onWindow(item, "minimize")) });
     } else if (single) {
       items.push({ label: t("taskbar.showWindow"), icon: <AppWindow />, disabled: !single.minimized && activeId === single.id, action: () => onWindow(single, "focus") });
       items.push({ label: t("window.minimize"), icon: <Minimize2 />, disabled: single.minimized, action: () => onWindow(single, "minimize") });
       items.push({ label: t(single.restoreRect ? "window.restore" : "window.maximize"), icon: <Maximize2 />, action: () => onWindow(single, "toggleMaximize") });
     }
-    if (!app.hidden) items.push({ label: t(pinned.has(app.id) ? "taskbar.unpinFromTaskbar" : "taskbar.pinToTaskbar"), icon: pinned.has(app.id) ? <PinOff /> : <Pin />, separator: true, action: () => onTogglePin(app.id) });
-    if (appWindows.length > 0) items.push({ label: t(appWindows.length > 1 ? "taskbar.closeAllWindows" : "taskbar.closeWindow"), icon: <X />, danger: true, separator: app.hidden, action: () => onCloseApp(app.id) });
+    if (pinnable) items.push({ label: t(isPinned ? "taskbar.unpinFromTaskbar" : "taskbar.pinToTaskbar"), icon: isPinned ? <PinOff /> : <Pin />, separator: true, action: () => moduleId ? onToggleModulePin(moduleId) : onTogglePin(app.id) });
+    if (appWindows.length > 0) items.push({ label: t(appWindows.length > 1 ? "taskbar.closeAllWindows" : "taskbar.closeWindow"), icon: <X />, danger: true, separator: app.hidden, action: () => moduleId ? onCloseModule(moduleId) : onCloseApp(app.id) });
     items.push({ label: t("taskbar.settings"), icon: <Settings2 />, separator: true, action: onTaskbarSettings });
     return items;
+  }
+
+  function moduleLabel(moduleId: string) {
+    return moduleNames.get(moduleId) || moduleId.split("-").map((part) => part ? part[0].toUpperCase() + part.slice(1) : part).join(" ");
   }
 
   function taskbarMenu(): ContextMenuItem[] {
@@ -90,13 +111,15 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
     <div className="taskbar-primary">
       <button className={`taskbar-start ${launcherOpen ? "active" : ""}`} type="button" title={t("desktop.mainMenu")} aria-label={t("desktop.mainMenu")} aria-expanded={launcherOpen} onClick={onToggleLauncher}><LayoutGrid /></button>
       <div className="taskbar-items" aria-label={t("desktop.runningApps")}>
-        {visibleApps.map((app) => {
-          const appWindows = windows.filter((item) => item.app === app.id);
+        {visibleItems.map(({ key, app, moduleId }) => {
+          const appWindows = windows.filter((item) => item.app === app.id && (!moduleId || item.moduleId === moduleId));
           const running = appWindows.length > 0;
-          const active = activeWindow?.app === app.id && !activeWindow.minimized;
+          const active = activeWindow?.app === app.id && (!moduleId || activeWindow.moduleId === moduleId) && !activeWindow.minimized;
           const minimized = running && appWindows.every((item) => item.minimized);
-          return <button key={app.id} type="button" className={`${pinned.has(app.id) ? "pinned" : ""} ${active ? "active" : ""} ${running ? "running" : ""} ${minimized ? "minimized" : ""}`} title={t(app.labelKey)} aria-label={t(app.labelKey)} aria-pressed={active} onClick={() => onApp(app.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, app, portalTarget: event.currentTarget.closest(".taskbar")?.parentElement ?? null }); }}>
-            {app.icon}<span>{t(app.labelKey)}</span>{running && <i aria-hidden="true" />}{appWindows.length > 1 && <b aria-label={`${t("taskbar.windowCount")}: ${appWindows.length}`}>{appWindows.length}</b>}
+          const label = moduleId ? moduleLabel(moduleId) : t(app.labelKey);
+          const itemPinned = moduleId ? pinnedModules.has(moduleId) : pinned.has(app.id);
+          return <button key={key} type="button" className={`${itemPinned ? "pinned" : ""} ${active ? "active" : ""} ${running ? "running" : ""} ${minimized ? "minimized" : ""}`} title={label} aria-label={label} aria-pressed={active} onClick={() => moduleId ? onModule(moduleId) : onApp(app.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, app, moduleId, portalTarget: event.currentTarget.closest(".taskbar")?.parentElement ?? null }); }}>
+            {app.icon}<span>{label}</span>{running && <i aria-hidden="true" />}{appWindows.length > 1 && <b aria-label={`${t("taskbar.windowCount")}: ${appWindows.length}`}>{appWindows.length}</b>}
           </button>;
         })}
       </div>
@@ -111,6 +134,6 @@ export function Taskbar({ apps, pinned, windows, activeId, profile, resolvedThem
       </div>
       <time className="system-clock" dateTime={new Date().toISOString()}><span>{clockText}</span><small>{dateText}</small></time>
     </div>
-    {context && <ContextMenu className="taskbar-context-menu" portalTarget={context.portalTarget} x={context.x} y={context.y} items={context.app ? appMenu(context.app) : taskbarMenu()} onClose={() => setContext(null)} />}
+    {context && <ContextMenu className="taskbar-context-menu" portalTarget={context.portalTarget} x={context.x} y={context.y} items={context.app ? appMenu(context.app, context.moduleId) : taskbarMenu()} onClose={() => setContext(null)} />}
   </footer>;
 }

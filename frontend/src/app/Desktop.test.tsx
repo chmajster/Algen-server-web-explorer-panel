@@ -198,6 +198,27 @@ describe("personalized desktop", () => {
     localStorage.removeItem("webnas_windows_test");
   });
 
+  it("persists a specific module on the taskbar after its window is closed", async () => {
+    localStorage.setItem("webnas_windows_test", JSON.stringify({ windows: [{ id: "module-1", app: "module", moduleId: "linux-updates", rect: { x: 20, y: 20, width: 900, height: 600 }, minimized: false, zIndex: 11 }], activeId: "module-1", counter: 1, topZ: 11 }));
+    vi.spyOn(api, "modules").mockResolvedValue([{ id: "linux-updates", manifest: { name: "Aktualizacje systemu" }, state: { installed: true, update_available: false }, jobs: [], module_status: { health: "healthy" } }] as unknown as ModuleSummary[]);
+    const base = settingsFixture();
+    const profile = settingsFixture({ startup_windows: "last", pinned_apps: [], pinned_modules: [], permissions: [...base.permissions, "modules.view"] });
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={save} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+    const taskbar = screen.getByLabelText("desktop.taskbar");
+    const moduleButton = await within(taskbar).findByRole("button", { name: "Aktualizacje systemu" });
+
+    fireEvent.contextMenu(moduleButton);
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
+    expect(save).toHaveBeenCalledWith({ pinned_modules: ["linux-updates"] });
+    expect(moduleButton).toHaveClass("pinned");
+
+    fireEvent.contextMenu(moduleButton);
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.closeWindow" }));
+    expect(within(taskbar).getByRole("button", { name: "Aktualizacje systemu" })).toHaveClass("pinned");
+    localStorage.removeItem("webnas_windows_test");
+  });
+
   it("persists independent desktop, Start, and taskbar destinations from All apps", () => {
     const profile = settingsFixture({ pinned_apps: [], start_pinned_apps: [], desktop_shortcut_apps: [] });
     const save = vi.fn().mockResolvedValue(undefined);

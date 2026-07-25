@@ -9,6 +9,7 @@ export const defaultUserPreferences: UserPreferences = {
   wallpaper_fit: "cover",
   taskbar_alignment: "center",
   pinned_apps: ["files", "transfers", "monitor", "settings"],
+  pinned_modules: [],
   start_pinned_apps: ["files", "transfers", "monitor", "settings"],
   desktop_shortcut_apps: ["files", "transfers", "monitor", "settings"],
   show_desktop_shortcuts: true,

@@ -63,6 +63,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       return new Set(Array.isArray(values) ? values.filter((value): value is AppId => typeof value === "string" && apps.some((app) => app.id === value)) : profile.pinned_apps);
     } catch { return new Set(profile.pinned_apps); }
   });
+  const [pinnedModules, setPinnedModules] = useState<Set<string>>(() => new Set(profile.pinned_modules));
   const [startPinned, setStartPinned] = useState<Set<AppId>>(() => new Set(profile.start_pinned_apps));
   const [desktopShortcuts, setDesktopShortcuts] = useState<Set<AppId>>(() => new Set(profile.desktop_shortcut_apps));
   const [recentApps, setRecentApps] = useState<RecentApp[]>(() => {
@@ -71,7 +72,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       return Array.isArray(value) ? value.filter((item): item is RecentApp => Boolean(item && typeof item === "object" && "id" in item && "usedAt" in item && typeof item.id === "string" && typeof item.usedAt === "number" && apps.some((app) => app.id === item.id))).slice(0, 8) : [];
     } catch { return []; }
   });
-  const [installedModules, setInstalledModules] = useState<Set<string>>(new Set());
+  const [moduleNames, setModuleNames] = useState<Map<string, string>>(new Map());
   const migrateLegacyPins = useRef(localStorage.getItem(legacyPinnedKey) !== null);
   const [clock, setClock] = useState(new Date());
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -85,7 +86,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const notifiedModuleEvents = useRef<Set<string>>(new Set());
   const notificationRef = useRef<HTMLElement>(null);
   const canUseApp = useCallback((appId: AppId) => { const definition = appById[appId]; return Boolean(definition && (!definition.admin || profile.is_admin) && (!definition.permission || profile.permissions.includes(definition.permission)) && (!definition.permissionAny || definition.permissionAny.some((permission) => profile.permissions.includes(permission)))); }, [profile.is_admin, profile.permissions]);
-  const moduleAppAvailable = useCallback((appId: AppId) => appId !== "ansible" || installedModules.has("ansible-controller"), [installedModules]);
+  const moduleAppAvailable = useCallback((appId: AppId) => appId !== "ansible" || moduleNames.has("ansible-controller"), [moduleNames]);
   const availableApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const taskbarApps = useMemo(() => apps.filter((app) => canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
@@ -189,7 +190,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     async function refreshModules() {
       try {
         const modules = await api.modules();
-        setInstalledModules(new Set(modules.filter((item) => item.state.installed).map((item) => item.id)));
+        setModuleNames(new Map(modules.filter((item) => item.state.installed).map((item) => [item.id, item.manifest.name])));
         const jobs = modules.flatMap((item) => item.jobs);
         if (!moduleNotificationsInitialized.current) {
           jobs.forEach((job) => previousModuleJobs.current.set(job.id, job.status));
@@ -240,6 +241,10 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     const existing = state.windows.filter((item) => item.app === app).sort((a, b) => b.zIndex - a.zIndex)[0];
     if (existing) selectTask(existing); else openApp(app);
   }
+  function selectModule(moduleId: string) {
+    const existing = state.windows.filter((item) => item.app === "module" && item.moduleId === moduleId).sort((a, b) => b.zIndex - a.zIndex)[0];
+    if (existing) selectTask(existing); else openApp("module", undefined, moduleId);
+  }
   function togglePin(app: AppId) {
     const previous = new Set(pinned);
     const next = new Set(pinned);
@@ -259,6 +264,16 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     setStartPinned(next);
     void onSettingsChange({ start_pinned_apps: [...next] }).catch((error: unknown) => {
       setStartPinned(previous);
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    });
+  }
+  function toggleModulePin(moduleId: string) {
+    const previous = new Set(pinnedModules);
+    const next = new Set(pinnedModules);
+    if (next.has(moduleId)) next.delete(moduleId); else next.add(moduleId);
+    setPinnedModules(next);
+    void onSettingsChange({ pinned_modules: [...next] }).catch((error: unknown) => {
+      setPinnedModules(previous);
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
     });
   }
@@ -282,6 +297,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     else dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } });
   }
   function closeAppWindows(app: AppId) { state.windows.filter((item) => item.app === app).forEach(closeWindow); }
+  function closeModuleWindows(moduleId: string) { state.windows.filter((item) => item.app === "module" && item.moduleId === moduleId).forEach(closeWindow); }
   function changeTaskbarAlignment(alignment: "left" | "center") { void onSettingsChange({ taskbar_alignment: alignment }).catch((error: unknown) => toast(error instanceof Error ? error.message : t("error.generic"), "error")); }
   function renderApp(item: WindowInstance) {
     switch (item.app) {
@@ -327,7 +343,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } })}>{renderApp(item)}</DesktopWindow>)}
     </main>
     {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onOpenProfile={() => openApp("settings", "account")} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
-    <Taskbar apps={taskbarApps} pinned={pinned} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setNotificationsOpen((value) => !value); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onOpenNew={(app) => openApp(app)} onTogglePin={togglePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
+    <Taskbar apps={taskbarApps} pinned={pinned} pinnedModules={pinnedModules} moduleNames={moduleNames} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setNotificationsOpen((value) => !value); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onModule={selectModule} onOpenNew={(app) => openApp(app)} onOpenModuleNew={(moduleId) => openApp("module", undefined, moduleId)} onTogglePin={togglePin} onToggleModulePin={toggleModulePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onCloseModule={closeModuleWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
     {notificationsOpen && <aside ref={notificationRef} className="notification-center" aria-label={t("desktop.notifications")}><header><div><Bell /><strong>{t("desktop.notifications")}</strong></div><button type="button" aria-label={t("action.close")} onClick={() => setNotificationsOpen(false)}><X /></button></header>{visibleToasts.length === 0 && (!profile.notification_transfer || tasks.length === 0) ? <div className="empty-state">{t("desktop.noNotifications")}</div> : <>{visibleToasts.slice().reverse().map((item) => <article className={item.type} key={item.id} role={item.moduleId ? "button" : undefined} tabIndex={item.moduleId ? 0 : undefined} onClick={() => { if (!item.moduleId) return; openApp("module", undefined, item.moduleId); setNotificationsOpen(false); }} onKeyDown={(event) => { if (item.moduleId && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openApp("module", undefined, item.moduleId); setNotificationsOpen(false); } }}><strong>{item.type === "error" ? t("status.error") : "WebNAS"}</strong><span>{item.text}</span></article>)}{profile.notification_transfer && tasks.slice(-profile.notification_limit).reverse().map((task) => <article key={task.id}><strong>{t(`transfers.${task.type}`)}</strong><span>{t(`task.${task.status}`)} · {Math.round(task.progress_percent ?? task.progress ?? 0)}%</span></article>)}</>}</aside>}
     <div className="toasts" role="status" aria-live="polite">{visibleToasts.map((item) => <div className={item.type} key={item.id}>{item.type === "error" && <ShieldCheck />}{item.text}</div>)}</div>
   </div>;
