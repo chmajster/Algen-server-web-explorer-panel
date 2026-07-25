@@ -1,0 +1,47 @@
+id: hosts-manager
+name: Hosts Manager
+description: Central registry for remote servers managed by WebNAS.
+long_description: Secure host enrollment, SSH trust, credentials, inventory, repositories, power management and cross-module capabilities.
+category: infrastructure
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: server
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+apt_packages: [openssh-client, git]
+dnf_packages: [openssh-clients, git]
+yum_packages: [openssh-clients, git]
+systemd_services: []
+packages:
+  apt: [openssh-client, git]
+  dnf: [openssh-clients, git]
+  yum: [openssh-clients, git]
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: false
+  reload: false
+  logs: true
+  diagnostics: true
+  backups: true
+  import_export: true
+  healthcheck: true
+ports: []
+dependencies: []
+conflicts: []
+permissions: [package_management, config_write, network_client]
+config_paths: []
+data_paths: [/var/lib/webnas/hosts-manager, /var/lib/webnas/secrets/hosts-manager.key]
+backup_paths: [/var/lib/webnas/hosts-manager]
+proxmox_safe: true
+requires_reboot: false
+requires_root: true
+configurable: true
+removable: true
+changelog:
+  - Initial central host registry release.

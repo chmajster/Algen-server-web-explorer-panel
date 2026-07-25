@@ -1,5 +1,7 @@
 # WebNAS
 
+WebNAS includes a central [Hosts Manager](HOSTS_MANAGER.md) for secure enrollment, shared inventory, SSH trust, connection credentials, power profiles, repositories and cross-module host actions. Ansible Controller consumes this registry instead of maintaining an independent editable host database.
+
 WebNAS is a web NAS administration panel for Linux, similar in spirit to Synology-style file management while using its own interface and assets. It gives a server a clean browser panel for local Linux users, PAM login, systemd startup, and rsync-powered file operations.
 
 See [CHANGELOG.md](CHANGELOG.md) for the project change history.

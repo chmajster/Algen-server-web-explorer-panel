@@ -800,3 +800,8 @@ def awx_job(job_id: int, user: SessionUser = Depends(require_permission(Permissi
 @router.get("/awx/jobs/{job_id}/stdout")
 def awx_stdout(job_id: int, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_VIEW))):
     return {"stdout": redact_text(AnsibleControllerProvider(user.username).awx_client().stdout(job_id))}
+
+
+from .host_capabilities import register_host_capabilities  # noqa: E402
+
+register_host_capabilities(_enqueue, repository, lambda actor: AnsibleControllerProvider(actor).get_config())

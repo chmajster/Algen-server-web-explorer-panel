@@ -1,5 +1,12 @@
 # Changelog
 
+## Hosts Manager
+
+- Added the independent `hosts-manager` module with a private versioned SQLite registry, granular RBAC, enrollment, SSH fingerprints, encrypted credentials, inventory/discovery, repositories, power profiles, operations/SSE, diagnostics and checksummed backup/restore.
+- Added transactional, idempotent migration from Ansible Controller preserving host/group IDs, facts, fingerprints, credential encryption and automation references.
+- Refactored production Ansible host access through `HostRegistryService` and registered real Ansible host capabilities.
+- Added the responsive bilingual Hosts Manager application and backend/frontend tests.
+
 All notable changes to WebNAS are documented in this file.
 
 The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses date-based unreleased entries until tagged releases are introduced.

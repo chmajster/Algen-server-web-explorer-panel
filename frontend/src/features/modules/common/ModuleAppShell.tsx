@@ -1,10 +1,10 @@
-import { Archive, Bot, CalendarClock, FileCog, FileText, Folder, GitBranch, Info, KeyRound, LayoutDashboard, Network, PlaySquare, Radio, ScrollText, Server, Stethoscope, Users, Workflow } from "lucide-react";
+import { Activity, Archive, Bot, CalendarClock, FileCog, FileText, Folder, GitBranch, Info, KeyRound, LayoutDashboard, Network, PlaySquare, Power, Radio, ScrollText, Server, Settings, Stethoscope, Users, Workflow } from "lucide-react";
 import type { ModuleStatus } from "../../../api";
 import type { Translate } from "../../../app/types";
 
-export type ModuleSection = "overview" | "configuration" | "service" | "logs" | "diagnostics" | "backups" | "info" | "shares" | "users" | "sessions" | "hosts" | "inventory" | "discovery" | "credentials" | "automation-account" | "projects" | "playbooks" | "templates" | "jobs" | "schedules" | "facts";
+export type ModuleSection = "overview" | "configuration" | "service" | "logs" | "diagnostics" | "backups" | "info" | "shares" | "users" | "sessions" | "hosts" | "inventory" | "discovery" | "credentials" | "automation-account" | "projects" | "playbooks" | "templates" | "jobs" | "schedules" | "facts" | "groups" | "enrollment" | "repositories" | "power" | "operations" | "settings";
 
-const icons: Record<ModuleSection, React.ReactNode> = { overview: <LayoutDashboard />, configuration: <FileCog />, service: <Server />, logs: <FileText />, diagnostics: <Stethoscope />, backups: <Archive />, info: <Info />, shares: <Folder />, users: <Users />, sessions: <Radio />, hosts: <Server />, inventory: <Workflow />, discovery: <Network />, credentials: <KeyRound />, "automation-account": <Bot />, projects: <GitBranch />, playbooks: <ScrollText />, templates: <PlaySquare />, jobs: <FileText />, schedules: <CalendarClock />, facts: <Info /> };
+const icons: Record<ModuleSection, React.ReactNode> = { overview: <LayoutDashboard />, configuration: <FileCog />, service: <Server />, logs: <FileText />, diagnostics: <Stethoscope />, backups: <Archive />, info: <Info />, shares: <Folder />, users: <Users />, sessions: <Radio />, hosts: <Server />, inventory: <Workflow />, discovery: <Network />, credentials: <KeyRound />, "automation-account": <Bot />, projects: <GitBranch />, playbooks: <ScrollText />, templates: <PlaySquare />, jobs: <FileText />, schedules: <CalendarClock />, facts: <Info />, groups: <Users />, enrollment: <ScrollText />, repositories: <GitBranch />, power: <Power />, operations: <Activity />, settings: <Settings /> };
 
 export function ModuleStatusBadge({ status, t }: { status: ModuleStatus; t: Translate }) {
   return <span className={`module-status-badge ${status.health}`}><i aria-hidden="true" />{t(`module.health.${status.health}`)}</span>;

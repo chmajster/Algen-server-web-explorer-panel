@@ -1,5 +1,7 @@
 # Ansible Automation Controller
 
+> Host ownership changed: hosts, groups, SSH connection credentials, fingerprints and facts now live in [Hosts Manager](HOSTS_MANAGER.md). Ansible Controller retains automation projects, playbooks, templates, schedules, executions/results and logical host locks. Its idempotent migration preserves existing host IDs and references.
+
 The `ansible-controller` package is WebNAS's native `ansible-core` automation controller. It follows Tower/AWX concepts (inventory, projects, playbooks, job templates, schedules and per-host results) without installing the retired Ansible Tower product or deploying AWX/Kubernetes. An existing AWX or Red Hat Automation Controller can be connected optionally.
 
 ## Architecture

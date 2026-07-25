@@ -1,5 +1,7 @@
 # WebNAS Package Center
 
+`hosts-manager` is a regular manifest-driven Package Center module and opens in its own WebNAS window. Uninstall preserves its central registry by default because Ansible Controller and other modules retain logical host-ID references. Full data removal is a separate high-risk, explicitly confirmed operation.
+
 Package Center is the administrator-only package and service manager built into WebNAS. It discovers trusted modules from `backend/app/modules`, validates their YAML manifests, creates a dry-run plan, and executes approved operations as durable SQLite jobs. The browser receives live progress through Server-Sent Events and falls back to polling.
 
 Installed modules now open in the shared module-management framework documented in [MODULES.md](MODULES.md). Package Center remains the catalog/install layer and keeps its original `/api/apps` compatibility routes; `/api/modules` adds provider status, configuration, logs, diagnostics, backups, and transactional module operations.

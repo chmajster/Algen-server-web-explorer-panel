@@ -139,6 +139,26 @@ class Permission(StrEnum):
     ANSIBLE_AUDIT_VIEW = "ansible-controller.audit.view"
     ANSIBLE_BACKUP = "ansible-controller.backup"
     ANSIBLE_RESTORE = "ansible-controller.restore"
+    HOSTS_MANAGER_VIEW = "hosts-manager.view"
+    HOSTS_MANAGER_HOSTS_VIEW = "hosts-manager.hosts.view"
+    HOSTS_MANAGER_HOSTS_MANAGE = "hosts-manager.hosts.manage"
+    HOSTS_MANAGER_HOSTS_APPROVE = "hosts-manager.hosts.approve"
+    HOSTS_MANAGER_DISCOVERY = "hosts-manager.discovery"
+    HOSTS_MANAGER_INVENTORY_MANAGE = "hosts-manager.inventory.manage"
+    HOSTS_MANAGER_CREDENTIALS_VIEW = "hosts-manager.credentials.view"
+    HOSTS_MANAGER_CREDENTIALS_MANAGE = "hosts-manager.credentials.manage"
+    HOSTS_MANAGER_REPOSITORIES_VIEW = "hosts-manager.repositories.view"
+    HOSTS_MANAGER_REPOSITORIES_MANAGE = "hosts-manager.repositories.manage"
+    HOSTS_MANAGER_POWER_VIEW = "hosts-manager.power.view"
+    HOSTS_MANAGER_POWER_ON = "hosts-manager.power.on"
+    HOSTS_MANAGER_POWER_SHUTDOWN = "hosts-manager.power.shutdown"
+    HOSTS_MANAGER_POWER_REBOOT = "hosts-manager.power.reboot"
+    HOSTS_MANAGER_ACTIONS_EXECUTE = "hosts-manager.actions.execute"
+    HOSTS_MANAGER_PASSWORDS_ROTATE = "hosts-manager.passwords.rotate"
+    HOSTS_MANAGER_AUDIT_VIEW = "hosts-manager.audit.view"
+    HOSTS_MANAGER_BACKUP = "hosts-manager.backup"
+    HOSTS_MANAGER_RESTORE = "hosts-manager.restore"
+    HOSTS_MANAGER_CONFIGURE = "hosts-manager.configure"
     LOGS_VIEW_OWN = "logs.view_own"
     LOGS_VIEW_SYSTEM = "logs.view_system"
     LOGS_VIEW_KERNEL = "logs.view_kernel"
@@ -155,7 +175,7 @@ class Permission(StrEnum):
 
 
 _READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics", "live", "export"}
-_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK}
+_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE}
 _APPLICATIONS: dict[str, list[str]] = {
     "files": ["files"],
     "transfers": ["transfers"],
@@ -173,6 +193,7 @@ _APPLICATIONS: dict[str, list[str]] = {
     "databases": ["module:postgresql", "module:mariadb", "module:redis"],
     "homeassistant": ["module:home-assistant"],
     "ansible-controller": ["module:ansible-controller"],
+    "hosts-manager": ["module:hosts-manager"],
     "logs": ["logs"],
     "system": ["monitor", "logs", "settings"],
 }
@@ -269,6 +290,11 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PROJECTS_MANAGE.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value,
         Permission.ANSIBLE_PLAYBOOKS_MANAGE.value, Permission.ANSIBLE_JOBS_LAUNCH.value, Permission.ANSIBLE_JOBS_CANCEL.value,
         Permission.ANSIBLE_SCHEDULES_MANAGE.value, Permission.ANSIBLE_BACKUP.value,
+        Permission.HOSTS_MANAGER_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_MANAGE.value,
+        Permission.HOSTS_MANAGER_HOSTS_APPROVE.value, Permission.HOSTS_MANAGER_DISCOVERY.value, Permission.HOSTS_MANAGER_INVENTORY_MANAGE.value,
+        Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_MANAGE.value,
+        Permission.HOSTS_MANAGER_POWER_VIEW.value, Permission.HOSTS_MANAGER_POWER_ON.value,
+        Permission.HOSTS_MANAGER_ACTIONS_EXECUTE.value, Permission.HOSTS_MANAGER_BACKUP.value, Permission.HOSTS_MANAGER_CONFIGURE.value,
     },
     Role.auditor: {
         Permission.FILES_VIEW.value, Permission.FILES_READ.value, Permission.FILES_DOWNLOAD.value, Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_VIEW_ALL.value,
@@ -283,6 +309,8 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.LOGS_EXPORT.value,
         Permission.ANSIBLE_VIEW.value, Permission.ANSIBLE_HOSTS_VIEW.value, Permission.ANSIBLE_CREDENTIALS_VIEW.value,
         Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value, Permission.ANSIBLE_AUDIT_VIEW.value,
+        Permission.HOSTS_MANAGER_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_VIEW.value, Permission.HOSTS_MANAGER_POWER_VIEW.value,
+        Permission.HOSTS_MANAGER_AUDIT_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value,
     },
     Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.LOGS_VIEW_OWN.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value, Permission.SYSTEM_STATUS.value},
 }

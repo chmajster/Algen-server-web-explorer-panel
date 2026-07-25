@@ -11,6 +11,7 @@ import { SambaModuleApp } from "./samba/SambaModuleApp";
 import { ManagedModuleApp } from "./ManagedModuleApp";
 import { DockerManagerApp } from "../docker/DockerManagerApp";
 import { AnsibleControllerApp } from "./ansible/AnsibleControllerApp";
+import { HostsManagerApp } from "./hosts/HostsManagerApp";
 
 const emptyStatus: ModuleStatus = { installed: false, update_available: false, service_state: "unknown", service_enabled: false, services: {}, health: "unknown", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} };
 
@@ -18,6 +19,7 @@ export function ModuleApp({ moduleId, initialPath, draftKey, permissions = [], t
   if (moduleId === "samba") return <SambaModuleApp initialSharePath={initialPath} readOnly={!permissions.includes("modules.configure")} canReinstall={permissions.includes("modules.update")} t={t} toast={toast} onOpenFolder={onOpenFolder} onDirtyChange={onDirtyChange} />;
   if (moduleId === "docker") return <DockerManagerApp draftKey={draftKey} permissions={permissions} t={t} toast={toast} onDirtyChange={onDirtyChange} />;
   if (moduleId === "ansible-controller") return <AnsibleControllerApp permissions={permissions} t={t} toast={toast} />;
+  if (moduleId === "hosts-manager") return <HostsManagerApp permissions={permissions} t={t} toast={toast} />;
   if (["linux-updates", "pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"].includes(moduleId)) return <ManagedModuleApp moduleId={moduleId} permissions={permissions} t={t} toast={toast} />;
   return <GenericModuleApp moduleId={moduleId} t={t} toast={toast} />;
 }

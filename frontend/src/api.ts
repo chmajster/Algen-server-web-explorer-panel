@@ -442,6 +442,13 @@ export type AnsibleScanHost = { id: string; address: string; hostname: string; p
 export type AnsibleScan = { id: string; request: Record<string, unknown>; status: string; progress: number; discovered: number; package_job_id?: string | null; error: string; created_at: number; hosts?: AnsibleScanHost[] };
 export type AnsibleSchedule = { id: string; name: string; template_id: string; kind: "once" | "hourly" | "daily" | "weekly" | "monthly" | "cron"; expression: string; timezone: string; missed_policy: "skip" | "run_once"; next_run_at?: number | null; last_run_at?: number | null; active: boolean };
 export type AnsibleValidation = { ok: boolean; errors: AnsibleRisk[]; warnings: AnsibleRisk[]; blocked: AnsibleRisk[]; task_count: number; documents?: number };
+export type HostsManagerDashboard = { total: number; online: number; offline: number; unverified: number; fingerprint_errors: number; pending_approval: number; ansible_available: number; power_managed: number; recent_operations: HostsManagerOperation[]; recent_errors: HostsManagerHost[] };
+export type HostsManagerHost = AnsibleHost & { hostname: string; fqdn: string; management_address: string; description: string; approved: boolean; registration_status: string; connection_status: string; power_status: string; enrollment_source: string; group_ids: string[]; capabilities?: HostsManagerCapability[] };
+export type HostsManagerGroup = AnsibleGroup;
+export type HostsManagerCredential = AnsibleCredential & { type: AnsibleCredential["type"] | "redfish" | "ipmi" | "proxmox_api" | "wol" };
+export type HostsManagerCapability = { id: string; name: string; icon: string; permission: string; module_id: string; deep_link: string };
+export type HostsManagerOperation = { id: string; host_id?: string | null; capability_id: string; module_id: string; status: string; stage: string; progress: number; error: string; details: Record<string, unknown>; created_at: number; updated_at: number };
+export type HostsManagerEnrollmentToken = { id: string; hostname_pattern: string; expires_at: number; used: boolean; expired?: boolean; revoked?: boolean; script_url?: string; command?: string };
 export type DockerPaged<T = Record<string, unknown>> = { items: T[]; total: number; page: number; page_size: number; pages: number };
 export type DockerDashboard = { status: ModuleStatus; counts: Record<string, number>; storage: Array<Record<string, unknown>>; security: Array<{ level: string; message: string }>; engine: Record<string, unknown>; usage: { cpu_percent?: number; memory_bytes?: number }; events: Array<Record<string, unknown>>; updates: Array<Record<string, unknown>>; prune_preview: { total?: number; estimated_reclaimable?: number } };
 export type DockerContainer = { ID?: string; Names?: string; Image?: string; State?: string; Status?: string; Ports?: string; Size?: string; [key: string]: unknown };
@@ -1040,6 +1047,26 @@ export const api = {
   ansibleConfig: () => request<Record<string, unknown>>("/api/modules/ansible-controller/config"),
   saveAnsibleConfig: (payload: Record<string, unknown>) => request<{ job: ModuleJob }>("/api/modules/ansible-controller/config", { method: "PUT", body: JSON.stringify({ ...payload, confirm: true }) }),
   saveAnsibleManagedAccount: (payload: { username: string; sudo_profile: "none" | "nopasswd"; shell: "/bin/bash" | "/bin/sh"; comment: string; authorized_keys_mode: "exclusive"; key_rotation_days: number }) => request<{ managed_username: string; managed_sudo_profile: string; managed_shell: string; managed_comment: string; managed_authorized_keys_mode: string; managed_key_rotation_days: number }>("/api/modules/ansible-controller/managed-account", { method: "PUT", body: JSON.stringify({ ...payload, confirm: true }) }),
+  hostsManagerDashboard: () => request<HostsManagerDashboard>("/api/modules/hosts-manager/dashboard"),
+  hostsManagerHosts: (query = "") => request<HostsManagerHost[]>(`/api/modules/hosts-manager/hosts${query ? `?${query}` : ""}`),
+  hostsManagerHost: (id: string) => request<HostsManagerHost>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}`),
+  saveHostsManagerHost: (payload: Record<string, unknown>, id = "") => request<HostsManagerHost>(id ? `/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/hosts", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  approveHostsManagerHost: (id: string) => request<HostsManagerHost>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/approve`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  disableHostsManagerHost: (id: string) => request<HostsManagerHost>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/disable`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  hostsManagerGroups: () => request<HostsManagerGroup[]>("/api/modules/hosts-manager/groups"),
+  saveHostsManagerGroup: (payload: Record<string, unknown>, id = "") => request<HostsManagerGroup>(id ? `/api/modules/hosts-manager/groups/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/groups", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  hostsManagerCredentials: () => request<HostsManagerCredential[]>("/api/modules/hosts-manager/credentials"),
+  createHostsManagerEnrollmentToken: (payload: Record<string, unknown>) => request<HostsManagerEnrollmentToken>("/api/modules/hosts-manager/enrollment-tokens", { method: "POST", body: JSON.stringify(payload) }),
+  hostsManagerEnrollmentTokens: () => request<HostsManagerEnrollmentToken[]>("/api/modules/hosts-manager/enrollment-tokens"),
+  revokeHostsManagerEnrollmentToken: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/enrollment-tokens/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  hostsManagerCapabilities: (id: string) => request<HostsManagerCapability[]>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/capabilities`),
+  hostsManagerActionPlan: (id: string, capability: string, parameters: Record<string, unknown> = {}) => request<Record<string, unknown>>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/actions/${encodeURIComponent(capability)}/plan`, { method: "POST", body: JSON.stringify({ parameters, confirm: false, confirmation_text: "" }) }),
+  executeHostsManagerAction: (id: string, capability: string, parameters: Record<string, unknown> = {}, confirmationText = "") => request<Record<string, unknown>>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/actions/${encodeURIComponent(capability)}/execute`, { method: "POST", body: JSON.stringify({ parameters, confirm: true, confirmation_text: confirmationText }) }),
+  hostsManagerOperations: () => request<HostsManagerOperation[]>("/api/modules/hosts-manager/operations"),
+  hostsManagerRepositories: () => request<Array<Record<string, unknown>>>("/api/modules/hosts-manager/repositories"),
+  hostsManagerPowerProfiles: () => request<Array<Record<string, unknown>>>("/api/modules/hosts-manager/power-profiles"),
+  hostsManagerDiagnostics: () => request<{ schema_version: number; checks: Array<{ id: string; status: string; message: string }> }>("/api/modules/hosts-manager/diagnostics"),
+  hostsManagerBackups: () => request<Array<Record<string, unknown>>>("/api/modules/hosts-manager/backups"),
   ansibleHosts: () => request<AnsibleHost[]>("/api/modules/ansible-controller/hosts"),
   ansibleHost: (id: string) => request<AnsibleHost>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}`),
   saveAnsibleHost: (payload: Record<string, unknown>, id = "") => request<AnsibleHost>(id ? `/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/hosts", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),

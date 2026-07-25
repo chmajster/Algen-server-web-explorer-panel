@@ -51,6 +51,7 @@ class AnsibleRepository:
     """Private, versioned module database. Credential plaintext never enters it."""
 
     def __init__(self, path: Path | None = None, key_path: Path | None = None) -> None:
+        self.centralized_hosts = path is None
         root = (path.parent if path else Path(get_config().paths.data_dir) / "ansible-controller").resolve(strict=False)
         root.mkdir(parents=True, exist_ok=True)
         try:
@@ -259,6 +260,12 @@ class AnsibleRepository:
         return result
 
     def _list(self, table: str, *, where: str = "", values: tuple[Any, ...] = (), order: str = "updated_at DESC", limit: int = 500) -> list[dict[str, Any]]:
+        if self.centralized_hosts and table == "host_group_memberships":
+            from ..hosts_manager.service import registry
+            return registry()._list("memberships", where=where, values=values, order=order, limit=limit)
+        if self.centralized_hosts and table == "saved_facts":
+            from ..hosts_manager.service import registry
+            return registry()._list("facts", where=where, values=values, order=order, limit=limit)
         allowed = {"hosts", "inventory_groups", "credentials", "projects", "playbooks", "job_templates", "schedules", "executions", "network_scans", "scan_hosts", "controller_audit_events", "known_host_keys", "host_results", "saved_facts", "host_group_memberships", "playbook_versions"}
         if table not in allowed:
             raise ValueError("unsupported repository table")
@@ -272,9 +279,15 @@ class AnsibleRepository:
         return values[0] if values else None
 
     def list_hosts(self, *, active_only: bool = False, limit: int = 5000) -> list[dict[str, Any]]:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            return registry().list_hosts(active_only=active_only, limit=limit)
         return self._list("hosts", where="active=1" if active_only else "", order="name", limit=limit)
 
     def host(self, host_id: str) -> dict[str, Any] | None:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            return registry().host(host_id)
         host = self._get("hosts", host_id)
         if host:
             host["groups"] = self._memberships_for_host(host_id)
@@ -283,6 +296,11 @@ class AnsibleRepository:
         return host
 
     def save_host(self, payload: HostInput, actor: str, host_id: str | None = None) -> dict[str, Any]:
+        if self.centralized_hosts:
+            from ..hosts_manager.models import HostInput as CentralHostInput
+            from ..hosts_manager.service import registry
+            value = payload.model_dump(mode="json")
+            return registry().save_host(CentralHostInput(**value, approved=True), actor, host_id, source="ansible-controller")
         now, object_id = time.time(), host_id or stable_id()
         values = payload.model_dump(mode="json")
         with self._lock, self.connect() as connection:
@@ -297,6 +315,10 @@ class AnsibleRepository:
         return self.host(object_id) or {}
 
     def create_enrollment_token(self, payload: EnrollmentTokenInput, actor: str) -> dict[str, Any]:
+        if self.centralized_hosts:
+            from ..hosts_manager.models import EnrollmentTokenInput as CentralEnrollmentTokenInput
+            from ..hosts_manager.service import registry
+            return registry().create_enrollment_token(CentralEnrollmentTokenInput(**payload.model_dump(mode="json")), actor)
         now, token_id, token = time.time(), stable_id(), secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         values = payload.model_dump(mode="json")
@@ -312,6 +334,10 @@ class AnsibleRepository:
         return {"id": token_id, "token": token, "hostname_pattern": values["hostname_pattern"], "expires_at": expires_at}
 
     def claim_enrollment_token(self, token: str, hostname: str) -> dict[str, Any] | None:
+        if self.centralized_hosts:
+            # The public enrollment endpoint is owned by Hosts Manager. This
+            # compatibility method deliberately cannot bypass its strict claim model.
+            return None
         now = time.time()
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         with self._lock, self.connect() as connection:
@@ -332,6 +358,9 @@ class AnsibleRepository:
             return result
 
     def delete_host(self, host_id: str, actor: str) -> bool:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            return registry().delete_host(host_id, actor)
         with self._lock, self.connect() as connection:
             changed = connection.execute("UPDATE hosts SET active=0,updated_at=?,updated_by=? WHERE id=? AND active=1", (time.time(), actor, host_id)).rowcount
         if changed:
@@ -339,6 +368,9 @@ class AnsibleRepository:
         return bool(changed)
 
     def list_groups(self) -> list[dict[str, Any]]:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            return registry().list_groups()
         groups = self._list("inventory_groups", order="name", limit=5000)
         with self._lock, self.connect() as connection:
             memberships = connection.execute("SELECT host_id,group_id,created_at,created_by FROM host_group_memberships").fetchall()
@@ -350,11 +382,19 @@ class AnsibleRepository:
         return groups
 
     def _memberships_for_host(self, host_id: str) -> list[dict[str, Any]]:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            item = registry().host(host_id)
+            return list(item.get("groups", [])) if item else []
         with self._lock, self.connect() as connection:
             rows = connection.execute("SELECT g.id,g.name FROM inventory_groups g JOIN host_group_memberships m ON m.group_id=g.id WHERE m.host_id=? AND g.active=1 ORDER BY g.name", (host_id,)).fetchall()
         return [dict(row) for row in rows]
 
     def save_group(self, payload: GroupInput, actor: str, group_id: str | None = None) -> dict[str, Any]:
+        if self.centralized_hosts:
+            from ..hosts_manager.models import GroupInput as CentralGroupInput
+            from ..hosts_manager.service import registry
+            return registry().save_group(CentralGroupInput(**payload.model_dump(mode="json")), actor, group_id)
         now, object_id = time.time(), group_id or stable_id()
         with self._lock, self.connect() as connection:
             existing = connection.execute("SELECT created_at,created_by FROM inventory_groups WHERE id=?", (object_id,)).fetchone()
@@ -370,13 +410,22 @@ class AnsibleRepository:
         return next(item for item in self.list_groups() if item["id"] == object_id)
 
     def credentials(self) -> list[dict[str, Any]]:
-        return [self._credential_metadata(item) for item in self._list("credentials", order="name", limit=5000)]
+        local = [self._credential_metadata(item) for item in self._list("credentials", order="name", limit=5000)]
+        if not self.centralized_hosts:
+            return local
+        from ..hosts_manager.service import registry
+        central = registry().credentials()
+        return list({str(item["id"]): item for item in [*local, *central]}.values())
 
     @staticmethod
     def _credential_metadata(item: dict[str, Any]) -> dict[str, Any]:
         return {key: value for key, value in item.items() if key != "encrypted_secret"} | {"secret_configured": bool(item.get("encrypted_secret"))}
 
     def save_credential(self, payload: CredentialInput, actor: str, credential_id: str | None = None) -> dict[str, Any]:
+        if self.centralized_hosts and payload.type.value in {"ssh_private_key", "ssh_password", "become_password"}:
+            from ..hosts_manager.models import CredentialInput as CentralCredentialInput
+            from ..hosts_manager.service import registry
+            return registry().save_credential(CentralCredentialInput(**payload.model_dump(mode="json")), actor, credential_id)
         now, object_id = time.time(), credential_id or stable_id()
         envelope = self.cipher.encrypt(json.dumps({"secret": payload.secret, "passphrase": payload.passphrase}, ensure_ascii=False), associated_data=object_id)
         with self._lock, self.connect() as connection:
@@ -392,6 +441,12 @@ class AnsibleRepository:
         return self._credential_metadata(item or {})
 
     def credential_secret(self, credential_id: str) -> dict[str, str]:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            try:
+                return registry().verified_credential(credential_id, module_id="ansible-controller", purpose="automation")
+            except KeyError:
+                pass
         item = self._get("credentials", credential_id)
         if not item or not item.get("active"):
             raise KeyError("credential not found")
@@ -399,6 +454,10 @@ class AnsibleRepository:
         return {"secret": str(value.get("secret") or ""), "passphrase": str(value.get("passphrase") or ""), "username": str(item.get("username") or ""), "type": str(item.get("type") or "")}
 
     def delete_credential(self, credential_id: str, actor: str) -> bool:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            if registry()._get("credentials", credential_id):
+                return registry().delete_credential(credential_id)
         with self._lock, self.connect() as connection:
             changed = connection.execute("UPDATE credentials SET active=0,encrypted_secret='',updated_at=?,updated_by=? WHERE id=? AND active=1", (time.time(), actor, credential_id)).rowcount
         if changed:
@@ -609,6 +668,10 @@ class AnsibleRepository:
             connection.execute("DELETE FROM host_locks WHERE execution_id=?", (execution_id,))
 
     def save_facts(self, host_id: str, actor: str, facts: dict[str, Any]) -> dict[str, Any]:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            safe = registry().save_facts(host_id, facts, actor)
+            return {"host_id": host_id, "facts": safe}
         import hashlib
 
         safe = redact(facts)
@@ -620,10 +683,25 @@ class AnsibleRepository:
         return self._get("saved_facts", object_id) or {}
 
     def known_key(self, address: str, port: int) -> dict[str, Any] | None:
+        if self.centralized_hosts:
+            from ..hosts_manager.service import registry
+            target = next((item for item in registry().list_hosts() if item["address"] == address and int(item["port"]) == port), None)
+            if not target:
+                return None
+            keys = registry().host_keys(target["id"])
+            if not keys:
+                return None
+            return keys[0] | {"address": address, "port": port}
         values = self._list("known_host_keys", where="address=? AND port=? AND active=1", values=(address, port), limit=1)
         return values[0] if values else None
 
     def accept_known_key(self, host_id: str | None, address: str, port: int, key_type: str, public_key: str, fingerprint: str, actor: str, replace: bool = False) -> dict[str, Any]:
+        if self.centralized_hosts and host_id:
+            from ..hosts_manager.service import registry
+            try:
+                return registry().accept_host_key(host_id, key_type, public_key, fingerprint, actor, replace)
+            except PermissionError as error:
+                raise RuntimeError(str(error)) from error
         existing = self.known_key(address, port)
         if existing and existing["fingerprint"] != fingerprint and not replace:
             raise RuntimeError("SSH host fingerprint changed; explicit replacement is required")

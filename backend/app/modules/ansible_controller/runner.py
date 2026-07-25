@@ -135,7 +135,13 @@ def parse_keyscan(output: str) -> list[dict[str, str]]:
 
 
 def write_known_hosts(repository: AnsibleRepository, path: Path) -> None:
-    keys = repository._list("known_host_keys", where="active=1 AND status='accepted'", order="address", limit=10_000)
+    if repository.centralized_hosts:
+        from ..hosts_manager.service import registry
+        keys = []
+        for host in registry().active_hosts():
+            keys.extend(item | {"address": host["address"], "port": host["port"], "active": True} for item in registry().host_keys(host["id"]) if item["status"] == "accepted")
+    else:
+        keys = repository._list("known_host_keys", where="active=1 AND status='accepted'", order="address", limit=10_000)
     lines = []
     for item in keys:
         target = item["address"] if int(item["port"]) == 22 else f"[{item['address']}]:{item['port']}"
