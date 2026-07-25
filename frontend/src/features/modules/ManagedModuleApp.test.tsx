@@ -42,7 +42,8 @@ describe("ManagedModuleApp", () => {
     await screen.findByText("web");
     fireEvent.click(screen.getByTitle("module.start"));
     expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+    expect(screen.getByText("admin.confirmAction")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.confirm" }));
     await waitFor(() => expect(api.moduleAction).toHaveBeenCalledWith("docker", "container_start", { target: "abc" }));
     expect(await screen.findByRole("dialog", { name: "package.liveJobTitle" })).toBeInTheDocument();
   });
@@ -70,7 +71,8 @@ describe("ManagedModuleApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "module.restart" }));
 
     expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+    expect(screen.getByText("admin.confirmAction")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.confirm" }));
 
     await waitFor(() => expect(api.moduleService).toHaveBeenCalledWith("docker", "restart"));
   });

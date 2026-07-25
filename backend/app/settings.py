@@ -7,6 +7,7 @@ import pwd
 import re
 import shlex
 import shutil
+import secrets
 import subprocess
 import tempfile
 import threading
@@ -16,7 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from .activity import ActivityCategory, record_activity
@@ -42,8 +44,10 @@ SUPPORTED_LANGUAGES = {"pl-PL", "en-US"}
 SUPPORTED_THEMES = {"light", "dark", "system"}
 SUPPORTED_STARTUP_WINDOWS = {"last", "none"}
 MAX_WALLPAPER_LENGTH = 2_000_000
+MAX_WALLPAPER_FILE_SIZE = 10 * 1024 * 1024
+MAX_WALLPAPER_FILES = 24
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
-WALLPAPER_RE = re.compile(r"^(https?://[^\s\"'<>]{1,1800}|data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+)$")
+WALLPAPER_RE = re.compile(r"^(https?://[^\s\"'<>]{1,1800}|/api/settings/wallpapers/[a-f0-9]{32}|/wallpapers/[a-z0-9._-]{1,80}\.svg|data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+)$")
 SERVICE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+(?:\.service)?$")
 CRITICAL_SYSTEMD_SERVICES = {
     "pveproxy",
@@ -391,6 +395,57 @@ def _settings_path(username: str) -> Path:
     directory = Path(get_config().paths.data_dir) / "settings"
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{safe}.json"
+
+
+def _wallpaper_directory(username: str) -> Path:
+    safe = username.replace("/", "_")
+    directory = Path(get_config().paths.data_dir) / "wallpapers" / safe
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _wallpaper_format(data: bytes) -> tuple[str, str] | None:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png", "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg", "image/jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return ".gif", "image/gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    return None
+
+
+def _wallpaper_file(username: str, wallpaper_id: str) -> Path:
+    if not re.fullmatch(r"[a-f0-9]{32}", wallpaper_id):
+        raise HTTPException(404, "Wallpaper not found")
+    matches = list(_wallpaper_directory(username).glob(f"{wallpaper_id}.*"))
+    image = next((item for item in matches if item.suffix in {".png", ".jpg", ".gif", ".webp"}), None)
+    if image is None:
+        raise HTTPException(404, "Wallpaper not found")
+    return image
+
+
+def _wallpaper_items(username: str) -> list[dict]:
+    directory = _wallpaper_directory(username)
+    items = []
+    for path in directory.iterdir():
+        if not path.is_file() or path.suffix not in {".png", ".jpg", ".gif", ".webp"} or not re.fullmatch(r"[a-f0-9]{32}", path.stem):
+            continue
+        metadata_path = path.with_suffix(".json")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+        except (OSError, ValueError):
+            metadata = {}
+        stat = path.stat()
+        items.append({
+            "id": path.stem,
+            "name": str(metadata.get("name") or path.name),
+            "url": f"/api/settings/wallpapers/{path.stem}",
+            "size": stat.st_size,
+            "created_at": int(metadata.get("created_at") or stat.st_mtime),
+        })
+    return sorted(items, key=lambda item: item["created_at"], reverse=True)
 
 
 def _read_settings(username: str) -> dict:
@@ -1003,6 +1058,67 @@ def _browser_language(header: str | None) -> Literal["pl-PL", "en-US"]:
     if "en" in lower:
         return "en-US"
     return "pl-PL"
+
+
+@router.get("/api/settings/wallpapers")
+def settings_wallpapers(user: SessionUser = Depends(_current_user)):
+    authorize(user, "settings.view_own")
+    return {"items": _wallpaper_items(user.username), "max_files": MAX_WALLPAPER_FILES, "max_file_size": MAX_WALLPAPER_FILE_SIZE}
+
+
+@router.post("/api/settings/wallpapers")
+async def settings_wallpaper_upload(file: UploadFile = File(...), user: SessionUser = Depends(_current_user)):
+    authorize(user, "settings.edit_own")
+    directory = _wallpaper_directory(user.username)
+    if len(_wallpaper_items(user.username)) >= MAX_WALLPAPER_FILES:
+        raise HTTPException(409, f"Wallpaper gallery can contain at most {MAX_WALLPAPER_FILES} images")
+    uploaded_name = file.filename
+    data = await file.read(MAX_WALLPAPER_FILE_SIZE + 1)
+    await file.close()
+    if len(data) > MAX_WALLPAPER_FILE_SIZE:
+        raise HTTPException(413, "Wallpaper image is too large")
+    detected = _wallpaper_format(data)
+    if detected is None:
+        raise HTTPException(415, "Wallpaper must be a PNG, JPEG, WebP, or GIF image")
+    suffix, media_type = detected
+    wallpaper_id = secrets.token_hex(16)
+    target = directory / f"{wallpaper_id}{suffix}"
+    metadata_path = directory / f"{wallpaper_id}.json"
+    original_name = Path(uploaded_name or f"wallpaper{suffix}").name.strip()[:120] or f"wallpaper{suffix}"
+    temp = target.with_suffix(f"{suffix}.tmp")
+    temp.write_bytes(data)
+    os.replace(temp, target)
+    os.chmod(target, 0o600)
+    metadata = {"name": original_name, "created_at": int(time.time()), "media_type": media_type}
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
+    os.chmod(metadata_path, 0o600)
+    item = {"id": wallpaper_id, "name": original_name, "url": f"/api/settings/wallpapers/{wallpaper_id}", "size": len(data), "created_at": metadata["created_at"]}
+    record_activity(ActivityCategory.configuration, "wallpaper_upload", user.username, details={"wallpaper_id": wallpaper_id, "size": len(data)}, source="settings")
+    return item
+
+
+@router.get("/api/settings/wallpapers/{wallpaper_id}")
+def settings_wallpaper_file(wallpaper_id: str, user: SessionUser = Depends(_current_user)):
+    authorize(user, "settings.view_own")
+    path = _wallpaper_file(user.username, wallpaper_id)
+    media_type = {".png": "image/png", ".jpg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}[path.suffix]
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
+
+
+@router.delete("/api/settings/wallpapers/{wallpaper_id}")
+def settings_wallpaper_delete(wallpaper_id: str, user: SessionUser = Depends(_current_user)):
+    authorize(user, "settings.edit_own")
+    path = _wallpaper_file(user.username, wallpaper_id)
+    path.unlink()
+    path.with_suffix(".json").unlink(missing_ok=True)
+    selected_url = f"/api/settings/wallpapers/{wallpaper_id}"
+    with user_settings_locks[user.username]:
+        settings = _normalize_user_settings(_read_settings(user.username))
+        if settings["wallpaper"] == selected_url:
+            settings["wallpaper"] = ""
+            _write_settings(user.username, UserSettings.model_validate(settings).model_dump())
+    record_activity(ActivityCategory.configuration, "wallpaper_delete", user.username, details={"wallpaper_id": wallpaper_id}, source="settings")
+    return {"ok": True}
 
 
 @router.get("/api/settings/me")

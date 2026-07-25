@@ -44,7 +44,8 @@ describe("administrative forms", () => {
 
     fireEvent.click(await screen.findByTitle("services.start"));
     expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+    expect(screen.getByText("admin.confirmAction")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.confirm" }));
 
     await waitFor(() => expect(api.systemdServiceAction).toHaveBeenCalledWith("webnas.service", "start", false));
   });

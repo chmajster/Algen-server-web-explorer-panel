@@ -77,6 +77,7 @@ export type Task = {
 };
 
 export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "ansible" | "module";
+export type WallpaperItem = { id: string; name: string; url: string; size: number; created_at: number };
 
 export type UserPreferences = {
   language: "pl-PL" | "en-US";
@@ -874,6 +875,9 @@ export const api = {
   activitySummary: () => request<ActivitySummary>("/api/activity/summary"),
   settingsMe: () => request<SettingsMe>("/api/settings/me"),
   updateSettings: (payload: SettingsPatch) => request<SettingsMe>("/api/settings/me", { method: "PATCH", body: JSON.stringify(payload) }),
+  wallpapers: () => request<{ items: WallpaperItem[]; max_files: number; max_file_size: number }>("/api/settings/wallpapers"),
+  uploadWallpaper: (file: File) => { const body = new FormData(); body.set("file", file); return request<WallpaperItem>("/api/settings/wallpapers", { method: "POST", body }); },
+  deleteWallpaper: (wallpaperId: string) => request<{ ok: boolean }>(`/api/settings/wallpapers/${encodeURIComponent(wallpaperId)}`, { method: "DELETE", body: "{}" }),
   changeMyPassword: (current_password: string, new_password: string) => request("/api/settings/change-password", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
   identityMe: () => request<IdentityProfile>("/api/identity/me"),
   identityPermissions: () => request<PermissionMetadata[]>("/api/identity/permissions"),

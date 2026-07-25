@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { CircleAlert, CircleCheckBig } from "lucide-react";
 import type { Translate } from "../../app/types";
 import { Modal } from "../../components/Modal";
 
@@ -41,6 +42,7 @@ export function AdminActionDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const confirmationOnly = fields.length === 0 && !description;
 
   function change(name: string, value: string) {
     setValues((current) => ({ ...current, [name]: value }));
@@ -82,7 +84,7 @@ export function AdminActionDialog({
         <>
           <button type="button" onClick={onClose}>{t("action.cancel")}</button>
           <button className={danger ? "button-danger" : "button-primary"} disabled={saving} type="submit" form={formId}>
-            {saving ? t("status.loading") : submitLabel || t("action.apply")}
+            {saving ? t("status.loading") : submitLabel || t(confirmationOnly ? "action.confirm" : "action.apply")}
           </button>
         </>
       }
@@ -94,7 +96,14 @@ export function AdminActionDialog({
         onPointerDown={(event) => event.stopPropagation()}
         onSubmit={(event) => void submit(event)}
       >
-        {description}
+        {description || (confirmationOnly && <section className={`admin-action-confirmation ${danger ? "danger" : ""}`}>
+          <span className="admin-action-confirmation-icon">{danger ? <CircleAlert /> : <CircleCheckBig />}</span>
+          <div>
+            <strong>{t(danger ? "admin.confirmDangerousAction" : "admin.confirmAction")}</strong>
+            <p>{t(danger ? "admin.confirmDangerousActionHint" : "admin.confirmActionHint").replace("{action}", title)}</p>
+            <small>{t("admin.confirmActionImmediate")}</small>
+          </div>
+        </section>)}
         {fields.map((field, index) => {
           const fieldId = `${formId}-${field.name}`;
           const common = {
@@ -137,7 +146,7 @@ export function AdminActionDialog({
             </label>
           );
         })}
-        {danger && <p className="danger-note">{t("admin.destructiveWarning")}</p>}
+        {danger && !confirmationOnly && <p className="danger-note">{t("admin.destructiveWarning")}</p>}
         {error && <p className="error-state compact-error" role="alert">{error}</p>}
       </form>
     </Modal>

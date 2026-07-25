@@ -53,7 +53,8 @@ describe("IdentityApp", () => {
     fireEvent.click(await screen.findByText("alice"));
     fireEvent.click(await screen.findByRole("button", { name: "identity.savePolicy" }));
     expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
+    expect(screen.getByText("admin.confirmAction")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.confirm" }));
     await waitFor(() => expect(toast).toHaveBeenCalledWith("Cannot remove last administrator", "error", "admin"));
   });
 

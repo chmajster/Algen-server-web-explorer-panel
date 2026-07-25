@@ -196,6 +196,15 @@ input, select, textarea { min-width: 0; border: 1px solid var(--border-subtle); 
 .data-actions button.danger { color: var(--danger); }
 .data-actions svg, .header-actions svg { width: 14px; height: 14px; }
 .admin-action-form { display: grid; gap: 13px; }
+.admin-action-confirmation { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: flex-start; gap: 11px; padding: 13px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border-subtle)); border-radius: var(--radius-medium); background: color-mix(in srgb, var(--accent) 7%, var(--surface-secondary)); }
+.admin-action-confirmation.danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border-subtle)); background: color-mix(in srgb, var(--danger) 7%, var(--surface-secondary)); }
+.admin-action-confirmation-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface-elevated)); }
+.admin-action-confirmation.danger .admin-action-confirmation-icon { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--surface-elevated)); }
+.admin-action-confirmation-icon svg { width: 18px; height: 18px; }
+.admin-action-confirmation > div { min-width: 0; display: grid; gap: 4px; }
+.admin-action-confirmation strong { font-size: .78rem; line-height: 1.3; }
+.admin-action-confirmation p { margin: 0; color: var(--text-secondary); font-size: .7rem; line-height: 1.45; overflow-wrap: anywhere; }
+.admin-action-confirmation small { color: var(--text-muted); font-size: .62rem; line-height: 1.4; }
 .remember-password { width: max-content; display: inline-flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 0.75rem; cursor: pointer; user-select: none; }.remember-password input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }.credential-note { margin-top: -7px; color: var(--text-muted); font-size: 0.625rem; }.app-job-state { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--surface-secondary); }.app-job-state > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.6875rem; }.app-job-state > header span { color: var(--text-secondary); }.app-job-state p { margin: 0; color: var(--danger); font-size: 0.75rem; overflow-wrap: anywhere; }.app-job-state pre { max-height: 150px; margin: 0; overflow: auto; padding: 9px; border-radius: 5px; color: #d8e6ec; background: #0d151b; font-size: 0.625rem; line-height: 1.4; white-space: pre-wrap; }.app-job-state.failed { border-color: color-mix(in srgb, var(--danger) 55%, var(--border-subtle)); background: color-mix(in srgb, var(--danger) 7%, var(--surface-secondary)); }.app-job-state.failed .progress-track span { background: var(--danger); }
 .danger-note { margin: 4px 0 0; padding: 9px; border-radius: 6px; color: var(--danger); background: color-mix(in srgb, var(--danger) 9%, transparent); font-size: 0.75rem; }
 .compact-error { min-height: 0; align-items: flex-start; padding: 6px 0; }
