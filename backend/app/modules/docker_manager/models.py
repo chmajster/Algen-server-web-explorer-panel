@@ -128,6 +128,20 @@ class ResourceLimits(DockerModel):
         return self
 
 
+class ContainerDefaultsPolicy(DockerModel):
+    resource_limits_enabled: bool = True
+    memory_mb: int = Field(default=512, ge=16, le=1_048_576)
+    memory_swap_mb: int = Field(default=1024, ge=16, le=2_097_152)
+    cpus: float = Field(default=1.0, ge=0.1, le=128)
+    pids: int = Field(default=128, ge=16, le=4_194_304)
+
+    @model_validator(mode="after")
+    def valid_swap(self) -> "ContainerDefaultsPolicy":
+        if self.memory_swap_mb < self.memory_mb:
+            raise ValueError("default memory plus swap cannot be lower than default memory")
+        return self
+
+
 class HealthcheckSpec(DockerModel):
     type: Literal["none", "http", "tcp"] = "none"
     port: int | None = Field(default=None, ge=1, le=65535)

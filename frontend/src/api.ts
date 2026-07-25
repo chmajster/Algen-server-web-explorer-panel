@@ -394,6 +394,7 @@ export type AnsibleHost = {
   last_error: string; managed_user_created: boolean; active: boolean; groups?: Array<{ id: string; name: string }>;
   facts?: Record<string, unknown>; created_at: number; updated_at: number;
 };
+export type AnsibleEnrollmentToken = { id: string; token: string; hostname_pattern: string; expires_at: number };
 export type AnsibleGroup = { id: string; name: string; description: string; parent_id?: string | null; variables: Record<string, unknown>; host_ids: string[]; active: boolean; created_at: number; updated_at: number };
 export type AnsibleCredential = { id: string; name: string; type: "ssh_private_key" | "ssh_password" | "become_password" | "git_private_key" | "awx_token" | "vault_secret"; username: string; description: string; secret_configured: boolean; active: boolean; created_at: number; updated_at: number };
 export type AnsibleProject = { id: string; name: string; source_type: "editor" | "git" | "archive" | "managed_directory"; repository_url: string; revision: string; credential_id?: string | null; sync_before_run: boolean; allow_submodules: boolean; last_commit: string; last_sync_at?: number | null; last_sync_status: string; active: boolean };
@@ -449,6 +450,13 @@ export type DockerContainerCreate = {
   limits?: { cpus?: number | null; memory_mb?: number | null; memory_swap_mb?: number | null; pids?: number | null };
   healthcheck?: { type: "none" | "http" | "tcp"; port?: number | null; path?: string; interval_seconds?: number; timeout_seconds?: number; retries?: number; start_period_seconds?: number };
   labels?: Record<string, string>; read_only?: boolean; init?: boolean; auto_start?: boolean; confirmation?: string;
+};
+export type DockerContainerDefaultsPolicy = {
+  resource_limits_enabled: boolean;
+  memory_mb: number;
+  memory_swap_mb: number;
+  cpus: number;
+  pids: number;
 };
 export type DockerContainerAction = {
   action: "start" | "stop" | "restart" | "pause" | "unpause" | "kill" | "rename" | "remove" | "duplicate" | "recreate" | "check_update" | "update";
@@ -964,6 +972,7 @@ export const api = {
   ansibleHosts: () => request<AnsibleHost[]>("/api/modules/ansible-controller/hosts"),
   ansibleHost: (id: string) => request<AnsibleHost>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}`),
   saveAnsibleHost: (payload: Record<string, unknown>, id = "") => request<AnsibleHost>(id ? `/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}` : "/api/modules/ansible-controller/hosts", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  createAnsibleEnrollmentToken: (payload: { hostname_pattern: string; ssh_user: string; port: number; credential_id: string | null; environment: string; location: string; tags: string[]; expires_minutes: number }) => request<AnsibleEnrollmentToken>("/api/modules/ansible-controller/enrollment-tokens", { method: "POST", body: JSON.stringify(payload) }),
   deleteAnsibleHost: (id: string) => request<{ ok: boolean }>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
   scanAnsibleHostKey: (id: string) => request<{ host_id: string; keys: Array<{ key_type: string; public_key: string; fingerprint: string }>; existing_fingerprint?: string | null; changed: boolean; requires_acceptance: boolean }>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}/ssh-key/scan`, { method: "POST", body: "{}" }),
   acceptAnsibleHostKey: (id: string, key: { public_key: string; fingerprint: string }, replace = false) => request<Record<string, unknown>>(`/api/modules/ansible-controller/hosts/${encodeURIComponent(id)}/ssh-key/accept`, { method: "POST", body: JSON.stringify({ ...key, replace, confirm: true }) }),
@@ -1019,6 +1028,8 @@ export const api = {
   dockerContainerCompose: (target: string) => request<{ content: string; secrets_omitted: boolean; environment_keys: string[] }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/compose`),
   dockerContainerSettings: (target: string) => request<DockerContainerSettings>(`/api/modules/docker/containers/${encodeURIComponent(target)}/settings`),
   updateDockerContainerSettings: (target: string, payload: DockerContainerSettingsUpdate) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/settings`, { method: "PUT", body: JSON.stringify(payload) }),
+  dockerContainerDefaultsPolicy: () => request<DockerContainerDefaultsPolicy>("/api/modules/docker/policy/container-defaults"),
+  saveDockerContainerDefaultsPolicy: (payload: DockerContainerDefaultsPolicy) => request<DockerContainerDefaultsPolicy>("/api/modules/docker/policy/container-defaults", { method: "PUT", body: JSON.stringify(payload) }),
   createDockerContainer: (payload: DockerContainerCreate) => request<{ job: ModuleJob }>("/api/modules/docker/containers", { method: "POST", body: JSON.stringify(payload) }),
   dockerContainerAction: (target: string, payload: DockerContainerAction) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
   dockerContainerBackup: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/backup?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),

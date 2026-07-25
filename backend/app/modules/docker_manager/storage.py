@@ -17,6 +17,13 @@ from ...package_center.models import api_error
 
 TOKEN_RE = re.compile(r"^[a-f0-9]{32}$")
 ARTIFACT_RE = re.compile(r"^[a-f0-9]{24}$")
+DEFAULT_CONTAINER_POLICY = {
+    "resource_limits_enabled": True,
+    "memory_mb": 512,
+    "memory_swap_mb": 1024,
+    "cpus": 1.0,
+    "pids": 128,
+}
 
 
 class DockerManagerStore:
@@ -35,6 +42,24 @@ class DockerManagerStore:
         self.path = self.root / "manager.sqlite3"
         self._lock = threading.RLock()
         self._migrate()
+
+    def container_defaults_policy(self) -> dict[str, Any]:
+        path = self.root / "container-defaults.json"
+        if not path.is_file():
+            return dict(DEFAULT_CONTAINER_POLICY)
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return dict(DEFAULT_CONTAINER_POLICY)
+        return {**DEFAULT_CONTAINER_POLICY, **value} if isinstance(value, dict) else dict(DEFAULT_CONTAINER_POLICY)
+
+    def save_container_defaults_policy(self, value: dict[str, Any]) -> dict[str, Any]:
+        path = self.root / "container-defaults.json"
+        candidate = path.with_suffix(".tmp")
+        candidate.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.chmod(candidate, 0o600)
+        candidate.replace(path)
+        return dict(value)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30)

@@ -30,6 +30,7 @@ from .models import (
     AppInstallRequest,
     ComposeActionRequest,
     ComposeSaveRequest,
+    ContainerDefaultsPolicy,
     ContainerActionRequest,
     ContainerCreateRequest,
     ContainerFilesystemImportRequest,
@@ -148,6 +149,18 @@ def engine(user: SessionUser = Depends(current_user)):
     _allow(user, "docker.view")
     provider = _provider(user)
     return {"status": provider.get_status(), "config": provider.get_config(), "diagnostics": [item.model_dump(mode="json") for item in provider.run_diagnostics()]}
+
+
+@router.get("/policy/container-defaults")
+def container_defaults_policy(user: SessionUser = Depends(current_user)):
+    _allow_any(user, "docker.view", "docker.create_container")
+    return ContainerDefaultsPolicy.model_validate(store().container_defaults_policy())
+
+
+@router.put("/policy/container-defaults")
+def save_container_defaults_policy(payload: ContainerDefaultsPolicy, user: SessionUser = Depends(mutating_user)):
+    _allow(user, "docker.update_engine")
+    return store().save_container_defaults_policy(payload.model_dump(mode="json"))
 
 
 @router.post("/engine/actions")

@@ -178,6 +178,26 @@ describe("personalized desktop", () => {
     expect(save).toHaveBeenCalledWith({ pinned_apps: ["settings"] });
   });
 
+  it("keeps a running application on the taskbar after pinning it and closing its window", () => {
+    localStorage.setItem("webnas_windows_test", JSON.stringify({ windows: [{ id: "transfers-1", app: "transfers", rect: { x: 20, y: 20, width: 900, height: 600 }, minimized: false, zIndex: 11 }], activeId: "transfers-1", counter: 1, topZ: 11 }));
+    const profile = settingsFixture({ pinned_apps: [] });
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={save} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+    const taskbar = screen.getByLabelText("desktop.taskbar");
+    const transfersButton = within(taskbar).getByRole("button", { name: "app.transfers" });
+
+    fireEvent.contextMenu(transfersButton);
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
+    expect(save).toHaveBeenCalledWith({ pinned_apps: ["transfers"] });
+    expect(transfersButton).toHaveClass("pinned");
+
+    fireEvent.contextMenu(transfersButton);
+    fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.closeWindow" }));
+    expect(screen.queryByRole("dialog", { name: "app.transfers" })).not.toBeInTheDocument();
+    expect(within(taskbar).getByRole("button", { name: "app.transfers" })).toHaveClass("pinned");
+    localStorage.removeItem("webnas_windows_test");
+  });
+
   it("persists independent desktop, Start, and taskbar destinations from All apps", () => {
     const profile = settingsFixture({ pinned_apps: [], start_pinned_apps: [], desktop_shortcut_apps: [] });
     const save = vi.fn().mockResolvedValue(undefined);

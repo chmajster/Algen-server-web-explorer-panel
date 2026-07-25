@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from app.identity.models import Role
 from app.identity.permissions import ROLE_PERMISSIONS
-from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, ContainerSettingsRequest, DefaultBridgeConfigRequest, MountSpec, NetworkCreateRequest, RegistryRequest, VolumeActionRequest, VolumeCreateRequest, validate_repository
+from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, ContainerDefaultsPolicy, ContainerSettingsRequest, DefaultBridgeConfigRequest, MountSpec, NetworkCreateRequest, RegistryRequest, VolumeActionRequest, VolumeCreateRequest, validate_repository
 from app.modules.docker_manager import router as docker_router
 from app.modules.docker_manager.router import PUBLIC_DOCKER_HUB
 from app.modules.docker_manager.storage import DockerManagerStore
@@ -37,6 +37,18 @@ def test_container_contract_rejects_high_risk_fields_and_socket_mounts():
         ContainerActionRequest(action="kill", signal="SIGSTOP")
     with pytest.raises(ValidationError):
         ContainerCreateRequest.model_validate({"name": "duplicate-ports", "image": "nginx:stable", "ports": [{"published": 8080, "target": 80}, {"published": 8080, "target": 81}]})
+
+
+def test_container_defaults_policy_is_validated_and_persisted(tmp_path: Path):
+    storage = DockerManagerStore(tmp_path)
+    assert storage.container_defaults_policy() == {
+        "resource_limits_enabled": True, "memory_mb": 512, "memory_swap_mb": 1024, "cpus": 1.0, "pids": 128,
+    }
+    value = ContainerDefaultsPolicy(memory_mb=2048, memory_swap_mb=4096, cpus=2, pids=256)
+    storage.save_container_defaults_policy(value.model_dump(mode="json"))
+    assert storage.container_defaults_policy()["memory_mb"] == 2048
+    with pytest.raises(ValidationError):
+        ContainerDefaultsPolicy(memory_mb=2048, memory_swap_mb=1024)
 
 
 def test_network_contract_rejects_system_names_and_conflicting_gateway():

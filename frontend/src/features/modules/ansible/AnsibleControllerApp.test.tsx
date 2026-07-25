@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnsibleControllerApp } from "./AnsibleControllerApp";
 
 const mocks = vi.hoisted(() => ({
-  module: vi.fn(), dashboard: vi.fn(), hosts: vi.fn(), groups: vi.fn(), credentials: vi.fn(), saveCredential: vi.fn(), config: vi.fn(), saveManagedAccount: vi.fn(), scans: vi.fn(), startScan: vi.fn(), projects: vi.fn(), playbooks: vi.fn(), validatePlaybook: vi.fn(), savePlaybook: vi.fn(), deletePlaybook: vi.fn(),
+  module: vi.fn(), dashboard: vi.fn(), hosts: vi.fn(), groups: vi.fn(), credentials: vi.fn(), saveCredential: vi.fn(), enrollment: vi.fn(), config: vi.fn(), saveManagedAccount: vi.fn(), scans: vi.fn(), startScan: vi.fn(), projects: vi.fn(), playbooks: vi.fn(), validatePlaybook: vi.fn(), savePlaybook: vi.fn(), deletePlaybook: vi.fn(),
 }));
 
 vi.mock("../../../api", async () => {
   const actual = await vi.importActual<typeof import("../../../api")>("../../../api");
-  return { ...actual, api: { ...actual.api, module: mocks.module, ansibleDashboard: mocks.dashboard, ansibleHosts: mocks.hosts, ansibleGroups: mocks.groups, ansibleCredentials: mocks.credentials, saveAnsibleCredential: mocks.saveCredential, ansibleConfig: mocks.config, saveAnsibleManagedAccount: mocks.saveManagedAccount, ansibleScans: mocks.scans, startAnsibleScan: mocks.startScan, ansibleProjects: mocks.projects, ansiblePlaybooks: mocks.playbooks, validateAnsiblePlaybook: mocks.validatePlaybook, saveAnsiblePlaybook: mocks.savePlaybook, deleteAnsiblePlaybook: mocks.deletePlaybook } };
+  return { ...actual, api: { ...actual.api, module: mocks.module, ansibleDashboard: mocks.dashboard, ansibleHosts: mocks.hosts, ansibleGroups: mocks.groups, ansibleCredentials: mocks.credentials, saveAnsibleCredential: mocks.saveCredential, createAnsibleEnrollmentToken: mocks.enrollment, ansibleConfig: mocks.config, saveAnsibleManagedAccount: mocks.saveManagedAccount, ansibleScans: mocks.scans, startAnsibleScan: mocks.startScan, ansibleProjects: mocks.projects, ansiblePlaybooks: mocks.playbooks, validateAnsiblePlaybook: mocks.validatePlaybook, saveAnsiblePlaybook: mocks.savePlaybook, deleteAnsiblePlaybook: mocks.deletePlaybook } };
 });
 
 const status = { installed: true, update_available: false, service_state: "ready", service_enabled: false, services: {}, health: "healthy", health_message: "ready", last_action: "", last_action_status: "", last_error: "", metrics: {} };
@@ -23,6 +23,7 @@ describe("AnsibleControllerApp", () => {
     mocks.dashboard.mockResolvedValue({ hosts: 2, hosts_online: 1, hosts_unreachable: 1, host_key_errors: 0, groups: 1, projects: 0, playbooks: 0, templates: 0, active_jobs: 0, failed_jobs: 0, scheduled: 0, ansible_version: "ansible 2.18" });
     mocks.hosts.mockResolvedValue([]); mocks.groups.mockResolvedValue([]); mocks.credentials.mockResolvedValue([]); mocks.scans.mockResolvedValue([]);
     mocks.saveCredential.mockResolvedValue({ id: "credential" });
+    mocks.enrollment.mockResolvedValue({ id: "enrollment", token: "one-time-token-value", hostname_pattern: "web-*", expires_at: 2_000_000_000 });
     mocks.config.mockResolvedValue({ managed_username: "algen-ansible", managed_sudo_profile: "none", managed_shell: "/bin/bash", managed_comment: "Algen Ansible automation", managed_authorized_keys_mode: "exclusive", managed_key_rotation_days: 90, allowed_networks: [] });
     mocks.saveManagedAccount.mockResolvedValue({ managed_username: "deploy-bot", managed_sudo_profile: "nopasswd", managed_shell: "/bin/sh", managed_comment: "Production automation", managed_authorized_keys_mode: "exclusive", managed_key_rotation_days: 60 });
     mocks.startScan.mockResolvedValue({ scan: { id: "scan", status: "queued", progress: 0, discovered: 0, request: {}, error: "", created_at: 1 }, job: { id: "job" }, address_count: 254 });
@@ -53,6 +54,24 @@ describe("AnsibleControllerApp", () => {
     fireEvent.change(cidr, { target: { value: "192.168.50.0/24" } });
     fireEvent.click(screen.getByRole("button", { name: /ansible.discovery.start/ }));
     await waitFor(() => expect(mocks.startScan).toHaveBeenCalledWith(expect.objectContaining({ cidr: "192.168.50.0/24", method: "nmap" })));
+  });
+
+  it("generates a one-time Bash command constrained by hostname pattern", async () => {
+    render(<AnsibleControllerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /module.section.hosts/ }));
+    const enrollment = (await screen.findByText("ansible.enrollment.title")).closest("details")!;
+    enrollment.setAttribute("open", "");
+    const fields = enrollment.querySelectorAll("input");
+    fireEvent.change(fields[0], { target: { value: "web-*.example.com" } });
+    fireEvent.change(fields[3], { target: { value: "production" } });
+    fireEvent.change(fields[5], { target: { value: "linux, web" } });
+    fireEvent.click(enrollment.querySelector<HTMLButtonElement>('button[type="submit"]')!);
+
+    await waitFor(() => expect(mocks.enrollment).toHaveBeenCalledWith(expect.objectContaining({
+      hostname_pattern: "web-*.example.com", environment: "production", tags: ["linux", "web"], expires_minutes: 15,
+    })));
+    expect(await screen.findByText(/Authorization: Bearer one-time-token-value/)).toBeInTheDocument();
+    expect(screen.getByText(/hostname -f/)).toBeInTheDocument();
   });
 
   it("shows credential fields appropriate for the selected type", async () => {

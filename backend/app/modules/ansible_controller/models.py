@@ -152,6 +152,24 @@ class HostInput(StrictModel):
         return value
 
 
+class EnrollmentTokenInput(StrictModel):
+    hostname_pattern: str = Field(default="node-*", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9*?.-]+$")
+    ssh_user: str = Field(default=MANAGED_SSH_USERNAME, min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
+    port: int = Field(default=22, ge=1, le=65535)
+    credential_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-f0-9]{24,64}$")
+    environment: str = Field(default="", max_length=64, pattern=r"^[A-Za-z0-9_.-]{0,64}$")
+    location: str = Field(default="", max_length=128)
+    tags: list[str] = Field(default_factory=list, max_length=50)
+    expires_minutes: int = Field(default=15, ge=5, le=60)
+
+    _safe_tags = field_validator("tags")(HostInput.safe_tags.__func__)
+
+
+class EnrollmentClaimInput(StrictModel):
+    hostname: str = Field(min_length=1, max_length=128, pattern=r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+    address: str = Field(min_length=1, max_length=253)
+
+
 class GroupInput(StrictModel):
     name: Identifier
     description: str = Field(default="", max_length=500)

@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, Cpu, Download, Eye, EyeOff, FileCode2, KeyRound, LockKeyhole, Maximize2, MemoryStick, Network, Play, Plus, Radar, RefreshCw, Save, Search, Server, ShieldCheck, Square, Terminal, Trash2, Upload, UserRoundCheck, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Copy, Cpu, Download, Eye, EyeOff, FileCode2, KeyRound, LockKeyhole, Maximize2, MemoryStick, Network, Play, Plus, Radar, RefreshCw, Save, Search, Server, ShieldCheck, Square, Terminal, Trash2, Upload, UserRoundCheck, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api, type AnsibleCredential, type AnsibleDashboard, type AnsibleExecution, type AnsibleGroup, type AnsibleHost,
@@ -64,7 +64,7 @@ export function AnsibleControllerApp({ permissions, t, toast }: Props) {
   let content: React.ReactNode;
   if (error) content = <div className="error-state" role="alert"><AlertTriangle />{error}<button onClick={() => void refresh()}>{t("action.retry")}</button></div>;
   else if (section === "overview") content = <Dashboard dashboard={dashboard} status={status} t={t} />;
-  else if (section === "hosts") content = <Hosts hosts={hosts} credentials={selectableCredentials} config={config} canManage={can("ansible-controller.hosts.manage")} t={t} toast={toast} refresh={refresh} />;
+  else if (section === "hosts") content = <><EnrollmentCommand t={t} toast={toast} credentials={selectableCredentials} canManage={can("ansible-controller.hosts.manage")} defaultSshUser={String(config.managed_username || "algen-ansible")} /><Hosts hosts={hosts} credentials={selectableCredentials} config={config} canManage={can("ansible-controller.hosts.manage")} t={t} toast={toast} refresh={refresh} /></>;
   else if (section === "inventory") content = <Inventory content={inventory} canManage={can("ansible-controller.hosts.manage")} t={t} toast={toast} refresh={refresh} />;
   else if (section === "discovery") content = <Discovery scans={scans} canManage={can("ansible-controller.discovery")} t={t} toast={toast} refresh={refresh} />;
   else if (section === "credentials") content = <Credentials items={credentials} canManage={can("ansible-controller.credentials.manage")} t={t} toast={toast} refresh={refresh} />;
@@ -94,6 +94,79 @@ function Dashboard({ dashboard, status, t }: { dashboard: AnsibleDashboard | nul
 }
 
 function Status({ state, t }: { state: string; t: Translate }) { const Icon = ["healthy", "completed", "online", "ok", "accepted", "safe"].includes(state) ? CheckCircle2 : ["failed", "unreachable", "changed", "error", "blocked"].includes(state) ? XCircle : AlertTriangle; return <span className={`ansible-status ${state}`}><Icon aria-hidden="true" />{t(`ansible.status.${state}`)}</span>; }
+
+function EnrollmentCommand({ canManage, credentials, defaultSshUser, t, toast }: { canManage: boolean; credentials: AnsibleCredential[]; defaultSshUser: string; t: Translate; toast: ToastFn }) {
+  const [hostnamePattern, setHostnamePattern] = useState("node-*");
+  const [sshUser, setSshUser] = useState(defaultSshUser);
+  const [port, setPort] = useState("22");
+  const [credentialId, setCredentialId] = useState("");
+  const [environment, setEnvironment] = useState("");
+  const [location, setLocation] = useState("");
+  const [tags, setTags] = useState("");
+  const [expiresMinutes, setExpiresMinutes] = useState("15");
+  const [command, setCommand] = useState("");
+  const [expiresAt, setExpiresAt] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  async function generate(event: React.FormEvent) {
+    event.preventDefault(); setBusy(true); setCommand("");
+    try {
+      const value = await api.createAnsibleEnrollmentToken({
+        hostname_pattern: hostnamePattern,
+        ssh_user: sshUser,
+        port: Number(port),
+        credential_id: credentialId || null,
+        environment,
+        location,
+        tags: tags.split(",").map((item) => item.trim()).filter(Boolean),
+        expires_minutes: Number(expiresMinutes),
+      });
+      const endpoint = new URL("/api/modules/ansible-controller/enroll", window.location.origin).toString();
+      setExpiresAt(value.expires_at);
+      setCommand(`set -eu
+DETECTED_HOST_NAME="$(hostname -f 2>/dev/null || hostname)"
+DETECTED_HOST_ADDRESS="$(hostname -I 2>/dev/null | awk '{print $1}')"
+HOST_NAME="\${ANSIBLE_ENROLL_HOSTNAME:-$DETECTED_HOST_NAME}"
+HOST_ADDRESS="\${ANSIBLE_ENROLL_ADDRESS:-$DETECTED_HOST_ADDRESS}"
+[ -n "$HOST_ADDRESS" ] || HOST_ADDRESS="$HOST_NAME"
+PAYLOAD="$(printf '{"hostname":"%s","address":"%s"}' "$HOST_NAME" "$HOST_ADDRESS")"
+curl --fail --silent --show-error --max-time 30 \\
+  -X POST '${endpoint}' \\
+  -H 'Authorization: Bearer ${value.token}' \\
+  -H 'Content-Type: application/json' \\
+  --data "$PAYLOAD"
+echo`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin", "ansible-controller");
+    } finally { setBusy(false); }
+  }
+
+  async function copyCommand() {
+    try {
+      await navigator.clipboard.writeText(command);
+      toast(t("ansible.enrollment.copied"), "ok");
+    } catch {
+      toast(t("ansible.enrollment.copyFailed"), "error");
+    }
+  }
+
+  if (!canManage) return null;
+  return <details className="ansible-enrollment">
+    <summary><Terminal /><span><strong>{t("ansible.enrollment.title")}</strong><small>{t("ansible.enrollment.hint")}</small></span><ChevronRight /></summary>
+    <form className="module-form-grid" onSubmit={(event) => void generate(event)}>
+      <label>{t("ansible.enrollment.hostnamePattern")}<input list="ansible-hostname-patterns" required maxLength={128} pattern="[A-Za-z0-9*?.-]+" value={hostnamePattern} onChange={(event) => setHostnamePattern(event.target.value)} /><datalist id="ansible-hostname-patterns"><option value="node-*" /><option value="web-*" /><option value="db-*" /><option value="worker-*" /><option value="*.example.com" /></datalist><small>{t("ansible.enrollment.hostnamePatternHint")}</small></label>
+      <label>{t("ansible.host.sshUser")}<input required value={sshUser} onChange={(event) => setSshUser(event.target.value)} /></label>
+      <label>{t("ansible.host.port")}<input type="number" min="1" max="65535" value={port} onChange={(event) => setPort(event.target.value)} /></label>
+      <label>{t("ansible.credential.title")}<select value={credentialId} onChange={(event) => setCredentialId(event.target.value)}><option value="">{t("common.none")}</option>{credentials.filter((item) => ["ssh_private_key", "ssh_password"].includes(item.type)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label>{t("ansible.enrollment.expiration")}<select value={expiresMinutes} onChange={(event) => setExpiresMinutes(event.target.value)}><option value="5">5 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select></label>
+      <label>{t("ansible.host.environment")}<input value={environment} onChange={(event) => setEnvironment(event.target.value)} /></label>
+      <label>{t("ansible.host.location")}<input value={location} onChange={(event) => setLocation(event.target.value)} /></label>
+      <label className="wide">{t("ansible.enrollment.tags")}<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="linux, production" /></label>
+      <button className="button-primary" type="submit" disabled={busy}><Terminal />{t(busy ? "status.loading" : "ansible.enrollment.generateCommand")}</button>
+    </form>
+    {command && <section className="ansible-enrollment-command"><header><div><strong>{t("ansible.enrollment.commandTitle")}</strong><small>{t("ansible.enrollment.validUntil")}: {new Date(expiresAt * 1000).toLocaleString()}</small></div><button type="button" onClick={() => void copyCommand()}><Copy />{t("action.copy")}</button></header><pre>{command}</pre><p><AlertTriangle />{t("ansible.enrollment.securityHint")}</p></section>}
+  </details>;
+}
 
 function Hosts({ hosts, credentials, config, canManage, t, toast, refresh }: { hosts: AnsibleHost[]; credentials: AnsibleCredential[]; config: Record<string, unknown>; canManage: boolean; t: Translate; toast: ToastFn; refresh: () => Promise<void> }) {
   const [form, setForm] = useState(blankHost); const [open, setOpen] = useState(false); const [search, setSearch] = useState(""); const [selected, setSelected] = useState<AnsibleHost | null>(null); const [key, setKey] = useState<{ public_key: string; fingerprint: string; changed: boolean } | null>(null);

@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  api, type AutoUpdateSettings, type ProxmoxSafety, type SettingsMe, type SettingsPatch,
+  api, type AutoUpdateSettings, type DockerContainerDefaultsPolicy, type ProxmoxSafety, type SettingsMe, type SettingsPatch,
   type SystemStatus, type UpdateProgress, type UpdateStatus
 } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
@@ -36,7 +36,7 @@ const categorySettings: Record<SettingsCategory, string[]> = {
   notifications: ["notificationsEnabled", "transferNotifications", "errorNotifications", "adminNotifications", "notificationLimit", "notificationAutoHide"],
   accessibility: ["interfaceScale", "largerText", "reduceMotion", "highContrast", "strongActiveBorders", "alwaysShowFocus"],
   language: ["language", "dateFormat", "timeFormat", "firstDayOfWeek"], account: ["username", "groups", "changePassword"],
-  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration"], administration: ["serviceInformation", "updates", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
+  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration", "containerDefaultsPolicy"], administration: ["serviceInformation", "updates", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
 };
 
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
@@ -86,13 +86,15 @@ function PasswordSection({ t, toast }: { t: Translate; toast: ToastFn }) {
 
 function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
+  const [dockerPolicy, setDockerPolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<"checking" | "installation">("checking");
+  const [group, setGroup] = useState<"checking" | "installation" | "containers">("checking");
   const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
   const [editing, setEditing] = useState(false);
   useEffect(() => {
     let live = true;
     api.autoUpdate().then((value) => { if (live) setPolicy(value); }).catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
+    api.dockerContainerDefaultsPolicy().then((value) => { if (live) setDockerPolicy(value); }).catch(() => undefined);
     return () => { live = false; };
   }, [t]);
   async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "update_config">>) {
@@ -112,8 +114,51 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
     }
   }
   const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
+  function chooseGroup(next: "checking" | "installation" | "containers") {
+    setGroup(next); if (next !== "containers") setSelected(next === "checking" ? "check_enabled" : "enabled"); setEditing(false);
+  }
   if (!policy && !error) return <div className="loading-state">{t("status.loading")}</div>;
   if (!policy) return <div className="error-state" role="alert">{error}</div>;
+  const policyGroups = <aside className="policy-groups">
+    <header><FolderOpen />{t("settings.policyCategories")}</header>
+    <button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button>
+    <button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button>
+    <button className={group === "containers" ? "active" : ""} onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>
+  </aside>;
+  if (group === "containers") {
+    async function saveDockerPolicy() {
+      if (!dockerPolicy) return;
+      setError("");
+      try {
+        setDockerPolicy(await api.saveDockerContainerDefaultsPolicy(dockerPolicy));
+        setEditing(false);
+        toast(t("settings.saved"), "ok", "admin");
+      } catch (reason) {
+        const message = reason instanceof Error ? reason.message : t("error.generic");
+        setError(message); toast(message, "error", "admin");
+      }
+    }
+    return <section className="policy-browser">
+      {policyGroups}
+      <section className="policy-list"><header><SlidersHorizontal />{t("settings.policies")}<b>1</b></header><button className="active"><span><strong>{t("settings.containerDefaultsPolicy")}</strong><small>docker.container_defaults</small></span><b>{t("settings.oneActiveRule")}</b></button></section>
+      <article className="policy-detail"><header><h3>{t("settings.containerDefaultsPolicy")}</h3><p>{t("settings.containerDefaultsPolicyHint")}</p><div><span><b>ID</b><code>docker.container_defaults</code></span><span><b>{t("settings.defaultValue")}</b><code>512 MiB / 1 CPU</code></span></div></header>
+        <div className="policy-rules-heading"><strong>{t("settings.configuredRules")}</strong><button className="button-primary" onClick={() => setEditing(true)}>+ {t("settings.editRule")}</button></div>
+        <section className="policy-rule-card"><header><span className={dockerPolicy?.resource_limits_enabled ? "enabled" : "disabled"}>{t(dockerPolicy?.resource_limits_enabled ? "common.enabled" : "common.disabled")}</span><b>{t("settings.priority")}: 100</b></header>
+          {dockerPolicy && <dl><div><dt>{t("docker.field.memoryMb")}</dt><dd>{dockerPolicy.memory_mb} MiB</dd></div><div><dt>{t("docker.field.memorySwapMb")}</dt><dd>{dockerPolicy.memory_swap_mb} MiB</dd></div><div><dt>{t("docker.field.cpus")}</dt><dd>{dockerPolicy.cpus}</dd></div><div><dt>{t("docker.field.pids")}</dt><dd>{dockerPolicy.pids}</dd></div></dl>}
+          <p>{t("settings.containerDefaultsPolicyHint")}</p>
+          {editing && dockerPolicy && <div className="policy-rule-editor docker-policy-editor">
+            <strong>{t("settings.ruleValue")}</strong>
+            <label className="check-row"><input type="checkbox" checked={dockerPolicy.resource_limits_enabled} onChange={(event) => setDockerPolicy({ ...dockerPolicy, resource_limits_enabled: event.target.checked })} />{t("docker.wizard.enableLimits")}</label>
+            <label>{t("docker.field.memoryMb")}<input aria-label={t("docker.field.memoryMb")} type="number" min="16" value={dockerPolicy.memory_mb} onChange={(event) => setDockerPolicy({ ...dockerPolicy, memory_mb: Number(event.target.value) })} /></label>
+            <label>{t("docker.field.memorySwapMb")}<input aria-label={t("docker.field.memorySwapMb")} type="number" min={dockerPolicy.memory_mb} value={dockerPolicy.memory_swap_mb} onChange={(event) => setDockerPolicy({ ...dockerPolicy, memory_swap_mb: Number(event.target.value) })} /></label>
+            <label>{t("docker.field.cpus")}<input aria-label={t("docker.field.cpus")} type="number" min="0.1" step="0.1" value={dockerPolicy.cpus} onChange={(event) => setDockerPolicy({ ...dockerPolicy, cpus: Number(event.target.value) })} /></label>
+            <label>{t("docker.field.pids")}<input aria-label={t("docker.field.pids")} type="number" min="16" value={dockerPolicy.pids} onChange={(event) => setDockerPolicy({ ...dockerPolicy, pids: Number(event.target.value) })} /></label>
+            <div><button className="button-primary" onClick={() => void saveDockerPolicy()}>{t("action.save")}</button><button onClick={() => setEditing(false)}>{t("action.cancel")}</button></div>
+          </div>}
+        </section>{error && <p className="update-settings-error">{error}</p>}
+      </article>
+    </section>;
+  }
   const definitions = {
     check_enabled: { group: "checking" as const, label: t("settings.automaticUpdateChecks"), id: "updates.check_enabled", description: t("settings.automaticUpdateChecksHint"), defaultValue: t("common.enabled") },
     interval_hours: { group: "checking" as const, label: t("settings.updateInterval"), id: "updates.check_interval_hours", description: t("settings.updateIntervalHint"), defaultValue: "12 h" },
@@ -128,11 +173,8 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
     const saved = await savePolicy({ [selected]: value });
     if (saved) setEditing(false);
   }
-  function chooseGroup(next: "checking" | "installation") {
-    setGroup(next); setSelected(next === "checking" ? "check_enabled" : "enabled"); setEditing(false);
-  }
   return <section className="policy-browser">
-    <aside className="policy-groups"><header><FolderOpen />{t("settings.policyCategories")}</header><button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button><button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button></aside>
+    {policyGroups}
     <section className="policy-list"><header><SlidersHorizontal />{t("settings.policies")}<b>{keys.length}</b></header>{keys.map((key) => <button key={key} className={selected === key ? "active" : ""} onClick={() => { setSelected(key); setEditing(false); }}><span><strong>{definitions[key].label}</strong><small>{definitions[key].id}</small></span><b>{t("settings.oneActiveRule")}</b></button>)}</section>
     <article className="policy-detail"><header><h3>{current.label}</h3><p>{current.description}</p><div><span><b>ID</b><code>{current.id}</code></span><span><b>{t("settings.defaultValue")}</b><code>{current.defaultValue}</code></span></div></header>
       <div className="policy-rules-heading"><strong>{t("settings.configuredRules")}</strong><button className="button-primary" onClick={() => setEditing(true)}>+ {t("settings.editRule")}</button></div>

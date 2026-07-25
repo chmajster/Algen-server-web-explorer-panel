@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import fnmatch
+import hashlib
 import json
 import os
 import secrets
@@ -11,11 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from ...config import get_config
-from .models import CredentialInput, GroupInput, HostInput, PlaybookInput, ProjectInput, ScheduleInput, TemplateInput
+from .models import CredentialInput, EnrollmentTokenInput, GroupInput, HostInput, PlaybookInput, ProjectInput, ScheduleInput, TemplateInput
 from .security import CredentialCipher, redact
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 JSON_COLUMNS = {
     "tags_json": "tags",
     "variables_json": "variables",
@@ -221,6 +223,16 @@ class AnsibleRepository:
                     key TEXT PRIMARY KEY, config_json TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
                     created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS enrollment_tokens(
+                    id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, hostname_pattern TEXT NOT NULL,
+                    ssh_user TEXT NOT NULL, port INTEGER NOT NULL, credential_id TEXT, environment TEXT NOT NULL DEFAULT '',
+                    location TEXT NOT NULL DEFAULT '', tags_json TEXT NOT NULL DEFAULT '[]',
+                    expires_at REAL NOT NULL, used_at REAL, used_hostname TEXT NOT NULL DEFAULT '',
+                    active INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    created_by TEXT NOT NULL, updated_by TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ansible_enrollment_tokens_hash
+                ON enrollment_tokens(token_hash,active,expires_at);
                 """
             )
             connection.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES (?,?)", (SCHEMA_VERSION, now))
@@ -283,6 +295,41 @@ class AnsibleRepository:
             )
         self.audit(actor, "host", object_id, "create" if not host_id else "update")
         return self.host(object_id) or {}
+
+    def create_enrollment_token(self, payload: EnrollmentTokenInput, actor: str) -> dict[str, Any]:
+        now, token_id, token = time.time(), stable_id(), secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        values = payload.model_dump(mode="json")
+        expires_at = now + values.pop("expires_minutes") * 60
+        with self._lock, self.connect() as connection:
+            connection.execute("DELETE FROM enrollment_tokens WHERE expires_at<? OR used_at IS NOT NULL", (now - 86400,))
+            connection.execute(
+                """INSERT INTO enrollment_tokens(id,token_hash,hostname_pattern,ssh_user,port,credential_id,environment,location,tags_json,expires_at,used_at,used_hostname,active,created_at,updated_at,created_by,updated_by)
+                VALUES(?,?,?,?,?,?,?,?,?,?,NULL,'',1,?,?,?,?)""",
+                (token_id, token_hash, values["hostname_pattern"], values["ssh_user"], values["port"], values["credential_id"], values["environment"], values["location"], json.dumps(values["tags"]), expires_at, now, now, actor, actor),
+            )
+        self.audit(actor, "enrollment_token", token_id, "create", {"hostname_pattern": values["hostname_pattern"], "expires_at": expires_at})
+        return {"id": token_id, "token": token, "hostname_pattern": values["hostname_pattern"], "expires_at": expires_at}
+
+    def claim_enrollment_token(self, token: str, hostname: str) -> dict[str, Any] | None:
+        now = time.time()
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        with self._lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM enrollment_tokens WHERE token_hash=? AND active=1 AND used_at IS NULL AND expires_at>=?",
+                (token_hash, now),
+            ).fetchone()
+            if not row or not fnmatch.fnmatchcase(hostname.casefold(), str(row["hostname_pattern"]).casefold()):
+                return None
+            changed = connection.execute(
+                "UPDATE enrollment_tokens SET used_at=?,used_hostname=?,active=0,updated_at=?,updated_by=? WHERE id=? AND used_at IS NULL AND active=1",
+                (now, hostname, now, f"self-enrollment:{hostname}", row["id"]),
+            ).rowcount
+            if not changed:
+                return None
+            result = dict(row)
+            result["tags"] = json.loads(result.pop("tags_json") or "[]")
+            return result
 
     def delete_host(self, host_id: str, actor: str) -> bool:
         with self._lock, self.connect() as connection:

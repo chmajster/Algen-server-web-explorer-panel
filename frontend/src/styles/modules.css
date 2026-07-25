@@ -295,6 +295,26 @@
 .managed-table .data-actions { flex-wrap: nowrap; }
 
 .ansible-panel { position: relative; min-width: 0; display: grid; align-content: start; gap: 14px; }
+.ansible-enrollment { border: 1px solid color-mix(in srgb,var(--accent) 28%,var(--border-subtle)); border-radius: var(--radius-medium); background: var(--surface-elevated); }
+.ansible-enrollment > summary { min-height: 52px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; list-style: none; color: var(--text-primary); }
+.ansible-enrollment > summary::-webkit-details-marker { display: none; }
+.ansible-enrollment > summary > svg:first-child { width: 18px; color: var(--accent); }
+.ansible-enrollment > summary > svg:last-child { width: 15px; color: var(--text-muted); transition: transform .15s ease; }
+.ansible-enrollment[open] > summary > svg:last-child { transform: rotate(90deg); }
+.ansible-enrollment > summary span { min-width: 0; display: grid; gap: 2px; }
+.ansible-enrollment > summary strong { font-size: .72rem; }
+.ansible-enrollment > summary small { color: var(--text-muted); font-size: .59rem; font-weight: 400; }
+.ansible-enrollment > .module-form-grid { margin: 0 10px 10px; }
+.ansible-enrollment-command { margin: 0 10px 10px; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-primary); }
+.ansible-enrollment-command > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-secondary); }
+.ansible-enrollment-command > header div { display: grid; gap: 2px; }
+.ansible-enrollment-command > header strong { font-size: .68rem; }
+.ansible-enrollment-command > header small { color: var(--text-muted); font-size: .56rem; }
+.ansible-enrollment-command > header button { min-height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; font-size: .6rem; }
+.ansible-enrollment-command > header button svg { width: 13px; }
+.ansible-enrollment-command pre { max-height: 260px; margin: 0; overflow: auto; padding: 12px; color: var(--text-primary); background: var(--surface-primary); font: .63rem/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ansible-enrollment-command > p { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 11px; border-top: 1px solid var(--border-subtle); color: var(--warning); background: color-mix(in srgb,var(--warning) 6%,var(--surface-secondary)); font-size: .58rem; line-height: 1.4; }
+.ansible-enrollment-command > p svg { width: 13px; flex: 0 0 auto; }
 .ansible-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ansible-panel > header h3 { margin: 0; font-size: .9rem; }
 .ansible-panel > header p { margin: 4px 0 0; color: var(--text-secondary); font-size: .7rem; }

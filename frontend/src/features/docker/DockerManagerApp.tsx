@@ -14,7 +14,7 @@ import {
   Stethoscope,
   Store,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   type DockerEngineAction,
@@ -73,7 +73,10 @@ export function DockerManagerApp({
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [events, setEvents] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const dashboardLoaded = useRef(false);
+  const loadInProgress = useRef(false);
   const [job, setJob] = useState<ModuleJob | null>(null);
   const [resourceRefresh, setResourceRefresh] = useState(0);
   const [engineAction, setEngineAction] = useState<DockerEngineAction["action"] | null>(null);
@@ -84,21 +87,27 @@ export function DockerManagerApp({
   );
   useEffect(() => { if (draftKey) sessionStorage.setItem(`${draftKey}:section`, section); }, [draftKey, section]);
   const load = useCallback(async () => {
-    setLoading(true);
+    loadInProgress.current = true;
+    const initialLoad = !dashboardLoaded.current;
+    if (initialLoad) setLoading(true);
+    else setRefreshing(true);
     try {
       setDashboard(await api.dockerDashboard());
+      dashboardLoaded.current = true;
       setError("");
       if (section === "events") setEvents((await api.dockerEvents()).items);
     } catch (reason) {
-      setError(errorMessage(reason, t));
+      if (initialLoad) setError(errorMessage(reason, t));
     } finally {
-      setLoading(false);
+      if (initialLoad) setLoading(false);
+      else setRefreshing(false);
+      loadInProgress.current = false;
     }
   }, [section, t]);
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => {
-      if (!document.hidden && section === "dashboard") void load();
+      if (!document.hidden && section === "dashboard" && !loadInProgress.current) void load();
     }, 5000);
     return () => window.clearInterval(timer);
   }, [load, section]);
@@ -257,8 +266,8 @@ export function DockerManagerApp({
             </div>
           </div>
           <div>
-            <button onClick={() => void load()}>
-              <RefreshCw />
+            <button aria-busy={refreshing} disabled={refreshing} onClick={() => void load()}>
+              <RefreshCw className={refreshing ? "spin" : undefined} />
               {t("action.refresh")}
             </button>
             {can("docker.prune") && (

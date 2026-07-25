@@ -1,12 +1,12 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "../../api";
+import { api, type DockerDashboard } from "../../api";
 import { DockerManagerApp } from "./DockerManagerApp";
 
 vi.mock("../../api", () => ({
   api: {
     dockerDashboard: vi.fn(), dockerEvents: vi.fn(), dockerContainers: vi.fn(), dockerContainer: vi.fn(), dockerContainerStats: vi.fn(),
-    dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(),
+    dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), dockerContainerDefaultsPolicy: vi.fn(), saveDockerContainerDefaultsPolicy: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(),
     dockerContainerBackup: vi.fn(), dockerImages: vi.fn(), dockerImageAction: vi.fn(), importDockerImage: vi.fn(), dockerApps: vi.fn(),
     dockerComposeProjects: vi.fn(), validateDockerCompose: vi.fn(), saveDockerComposeProject: vi.fn(), dockerComposeAction: vi.fn(),
     dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerNetworkContainers: vi.fn(), dockerDefaultBridge: vi.fn(), saveDockerDefaultBridge: vi.fn(), createDockerNetwork: vi.fn(), dockerNetworkAction: vi.fn(), dockerPrunePlan: vi.fn(), dockerRegistries: vi.fn(), dockerRegistrySources: vi.fn(), dockerRegistryCatalog: vi.fn(), dockerRegistryTags: vi.fn(), dockerBackups: vi.fn(),
@@ -29,6 +29,7 @@ describe("DockerManagerApp", () => {
     vi.mocked(api.dockerContainer).mockResolvedValue({ name: "web", state: { Status: "running" } });
     vi.mocked(api.dockerContainerSettings).mockResolvedValue({ name: "web", resource_limits_enabled: false, cpu_priority: "medium", memory_mb: null, auto_restart: false, restart_policy: "no", portal_enabled: false, portal_port: null, portal_published_port: null, portal_protocol: "http", compose_managed: false, available_ports: [{ target: 8096, published: 8096, protocol: "tcp" }] });
     vi.mocked(api.updateDockerContainerSettings).mockResolvedValue({ job: { id: "settings-job" } } as never);
+    vi.mocked(api.dockerContainerDefaultsPolicy).mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
     vi.mocked(api.dockerImages).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.dockerNetworks).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.dockerRegistries).mockResolvedValue({ items: [{ id: "docker-hub-public", name: "Docker Hub", provider: "docker_hub", server: "docker.io", username: "", tls: true, ca_certificate_configured: false, secret_configured: false, built_in: true, public_access: true, created_at: 0, updated_at: 0 }] });
@@ -52,6 +53,24 @@ describe("DockerManagerApp", () => {
     render(<DockerManagerApp permissions={["docker.view"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     expect(await screen.findByRole("button", { name: "docker.section.dashboard" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "docker.section.registries" })).not.toBeInTheDocument();
+  });
+
+  it("keeps dashboard elements visible while data refreshes in the background", async () => {
+    let finishRefresh: ((value: DockerDashboard) => void) | undefined;
+    vi.mocked(api.dockerDashboard)
+      .mockResolvedValueOnce(dashboard as never)
+      .mockImplementationOnce(() => new Promise<DockerDashboard>((resolve) => { finishRefresh = resolve; }));
+    const { container } = render(<DockerManagerApp permissions={["docker.view"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+
+    expect(await screen.findByRole("button", { name: "docker.section.dashboard" })).toBeInTheDocument();
+    expect(container.querySelector(".docker-dashboard")).toBeInTheDocument();
+    const refresh = container.querySelector<HTMLButtonElement>(".docker-manager-header button")!;
+    fireEvent.click(refresh);
+
+    expect(container.querySelector(".docker-dashboard")).toBeInTheDocument();
+    expect(refresh).toHaveAttribute("aria-busy", "true");
+    await act(async () => { finishRefresh?.(dashboard as unknown as DockerDashboard); });
+    expect(refresh).toHaveAttribute("aria-busy", "false");
   });
 
   it("shows public Docker Hub as the built-in default registry", async () => {
@@ -138,14 +157,16 @@ describe("DockerManagerApp", () => {
     expect(screen.getByLabelText("docker.wizard.variableValue")).toHaveValue("Europe/Warsaw");
   });
 
-  it("enables resource limits and reveals conditional healthcheck fields", async () => {
+  it("loads resource defaults from policy and reveals conditional healthcheck fields", async () => {
     render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.resources" }));
-    expect(screen.getByLabelText("docker.field.memoryMb")).toBeDisabled();
-    fireEvent.click(screen.getByLabelText("docker.wizard.enableLimits"));
-    expect(screen.getByLabelText("docker.field.memoryMb")).toBeEnabled();
+    await waitFor(() => expect(screen.getByLabelText("docker.field.memoryMb")).toHaveValue(512));
+    expect(screen.getByLabelText("docker.field.memorySwapMb")).toHaveValue(1024);
+    expect(screen.getByLabelText("docker.field.cpus")).toHaveValue(1);
+    expect(screen.getByLabelText("docker.field.pids")).toHaveValue(128);
+    expect(screen.getByLabelText("docker.wizard.enableLimits")).toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.health" }));
     fireEvent.change(screen.getByLabelText("docker.field.healthcheck"), { target: { value: "http" } });

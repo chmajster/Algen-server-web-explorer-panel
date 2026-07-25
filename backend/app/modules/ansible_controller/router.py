@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import shutil
 import subprocess
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
 
 from ...activity import ActivityCategory, record_activity
@@ -26,6 +27,8 @@ from .models import (
     ConfirmationInput,
     ControllerConfigInput,
     CredentialInput,
+    EnrollmentClaimInput,
+    EnrollmentTokenInput,
     FingerprintAcceptInput,
     GroupInput,
     HostInput,
@@ -154,6 +157,44 @@ def hosts(active_only: bool = False, user: SessionUser = Depends(require_permiss
 def create_host(payload: HostInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_HOSTS_MANAGE))):
     _require_credential_type(payload.credential_id, {"ssh_private_key", "ssh_password"})
     return repository().save_host(payload, user.username)
+
+
+@router.post("/enrollment-tokens")
+def create_enrollment_token(payload: EnrollmentTokenInput, user: SessionUser = Depends(require_permission(Permission.ANSIBLE_HOSTS_MANAGE))):
+    _require_credential_type(payload.credential_id, {"ssh_private_key", "ssh_password"})
+    value = repository().create_enrollment_token(payload, user.username)
+    _audit_api(user.username, "create_enrollment_token", "enrollment_token", value["id"], {"hostname_pattern": value["hostname_pattern"], "expires_at": value["expires_at"]})
+    return value
+
+
+@router.post("/enroll")
+def enroll_host(payload: EnrollmentClaimInput, authorization: str = Header(default="")):
+    token = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else ""
+    if len(token) < 32 or len(token) > 128:
+        api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token is invalid, expired, already used, or does not allow this hostname")
+    policy = repository().claim_enrollment_token(token, payload.hostname)
+    if not policy:
+        api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token is invalid, expired, already used, or does not allow this hostname")
+    host = HostInput(
+        name=payload.hostname,
+        address=payload.address,
+        port=int(policy["port"]),
+        ssh_user=str(policy["ssh_user"]),
+        credential_id=policy["credential_id"],
+        python_interpreter="auto_silent",
+        connection_type="ssh",
+        environment=str(policy["environment"]),
+        location=str(policy["location"]),
+        tags=list(policy["tags"]),
+        variables={},
+        active=True,
+    )
+    try:
+        saved = repository().save_host(host, f"self-enrollment:{payload.hostname}")
+    except sqlite3.IntegrityError:
+        api_error(409, "HOST_ALREADY_EXISTS", "A host with this hostname is already registered")
+    _audit_api(f"self-enrollment:{payload.hostname}", "enroll", "host", saved["id"], {"hostname": payload.hostname})
+    return {"host": saved, "fingerprint_verification_required": True}
 
 
 @router.get("/hosts/{host_id}")

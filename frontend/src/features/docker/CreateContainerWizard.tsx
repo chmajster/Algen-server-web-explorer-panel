@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, type DockerContainerCreate, type ModuleJob } from "../../api";
+import { api, type DockerContainerCreate, type DockerContainerDefaultsPolicy, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { errorMessage } from "./shared";
 import { ConfigRow, ConfigSection, KeyValueRows } from "./create-container/CompactConfig";
@@ -73,6 +73,7 @@ function pairLines(rows: EditablePair[]): string {
 type ContainerWizardDraft = {
   step?: number; name?: string; image?: string; network?: string; ports?: string; environment?: string; mounts?: MountRow[];
   memory?: string; memorySwap?: string; cpus?: string; pids?: string; hostname?: string; workingDir?: string; containerUser?: string;
+  limitsEnabled?: boolean;
   networkAliases?: string; restartPolicy?: "no" | "always" | "unless-stopped" | "on-failure"; labels?: string;
   healthType?: "none" | "http" | "tcp"; healthPort?: string; healthPath?: string; readOnly?: boolean; init?: boolean; autoStart?: boolean;
   composeMode?: boolean; composeProject?: string; composeContent?: string; composeEnvironment?: string; composeAutoStart?: boolean;
@@ -199,7 +200,9 @@ export function CreateContainerWizard({
   const [readOnly, setReadOnly] = useState(draft.readOnly || false);
   const [init, setInit] = useState(draft.init ?? true);
   const [autoStart, setAutoStart] = useState(draft.autoStart ?? true);
-  const [limitsEnabled, setLimitsEnabled] = useState(Boolean(draft.memory || draft.memorySwap || draft.cpus || draft.pids));
+  const [limitsEnabled, setLimitsEnabled] = useState(draft.limitsEnabled ?? Boolean(draft.memory || draft.memorySwap || draft.cpus || draft.pids));
+  const [resourcePolicy, setResourcePolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
+  const resourceLimitsTouched = useRef(false);
   const [composeMode, setComposeMode] = useState(draft.composeMode || false);
   const [composeProject, setComposeProject] = useState(draft.composeProject || "");
   const [composeContent, setComposeContent] = useState(draft.composeContent || "");
@@ -223,6 +226,32 @@ export function CreateContainerWizard({
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [onClose, pathPickerMountId]);
+
+  useEffect(() => {
+    let active = true;
+    api.dockerContainerDefaultsPolicy()
+      .then((policy) => {
+        if (!active) return;
+        setResourcePolicy(policy);
+        if (resourceLimitsTouched.current || draft.limitsEnabled !== undefined || draft.memory || draft.memorySwap || draft.cpus || draft.pids) return;
+        setLimitsEnabled(policy.resource_limits_enabled);
+        setMemory(String(policy.memory_mb));
+        setMemorySwap(String(policy.memory_swap_mb));
+        setCpus(String(policy.cpus));
+        setPids(String(policy.pids));
+      })
+      .catch(() => {
+        if (!active || resourceLimitsTouched.current || draft.limitsEnabled !== undefined || draft.memory || draft.memorySwap || draft.cpus || draft.pids) return;
+        const fallback = { resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 };
+        setResourcePolicy(fallback);
+        setLimitsEnabled(true);
+        setMemory(String(fallback.memory_mb));
+        setMemorySwap(String(fallback.memory_swap_mb));
+        setCpus(String(fallback.cpus));
+        setPids(String(fallback.pids));
+      });
+    return () => { active = false; };
+  }, [draft.cpus, draft.limitsEnabled, draft.memory, draft.memorySwap, draft.pids]);
 
   function addMount(values: Partial<Omit<MountRow, "id">> = {}) {
     setMounts((current) => [...current, {
@@ -266,12 +295,12 @@ export function CreateContainerWizard({
   useEffect(() => {
     if (!draftKey) return;
     const value: ContainerWizardDraft = {
-      step: 0, name, image, network, ports, environment, mounts, memory, memorySwap, cpus, pids, hostname, workingDir,
+      step: 0, name, image, network, ports, environment, mounts, memory, memorySwap, cpus, pids, limitsEnabled, hostname, workingDir,
       containerUser, networkAliases, restartPolicy, labels, healthType, healthPort, healthPath, readOnly, init, autoStart,
       composeMode, composeProject, composeContent, composeEnvironment, composeAutoStart,
     };
     sessionStorage.setItem(draftKey, JSON.stringify(value));
-  }, [autoStart, composeAutoStart, composeContent, composeEnvironment, composeMode, composeProject, containerUser, cpus, draftKey, environment, healthPath, healthPort, healthType, hostname, image, init, labels, memory, memorySwap, mounts, name, network, networkAliases, pids, ports, readOnly, restartPolicy, workingDir]);
+  }, [autoStart, composeAutoStart, composeContent, composeEnvironment, composeMode, composeProject, containerUser, cpus, draftKey, environment, healthPath, healthPort, healthType, hostname, image, init, labels, limitsEnabled, memory, memorySwap, mounts, name, network, networkAliases, pids, ports, readOnly, restartPolicy, workingDir]);
 
   useEffect(() => {
     if (!canViewLocalImages) return;
@@ -425,10 +454,12 @@ export function CreateContainerWizard({
       const importedLabels = lines(parsed.labels);
       setLabels(importedLabels);
       setLabelRows(editablePairs(importedLabels).map((row) => ({ ...row, id: nextLabelId.current++ })));
+      resourceLimitsTouched.current = true;
       setMemory(parsed.limits?.memory_mb == null ? "" : String(parsed.limits.memory_mb));
       setMemorySwap(parsed.limits?.memory_swap_mb == null ? "" : String(parsed.limits.memory_swap_mb));
       setCpus(parsed.limits?.cpus == null ? "" : String(parsed.limits.cpus));
       setPids(parsed.limits?.pids == null ? "" : String(parsed.limits.pids));
+      setLimitsEnabled(Boolean(parsed.limits && Object.values(parsed.limits).some((value) => value != null)));
       setHealthType(parsed.healthcheck?.type || "none");
       setHealthPort(parsed.healthcheck?.port == null ? "" : String(parsed.healthcheck.port));
       setHealthPath(parsed.healthcheck?.path || "/");
@@ -668,12 +699,22 @@ export function CreateContainerWizard({
             </ConfigSection>
 
             <ConfigSection title={t("docker.wizard.section.resources")}>
-              <ConfigRow label={t("docker.wizard.enableLimits")}><label className="docker-compact-check"><input type="checkbox" checked={limitsEnabled} onChange={(event) => { const enabled = event.target.checked; setLimitsEnabled(enabled); if (!enabled) { setMemory(""); setMemorySwap(""); setCpus(""); setPids(""); } }} />{t("docker.wizard.enableLimits")}</label></ConfigRow>
+              <ConfigRow label={t("docker.wizard.enableLimits")} description={t("docker.wizard.resourcePolicyHint")}><label className="docker-compact-check"><input type="checkbox" checked={limitsEnabled} onChange={(event) => {
+                const enabled = event.target.checked;
+                resourceLimitsTouched.current = true;
+                setLimitsEnabled(enabled);
+                if (enabled && resourcePolicy) {
+                  setMemory((value) => value || String(resourcePolicy.memory_mb));
+                  setMemorySwap((value) => value || String(resourcePolicy.memory_swap_mb));
+                  setCpus((value) => value || String(resourcePolicy.cpus));
+                  setPids((value) => value || String(resourcePolicy.pids));
+                }
+              }} />{t("docker.wizard.enableLimits")}</label></ConfigRow>
               <div className={!limitsEnabled ? "docker-limits-disabled" : ""}>
-                <ConfigRow label={t("docker.field.memoryMb")}><div className="docker-compact-unit"><input aria-label={t("docker.field.memoryMb")} disabled={!limitsEnabled} type="number" min="16" value={memory} onChange={(event) => setMemory(event.target.value)} /><span>MB</span></div></ConfigRow>
-                <ConfigRow label={t("docker.field.memorySwapMb")}><div className="docker-compact-unit"><input aria-label={t("docker.field.memorySwapMb")} disabled={!limitsEnabled} type="number" min="16" value={memorySwap} onChange={(event) => setMemorySwap(event.target.value)} /><span>MB</span></div></ConfigRow>
-                <ConfigRow label={t("docker.field.cpus")}><input aria-label={t("docker.field.cpus")} disabled={!limitsEnabled} type="number" min="0.1" step="0.1" value={cpus} onChange={(event) => setCpus(event.target.value)} /></ConfigRow>
-                <ConfigRow label={t("docker.field.pids")}><input aria-label={t("docker.field.pids")} disabled={!limitsEnabled} type="number" min="1" value={pids} onChange={(event) => setPids(event.target.value)} /></ConfigRow>
+                <ConfigRow label={t("docker.field.memoryMb")}><div className="docker-compact-unit"><input aria-label={t("docker.field.memoryMb")} disabled={!limitsEnabled} type="number" min="16" value={memory} onChange={(event) => { resourceLimitsTouched.current = true; setMemory(event.target.value); }} /><span>MB</span></div></ConfigRow>
+                <ConfigRow label={t("docker.field.memorySwapMb")}><div className="docker-compact-unit"><input aria-label={t("docker.field.memorySwapMb")} disabled={!limitsEnabled} type="number" min="16" value={memorySwap} onChange={(event) => { resourceLimitsTouched.current = true; setMemorySwap(event.target.value); }} /><span>MB</span></div></ConfigRow>
+                <ConfigRow label={t("docker.field.cpus")}><input aria-label={t("docker.field.cpus")} disabled={!limitsEnabled} type="number" min="0.1" step="0.1" value={cpus} onChange={(event) => { resourceLimitsTouched.current = true; setCpus(event.target.value); }} /></ConfigRow>
+                <ConfigRow label={t("docker.field.pids")}><input aria-label={t("docker.field.pids")} disabled={!limitsEnabled} type="number" min="16" value={pids} onChange={(event) => { resourceLimitsTouched.current = true; setPids(event.target.value); }} /></ConfigRow>
               </div>
             </ConfigSection>
 

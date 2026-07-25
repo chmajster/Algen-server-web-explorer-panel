@@ -128,6 +128,7 @@ describe("settings application", () => {
 
   it("configures the 12-hour update check policy independently from automatic installation", async () => {
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 100 });
+    vi.spyOn(api, "dockerContainerDefaultsPolicy").mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
     const saveAuto = vi.spyOn(api, "saveAutoUpdate").mockImplementation(async (payload) => ({ ...payload, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 200 }));
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
@@ -144,6 +145,22 @@ describe("settings application", () => {
     fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
     fireEvent.click(screen.getByLabelText("settings.automaticUpdates"));
     await waitFor(() => expect(saveAuto).toHaveBeenLastCalledWith({ check_enabled: true, enabled: true, interval_hours: 24, update_config: false }));
+  });
+
+  it("edits the default container resource policy", async () => {
+    vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 100 });
+    vi.spyOn(api, "dockerContainerDefaultsPolicy").mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
+    const save = vi.spyOn(api, "saveDockerContainerDefaultsPolicy").mockImplementation(async (value) => value);
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.policies" }));
+    fireEvent.click(await screen.findByRole("button", { name: /settings.policyCategoryContainers/ }));
+    fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
+    fireEvent.change(screen.getByLabelText("docker.field.memoryMb"), { target: { value: "2048" } });
+    fireEvent.change(screen.getByLabelText("docker.field.memorySwapMb"), { target: { value: "4096" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.save" }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ memory_mb: 2048, memory_swap_mb: 4096, cpus: 1, pids: 128 })));
   });
 
   it("restores a persisted update result after the service reconnects", async () => {

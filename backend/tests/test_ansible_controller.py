@@ -21,6 +21,7 @@ from app.modules.ansible_controller.models import (
     AwxSettingsInput,
     CredentialInput,
     CredentialType,
+    EnrollmentTokenInput,
     HostInput,
     ManagedAccountConfigInput,
     NetworkScanInput,
@@ -200,6 +201,48 @@ def test_host_model_blocks_transport_override_and_controller_loopback():
         HostInput(name="node", address="127.0.0.1")
     with pytest.raises(ValueError, match="Python interpreter"):
         HostInput(name="node", address="192.168.1.9", python_interpreter="/tmp/python;id")
+
+
+def test_one_time_enrollment_token_enforces_hostname_pattern(tmp_path: Path):
+    repository = store(tmp_path)
+    value = repository.create_enrollment_token(
+        EnrollmentTokenInput(hostname_pattern="web-*.example.com", ssh_user="deploy", environment="production", tags=["linux", "web"]),
+        "admin",
+    )
+
+    assert repository.claim_enrollment_token(value["token"], "db-01.example.com") is None
+    claimed = repository.claim_enrollment_token(value["token"], "web-01.example.com")
+    assert claimed and claimed["ssh_user"] == "deploy"
+    assert claimed["environment"] == "production"
+    assert claimed["tags"] == ["linux", "web"]
+    assert repository.claim_enrollment_token(value["token"], "web-02.example.com") is None
+    with pytest.raises(ValueError):
+        EnrollmentTokenInput(hostname_pattern="../../*")
+
+
+def test_public_enrollment_endpoint_registers_an_unverified_host(monkeypatch, tmp_path: Path):
+    isolated = store(tmp_path)
+    value = isolated.create_enrollment_token(EnrollmentTokenInput(hostname_pattern="node-*"), "admin")
+    monkeypatch.setattr(ansible_router, "repository", lambda: isolated)
+    app = FastAPI()
+    app.include_router(ansible_router.router)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/modules/ansible-controller/enroll",
+        headers={"Authorization": f"Bearer {value['token']}"},
+        json={"hostname": "node-01", "address": "192.168.50.21"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["host"]["name"] == "node-01"
+    assert response.json()["host"]["fingerprint_status"] == "unverified"
+    assert response.json()["fingerprint_verification_required"] is True
+    assert client.post(
+        "/api/modules/ansible-controller/enroll",
+        headers={"Authorization": f"Bearer {value['token']}"},
+        json={"hostname": "node-02", "address": "192.168.50.22"},
+    ).status_code == 401
 
 
 def test_ssh_password_credential_requires_a_local_username():
