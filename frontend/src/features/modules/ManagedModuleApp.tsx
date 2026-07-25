@@ -117,12 +117,16 @@ export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId
     ? <LinuxUpdateConfirmation action={dialog.action} status={status} resource={resource} t={t} />
     : repositoryToggleDialog && dialog.kind === "action"
       ? <RepositoryToggleConfirmation action={dialog.action} repository={dialog.payload || {}} t={t} />
-      : undefined;
+      : dialog?.kind === "diagnostics"
+        ? <DiagnosticsConfirmation moduleName={moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : summary.manifest.name} t={t} />
+        : undefined;
   const submitLabel = packageActionDialog && dialog.kind === "action"
     ? linuxUpdateSubmitLabel(dialog.action, t)
     : repositoryToggleDialog && dialog.kind === "action"
       ? t(dialog.action === "repository_disable" ? "managed.disableRepository" : "managed.enableRepository")
-      : undefined;
+      : dialog?.kind === "diagnostics"
+        ? t("module.runDiagnostics")
+        : undefined;
   return <><section className="module-app managed-module"><ModuleHeader name={moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : summary.manifest.name} status={status} healthMessage={healthMessage} stateLabel={stateLabel} stateValue={stateValue} activeJob={job ? { operation: job.operation || job.action, progress: job.progress } : null} t={t} actions={<button onClick={() => void reloadVisible()}><RefreshCw />{t("action.refresh")}</button>} /><div className="module-layout"><nav className="module-navigation" aria-label={t("module.sections")}>{sections.map((name) => <button key={name} className={section === name ? "active" : ""} onClick={() => setSection(name)}>{navIcon(name)}<span>{t(RESOURCE_LABELS[name] || `managed.${name}`)}</span></button>)}</nav><main className="module-content">{content}</main></div></section>{liveJob && <PackageJobDialog initialJob={liveJob} moduleName={moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : summary.manifest.name} t={t} onClose={() => { setLiveJob(null); void reloadVisible(); }} />}{dialog && <AdminActionDialog title={dialogTitle(dialog, t)} fields={dialogFields(dialog, t)} description={dialogDescription} submitLabel={submitLabel} danger={"danger" in dialog ? dialog.danger : dialog.kind === "restore" || dialog.kind === "delete"} t={t} onClose={() => setDialog(null)} onSubmit={submit} />}</>;
 }
 
@@ -162,6 +166,22 @@ function managedActionDescription(action: string, t: Translate): string {
   if (action === "upgrade_security") return t("managed.confirm.securityIntro");
   if (action === "upgrade_all") return t("managed.confirm.allIntro");
   return "";
+}
+
+function DiagnosticsConfirmation({ moduleName, t }: { moduleName: string; t: Translate }) {
+  return <section className="diagnostics-confirmation">
+    <div className="diagnostics-confirmation-intro">
+      <Stethoscope />
+      <div>
+        <strong>{t("module.diagnosticsConfirmTitle")}</strong>
+        <p>{t("module.diagnosticsConfirmIntro").replace("{name}", moduleName)}</p>
+      </div>
+    </div>
+    <div className="diagnostics-confirmation-details">
+      <p><CircleCheckBig /><span><strong>{t("module.diagnosticsReadOnlyTitle")}</strong><small>{t("module.diagnosticsReadOnlyHint")}</small></span></p>
+      <p><FileText /><span><strong>{t("module.diagnosticsResultsTitle")}</strong><small>{t("module.diagnosticsResultsHint")}</small></span></p>
+    </div>
+  </section>;
 }
 
 function RepositoryToggleConfirmation({ action, repository, t }: { action: string; repository: Record<string, unknown>; t: Translate }) {

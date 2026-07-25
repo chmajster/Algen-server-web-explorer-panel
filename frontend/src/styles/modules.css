@@ -309,6 +309,20 @@
 .linux-update-confirmation-note svg { width: 16px; height: 16px; flex: 0 0 auto; }
 @media (max-width: 520px) { .linux-update-confirmation dl { grid-template-columns: 1fr; } }
 @container (max-width: 760px) { .managed-actions.update-actions { grid-template-columns: 1fr; } }
+.diagnostics-confirmation { display: grid; gap: 12px; }
+.diagnostics-confirmation-intro { display: flex; align-items: flex-start; gap: 11px; padding: 13px; border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-subtle)); border-radius: 9px; background: color-mix(in srgb, var(--accent) 7%, var(--surface-secondary)); }
+.diagnostics-confirmation-intro > svg { width: 22px; height: 22px; flex: 0 0 auto; color: var(--accent); }
+.diagnostics-confirmation-intro > div { min-width: 0; display: grid; gap: 4px; }
+.diagnostics-confirmation-intro strong { font-size: .82rem; }
+.diagnostics-confirmation-intro p { margin: 0; color: var(--text-secondary); font-size: .71rem; line-height: 1.45; }
+.diagnostics-confirmation-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.diagnostics-confirmation-details p { min-width: 0; display: flex; align-items: flex-start; gap: 9px; margin: 0; padding: 11px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-secondary); }
+.diagnostics-confirmation-details p > svg { width: 17px; height: 17px; flex: 0 0 auto; color: var(--success); }
+.diagnostics-confirmation-details p:last-child > svg { color: var(--accent); }
+.diagnostics-confirmation-details span { min-width: 0; display: grid; gap: 3px; }
+.diagnostics-confirmation-details strong { font-size: .7rem; }
+.diagnostics-confirmation-details small { color: var(--text-muted); font-size: .62rem; line-height: 1.4; }
+@media (max-width: 520px) { .diagnostics-confirmation-details { grid-template-columns: 1fr; } }
 .repository-toggle-confirmation { display: grid; gap: 14px; }
 .repository-toggle-intro { display: flex; align-items: flex-start; gap: 11px; padding: 13px; border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border-subtle)); border-radius: 8px; background: color-mix(in srgb, var(--accent) 7%, var(--surface-secondary)); }
 .repository-toggle-intro.disable { border-color: color-mix(in srgb, var(--warning) 32%, var(--border-subtle)); background: color-mix(in srgb, var(--warning) 8%, var(--surface-secondary)); }

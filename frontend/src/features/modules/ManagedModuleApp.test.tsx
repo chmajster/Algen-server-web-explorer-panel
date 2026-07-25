@@ -5,7 +5,7 @@ import { ManagedModuleApp } from "./ManagedModuleApp";
 
 vi.mock("../../api", async () => {
   const actual = await vi.importActual<typeof import("../../api")>("../../api");
-  return { ...actual, api: { ...actual.api, module: vi.fn(), moduleResource: vi.fn(), moduleAction: vi.fn(), moduleService: vi.fn(), saveModuleConnection: vi.fn() } };
+  return { ...actual, api: { ...actual.api, module: vi.fn(), moduleResource: vi.fn(), moduleAction: vi.fn(), moduleService: vi.fn(), moduleDiagnostics: vi.fn(), saveModuleConnection: vi.fn() } };
 });
 
 const summary = {
@@ -27,7 +27,7 @@ const linuxSummary = {
 const queuedUpdate = { id: "update-1", module_id: "linux-updates", action: "manage", operation: "upgrade_security", status: "queued" as const, progress: 0, created_at: 1, log_tail: [], error: "", current_step: "Queued" };
 
 describe("ManagedModuleApp", () => {
-  beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.module).mockResolvedValue(summary); vi.mocked(api.moduleResource).mockResolvedValue({ resource: "containers", items: [{ ID: "abc", Names: "web", State: "exited" }], total: 1 }); vi.mocked(api.moduleAction).mockResolvedValue({ job: queuedUpdate }); vi.mocked(api.moduleService).mockResolvedValue({ job: queuedUpdate }); });
+  beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.module).mockResolvedValue(summary); vi.mocked(api.moduleResource).mockResolvedValue({ resource: "containers", items: [{ ID: "abc", Names: "web", State: "exited" }], total: 1 }); vi.mocked(api.moduleAction).mockResolvedValue({ job: queuedUpdate }); vi.mocked(api.moduleService).mockResolvedValue({ job: queuedUpdate }); vi.mocked(api.moduleDiagnostics).mockResolvedValue({ diagnostics: [] }); });
 
   it("keeps mutating controls hidden from auditors", async () => {
     render(<ManagedModuleApp moduleId="docker" permissions={["modules.view", "docker.view"]} t={(key) => key} toast={vi.fn()} />);
@@ -73,6 +73,20 @@ describe("ManagedModuleApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
 
     await waitFor(() => expect(api.moduleService).toHaveBeenCalledWith("docker", "restart"));
+  });
+
+  it("explains the diagnostic run instead of showing an empty confirmation dialog", async () => {
+    render(<ManagedModuleApp moduleId="docker" permissions={["modules.view", "docker.manage_containers"]} t={(key) => key} toast={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /managed.diagnostics/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "module.runDiagnostics" }));
+
+    const dialog = screen.getByRole("dialog", { name: "module.runDiagnostics" });
+    expect(within(dialog).getByText("module.diagnosticsConfirmTitle")).toBeInTheDocument();
+    expect(within(dialog).getByText("module.diagnosticsConfirmIntro")).toBeInTheDocument();
+    expect(within(dialog).getByText("module.diagnosticsReadOnlyHint")).toBeInTheDocument();
+    expect(within(dialog).getByText("module.diagnosticsResultsHint")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "module.runDiagnostics" })).toBeInTheDocument();
   });
 
   it("starts security patching from the update button through the durable module action", async () => {
