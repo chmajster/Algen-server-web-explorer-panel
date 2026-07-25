@@ -42,9 +42,13 @@ from .models import (
     NetworkActionRequest,
     NetworkCreateRequest,
     PrunePlanRequest,
+    RegistryCatalogResponse,
     RegistryRequest,
+    RegistrySource,
+    RegistryTagsResponse,
     VolumeActionRequest,
     VolumeCreateRequest,
+    validate_repository,
 )
 from .storage import store
 
@@ -80,6 +84,14 @@ def _allow_any(user: SessionUser, *permissions: str) -> None:
     if any(has_permission(user.username, permission) for permission in permissions):
         return
     authorize(user, permissions[0])
+
+
+def _catalog_registry(registry_id: str) -> tuple[dict, dict[str, str] | None]:
+    if registry_id == PUBLIC_DOCKER_HUB["id"]:
+        return PUBLIC_DOCKER_HUB, None
+    if not re.fullmatch(r"[a-f0-9]{24}", registry_id):
+        api_error(422, "INVALID_REGISTRY_ID", "Invalid registry identifier")
+    return store().public_registry(registry_id), store().registry_credentials(registry_id)
 
 
 def _enqueue(operation: str, payload: dict, user: SessionUser, *, warning: str = "") -> dict:
@@ -443,6 +455,74 @@ async def import_image(file: UploadFile = File(...), user: SessionUser = Depends
 def registries(user: SessionUser = Depends(current_user)):
     _allow(user, "docker.manage_registries")
     return {"items": [PUBLIC_DOCKER_HUB, *store().list_registries()]}
+
+
+@router.get("/registries/sources", response_model=list[RegistrySource])
+def registry_sources(user: SessionUser = Depends(current_user)):
+    _allow_any(user, "docker.view_images", "docker.manage_registries")
+    values = [PUBLIC_DOCKER_HUB, *store().list_registries()]
+    return [
+        {
+            "id": value["id"],
+            "name": value["name"],
+            "provider": value["provider"],
+            "server": value["server"],
+            "built_in": bool(value.get("built_in")),
+            "public_access": bool(value.get("public_access")),
+        }
+        for value in values
+    ]
+
+
+@router.get("/registries/catalog", response_model=RegistryCatalogResponse)
+def registry_catalog(
+    registry_id: str = Query(max_length=64),
+    query: str = Query(min_length=2, max_length=100),
+    page: int = Query(1, ge=1, le=100),
+    page_size: int = Query(25, ge=1, le=100),
+    official: Literal["all", "official", "unofficial"] = "all",
+    sort: Literal["relevance", "name", "stars"] = "relevance",
+    direction: Literal["asc", "desc"] = "desc",
+    user: SessionUser = Depends(current_user),
+):
+    _allow_any(user, "docker.view_images", "docker.manage_registries")
+    normalized_query = query.strip()
+    if len(normalized_query) < 2 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._ /-]{1,99}", normalized_query):
+        api_error(422, "INVALID_REGISTRY_SEARCH", "Registry search must contain 2-100 safe characters")
+    registry, credentials = _catalog_registry(registry_id)
+    return _provider(user).registry_catalog(
+        registry,
+        credentials,
+        query=normalized_query,
+        page=page,
+        page_size=page_size,
+        official=official,
+        sort=sort,
+        direction=direction,
+    )
+
+
+@router.get("/registries/tags", response_model=RegistryTagsResponse)
+def registry_tags(
+    registry_id: str = Query(max_length=64),
+    repository_name: str = Query(min_length=1, max_length=255),
+    page: int = Query(1, ge=1, le=100),
+    page_size: int = Query(100, ge=1, le=100),
+    user: SessionUser = Depends(current_user),
+):
+    _allow_any(user, "docker.view_images", "docker.manage_registries")
+    try:
+        repository_name = validate_repository(repository_name)
+    except ValueError:
+        api_error(422, "INVALID_REGISTRY_REPOSITORY", "Invalid registry repository name")
+    registry, credentials = _catalog_registry(registry_id)
+    return _provider(user).registry_tags(
+        registry,
+        credentials,
+        repository=repository_name,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/registries")

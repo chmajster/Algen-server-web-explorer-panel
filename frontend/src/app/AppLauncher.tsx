@@ -27,6 +27,7 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [context, setContext] = useState<LauncherContext | null>(null);
+  const [renderedAt] = useState(() => Date.now());
   const normalized = query.trim().toLocaleLowerCase(profile.language);
   const filtered = useMemo(() => apps.filter((app) => t(app.labelKey).toLocaleLowerCase(profile.language).includes(normalized)), [apps, normalized, profile.language, t]);
   const pinnedApps = filtered.filter((app) => startPinned.has(app.id));
@@ -34,7 +35,7 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   const allVisible = showAll || Boolean(normalized);
 
   function relativeTime(timestamp: number) {
-    const elapsed = Math.max(0, Date.now() - timestamp);
+    const elapsed = Math.max(0, renderedAt - timestamp);
     if (elapsed < 60_000) return t("desktop.justNow");
     if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} min ${t("desktop.timeAgo")}`;
     if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} h ${t("desktop.timeAgo")}`;

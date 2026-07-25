@@ -42,6 +42,7 @@ export function DockerTable({
   empty,
   actions,
   actionsLabel = "",
+  onRowClick,
 }: {
   items: Array<Record<string, unknown>>;
   columns: Array<{
@@ -52,6 +53,7 @@ export function DockerTable({
   empty: string;
   actions?: (row: Record<string, unknown>) => ReactNode;
   actionsLabel?: string;
+  onRowClick?: (row: Record<string, unknown>) => void;
 }) {
   if (!items.length)
     return (
@@ -85,6 +87,15 @@ export function DockerTable({
                   item.name ||
                   index,
               )}
+              className={onRowClick ? "docker-clickable-row" : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+              onClick={onRowClick ? () => onRowClick(item) : undefined}
+              onKeyDown={onRowClick ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onRowClick(item);
+                }
+              } : undefined}
             >
               {columns.map((column) => (
                 <td key={column.key}>
@@ -95,7 +106,7 @@ export function DockerTable({
               ))}
               {actions && (
                 <td>
-                  <div className="docker-row-actions">{actions(item)}</div>
+                  <div className="docker-row-actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>{actions(item)}</div>
                 </td>
               )}
             </tr>

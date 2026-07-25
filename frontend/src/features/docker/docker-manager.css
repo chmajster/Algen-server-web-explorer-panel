@@ -204,6 +204,167 @@
   min-width: 34px;
   padding: 6px;
 }
+.docker-clickable-row {
+  cursor: pointer;
+}
+.docker-clickable-row:hover td {
+  background: var(--surface-hover);
+}
+.docker-clickable-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.registry-manager {
+  min-width: 0;
+}
+.registry-tabs {
+  display: flex;
+  gap: 4px;
+  margin: -4px 0 14px;
+  padding-bottom: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.registry-tabs button {
+  flex: 0 0 auto;
+  border-color: transparent;
+  background: transparent;
+}
+.registry-tabs button.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
+  background: var(--surface-selected);
+}
+.registry-catalog-toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.registry-catalog-toolbar .docker-search {
+  flex: 1 1 250px;
+}
+.registry-catalog-toolbar > label:not(.docker-search) {
+  min-width: 135px;
+  display: grid;
+  flex: 1 1 145px;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: .72rem;
+}
+.registry-catalog-toolbar > label:nth-of-type(2) {
+  min-width: 175px;
+  flex-grow: 1.2;
+}
+.registry-catalog-toolbar select {
+  width: 100%;
+}
+.registry-catalog-intro {
+  min-height: 220px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  padding: 24px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.registry-catalog-intro > svg {
+  width: 34px;
+  height: 34px;
+  color: var(--accent);
+}
+.registry-catalog-intro strong {
+  color: var(--text-primary);
+}
+.registry-boolean {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--surface-secondary);
+  font-size: .72rem;
+  font-weight: 700;
+}
+.registry-boolean.yes {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.registry-image-details {
+  display: grid;
+  gap: 14px;
+}
+.registry-image-details > header {
+  display: grid;
+  gap: 5px;
+}
+.registry-image-details > header strong {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+.registry-image-details > header span,
+.registry-image-details .field-label small {
+  color: var(--text-secondary);
+  font-size: .75rem;
+  line-height: 1.45;
+}
+.registry-image-details dl {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+  background: var(--border-subtle);
+}
+.registry-image-details dl > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 11px;
+  background: var(--surface-secondary);
+}
+.registry-image-details dt {
+  color: var(--text-muted);
+  font-size: .7rem;
+}
+.registry-image-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: .75rem;
+}
+.registry-image-details .field-label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: .75rem;
+}
+.registry-image-details input,
+.registry-image-details select {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+}
+.registry-image-details .docker-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+}
+.registry-image-details .docker-notice svg {
+  width: 16px;
+  flex: 0 0 auto;
+}
+.registry-tag-filter {
+  display: block;
+}
 .docker-network-name {
   display: inline-flex;
   align-items: center;
@@ -1146,6 +1307,22 @@
   }
   .docker-settings-fields {
     padding-left: 0;
+  }
+  .registry-catalog-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .registry-catalog-toolbar .docker-search,
+  .registry-catalog-toolbar > label:not(.docker-search) {
+    min-width: 0;
+    width: 100%;
+  }
+  .registry-catalog-toolbar .docker-search,
+  .registry-catalog-toolbar > label:nth-of-type(2) {
+    grid-column: 1 / -1;
+  }
+  .registry-image-details dl > div {
+    grid-template-columns: 1fr;
   }
   .docker-wizard-steps li {
     font-size: 0;

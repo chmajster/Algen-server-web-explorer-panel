@@ -9,7 +9,7 @@ vi.mock("../../api", () => ({
     dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(),
     dockerContainerBackup: vi.fn(), dockerImages: vi.fn(), dockerImageAction: vi.fn(), importDockerImage: vi.fn(), dockerApps: vi.fn(),
     dockerComposeProjects: vi.fn(), validateDockerCompose: vi.fn(), saveDockerComposeProject: vi.fn(), dockerComposeAction: vi.fn(),
-    dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerNetworkContainers: vi.fn(), dockerDefaultBridge: vi.fn(), saveDockerDefaultBridge: vi.fn(), createDockerNetwork: vi.fn(), dockerNetworkAction: vi.fn(), dockerPrunePlan: vi.fn(), dockerRegistries: vi.fn(), dockerBackups: vi.fn(),
+    dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerNetworkContainers: vi.fn(), dockerDefaultBridge: vi.fn(), saveDockerDefaultBridge: vi.fn(), createDockerNetwork: vi.fn(), dockerNetworkAction: vi.fn(), dockerPrunePlan: vi.fn(), dockerRegistries: vi.fn(), dockerRegistrySources: vi.fn(), dockerRegistryCatalog: vi.fn(), dockerRegistryTags: vi.fn(), dockerBackups: vi.fn(),
     list: vi.fn(), localDisks: vi.fn(), mountRoots: vi.fn(),
     dockerDaemonConfig: vi.fn(), dockerDiagnostics: vi.fn(), dockerEngineAction: vi.fn(), dockerPrune: vi.fn(),
   },
@@ -32,6 +32,7 @@ describe("DockerManagerApp", () => {
     vi.mocked(api.dockerImages).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.dockerNetworks).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.dockerRegistries).mockResolvedValue({ items: [{ id: "docker-hub-public", name: "Docker Hub", provider: "docker_hub", server: "docker.io", username: "", tls: true, ca_certificate_configured: false, secret_configured: false, built_in: true, public_access: true, created_at: 0, updated_at: 0 }] });
+    vi.mocked(api.dockerRegistrySources).mockResolvedValue([{ id: "docker-hub-public", name: "Docker Hub", provider: "docker_hub", server: "docker.io", built_in: true, public_access: true }]);
     vi.mocked(api.localDisks).mockResolvedValue([]);
     vi.mocked(api.mountRoots).mockResolvedValue([]);
     vi.mocked(api.list).mockResolvedValue({ current_path: "/srv/media", parent_path: "/srv", items: [], page: 1, page_size: 200, total_items: 0, total_pages: 1 } as never);
@@ -54,8 +55,10 @@ describe("DockerManagerApp", () => {
   });
 
   it("shows public Docker Hub as the built-in default registry", async () => {
-    render(<DockerManagerApp permissions={["docker.view", "docker.manage_registries"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_images", "docker.manage_registries"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.registries" }));
+    expect(await screen.findByRole("tab", { name: "docker.registry.catalogTab" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: "docker.registry.connectionsTab" }));
     expect(await screen.findByText("Docker Hub")).toBeInTheDocument();
     expect(screen.getByText("docker.publicAnonymous")).toBeInTheDocument();
     expect(screen.getByText("docker.defaultRegistry")).toBeInTheDocument();

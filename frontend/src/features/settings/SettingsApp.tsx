@@ -153,6 +153,7 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
   const [runningUpdate, setRunningUpdate] = useState(false);
   const [updateDialog, setUpdateDialog] = useState<UpdateDialogState | null>(null);
   const [updateError, setUpdateError] = useState("");
+  const [renderedAt] = useState(() => Date.now());
   useEffect(() => {
     let live = true;
     Promise.allSettled([api.systemStatus(), api.checkUpdates(), api.autoUpdate(), api.proxmoxSafety(), api.updateProgress()]).then((results) => {
@@ -221,7 +222,7 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
   const releaseDate = (value: number | null | undefined) => {
     if (!value) return "—";
     const date = new Date(value * 1000);
-    let remaining = Math.max(0, Date.now() - date.getTime());
+    let remaining = Math.max(0, renderedAt - date.getTime());
     const units: Array<[string, number]> = [[locale === "pl-PL" ? "r." : "y", 365 * 86_400_000], ["d", 86_400_000], [locale === "pl-PL" ? "godz." : "h", 3_600_000], ["min", 60_000], ["s", 1000]];
     const matched = units.findIndex(([, size]) => remaining >= size);
     const first = matched < 0 ? units.length - 1 : matched;

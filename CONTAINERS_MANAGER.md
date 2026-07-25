@@ -17,7 +17,8 @@ The desktop application is split into independently maintained views:
 - dashboard with engine/Compose/package versions, service state and uptime, container/image/volume/network counts, CPU/RAM/storage summaries, update availability, security information and prune preview;
 - containers list, details, bounded logs, SSE log delivery, live/current statistics plus seven-day sampled history, processes, typed creation wizard, live name/resource/restart/web-portal settings, and lifecycle/update/duplicate/recreate/export/backup actions;
 - local images, Docker Hub search, pull/update/remove/prune, checksummed save artifacts and bounded tar upload/load;
-- registries with password/token files outside SQLite, TLS/custom-CA metadata, login tests, logout and `docker login --password-stdin`;
+- a registry image catalog with Docker Hub search, Registry V2 catalog/tag discovery, tag/platform-aware pulls and paginated bounded responses;
+- registry connections with password/token files outside SQLite, TLS/custom-CA metadata, login tests, logout and `docker login --password-stdin`;
 - Compose projects with static allowlist checks plus mandatory `docker compose config`, separate public and secret `.env` values, service status/logs, revision history, rollback, lifecycle actions and typed service scaling;
 - volumes and networks with consumers, protected system networks, subnet-conflict checks, volume backup/restore/clone and destructive previews;
 - a dedicated bridge-network editor with automatic or manual IPv4, optional manual IPv6, contained allocation ranges, gateways, internal mode, labels and an explicit IP-masquerade override; the same screen can safely configure Docker's default `bridge` through the existing validated, backed-up and rollback-capable `daemon.json` workflow;
@@ -37,7 +38,7 @@ All routes are under `/api/modules/docker`:
 | --- | --- |
 | Dashboard/engine | `GET /dashboard`, `GET /engine`, `POST /engine/actions`, `GET/PUT /daemon-config` |
 | Containers | `GET/POST /containers`, `POST /containers/import`, `GET /containers/{name}`, `GET/PUT /containers/{name}/settings`, `POST /containers/{name}/actions`, `/logs`, `/logs/stream`, `/stats`, `/processes`, `/compose`, `/export`, `/backup` |
-| Images/registries | `GET /images`, `GET /images/search`, `POST /images/actions`, `POST /images/import`, registry CRUD/test routes |
+| Images/registries | `GET /images`, `POST /images/actions`, `POST /images/import`, `GET /registries/sources`, `GET /registries/catalog`, `GET /registries/tags`, registry CRUD/test routes |
 | Volumes/networks | list/detail/create routes, `GET/PUT /networks/default-bridge`, `GET /networks/{name}/containers`, and typed `POST .../{name}/actions` |
 | Compose | list/get/save/validate/action/status/log/history/rollback routes below `/compose` |
 | Catalog/events | `GET /apps`, app install/action routes, `GET /events` |
@@ -78,7 +79,7 @@ The backend is the enforcement boundary. The responsive PL/EN interface also hid
 
 ## Verification
 
-Backend coverage uses mocked subprocess/HTTP/filesystem boundaries and checks strict models, socket/namespace rejection, registry-secret migration/non-disclosure, one-time inputs, the closed catalog and Pi-hole/Home Assistant arguments, Compose policy/runtime validation, daemon allowlists, fixed Docker argument arrays, RBAC, trusted install hooks and route registration. Frontend component tests cover manager navigation, permission hiding and masked secret-bearing create requests. Normal validation commands are:
+Backend coverage uses mocked subprocess/HTTP/filesystem boundaries and checks strict models, socket/namespace rejection, Registry V2 pagination/authentication/timeouts/SSRF handling, registry-secret migration/non-disclosure, one-time inputs, the closed application catalog and Pi-hole/Home Assistant arguments, Compose policy/runtime validation, daemon allowlists, fixed Docker argument arrays, RBAC, trusted install hooks and route registration. Frontend component tests cover registry tabs/search/filtering/tag pulls, local-only image management, manager navigation, permission hiding and masked secret-bearing create requests. Normal validation commands are:
 
 ```bash
 cd backend

@@ -24,8 +24,6 @@ export function ImagesManager({
   onJob: (job: ModuleJob) => void;
 }) {
   const [items, setItems] = useState<DockerImage[]>([]);
-  const [registryItems, setRegistryItems] = useState<Array<Record<string, unknown>>>([]);
-  const [registryMode, setRegistryMode] = useState(false);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -39,7 +37,6 @@ export function ImagesManager({
     setError("");
     try {
       setItems((await api.dockerImages({ search, page_size: 200 })).items);
-      setRegistryMode(false);
     } catch (reason) {
       setError(errorMessage(reason, t));
     } finally {
@@ -81,22 +78,6 @@ export function ImagesManager({
       if (upload.current) upload.current.value = "";
     }
   }
-  async function searchRegistry() {
-    if (search.trim().length < 2) {
-      toast(t("docker.registrySearchTooShort"), "error", "admin");
-      return;
-    }
-    setLoading(true);
-    try {
-      setRegistryItems((await api.searchDockerImages(search.trim())).items);
-      setRegistryMode(true);
-      setError("");
-    } catch (reason) {
-      setError(errorMessage(reason, t));
-    } finally {
-      setLoading(false);
-    }
-  }
   return (
     <>
       <section>
@@ -113,10 +94,6 @@ export function ImagesManager({
           <button onClick={() => void load()}>
             <RefreshCw />
             {t("action.refresh")}
-          </button>
-          <button onClick={() => void searchRegistry()}>
-            <Search />
-            {t("docker.searchRegistry")}
           </button>
           {permissions.includes("docker.pull_image") && (
             <button
@@ -150,41 +127,20 @@ export function ImagesManager({
           t={t}
         >
           <DockerTable
-            items={registryMode ? registryItems : items}
-            empty={t(registryMode ? "docker.noRegistryImages" : "docker.noImages")}
-            columns={
-              registryMode
-                ? [
-                    { key: "repository", label: t("docker.field.repository") },
-                    { key: "description", label: t("docker.field.description") },
-                    { key: "stars", label: t("docker.field.stars") },
-                    { key: "official", label: t("docker.field.official") },
-                  ]
-                : [
-                    { key: "Repository", label: t("docker.field.repository") },
-                    { key: "Tag", label: t("docker.field.tag") },
-                    { key: "Digest", label: t("docker.field.digest") },
-                    { key: "Size", label: t("docker.field.size") },
-                    { key: "CreatedSince", label: t("docker.field.created") },
-                    { key: "consumers", label: t("docker.field.consumers") },
-                  ]
-            }
+            items={items}
+            empty={t("docker.noImages")}
+            columns={[
+              { key: "Repository", label: t("docker.field.repository") },
+              { key: "Tag", label: t("docker.field.tag") },
+              { key: "Digest", label: t("docker.field.digest") },
+              { key: "Size", label: t("docker.field.size") },
+              { key: "CreatedSince", label: t("docker.field.created") },
+              { key: "consumers", label: t("docker.field.consumers") },
+            ]}
             actions={(row) => {
-              const image = registryMode
-                ? String(row.repository || "")
-                : `${row.Repository}:${row.Tag}`;
+              const image = `${row.Repository}:${row.Tag}`;
               return (
                 <>
-                  {registryMode && permissions.includes("docker.pull_image") && (
-                    <button
-                      title={t("docker.pullImage")}
-                      onClick={() => setDialog({ action: "pull", image })}
-                    >
-                      <Download />
-                    </button>
-                  )}
-                  {!registryMode && (
-                    <>
                   <button
                     title={t("docker.saveImage")}
                     disabled={!permissions.includes("docker.export_backup")}
@@ -200,8 +156,6 @@ export function ImagesManager({
                   >
                     <Trash2 />
                   </button>
-                    </>
-                  )}
                 </>
               );
             }}

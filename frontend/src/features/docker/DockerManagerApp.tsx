@@ -155,7 +155,7 @@ export function DockerManagerApp({
     ["compose", <ScrollText />, "docker.manage_compose"],
     ["volumes", <Database />, "docker.manage_volumes"],
     ["networks", <Network />, "docker.manage_networks"],
-    ["registries", <HardDrive />, "docker.manage_registries"],
+    ["registries", <HardDrive />, "docker.view_images"],
     ["events", <History />, "docker.view"],
     ["backups", <Archive />, "docker.export_backup"],
     ["engine", <Settings />, "docker.view"],
@@ -224,7 +224,7 @@ export function DockerManagerApp({
   else if (section === "networks")
     content = <NetworksManager permissions={permissions} refreshToken={resourceRefresh} t={t} toast={toast} onJob={started} />;
   else if (section === "registries")
-    content = <RegistryManager t={t} toast={toast} onJob={started} />;
+    content = <RegistryManager permissions={permissions} t={t} toast={toast} onJob={started} />;
   else if (section === "events")
     content = (
       <DockerTable

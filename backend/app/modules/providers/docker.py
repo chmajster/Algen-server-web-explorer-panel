@@ -8,6 +8,8 @@ import os
 import re
 import secrets
 import shutil
+import socket
+import ssl
 import subprocess
 import tarfile
 import tempfile
@@ -16,6 +18,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
 import yaml
 
 from ...config import get_config
@@ -40,6 +43,9 @@ DAEMON_CONFIG_FIELDS = {
     "registry-mirrors", "ipv6", "fixed-cidr-v6", "userland-proxy", "experimental", "features",
     "bip", "fixed-cidr", "default-gateway", "default-gateway-v6", "ip-masq",
 }
+REGISTRY_RESPONSE_LIMIT = 2 * 1024 * 1024
+REGISTRY_CATALOG_LIMIT = 500
+REGISTRY_TAG_LIMIT = 500
 
 
 def _bytes(value: str) -> int:
@@ -200,6 +206,328 @@ class DockerProvider(PrivateBackupProvider):
                 "automated": str(item.get("IsAutomated") or "").lower() in {"true", "[ok]", "ok"},
             })
         return {"items": items, "total": len(items), "source": "docker_hub"}
+
+    @staticmethod
+    def _registry_source(registry: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(registry["id"]),
+            "name": str(registry["name"]),
+            "provider": str(registry["provider"]),
+            "server": str(registry["server"]),
+            "built_in": bool(registry.get("built_in")),
+            "public_access": bool(registry.get("public_access")),
+        }
+
+    @staticmethod
+    def _registry_verify(registry: dict[str, Any], credentials: dict[str, str] | None) -> bool | ssl.SSLContext:
+        if not bool(registry.get("tls", True)):
+            return True
+        certificate = str((credentials or {}).get("ca_certificate") or "")
+        if not certificate:
+            return True
+        try:
+            context = ssl.create_default_context()
+            context.load_verify_locations(cadata=certificate)
+            return context
+        except (OSError, ssl.SSLError, ValueError):
+            api_error(422, "INVALID_REGISTRY_CA", "The configured registry CA certificate is invalid")
+
+    @staticmethod
+    def _assert_safe_registry_url(url: str, expected_host: str, require_tls: bool) -> None:
+        parsed = urllib.parse.urlsplit(url)
+        expected = urllib.parse.urlsplit(f"https://{expected_host}")
+        if (
+            parsed.scheme not in {"http", "https"}
+            or (require_tls and parsed.scheme != "https")
+            or parsed.hostname != expected.hostname
+            or parsed.port != expected.port
+            or parsed.username is not None
+            or parsed.password is not None
+            or not parsed.hostname
+        ):
+            api_error(400, "UNSAFE_REGISTRY_URL", "Registry URL is not allowed")
+        hostname = parsed.hostname.lower().rstrip(".")
+        if hostname == "localhost" or hostname.endswith(".localhost") or hostname == "metadata.google.internal":
+            api_error(400, "UNSAFE_REGISTRY_URL", "Registry URL is not allowed")
+        try:
+            addresses = {
+                ipaddress.ip_address(item[4][0])
+                for item in socket.getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+            }
+        except (socket.gaierror, ValueError):
+            api_error(502, "REGISTRY_DNS_FAILED", "The registry host could not be resolved")
+        if not addresses or any(
+            address.is_loopback
+            or address.is_link_local
+            or address.is_multicast
+            or address.is_unspecified
+            or address.is_reserved
+            for address in addresses
+        ):
+            api_error(400, "UNSAFE_REGISTRY_URL", "Registry URL is not allowed")
+
+    def _registry_fetch_json(
+        self,
+        url: str,
+        *,
+        expected_host: str,
+        require_tls: bool,
+        verify: bool | ssl.SSLContext,
+        auth: httpx.BasicAuth | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, Any], dict[str, str]]:
+        self._assert_safe_registry_url(url, expected_host, require_tls)
+        try:
+            with httpx.Client(
+                timeout=httpx.Timeout(20.0, connect=8.0),
+                verify=verify,
+                follow_redirects=False,
+                trust_env=False,
+            ) as client:
+                with client.stream("GET", url, auth=auth, headers={"Accept": "application/json", **(headers or {})}) as response:
+                    body = bytearray()
+                    for chunk in response.iter_bytes():
+                        body.extend(chunk)
+                        if len(body) > REGISTRY_RESPONSE_LIMIT:
+                            api_error(502, "REGISTRY_RESPONSE_TOO_LARGE", "Registry response exceeded the safety limit")
+                    response_headers = {key.lower(): value for key, value in response.headers.items()}
+                    if not body:
+                        payload: dict[str, Any] = {}
+                    else:
+                        decoded = json.loads(body.decode("utf-8"))
+                        if not isinstance(decoded, dict):
+                            api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
+                        payload = decoded
+                    return response.status_code, payload, response_headers
+        except httpx.TimeoutException:
+            api_error(504, "REGISTRY_TIMEOUT", "The registry did not respond in time")
+        except (httpx.HTTPError, UnicodeDecodeError, json.JSONDecodeError):
+            api_error(502, "REGISTRY_CONNECTION_FAILED", "Could not read a valid response from the registry")
+
+    def _registry_http_json(
+        self,
+        url: str,
+        *,
+        registry: dict[str, Any],
+        credentials: dict[str, str] | None,
+    ) -> tuple[int, dict[str, Any], dict[str, str]]:
+        expected_host = str(registry["server"])
+        require_tls = bool(registry.get("tls", True))
+        verify = self._registry_verify(registry, credentials)
+        username = str((credentials or {}).get("username") or "")
+        password = str((credentials or {}).get("password") or "")
+        basic = httpx.BasicAuth(username, password) if username or password else None
+        status, payload, headers = self._registry_fetch_json(
+            url,
+            expected_host=expected_host,
+            require_tls=require_tls,
+            verify=verify,
+            auth=basic,
+        )
+        challenge = headers.get("www-authenticate", "")
+        if status != 401 or not challenge.lower().startswith("bearer "):
+            return status, payload, headers
+        parameters = dict(re.findall(r'([A-Za-z][A-Za-z0-9_-]*)="([^"]*)"', challenge))
+        realm = parameters.pop("realm", "")
+        if not realm:
+            return status, payload, headers
+        token_url = f"{realm}?{urllib.parse.urlencode(parameters)}" if parameters else realm
+        token_status, token_payload, _token_headers = self._registry_fetch_json(
+            token_url,
+            expected_host=expected_host,
+            require_tls=require_tls,
+            verify=verify,
+            auth=basic,
+        )
+        token = str(token_payload.get("token") or token_payload.get("access_token") or "")
+        if token_status < 200 or token_status >= 300 or not token:
+            api_error(502, "REGISTRY_AUTH_FAILED", "Registry authentication failed")
+        return self._registry_fetch_json(
+            url,
+            expected_host=expected_host,
+            require_tls=require_tls,
+            verify=verify,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    @staticmethod
+    def _registry_next_url(current_url: str, link: str, server: str, tls: bool) -> str:
+        match = re.search(r'<([^>]+)>\s*;\s*rel="?next"?', link, re.IGNORECASE)
+        if not match:
+            return ""
+        candidate = urllib.parse.urljoin(current_url, match.group(1))
+        parsed = urllib.parse.urlsplit(candidate)
+        if parsed.netloc != server or parsed.scheme != ("https" if tls else "http"):
+            api_error(502, "UNSAFE_REGISTRY_PAGINATION", "Registry returned an unsafe pagination link")
+        return candidate
+
+    def _registry_v2_collection(
+        self,
+        registry: dict[str, Any],
+        credentials: dict[str, str] | None,
+        path: str,
+        field: str,
+        limit: int,
+    ) -> tuple[list[str], bool]:
+        scheme = "https" if bool(registry.get("tls", True)) else "http"
+        url = f"{scheme}://{registry['server']}{path}"
+        values: list[str] = []
+        first = True
+        while url and len(values) < limit:
+            status, payload, headers = self._registry_http_json(url, registry=registry, credentials=credentials)
+            if first and status in {404, 405}:
+                api_error(409, "REGISTRY_CATALOG_UNSUPPORTED", "This registry does not expose catalog browsing")
+            if status in {401, 403}:
+                api_error(502, "REGISTRY_AUTH_FAILED", "Registry authentication failed")
+            if status < 200 or status >= 300:
+                api_error(502, "REGISTRY_REQUEST_FAILED", "The registry request failed")
+            raw = payload.get(field)
+            if raw is None:
+                raw = []
+            if not isinstance(raw, list):
+                api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
+            for item in raw:
+                value = str(item)
+                if value and value not in values:
+                    values.append(value)
+                    if len(values) >= limit:
+                        break
+            first = False
+            url = self._registry_next_url(url, headers.get("link", ""), str(registry["server"]), bool(registry.get("tls", True)))
+        return values, bool(url)
+
+    @staticmethod
+    def _pagination(page: int, page_size: int, total: int, truncated: bool = False) -> dict[str, Any]:
+        pages = (total + page_size - 1) // page_size if total else 0
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": pages,
+            "has_next": page < pages or truncated,
+            "truncated": truncated,
+        }
+
+    def registry_catalog(
+        self,
+        registry: dict[str, Any],
+        credentials: dict[str, str] | None,
+        *,
+        query: str,
+        page: int,
+        page_size: int,
+        official: str,
+        sort: str,
+        direction: str,
+    ) -> dict[str, Any]:
+        source = self._registry_source(registry)
+        if source["provider"] == "docker_hub" and bool(registry.get("built_in")):
+            raw_items = self.search_registry(query, 100)["items"]
+            items = [
+                {
+                    "registry_id": source["id"],
+                    "registry": source["name"],
+                    "provider": source["provider"],
+                    "repository": item["repository"],
+                    "pull_reference": item["repository"],
+                    "description": item["description"],
+                    "stars": item["stars"],
+                    "official": item["official"],
+                    "automated": item["automated"],
+                }
+                for item in raw_items
+            ]
+            truncated = len(raw_items) == 100
+        else:
+            repositories, truncated = self._registry_v2_collection(
+                registry,
+                credentials,
+                "/v2/_catalog?n=100",
+                "repositories",
+                REGISTRY_CATALOG_LIMIT,
+            )
+            lowered = query.casefold()
+            items = [
+                {
+                    "registry_id": source["id"],
+                    "registry": source["name"],
+                    "provider": source["provider"],
+                    "repository": repository,
+                    "pull_reference": f"{source['server']}/{repository}",
+                    "description": "",
+                    "stars": 0,
+                    "official": False,
+                    "automated": None,
+                }
+                for repository in repositories
+                if lowered in repository.casefold()
+            ]
+        if official == "official":
+            items = [item for item in items if item["official"]]
+        elif official == "unofficial":
+            items = [item for item in items if not item["official"]]
+        reverse = direction == "desc"
+        if sort == "name":
+            items.sort(key=lambda item: str(item["repository"]).casefold(), reverse=reverse)
+        elif sort == "stars":
+            items.sort(key=lambda item: int(item["stars"]), reverse=reverse)
+        total = len(items)
+        offset = (page - 1) * page_size
+        return {
+            "items": items[offset:offset + page_size],
+            "pagination": self._pagination(page, page_size, total, truncated),
+            "source": source,
+        }
+
+    def registry_tags(
+        self,
+        registry: dict[str, Any],
+        credentials: dict[str, str] | None,
+        *,
+        repository: str,
+        page: int,
+        page_size: int,
+    ) -> dict[str, Any]:
+        source = self._registry_source(registry)
+        if source["provider"] == "docker_hub" and bool(registry.get("built_in")):
+            normalized = repository if "/" in repository else f"library/{repository}"
+            encoded = urllib.parse.quote(normalized, safe="/")
+            public_registry = {**registry, "server": "hub.docker.com", "tls": True}
+            status, payload, _headers = self._registry_http_json(
+                f"https://hub.docker.com/v2/repositories/{encoded}/tags?page_size={REGISTRY_TAG_LIMIT}",
+                registry=public_registry,
+                credentials=None,
+            )
+            if status == 404:
+                api_error(404, "REGISTRY_REPOSITORY_NOT_FOUND", "Registry repository was not found")
+            if status < 200 or status >= 300:
+                api_error(502, "REGISTRY_REQUEST_FAILED", "The registry request failed")
+            results = payload.get("results")
+            if not isinstance(results, list):
+                api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
+            tags = [str(item.get("name") or "") for item in results if isinstance(item, dict) and item.get("name")]
+            truncated = bool(payload.get("next")) or len(tags) >= REGISTRY_TAG_LIMIT
+            pull_reference = repository
+        else:
+            encoded = urllib.parse.quote(repository, safe="/")
+            tags, truncated = self._registry_v2_collection(
+                registry,
+                credentials,
+                f"/v2/{encoded}/tags/list?n=100",
+                "tags",
+                REGISTRY_TAG_LIMIT,
+            )
+            pull_reference = f"{source['server']}/{repository}"
+        tags = sorted(set(tags), key=str.casefold)
+        total = len(tags)
+        offset = (page - 1) * page_size
+        return {
+            "repository": repository,
+            "pull_reference": pull_reference,
+            "tags": tags[offset:offset + page_size],
+            "pagination": self._pagination(page, page_size, total, truncated),
+            "source": source,
+        }
 
     def _inspect_container(self, name: str) -> dict[str, Any] | None:
         if not shutil.which("docker"):

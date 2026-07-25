@@ -428,7 +428,16 @@ export type DockerNetwork = {
 };
 export type DockerApp = { id: string; name: string; description: string; image: string; container: string; category: string; panel_port: number; ports: string[]; version: string; required_secrets: string[]; architectures: string[]; healthcheck: string; dependencies: string[]; minimum_memory_mb: number; documentation_url: string; update_strategy: string; backup_strategy: string; uninstall_strategy: string; installed: boolean; running: boolean; managed: boolean; status: string };
 export type DockerArtifact = { id: string; kind: string; display_name: string; checksum: string; size: number; created_at: number; created_by: string; metadata: Record<string, unknown> };
-export type DockerRegistry = { id: string; name: string; provider: string; server: string; username: string; tls: boolean; ca_certificate_configured: boolean; secret_configured: boolean; built_in?: boolean; public_access?: boolean; created_at: number; updated_at: number };
+export type DockerRegistryProvider = "docker_hub" | "ghcr" | "gitlab" | "quay" | "custom";
+export type DockerRegistry = { id: string; name: string; provider: DockerRegistryProvider; server: string; username: string; tls: boolean; ca_certificate_configured: boolean; secret_configured: boolean; built_in?: boolean; public_access?: boolean; created_at: number; updated_at: number };
+export type DockerRegistrySource = { id: string; name: string; provider: DockerRegistryProvider; server: string; built_in: boolean; public_access: boolean };
+export type DockerRegistryCatalogImage = {
+  registry_id: string; registry: string; provider: DockerRegistryProvider; repository: string; pull_reference: string;
+  description: string; stars: number; official: boolean; automated: boolean | null; [key: string]: unknown;
+};
+export type DockerRegistryPagination = { page: number; page_size: number; total: number; pages: number; has_next: boolean; truncated: boolean };
+export type DockerRegistryCatalogResult = { items: DockerRegistryCatalogImage[]; pagination: DockerRegistryPagination; source: DockerRegistrySource };
+export type DockerRegistryTagsResult = { repository: string; pull_reference: string; tags: string[]; pagination: DockerRegistryPagination; source: DockerRegistrySource };
 export type DockerPortMapping = { host_ip?: string | null; published: number; target: number; protocol?: "tcp" | "udp" };
 export type DockerMount = { type: "volume" | "bind" | "tmpfs"; source?: string; target: string; read_only?: boolean; tmpfs_size_mb?: number | null };
 export type DockerContainerCreate = {
@@ -452,7 +461,7 @@ export type DockerComposeAction = { action: "up" | "down" | "start" | "stop" | "
 export type DockerVolumeAction = { action: "remove" | "prune" | "backup" | "restore" | "clone"; target_name?: string | null; backup_id?: string | null; force?: boolean; confirmation?: string; pam_password?: string | null };
 export type DockerNetworkAction = { action: "remove" | "prune" | "connect" | "disconnect"; container?: string | null; force?: boolean; confirmation?: string; pam_password?: string | null };
 export type DockerEngineAction = { action: "install" | "reinstall" | "update" | "start" | "stop" | "restart" | "enable" | "disable" | "test"; confirmation?: string; pam_password?: string | null };
-export type DockerRegistrySave = { name: string; provider: "docker_hub" | "ghcr" | "gitlab" | "quay" | "custom"; server: string; username: string; password?: string | null; tls?: boolean; ca_certificate?: string | null };
+export type DockerRegistrySave = { name: string; provider: DockerRegistryProvider; server: string; username: string; password?: string | null; tls?: boolean; ca_certificate?: string | null };
 export type DockerVolumeCreate = { name: string; labels?: Record<string, string> };
 export type DockerNetworkCreate = {
   name: string; driver: "bridge";
@@ -1016,7 +1025,6 @@ export const api = {
   dockerContainerExport: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/export?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),
   importDockerContainerFilesystem: (file: File, repository: string) => { const body = new FormData(); body.set("file", file); body.set("repository", repository); body.set("confirmation", repository); return request<{ job: ModuleJob }>("/api/modules/docker/containers/import", { method: "POST", body }); },
   dockerImages: (params: Record<string, string | number> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => query.set(key, String(value))); return request<DockerPaged<DockerImage>>(`/api/modules/docker/images?${query}`); },
-  searchDockerImages: (query: string) => request<{ items: Array<Record<string, unknown>>; total: number; source: string }>(`/api/modules/docker/images/search?q=${encodeURIComponent(query)}&limit=50`),
   dockerImageAction: (payload: DockerImageAction) => request<{ job: ModuleJob }>("/api/modules/docker/images/actions", { method: "POST", body: JSON.stringify(payload) }),
   importDockerImage: (file: File) => { const body = new FormData(); body.set("file", file); return request<{ job: ModuleJob }>("/api/modules/docker/images/import", { method: "POST", body }); },
   dockerVolumes: (search = "") => request<DockerPaged>(`/api/modules/docker/volumes?search=${encodeURIComponent(search)}`),
@@ -1040,6 +1048,16 @@ export const api = {
   installDockerApp: (id: string, payload: DockerAppInstall) => request<{ job: ModuleJob }>(`/api/modules/docker/apps/${encodeURIComponent(id)}/install`, { method: "POST", body: JSON.stringify(payload) }),
   dockerAppAction: (id: string, action: "start" | "stop" | "restart" | "update" | "remove", payload: DockerAppAction = {}) => request<{ job: ModuleJob }>(`/api/modules/docker/apps/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify(payload) }),
   dockerRegistries: () => request<{ items: DockerRegistry[] }>("/api/modules/docker/registries"),
+  dockerRegistrySources: () => request<DockerRegistrySource[]>("/api/modules/docker/registries/sources"),
+  dockerRegistryCatalog: (params: { registry_id: string; query: string; page?: number; page_size?: number; official?: "all" | "official" | "unofficial"; sort?: "relevance" | "name" | "stars"; direction?: "asc" | "desc" }) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => value !== undefined && query.set(key, String(value)));
+    return request<DockerRegistryCatalogResult>(`/api/modules/docker/registries/catalog?${query}`);
+  },
+  dockerRegistryTags: (registryId: string, repositoryName: string, page = 1, pageSize = 100) => {
+    const query = new URLSearchParams({ registry_id: registryId, repository_name: repositoryName, page: String(page), page_size: String(pageSize) });
+    return request<DockerRegistryTagsResult>(`/api/modules/docker/registries/tags?${query}`);
+  },
   saveDockerRegistry: (payload: DockerRegistrySave, id = "") => request<{ registry: DockerRegistry; job: ModuleJob }>(id ? `/api/modules/docker/registries/${encodeURIComponent(id)}` : "/api/modules/docker/registries", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
   testDockerRegistry: (id: string) => request<{ job: ModuleJob }>(`/api/modules/docker/registries/${encodeURIComponent(id)}/test`, { method: "POST", body: "{}" }),
   logoutDockerRegistry: (id: string) => request<{ job: ModuleJob }>(`/api/modules/docker/registries/${encodeURIComponent(id)}/logout`, { method: "POST", body: "{}" }),

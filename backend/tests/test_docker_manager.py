@@ -6,13 +6,15 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.identity.models import Role
 from app.identity.permissions import ROLE_PERMISSIONS
-from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, ContainerSettingsRequest, DefaultBridgeConfigRequest, MountSpec, NetworkCreateRequest, RegistryRequest, VolumeActionRequest, VolumeCreateRequest
+from app.modules.docker_manager.models import ComposeActionRequest, ComposeSaveRequest, ContainerActionRequest, ContainerCreateRequest, ContainerSettingsRequest, DefaultBridgeConfigRequest, MountSpec, NetworkCreateRequest, RegistryRequest, VolumeActionRequest, VolumeCreateRequest, validate_repository
+from app.modules.docker_manager import router as docker_router
 from app.modules.docker_manager.router import PUBLIC_DOCKER_HUB
 from app.modules.docker_manager.storage import DockerManagerStore
 from app.modules import router as legacy_module_router
@@ -319,6 +321,122 @@ def test_registry_search_uses_fixed_docker_cli_arguments(monkeypatch):
         DockerProvider("alice").search_registry("$(id)", 10)
 
 
+def test_registry_v2_catalog_follows_safe_pagination_and_filters(monkeypatch):
+    provider = DockerProvider("alice")
+    registry = {"id": "a" * 24, "name": "Private", "provider": "custom", "server": "registry.example.test", "tls": True}
+    calls: list[str] = []
+
+    def request(url, *, registry, credentials):
+        calls.append(url)
+        if len(calls) == 1:
+            return 200, {"repositories": ["team/web", "team/api"]}, {"link": '</v2/_catalog?n=100&last=team%2Fapi>; rel="next"'}
+        return 200, {"repositories": ["other/tool"]}, {}
+
+    monkeypatch.setattr(provider, "_registry_http_json", request)
+    result = provider.registry_catalog(registry, {"username": "alice", "password": "private"}, query="team", page=1, page_size=25, official="all", sort="name", direction="asc")
+
+    assert calls == [
+        "https://registry.example.test/v2/_catalog?n=100",
+        "https://registry.example.test/v2/_catalog?n=100&last=team%2Fapi",
+    ]
+    assert [item["repository"] for item in result["items"]] == ["team/api", "team/web"]
+    assert all(item["pull_reference"].startswith("registry.example.test/") for item in result["items"])
+
+
+def test_registry_v2_and_docker_hub_tags_are_bounded(monkeypatch):
+    provider = DockerProvider("alice")
+    registry = {"id": "b" * 24, "name": "Private", "provider": "custom", "server": "registry.example.test", "tls": True}
+    monkeypatch.setattr(provider, "_registry_http_json", lambda url, **kwargs: (200, {"name": "team/web", "tags": ["2.0", "1.0"]}, {}))
+
+    private = provider.registry_tags(registry, {"username": "alice", "password": "private"}, repository="team/web", page=1, page_size=100)
+    assert private["tags"] == ["1.0", "2.0"]
+    assert private["pull_reference"] == "registry.example.test/team/web"
+
+    monkeypatch.setattr(provider, "_registry_http_json", lambda url, **kwargs: (200, {"results": [{"name": "stable"}, {"name": "latest"}], "next": None}, {}))
+    public = provider.registry_tags(PUBLIC_DOCKER_HUB, None, repository="library/nginx", page=1, page_size=100)
+    assert public["tags"] == ["latest", "stable"]
+    assert public["pull_reference"] == "library/nginx"
+
+
+def test_registry_http_uses_basic_auth_without_returning_credentials(monkeypatch):
+    provider = DockerProvider("alice")
+    captured: list[object] = []
+
+    def fetch(url, **kwargs):
+        captured.append(kwargs.get("auth"))
+        return 200, {"repositories": []}, {}
+
+    monkeypatch.setattr(provider, "_registry_fetch_json", fetch)
+    status, payload, _headers = provider._registry_http_json(
+        "https://registry.example.test/v2/_catalog",
+        registry={"server": "registry.example.test", "tls": True},
+        credentials={"username": "alice", "password": "private-token", "ca_certificate": ""},
+    )
+    assert status == 200 and payload == {"repositories": []}
+    assert isinstance(captured[0], httpx.BasicAuth)
+    assert "private-token" not in json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    ("failure", "code"),
+    [
+        (httpx.TimeoutException("private-token"), "REGISTRY_TIMEOUT"),
+        (httpx.ConnectError("private-token"), "REGISTRY_CONNECTION_FAILED"),
+    ],
+)
+def test_registry_connection_errors_are_sanitized(monkeypatch, failure, code):
+    provider = DockerProvider("alice")
+    monkeypatch.setattr(provider, "_assert_safe_registry_url", lambda *args, **kwargs: None)
+
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            raise failure
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(httpx, "Client", FailingClient)
+    with pytest.raises(HTTPException) as captured:
+        provider._registry_fetch_json(
+            "https://registry.example.test/v2/_catalog",
+            expected_host="registry.example.test",
+            require_tls=True,
+            verify=True,
+        )
+    assert captured.value.detail["code"] == code
+    assert "private-token" not in json.dumps(captured.value.detail)
+
+
+def test_registry_catalog_rejects_ssrf_and_invalid_repository():
+    with pytest.raises(HTTPException) as captured:
+        DockerProvider._assert_safe_registry_url("http://127.0.0.1:5000/v2/_catalog", "127.0.0.1:5000", False)
+    assert captured.value.detail["code"] == "UNSAFE_REGISTRY_URL"
+    for value in ("../secret", "repo:latest", "bad repository"):
+        with pytest.raises(ValueError):
+            validate_repository(value)
+    assert validate_repository("UPPER/repo") == "upper/repo"
+
+
+def test_registry_catalog_requires_an_authorized_user(monkeypatch):
+    user = SessionUser(username="auditor", csrf_token="csrf")
+    monkeypatch.setattr(docker_router, "_allow_any", lambda *_args: (_ for _ in ()).throw(HTTPException(403, "Permission required")))
+    with pytest.raises(HTTPException) as captured:
+        docker_router.registry_catalog(
+            registry_id="docker-hub-public",
+            query="nginx",
+            page=1,
+            page_size=25,
+            official="all",
+            sort="relevance",
+            direction="desc",
+            user=user,
+        )
+    assert captured.value.status_code == 403
+
+
 def test_docker_resource_duplicate_check_uses_fixed_list_arguments(monkeypatch):
     provider = DockerProvider("alice")
     calls: list[list[str]] = []
@@ -480,6 +598,9 @@ def test_docker_manager_routes_are_registered():
     assert "/api/modules/docker/containers/{target}/actions" in paths
     assert "/api/modules/docker/images/actions" in paths
     assert "/api/modules/docker/images/search" in paths
+    assert "/api/modules/docker/registries/sources" in paths
+    assert "/api/modules/docker/registries/catalog" in paths
+    assert "/api/modules/docker/registries/tags" in paths
     assert "/api/modules/docker/networks/default-bridge" in paths
     assert "/api/modules/docker/networks/{target}/containers" in paths
     assert "/api/modules/docker/compose/{project}" in paths

@@ -16,6 +16,8 @@ PATH_RE = re.compile(r"^/[A-Za-z0-9._~!$&'()+,;=:@%/-]{0,1023}$")
 PROJECT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 REGISTRY_RE = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::[1-9][0-9]{0,4})?$", re.ASCII)
 VOLUME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{1,127}$")
+REPOSITORY_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$")
+TAG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 
 
 def _identifier(value: str, label: str = "identifier") -> str:
@@ -29,6 +31,11 @@ def _image(value: str) -> str:
     value = value.strip()
     if not IMAGE_RE.fullmatch(value) or value.startswith("-"):
         raise ValueError("invalid image reference")
+    without_digest = value.split("@", 1)[0]
+    last_segment = without_digest.rsplit("/", 1)[-1]
+    if ":" in last_segment:
+        _name, tag = last_segment.rsplit(":", 1)
+        validate_tag(tag)
     return value
 
 
@@ -363,6 +370,64 @@ class RegistryRequest(DockerModel):
         if self.ca_certificate and not self.tls:
             raise ValueError("custom CA requires TLS")
         return self
+
+
+class RegistrySource(DockerModel):
+    id: str
+    name: str
+    provider: Literal["docker_hub", "ghcr", "gitlab", "quay", "custom"]
+    server: str
+    built_in: bool = False
+    public_access: bool = False
+
+
+class RegistryCatalogImage(DockerModel):
+    registry_id: str
+    registry: str
+    provider: Literal["docker_hub", "ghcr", "gitlab", "quay", "custom"]
+    repository: str
+    pull_reference: str
+    description: str = ""
+    stars: int = Field(default=0, ge=0)
+    official: bool = False
+    automated: bool | None = None
+
+
+class RegistryPagination(DockerModel):
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    total: int = Field(ge=0)
+    pages: int = Field(ge=0)
+    has_next: bool = False
+    truncated: bool = False
+
+
+class RegistryCatalogResponse(DockerModel):
+    items: list[RegistryCatalogImage]
+    pagination: RegistryPagination
+    source: RegistrySource
+
+
+class RegistryTagsResponse(DockerModel):
+    repository: str
+    pull_reference: str
+    tags: list[str]
+    pagination: RegistryPagination
+    source: RegistrySource
+
+
+def validate_repository(value: str) -> str:
+    normalized = value.strip().lower()
+    if len(normalized) > 255 or not REPOSITORY_RE.fullmatch(normalized):
+        raise ValueError("invalid repository name")
+    return normalized
+
+
+def validate_tag(value: str) -> str:
+    normalized = value.strip()
+    if not TAG_RE.fullmatch(normalized):
+        raise ValueError("invalid image tag")
+    return normalized
 
 
 class VolumeCreateRequest(DockerModel):
