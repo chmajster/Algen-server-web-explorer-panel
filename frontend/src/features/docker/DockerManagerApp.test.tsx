@@ -78,59 +78,81 @@ describe("DockerManagerApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "safe-web" } });
     fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "nginx:stable" } });
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.secrets" }));
     fireEvent.change(screen.getByLabelText("docker.secretName"), { target: { value: "APP_PASSWORD" } });
     const secretValue = screen.getByLabelText("docker.secretValue");
     expect(secretValue).toHaveAttribute("type", "password");
     fireEvent.change(secretValue, { target: { value: "private" } });
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
-    expect(screen.getByText("docker.highRiskBlocked")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "docker.createContainer" }));
     await waitFor(() => expect(api.createDockerContainer).toHaveBeenCalled());
     expect(vi.mocked(api.createDockerContainer).mock.calls[0][0]).toMatchObject({ name: "safe-web", image: "nginx:stable", secret_environment: { APP_PASSWORD: "private" } });
   });
 
-  it("blocks incomplete steps and allows keyboard-accessible navigation to completed steps", async () => {
+  it("opens and closes compact configuration sections with aria-expanded", async () => {
     render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
 
     const dialog = screen.getByRole("dialog", { name: "docker.createContainer" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(dialog.querySelector(".docker-wizard-workspace")).toBeInTheDocument();
-    expect(dialog.querySelector(".docker-wizard-footer")).toBeInTheDocument();
-    const basicStep = within(dialog).getByRole("button", { name: /docker.wizard.basic/ });
-    expect(basicStep).toHaveAttribute("aria-current", "step");
-
-    fireEvent.click(within(dialog).getByRole("button", { name: /action.next/ }));
-    expect(screen.getByRole("alert")).toHaveTextContent("docker.wizard.validation.name");
+    expect(dialog.querySelector(".docker-compact-form")).toBeInTheDocument();
+    expect(dialog.querySelector(".docker-compact-footer")).toBeInTheDocument();
+    const general = within(dialog).getByRole("button", { name: "docker.wizard.section.general" });
+    const secrets = within(dialog).getByRole("button", { name: "docker.wizard.section.secrets" });
+    expect(general).toHaveAttribute("aria-expanded", "true");
+    expect(secrets).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByLabelText("docker.field.name")).toHaveAttribute("aria-invalid", "true");
-
-    fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "guided-web" } });
-    fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "nginx:stable" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: /action.next/ }));
-    expect(screen.getByLabelText("docker.field.ports")).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole("button", { name: /docker.wizard.basic/ }));
-    expect(screen.getByLabelText("docker.field.name")).toHaveValue("guided-web");
-    fireEvent.click(within(dialog).getByRole("button", { name: /docker.wizard.connectivity/ }));
-    expect(screen.getByLabelText("docker.field.ports")).toBeInTheDocument();
+    fireEvent.click(general);
+    expect(general).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("docker.field.name")).not.toBeInTheDocument();
+    fireEvent.click(secrets);
+    expect(secrets).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("docker.secretValue")).toHaveAttribute("type", "password");
   });
 
-  it("returns from a review summary card to the related edit step", async () => {
+  it("adds, validates, and removes editable port rows", async () => {
     render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
-    fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "review-web" } });
-    fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "nginx:stable" } });
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.addPort" }));
+    fireEvent.change(screen.getByLabelText("docker.wizard.hostPort"), { target: { value: "70000" } });
+    fireEvent.change(screen.getByLabelText("docker.wizard.containerPort"), { target: { value: "80" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("docker.wizard.validation.portRange");
+    fireEvent.change(screen.getByLabelText("docker.wizard.hostPort"), { target: { value: "8080" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.removePort" }));
+    expect(screen.queryByLabelText("docker.wizard.hostPort")).not.toBeInTheDocument();
+  });
 
-    expect(screen.getByText("docker.wizard.preflightPassed")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "action.edit" })[0]);
-    expect(screen.getByLabelText("docker.field.name")).toHaveValue("review-web");
+  it("edits environment variables as rows and text without losing data", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.addVariable" }));
+    fireEvent.change(screen.getByLabelText("docker.wizard.variableName"), { target: { value: "TZ" } });
+    fireEvent.change(screen.getByLabelText("docker.wizard.variableValue"), { target: { value: "Europe/Warsaw" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.editAsText" }));
+    expect(screen.getByLabelText("docker.field.environment")).toHaveValue("TZ=Europe/Warsaw");
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.editAsRows" }));
+    expect(screen.getByLabelText("docker.wizard.variableName")).toHaveValue("TZ");
+    expect(screen.getByLabelText("docker.wizard.variableValue")).toHaveValue("Europe/Warsaw");
+  });
+
+  it("enables resource limits and reveals conditional healthcheck fields", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.resources" }));
+    expect(screen.getByLabelText("docker.field.memoryMb")).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("docker.wizard.enableLimits"));
+    expect(screen.getByLabelText("docker.field.memoryMb")).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.health" }));
+    fireEvent.change(screen.getByLabelText("docker.field.healthcheck"), { target: { value: "http" } });
+    expect(screen.getByLabelText("docker.field.healthPort")).toBeInTheDocument();
+    expect(screen.getByLabelText("docker.field.healthPath")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("docker.field.healthcheck"), { target: { value: "tcp" } });
+    expect(screen.queryByLabelText("docker.field.healthPath")).not.toBeInTheDocument();
   });
 
   it("restores a create-container draft after reload without persisting secret fields", async () => {
@@ -143,8 +165,10 @@ describe("DockerManagerApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "restored-media" } });
     fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "jellyfin:latest" } });
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
-    fireEvent.change(screen.getByLabelText("docker.field.ports"), { target: { value: "8096:8096/tcp" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.addPort" }));
+    fireEvent.change(screen.getByLabelText("docker.wizard.hostPort"), { target: { value: "8096" } });
+    fireEvent.change(screen.getByLabelText("docker.wizard.containerPort"), { target: { value: "8096" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.secrets" }));
     fireEvent.change(screen.getByLabelText("docker.secretName"), { target: { value: "API_TOKEN" } });
     fireEvent.change(screen.getByLabelText("docker.secretValue"), { target: { value: "do-not-store" } });
     expect(sessionStorage.getItem(draftKey)).not.toContain("do-not-store");
@@ -152,8 +176,8 @@ describe("DockerManagerApp", () => {
     first.unmount();
     render(<DockerManagerApp draftKey="test-window" permissions={permissions} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     expect(await screen.findByRole("heading", { name: "docker.createContainer" })).toBeInTheDocument();
-    expect(screen.getByLabelText("docker.field.ports")).toHaveValue("8096:8096/tcp");
-    fireEvent.click(screen.getByRole("button", { name: /action.back/ }));
+    expect(screen.getByLabelText("docker.wizard.hostPort")).toHaveValue("8096");
+    expect(screen.getByLabelText("docker.wizard.containerPort")).toHaveValue("8096");
     expect(screen.getByLabelText("docker.field.name")).toHaveValue("restored-media");
     expect(screen.getByLabelText("docker.field.image")).toHaveValue("jellyfin:latest");
     sessionStorage.removeItem(draftKey);
@@ -170,9 +194,10 @@ describe("DockerManagerApp", () => {
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() => expect(screen.getByLabelText("docker.field.name")).toHaveValue("imported-web"));
     expect(screen.getByLabelText("docker.field.image")).toHaveValue("nginx:stable");
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
-    expect(screen.getByLabelText("docker.field.environment")).toHaveValue("TZ=Europe/Warsaw");
-    expect(screen.getByLabelText("docker.field.ports")).toHaveValue("8080:80/tcp");
+    expect(screen.getByLabelText("docker.wizard.variableName")).toHaveValue("TZ");
+    expect(screen.getByLabelText("docker.wizard.variableValue")).toHaveValue("Europe/Warsaw");
+    expect(screen.getByLabelText("docker.wizard.hostPort")).toHaveValue("8080");
+    expect(screen.getByLabelText("docker.wizard.containerPort")).toHaveValue("80");
   });
 
   it("searches and selects an image already downloaded to Docker", async () => {
@@ -224,14 +249,15 @@ describe("DockerManagerApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "media" } });
     fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "jellyfin:latest" } });
-    fireEvent.click(screen.getByRole("button", { name: /action.next/ }));
     expect(screen.queryByRole("textbox", { name: "docker.field.mounts" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "docker.addMount" }));
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.addVolume" }));
     fireEvent.click(screen.getByRole("button", { name: "docker.chooseHostPath" }));
     expect(await screen.findByRole("heading", { name: "docker.chooseHostPath" })).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "docker.chooseCurrentFolder" }));
     expect(screen.getByLabelText("docker.mountSource")).toHaveValue("/srv/media");
     fireEvent.change(screen.getByLabelText("docker.mountTarget"), { target: { value: "/media" } });
+    fireEvent.change(screen.getByLabelText("docker.wizard.accessMode"), { target: { value: "ro" } });
+    expect(screen.getByLabelText("docker.wizard.accessMode")).toHaveValue("ro");
     fireEvent.click(screen.getByRole("button", { name: "docker.removeMount" }));
     expect(screen.getByText("docker.noMounts")).toBeInTheDocument();
   });
