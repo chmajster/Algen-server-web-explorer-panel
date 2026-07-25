@@ -294,7 +294,12 @@ class DockerProvider(PrivateBackupProvider):
                     if not body:
                         payload: dict[str, Any] = {}
                     else:
-                        decoded = json.loads(body.decode("utf-8"))
+                        try:
+                            decoded = json.loads(body.decode("utf-8"))
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            if 200 <= response.status_code < 300:
+                                api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
+                            decoded = {}
                         if not isinstance(decoded, dict):
                             api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
                         payload = decoded
@@ -331,7 +336,10 @@ class DockerProvider(PrivateBackupProvider):
         realm = parameters.pop("realm", "")
         if not realm:
             return status, payload, headers
-        token_url = f"{realm}?{urllib.parse.urlencode(parameters)}" if parameters else realm
+        realm_parts = urllib.parse.urlsplit(realm)
+        token_query = urllib.parse.parse_qsl(realm_parts.query, keep_blank_values=True)
+        token_query.extend(parameters.items())
+        token_url = urllib.parse.urlunsplit((*realm_parts[:3], urllib.parse.urlencode(token_query), realm_parts.fragment))
         token_status, token_payload, _token_headers = self._registry_fetch_json(
             token_url,
             expected_host=expected_host,

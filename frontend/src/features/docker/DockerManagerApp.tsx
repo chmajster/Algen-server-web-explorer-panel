@@ -161,7 +161,7 @@ export function DockerManagerApp({
     ["engine", <Settings />, "docker.view"],
     ["diagnostics", <Stethoscope />, "docker.diagnostics"],
   ];
-  const sections = allSections.filter(([, , permission]) => can(permission));
+  const sections = allSections.filter(([name, , permission]) => name === "registries" ? can("docker.view_images") || can("docker.manage_registries") : can(permission));
   const started = (next: ModuleJob) => setJob(next);
   let content: React.ReactNode = null;
   if (section === "dashboard" && dashboard)
