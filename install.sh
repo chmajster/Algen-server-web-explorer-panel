@@ -25,6 +25,7 @@ REMOVE_SCOPE=""
 UPDATE_CONFIG="no"
 EXISTING_ACTION_TIMEOUT="5"
 ALLOW_PROXMOX_HOST_INSTALL="no"
+GRANT_JOURNAL_ACCESS="no"
 IS_PROXMOX="no"
 
 CONFIG_DIR="/etc/webnas"
@@ -82,6 +83,7 @@ Options:
   --skip-build            Skip frontend build
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
+  --grant-journal-access  Add the service user to systemd-journal for system log access
   --existing-action ACTION
                           Existing install action: update, reinstall, backup-config, remove, remove-app, remove-all, or abort
   --update-config         Also regenerate config.yaml during update actions
@@ -167,6 +169,11 @@ parse_args() {
         ;;
       --allow-proxmox-host-install)
         ALLOW_PROXMOX_HOST_INSTALL="yes"
+        NON_INTERACTIVE="yes"
+        shift
+        ;;
+      --grant-journal-access)
+        GRANT_JOURNAL_ACCESS="yes"
         NON_INTERACTIVE="yes"
         shift
         ;;
@@ -905,6 +912,16 @@ ensure_service_user() {
     useradd --system --user-group --home "$INSTALL_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
     SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
     ok "Created system user: ${SERVICE_USER}"
+  fi
+  if getent group systemd-journal >/dev/null 2>&1; then
+    if [[ "$GRANT_JOURNAL_ACCESS" == "yes" ]]; then
+      usermod -a -G systemd-journal "$SERVICE_USER"
+      ok "Granted ${SERVICE_USER} read access through systemd-journal"
+    elif ! id -nG "$SERVICE_USER" | tr ' ' '\n' | grep -Fxq systemd-journal; then
+      warn "System journal access was not granted. Re-run with --grant-journal-access or add ${SERVICE_USER} to systemd-journal manually."
+    fi
+  else
+    warn "The systemd-journal group is unavailable; journal visibility depends on this distribution's journal ACL policy."
   fi
 }
 

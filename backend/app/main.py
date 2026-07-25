@@ -20,6 +20,7 @@ from .auth import authenticate, normalize_username, user_home
 from .config import get_config
 from .file_ops import download_response, list_dir, mime_for, run_user_op, save_upload, tree_dir
 from .local_disks import router as local_disks_router
+from .logs import router as logs_router
 from .identity.router import router as identity_router
 from .identity.permissions import authorize
 from .network_mounts import router as mounts_router
@@ -63,6 +64,7 @@ app.include_router(package_center_router)
 app.include_router(mounts_router)
 app.include_router(network_diagnostics_router)
 app.include_router(local_disks_router)
+app.include_router(logs_router)
 app.include_router(docker_manager_router)
 app.include_router(ansible_controller_router)
 app.include_router(modules_router)

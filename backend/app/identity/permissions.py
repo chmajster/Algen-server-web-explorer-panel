@@ -139,12 +139,22 @@ class Permission(StrEnum):
     ANSIBLE_AUDIT_VIEW = "ansible-controller.audit.view"
     ANSIBLE_BACKUP = "ansible-controller.backup"
     ANSIBLE_RESTORE = "ansible-controller.restore"
+    LOGS_VIEW_OWN = "logs.view_own"
+    LOGS_VIEW_SYSTEM = "logs.view_system"
+    LOGS_VIEW_KERNEL = "logs.view_kernel"
+    LOGS_VIEW_SERVICES = "logs.view_services"
+    LOGS_VIEW_SECURITY = "logs.view_security"
+    LOGS_VIEW_WEBNAS = "logs.view_webnas"
+    LOGS_VIEW_CONTAINERS = "logs.view_containers"
+    LOGS_LIVE = "logs.live"
+    LOGS_EXPORT = "logs.export"
+    LOGS_SAVED_VIEWS_MANAGE = "logs.saved_views.manage"
     SYSTEM_STATUS = "system.status"
     SYSTEM_LOGS = "system.logs"
     SYSTEM_RESTART = "system.restart"
 
 
-_READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics"}
+_READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics", "live", "export"}
 _CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK}
 _APPLICATIONS: dict[str, list[str]] = {
     "files": ["files"],
@@ -163,6 +173,7 @@ _APPLICATIONS: dict[str, list[str]] = {
     "databases": ["module:postgresql", "module:mariadb", "module:redis"],
     "homeassistant": ["module:home-assistant"],
     "ansible-controller": ["module:ansible-controller"],
+    "logs": ["logs"],
     "system": ["monitor", "logs", "settings"],
 }
 
@@ -242,6 +253,9 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
     Role.admin: set(ALL_PERMISSIONS),
     Role.operator: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {
         Permission.SYSTEM_STATUS.value, Permission.SYSTEM_LOGS.value, Permission.SETTINGS_VIEW_SYSTEM.value,
+        Permission.LOGS_VIEW_OWN.value, Permission.LOGS_VIEW_SYSTEM.value, Permission.LOGS_VIEW_KERNEL.value,
+        Permission.LOGS_VIEW_SERVICES.value, Permission.LOGS_VIEW_WEBNAS.value, Permission.LOGS_VIEW_CONTAINERS.value,
+        Permission.LOGS_LIVE.value, Permission.LOGS_EXPORT.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value,
         Permission.USERS_VIEW.value, Permission.USERS_UPDATE.value, Permission.USERS_LOCK.value, Permission.USERS_UNLOCK.value, Permission.USERS_CHANGE_PASSWORD.value, Permission.USERS_MANAGE_GROUPS.value, Permission.USERS_MANAGE_QUOTA.value,
         Permission.GROUPS_VIEW.value, Permission.GROUPS_CREATE.value, Permission.GROUPS_MANAGE_MEMBERS.value, Permission.ACCESS_VIEW.value,
         Permission.AUDIT_VIEW_OWN.value, Permission.MODULES_VIEW.value, Permission.MODULES_CONFIGURE.value, Permission.MODULES_DIAGNOSTICS.value, Permission.MODULES_LOGS.value, Permission.MODULES_BACKUP_CREATE.value, Permission.MODULES_BACKUP_RESTORE.value,
@@ -264,10 +278,13 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.DOCKER_VIEW.value, Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_INSPECT_CONTAINER.value,
         Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value, Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_DIAGNOSTICS.value,
         Permission.DNS_VIEW.value, Permission.DATABASES_VIEW.value, Permission.HOMEASSISTANT_VIEW.value, Permission.SYSTEM_STATUS.value, Permission.SYSTEM_LOGS.value,
+        Permission.LOGS_VIEW_OWN.value, Permission.LOGS_VIEW_SYSTEM.value, Permission.LOGS_VIEW_KERNEL.value,
+        Permission.LOGS_VIEW_SERVICES.value, Permission.LOGS_VIEW_WEBNAS.value, Permission.LOGS_VIEW_CONTAINERS.value,
+        Permission.LOGS_EXPORT.value,
         Permission.ANSIBLE_VIEW.value, Permission.ANSIBLE_HOSTS_VIEW.value, Permission.ANSIBLE_CREDENTIALS_VIEW.value,
         Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value, Permission.ANSIBLE_AUDIT_VIEW.value,
     },
-    Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.SYSTEM_STATUS.value},
+    Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.LOGS_VIEW_OWN.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value, Permission.SYSTEM_STATUS.value},
 }
 
 

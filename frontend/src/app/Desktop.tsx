@@ -2,7 +2,7 @@ import { Bell, ShieldCheck, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
-import { isSettingsCategory, LogsAppView, MonitorApp, ServicesApp, SettingsAppView } from "../features/admin/SystemApps";
+import { isSettingsCategory, MonitorApp, ServicesApp, SettingsAppView } from "../features/admin/SystemApps";
 import { FileManager } from "../features/files/FileManager";
 import { TransferCenter } from "../features/transfers/TransferCenter";
 import { DesktopWidgets } from "../features/widgets/DesktopWidgets";
@@ -17,6 +17,7 @@ import { initialWindowState, restoreWindowState, windowReducer } from "./windowS
 
 const ActivityCenter = lazy(() => import("../features/activity/ActivityCenter").then((module) => ({ default: module.ActivityCenter })));
 const IdentityApp = lazy(() => import("../features/admin/IdentityApp").then((module) => ({ default: module.IdentityApp })));
+const LogsApp = lazy(() => import("../features/logs/LogsApp").then((module) => ({ default: module.LogsApp })));
 const ModuleApp = lazy(() => import("../features/modules/ModuleApp").then((module) => ({ default: module.ModuleApp })));
 const ModuleHub = lazy(() => import("../features/modules/ModuleHub").then((module) => ({ default: module.ModuleHub })));
 const PackageCenterApp = lazy(() => import("../features/package-center/PackageCenterApp").then((module) => ({ default: module.PackageCenterApp })));
@@ -315,7 +316,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       case "access": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="roles" t={t} toast={toast} /></Suspense>;
       case "services": return <ServicesApp t={t} toast={toast} />;
       case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
-      case "logs": return <LogsAppView t={t} />;
+      case "logs": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><LogsApp permissions={profile.permissions} t={t} toast={toast} /></Suspense>;
       case "settings": return <SettingsAppView settings={profile} initialSection={isSettingsCategory(item.initialPath) ? item.initialPath : "system"} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} onSectionChange={(section) => dispatch({ type: "setInitialPath", id: item.id, initialPath: section })} />;
       case "monitor": return <MonitorApp t={t} />;
       case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
@@ -324,6 +325,12 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
 
   const interfaceScale = profile.interface_scale / 100;
   const textScale = interfaceScale * (profile.larger_text ? 1.125 : 1);
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousFontSize = root.style.fontSize;
+    root.style.fontSize = `${16 * textScale}px`;
+    return () => { root.style.fontSize = previousFontSize; };
+  }, [textScale]);
   const rootStyle = {
     "--ui-scale": interfaceScale,
     "--interface-font-size": `${16 * textScale}px`,

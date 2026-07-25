@@ -33,6 +33,7 @@ sudo ./install.sh --user webnas
 sudo ./install.sh --yes
 sudo ./install.sh --no-firewall
 sudo ./install.sh --skip-build
+sudo ./install.sh --grant-journal-access
 sudo ./install.sh --existing-action update
 sudo ./install.sh --existing-action reinstall
 ```
@@ -71,6 +72,21 @@ The installer installs the packages actually used by WebNAS:
 - `sudo`, PAM development/runtime packages, and local account tools.
 - `curl`, `tar`, `gzip`, `iproute2`/`iproute`, and system utilities.
 - `udev`/`systemd-udev` and `util-linux` (`mount`, `umount`, and `findmnt`) for USB automount; NTFS/exFAT utilities are installed when the distribution provides them.
+
+## Logs and journal access
+
+WebNAS does not run as root merely to read logs. On systemd hosts, the recommended minimal access is membership of the service account in `systemd-journal`:
+
+```bash
+sudo usermod -a -G systemd-journal webnas
+sudo systemctl restart webnas
+```
+
+The installer only performs this change when explicitly requested with `--grant-journal-access`. Without it, installation continues and the Logs application marks restricted journal sources as unavailable. Existing installations can safely rerun the installer with the flag; configuration and saved views are preserved.
+
+Debian and Ubuntu commonly provide `/var/log/syslog`, `/var/log/auth.log`, and APT logs. Fedora, RHEL, Rocky Linux, and AlmaLinux commonly provide `/var/log/messages`, `/var/log/secure`, and DNF/YUM logs. WebNAS probes its closed server-side source list and never assumes that every file exists. Reading classic files may additionally require a distribution-specific read group or ACL; grant only the files required by policy.
+
+Proxmox Safe Mode remains active for log browsing and does not grant access to protected paths or administrative commands. Journal visibility is determined by the service account's normal systemd permissions. Prefer a VM or LXC guest, and do not run the entire WebNAS service as root solely for logs.
 
 ## Manual Installation
 

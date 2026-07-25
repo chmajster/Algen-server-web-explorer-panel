@@ -187,6 +187,39 @@ export type AutoUpdateSettings = {
   next_check: number | null;
 };
 export type SystemLogs = { source: string; lines: string[] };
+export type LogEntry = {
+  id: string;
+  timestamp: string | null;
+  priority: number;
+  severity: "emergency" | "alert" | "critical" | "error" | "warning" | "notice" | "info" | "debug";
+  source: string;
+  unit: string;
+  identifier: string;
+  hostname: string;
+  pid: number | null;
+  uid: number | null;
+  message: string;
+  cursor: string;
+  fields: Record<string, unknown>;
+};
+export type LogSource = { id: string; label: string; available: boolean; status: string; permission: string };
+export type LogSourceGroup = { id: string; label: string; items: LogSource[] };
+export type LogSourcesResponse = { groups: LogSourceGroup[]; capabilities: { journal: boolean; docker: boolean; live: boolean; export: boolean } };
+export type LogQuery = {
+  source?: string; query?: string; regex?: boolean; case_sensitive?: boolean; negate?: boolean; message_only?: boolean;
+  priority?: number[]; unit?: string; pid?: number | null; uid?: number | null; identifier?: string; transport?: string;
+  hostname?: string; device?: string; username?: string; group?: string; boot_id?: string; container_id?: string;
+  since?: number | null; until?: number | null; cursor?: string;
+  direction?: "older" | "newer"; limit?: number;
+};
+export type LogEntriesResponse = { items: LogEntry[]; next_cursor: string | null; has_more: boolean; direction: string; limit: number; truncated: boolean };
+export type LogBoot = { id: string; index: number; first: string | null; last: string | null; duration_seconds?: number | null; current: boolean };
+export type LogService = { unit: string; load: string; active: string; sub: string; description: string };
+export type LogContainer = { id: string; name: string; image: string; state: string; status: string };
+export type LogSavedView = {
+  id: string; name: string; source: string; query: string; filters: Record<string, string | number | boolean | number[]>;
+  columns: string[]; sort: "newest" | "oldest"; view_mode: "compact" | "table"; builtin: boolean;
+};
 export type ActivityCategory = "login" | "file" | "configuration" | "administration" | "module";
 export type ActivityStatus = "success" | "failure" | "info" | "queued" | "cancelled";
 export type ActivityEvent = {
@@ -918,6 +951,39 @@ export const api = {
   hostInfo: () => request<HostInfo>("/api/system/host-info"),
   resources: () => request<ResourceDashboard>("/api/system/resources"),
   systemLogs: (lines = 160) => request<SystemLogs>(`/api/admin/system/logs?lines=${lines}`),
+  logSources: () => request<LogSourcesResponse>("/api/logs/sources"),
+  logEntries: (params: LogQuery = {}, signal?: AbortSignal) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (Array.isArray(value)) value.forEach((item) => query.append(key, String(item)));
+      else if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+    });
+    return request<LogEntriesResponse>(`/api/logs/entries${query.size ? `?${query}` : ""}`, { signal });
+  },
+  logBoots: () => request<{ items: LogBoot[]; status: string; error?: string }>("/api/logs/boots"),
+  logServices: () => request<{ items: LogService[]; status: string; error?: string }>("/api/logs/services"),
+  logService: (unit: string) => request<LogService & { pid: number | null; started_at: string; entries: LogEntry[] }>(`/api/logs/services/${encodeURIComponent(unit)}`),
+  logContainers: () => request<{ items: LogContainer[]; status: string; error?: string }>("/api/logs/containers"),
+  logFields: () => request<{ items: string[] }>("/api/logs/fields"),
+  logSavedViews: () => request<{ items: LogSavedView[] }>("/api/logs/saved-views"),
+  createLogSavedView: (payload: Omit<LogSavedView, "id" | "builtin">) => request<LogSavedView>("/api/logs/saved-views", { method: "POST", body: JSON.stringify(payload) }),
+  updateLogSavedView: (id: string, payload: Omit<LogSavedView, "id" | "builtin">) => request<LogSavedView>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteLogSavedView: (id: string) => request<{ ok: boolean }>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
+  exportLogs: async (payload: LogQuery & { format: "txt" | "json" | "jsonl" | "csv"; limit?: number }) => {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    const res = await fetch("/api/logs/export", { method: "POST", body: JSON.stringify(payload), headers, credentials: "include" });
+    if (!res.ok) {
+      const body = await res.text();
+      let message = body || res.statusText;
+      try {
+        const parsed = JSON.parse(body) as { detail?: string | { message?: string } };
+        message = typeof parsed.detail === "string" ? parsed.detail : parsed.detail?.message || message;
+      } catch { /* plain responses retain their original text */ }
+      throw new ApiError(message, res.status);
+    }
+    const disposition = res.headers.get("content-disposition") || "";
+    return { blob: await res.blob(), filename: disposition.match(/filename="([^"]+)"/)?.[1] || `webnas-logs.${payload.format}`, truncated: res.headers.get("x-webnas-truncated") === "true" };
+  },
   proxmoxSafety: () => request<ProxmoxSafety>("/api/admin/system/proxmox-safety"),
   networkOverview: () => request<NetworkOverview>("/api/admin/network/overview"),
   networkDns: () => request<DnsConfiguration>("/api/admin/network/dns"),

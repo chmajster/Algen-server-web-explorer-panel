@@ -23,7 +23,7 @@ export const apps: AppDefinition[] = [
   { id: "access", labelKey: "app.access", icon: <ShieldCheck />, permission: "access.view", hidden: true, minWidth: 760, minHeight: 500 },
   { id: "services", labelKey: "app.services", icon: <ServerCog />, permission: "services.view" },
   { id: "store", labelKey: "app.store", icon: <Package />, permission: "modules.install" },
-  { id: "logs", labelKey: "app.logs", icon: <Terminal />, permission: "system.logs" },
+  { id: "logs", labelKey: "app.logs", icon: <Terminal />, permissionAny: ["logs.view_own", "logs.view_system", "logs.view_kernel", "logs.view_services", "logs.view_webnas", "logs.view_containers", "system.logs"] },
   { id: "settings", labelKey: "app.settings", icon: <Settings />, permission: "settings.view_own" },
   { id: "monitor", labelKey: "app.monitor", icon: <Activity />, permission: "system.status" },
   { id: "module", labelKey: "app.module", icon: <Package />, permission: "modules.view", hidden: true, minWidth: 760, minHeight: 500 }

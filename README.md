@@ -28,6 +28,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - One permission-aware **Users and groups** application for local Linux account/group management, built-in roles, per-user and Linux-group allow/deny policy, effective-access sources, and an audited SQLite policy store. PAM and Linux accounts remain the source of truth.
 - Per-user CPU, RAM, disk, transfer, service, and alert widgets that can be pinned, hidden, moved, and resized on the desktop.
 - Persistent Activity Center for sign-ins, file operations, configuration changes, administrative tasks, and module events, with private per-user history and permission-controlled global audit access.
+- Native Logs application for bounded journal, kernel, service, detected file, WebNAS, Activity Center, and Docker-container logs with combined server-side filters, live tail, export, saved views, and granular RBAC.
 
 ## Desktop and personalization
 
@@ -44,6 +45,14 @@ File Manager preferences are active rather than cosmetic. They control list/grid
 **Activity Center** presents a searchable, paginated timeline of sign-ins, file operations, user configuration changes, administrative actions, and module jobs. Every user can inspect their own activity. Administrators and auditors with `audit.view` can inspect the global timeline and filter it by user, category, status, and text. Status labels and icons distinguish queued, completed, failed, informational, and cancelled operations without relying on color alone.
 
 Events are stored in `paths.data_dir/activity.sqlite3` with a bounded history and private data-directory permissions. Only structured operation metadata is retained: file contents, passwords, cookies, authorization headers, tokens, credentials, and private keys are never intentionally stored. Nested details and free-form error text pass through the same secret-redaction layer used by module logs. Activity recording is failure-isolated, so an unavailable activity database cannot weaken or interrupt PAM authentication, CSRF validation, path policy, Proxmox Safe Mode, or the operation being audited.
+
+## Logs
+
+**Logs** is a permission-aware Linux log browser available from the desktop, Start menu, search, taskbar pinning, and restored windows. It reads structured `journalctl --output=json` records, kernel entries, dynamically detected systemd services, controlled classic files and rotations, WebNAS/Activity Center adapters, and Docker containers when Docker is available. A missing program, file, permission, or individual source is reported locally without disabling the remaining sources.
+
+Search, priority, time, boot, service, PID/UID, identifier, transport, container, phrase, case, negation, and bounded regular-expression filters execute on the backend. Responses default to 200 and never exceed 1,000 records; continuation tokens replace unbounded offset pagination. The frontend caps retained live entries and virtualizes the visible list. TXT, JSON, JSONL, and CSV exports are UTF-8, filter-aware, bounded to 5,000 entries, and report truncation.
+
+Log messages and structured fields pass through the existing credential/token/private-key redaction layer. The API accepts neither paths nor command strings, runs only server-generated argument arrays without `shell=True`, validates units/containers/ranges/limits, bounds subprocess output and time, and audits access without recording queries or log contents. Saved views are validated, private, atomically replaced under `paths.data_dir/settings/log_views`, and protected by CSRF for mutations. See [Logs API and operations](docs/LOGS_API.md).
 
 User preferences are stored by the backend in `paths.data_dir/settings/<username>.json`. Every value is validated against an enum, length limit, or numeric range, files are replaced atomically with owner-only permissions, and missing fields from older files receive safe defaults automatically. Passwords and other secrets are never part of this settings store; password changes continue to require the current password through the dedicated authenticated endpoint.
 

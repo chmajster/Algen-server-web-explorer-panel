@@ -1,6 +1,6 @@
 import { Lock, PackagePlus, Play, Plus, Power, RefreshCw, RotateCcw, Square, Trash2, Unlock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api, type AdminGroup, type AdminUser, type SambaConfig, type SambaShare, type SambaStatus, type StoreApp, type SystemdService, type SystemLogs } from "../../api";
+import { api, type AdminGroup, type AdminUser, type SambaConfig, type SambaShare, type SambaStatus, type StoreApp, type SystemdService } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSection";
 import { AdminActionDialog, type AdminField } from "./AdminActionDialog";
@@ -79,7 +79,6 @@ export function SambaAppView({ t, toast }: { t: Translate; toast: ToastFn }) {
   return <Shell title={t("app.samba")} subtitle={t("samba.subtitle")} loading={state.loading} t={t} onRefresh={state.refresh} actions={<><button onClick={() => editShare()}><Plus />{t("samba.addShare")}</button><button onClick={() => service("start")}><Play />{t("samba.start")}</button><button onClick={() => service("stop")}><Square />{t("samba.stop")}</button><button onClick={() => service("restart")}><RotateCcw />{t("samba.restart")}</button></>}><DataState state={state} t={t}><div className="summary-grid"><article><span>{t("samba.installed")}</span><strong>{state.data?.installed ? t("common.yes") : t("common.no")}</strong></article><article><span>{t("samba.shares")}</span><strong>{state.data?.shares.length || 0}</strong></article></div>{state.data?.shares.map((share) => <article className="data-row" key={share.name}><strong>{share.name}</strong><code>{share.path}</code><span className={`status-badge ${share.enabled ? "completed" : "cancelled"}`}>{share.enabled ? t("common.enabled") : t("common.disabled")}</span><div className="data-actions"><button onClick={() => editShare(share)}>{t("action.edit")}</button><button className="danger" onClick={() => setDialog({ title: `${t("action.delete")}: ${share.name}`, fields: [], danger: true, submit: () => removeShare(share.name) })}><Trash2 /></button></div></article>)}</DataState>{dialog && <AdminActionDialog {...dialog} t={t} onClose={() => setDialog(null)} onSubmit={dialog.submit} />}</Shell>;
 }
 
-export function LogsAppView({ t }: { t: Translate }) { const state = useLoader<SystemLogs>(() => api.systemLogs(250)); return <Shell title={t("app.logs")} subtitle={t("logs.subtitle")} loading={state.loading} t={t} onRefresh={state.refresh}><DataState state={state} t={t}><pre className="log-view">{state.data?.lines.join("\n")}</pre></DataState></Shell>; }
 export { MonitorApp } from "./MonitorApp";
 function DataState<T>({ state, t, children }: { state: { data: T | null; loading: boolean; error: string }; t: Translate; children: React.ReactNode }) { if (state.loading && !state.data) return <div className="loading-state">{t("status.loading")}</div>; if (state.error) return <div className="error-state">{state.error}</div>; return <div className="data-list">{children}</div>; }
 export { SettingsAppView, isSettingsCategory } from "../settings/SettingsApp";

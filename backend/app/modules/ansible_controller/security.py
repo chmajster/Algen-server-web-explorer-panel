@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any
 
 
-SENSITIVE_MARKERS = ("password", "passwd", "passphrase", "secret", "token", "authorization", "credential", "private_key", "private key", "vault")
-TEXT_SECRET_RE = re.compile(r"(?i)(password|passwd|passphrase|token|secret|authorization|private[_ -]?key|vault)(\s*[:=]\s*)([^\s,;]+)")
+SENSITIVE_MARKERS = ("password", "passwd", "passphrase", "secret", "token", "authorization", "credential", "cookie", "connection_string", "database_url", "private_key", "private key", "vault")
+TEXT_SECRET_RE = re.compile(r"(?i)(password|passwd|passphrase|token|secret|authorization|cookie|connection[_ -]?string|database[_ -]?url|private[_ -]?key|vault)(\s*[:=]\s*)([^\s,;]+)")
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", re.DOTALL)
+URL_CREDENTIAL_RE = re.compile(r"(?i)(\b[a-z][a-z0-9+.-]*://[^:/\s]+:)[^@\s]+@")
 
 
 def sensitive_key(value: object) -> bool:
@@ -27,6 +28,7 @@ def redact_text(value: object, known_secrets: list[str] | None = None, limit: in
         if secret:
             text = text.replace(secret, "[REDACTED]")
     text = PRIVATE_KEY_RE.sub("[REDACTED PRIVATE KEY]", text)
+    text = URL_CREDENTIAL_RE.sub(r"\1[REDACTED]@", text)
     text = TEXT_SECRET_RE.sub(r"\1\2[REDACTED]", text)
     encoded = text.encode("utf-8", errors="replace")
     if len(encoded) > limit:
