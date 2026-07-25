@@ -1,4 +1,4 @@
-import { FilePenLine, FileText, Plus, RefreshCw, RotateCcw, TestTube2, Trash2 } from "lucide-react";
+import { FilePenLine, FileText, Network, Plus, RefreshCw, RotateCcw, TestTube2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type NetworkMount, type NetworkMountPayload } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
@@ -166,10 +166,21 @@ export function NetworkMountsSettingsSection({ isAdmin, t, toast }: { isAdmin: b
     if (action === "delete") notifyNetworkMountsChanged();
   }
 
+  const mountedCount = mounts.filter((mount) => mount.actual_mounted).length;
+  const attentionCount = mounts.filter((mount) => ["error", "missing_packages", "host_unavailable", "migration_required", "manual_intervention_required"].includes(mount.status)).length;
+
   return <section className="network-mounts-settings" aria-label={t("settings.networkResources")}>
-    <header className="feature-header"><div><h3>{t("settings.networkResources")}</h3><p>{t("mounts.settingsSubtitle")}</p></div><div className="header-actions"><button onClick={() => void refresh()}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button><button onClick={() => setEditing("new")}><Plus />{t("mounts.new")}</button></div></header>
+    <header className="network-mounts-hero">
+      <div className="network-mounts-intro"><span className="network-mounts-icon"><Network /></span><div><span className="network-mounts-protocols">SMB · NFS · SSHFS · WebDAV</span><h3>{t("settings.networkResources")}</h3><p>{t("mounts.settingsSubtitle")}</p></div></div>
+      <div className="network-mounts-summary" aria-label={t("mounts.summary")}>
+        <div><strong>{mounts.length}</strong><span>{t("mounts.summary.total")}</span></div>
+        <div className="mounted"><strong>{mountedCount}</strong><span>{t("mounts.summary.mounted")}</span></div>
+        <div className={attentionCount ? "attention" : ""}><strong>{attentionCount}</strong><span>{t("mounts.summary.attention")}</span></div>
+      </div>
+      <div className="network-mounts-actions"><button className="mount-refresh-button" onClick={() => void refresh()}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button><button className="button-primary" onClick={() => setEditing("new")}><Plus />{t("mounts.new")}</button></div>
+    </header>
     {error && <p className="error-state" role="alert">{error}</p>}
-    {!loading && mounts.length === 0 && <div className="empty-state">{t("mounts.empty")}</div>}
+    {!loading && mounts.length === 0 && <div className="network-mounts-empty"><span><Network /></span><strong>{t("mounts.empty")}</strong><p>{t("mounts.emptyHint")}</p></div>}
     <div className="mount-card-grid">{mounts.map((mount) => { const busy = busyStatuses.has(mount.status) || mount.jobs.some((job) => ["queued", "running"].includes(job.status)); const fs = mount.fs; return <article className="mount-card" key={mount.id}>
       <header><div><strong>{mount.name}</strong><small>{mount.type.toUpperCase()} · {mount.host}</small></div><span className={`status-badge ${mount.status}`}>{t(`mounts.status.${mount.status}`)}</span></header>
       <dl><div><dt>{t("mounts.remote")}</dt><dd>{mount.remote}</dd></div><div><dt>{t("mounts.mountPoint")}</dt><dd><code>{mount.mount_point}</code></dd></div><div><dt>{t("mounts.owner")}</dt><dd>{mount.owner}</dd></div><div><dt>{t("mounts.access")}</dt><dd>{[...mount.allowed_users, ...mount.allowed_groups.map((group) => `@${group}`)].join(", ") || t("mounts.allAuthenticated")}</dd></div><div><dt>{t("mounts.mode")}</dt><dd>{mount.read_only ? t("mounts.readOnly") : t("mounts.readWrite")} · {mount.persistent ? t("mounts.persistent") : t("mounts.temporary")}</dd></div>{fs && <div><dt>{t("mounts.space")}</dt><dd>{Math.round(fs.used / Math.max(fs.total, 1) * 100)}% · {(fs.free / 1073741824).toFixed(1)} GiB {t("mounts.free")} · {fs.fs_type}</dd></div>}</dl>

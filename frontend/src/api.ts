@@ -101,7 +101,7 @@ export type UserPreferences = {
   clock_show_seconds: boolean;
   date_format: "locale" | "short" | "long" | "iso";
   time_format: "12" | "24";
-  interface_scale: 90 | 100 | 110 | 125;
+  interface_scale: number;
   larger_text: boolean;
   high_contrast: boolean;
   reduced_motion: boolean;

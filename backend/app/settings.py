@@ -160,7 +160,7 @@ class UserSettings(BaseModel):
     clock_show_seconds: bool = False
     date_format: Literal["locale", "short", "long", "iso"] = "short"
     time_format: Literal["12", "24"] = "24"
-    interface_scale: Literal[90, 100, 110, 125] = 100
+    interface_scale: int = Field(default=100, ge=50, le=200)
     larger_text: bool = False
     high_contrast: bool = False
     reduced_motion: bool = False
@@ -243,7 +243,7 @@ class MePatch(BaseModel):
     clock_show_seconds: bool | None = None
     date_format: Literal["locale", "short", "long", "iso"] | None = None
     time_format: Literal["12", "24"] | None = None
-    interface_scale: Literal[90, 100, 110, 125] | None = None
+    interface_scale: int | None = Field(default=None, ge=50, le=200)
     larger_text: bool | None = None
     high_contrast: bool | None = None
     reduced_motion: bool | None = None

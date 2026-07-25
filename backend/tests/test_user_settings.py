@@ -92,6 +92,15 @@ def test_patch_rejects_invalid_preferences(field, value):
         settings.MePatch(**{field: value})
 
 
+def test_interface_scale_accepts_full_supported_range():
+    assert settings.MePatch(interface_scale=50).interface_scale == 50
+    assert settings.MePatch(interface_scale=200).interface_scale == 200
+    with pytest.raises(ValidationError):
+        settings.MePatch(interface_scale=49)
+    with pytest.raises(ValidationError):
+        settings.MePatch(interface_scale=201)
+
+
 def test_wallpaper_validator_accepts_gallery_urls_and_rejects_unsafe_local_paths():
     uploaded = f"/api/settings/wallpapers/{'a' * 32}"
 

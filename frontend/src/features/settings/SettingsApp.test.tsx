@@ -95,10 +95,14 @@ describe("settings application", () => {
     render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={save} onOpenApp={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "settings.category.accessibility" }));
 
-    fireEvent.change(screen.getByLabelText("settings.interfaceScale"), { target: { value: "125" } });
+    const scale = screen.getByLabelText("settings.interfaceScale");
+    expect(scale).toHaveAttribute("min", "50");
+    expect(scale).toHaveAttribute("max", "200");
+    fireEvent.change(scale, { target: { value: "175" } });
+    fireEvent.blur(scale);
     fireEvent.click(screen.getByLabelText("settings.largerText"));
 
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: 125 }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: 175 }));
     expect(save).toHaveBeenCalledWith({ larger_text: true });
   });
 

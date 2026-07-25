@@ -61,6 +61,15 @@ describe("network mount settings", () => {
     expect(submitted).toMatchObject({ type: "nfs", export_path: "/exports/backup" });
   });
 
+  it("shows a resource summary and an actionable empty state", async () => {
+    render(<NetworkMountsSettingsSection isAdmin t={t} toast={vi.fn()} />);
+    await waitFor(() => expect(api.mounts).toHaveBeenCalled());
+
+    expect(screen.getByLabelText("mounts.summary")).toBeInTheDocument();
+    expect(screen.getByText("mounts.emptyHint")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /mounts.new/ })).toBeInTheDocument();
+  });
+
   it("explains writable network-resource behavior and hides it in read-only mode", async () => {
     render(<NetworkMountsSettingsSection isAdmin t={t} toast={vi.fn()} />);
     await waitFor(() => expect(api.mounts).toHaveBeenCalled());
