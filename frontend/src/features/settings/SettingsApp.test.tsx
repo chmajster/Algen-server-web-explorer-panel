@@ -14,7 +14,14 @@ const hostInfo: HostInfo = {
 };
 
 describe("settings application", () => {
-  beforeEach(() => { vi.spyOn(api, "hostInfo").mockResolvedValue(hostInfo); });
+  beforeEach(() => {
+    vi.spyOn(api, "hostInfo").mockResolvedValue(hostInfo);
+    vi.spyOn(api, "wallpapers").mockResolvedValue({ items: [], max_files: 24, max_file_size: 10 * 1024 * 1024 });
+    vi.spyOn(api, "identityUsers").mockResolvedValue([]);
+    vi.spyOn(api, "identityGroups").mockResolvedValue([]);
+    vi.spyOn(api, "identityRoles").mockResolvedValue({ permissions: [], roles: { admin: [], operator: [], auditor: [], user: [] } });
+    vi.spyOn(api, "identityHistory").mockResolvedValue([]);
+  });
   afterEach(() => { vi.restoreAllMocks(); window.sessionStorage.clear(); });
 
   it("loads host information and presents it in expandable panels", async () => {
@@ -31,7 +38,7 @@ describe("settings application", () => {
     expect(screen.getByText("Example CPU")).toBeInTheDocument();
     expect(screen.getByText("Example GPU")).toBeInTheDocument();
   });
-  it("searches individual settings and opens their category", () => {
+  it("searches for wallpaper and opens the nested wallpaper gallery", async () => {
     render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText("settings.search"), { target: { value: "wallpaper" } });
@@ -39,7 +46,27 @@ describe("settings application", () => {
     expect(screen.getByRole("heading", { name: "settings.searchResults" })).toBeInTheDocument();
     const result = screen.getByRole("button", { name: "settings.wallpapersettings.category.personalization" });
     fireEvent.click(result);
-    expect(screen.getByRole("heading", { name: "settings.category.personalization" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "settings.wallpaper" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "action.back" })).toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: "settings.builtInWallpapers" })).toBeInTheDocument();
+  });
+
+  it("selects a built-in wallpaper and uploads a private wallpaper", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const uploaded = { id: "a".repeat(32), name: "mountains.png", url: `/api/settings/wallpapers/${"a".repeat(32)}`, size: 128, created_at: 100 };
+    const upload = vi.spyOn(api, "uploadWallpaper").mockResolvedValue(uploaded);
+    render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={save} onOpenApp={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.personalization" }));
+    fireEvent.click(screen.getByRole("button", { name: /settings.wallpaper/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "settings.wallpaperPreset.aurora" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ wallpaper: "/wallpapers/aurora.svg" }));
+
+    const file = new File(["image"], "mountains.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("settings.addWallpaper"), { target: { files: [file] } });
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(file));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ wallpaper: uploaded.url }));
+    expect(screen.getByRole("radio", { name: "mountains.png" })).toBeInTheDocument();
   });
 
   it("reports the active settings section so the window can restore it", () => {
@@ -92,14 +119,18 @@ describe("settings application", () => {
     expect(screen.getByRole("button", { name: "settings.category.policies" })).toBeInTheDocument();
   });
 
-  it("opens Users and groups from the administrator settings category", () => {
+  it("embeds the complete Users and groups module in administrator settings", async () => {
     const openApp = vi.fn();
-    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={openApp} />);
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true, permissions: ["users.view", "groups.view", "access.view"] })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={openApp} />);
 
     fireEvent.click(screen.getByRole("button", { name: "settings.category.identity" }));
-    fireEvent.click(screen.getByRole("button", { name: "settings.openUsersAndGroups" }));
 
-    expect(openApp).toHaveBeenCalledWith("identity");
+    expect(await screen.findByRole("navigation", { name: "identity.tabs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "identity.tab.users" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "identity.tab.groups" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "identity.tab.roles" })).toBeInTheDocument();
+    await waitFor(() => expect(api.identityUsers).toHaveBeenCalled());
+    expect(openApp).not.toHaveBeenCalled();
   });
 
   it("runs an update manually from administration settings", async () => {

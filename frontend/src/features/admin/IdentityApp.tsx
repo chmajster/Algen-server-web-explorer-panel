@@ -12,7 +12,7 @@ const roleValues: RbacRole[] = ["admin", "operator", "auditor", "user"];
 const splitNames = (value: string): string[] => [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
 const optionalNumber = (value: string): number | null => value.trim() ? Number(value) : null;
 
-export function IdentityApp({ permissions, initialTab = "users", t, toast }: { permissions: string[]; initialTab?: Tab; t: Translate; toast: ToastFn }) {
+export function IdentityApp({ permissions, initialTab = "users", embedded = false, t, toast }: { permissions: string[]; initialTab?: Tab; embedded?: boolean; t: Translate; toast: ToastFn }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [users, setUsers] = useState<IdentityUser[]>([]);
   const [groups, setGroups] = useState<IdentityGroup[]>([]);
@@ -74,8 +74,8 @@ export function IdentityApp({ permissions, initialTab = "users", t, toast }: { p
   }
 
   const metadata = roles?.permissions || [];
-  return <section className="identity-app">
-    <header className="feature-header"><div><h2>{t("app.identity")}</h2><p>{t("identity.subtitle")}</p></div><button onClick={() => void refresh()}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button></header>
+  return <section className={`identity-app ${embedded ? "embedded" : ""}`}>
+    <header className="feature-header"><div>{!embedded && <h2>{t("app.identity")}</h2>}<p>{t("identity.subtitle")}</p></div><button onClick={() => void refresh()}><RefreshCw className={loading ? "spin" : ""} />{t("action.refresh")}</button></header>
     <nav className="identity-tabs" aria-label={t("identity.tabs")}>
       {accessibleTabs.map((name) => <button className={tab === name ? "active" : ""} key={name} onClick={() => { setTab(name); setSearch(""); }}>{name === "users" ? <Users /> : name === "groups" ? <UserCog /> : name === "roles" ? <ShieldCheck /> : <History />}<span>{t(`identity.tab.${name}`)}</span></button>)}
     </nav>

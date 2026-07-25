@@ -92,6 +92,48 @@ def test_patch_rejects_invalid_preferences(field, value):
         settings.MePatch(**{field: value})
 
 
+def test_wallpaper_validator_accepts_gallery_urls_and_rejects_unsafe_local_paths():
+    uploaded = f"/api/settings/wallpapers/{'a' * 32}"
+
+    assert settings._validate_wallpaper("/wallpapers/aurora.svg") == "/wallpapers/aurora.svg"
+    assert settings._validate_wallpaper(uploaded) == uploaded
+    with pytest.raises(settings.HTTPException):
+        settings._validate_wallpaper("/wallpapers/../../etc/passwd")
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (b"\x89PNG\r\n\x1a\npayload", (".png", "image/png")),
+        (b"\xff\xd8\xffpayload", (".jpg", "image/jpeg")),
+        (b"GIF89apayload", (".gif", "image/gif")),
+        (b"RIFF\x00\x00\x00\x00WEBPpayload", (".webp", "image/webp")),
+    ],
+)
+def test_wallpaper_format_uses_file_signatures(payload, expected):
+    assert settings._wallpaper_format(payload) == expected
+
+
+def test_wallpaper_gallery_is_private_per_user(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "get_config", lambda: SimpleNamespace(paths=SimpleNamespace(data_dir=str(tmp_path))))
+    wallpaper_id = "b" * 32
+    alice_directory = settings._wallpaper_directory("alice")
+    (alice_directory / f"{wallpaper_id}.png").write_bytes(b"\x89PNG\r\n\x1a\npayload")
+    (alice_directory / f"{wallpaper_id}.json").write_text(
+        json.dumps({"name": "Moja tapeta.png", "created_at": 123, "media_type": "image/png"}),
+        encoding="utf-8",
+    )
+
+    assert settings._wallpaper_items("alice") == [{
+        "id": wallpaper_id,
+        "name": "Moja tapeta.png",
+        "url": f"/api/settings/wallpapers/{wallpaper_id}",
+        "size": 15,
+        "created_at": 123,
+    }]
+    assert settings._wallpaper_items("bob") == []
+
+
 def test_settings_are_written_and_read_atomically_per_user(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "get_config", lambda: SimpleNamespace(paths=SimpleNamespace(data_dir=str(tmp_path))))
     payload = settings.UserSettings(theme="dark", file_page_size=100).model_dump()
