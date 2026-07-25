@@ -68,6 +68,11 @@ describe("RegistryManager", () => {
 
   it("searches with Enter and the search button using selected filters", async () => {
     render(<RegistryCatalog permissions={["docker.view_images"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
+    await waitFor(() => expect(api.dockerRegistryCatalog).toHaveBeenCalledWith(expect.objectContaining({
+      registry_id: "docker-hub-public",
+      query: "server",
+      page_size: 10,
+    })));
     const search = await screen.findByRole("textbox", { name: "docker.registry.searchImages" });
     fireEvent.change(search, { target: { value: "nginx" } });
     fireEvent.keyDown(search, { key: "Enter" });
@@ -76,6 +81,11 @@ describe("RegistryManager", () => {
     expect(await screen.findByText("library/nginx")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("combobox", { name: "docker.registry.chooseRegistry" }), { target: { value: "a".repeat(24) } });
+    await waitFor(() => expect(api.dockerRegistryCatalog).toHaveBeenLastCalledWith(expect.objectContaining({
+      registry_id: "a".repeat(24),
+      query: "nginx",
+    })));
+    await waitFor(() => expect(screen.getByRole("button", { name: "action.search" })).not.toBeDisabled());
     fireEvent.change(screen.getByRole("combobox", { name: "docker.registry.imageFilter" }), { target: { value: "official" } });
     fireEvent.change(screen.getByRole("combobox", { name: "docker.registry.sort" }), { target: { value: "name" } });
     fireEvent.change(screen.getByRole("combobox", { name: "docker.registry.pageSize" }), { target: { value: "50" } });
@@ -126,6 +136,8 @@ describe("RegistryManager", () => {
   it("shows short-query, empty, and unsupported-catalog states", async () => {
     render(<RegistryCatalog permissions={["docker.view_images"]} t={t} toast={vi.fn()} onJob={vi.fn()} />);
     const search = await screen.findByRole("textbox", { name: "docker.registry.searchImages" });
+    await waitFor(() => expect(api.dockerRegistryCatalog).toHaveBeenCalled());
+    vi.mocked(api.dockerRegistryCatalog).mockClear();
     fireEvent.change(search, { target: { value: "n" } });
     fireEvent.click(screen.getByRole("button", { name: "action.search" }));
     expect(screen.getByRole("alert")).toHaveTextContent("docker.registrySearchTooShort");
@@ -134,7 +146,7 @@ describe("RegistryManager", () => {
     vi.mocked(api.dockerRegistryCatalog).mockResolvedValueOnce({ ...catalog, items: [], pagination: { ...catalog.pagination, total: 0, pages: 0 } });
     fireEvent.change(search, { target: { value: "missing" } });
     fireEvent.click(screen.getByRole("button", { name: "action.search" }));
-    expect(await screen.findByText("docker.registry.noResults")).toBeInTheDocument();
+    expect(await screen.findByText("docker.registry.catalogEmpty")).toBeInTheDocument();
 
     vi.mocked(api.dockerRegistryCatalog).mockRejectedValueOnce(new ApiError("raw", 409, "REGISTRY_CATALOG_UNSUPPORTED"));
     fireEvent.change(search, { target: { value: "private/repository" } });

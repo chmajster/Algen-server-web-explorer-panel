@@ -12,6 +12,8 @@ import type { ToastFn, Translate } from "../../app/types";
 import { DockerTable, errorMessage } from "./shared";
 import { RegistryImageDialog } from "./RegistryImageDialog";
 
+const INITIAL_CATALOG_QUERY = "server";
+
 export function RegistryCatalog({
   permissions,
   t,
@@ -29,7 +31,7 @@ export function RegistryCatalog({
   const [activeQuery, setActiveQuery] = useState("");
   const [official, setOfficial] = useState<"all" | "official" | "unofficial">("all");
   const [sort, setSort] = useState<"relevance" | "name" | "stars">("relevance");
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(10);
   const [result, setResult] = useState<DockerRegistryCatalogResult | null>(null);
   const [selected, setSelected] = useState<DockerRegistryCatalogImage | null>(null);
   const [loadingSources, setLoadingSources] = useState(true);
@@ -37,6 +39,7 @@ export function RegistryCatalog({
   const [error, setError] = useState("");
   const [validation, setValidation] = useState("");
   const request = useRef(0);
+  const initialCatalogLoaded = useRef(false);
   const canPull = permissions.includes("docker.pull_image");
 
   const loadSources = useCallback(async () => {
@@ -57,13 +60,13 @@ export function RegistryCatalog({
     void loadSources();
   }, [loadSources]);
 
-  async function searchImages(searchQuery = query, page = 1) {
+  const searchImages = useCallback(async (searchQuery = query, page = 1, sourceId = registryId) => {
     const normalized = searchQuery.trim();
     if (normalized.length < 2) {
       setValidation(t("docker.registrySearchTooShort"));
       return;
     }
-    if (!registryId) {
+    if (!sourceId) {
       setError(t("docker.registry.noSources"));
       return;
     }
@@ -73,7 +76,7 @@ export function RegistryCatalog({
     setLoading(true);
     try {
       const next = await api.dockerRegistryCatalog({
-        registry_id: registryId,
+        registry_id: sourceId,
         query: normalized,
         page,
         page_size: pageSize,
@@ -92,7 +95,13 @@ export function RegistryCatalog({
     } finally {
       if (sequence === request.current) setLoading(false);
     }
-  }
+  }, [official, pageSize, query, registryId, sort, t]);
+
+  useEffect(() => {
+    if (loadingSources || !registryId || initialCatalogLoaded.current) return;
+    initialCatalogLoaded.current = true;
+    void searchImages(INITIAL_CATALOG_QUERY, 1, registryId);
+  }, [loadingSources, registryId, searchImages]);
 
   const items = result?.items || [];
   return (
@@ -117,7 +126,16 @@ export function RegistryCatalog({
           </label>
           <label>
             <span>{t("docker.registry.chooseRegistry")}</span>
-            <select aria-label={t("docker.registry.chooseRegistry")} disabled={loadingSources} value={registryId} onChange={(event) => setRegistryId(event.target.value)}>
+            <select
+              aria-label={t("docker.registry.chooseRegistry")}
+              disabled={loadingSources}
+              value={registryId}
+              onChange={(event) => {
+                const nextRegistryId = event.target.value;
+                setRegistryId(nextRegistryId);
+                void searchImages(query || INITIAL_CATALOG_QUERY, 1, nextRegistryId);
+              }}
+            >
               {sources.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}
             </select>
           </label>
@@ -148,6 +166,7 @@ export function RegistryCatalog({
           <label>
             <span>{t("docker.registry.pageSize")}</span>
             <select aria-label={t("docker.registry.pageSize")} value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+              <option value={10}>10</option>
               <option value={25}>25</option>
               <option value={50}>50</option>
               <option value={100}>100</option>
@@ -164,7 +183,7 @@ export function RegistryCatalog({
           <>
             <DockerTable
               items={items}
-              empty={t("docker.registry.noResults")}
+              empty={t("docker.registry.catalogEmpty")}
               actionsLabel={t("managed.actions")}
               onRowClick={(row) => setSelected(row as DockerRegistryCatalogImage)}
               columns={[
