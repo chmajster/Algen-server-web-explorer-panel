@@ -114,6 +114,8 @@ export function NetworkInterfaceCard({ network, rx, tx, gateways, dnsServers, t 
 }) {
   const [open, setOpen] = useState(false);
   const address = primaryAddress(network);
+  const ipv4 = network.addresses.filter((item) => item.family === "ipv4");
+  const ipv6 = network.addresses.filter((item) => item.family === "ipv6");
   const issues = issueCount(network);
   const stateLabel = network.system ? t("network.systemInterface") : network.state === "up" ? "UP" : network.state === "down" ? "DOWN" : "UNKNOWN";
   return <article className={`network-interface-card ${network.system ? "system" : network.state}`}>
@@ -128,8 +130,8 @@ export function NetworkInterfaceCard({ network, rx, tx, gateways, dnsServers, t 
       <div><dt>{t("network.errorsAndDrops")}</dt><dd className={issues ? "danger" : ""}>{issues.toLocaleString()}</dd></div>
     </dl>
     <NetworkTrafficChart rx={rx} tx={tx} label={`${network.name} ${t("network.trafficHistory")}`} />
-    <details className="network-interface-expanded" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary aria-expanded={open}><span>{t(open ? "network.hideDetails" : "network.interfaceDetails")}</span><ChevronDown aria-hidden="true" /></summary>
+    <details className="network-interface-expanded" open={open}>
+      <summary aria-expanded={open} onClick={(event) => { event.preventDefault(); setOpen((value) => !value); }}><span>{t(open ? "network.hideDetails" : "network.interfaceDetails")}</span><ChevronDown aria-hidden="true" /></summary>
       <div className="network-interface-sections">
         <section><h5>{t("network.connectionSection")}</h5><dl>
           <div><dt>{t("network.status")}</dt><dd>{network.state.toUpperCase()}</dd></div>
@@ -140,8 +142,8 @@ export function NetworkInterfaceCard({ network, rx, tx, gateways, dnsServers, t 
           <div><dt>MAC</dt><dd><code>{valueOrDash(network.mac_address)}</code></dd></div>
         </dl></section>
         <section><h5>{t("network.addressingSection")}</h5><dl>
-          <div><dt>IPv4</dt><dd>{network.addresses.filter((item) => item.family === "ipv4").map((item) => <code key={item.address}>{item.address}/{item.prefix_length}</code>).reduce<ReactNode[]>((all, item) => [...all, item], []).length ? network.addresses.filter((item) => item.family === "ipv4").map((item) => <code key={item.address}>{item.address}/{item.prefix_length}</code>) : "—"}</dd></div>
-          <div><dt>IPv6</dt><dd>{network.addresses.filter((item) => item.family === "ipv6").length ? network.addresses.filter((item) => item.family === "ipv6").map((item) => <code key={item.address}>{item.address}/{item.prefix_length}</code>) : "—"}</dd></div>
+          <div><dt>IPv4</dt><dd>{ipv4.length ? ipv4.map((item) => <code key={item.address}>{item.address}/{item.prefix_length}</code>) : "—"}</dd></div>
+          <div><dt>IPv6</dt><dd>{ipv6.length ? ipv6.map((item) => <code key={item.address}>{item.address}/{item.prefix_length}</code>) : "—"}</dd></div>
           <div><dt>{t("network.gateway")}</dt><dd>{gateways.length ? gateways.map((item) => <code key={item}>{item}</code>) : "—"}</dd></div>
           <div><dt>DNS</dt><dd>{dnsServers.length ? dnsServers.map((item) => <code key={item}>{item}</code>) : "—"}</dd></div>
         </dl></section>
@@ -174,6 +176,7 @@ function NetworkMonitor({ t }: { t: Translate }) {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const mounted = useRef(true);
   const inFlight = useRef(false);
+  const hasOverview = useRef(false);
 
   const refreshOverview = useCallback(async () => {
     if (inFlight.current) return;
@@ -182,6 +185,7 @@ function NetworkMonitor({ t }: { t: Translate }) {
     try {
       const next = await api.networkOverview();
       if (!mounted.current) return;
+      hasOverview.current = true;
       setOverview(next);
       setHistory((current) => {
         const updated = { ...current };
@@ -192,12 +196,12 @@ function NetworkMonitor({ t }: { t: Translate }) {
         return updated;
       });
     } catch (reason) {
-      if (mounted.current) setError(overview ? t("network.staleData") : reason instanceof Error ? reason.message : t("error.generic"));
+      if (mounted.current) setError(hasOverview.current ? t("network.staleData") : reason instanceof Error ? reason.message : t("error.generic"));
     } finally {
       inFlight.current = false;
       if (mounted.current) setLoading(false);
     }
-  }, [overview, t]);
+  }, [t]);
 
   const refreshContext = useCallback(async () => {
     const [dnsResult, routingResult] = await Promise.allSettled([api.networkDns(), api.networkRouting()]);
@@ -206,7 +210,7 @@ function NetworkMonitor({ t }: { t: Translate }) {
     if (routingResult.status === "fulfilled") setRouting(routingResult.value);
   }, []);
 
-  useEffect(() => { mounted.current = true; void refreshOverview(); void refreshContext(); return () => { mounted.current = false; }; }, []);
+  useEffect(() => { mounted.current = true; void refreshOverview(); void refreshContext(); return () => { mounted.current = false; }; }, [refreshContext, refreshOverview]);
   useEffect(() => {
     if (!autoRefresh) return;
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refreshOverview(); }, refreshInterval);
@@ -264,13 +268,14 @@ export function DnsDiagnostics({ t }: { t: Translate }) {
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState("");
+  const hasConfiguration = useRef(false);
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
-    try { setConfiguration(await api.networkDns()); }
-    catch (reason) { setError(configuration ? t("network.staleData") : reason instanceof Error ? reason.message : t("error.generic")); }
+    try { setConfiguration(await api.networkDns()); hasConfiguration.current = true; }
+    catch (reason) { setError(hasConfiguration.current ? t("network.staleData") : reason instanceof Error ? reason.message : t("error.generic")); }
     finally { setLoading(false); }
-  }, [configuration, t]);
-  useEffect(() => { void refresh(); }, []);
+  }, [t]);
+  useEffect(() => { void refresh(); }, [refresh]);
   async function test(event: React.FormEvent) {
     event.preventDefault(); setTesting(true); setError(""); setResult(null);
     try { setResult(await api.testNetworkDns(hostname.trim())); }
@@ -318,13 +323,14 @@ export function RoutingTable({ t }: { t: Translate }) {
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [family, setFamily] = useState<RouteFamily>("all");
+  const hasData = useRef(false);
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
-    try { setData(await api.networkRouting()); }
-    catch (reason) { setError(data ? t("network.staleData") : reason instanceof Error ? reason.message : t("error.generic")); }
+    try { setData(await api.networkRouting()); hasData.current = true; }
+    catch (reason) { setError(hasData.current ? t("network.staleData") : reason instanceof Error ? reason.message : t("error.generic")); }
     finally { setLoading(false); }
-  }, [data, t]);
-  useEffect(() => { void refresh(); }, []);
+  }, [t]);
+  useEffect(() => { void refresh(); }, [refresh]);
   const routes = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return (data?.routes || []).filter((route) => family === "all" || route.family === family).filter((route) => !needle || [route.destination, route.gateway || "", route.device || "", route.table, route.protocol || "", route.preferred_source || ""].some((value) => value.toLowerCase().includes(needle)));
