@@ -18,6 +18,7 @@ export type AppId =
   | "access"
   | "containers"
   | "ansible"
+  | "hosts"
   | "module";
 
 export type Theme = "light" | "dark" | "system";
