@@ -168,10 +168,10 @@ function NetworkMountCard({ mount, t, toast, onEdit, onAction, onLogs }: { mount
       <button type="button" className="mount-card-collapse-toggle" aria-expanded={!collapsed} aria-label={`${t(collapsed ? "mounts.expandResource" : "mounts.collapseResource")}: ${mount.name}`} onClick={() => setCollapsed((value) => !value)}>
         {collapsed ? <ChevronRight aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
         <div className="mount-card-identity">
-          {!collapsed && <span><ProtocolIcon protocol={mount.type} /></span>}
-          <div><div><h4>{mount.name}</h4>{!collapsed && <b>{mount.type.toUpperCase()}</b>}</div>{!collapsed && <small>{mount.host}</small>}</div>
+          <span><ProtocolIcon protocol={mount.type} /></span>
+          <div><div><h4>{mount.name}</h4><b>{mount.type.toUpperCase()}</b></div>{!collapsed && <small>{mount.host}</small>}</div>
         </div>
-        {!collapsed && <MountStatusBadge mount={mount} t={t} />}
+        <MountStatusBadge mount={mount} t={t} />
       </button>
     </header>
     {!collapsed && <>

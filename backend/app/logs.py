@@ -51,6 +51,19 @@ HOST_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9_.:-]{0,251}[A-Za-z
 BOOT_RE = re.compile(r"^[a-fA-F0-9]{32}$")
 SOURCE_RE = re.compile(r"^[a-z0-9][a-z0-9:_.@/-]{0,180}$")
 UNSAFE_REGEX_RE = re.compile(r"(\([^)]*[+*][^)]*\)[+*]|\.\*[+*]|\.\+\+|\{\d+,\d*\}[+*])")
+PYTHON_TRACEBACK_RE = re.compile(r"(?m)^Traceback \(most recent call last\):\s*$")
+PYTHON_EXCEPTION_RE = re.compile(
+    r"(?m)^(?:[\w.]+\.)?[A-Za-z_]\w*(?:Error|Exception|Fault|Failure):(?:\s|$)"
+)
+PYTHON_TRACEBACK_LINE_RE = re.compile(
+    r'^(?:\s+File ".+", line \d+(?:, in .+)?|\s+.*|\s*\^+\s*|'
+    r'During handling of the above exception.*|The above exception was the direct cause.*)$'
+)
+ERROR_SIGNAL_RE = re.compile(
+    r"(?im)(?:^|\b)(?:Exception in ASGI application|Unhandled exception|Uncaught exception|"
+    r"Segmentation fault|core dumped|panic|failed with result|process exited with status)(?:\b|$)"
+)
+UPPERCASE_ERROR_RE = re.compile(r"(?m)(?:^|[\s:[])(?:ERROR|FATAL)(?:[\s:\]]|$)")
 
 CLASSIC_LOGS: dict[str, tuple[str, str, Permission]] = {
     "syslog": ("/var/log/syslog", "System log", Permission.LOGS_VIEW_SYSTEM),
@@ -70,11 +83,37 @@ CLASSIC_LOGS: dict[str, tuple[str, str, Permission]] = {
 }
 
 
+def infer_effective_priority(message: object, original_priority: object, fields: dict[str, Any] | None = None) -> tuple[int, str | None]:
+    """Return a content-aware priority without ever weakening the source priority."""
+    priority = _int(original_priority)
+    priority = priority if priority in LOG_PRIORITIES else 6
+    text = str(message or "")
+    relevant_fields = fields if isinstance(fields, dict) else {}
+    for key in ("TRACEBACK", "STACKTRACE", "EXCEPTION", "ERROR"):
+        value = relevant_fields.get(key)
+        if isinstance(value, str) and value:
+            text = f"{text}\n{value}"
+    inferred: int | None = None
+    reason: str | None = None
+    if PYTHON_TRACEBACK_RE.search(text):
+        inferred, reason = 3, "python_traceback"
+    elif PYTHON_EXCEPTION_RE.search(text):
+        inferred, reason = 3, "python_exception"
+    elif ERROR_SIGNAL_RE.search(text) or UPPERCASE_ERROR_RE.search(text):
+        inferred, reason = 3, "error_signal"
+    effective = min(priority, inferred) if inferred is not None else priority
+    return effective, reason if effective < priority else None
+
+
 class LogEntry(BaseModel):
     id: str
     timestamp: str | None = None
+    original_priority: int | None = None
+    original_severity: str | None = None
     priority: int = 6
     severity: str = "info"
+    severity_inferred: bool = False
+    severity_reason: str | None = None
     source: str
     unit: str = ""
     identifier: str = ""
@@ -84,6 +123,19 @@ class LogEntry(BaseModel):
     message: str
     cursor: str = ""
     fields: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def effective_severity(self) -> "LogEntry":
+        original = self.original_priority if self.original_priority in LOG_PRIORITIES else self.priority
+        original = original if original in LOG_PRIORITIES else 6
+        effective, reason = infer_effective_priority(self.message, original, self.fields)
+        self.original_priority = original
+        self.original_severity = self.original_severity or LOG_PRIORITIES[original]
+        self.priority = effective
+        self.severity = LOG_PRIORITIES[effective]
+        self.severity_inferred = effective < original
+        self.severity_reason = reason if self.severity_inferred else None
+        return self
 
 
 class SavedViewPayload(BaseModel):

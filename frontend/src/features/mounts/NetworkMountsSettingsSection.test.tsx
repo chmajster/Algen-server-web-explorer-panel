@@ -162,6 +162,8 @@ describe("network mount settings", () => {
     fireEvent.click(within(mediaCard).getByRole("button", { name: "mounts.collapseResource: media" }));
     expect(mediaCard).toHaveClass("is-collapsed");
     expect(within(mediaCard).getByRole("heading", { name: "media" })).toBeInTheDocument();
+    expect(within(mediaCard).getByText("SMB")).toBeInTheDocument();
+    expect(within(mediaCard).getByText("mounts.status.mounted")).toBeInTheDocument();
     expect(within(mediaCard).queryByText("nas.local")).not.toBeInTheDocument();
     expect(within(mediaCard).queryByRole("button", { name: "mounts.unmount" })).not.toBeInTheDocument();
     expect(within(backupCard).getByRole("button", { name: "mounts.mount" })).toBeInTheDocument();
