@@ -9,7 +9,7 @@ import {
   type NetworkOverview,
   type RoutingSnapshot,
 } from "../../api";
-import { NetworkSettingsSection, NetworkTrafficChart } from "./NetworkSettingsSection";
+import { DnsDiagnostics, NetworkMonitor, NetworkSettingsSection, NetworkTrafficChart, RoutingTable } from "./NetworkSettingsSection";
 
 const t = (key: string) => key;
 const network = (overrides: Partial<NetworkInterfaceDetail> = {}): NetworkInterfaceDetail => ({
@@ -47,6 +47,7 @@ describe("network settings", () => {
     vi.spyOn(api, "networkDns").mockResolvedValue(dns);
     vi.spyOn(api, "networkRouting").mockResolvedValue(routing);
     vi.spyOn(api, "testNetworkDns").mockResolvedValue(dnsResult());
+    vi.spyOn(api, "networkManagement").mockRejectedValue(new Error("not used in diagnostics tests"));
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -63,13 +64,13 @@ describe("network settings", () => {
 
   it("switches accessible tabs with clicks and keyboard", async () => {
     render(<NetworkSettingsSection isAdmin t={t} />);
-    const monitor = screen.getByRole("tab", { name: "network.monitor" });
-    expect(monitor).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(monitor, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "DNS" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "network-tab-dns");
-    fireEvent.click(screen.getByRole("tab", { name: "network.routing" }));
-    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "network-tab-routing");
+    const general = screen.getByRole("tab", { name: "network.tab.general" });
+    expect(general).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(general, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "network.tab.interfaces" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "network-tab-interfaces");
+    fireEvent.click(screen.getByRole("tab", { name: "network.tab.connectivity" }));
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "network-tab-connectivity");
   });
 
   it("calculates the four summary values and reports a healthy network", async () => {
@@ -77,7 +78,7 @@ describe("network settings", () => {
       network(),
       network({ name: "eth1", state: "down", carrier: false, rx_bytes_per_sec: 1024, tx_bytes_per_sec: 512 }),
     ]));
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     const health = await screen.findByLabelText("network.health.ok");
     expect(health).toBeInTheDocument();
     const summary = screen.getByLabelText("network.summary");
@@ -89,11 +90,11 @@ describe("network settings", () => {
 
   it("distinguishes warning and offline health states", async () => {
     vi.mocked(api.networkOverview).mockResolvedValue(overview([network({ rx_errors: 2 })]));
-    const { unmount } = render(<NetworkSettingsSection isAdmin t={t} />);
+    const { unmount } = render(<NetworkMonitor t={t} />);
     expect(await screen.findByLabelText("network.health.warning")).toBeInTheDocument();
     unmount();
     vi.mocked(api.networkOverview).mockResolvedValue(overview([network({ state: "down", carrier: false })]));
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     expect(await screen.findByLabelText("network.health.offline")).toBeInTheDocument();
   });
 
@@ -102,7 +103,7 @@ describe("network settings", () => {
       network(),
       network({ name: "backup0", addresses: [{ family: "ipv4", address: "198.51.100.8", prefix_length: 24, scope: "global" }] }),
     ]));
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     await screen.findByRole("heading", { name: "eth0" });
     const search = screen.getByPlaceholderText("network.searchInterfaces");
     fireEvent.change(search, { target: { value: "backup0" } });
@@ -120,7 +121,7 @@ describe("network settings", () => {
       network({ name: "down0", state: "down", carrier: false }),
       network({ name: "broken0", rx_dropped: 3 }),
     ]));
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     await screen.findByRole("heading", { name: "eth0" });
     const filter = screen.getByLabelText("network.filter");
     fireEvent.change(filter, { target: { value: "up" } });
@@ -131,7 +132,7 @@ describe("network settings", () => {
   });
 
   it("shows only essential interface data until details are opened", async () => {
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     const card = (await screen.findByRole("heading", { name: "eth0" })).closest("article")!;
     expect(within(card).getAllByText("192.0.2.10/24").find((item) => item.tagName === "P")).toBeVisible();
     expect(within(card).getAllByText("1 Gb/s").find((item) => !item.closest("details"))).toBeVisible();
@@ -145,7 +146,7 @@ describe("network settings", () => {
   });
 
   it("toggles automatic refresh and changes its interval", async () => {
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     await screen.findByRole("heading", { name: "eth0" });
     const toggle = screen.getByRole("switch", { name: /network.autoRefresh/ });
     expect(toggle).toHaveAttribute("aria-checked", "true");
@@ -158,7 +159,7 @@ describe("network settings", () => {
 
   it("refreshes manually and keeps previous data after a failed refresh", async () => {
     vi.mocked(api.networkOverview).mockResolvedValueOnce(overview()).mockRejectedValueOnce(new Error("offline"));
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     expect(await screen.findByRole("heading", { name: "eth0" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "network.refreshNow" }));
     expect(await screen.findByText("network.staleData")).toBeInTheDocument();
@@ -168,7 +169,7 @@ describe("network settings", () => {
 
   it("continues automatic refresh at the selected interval", async () => {
     vi.useFakeTimers();
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     await act(async () => { await Promise.resolve(); });
     expect(api.networkOverview).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
@@ -177,7 +178,7 @@ describe("network settings", () => {
 
   it("deduplicates warnings and renders an empty history without NaN", async () => {
     vi.mocked(api.networkOverview).mockResolvedValue(overview([network()], ["duplicate warning", "duplicate warning"]));
-    render(<NetworkSettingsSection isAdmin t={t} />);
+    render(<NetworkMonitor t={t} />);
     expect(await screen.findAllByText("duplicate warning")).toHaveLength(1);
     const { container } = render(<NetworkTrafficChart rx={[]} tx={[]} label="empty traffic" />);
     expect(screen.getByRole("img", { name: "empty traffic" })).toBeInTheDocument();
@@ -186,8 +187,7 @@ describe("network settings", () => {
 
   it("runs successful and failed DNS tests with detailed server results", async () => {
     vi.mocked(api.testNetworkDns).mockResolvedValueOnce(dnsResult()).mockResolvedValueOnce(dnsResult(false));
-    render(<NetworkSettingsSection isAdmin t={t} />);
-    fireEvent.click(screen.getByRole("tab", { name: "DNS" }));
+    render(<DnsDiagnostics t={t} />);
     await screen.findByText("network.dnsConfigurationSummary");
     expect(screen.getAllByText("1.1.1.1").find((item) => !item.closest("details"))).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "network.runDnsTest" }));
@@ -201,8 +201,7 @@ describe("network settings", () => {
   });
 
   it("keeps raw DNS configuration in a collapsed details section", async () => {
-    render(<NetworkSettingsSection isAdmin t={t} />);
-    fireEvent.click(screen.getByRole("tab", { name: "DNS" }));
+    render(<DnsDiagnostics t={t} />);
     const detailsLabel = await screen.findByText("network.dnsConfigurationDetails");
     expect(screen.getByText("../run/systemd/resolve/stub-resolv.conf")).not.toBeVisible();
     fireEvent.click(detailsLabel);
@@ -210,8 +209,7 @@ describe("network settings", () => {
   });
 
   it("filters and searches IPv4 and IPv6 routes", async () => {
-    render(<NetworkSettingsSection isAdmin t={t} />);
-    fireEvent.click(screen.getByRole("tab", { name: "network.routing" }));
+    render(<RoutingTable t={t} />);
     await screen.findByText("network.readOnlyHint");
     const family = screen.getByLabelText("network.family");
     fireEvent.change(family, { target: { value: "ipv6" } });
@@ -224,8 +222,7 @@ describe("network settings", () => {
   });
 
   it("keeps advanced routing rules collapsed until requested", async () => {
-    render(<NetworkSettingsSection isAdmin t={t} />);
-    fireEvent.click(screen.getByRole("tab", { name: "network.routing" }));
+    render(<RoutingTable t={t} />);
     const summary = await screen.findByText("network.routingAdvancedRules".replace("{count}", "1"));
     expect(screen.getByText("32766")).not.toBeVisible();
     fireEvent.click(summary);

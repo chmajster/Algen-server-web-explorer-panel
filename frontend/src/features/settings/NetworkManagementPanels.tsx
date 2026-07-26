@@ -202,12 +202,13 @@ function PlanModal({ plan, busy, error, onClose, onApply }: { plan: NetworkPlan;
   const [phrase, setPhrase] = useState("");
   return <Modal title="Podgląd planu zmian" onClose={onClose}><div className="network-plan">
     <div className={`network-risk ${plan.high_risk ? "high" : "normal"}`}><ShieldAlert /><div><strong>{plan.high_risk ? "Zmiana wysokiego ryzyka" : "Plan gotowy"}</strong><p>Cel: {plan.target}. Automatyczny rollback po {plan.rollback_seconds} s.</p></div></div>
+    {!plan.rollback_supported && <p className="error-state" role="alert">Brak trwałego mechanizmu rollbacku systemd. Zastosowanie planu jest zablokowane.</p>}
     {plan.warnings.length > 0 && <ul>{plan.warnings.map((warning) => <li key={warning}><AlertTriangle />{warning}</li>)}</ul>}
     <details open><summary>Polecenia ({plan.commands.length})</summary><pre>{plan.commands.map((command) => command.join(" ")).join("\n") || "Zmiana stanu zarządzanego"}</pre></details>
     <details><summary>Stan przed i po</summary><pre>{JSON.stringify({ before: plan.before, after: plan.after }, null, 2)}</pre></details>
     {plan.high_risk && <Field label={`Wpisz dokładnie: ${plan.required_phrase}`}><input autoFocus value={phrase} onChange={(e) => setPhrase(e.target.value)} /></Field>}
     {error && <p className="error-state" role="alert">{error}</p>}
-  </div><footer><button type="button" onClick={onClose}>Anuluj</button><button className="button-primary" disabled={busy || plan.high_risk && phrase !== plan.required_phrase} onClick={() => onApply(phrase)}>{busy ? "Stosowanie…" : "Zastosuj plan"}</button></footer></Modal>;
+  </div><footer><button type="button" onClick={onClose}>Anuluj</button><button className="button-primary" disabled={busy || !plan.rollback_supported || plan.high_risk && phrase !== plan.required_phrase} onClick={() => onApply(phrase)}>{busy ? "Stosowanie…" : "Zastosuj plan"}</button></footer></Modal>;
 }
 
 function TransactionBanner({ transaction, busy, onConfirm, onRollback }: { transaction: NetworkTransaction; busy: boolean; onConfirm: () => void; onRollback: () => void }) {
@@ -217,7 +218,7 @@ function TransactionBanner({ transaction, busy, onConfirm, onRollback }: { trans
   return <aside className="network-transaction-banner" role="status"><RefreshCw /><div><strong>Sprawdź połączenie — rollback za {left} s</strong><p>Zmiany pozostaną tylko po potwierdzeniu.</p></div><button disabled={busy} onClick={onRollback}>Cofnij teraz</button><button className="button-primary" disabled={busy} onClick={onConfirm}><CheckCircle2 />Zachowaj zmiany</button></aside>;
 }
 
-export function NetworkManagementWorkspace({ tab, t, onNavigate }: { tab: "general" | "interfaces" | "traffic" | "routes"; t: Translate; onNavigate: (tab: "interfaces" | "routes" | "connectivity") => void }) {
+export function NetworkManagementWorkspace({ tab, t, permissions = [], onNavigate }: { tab: "general" | "interfaces" | "traffic" | "routes"; t: Translate; permissions?: string[]; onNavigate: (tab: "interfaces" | "routes" | "connectivity") => void }) {
   const [state, setState] = useState<NetworkManagementState | null>(null);
   const [plan, setPlan] = useState<NetworkPlan | null>(null);
   const [transaction, setTransaction] = useState<NetworkTransaction | null>(null);
@@ -256,14 +257,16 @@ export function NetworkManagementWorkspace({ tab, t, onNavigate }: { tab: "gener
   }
   if (loading) return <div className="loading-state">{t("status.loading")}</div>;
   if (!state) return <p className="error-state" role="alert">{error}</p>;
+  const mayMutate = permissions.length === 0 || permissions.some((permission) => permission.startsWith("network.manage_") || permission === "network.confirm" || permission === "network.rollback");
+  const visibleState = mayMutate ? state : { ...state, provider: { ...state.provider, writable: false, warnings: [...state.provider.warnings, "Brak uprawnienia do modyfikacji konfiguracji sieci."] } };
   return <div className="network-management-workspace">
     {transaction?.state === "pending_confirmation" && <TransactionBanner transaction={transaction} busy={busy} onConfirm={() => void finish("confirm")} onRollback={() => void finish("rollback")} />}
     {error && !plan && <p className="error-state" role="alert">{error}</p>}
     <div className="network-management-heading"><div><Globe2 /><span><strong>{state.hostname}</strong><small>{state.provider.id} · {state.provider.writable ? "zapis dostępny" : "tylko odczyt"}</small></span></div><button onClick={() => void refresh()}><RefreshCw />Odśwież</button></div>
-    {tab === "general" && <GeneralPanel state={state} onChange={(change) => void prepare(change)} onNavigate={onNavigate} />}
-    {tab === "interfaces" && <InterfacesPanel state={state} onChange={(change) => void prepare(change)} />}
-    {tab === "routes" && <RoutesPanel state={state} onChange={(change) => void prepare(change)} />}
-    {tab === "traffic" && <TrafficPanel state={state} onChange={(change) => void prepare(change)} />}
+    {tab === "general" && <GeneralPanel state={visibleState} onChange={(change) => void prepare(change)} onNavigate={onNavigate} />}
+    {tab === "interfaces" && <InterfacesPanel state={visibleState} onChange={(change) => void prepare(change)} />}
+    {tab === "routes" && <RoutesPanel state={visibleState} onChange={(change) => void prepare(change)} />}
+    {tab === "traffic" && <TrafficPanel state={visibleState} onChange={(change) => void prepare(change)} />}
     {plan && <PlanModal plan={plan} busy={busy} error={error} onClose={() => { setPlan(null); setError(""); }} onApply={(phrase) => void apply(phrase)} />}
   </div>;
 }

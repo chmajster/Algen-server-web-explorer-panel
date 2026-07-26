@@ -165,7 +165,7 @@ export function NetworkInterfaceCard({ network, rx, tx, gateways, dnsServers, t 
   </article>;
 }
 
-function NetworkMonitor({ t }: { t: Translate }) {
+export function NetworkMonitor({ t }: { t: Translate }) {
   const [overview, setOverview] = useState<NetworkOverview | null>(null);
   const [dns, setDns] = useState<DnsConfiguration | null>(null);
   const [routing, setRouting] = useState<RoutingSnapshot | null>(null);
@@ -382,7 +382,7 @@ function ConnectivityTester({ t }: { t: Translate }) {
   </section>;
 }
 
-export function NetworkSettingsSection({ isAdmin, t }: { isAdmin: boolean; t: Translate }) {
+export function NetworkSettingsSection({ isAdmin, permissions = [], t }: { isAdmin: boolean; permissions?: string[]; t: Translate }) {
   const [tab, setTab] = useState<NetworkTab>("general");
   const tabs: Array<{ id: NetworkTab; icon: ReactNode; label: string }> = [
     { id: "general", icon: <Gauge aria-hidden="true" />, label: t("network.tab.general") },
@@ -404,7 +404,7 @@ export function NetworkSettingsSection({ isAdmin, t }: { isAdmin: boolean; t: Tr
     <header className="network-settings-page-header"><span><Gauge aria-hidden="true" /></span><div><h2 id="network-settings-title">{t("settings.category.network")}</h2><p>{t("network.settingsDescription")}</p></div></header>
     <nav className="network-settings-tabs" role="tablist" aria-label={t("settings.category.network")} onKeyDown={keyboard}>{tabs.map((item) => <button id={`network-tab-${item.id}`} key={item.id} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`network-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.icon}<span>{item.label}</span></button>)}</nav>
     <div id={`network-panel-${tab}`} role="tabpanel" aria-labelledby={`network-tab-${tab}`}>
-      {tab !== "connectivity" && <NetworkManagementWorkspace tab={tab} t={t} onNavigate={setTab} />}
+      {tab !== "connectivity" && <NetworkManagementWorkspace tab={tab} t={t} permissions={permissions} onNavigate={setTab} />}
       {tab === "connectivity" && <div className="network-connectivity-stack"><ConnectivityTester t={t} /><NetworkMonitor t={t} /><DnsDiagnostics t={t} /><RoutingTable t={t} /></div>}
     </div>
   </section>;

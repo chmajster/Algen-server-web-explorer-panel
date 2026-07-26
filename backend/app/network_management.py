@@ -33,6 +33,42 @@ MAX_OBJECTS = 256
 _transaction_lock = Lock()
 
 
+def _acquire_process_lock() -> int:
+    path = _state_root() / "operation.lock"
+    descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            if os.fstat(descriptor).st_size == 0:
+                os.write(descriptor, b"\0")
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError) as error:
+        os.close(descriptor)
+        raise HTTPException(409, "Another network operation is active") from error
+    return descriptor
+
+
+def _release_process_lock(descriptor: int) -> None:
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
 def _state_root() -> Path:
     path = Path(get_config().paths.data_dir) / "network-management"
     path.mkdir(parents=True, exist_ok=True)
@@ -490,11 +526,12 @@ class ReadOnlyProvider(NetworkProvider):
 
 def detect_provider() -> tuple[NetworkProvider, list[str]]:
     active: list[str] = []
-    if shutil.which("nmcli") and _run_command([shutil.which("nmcli") or "nmcli", "-t", "-f", "RUNNING", "general"]).returncode == 0:
+    if shutil.which("nmcli") and (nm_result := _run_command([shutil.which("nmcli") or "nmcli", "-t", "-f", "RUNNING", "general"])).returncode == 0 and "running" in nm_result.stdout.lower():
         active.append("networkmanager")
-    if shutil.which("netplan") and any(Path("/etc/netplan").glob("*.yaml")):
+    netplan_active = bool(shutil.which("netplan") and any(Path("/etc/netplan").glob("*.yaml")))
+    if netplan_active:
         active.append("netplan")
-    if shutil.which("networkctl") and _run_command([shutil.which("networkctl") or "networkctl", "--no-pager", "list"]).returncode == 0:
+    elif shutil.which("networkctl") and _run_command([shutil.which("networkctl") or "networkctl", "--no-pager", "list"]).returncode == 0:
         active.append("systemd-networkd")
     if Path("/etc/network/interfaces").exists():
         active.append("ifupdown")
@@ -674,7 +711,7 @@ def build_plan(change: NetworkChange, actor: str, client_interface: str | None) 
         "provider": provider.id, "change": change.model_dump(mode="json"), "target": target,
         "before": before, "after": after, "commands": redact(commands), "warnings": warnings[:32],
         "high_risk": risk, "required_phrase": f"APPLY {target}" if risk else "",
-        "rollback_supported": True, "rollback_seconds": ROLLBACK_SECONDS,
+        "rollback_supported": shutil.which("systemd-run") is not None, "rollback_seconds": ROLLBACK_SECONDS,
         "client_interface": client_interface,
     }
     plans = _state_root() / "plans"
@@ -790,7 +827,9 @@ def _schedule_rollback(transaction_id: str, seconds: int) -> str | None:
 def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, Any]:
     if not _transaction_lock.acquire(blocking=False):
         raise HTTPException(409, "Another network operation is active")
+    process_lock: int | None = None
     try:
+        process_lock = _acquire_process_lock()
         if _active_transaction():
             raise HTTPException(409, "A network transaction is awaiting confirmation")
         plan = _read_json(_state_root() / "plans" / f"{plan_id}.json", None)
@@ -798,6 +837,8 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
             raise HTTPException(404, "Network plan is missing or expired")
         if plan.get("required_phrase") and confirmation_phrase != plan["required_phrase"]:
             raise HTTPException(400, "The high-risk confirmation phrase is incorrect")
+        if not plan.get("rollback_supported"):
+            raise HTTPException(503, "A durable systemd rollback mechanism is unavailable")
         change = NetworkChange.model_validate(plan["change"])
         provider = _provider_by_id(str(plan["provider"]))
         transaction_id = uuid.uuid4().hex
@@ -840,6 +881,8 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
         record_activity(ActivityCategory.configuration, "network_apply", actor, target=plan["target"], details={"provider": provider.id, "plan_id": plan_id, "warnings": plan["warnings"], "rollback_unit": unit}, source="network")
         return transaction
     finally:
+        if process_lock is not None:
+            _release_process_lock(process_lock)
         _transaction_lock.release()
 
 

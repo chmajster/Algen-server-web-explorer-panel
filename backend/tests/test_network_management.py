@@ -117,7 +117,7 @@ def test_provider_detection(monkeypatch, tools, provider):
 
 def test_ambiguous_providers_are_read_only(monkeypatch):
     monkeypatch.setattr(management.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"nmcli", "networkctl"} else None)
-    monkeypatch.setattr(management, "_run_command", lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "", ""))
+    monkeypatch.setattr(management, "_run_command", lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "running", ""))
     monkeypatch.setattr(management.Path, "exists", lambda self: False)
     provider, warnings = management.detect_provider()
     assert provider.writable is False
