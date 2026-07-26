@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from threading import Lock
 from typing import Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -28,7 +29,7 @@ from .security import SessionUser, get_session_user, require_csrf
 router = APIRouter(prefix="/api/admin/network", tags=["network-management"])
 IFNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,14}$")
 DOMAIN_RE = re.compile(r"^(?:~?\.|~?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)$")
-ROLLBACK_SECONDS = 90
+ROLLBACK_SECONDS = 15
 MAX_OBJECTS = 256
 _transaction_lock = Lock()
 
@@ -675,7 +676,29 @@ def _conflicts(change: NetworkChange, state: dict[str, Any]) -> list[str]:
     return warnings
 
 
-def build_plan(change: NetworkChange, actor: str, client_interface: str | None) -> dict[str, Any]:
+def _panel_addresses(change: NetworkChange, panel_url: str | None) -> tuple[str | None, str | None, list[str]]:
+    if not panel_url:
+        return None, None, []
+    parsed = urlsplit(panel_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None, None, []
+    port = f":{parsed.port}" if parsed.port else ""
+    current = urlunsplit((parsed.scheme, f"{parsed.hostname}{port}", "", "", "")).rstrip("/")
+    candidates = [current]
+    predicted: str | None = None
+    if change.interface:
+        addresses = change.interface.ipv4.addresses + change.interface.ipv6.addresses
+        for item in addresses:
+            host = f"[{item.address}]" if ":" in item.address else item.address
+            candidate = urlunsplit((parsed.scheme, f"{host}{port}", "", "", "")).rstrip("/")
+            if candidate not in candidates:
+                candidates.append(candidate)
+            if predicted is None:
+                predicted = candidate
+    return current, predicted, candidates
+
+
+def build_plan(change: NetworkChange, actor: str, client_interface: str | None, panel_url: str | None = None) -> dict[str, Any]:
     provider, provider_warnings = detect_provider()
     if not provider.writable and change.operation not in {"save_route", "delete_route", "save_traffic", "delete_traffic"}:
         raise HTTPException(409, "The active network provider is read-only")
@@ -713,6 +736,7 @@ def build_plan(change: NetworkChange, actor: str, client_interface: str | None) 
         after["traffic"][change.traffic.id] = change.traffic.model_dump(mode="json")
     elif change.operation == "delete_traffic" and change.object_id:
         after["traffic"].pop(change.object_id, None)
+    previous_address, predicted_address, reachable_addresses = _panel_addresses(change, panel_url)
     plan = {
         "id": plan_id, "actor": actor, "created_at": time.time(), "expires_at": time.time() + 600,
         "provider": provider.id, "change": change.model_dump(mode="json"), "target": target,
@@ -720,6 +744,8 @@ def build_plan(change: NetworkChange, actor: str, client_interface: str | None) 
         "high_risk": risk, "required_phrase": f"APPLY {target}" if risk else "",
         "rollback_supported": shutil.which("systemd-run") is not None, "rollback_seconds": ROLLBACK_SECONDS,
         "client_interface": client_interface,
+        "previous_panel_address": previous_address, "predicted_panel_address": predicted_address,
+        "reachable_addresses": reachable_addresses,
     }
     plans = _state_root() / "plans"
     plans.mkdir(exist_ok=True)
@@ -806,6 +832,31 @@ def _capture_provider_state(provider: NetworkProvider, change: NetworkChange, sn
             snapshot.setdefault("files", {})[str(path)] = path.read_text(encoding="utf-8") if path.is_file() else None
 
 
+def _capture_managed_files(provider: NetworkProvider, change: NetworkChange, snapshot: dict[str, Any]) -> None:
+    paths: set[Path] = set()
+    if change.operation == "save_dns" and isinstance(provider, (SystemdNetworkdProvider, NetplanProvider)):
+        paths.add(Path("/etc/systemd/resolved.conf.d/80-webnas.conf"))
+    interface_name = change.interface.name if change.interface else change.interface_name
+    if interface_name and change.operation in {"save_interface", "delete_interface"}:
+        if isinstance(provider, SystemdNetworkdProvider) and not isinstance(provider, NetplanProvider):
+            directory = Path("/etc/systemd/network")
+            rendered = render_networkd(change.interface) if change.interface else {}
+            previous = _managed_state().get("interfaces", {}).get(interface_name)
+            previous_names = set(render_networkd(InterfaceConfiguration.model_validate(previous))) if previous else set()
+            names = set(rendered) | previous_names | {
+                f"80-webnas-{interface_name}.network",
+                f"80-webnas-{interface_name}.netdev",
+                f"80-webnas-{interface_name}.link",
+            }
+            paths.update(directory / name for name in names)
+        elif isinstance(provider, NetplanProvider):
+            paths.add(Path("/etc/netplan") / f"90-webnas-{interface_name}.yaml")
+    if change.operation in {"save_route", "delete_route", "save_traffic", "delete_traffic"}:
+        paths.add(Path("/etc/systemd/system/webnas-network-managed.service"))
+    for path in paths:
+        snapshot.setdefault("files", {})[str(path)] = path.read_text(encoding="utf-8") if path.exists() else None
+
+
 def _restore_managed_configuration() -> None:
     state = _managed_state()
     for value in state.get("routes", {}).values():
@@ -831,6 +882,16 @@ def _schedule_rollback(transaction_id: str, seconds: int) -> str | None:
     return unit if result.returncode == 0 else None
 
 
+def _cancel_rollback_timer(unit: str | None) -> None:
+    systemctl = shutil.which("systemctl")
+    if not unit or not systemctl:
+        return
+    base = str(unit).removesuffix(".service").removesuffix(".timer")
+    for name in (f"{base}.timer", f"{base}.service"):
+        _run_command([systemctl, "stop", name], timeout=8)
+        _run_command([systemctl, "reset-failed", name], timeout=8)
+
+
 def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, Any]:
     if not _transaction_lock.acquire(blocking=False):
         raise HTTPException(409, "Another network operation is active")
@@ -851,16 +912,41 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
         transaction_id = uuid.uuid4().hex
         transaction_dir = _state_root() / "transactions" / transaction_id
         transaction_dir.mkdir(parents=True)
-        snapshot = {"state": plan["before"], "files": {}, "commands": plan["commands"], "actor": actor}
+        started_at = time.time()
+        deadline = started_at + ROLLBACK_SECONDS
+        snapshot = {
+            "state": plan["before"], "files": {}, "commands": plan["commands"], "actor": actor,
+            "change": plan["change"],
+        }
         _capture_provider_state(provider, change, snapshot)
+        _capture_managed_files(provider, change, snapshot)
+        _atomic_json(transaction_dir / "snapshot.json", snapshot)
+        transaction = {
+            "id": transaction_id, "transaction_id": transaction_id, "state": "pending_confirmation",
+            "status": "pending_confirmation", "actor": actor, "provider": provider.id,
+            "started_at": started_at, "created_at": started_at, "deadline": deadline, "deadline_at": deadline,
+            "rollback_unit": None, "plan_id": plan_id, "target": plan["target"],
+            "previous_panel_address": plan.get("previous_panel_address"),
+            "predicted_panel_address": plan.get("predicted_panel_address"),
+            "reachable_addresses": plan.get("reachable_addresses", []),
+        }
+        _atomic_json(transaction_dir / "transaction.json", transaction)
+        _atomic_json(_state_root() / "active.json", transaction)
+        unit = _schedule_rollback(transaction_id, ROLLBACK_SECONDS)
+        if not unit:
+            transaction.update({"state": "failed", "status": "failed", "failed_at": time.time(), "error": "rollback_timer"})
+            _atomic_json(transaction_dir / "transaction.json", transaction)
+            (_state_root() / "active.json").unlink(missing_ok=True)
+            raise HTTPException(503, "A durable rollback timer could not be scheduled")
+        transaction["rollback_unit"] = unit
+        _atomic_json(transaction_dir / "transaction.json", transaction)
+        _atomic_json(_state_root() / "active.json", transaction)
+
         _write_provider_files(provider, change, snapshot)
         restore_service_changed = _write_restore_service(change, snapshot)
-        _atomic_json(transaction_dir / "snapshot.json", snapshot)
         commands = provider.commands(change) + _commands_for_generic(change)
-        executed: list[list[str]] = []
         for command in commands:
             result = _run_command(command, timeout=30)
-            executed.append(command)
             if result.returncode and not (change.operation == "save_interface" and command[1:4] == ["connection", "delete", f"webnas-{change.interface.name if change.interface else ''}"]):
                 rollback_transaction(transaction_id, automatic=True)
                 raise HTTPException(502, "Network configuration failed and was rolled back")
@@ -874,17 +960,6 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
                 if _run_command(command, timeout=15).returncode:
                     rollback_transaction(transaction_id, automatic=True)
                     raise HTTPException(502, "Could not enable persistent network configuration")
-        unit = _schedule_rollback(transaction_id, ROLLBACK_SECONDS)
-        if not unit:
-            rollback_transaction(transaction_id, automatic=True)
-            raise HTTPException(503, "A durable rollback timer could not be scheduled")
-        transaction = {
-            "id": transaction_id, "state": "pending_confirmation", "actor": actor,
-            "provider": provider.id, "started_at": time.time(), "deadline": time.time() + ROLLBACK_SECONDS,
-            "rollback_unit": unit, "plan_id": plan_id, "target": plan["target"],
-        }
-        _atomic_json(transaction_dir / "transaction.json", transaction)
-        _atomic_json(_state_root() / "active.json", transaction)
         record_activity(ActivityCategory.configuration, "network_apply", actor, target=plan["target"], details={"provider": provider.id, "plan_id": plan_id, "warnings": plan["warnings"], "rollback_unit": unit}, source="network")
         return transaction
     finally:
@@ -898,20 +973,53 @@ def _active_transaction() -> dict[str, Any] | None:
     return value if isinstance(value, dict) and value.get("state") == "pending_confirmation" else None
 
 
+def _transaction_record(transaction_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"[a-f0-9]{32}", transaction_id):
+        return None
+    value = _read_json(_state_root() / "transactions" / transaction_id / "transaction.json", None)
+    return value if isinstance(value, dict) and value.get("id") == transaction_id else None
+
+
+def transaction_status(transaction_id: str) -> dict[str, Any]:
+    value = _transaction_record(transaction_id)
+    if not value:
+        raise HTTPException(404, "Network transaction was not found")
+    now = time.time()
+    state = str(value.get("state") or "failed")
+    deadline = float(value.get("deadline_at", value.get("deadline", 0)))
+    expired_pending = state == "pending_confirmation" and now >= deadline
+    status = "rollback_pending" if expired_pending else state
+    return {
+        **value,
+        "transaction_id": transaction_id,
+        "status": status,
+        "confirmed": state == "confirmed",
+        "rollback_pending": expired_pending,
+        "rollback_started": state == "rollback_started",
+        "rolled_back": state == "rolled_back",
+        "failed": state == "failed",
+        "created_at": float(value.get("created_at", value.get("started_at", 0))),
+        "deadline_at": deadline,
+        "remaining_seconds": max(0, deadline - now),
+        "current_server_time": now,
+        "reachable_addresses": list(value.get("reachable_addresses") or []),
+    }
+
+
 def confirm_transaction(transaction_id: str, actor: str) -> dict[str, Any]:
     active = _active_transaction()
+    existing = _transaction_record(transaction_id)
+    if existing and existing.get("state") == "confirmed":
+        return existing
     if not active or active.get("id") != transaction_id:
         raise HTTPException(404, "No pending network transaction")
-    unit = active.get("rollback_unit")
-    if unit and shutil.which("systemctl"):
-        systemctl = shutil.which("systemctl") or "systemctl"
-        for suffix in (".timer", ".service"):
-            name = str(unit).removesuffix(".service").removesuffix(".timer") + suffix
-            _run_command([systemctl, "stop", name], timeout=8)
-            _run_command([systemctl, "reset-failed", name], timeout=8)
-    active.update({"state": "confirmed", "confirmed_at": time.time(), "confirmed_by": actor})
+    now = time.time()
+    if now >= float(active.get("deadline_at", active.get("deadline", 0))):
+        raise HTTPException(409, "The network transaction expired; rollback cannot be cancelled")
+    active.update({"state": "confirmed", "status": "confirmed", "confirmed_at": now, "confirmed_by": actor})
     _atomic_json(_state_root() / "transactions" / transaction_id / "transaction.json", active)
     (_state_root() / "active.json").unlink(missing_ok=True)
+    _cancel_rollback_timer(active.get("rollback_unit"))
     record_activity(ActivityCategory.configuration, "network_confirm", actor, target=str(active.get("target") or ""), details={"provider": active.get("provider"), "transaction_id": transaction_id, "confirmed": True}, source="network")
     return active
 
@@ -921,6 +1029,15 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
     snapshot = _read_json(directory / "snapshot.json", None)
     if not isinstance(snapshot, dict):
         raise HTTPException(404, "Network snapshot was not found")
+    active = _read_json(directory / "transaction.json", {"id": transaction_id})
+    if automatic and active.get("state") == "confirmed":
+        return active
+    if active.get("state") == "rolled_back":
+        return active
+    if not automatic:
+        _cancel_rollback_timer(active.get("rollback_unit"))
+    active.update({"state": "rollback_started", "status": "rollback_started", "rollback_started_at": time.time(), "automatic": automatic})
+    _atomic_json(directory / "transaction.json", active)
     for raw_path, content in snapshot.get("files", {}).items():
         path = Path(raw_path)
         if content is None:
@@ -933,11 +1050,19 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
         if snapshot["files"][restore_unit] is None:
             _run_command([systemctl, "disable", "webnas-network-managed.service"], timeout=10)
         _run_command([systemctl, "daemon-reload"], timeout=10)
+    change_data = snapshot.get("change")
+    if isinstance(change_data, dict):
+        try:
+            change = NetworkChange.model_validate(change_data)
+            if change.operation in {"save_route", "save_traffic"}:
+                object_id = change.route.id if change.route else change.traffic.id if change.traffic else None
+                operation = "delete_route" if change.route else "delete_traffic"
+                if object_id:
+                    for command in _commands_for_generic(NetworkChange(operation=operation, object_id=object_id)):
+                        _run_command(command, timeout=20)
+        except (ValueError, TypeError):
+            pass
     _atomic_json(_state_root() / "state.json", snapshot.get("state", {}))
-    active = _read_json(directory / "transaction.json", {"id": transaction_id})
-    active.update({"state": "rolled_back", "rolled_back_at": time.time(), "automatic": automatic, "rolled_back_by": actor})
-    _atomic_json(directory / "transaction.json", active)
-    (_state_root() / "active.json").unlink(missing_ok=True)
     provider_id = str(active.get("provider") or "")
     if provider_id == "networkmanager":
         nmcli = shutil.which("nmcli") or "nmcli"
@@ -955,6 +1080,10 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
         commands = []
     for command in commands:
         _run_command(command, timeout=20)
+    _restore_managed_configuration()
+    active.update({"state": "rolled_back", "status": "rolled_back", "rolled_back_at": time.time(), "automatic": automatic, "rolled_back_by": actor})
+    _atomic_json(directory / "transaction.json", active)
+    (_state_root() / "active.json").unlink(missing_ok=True)
     record_activity(ActivityCategory.configuration, "network_rollback", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic}, source="network")
     return active
 
@@ -972,7 +1101,7 @@ def management_state() -> dict[str, Any]:
         "dns": dns,
         "routing": routes,
         "managed": state,
-        "transaction": _active_transaction(),
+        "transaction": transaction_status(active["id"]) if (active := _active_transaction()) else None,
         "tools": {name: shutil.which(name) is not None for name in ("ip", "tc", "ethtool", "nmcli", "networkctl", "resolvectl", "netplan", "tracepath", "traceroute")},
     }
 
@@ -1009,7 +1138,7 @@ def management_endpoint(user: SessionUser = Depends(require_permission(Permissio
 @router.post("/plans")
 def plan_endpoint(payload: PlanRequest, request: Request, user: SessionUser = Depends(_mutating_user)):
     authorize(user, _permission_for(payload.change))
-    return build_plan(payload.change, user.username, _client_interface(request))
+    return build_plan(payload.change, user.username, _client_interface(request), str(request.base_url))
 
 
 @router.post("/apply")
@@ -1035,6 +1164,17 @@ def confirm_endpoint(payload: TransactionRequest, user: SessionUser = Depends(_m
 def rollback_endpoint(payload: TransactionRequest, user: SessionUser = Depends(_mutating_user)):
     authorize(user, Permission.NETWORK_ROLLBACK)
     return rollback_transaction(payload.transaction_id, user.username)
+
+
+@router.get("/transactions/active")
+def active_transaction_endpoint(user: SessionUser = Depends(require_permission(Permission.NETWORK_CONFIG_VIEW))):
+    active = _active_transaction()
+    return transaction_status(active["id"]) if active else None
+
+
+@router.get("/transactions/{transaction_id}/status")
+def transaction_status_endpoint(transaction_id: str, user: SessionUser = Depends(require_permission(Permission.NETWORK_CONFIG_VIEW))):
+    return transaction_status(transaction_id)
 
 
 if __name__ == "__main__":

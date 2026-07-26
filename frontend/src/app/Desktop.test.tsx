@@ -85,13 +85,13 @@ describe("personalized desktop", () => {
     expect(screen.getByRole("button", { name: "app.store" })).toBeInTheDocument();
   });
 
-  it("opens current-user information when the profile in Start is clicked", () => {
+  it("opens current-user information when the profile in Start is clicked", async () => {
     renderDesktop();
     fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
     fireEvent.click(screen.getByRole("button", { name: /desktop.openUserSettings/ }));
 
     expect(screen.getByRole("dialog", { name: "app.settings" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "settings.category.account" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "settings.category.account" })).toBeInTheDocument();
     expect(screen.getAllByText("test").length).toBeGreaterThan(0);
   });
 
