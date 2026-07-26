@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from starlette.requests import Request
 
 from app import network_management as management
 
@@ -212,6 +213,9 @@ def test_mutating_routes_require_csrf_dependency_and_domain_permissions():
     assert ("GET", "/api/admin/network/transactions/{transaction_id}/status") in routes
     assert ("POST", "/api/admin/network/transactions/{transaction_id}/confirm") in routes
     assert ("POST", "/api/admin/network/transactions/{transaction_id}/rollback") in routes
+    assert ("GET", "/api/admin/network/policy") in routes
+    assert ("PUT", "/api/admin/network/policy") in routes
+    assert ("POST", "/api/admin/network/policy/reset") in routes
     assert management._permission_for(management.NetworkChange(operation="save_dns", dns=management.DnsSettings())) == management.Permission.NETWORK_DNS
 
 
@@ -224,9 +228,80 @@ def test_systemd_rollback_timer_is_exactly_fifteen_seconds(monkeypatch):
         lambda command, timeout=0: calls.append(command) or subprocess.CompletedProcess(command, 0, "", ""),
     )
     transaction_id = "a" * 32
-    assert management._schedule_rollback(transaction_id, management.ROLLBACK_SECONDS) == f"webnas-network-rollback-{transaction_id}.service"
+    assert management._schedule_rollback(transaction_id, management.DEFAULT_CONFIRMATION_TIMEOUT_SECONDS) == f"webnas-network-rollback-{transaction_id}.service"
     assert "--on-active=15s" in calls[0]
     assert calls[0][-3:] == ["app.network_management", "--rollback", transaction_id]
+
+
+def test_network_policy_defaults_validates_strict_bounds_and_persists():
+    assert management.read_network_policy().change_confirmation_timeout_seconds == 15
+    management.write_network_policy(management.NetworkPolicy(change_confirmation_timeout_seconds=45))
+    assert management.read_network_policy().change_confirmation_timeout_seconds == 45
+    for value in (0, -1, 4, 301, 1.5, "15"):
+        with pytest.raises(ValidationError):
+            management.NetworkPolicyUpdate.model_validate({"change_confirmation_timeout_seconds": value, "confirm": True})
+    with pytest.raises(ValidationError):
+        management.NetworkPolicyUpdate.model_validate({"confirm": True})
+    with pytest.raises(ValidationError):
+        management.NetworkPolicyUpdate.model_validate({"change_confirmation_timeout_seconds": 15, "confirm": True, "unknown": True})
+
+
+def test_network_policy_update_requires_permission_and_is_audited(monkeypatch):
+    checks = []
+    events = []
+    monkeypatch.setattr(management, "authorize", lambda user, permission: checks.append(permission))
+    monkeypatch.setattr(management, "record_activity", lambda *args, **kwargs: events.append((args, kwargs)))
+    user = SimpleNamespace(username="admin")
+    result = management.update_network_policy_endpoint(
+        management.NetworkPolicyUpdate(change_confirmation_timeout_seconds=60, confirm=True),
+        user,
+    )
+    assert result["change_confirmation_timeout_seconds"] == 60
+    assert checks == [management.Permission.NETWORK_POLICY_EDIT]
+    assert events[0][1]["details"]["old_value"] == 15
+    assert events[0][1]["details"]["new_value"] == 60
+
+
+def test_network_policy_mutation_dependency_enforces_csrf(monkeypatch):
+    user = SimpleNamespace(username="admin")
+    checked = []
+    monkeypatch.setattr(management, "get_session_user", lambda request: user)
+    monkeypatch.setattr(management, "require_csrf", lambda request, current: checked.append(current.username))
+    request = Request({"type": "http", "method": "PUT", "path": "/api/admin/network/policy", "headers": [], "client": ("127.0.0.1", 1)})
+    assert management._mutating_user(request) is user
+    assert checked == ["admin"]
+
+
+def test_new_transactions_use_current_policy_without_changing_active_deadline(monkeypatch):
+    clock = {"now": 2_000.0}
+    scheduled = []
+    monkeypatch.setattr(management.time, "time", lambda: clock["now"])
+    monkeypatch.setattr(management, "detect_provider", lambda: (management.NetworkManagerProvider(), []))
+    monkeypatch.setattr(management, "network_overview", lambda: {"interfaces": []})
+    monkeypatch.setattr(management, "routing_snapshot", lambda: {"gateways": []})
+    monkeypatch.setattr(management.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(management, "_run_command", lambda command, timeout=0: subprocess.CompletedProcess(command, 0, "", ""))
+    monkeypatch.setattr(management, "_schedule_rollback", lambda transaction_id, seconds: scheduled.append(seconds) or f"webnas-network-rollback-{transaction_id}.service")
+    management.write_network_policy(management.NetworkPolicy(change_confirmation_timeout_seconds=30))
+    plan = management.build_plan(management.NetworkChange(operation="save_interface", interface=interface()), "alice", None)
+    assert plan["confirmation_timeout_seconds"] == 30
+    active = management.apply_plan(plan["id"], "alice", "")
+    assert active["confirmation_timeout_seconds"] == 30
+    assert active["deadline_at"] - active["created_at"] == 30
+    assert scheduled == [30]
+
+    management.write_network_policy(management.NetworkPolicy(change_confirmation_timeout_seconds=90))
+    persisted = management.transaction_status(active["id"])
+    assert persisted["confirmation_timeout_seconds"] == 30
+    assert persisted["deadline_at"] == active["deadline_at"]
+
+
+def test_apply_payload_cannot_override_policy_timeout():
+    with pytest.raises(ValidationError):
+        management.ApplyRequest.model_validate({
+            "plan_id": "a" * 32,
+            "confirmation_timeout_seconds": 300,
+        })
 
 
 def test_rollback_is_armed_before_network_commands(monkeypatch):
