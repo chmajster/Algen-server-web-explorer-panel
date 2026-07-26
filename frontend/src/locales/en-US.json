@@ -1551,6 +1551,8 @@
   "identity.permissionState": "Permission state",
   "identity.inherited": "Inherited",
   "identity.allowed": "Granted",
+  "identity.effectivePermissions": "Effective permissions",
+  "identity.permissionSources": "Permission sources",
   "identity.denied": "Denied",
   "identity.permission": "Permission",
   "identity.mutating": "changes system state",

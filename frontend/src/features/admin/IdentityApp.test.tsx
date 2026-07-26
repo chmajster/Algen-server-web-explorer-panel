@@ -29,7 +29,7 @@ describe("IdentityApp", () => {
     expect(await screen.findByText(/group:ops/)).toBeInTheDocument();
     fireEvent.click(screen.getByText("root-admin"));
     expect(await screen.findByText("identity.linuxAdminProtection")).toBeInTheDocument();
-    expect(screen.getByLabelText(/services.restart identity.permissionState/)).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "identity.savePolicy" })).not.toBeInTheDocument();
   });
 
   it("hides mutating controls when the viewer only has read permission", async () => {

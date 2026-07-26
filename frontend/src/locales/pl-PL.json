@@ -1551,6 +1551,8 @@
   "identity.permissionState": "Stan uprawnienia",
   "identity.inherited": "Dziedziczone",
   "identity.allowed": "Przyznane",
+  "identity.effectivePermissions": "Efektywne uprawnienia",
+  "identity.permissionSources": "Źródła uprawnień",
   "identity.denied": "Zabronione",
   "identity.permission": "Uprawnienie",
   "identity.mutating": "zmienia stan systemu",

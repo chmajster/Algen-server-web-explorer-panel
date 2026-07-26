@@ -374,6 +374,8 @@
 .hosts-settings-form { max-width: 720px; display: grid; gap: 14px; }
 .hosts-settings-preview { display: flex; flex-wrap: wrap; gap: 8px; }
 .hosts-settings-preview code { padding: 6px 9px; border-radius: 7px; background: var(--surface-secondary); }
+.identity-policy-summary { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border-color, rgba(127,127,127,.25)); border-radius: 10px; }
+.identity-policy-summary small { overflow-wrap: anywhere; }
 .ansible-enrollment { border: 1px solid color-mix(in srgb,var(--accent) 28%,var(--border-subtle)); border-radius: var(--radius-medium); background: var(--surface-elevated); }
 .ansible-enrollment > summary { min-height: 52px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; list-style: none; color: var(--text-primary); }
 .ansible-enrollment > summary::-webkit-details-marker { display: none; }
