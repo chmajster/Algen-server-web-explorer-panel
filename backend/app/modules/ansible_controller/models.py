@@ -123,10 +123,10 @@ class HostInput(StrictModel):
 
     @field_validator("tags")
     @classmethod
-    def safe_tags(cls, values: list[str]) -> list[str]:
-        if any(not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", value) for value in values):
+    def safe_tags(cls, value: list[str]) -> list[str]:
+        if any(not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", item) for item in value):
             raise ValueError("invalid host tag")
-        return list(dict.fromkeys(values))
+        return list(dict.fromkeys(value))
 
     @field_validator("variables")
     @classmethod
