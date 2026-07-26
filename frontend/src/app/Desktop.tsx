@@ -2,10 +2,7 @@ import { Bell, ShieldCheck, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
-import { isSettingsCategory, MonitorApp, ServicesApp, SettingsAppView } from "../features/admin/SystemApps";
-import { FileManager } from "../features/files/FileManager";
-import { TransferCenter } from "../features/transfers/TransferCenter";
-import { DesktopWidgets } from "../features/widgets/DesktopWidgets";
+import type { SettingsCategory } from "../features/settings/SettingsApp";
 import type { UploadControls } from "../features/transfers/useUploadManager";
 import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
@@ -16,11 +13,19 @@ import type { AppId, RecentApp, Theme, Toast, ToastFn, Translate, User, WindowIn
 import { initialWindowState, restoreWindowState, windowReducer } from "./windowState";
 
 const ActivityCenter = lazy(() => import("../features/activity/ActivityCenter").then((module) => ({ default: module.ActivityCenter })));
+const DesktopWidgets = lazy(() => import("../features/widgets/DesktopWidgets").then((module) => ({ default: module.DesktopWidgets })));
+const FileManager = lazy(() => import("../features/files/FileManager").then((module) => ({ default: module.FileManager })));
 const IdentityApp = lazy(() => import("../features/admin/IdentityApp").then((module) => ({ default: module.IdentityApp })));
 const LogsApp = lazy(() => import("../features/logs/LogsApp").then((module) => ({ default: module.LogsApp })));
+const MonitorApp = lazy(() => import("../features/admin/MonitorApp").then((module) => ({ default: module.MonitorApp })));
 const ModuleApp = lazy(() => import("../features/modules/ModuleApp").then((module) => ({ default: module.ModuleApp })));
 const ModuleHub = lazy(() => import("../features/modules/ModuleHub").then((module) => ({ default: module.ModuleHub })));
 const PackageCenterApp = lazy(() => import("../features/package-center/PackageCenterApp").then((module) => ({ default: module.PackageCenterApp })));
+const ServicesApp = lazy(() => import("../features/admin/SystemApps").then((module) => ({ default: module.ServicesApp })));
+const SettingsAppView = lazy(() => import("../features/settings/SettingsApp").then((module) => ({ default: module.SettingsAppView })));
+const TransferCenter = lazy(() => import("../features/transfers/TransferCenter").then((module) => ({ default: module.TransferCenter })));
+const settingsCategories = new Set<SettingsCategory>(["system", "personalization", "files", "transfers", "notifications", "accessibility", "language", "account", "identity", "network", "networkResources", "updates", "policies", "administration", "about"]);
+const isSettingsCategory = (value: string | undefined): value is SettingsCategory => Boolean(value && settingsCategories.has(value as SettingsCategory));
 
 function wallpaperStyle(profile: SettingsMe): CSSProperties {
   if (!profile.wallpaper) return {};
@@ -302,23 +307,23 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   function changeTaskbarAlignment(alignment: "left" | "center") { void onSettingsChange({ taskbar_alignment: alignment }).catch((error: unknown) => toast(error instanceof Error ? error.message : t("error.generic"), "error")); }
   function renderApp(item: WindowInstance) {
     switch (item.app) {
-      case "files": return <FileManager homePath={user.home} initialPath={item.initialPath} settings={profile} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onUploadCancel={uploadControls.cancel} onUploadRetry={uploadControls.retry} onSettingsChange={onSettingsChange} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={(path) => openApp("module", path, "samba")} />;
-      case "transfers": return <TransferCenter tasks={tasks} settings={profile} t={t} toast={toast} uploadControls={uploadControls} />;
+      case "files": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><FileManager homePath={user.home} initialPath={item.initialPath} settings={profile} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onUploadCancel={uploadControls.cancel} onUploadRetry={uploadControls.retry} onSettingsChange={onSettingsChange} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={(path) => openApp("module", path, "samba")} /></Suspense>;
+      case "transfers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><TransferCenter tasks={tasks} settings={profile} t={t} toast={toast} uploadControls={uploadControls} /></Suspense>;
       case "activity": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ActivityCenter locale={profile.language} t={t} /></Suspense>;
       case "identity": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} t={t} toast={toast} /></Suspense>;
       case "users": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="users" t={t} toast={toast} /></Suspense>;
       case "groups": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="groups" t={t} toast={toast} /></Suspense>;
-      case "mounts": return <SettingsAppView settings={profile} initialSection="networkResources" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} />;
+      case "mounts": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection="networkResources" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} /></Suspense>;
       case "samba": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="samba" initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
       case "modules": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleHub t={t} toast={toast} onOpen={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
       case "containers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="docker" draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
       case "ansible": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="ansible-controller" draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
       case "access": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="roles" t={t} toast={toast} /></Suspense>;
-      case "services": return <ServicesApp t={t} toast={toast} />;
+      case "services": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ServicesApp t={t} toast={toast} /></Suspense>;
       case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
       case "logs": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><LogsApp permissions={profile.permissions} t={t} toast={toast} /></Suspense>;
-      case "settings": return <SettingsAppView settings={profile} initialSection={isSettingsCategory(item.initialPath) ? item.initialPath : "system"} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} onSectionChange={(section) => dispatch({ type: "setInitialPath", id: item.id, initialPath: section })} />;
-      case "monitor": return <MonitorApp t={t} />;
+      case "settings": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection={isSettingsCategory(item.initialPath) ? item.initialPath : "system"} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} onSectionChange={(section) => dispatch({ type: "setInitialPath", id: item.id, initialPath: section })} /></Suspense>;
+      case "monitor": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><MonitorApp t={t} /></Suspense>;
       case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
     }
   }
@@ -346,7 +351,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     <main className="desktop-surface" style={wallpaperStyle(profile)} onPointerDown={(event) => { if (event.target === event.currentTarget) setSelectedShortcut(null); }}>
       {profile.show_desktop_shortcuts && <div className={`desktop-shortcuts shortcuts-${profile.desktop_shortcut_size}`} aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => desktopShortcuts.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} selected={selectedShortcut === app.id} onSelect={() => setSelectedShortcut(app.id)} onOpen={() => openApp(app.id)} />)}</div>}
       {profile.show_welcome_widget && <div className="desktop-welcome"><span>WebNAS</span><strong>{t("desktop.welcome")}, {user.username}</strong><small>{t("desktop.welcomeHint")}</small></div>}
-      <DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} />
+      <Suspense fallback={null}><DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} /></Suspense>
       {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } })}>{renderApp(item)}</DesktopWindow>)}
     </main>
     {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onOpenProfile={() => openApp("settings", "account")} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
