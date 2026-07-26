@@ -624,6 +624,8 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
     if not _transaction_lock.acquire(blocking=False):
         raise HTTPException(409, "Another network operation is active")
     try:
+        if _active_transaction():
+            raise HTTPException(409, "A network transaction is awaiting confirmation")
         plan = _read_json(_state_root() / "plans" / f"{plan_id}.json", None)
         if not isinstance(plan, dict) or plan.get("actor") != actor or float(plan.get("expires_at", 0)) < time.time():
             raise HTTPException(404, "Network plan is missing or expired")
@@ -671,8 +673,11 @@ def confirm_transaction(transaction_id: str, actor: str) -> dict[str, Any]:
         raise HTTPException(404, "No pending network transaction")
     unit = active.get("rollback_unit")
     if unit and shutil.which("systemctl"):
-        _run_command([shutil.which("systemctl") or "systemctl", "stop", unit], timeout=8)
-        _run_command([shutil.which("systemctl") or "systemctl", "reset-failed", unit], timeout=8)
+        systemctl = shutil.which("systemctl") or "systemctl"
+        for suffix in (".timer", ".service"):
+            name = str(unit).removesuffix(".service").removesuffix(".timer") + suffix
+            _run_command([systemctl, "stop", name], timeout=8)
+            _run_command([systemctl, "reset-failed", name], timeout=8)
     active.update({"state": "confirmed", "confirmed_at": time.time(), "confirmed_by": actor})
     _atomic_json(_state_root() / "transactions" / transaction_id / "transaction.json", active)
     (_state_root() / "active.json").unlink(missing_ok=True)
@@ -696,9 +701,16 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
     active.update({"state": "rolled_back", "rolled_back_at": time.time(), "automatic": automatic, "rolled_back_by": actor})
     _atomic_json(directory / "transaction.json", active)
     (_state_root() / "active.json").unlink(missing_ok=True)
-    provider = _provider_by_id(str(active.get("provider") or ""))
-    reload_change = NetworkChange(operation="set_link", interface_name="lo", link_up=True)
-    for command in provider.commands(reload_change):
+    provider_id = str(active.get("provider") or "")
+    if provider_id == "networkmanager":
+        commands = [[shutil.which("nmcli") or "nmcli", "connection", "reload"]]
+    elif provider_id == "netplan":
+        commands = [[shutil.which("netplan") or "netplan", "generate"], [shutil.which("netplan") or "netplan", "apply"]]
+    elif provider_id == "systemd-networkd":
+        commands = [[shutil.which("networkctl") or "networkctl", "reload"]]
+    else:
+        commands = []
+    for command in commands:
         _run_command(command, timeout=20)
     record_activity(ActivityCategory.configuration, "network_rollback", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic}, source="network")
     return active
@@ -760,7 +772,12 @@ def plan_endpoint(payload: PlanRequest, request: Request, user: SessionUser = De
 @router.post("/apply")
 def apply_endpoint(payload: ApplyRequest, user: SessionUser = Depends(_mutating_user)):
     plan = _read_json(_state_root() / "plans" / f"{payload.plan_id}.json", {})
-    change = NetworkChange.model_validate(plan.get("change", {}))
+    if not isinstance(plan, dict) or not plan.get("change"):
+        raise HTTPException(404, "Network plan is missing or expired")
+    try:
+        change = NetworkChange.model_validate(plan["change"])
+    except ValueError as error:
+        raise HTTPException(404, "Network plan is invalid") from error
     authorize(user, _permission_for(change))
     return apply_plan(payload.plan_id, user.username, payload.confirmation_phrase)
 

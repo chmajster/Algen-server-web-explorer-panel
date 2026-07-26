@@ -1,6 +1,6 @@
 import {
   Activity, AlertTriangle, ArrowDownToLine, ArrowUpFromLine, CheckCircle2, ChevronDown, CircleOff,
-  Download, Gauge, Globe2, Network, RefreshCw, Route as RouteIcon, Search, ShieldCheck, X, XCircle,
+  Download, Gauge, Globe2, Network, RefreshCw, Route as RouteIcon, Search, ShieldCheck, SlidersHorizontal, X, XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
@@ -15,9 +15,10 @@ import {
 } from "../../api";
 import type { Translate } from "../../app/types";
 import { formatSize } from "../files/utils";
+import { NetworkManagementWorkspace } from "./NetworkManagementPanels";
 
 const MAX_SAMPLES = 60;
-type NetworkTab = "monitor" | "dns" | "routing";
+type NetworkTab = "general" | "interfaces" | "traffic" | "routes" | "connectivity";
 type History = Record<string, number[]>;
 type InterfaceFilter = "all" | "up" | "down" | "errors";
 type RouteFamily = "all" | "ipv4" | "ipv6";
@@ -356,11 +357,13 @@ export function RoutingTable({ t }: { t: Translate }) {
 }
 
 export function NetworkSettingsSection({ isAdmin, t }: { isAdmin: boolean; t: Translate }) {
-  const [tab, setTab] = useState<NetworkTab>("monitor");
+  const [tab, setTab] = useState<NetworkTab>("general");
   const tabs: Array<{ id: NetworkTab; icon: ReactNode; label: string }> = [
-    { id: "monitor", icon: <Activity aria-hidden="true" />, label: t("network.monitor") },
-    { id: "dns", icon: <Globe2 aria-hidden="true" />, label: "DNS" },
-    { id: "routing", icon: <RouteIcon aria-hidden="true" />, label: t("network.routing") },
+    { id: "general", icon: <Gauge aria-hidden="true" />, label: t("network.tab.general") },
+    { id: "interfaces", icon: <Network aria-hidden="true" />, label: t("network.tab.interfaces") },
+    { id: "traffic", icon: <SlidersHorizontal aria-hidden="true" />, label: t("network.tab.traffic") },
+    { id: "routes", icon: <RouteIcon aria-hidden="true" />, label: t("network.tab.routes") },
+    { id: "connectivity", icon: <Activity aria-hidden="true" />, label: t("network.tab.connectivity") },
   ];
   if (!isAdmin) return null;
   function keyboard(event: KeyboardEvent<HTMLElement>) {
@@ -375,9 +378,8 @@ export function NetworkSettingsSection({ isAdmin, t }: { isAdmin: boolean; t: Tr
     <header className="network-settings-page-header"><span><Gauge aria-hidden="true" /></span><div><h2 id="network-settings-title">{t("settings.category.network")}</h2><p>{t("network.settingsDescription")}</p></div></header>
     <nav className="network-settings-tabs" role="tablist" aria-label={t("settings.category.network")} onKeyDown={keyboard}>{tabs.map((item) => <button id={`network-tab-${item.id}`} key={item.id} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`network-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.icon}<span>{item.label}</span></button>)}</nav>
     <div id={`network-panel-${tab}`} role="tabpanel" aria-labelledby={`network-tab-${tab}`}>
-      {tab === "monitor" && <NetworkMonitor t={t} />}
-      {tab === "dns" && <DnsDiagnostics t={t} />}
-      {tab === "routing" && <RoutingTable t={t} />}
+      {tab !== "connectivity" && <NetworkManagementWorkspace tab={tab} t={t} />}
+      {tab === "connectivity" && <div className="network-connectivity-stack"><NetworkMonitor t={t} /><DnsDiagnostics t={t} /><RoutingTable t={t} /></div>}
     </div>
   </section>;
 }

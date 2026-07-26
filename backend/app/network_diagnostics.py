@@ -13,7 +13,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
@@ -56,6 +56,68 @@ class DnsTestRequest(BaseModel):
         except ValueError:
             return ascii_name
         raise ValueError("Enter a DNS name, not an IP address")
+
+
+class ConnectivityTestRequest(BaseModel):
+    kind: Literal["ping", "trace", "tcp"]
+    target: str = Field(min_length=1, max_length=253)
+    port: int | None = Field(default=None, ge=1, le=65535)
+
+    @field_validator("target")
+    @classmethod
+    def validate_target(cls, value: str) -> str:
+        candidate = value.strip().rstrip(".")
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            pass
+        try:
+            ascii_name = candidate.encode("idna").decode("ascii").lower()
+        except UnicodeError as exc:
+            raise ValueError("Invalid connectivity target") from exc
+        if len(ascii_name) > 253 or any(
+            not label or len(label) > 63 or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label)
+            for label in ascii_name.split(".")
+        ):
+            raise ValueError("Invalid connectivity target")
+        return ascii_name
+
+    @field_validator("port")
+    @classmethod
+    def port_is_optional_only_for_non_tcp(cls, value: int | None) -> int | None:
+        return value
+
+
+def test_connectivity(kind: str, target: str, port: int | None = None) -> dict[str, Any]:
+    started = time.monotonic()
+    if kind == "tcp":
+        if port is None:
+            raise ValueError("TCP test requires a port")
+        try:
+            with socket.create_connection((target, port), timeout=5):
+                success, output = True, f"TCP {target}:{port} accepted the connection"
+        except OSError as exc:
+            success, output = False, f"TCP connection failed: {type(exc).__name__}"
+    else:
+        if kind == "ping":
+            tool = shutil.which("ping")
+            arguments = ["-c", "3", "-W", "2", target]
+        else:
+            tool = shutil.which("tracepath") or shutil.which("traceroute")
+            arguments = ["-n", "-m", "20", target] if tool and Path(tool).name == "traceroute" else ["-n", "-m", "20", target]
+        if not tool:
+            return {"kind": kind, "target": target, "port": port, "success": False, "duration_ms": 0, "output": f"{kind} tool is unavailable"}
+        result = _run_command([tool, *arguments], timeout=15)
+        success = result.returncode == 0
+        output = (result.stdout or result.stderr or "")[:64 * 1024]
+    return {
+        "kind": kind,
+        "target": target,
+        "port": port,
+        "success": success,
+        "duration_ms": round((time.monotonic() - started) * 1000, 2),
+        "output": output,
+    }
 
 
 def _read_text(path: str | Path, *, limit: int = 256 * 1024) -> str:
@@ -526,3 +588,12 @@ def dns_test_endpoint(payload: DnsTestRequest, user: SessionUser = Depends(requi
 @router.get("/routing")
 def routing_endpoint(user: SessionUser = Depends(require_permission(Permission.SETTINGS_VIEW_SYSTEM))):
     return routing_snapshot()
+
+
+@router.post("/connectivity/test")
+def connectivity_test_endpoint(payload: ConnectivityTestRequest, user: SessionUser = Depends(require_permission(Permission.NETWORK_CONFIG_VIEW, mutating=False))):
+    if payload.kind == "tcp" and payload.port is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(422, "TCP test requires a port")
+    return test_connectivity(payload.kind, payload.target, payload.port)
