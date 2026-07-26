@@ -1025,6 +1025,8 @@
   "settings.networkConfirmationTimeoutHint": "After applying a network configuration change, it must be confirmed before the selected time expires. Otherwise, the previous configuration is restored automatically.",
   "settings.networkConfirmationTimeoutValidation": "Enter a whole number of seconds from {min} to {max}.",
   "settings.networkPolicyDefaultRestored": "The default network change confirmation timeout was restored.",
+  "settings.confirmNetworkPolicyChange": "Are you sure you want to change the network confirmation timeout? The new value will only apply to new transactions.",
+  "settings.confirmNetworkPolicyReset": "Are you sure you want to restore the default timeout of 15 seconds? The change will only apply to new transactions.",
   "settings.seconds": "seconds",
   "settings.restoreDefault": "Restore default",
   "settings.containerDefaultsPolicy": "Default container resource limits",

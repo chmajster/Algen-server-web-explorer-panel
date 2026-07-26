@@ -107,7 +107,7 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
   const numeric = Number(draft);
   const invalid = !/^\d+$/.test(draft) || !Number.isInteger(numeric) || numeric < policy.minimum_seconds || numeric > policy.maximum_seconds;
   async function save() {
-    if (invalid) return;
+    if (invalid || !window.confirm(t("settings.confirmNetworkPolicyChange"))) return;
     setSaving(true); setError("");
     try {
       const updated = await api.saveNetworkPolicy(numeric);
@@ -118,6 +118,7 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
     } finally { setSaving(false); }
   }
   async function reset() {
+    if (!window.confirm(t("settings.confirmNetworkPolicyReset"))) return;
     setSaving(true); setError("");
     try {
       const updated = await api.resetNetworkPolicy();

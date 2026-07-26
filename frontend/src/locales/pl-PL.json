@@ -1025,6 +1025,8 @@
   "settings.networkConfirmationTimeoutHint": "Po zastosowaniu zmiany konfiguracji sieci należy potwierdzić ją przed upływem wskazanego czasu. W przeciwnym razie poprzednia konfiguracja zostanie automatycznie przywrócona.",
   "settings.networkConfirmationTimeoutValidation": "Podaj pełną liczbę sekund z zakresu {min}–{max}.",
   "settings.networkPolicyDefaultRestored": "Przywrócono domyślny czas potwierdzenia zmian sieciowych.",
+  "settings.confirmNetworkPolicyChange": "Czy na pewno chcesz zmienić czas potwierdzenia zmian sieciowych? Nowa wartość będzie stosowana tylko do nowych transakcji.",
+  "settings.confirmNetworkPolicyReset": "Czy na pewno chcesz przywrócić domyślny czas 15 sekund? Zmiana będzie stosowana tylko do nowych transakcji.",
   "settings.seconds": "sekundy",
   "settings.restoreDefault": "Przywróć wartość domyślną",
   "settings.containerDefaultsPolicy": "Domyślne limity zasobów kontenera",

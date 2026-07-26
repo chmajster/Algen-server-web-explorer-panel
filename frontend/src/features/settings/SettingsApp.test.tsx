@@ -213,6 +213,7 @@ describe("settings application", () => {
   });
 
   it("validates, saves and resets the network confirmation timeout policy", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 100 });
     vi.spyOn(api, "dockerContainerDefaultsPolicy").mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
     const save = vi.spyOn(api, "saveNetworkPolicy").mockResolvedValue({ change_confirmation_timeout_seconds: 45, minimum_seconds: 5, maximum_seconds: 300, default_seconds: 15 });
@@ -231,9 +232,11 @@ describe("settings application", () => {
 
     fireEvent.change(input, { target: { value: "45" } });
     fireEvent.click(screen.getByRole("button", { name: "action.save" }));
+    expect(confirm).toHaveBeenCalledWith("settings.confirmNetworkPolicyChange");
     await waitFor(() => expect(save).toHaveBeenCalledWith(45));
     fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
     fireEvent.click(screen.getByRole("button", { name: "settings.restoreDefault" }));
+    expect(confirm).toHaveBeenCalledWith("settings.confirmNetworkPolicyReset");
     await waitFor(() => expect(reset).toHaveBeenCalledOnce());
   });
 
