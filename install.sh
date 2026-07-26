@@ -1074,10 +1074,10 @@ except (OSError, TypeError, ValueError, json.JSONDecodeError):
 PY
 )"
   rm -f -- "$audit_report"
+  warn "npm found ${vulnerability_count} frontend package vulnerabilities"
+  info "Running npm audit report"
+  (cd "${INSTALL_DIR}/frontend" && npm audit )
   if [[ "$vulnerability_count" =~ ^[1-9][0-9]*$ ]]; then
-    warn "npm found ${vulnerability_count} frontend package vulnerabilities"
-    info "Running npm audit report"
-    (cd "${INSTALL_DIR}/frontend" && npm audit )
     if confirm_npm_audit_fix 5; then
       info "Running npm audit fix"
       (cd "${INSTALL_DIR}/frontend" && npm audit fix)
