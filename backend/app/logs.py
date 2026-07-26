@@ -63,7 +63,11 @@ ERROR_SIGNAL_RE = re.compile(
     r"(?im)(?:^|\b)(?:Exception in ASGI application|Unhandled exception|Uncaught exception|"
     r"Segmentation fault|core dumped|panic|failed with result|process exited with status)(?:\b|$)"
 )
-UPPERCASE_ERROR_RE = re.compile(r"(?m)(?:^|[\s:[])(?:ERROR|FATAL)(?:[\s:\]]|$)")
+UPPERCASE_ERROR_RE = re.compile(r"(?m)(?:^|[\s:\[])(?:ERROR|FATAL)(?:[\s:\]]|$)")
+BENIGN_ERROR_RE = re.compile(
+    r"(?i)\b(?:0 errors?|no errors?(?: detected)?|errors?\s+(?:count|rate)\s*:\s*0|"
+    r"without error|ignore_errors|error handling enabled|documentation about error handling)\b"
+)
 
 CLASSIC_LOGS: dict[str, tuple[str, str, Permission]] = {
     "syslog": ("/var/log/syslog", "System log", Permission.LOGS_VIEW_SYSTEM),
@@ -95,11 +99,12 @@ def infer_effective_priority(message: object, original_priority: object, fields:
             text = f"{text}\n{value}"
     inferred: int | None = None
     reason: str | None = None
+    signal_text = BENIGN_ERROR_RE.sub("", text)
     if PYTHON_TRACEBACK_RE.search(text):
         inferred, reason = 3, "python_traceback"
     elif PYTHON_EXCEPTION_RE.search(text):
         inferred, reason = 3, "python_exception"
-    elif ERROR_SIGNAL_RE.search(text) or UPPERCASE_ERROR_RE.search(text):
+    elif ERROR_SIGNAL_RE.search(signal_text) or UPPERCASE_ERROR_RE.search(signal_text):
         inferred, reason = 3, "error_signal"
     effective = min(priority, inferred) if inferred is not None else priority
     return effective, reason if effective < priority else None
@@ -130,7 +135,7 @@ class LogEntry(BaseModel):
         original = original if original in LOG_PRIORITIES else 6
         effective, reason = infer_effective_priority(self.message, original, self.fields)
         self.original_priority = original
-        self.original_severity = self.original_severity or LOG_PRIORITIES[original]
+        self.original_severity = LOG_PRIORITIES[original]
         self.priority = effective
         self.severity = LOG_PRIORITIES[effective]
         self.severity_inferred = effective < original
@@ -357,6 +362,99 @@ def parse_dmesg_record(raw: str | dict[str, Any]) -> LogEntry | None:
     priority = priority if priority in LOG_PRIORITIES else 6
     stable = hashlib.sha256(f"{timestamp}|{message}".encode()).hexdigest()
     return LogEntry(id=stable, timestamp=timestamp, priority=priority, severity=LOG_PRIORITIES[priority], source="kernel", identifier="kernel", message=message, fields=fields)
+
+
+def _entry_seconds(entry: LogEntry) -> float | None:
+    if not entry.timestamp:
+        return None
+    try:
+        return datetime.fromisoformat(entry.timestamp.replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _traceback_context(entry: LogEntry) -> tuple[str, int | None, str]:
+    boot_id = entry.fields.get("_BOOT_ID") if isinstance(entry.fields, dict) else ""
+    return entry.unit, entry.pid, str(boot_id or "")
+
+
+def _traceback_continuation(message: str) -> bool:
+    return bool(PYTHON_TRACEBACK_LINE_RE.fullmatch(message) or PYTHON_EXCEPTION_RE.search(message))
+
+
+def group_traceback_entries(entries: list[LogEntry]) -> list[LogEntry]:
+    """Merge safe, adjacent Python traceback records while preserving source order."""
+    if len(entries) < 2:
+        return entries
+    timed = [_entry_seconds(entry) for entry in entries]
+    descending = timed[0] is not None and timed[-1] is not None and timed[0] > timed[-1]
+    ordered = list(reversed(entries)) if descending else list(entries)
+    grouped: list[LogEntry] = []
+    index = 0
+    while index < len(ordered):
+        first = ordered[index]
+        if not PYTHON_TRACEBACK_RE.search(first.message):
+            grouped.append(first)
+            index += 1
+            continue
+        first_time = _entry_seconds(first)
+        context = _traceback_context(first)
+        candidates = [first]
+        cursor = index + 1
+        terminal = False
+        while cursor < len(ordered):
+            candidate = ordered[cursor]
+            candidate_time = _entry_seconds(candidate)
+            if (
+                first_time is None
+                or candidate_time is None
+                or candidate_time - first_time > 2
+                or candidate_time < first_time
+                or _traceback_context(candidate) != context
+                or not _traceback_continuation(candidate.message)
+            ):
+                break
+            candidates.append(candidate)
+            cursor += 1
+            if PYTHON_EXCEPTION_RE.search(candidate.message):
+                terminal = True
+                break
+        if len(candidates) < 2 or not terminal:
+            grouped.append(first)
+            index += 1
+            continue
+        message = redact_text("\n".join(item.message for item in candidates), limit=MAX_MESSAGE)
+        originals = [
+            {
+                "id": item.id,
+                "timestamp": item.timestamp,
+                "original_priority": item.original_priority,
+                "message": redact_text(item.message, limit=MAX_MESSAGE),
+            }
+            for item in candidates
+        ]
+        stable = hashlib.sha256(
+            ("traceback|" + "|".join(item.id for item in candidates)).encode("utf-8", errors="replace")
+        ).hexdigest()
+        fields = dict(first.fields)
+        fields.update({"traceback_records": originals, "traceback_lines": message.splitlines(), "merged_count": len(candidates)})
+        original_priority = min(item.original_priority if item.original_priority in LOG_PRIORITIES else item.priority for item in candidates)
+        grouped.append(LogEntry(
+            id=stable,
+            timestamp=first.timestamp,
+            original_priority=original_priority,
+            source=first.source,
+            unit=first.unit,
+            identifier=first.identifier,
+            hostname=first.hostname,
+            pid=first.pid,
+            uid=first.uid,
+            message=message,
+            cursor=first.cursor,
+            fields=redact(fields),
+        ))
+        index = cursor
+    return list(reversed(grouped)) if descending else grouped
 
 
 def _encode_cursor(source: str, timestamp: str | None, cursor: str = "", offset: int | None = None) -> str:
@@ -758,6 +856,7 @@ def query_entries(
             boot_id=boot_id, since=since, until=until,
             continuation=continuation, direction=direction,
         )
+    entries = group_traceback_entries(entries)
     if not has_permission(user.username, Permission.LOGS_VIEW_SECURITY):
         entries = [item for item in entries if not _security_entry(item)]
     filtered: list[LogEntry] = []
@@ -860,34 +959,94 @@ def log_entries(
     return result
 
 
+def _normalize_boot_record(value: dict[str, Any]) -> dict[str, Any] | None:
+    raw_boot_id = value.get("boot_id") or value.get("boot-id") or value.get("bootId")
+    boot_id = raw_boot_id if isinstance(raw_boot_id, str) else ""
+    if not BOOT_RE.fullmatch(boot_id):
+        return None
+    raw_index = _int(value.get("index"))
+    index = raw_index if raw_index is not None else 0
+    first = value.get("first_entry") if "first_entry" in value else value.get("first")
+    last = value.get("last_entry") if "last_entry" in value else value.get("last")
+    first_value = first if isinstance(first, (str, int, float)) and not isinstance(first, bool) else None
+    last_value = last if isinstance(last, (str, int, float)) and not isinstance(last, bool) else None
+    first_number, last_number = _int(first_value), _int(last_value)
+    duration = (
+        max(0, (last_number - first_number) / 1_000_000)
+        if first_number is not None and last_number is not None
+        else None
+    )
+    return {
+        "id": boot_id,
+        "index": index,
+        "first": first_value,
+        "last": last_value,
+        "duration_seconds": duration,
+        "current": index == 0,
+    }
+
+
+def parse_journal_boots(stdout: str) -> list[dict[str, Any]]:
+    """Parse all JSON shapes emitted by different journalctl releases."""
+    records: list[dict[str, Any]] = []
+
+    def collect(value: object) -> None:
+        if isinstance(value, dict):
+            records.append(value)
+        elif isinstance(value, list):
+            records.extend(item for item in value if isinstance(item, dict))
+
+    stripped = stdout.strip()
+    if not stripped:
+        return []
+    try:
+        collect(json.loads(stripped))
+    except (TypeError, json.JSONDecodeError):
+        for line in stdout.splitlines():
+            if not line.strip():
+                continue
+            try:
+                collect(json.loads(line))
+            except (TypeError, json.JSONDecodeError):
+                continue
+    return [item for item in (_normalize_boot_record(record) for record in records) if item is not None]
+
+
+def parse_journal_boots_text(stdout: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for line in stdout.splitlines():
+        match = re.match(r"\s*(-?\d+)\s+([a-fA-F0-9]{32})\s+(.*?)\s+(?:—|--)\s+(.*?)\s*$", line)
+        if not match:
+            continue
+        index = int(match.group(1))
+        items.append({
+            "index": index,
+            "id": match.group(2),
+            "first": match.group(3),
+            "last": match.group(4),
+            "duration_seconds": None,
+            "current": index == 0,
+        })
+    return items
+
+
 @router.get("/boots")
 def log_boots(user: SessionUser = Depends(_current_user)):
     authorize(user, Permission.LOGS_VIEW_SYSTEM)
     executable = shutil.which("journalctl")
     if not executable:
         return {"items": [], "status": "missing_program"}
-    code, stdout, stderr = _run_bounded([executable, "--list-boots", "--no-pager", "--output=json"], timeout=8)
-    items = []
-    if code == 0:
-        for line in stdout.splitlines():
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            boot_id = str(value.get("boot_id") or value.get("boot-id") or "")
-            if BOOT_RE.fullmatch(boot_id):
-                first = value.get("first_entry") or value.get("first")
-                last = value.get("last_entry") or value.get("last")
-                first_number, last_number = _int(first), _int(last)
-                duration = max(0, (last_number - first_number) / 1_000_000) if first_number is not None and last_number is not None else None
-                items.append({"id": boot_id, "index": _int(value.get("index")) or 0, "first": first, "last": last, "duration_seconds": duration, "current": (_int(value.get("index")) or 0) == 0})
-    if not items:
-        code, stdout, stderr = _run_bounded([executable, "--list-boots", "--no-pager"], timeout=8)
-        for line in stdout.splitlines():
-            match = re.match(r"\s*(-?\d+)\s+([a-fA-F0-9]{32})\s+(.*?)\s+—\s+(.*)", line)
-            if match:
-                items.append({"index": int(match.group(1)), "id": match.group(2), "first": match.group(3), "last": match.group(4), "duration_seconds": None, "current": int(match.group(1)) == 0})
-    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else stderr}
+    code, stdout, _ = _run_bounded([executable, "--list-boots", "--no-pager", "--output=json"], timeout=8)
+    parsed_items = parse_journal_boots(stdout) if code == 0 else []
+    if parsed_items:
+        return {"items": parsed_items, "status": "available", "error": ""}
+    code, stdout, _ = _run_bounded([executable, "--list-boots", "--no-pager"], timeout=8)
+    parsed_items = parse_journal_boots_text(stdout) if code == 0 else []
+    return {
+        "items": parsed_items,
+        "status": "available" if code == 0 else "error",
+        "error": "" if code == 0 else "journalctl could not list system boots",
+    }
 
 
 @router.get("/services")
@@ -1021,13 +1180,28 @@ def log_export(payload: ExportRequest, user: SessionUser = Depends(_mutating_use
         media = "application/x-ndjson"
     elif payload.format == "csv":
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=["timestamp", "severity", "source", "unit", "identifier", "pid", "uid", "hostname", "message"], extrasaction="ignore")
+        writer = csv.DictWriter(
+            output,
+            fieldnames=[
+                "timestamp", "priority", "severity", "original_priority", "original_severity",
+                "severity_inferred", "severity_reason", "source", "unit", "identifier", "pid",
+                "uid", "hostname", "message",
+            ],
+            extrasaction="ignore",
+        )
         writer.writeheader()
         writer.writerows(items)
         content = output.getvalue()
         media = "text/csv"
     else:
-        content = "\n".join(f"{item.get('timestamp') or '-'} [{item['severity'].upper()}] {item.get('unit') or item.get('identifier') or item['source']}: {item['message']}" for item in items) + "\n"
+        content = "\n".join(
+            f"{item.get('timestamp') or '-'} "
+            f"[{item['severity'].upper()} priority={item['priority']}; "
+            f"original={item['original_severity']}/{item['original_priority']}"
+            f"{'; inferred=' + str(item.get('severity_reason')) if item.get('severity_inferred') else ''}] "
+            f"{item.get('unit') or item.get('identifier') or item['source']}: {item['message']}"
+            for item in items
+        ) + "\n"
         media = "text/plain"
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     filename = f"webnas-logs-{re.sub(r'[^a-z0-9-]', '-', payload.source.casefold())[:40]}-{stamp}.{payload.format}"
