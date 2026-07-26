@@ -536,7 +536,8 @@ class NetworkCreateRequest(DockerModel):
             if ip_range and (
                 ip_range.version != version
                 or ip_range.is_multicast
-                or not ip_range.subnet_of(network)
+                or (isinstance(ip_range, ipaddress.IPv4Network) and isinstance(network, ipaddress.IPv4Network) and not ip_range.subnet_of(network))
+                or (isinstance(ip_range, ipaddress.IPv6Network) and isinstance(network, ipaddress.IPv6Network) and not ip_range.subnet_of(network))
             ):
                 raise ValueError(f"IPv{version} IP range must belong to the subnet")
             if gateway and (gateway.version != version or gateway not in network):
@@ -609,7 +610,7 @@ class DefaultBridgeConfigRequest(DockerModel):
                 raise ValueError("invalid default bridge IPv4 configuration") from error
             if network.version != 4 or network.is_multicast or network.prefixlen == 0:
                 raise ValueError("invalid default bridge IPv4 subnet")
-            if ip_range and (ip_range.version != 4 or not ip_range.subnet_of(network)):
+            if ip_range and (ip_range.version != 4 or (isinstance(ip_range, ipaddress.IPv4Network) and isinstance(network, ipaddress.IPv4Network) and not ip_range.subnet_of(network))):
                 raise ValueError("default bridge IPv4 range must belong to the subnet")
             if gateway.version != 4 or gateway not in network or gateway in {network.network_address, network.broadcast_address}:
                 raise ValueError("default bridge IPv4 gateway must be a usable address in the subnet")

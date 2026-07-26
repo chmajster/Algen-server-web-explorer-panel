@@ -215,7 +215,7 @@ class EnrollmentTokenInput(StrictModel):
     require_approval: bool = True
     onboard_ansible: bool = False
 
-    _tags = field_validator("tags")(HostInput.safe_tags.__func__)
+    _tags = field_validator("tags")(HostInput.safe_tags)
 
 
 class EnrollmentClaimInput(StrictModel):
@@ -355,7 +355,7 @@ class ScanImportInput(StrictModel):
     tags: list[str] = Field(default_factory=list, max_length=50)
     confirm: bool = False
 
-    _tags = field_validator("tags")(HostInput.safe_tags.__func__)
+    _tags = field_validator("tags")(HostInput.safe_tags)
 
 
 class BackupInput(StrictModel):

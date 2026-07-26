@@ -90,12 +90,12 @@ def parse_inventory(content: str, format_hint: str = "yaml", *, max_hosts: int =
             raise ValueError("inventory contains too many hosts")
         return {"format": "ini", "groups": groups, "host_count": count}
     try:
-        value = yaml.safe_load(content) or {}
+        inventory_data = yaml.safe_load(content) or {}
     except yaml.YAMLError as error:
         raise ValueError(f"invalid YAML inventory: {error}") from error
-    if not isinstance(value, dict):
+    if not isinstance(inventory_data, dict):
         raise ValueError("inventory must be a mapping")
-    _assert_no_plaintext_secrets(value)
+    _assert_no_plaintext_secrets(inventory_data)
     def count_hosts(item: Any) -> int:
         if not isinstance(item, dict):
             return 0
@@ -105,10 +105,10 @@ def parse_inventory(content: str, format_hint: str = "yaml", *, max_hosts: int =
             count += sum(count_hosts(child) for child in children.values())
         return count
 
-    host_count = count_hosts(value.get("all", value))
+    host_count = count_hosts(inventory_data.get("all", inventory_data))
     if host_count > max_hosts:
         raise ValueError("inventory contains too many hosts")
-    return {"format": "yaml", "inventory": value, "host_count": host_count}
+    return {"format": "yaml", "inventory": inventory_data, "host_count": host_count}
 
 
 def inventory_records(validation: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
