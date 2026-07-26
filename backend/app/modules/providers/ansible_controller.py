@@ -31,6 +31,9 @@ def _run_cancellable(
     uid: int | None = None,
     gid: int | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    fn = None
+    if os.name != "nt" and uid is not None and gid is not None:
+        fn = demote_preexec(uid, gid)
     process = subprocess.Popen(
         args,
         stdout=subprocess.PIPE,
@@ -40,9 +43,11 @@ def _run_cancellable(
         start_new_session=True,
         cwd=cwd,
         env=env,
-        preexec_fn=demote_preexec(uid, gid) if os.name != "nt" and uid is not None and gid is not None else None,
+        preexec_fn=fn,
     )
     deadline = time.monotonic() + timeout
+    stdout_data: str | bytes = ""
+    stderr_data: str | bytes = ""
     while True:
         if cancelled():
             if os.name != "nt":
@@ -77,10 +82,11 @@ def _run_cancellable(
             process.communicate()
             raise RuntimeError("Network scan timed out")
         try:
-            stdout, stderr = process.communicate(timeout=min(0.2, max(0.01, deadline - time.monotonic())))
+            stdout_data, stderr_data = process.communicate(timeout=min(0.2, max(0.01, deadline - time.monotonic())))
+            break
         except subprocess.TimeoutExpired:
             continue
-    return subprocess.CompletedProcess(args, int(process.returncode or 0), stdout, stderr)
+    return subprocess.CompletedProcess(args, int(process.returncode or 0), str(stdout_data), str(stderr_data))
 
 
 def _generate_host_key(store: Any, host_id: str) -> tuple[str, str]:
@@ -142,7 +148,7 @@ class AnsibleControllerProvider(ModuleProvider):
             "managed_shell": value.get("managed_shell") or "/bin/bash",
             "managed_comment": value.get("managed_comment") if isinstance(value.get("managed_comment"), str) else "Algen Ansible automation",
             "managed_authorized_keys_mode": "exclusive",
-            "managed_key_rotation_days": min(max(int(value.get("managed_key_rotation_days") if value.get("managed_key_rotation_days") is not None else 90), 0), 365),
+            "managed_key_rotation_days": min(max(int(str(value.get("managed_key_rotation_days") if value.get("managed_key_rotation_days") is not None else 90)), 0), 365),
             "awx": awx,
         }
 
@@ -177,7 +183,7 @@ class AnsibleControllerProvider(ModuleProvider):
         if (config.get("managed_authorized_keys_mode") or "exclusive") != "exclusive":
             errors.append("invalid managed account authorized keys mode")
         try:
-            rotation_days = int(config.get("managed_key_rotation_days") if config.get("managed_key_rotation_days") is not None else 90)
+            rotation_days = int(str(config.get("managed_key_rotation_days") if config.get("managed_key_rotation_days") is not None else 90))
             if not 0 <= rotation_days <= 365:
                 raise ValueError
         except (TypeError, ValueError):
@@ -393,7 +399,7 @@ class AnsibleControllerProvider(ModuleProvider):
                 credential_id,
                 str(host.get("ssh_user") or managed_username) if rotating else str(payload.get("initial_username") or "root"),
                 managed_username,
-                "none" if rotating else str(payload.get("sudo_profile") or "none"),
+                str(payload.get("sudo_profile") or "none"),
                 str(payload.get("sudoers_policy") or ""),
                 str(payload.get("managed_shell") or "/bin/bash"),
                 str(payload.get("managed_comment") or "Algen Ansible automation"),
@@ -419,9 +425,9 @@ class AnsibleControllerProvider(ModuleProvider):
                 with self.store._lock, self.store.connect() as connection:
                     connection.execute("UPDATE hosts SET managed_user_created=1,updated_at=?,updated_by=? WHERE id=?", (time.time(), actor, host_id))
             progress(65, f"Unique host key installed for {host['name']}")
-            result = execute_ad_hoc(self.store, host_id, actor, log, progress, cancelled, facts=True)
+            cmd_result = execute_ad_hoc(self.store, host_id, actor, log, progress, cancelled, facts=True)
             self.store.audit(actor, "host", host_id, "key_rotated" if rotating else "onboard_complete", {"managed_user_created": True, "managed_username": managed_username, "credential_id": managed_credential["id"], "key_scope": "per_host"})
-            return result
+            return cmd_result
         if operation == "sync_project":
             project_id = str(payload.get("project_id") or "")
             project = self.store._get("projects", project_id)
@@ -545,18 +551,18 @@ class AnsibleControllerProvider(ModuleProvider):
             return {"project_id": project_id, "commit": commit}
         if operation == "backup":
             progress(20, "Create private controller backup")
-            result = create_backup(self.store, actor, str(payload.get("description") or ""), bool(payload.get("include_credentials")))
+            backup_result = create_backup(self.store, actor, str(payload.get("description") or ""), bool(payload.get("include_credentials")))
             progress(100, "Backup completed")
-            return result
+            return backup_result
         if operation == "restore":
             progress(10, "Validate backup and checksum")
             backup_id = str(payload.get("backup_id") or "")
             checksum = str(payload.get("checksum") or "")
             if not checksum:
                 checksum = next((str(item["checksum"]) for item in list_backups(self.store) if item["id"] == backup_id), "")
-            result = restore_backup(self.store, backup_id, checksum, actor, bool(payload.get("include_credentials")))
+            restore_result = restore_backup(self.store, backup_id, checksum, actor, bool(payload.get("include_credentials")))
             progress(100, "Restore completed")
-            return result
+            return restore_result
         api_error(400, "ANSIBLE_OPERATION_NOT_SUPPORTED", "Unsupported Ansible controller operation")
 
     def execute_operation(self, action: PackageAction, payload: dict[str, Any], actor: str, log: LogCallback, progress: ProgressCallback, cancelled: CancelCallback) -> dict[str, Any]:

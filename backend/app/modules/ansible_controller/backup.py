@@ -88,7 +88,7 @@ def _add_private_file(archive: tarfile.TarFile, path: Path, name: str) -> None:
 
 
 def list_backups(repository: AnsibleRepository) -> list[dict[str, Any]]:
-    result = []
+    result: list[dict[str, Any]] = []
     backup_dir = repository.root / "backups"
     if not backup_dir.exists():
         return result

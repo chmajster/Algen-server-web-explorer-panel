@@ -46,11 +46,11 @@ def _acquire_process_lock() -> int:
             if os.fstat(descriptor).st_size == 0:
                 os.write(descriptor, b"\0")
             os.lseek(descriptor, 0, os.SEEK_SET)
-            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
         else:
             import fcntl
 
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
     except (OSError, BlockingIOError) as error:
         os.close(descriptor)
         raise HTTPException(409, "Another network operation is active") from error
@@ -63,11 +63,11 @@ def _release_process_lock(descriptor: int) -> None:
             import msvcrt
 
             os.lseek(descriptor, 0, os.SEEK_SET)
-            msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
         else:
             import fcntl
 
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            fcntl.flock(descriptor, fcntl.LOCK_UN)  # type: ignore[attr-defined]
     finally:
         os.close(descriptor)
 
@@ -434,7 +434,7 @@ class NetworkManagerProvider(NetworkProvider):
         if change.operation == "delete_interface":
             return [[nmcli, "connection", "delete", f"webnas-{change.interface_name}"]]
         if change.operation == "save_dns" and change.dns:
-            commands = []
+            commands: list[list[str]] = []
             for interface, servers in change.dns.per_interface.items():
                 result = _run_command([nmcli, "-g", "GENERAL.CONNECTION", "device", "show", interface], timeout=5)
                 connection = result.stdout.strip().splitlines()[0][:256] if result.returncode == 0 and result.stdout.strip() else f"webnas-{interface}"
@@ -519,7 +519,7 @@ def render_netplan(configuration: InterfaceConfiguration) -> str:
     domains = list(dict.fromkeys(configuration.ipv4.search_domains + configuration.ipv6.search_domains))
     if nameservers or domains:
         item["nameservers"] = {"addresses": nameservers, "search": domains}
-    routes = []
+    routes: list[dict[str, Any]] = []
     for family, default in ((configuration.ipv4, "0.0.0.0/0"), (configuration.ipv6, "::/0")):
         if family.gateway:
             routes.append({"to": default, "via": family.gateway, "metric": family.metric})
@@ -586,7 +586,7 @@ def detect_provider() -> tuple[NetworkProvider, list[str]]:
         active.append("systemd-networkd")
     if Path("/etc/network/interfaces").exists():
         active.append("ifupdown")
-    warnings = []
+    warnings: list[str] = []
     writable = [item for item in active if item != "ifupdown"]
     if len(writable) > 1:
         return ReadOnlyProvider(), [f"Ambiguous network management: {', '.join(active)}"]
@@ -1127,7 +1127,7 @@ def _rollback_transaction(transaction_id: str, actor: str = "system", automatic:
                 object_id = change.route.id if change.route else change.traffic.id if change.traffic else None
                 operation = "delete_route" if change.route else "delete_traffic"
                 if object_id:
-                    for command in _commands_for_generic(NetworkChange(operation=operation, object_id=object_id)):
+                    for command in _commands_for_generic(NetworkChange(operation=operation, object_id=object_id)):  # type: ignore[arg-type]
                         _run_command(command, timeout=20)
         except (ValueError, TypeError):
             pass

@@ -25,6 +25,7 @@ from .inventory import generate_inventory, inventory_records, parse_inventory
 from .models import (
     BackupCreateInput,
     ConfirmationInput,
+    ConnectionType,
     ControllerConfigInput,
     CredentialInput,
     EnrollmentClaimInput,
@@ -188,7 +189,7 @@ def enroll_host(payload: EnrollmentClaimInput, authorization: str = Header(defau
         ssh_user=str(policy["ssh_user"]),
         credential_id=policy["credential_id"],
         python_interpreter="auto_silent",
-        connection_type="ssh",
+        connection_type=ConnectionType.ssh,
         environment=str(policy["environment"]),
         location=str(policy["location"]),
         tags=list(policy["tags"]),

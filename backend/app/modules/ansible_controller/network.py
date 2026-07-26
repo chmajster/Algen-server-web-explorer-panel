@@ -52,9 +52,9 @@ def scan_addresses(payload: NetworkScanInput, allowed_networks: Iterable[str] = 
     if count > max_addresses:
         raise ValueError(f"scan range exceeds {max_addresses} addresses")
     networks = list(ipaddress.summarize_address_range(start, end))
-    for network in networks:
-        if isinstance(network, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
-            if not _network_allowed(network, allowed_networks):
+    for net in networks:
+        if isinstance(net, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
+            if not _network_allowed(net, allowed_networks):
                 raise ValueError("scan range is not private, local or explicitly allowed")
     return [str(ipaddress.ip_address(number)) for number in range(int(start), int(end) + 1)]
 

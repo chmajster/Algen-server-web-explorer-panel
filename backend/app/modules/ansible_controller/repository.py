@@ -41,7 +41,7 @@ def stable_id() -> str:
 class ClosingConnection(sqlite3.Connection):
     """SQLite transaction context that also releases the database handle."""
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool | None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool | None:  # type: ignore[override]
         try:
             return super().__exit__(exc_type, exc_val, exc_tb)
         finally:

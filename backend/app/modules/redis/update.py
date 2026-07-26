@@ -1,4 +1,4 @@
-from install import main
+from .install import main
 
 
 if __name__ == "__main__":

@@ -73,10 +73,10 @@ def next_run(kind: str, expression: str, timezone: str, after: float | None = No
         fields = expression.split()
         if len(fields) != 5:
             raise ValueError("cron requires five fields")
-        minute, hour, day, month, weekday = fields
+        c_minute, c_hour, c_day, c_month, c_weekday = fields
         candidate = current.replace(second=0, microsecond=0) + timedelta(minutes=1)
         for _ in range(366 * 24 * 60):
-            if _matches(minute, candidate.minute, 0, 59) and _matches(hour, candidate.hour, 0, 23) and _matches(day, candidate.day, 1, 31) and _matches(month, candidate.month, 1, 12) and _matches(weekday, (candidate.weekday() + 1) % 7, 0, 7):
+            if _matches(c_minute, candidate.minute, 0, 59) and _matches(c_hour, candidate.hour, 0, 23) and _matches(c_day, candidate.day, 1, 31) and _matches(c_month, candidate.month, 1, 12) and _matches(c_weekday, (candidate.weekday() + 1) % 7, 0, 7):
                 return candidate.timestamp()
             candidate += timedelta(minutes=1)
         raise ValueError("cron has no occurrence in the next year")

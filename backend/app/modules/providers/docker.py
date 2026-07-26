@@ -724,11 +724,14 @@ class DockerProvider(PrivateBackupProvider):
         host = inspect.get("HostConfig") or {}
         container_id = str(inspect.get("Id") or "")
         ports: list[dict[str, Any]] = []
-        for raw_target, bindings in (host.get("PortBindings") or {}).items():
-            target_port, protocol = str(raw_target).split("/", 1)
-            for binding in bindings or []:
-                if binding.get("HostPort"):
-                    ports.append({"target": int(target_port), "published": int(binding["HostPort"]), "protocol": protocol, "host_ip": binding.get("HostIp") or None})
+        port_bindings = host.get("PortBindings")
+        if isinstance(port_bindings, dict):
+            for raw_target, bindings in port_bindings.items():
+                target_port, protocol = str(raw_target).split("/", 1)
+                if isinstance(bindings, list):
+                    for binding in bindings:
+                        if isinstance(binding, dict) and binding.get("HostPort"):
+                            ports.append({"target": int(target_port), "published": int(binding["HostPort"]), "protocol": protocol, "host_ip": binding.get("HostIp") or None})
         preferences = self.manager_store.container_preferences(container_id)
         memory = int(host.get("Memory") or 0)
         cpu_shares = int(host.get("CpuShares") or 0)
@@ -760,10 +763,11 @@ class DockerProvider(PrivateBackupProvider):
         if request.name != original_name and self._inspect_container(request.name):
             api_error(409, "CONTAINER_NAME_EXISTS", "A container with the requested name already exists")
         host = inspect.get("HostConfig") or {}
+        port_bindings = host.get("PortBindings")
         published_targets = {
             int(str(raw_target).split("/", 1)[0])
-            for raw_target, bindings in (host.get("PortBindings") or {}).items()
-            if str(raw_target).endswith("/tcp") and any(binding.get("HostPort") for binding in (bindings or []))
+            for raw_target, bindings in (port_bindings.items() if isinstance(port_bindings, dict) else [])
+            if str(raw_target).endswith("/tcp") and any(binding.get("HostPort") for binding in (bindings if isinstance(bindings, list) else []))
         }
         if request.portal_enabled and request.portal_port not in published_targets:
             api_error(422, "PORTAL_PORT_NOT_PUBLISHED", "The selected web portal port is not published by this container")
@@ -1212,9 +1216,12 @@ class DockerProvider(PrivateBackupProvider):
         enriched: list[dict[str, Any]] = []
         for item in items:
             detail = inspection_by_id.get(str(item.get("ID") or "")) or inspection_by_name.get(str(item.get("Name") or "")) or {}
-            ipam = detail.get("IPAM") if isinstance(detail.get("IPAM"), dict) else {}
-            configs = ipam.get("Config") if isinstance(ipam, dict) and isinstance(ipam.get("Config"), list) else []
-            containers = detail.get("Containers") if isinstance(detail.get("Containers"), dict) else {}
+            ipam_val = detail.get("IPAM")
+            ipam = ipam_val if isinstance(ipam_val, dict) else {}
+            configs_val = ipam.get("Config")
+            configs = configs_val if isinstance(configs_val, list) else []
+            containers_val = detail.get("Containers")
+            containers = containers_val if isinstance(containers_val, dict) else {}
             attached = [
                 {
                     "id": str(container_id),
@@ -1264,7 +1271,8 @@ class DockerProvider(PrivateBackupProvider):
         if network in SYSTEM_NETWORKS:
             api_error(403, "SYSTEM_NETWORK_PROTECTED", "Docker system networks cannot be modified")
         detail = self._inspect("network", network)
-        attached = detail.get("Containers") if isinstance(detail.get("Containers"), dict) else {}
+        attached_val = detail.get("Containers")
+        attached = attached_val if isinstance(attached_val, dict) else {}
         attached_ids = {str(value) for value in attached}
         containers = self._json_lines(
             self._docker(["ps", "-a", "--no-trunc", "--format", "{{json .}}"], timeout=30)
@@ -1286,7 +1294,7 @@ class DockerProvider(PrivateBackupProvider):
             for item in containers
             if item.get("ID") and item.get("Names")
         ]
-        items.sort(key=lambda item: item["name"].lower())
+        items.sort(key=lambda item: str(item["name"]).lower())
         return {"items": items, "total": len(items), "network": network}
 
     def default_bridge_config(self) -> dict[str, Any]:
@@ -1535,11 +1543,13 @@ class DockerProvider(PrivateBackupProvider):
                 key, value = str(raw).split("=", 1)
                 env[key] = value
         ports: list[dict[str, Any]] = []
-        for target, bindings in (host.get("PortBindings") or {}).items():
-            port, protocol = str(target).split("/", 1)
-            for binding in bindings or []:
-                if binding.get("HostPort"):
-                    ports.append({"host_ip": binding.get("HostIp") or None, "published": int(binding["HostPort"]), "target": int(port), "protocol": protocol})
+        port_bindings = host.get("PortBindings")
+        if isinstance(port_bindings, dict):
+            for target, bindings in port_bindings.items():
+                if isinstance(bindings, list):
+                    for binding in bindings:
+                        if isinstance(binding, dict) and binding.get("HostPort"):
+                            ports.append({"host_ip": binding.get("HostIp") or None, "published": int(binding["HostPort"]), "target": int(str(target).split("/", 1)[0]), "protocol": str(target).split("/", 1)[1] if "/" in str(target) else "tcp"})
         mounts: list[dict[str, Any]] = []
         for mount in inspect.get("Mounts") or []:
             kind = str(mount.get("Type") or "")
