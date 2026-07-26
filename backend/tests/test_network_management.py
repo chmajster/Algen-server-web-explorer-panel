@@ -262,6 +262,25 @@ def test_network_policy_update_requires_permission_and_is_audited(monkeypatch):
     assert events[0][1]["details"]["new_value"] == 60
 
 
+def test_network_policy_update_is_denied_without_permission(monkeypatch):
+    monkeypatch.setattr(management, "authorize", lambda user, permission: (_ for _ in ()).throw(HTTPException(403, "Forbidden")))
+    with pytest.raises(HTTPException) as error:
+        management.update_network_policy_endpoint(
+            management.NetworkPolicyUpdate(change_confirmation_timeout_seconds=60, confirm=True),
+            SimpleNamespace(username="user"),
+        )
+    assert error.value.status_code == 403
+    assert management.read_network_policy().change_confirmation_timeout_seconds == 15
+
+
+def test_network_policy_can_be_reset_to_default(monkeypatch):
+    monkeypatch.setattr(management, "authorize", lambda user, permission: None)
+    management.write_network_policy(management.NetworkPolicy(change_confirmation_timeout_seconds=120))
+    result = management.reset_network_policy_endpoint(management.PolicyResetRequest(confirm=True), SimpleNamespace(username="admin"))
+    assert result["change_confirmation_timeout_seconds"] == 15
+    assert management.read_network_policy().change_confirmation_timeout_seconds == 15
+
+
 def test_network_policy_mutation_dependency_enforces_csrf(monkeypatch):
     user = SimpleNamespace(username="admin")
     checked = []
