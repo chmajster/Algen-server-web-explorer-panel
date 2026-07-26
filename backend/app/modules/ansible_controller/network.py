@@ -21,8 +21,11 @@ def _network_allowed(network: ipaddress.IPv4Network | ipaddress.IPv6Network, all
             configured = ipaddress.ip_network(raw, strict=False)
         except ValueError:
             continue
-        if network.version == configured.version and network.subnet_of(configured):
-            return True
+        if network.version == configured.version:
+            if isinstance(network, ipaddress.IPv4Network) and isinstance(configured, ipaddress.IPv4Network) and network.subnet_of(configured):
+                return True
+            if isinstance(network, ipaddress.IPv6Network) and isinstance(configured, ipaddress.IPv6Network) and network.subnet_of(configured):
+                return True
     return False
 
 
@@ -49,8 +52,10 @@ def scan_addresses(payload: NetworkScanInput, allowed_networks: Iterable[str] = 
     if count > max_addresses:
         raise ValueError(f"scan range exceeds {max_addresses} addresses")
     networks = list(ipaddress.summarize_address_range(start, end))
-    if not all(_network_allowed(network, allowed_networks) for network in networks):
-        raise ValueError("scan range is not private, local or explicitly allowed")
+    for network in networks:
+        if isinstance(network, (ipaddress.IPv4Network, ipaddress.IPv6Network)):
+            if not _network_allowed(network, allowed_networks):
+                raise ValueError("scan range is not private, local or explicitly allowed")
     return [str(ipaddress.ip_address(number)) for number in range(int(start), int(end) + 1)]
 
 
@@ -89,7 +94,8 @@ def parse_nmap_xml(content: str, port: int, reverse_dns: bool = False) -> list[d
             continue
         address = address_node.attrib["addr"]
         port_node = host.find(f"./ports/port[@portid='{port}']")
-        state = port_node.find("state").attrib.get("state") if port_node is not None and port_node.find("state") is not None else "closed"
+        state_node = port_node.find("state") if port_node is not None else None
+        state = state_node.attrib.get("state") if state_node is not None else "closed"
         hostname = ""
         if reverse_dns:
             try:

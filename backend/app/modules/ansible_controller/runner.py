@@ -137,7 +137,7 @@ def parse_keyscan(output: str) -> list[dict[str, str]]:
 def write_known_hosts(repository: AnsibleRepository, path: Path) -> None:
     if repository.centralized_hosts:
         from ..hosts_manager.service import registry
-        keys = []
+        keys: list[dict[str, Any]] = []
         for host in registry().active_hosts():
             keys.extend(item | {"address": host["address"], "port": host["port"], "active": True} for item in registry().host_keys(host["id"]) if item["status"] == "accepted")
     else:
@@ -562,7 +562,12 @@ def execute_ad_hoc(
             if candidates:
                 try:
                     raw = json.loads(candidates[0].read_text(encoding="utf-8"))
-                    stored = raw.get("ansible_facts") if isinstance(raw, dict) and isinstance(raw.get("ansible_facts"), dict) else raw if isinstance(raw, dict) else {}
+                    if isinstance(raw, dict):
+                        facts_data = raw.get("ansible_facts")
+                        if isinstance(facts_data, dict):
+                            stored = facts_data
+                        else:
+                            stored = raw
                 except (OSError, ValueError):
                     stored = {}
             repository.save_facts(host_id, actor, stored)
@@ -595,8 +600,8 @@ def execute_template(repository: AnsibleRepository, execution_id: str, actor: st
     if not runtime_validation["ok"]:
         repository.update_execution(execution_id, actor, status="failed", stage="preflight_failed", finished_at=time.time())
         raise RuntimeError("ansible-playbook pre-flight validation failed")
-    hosts = [repository.host(host_id) for host_id in execution.get("host_ids", [])]
-    hosts = [host for host in hosts if host and host.get("active")]
+    raw_hosts = [repository.host(host_id) for host_id in execution.get("host_ids", [])]
+    hosts: list[dict[str, Any]] = [host for host in raw_hosts if host is not None and host.get("active")]
     groups = repository.list_groups()
     memberships = repository._list("host_group_memberships", limit=10_000, order="created_at")
     repository.acquire_execution_locks(

@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from types import TracebackType
 from typing import Any, Callable
 
 from ...config import get_config
@@ -34,9 +35,9 @@ def stable_id() -> str:
 
 
 class ClosingConnection(sqlite3.Connection):
-    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> bool:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool | None:
         try:
-            return bool(super().__exit__(exc_type, exc_value, traceback))
+            return super().__exit__(exc_type, exc_val, exc_tb)
         finally:
             self.close()
 

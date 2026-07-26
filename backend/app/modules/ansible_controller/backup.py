@@ -38,7 +38,7 @@ def create_backup(repository: AnsibleRepository, actor: str, description: str = 
             destination.commit()
         manifest: dict[str, Any] = {"version": BACKUP_VERSION, "created_at": time.time(), "created_by": actor, "description": description[:200], "credentials_included": include_credentials}
         if include_credentials:
-            credentials = []
+            credentials: list[dict[str, Any]] = []
             for item in repository._list("credentials", limit=5000):
                 credentials.append({"id": item["id"], "encrypted_secret": item["encrypted_secret"]})
             atomic_private_write(staging / "credentials.enc", repository.cipher.export_encrypted({"credentials": credentials}).encode())
