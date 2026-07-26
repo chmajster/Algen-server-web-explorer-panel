@@ -150,7 +150,7 @@ describe("network mount settings", () => {
     expect(within(mediaCard).getByRole("menuitem", { name: "action.delete" })).toBeInTheDocument();
   });
 
-  it("collapses resources independently to compact name-only rows", async () => {
+  it("collapses resources independently while retaining identity, protocol, host and status", async () => {
     vi.mocked(api.mounts).mockResolvedValue([
       mount(),
       mount({ id: "mount-2", name: "backup", host: "backup.local", actual_mounted: false, status: "unmounted" }),
@@ -164,7 +164,7 @@ describe("network mount settings", () => {
     expect(within(mediaCard).getByRole("heading", { name: "media" })).toBeInTheDocument();
     expect(within(mediaCard).getByText("SMB")).toBeInTheDocument();
     expect(within(mediaCard).getByText("mounts.status.mounted")).toBeInTheDocument();
-    expect(within(mediaCard).queryByText("nas.local")).not.toBeInTheDocument();
+    expect(within(mediaCard).getByText("nas.local")).toBeInTheDocument();
     expect(within(mediaCard).queryByRole("button", { name: "mounts.unmount" })).not.toBeInTheDocument();
     expect(within(backupCard).getByRole("button", { name: "mounts.mount" })).toBeInTheDocument();
 

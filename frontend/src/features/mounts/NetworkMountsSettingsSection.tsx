@@ -169,7 +169,7 @@ function NetworkMountCard({ mount, t, toast, onEdit, onAction, onLogs }: { mount
         {collapsed ? <ChevronRight aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
         <div className="mount-card-identity">
           <span><ProtocolIcon protocol={mount.type} /></span>
-          <div><div><h4>{mount.name}</h4><b>{mount.type.toUpperCase()}</b></div>{!collapsed && <small>{mount.host}</small>}</div>
+          <div><div><h4>{mount.name}</h4><b>{mount.type.toUpperCase()}</b></div><small>{mount.host}</small></div>
         </div>
         <MountStatusBadge mount={mount} t={t} />
       </button>
