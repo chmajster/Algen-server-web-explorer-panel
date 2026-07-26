@@ -162,7 +162,10 @@ class EnrollmentTokenInput(StrictModel):
     tags: list[str] = Field(default_factory=list, max_length=50)
     expires_minutes: int = Field(default=15, ge=5, le=60)
 
-    _safe_tags = field_validator("tags")(HostInput.safe_tags)
+    @field_validator("tags")
+    @classmethod
+    def _validate_tags(cls, value: list[str]) -> list[str]:
+        return HostInput.safe_tags(value)
 
 
 class EnrollmentClaimInput(StrictModel):
@@ -178,7 +181,10 @@ class GroupInput(StrictModel):
     host_ids: list[str] = Field(default_factory=list, max_length=5000)
     active: bool = True
 
-    _no_secrets = field_validator("variables")(HostInput.no_secret_variables)
+    @field_validator("variables")
+    @classmethod
+    def _validate_variables(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return HostInput.no_secret_variables(value)
 
 
 class CredentialInput(StrictModel):
