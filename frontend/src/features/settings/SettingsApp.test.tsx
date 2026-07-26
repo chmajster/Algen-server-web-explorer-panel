@@ -21,6 +21,7 @@ describe("settings application", () => {
     vi.spyOn(api, "identityGroups").mockResolvedValue([]);
     vi.spyOn(api, "identityRoles").mockResolvedValue({ permissions: [], roles: { admin: [], operator: [], auditor: [], user: [] } });
     vi.spyOn(api, "identityHistory").mockResolvedValue([]);
+    vi.spyOn(api, "networkPolicy").mockResolvedValue({ change_confirmation_timeout_seconds: 15, minimum_seconds: 5, maximum_seconds: 300, default_seconds: 15 });
   });
   afterEach(() => { vi.restoreAllMocks(); window.sessionStorage.clear(); });
 
@@ -209,6 +210,31 @@ describe("settings application", () => {
     fireEvent.click(screen.getByRole("button", { name: "action.save" }));
 
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ memory_mb: 2048, memory_swap_mb: 4096, cpus: 1, pids: 128 })));
+  });
+
+  it("validates, saves and resets the network confirmation timeout policy", async () => {
+    vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 100 });
+    vi.spyOn(api, "dockerContainerDefaultsPolicy").mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
+    const save = vi.spyOn(api, "saveNetworkPolicy").mockResolvedValue({ change_confirmation_timeout_seconds: 45, minimum_seconds: 5, maximum_seconds: 300, default_seconds: 15 });
+    const reset = vi.spyOn(api, "resetNetworkPolicy").mockResolvedValue({ change_confirmation_timeout_seconds: 15, minimum_seconds: 5, maximum_seconds: 300, default_seconds: 15 });
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.policies" }));
+    fireEvent.click(await screen.findByRole("button", { name: /settings.policyCategoryNetwork/ }));
+    expect(screen.getAllByText("network.change_confirmation_timeout_seconds")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
+    const input = screen.getByLabelText("settings.networkConfirmationTimeout");
+    expect(input).toHaveValue(15);
+    fireEvent.change(input, { target: { value: "4" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("settings.networkConfirmationTimeoutValidation");
+    expect(screen.getByRole("button", { name: "action.save" })).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "45" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(45));
+    fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
+    fireEvent.click(screen.getByRole("button", { name: "settings.restoreDefault" }));
+    await waitFor(() => expect(reset).toHaveBeenCalledOnce());
   });
 
   it("restores a persisted update result after the service reconnects", async () => {

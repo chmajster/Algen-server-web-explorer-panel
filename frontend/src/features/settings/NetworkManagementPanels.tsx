@@ -260,7 +260,7 @@ function TransactionBanner({ transaction, connection, pendingAction, serverOffse
   const status = transaction.status || transaction.state;
   const deadline = transaction.deadline_at || transaction.deadline;
   const left = Math.max(0, Math.ceil(deadline - (now + serverOffset)));
-  const countdown = `00:${String(left).padStart(2, "0")}`;
+  const countdown = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
   const title = status === "confirmed" ? "Konfiguracja zachowana"
     : status === "rolled_back" ? "Przywrócono poprzednią konfigurację"
       : status === "failed" ? "Nie udało się potwierdzić przed upływem czasu"

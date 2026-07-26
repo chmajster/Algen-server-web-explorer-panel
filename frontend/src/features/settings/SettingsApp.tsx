@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  api, type AutoUpdateSettings, type DockerContainerDefaultsPolicy, type ProxmoxSafety, type SettingsMe, type SettingsPatch,
+  api, type AutoUpdateSettings, type DockerContainerDefaultsPolicy, type NetworkPolicy, type ProxmoxSafety, type SettingsMe, type SettingsPatch,
   type SystemStatus, type UpdateProgress, type UpdateStatus
 } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
@@ -49,7 +49,7 @@ const categorySettings: Record<SettingsCategory, string[]> = {
   notifications: ["notificationsEnabled", "transferNotifications", "errorNotifications", "adminNotifications", "notificationLimit", "notificationAutoHide"],
   accessibility: ["interfaceScale", "largerText", "reduceMotion", "highContrast", "strongActiveBorders", "alwaysShowFocus"],
   language: ["language", "dateFormat", "timeFormat", "firstDayOfWeek"], account: ["username", "groups", "changePassword"],
-  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], updates: ["updates", "updateStatus"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration", "containerDefaultsPolicy"], administration: ["serviceInformation", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
+  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], updates: ["updates", "updateStatus"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration", "containerDefaultsPolicy", "networkConfirmationTimeout"], administration: ["serviceInformation", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
 };
 
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
@@ -97,17 +97,61 @@ function PasswordSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   return <Card title={t("settings.changePassword")}><form className="password-settings" onSubmit={(event) => void submit(event)}><label>{t("settings.currentPassword")}<input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} /></label><label>{t("settings.newPassword")}<input type="password" autoComplete="new-password" required minLength={8} value={next} onChange={(event) => setNext(event.target.value)} /></label><button className="button-primary" type="submit" disabled={saving}>{saving ? t("settings.saving") : t("settings.changePassword")}</button></form></Card>;
 }
 
+function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }: {
+  policy: NetworkPolicy; policyGroups: ReactNode; t: Translate; toast: ToastFn; onChange: (policy: NetworkPolicy) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(policy.change_confirmation_timeout_seconds));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => setDraft(String(policy.change_confirmation_timeout_seconds)), [policy.change_confirmation_timeout_seconds]);
+  const numeric = Number(draft);
+  const invalid = !/^\d+$/.test(draft) || !Number.isInteger(numeric) || numeric < policy.minimum_seconds || numeric > policy.maximum_seconds;
+  async function save() {
+    if (invalid) return;
+    setSaving(true); setError("");
+    try {
+      const updated = await api.saveNetworkPolicy(numeric);
+      onChange(updated); setEditing(false); toast(t("settings.saved"), "ok", "admin");
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : t("error.generic");
+      setError(message); toast(message, "error", "admin");
+    } finally { setSaving(false); }
+  }
+  async function reset() {
+    setSaving(true); setError("");
+    try {
+      const updated = await api.resetNetworkPolicy();
+      onChange(updated); setEditing(false); toast(t("settings.networkPolicyDefaultRestored"), "ok", "admin");
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : t("error.generic");
+      setError(message); toast(message, "error", "admin");
+    } finally { setSaving(false); }
+  }
+  return <section className="policy-browser">
+    {policyGroups}
+    <section className="policy-list"><header><SlidersHorizontal />{t("settings.policies")}<b>1</b></header><button className="active"><span><strong>{t("settings.networkConfirmationTimeout")}</strong><small>network.change_confirmation_timeout_seconds</small></span><b>{t("settings.oneActiveRule")}</b></button></section>
+    <article className="policy-detail"><header><h3>{t("settings.networkConfirmationTimeout")}</h3><p>{t("settings.networkConfirmationTimeoutHint")}</p><div><span><b>ID</b><code>network.change_confirmation_timeout_seconds</code></span><span><b>{t("settings.defaultValue")}</b><code>{policy.default_seconds} {t("settings.seconds")}</code></span></div></header>
+      <div className="policy-rules-heading"><strong>{t("settings.configuredRules")}</strong><button className="button-primary" onClick={() => setEditing(true)}>+ {t("settings.editRule")}</button></div>
+      <section className="policy-rule-card"><header><span className="enabled">{t("common.enabled")}</span><b>{t("settings.priority")}: 100</b></header><dl><div><dt>{t("settings.scope")}</dt><dd>{t("settings.globalScope")}</dd></div><div><dt>{t("settings.value")}</dt><dd><code>{policy.change_confirmation_timeout_seconds} {t("settings.seconds")}</code></dd></div></dl><p>{t("settings.networkConfirmationTimeoutHint")}</p>
+        {editing && <div className="policy-rule-editor"><strong>{t("settings.ruleValue")}</strong><label>{t("settings.networkConfirmationTimeout")}<span className="input-with-unit"><input aria-label={t("settings.networkConfirmationTimeout")} type="number" min={policy.minimum_seconds} max={policy.maximum_seconds} step="1" value={draft} onChange={(event) => setDraft(event.target.value)} /><span>{t("settings.seconds")}</span></span>{invalid && <small className="field-error" role="alert">{t("settings.networkConfirmationTimeoutValidation").replace("{min}", String(policy.minimum_seconds)).replace("{max}", String(policy.maximum_seconds))}</small>}</label><div><button className="button-primary" disabled={saving || invalid} onClick={() => void save()}>{t("action.save")}</button><button disabled={saving} onClick={() => { setEditing(false); setDraft(String(policy.change_confirmation_timeout_seconds)); setError(""); }}>{t("action.cancel")}</button><button disabled={saving || policy.change_confirmation_timeout_seconds === policy.default_seconds} onClick={() => void reset()}>{t("settings.restoreDefault")}</button></div></div>}
+      </section>{error && <p className="update-settings-error" role="alert">{error}</p>}
+    </article>
+  </section>;
+}
+
 function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
   const [dockerPolicy, setDockerPolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
+  const [networkPolicy, setNetworkPolicy] = useState<NetworkPolicy | null>(null);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<"checking" | "installation" | "containers">("checking");
+  const [group, setGroup] = useState<"checking" | "installation" | "containers" | "network">("checking");
   const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
   const [editing, setEditing] = useState(false);
   useEffect(() => {
     let live = true;
-    Promise.all([api.autoUpdate(), api.dockerContainerDefaultsPolicy()])
-      .then(([updatePolicy, containerPolicy]) => { if (live) { setPolicy(updatePolicy); setDockerPolicy(containerPolicy); } })
+    Promise.all([api.autoUpdate(), api.dockerContainerDefaultsPolicy(), api.networkPolicy()])
+      .then(([updatePolicy, containerPolicy, currentNetworkPolicy]) => { if (live) { setPolicy(updatePolicy); setDockerPolicy(containerPolicy); setNetworkPolicy(currentNetworkPolicy); } })
       .catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
     return () => { live = false; };
   }, [t]);
@@ -128,7 +172,7 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
     }
   }
   const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
-  function chooseGroup(next: "checking" | "installation" | "containers") {
+  function chooseGroup(next: "checking" | "installation" | "containers" | "network") {
     setGroup(next); if (next !== "containers") setSelected(next === "checking" ? "check_enabled" : "enabled"); setEditing(false);
   }
   const policyGroups = <aside className="policy-groups">
@@ -136,7 +180,13 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
     <button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button>
     <button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button>
     <button className={group === "containers" ? "active" : ""} onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>
+    <button className={group === "network" ? "active" : ""} onClick={() => chooseGroup("network")}><FolderOpen /><span>{t("settings.policyCategoryNetwork")}</span><b>1</b></button>
   </aside>;
+  if (group === "network") {
+    if (!networkPolicy && !error) return <div className="loading-state">{t("status.loading")}</div>;
+    if (!networkPolicy) return <div className="error-state" role="alert">{error}</div>;
+    return <NetworkConfirmationPolicy policy={networkPolicy} policyGroups={policyGroups} t={t} toast={toast} onChange={setNetworkPolicy} />;
+  }
   if (group === "containers") {
     if (!dockerPolicy && !error) return <div className="loading-state">{t("status.loading")}</div>;
     if (!dockerPolicy) return <div className="error-state" role="alert">{error}</div>;

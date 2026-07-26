@@ -23,6 +23,7 @@ const state: NetworkManagementState = {
 const plan: NetworkPlan = {
   id: "a".repeat(32), provider: "networkmanager", target: "eth1", before: {}, after: {}, commands: [["nmcli", "connection", "add"]],
   warnings: [], high_risk: false, required_phrase: "", rollback_supported: true, rollback_seconds: 15, client_interface: null,
+  confirmation_timeout_seconds: 15, rollback_method: "systemd_transient_timer", automatic_rollback_without_confirmation: true,
 };
 const now = Date.now() / 1000;
 const transaction: NetworkTransaction = {
@@ -149,6 +150,24 @@ describe("network management settings", () => {
     vi.mocked(api.networkTransactionStatus).mockResolvedValue(synchronized);
     render(<NetworkSettingsSection isAdmin t={t} />);
     expect(await screen.findByText(/Automatyczne przywrócenie za 00:0[45]/)).toBeInTheDocument();
+  });
+
+  it("formats a non-default timeout from the transaction deadline", async () => {
+    const current = Date.now() / 1000;
+    const custom = {
+      ...transaction,
+      started_at: current,
+      created_at: current,
+      deadline: current + 45,
+      deadline_at: current + 45,
+      confirmation_timeout_seconds: 45,
+      current_server_time: current,
+    };
+    vi.mocked(api.networkManagement).mockResolvedValue({ ...state, transaction: custom });
+    vi.mocked(api.activeNetworkTransaction).mockResolvedValue(custom);
+    vi.mocked(api.networkTransactionStatus).mockResolvedValue(custom);
+    render(<NetworkSettingsSection isAdmin t={t} />);
+    expect(await screen.findByText(/Automatyczne przywrócenie za 00:4[45]/)).toBeInTheDocument();
   });
 
   it("enters rollback state after the local deadline while polling continues", async () => {

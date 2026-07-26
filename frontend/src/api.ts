@@ -896,6 +896,13 @@ export type NetworkPlan = {
   commands: string[][]; warnings: string[]; high_risk: boolean; required_phrase: string;
   rollback_supported: boolean; rollback_seconds: number; client_interface: string | null;
   previous_panel_address?: string | null; predicted_panel_address?: string | null; reachable_addresses?: string[];
+  confirmation_timeout_seconds: number; rollback_method: string; automatic_rollback_without_confirmation: boolean;
+};
+export type NetworkPolicy = {
+  change_confirmation_timeout_seconds: number;
+  minimum_seconds: number;
+  maximum_seconds: number;
+  default_seconds: number;
 };
 export type NetworkTransaction = {
   id: string; transaction_id?: string; provider: string;
@@ -904,6 +911,7 @@ export type NetworkTransaction = {
   confirmed?: boolean; rollback_pending?: boolean; rollback_started?: boolean; rolled_back?: boolean; failed?: boolean;
   started_at: number; deadline: number; rollback_unit: string | null; target: string;
   created_at?: number; deadline_at?: number; remaining_seconds?: number; current_server_time?: number;
+  server_time?: number; confirmation_timeout_seconds?: number;
   previous_panel_address?: string | null; predicted_panel_address?: string | null; reachable_addresses?: string[];
 };
 export type NetworkManagementState = {
@@ -1125,6 +1133,9 @@ export const api = {
   networkManagement: () => request<NetworkManagementState>("/api/admin/network/management"),
   testNetworkConnectivity: (kind: "ping" | "trace" | "tcp", target: string, port?: number | null) => request<NetworkConnectivityResult>("/api/admin/network/connectivity/test", { method: "POST", body: JSON.stringify({ kind, target, port: port || null }) }),
   planNetworkChange: (change: NetworkChange) => request<NetworkPlan>("/api/admin/network/plans", { method: "POST", body: JSON.stringify({ change }) }),
+  networkPolicy: () => request<NetworkPolicy>("/api/admin/network/policy"),
+  saveNetworkPolicy: (change_confirmation_timeout_seconds: number) => request<NetworkPolicy>("/api/admin/network/policy", { method: "PUT", body: JSON.stringify({ change_confirmation_timeout_seconds, confirm: true }) }),
+  resetNetworkPolicy: () => request<NetworkPolicy>("/api/admin/network/policy/reset", { method: "POST", body: JSON.stringify({ confirm: true }) }),
   applyNetworkPlan: (plan_id: string, confirmation_phrase = "") => request<NetworkTransaction>("/api/admin/network/apply", { method: "POST", body: JSON.stringify({ plan_id, confirmation_phrase }) }),
   activeNetworkTransaction: (baseUrl = "", signal?: AbortSignal) => request<NetworkTransaction | null>(apiAt(baseUrl, "/api/admin/network/transactions/active"), { signal }),
   networkTransactionStatus: (transaction_id: string, baseUrl = "", signal?: AbortSignal) => request<NetworkTransaction>(apiAt(baseUrl, `/api/admin/network/transactions/${encodeURIComponent(transaction_id)}/status`), { signal }),
