@@ -238,9 +238,12 @@ class TrafficRule(StrictModel):
     @model_validator(mode="after")
     def valid_rule(self) -> "TrafficRule":
         _validate_ifname(self.interface)
+        families: set[int] = set()
         for value in (self.source_cidr, self.destination_cidr):
             if value:
-                ipaddress.ip_network(value, strict=False)
+                families.add(ipaddress.ip_network(value, strict=False).version)
+        if len(families) > 1:
+            raise ValueError("Traffic filter CIDRs must use the same address family")
         if self.protocol == "any" and (self.source_port or self.destination_port):
             raise ValueError("Ports require TCP or UDP")
         if self.guaranteed_kbit > self.maximum_kbit:
@@ -368,18 +371,28 @@ def render_networkd(configuration: InterfaceConfiguration) -> dict[str, str]:
         network += "IPv6AcceptRA=yes\n"
     for address in configuration.ipv4.addresses + configuration.ipv6.addresses:
         network += f"Address={address.address}/{address.prefix}\n"
-    for gateway in (configuration.ipv4.gateway, configuration.ipv6.gateway):
-        if gateway:
-            network += f"Gateway={gateway}\n"
     for server in configuration.ipv4.dns + configuration.ipv6.dns:
         network += f"DNS={server}\n"
-    files = {f"80-webnas-{configuration.name}.network": match + network}
+    for domain in configuration.ipv4.search_domains + configuration.ipv6.search_domains:
+        network += f"Domains={domain}\n"
+    for family in (configuration.ipv4, configuration.ipv6):
+        if family.gateway:
+            network += f"\n[Route]\nGateway={family.gateway}\nMetric={family.metric}\n"
+    files = {
+        f"80-webnas-{configuration.name}.network": match + network,
+        f"80-webnas-{configuration.name}.link": f"[Match]\nOriginalName={configuration.name}\n\n[Link]\nMTUBytes={configuration.mtu}\n",
+    }
     if configuration.kind == "bond":
         files[f"80-webnas-{configuration.name}.netdev"] = f"[NetDev]\nName={configuration.name}\nKind=bond\n\n[Bond]\nMode={configuration.bond_mode}\nMIIMonitorSec={configuration.miimon}ms\n"
+        for member in configuration.members:
+            files[f"79-webnas-{configuration.name}-{member}.network"] = f"[Match]\nName={member}\n\n[Network]\nBond={configuration.name}\n"
     elif configuration.kind == "vlan":
         files[f"80-webnas-{configuration.name}.netdev"] = f"[NetDev]\nName={configuration.name}\nKind=vlan\n\n[VLAN]\nId={configuration.vlan_id}\n"
+        files[f"79-webnas-{configuration.name}-{configuration.parent}.network"] = f"[Match]\nName={configuration.parent}\n\n[Network]\nVLAN={configuration.name}\n"
     elif configuration.kind == "bridge":
         files[f"80-webnas-{configuration.name}.netdev"] = f"[NetDev]\nName={configuration.name}\nKind=bridge\n\n[Bridge]\nSTP={'yes' if configuration.stp else 'no'}\nForwardDelaySec={configuration.forward_delay}\n"
+        for member in configuration.members:
+            files[f"79-webnas-{configuration.name}-{member}.network"] = f"[Match]\nName={member}\n\n[Network]\nBridge={configuration.name}\n"
     return files
 
 
@@ -395,6 +408,16 @@ def render_netplan(configuration: InterfaceConfiguration) -> str:
     addresses = [f"{address.address}/{address.prefix}" for address in configuration.ipv4.addresses + configuration.ipv6.addresses]
     if addresses:
         item["addresses"] = addresses
+    nameservers = list(dict.fromkeys(configuration.ipv4.dns + configuration.ipv6.dns))
+    domains = list(dict.fromkeys(configuration.ipv4.search_domains + configuration.ipv6.search_domains))
+    if nameservers or domains:
+        item["nameservers"] = {"addresses": nameservers, "search": domains}
+    routes = []
+    for family, default in ((configuration.ipv4, "0.0.0.0/0"), (configuration.ipv6, "::/0")):
+        if family.gateway:
+            routes.append({"to": default, "via": family.gateway, "metric": family.metric})
+    if routes:
+        item["routes"] = routes
     if configuration.kind == "bond":
         item["interfaces"] = configuration.members
         item["parameters"] = {"mode": configuration.bond_mode, "mii-monitor-interval": configuration.miimon}
@@ -417,7 +440,12 @@ class SystemdNetworkdProvider(NetworkProvider):
             ip = shutil.which("ip") or "ip"
             return [[ip, "link", "set", "dev", change.interface_name or "", "up" if change.link_up else "down"]]
         if change.operation in {"save_interface", "delete_interface", "save_dns"}:
-            return [[networkctl, "reload"], [networkctl, "reconfigure", change.interface.name if change.interface else change.interface_name or "lo"]]
+            commands = [[networkctl, "reload"]]
+            if change.operation != "save_dns":
+                commands.append([networkctl, "reconfigure", change.interface.name if change.interface else change.interface_name or "lo"])
+            elif shutil.which("systemctl"):
+                commands.append([shutil.which("systemctl") or "systemctl", "restart", "systemd-resolved.service"])
+            return commands
         return []
 
 
@@ -426,7 +454,10 @@ class NetplanProvider(SystemdNetworkdProvider):
 
     def commands(self, change: NetworkChange) -> list[list[str]]:
         if change.operation in {"save_interface", "delete_interface", "save_dns"}:
-            return [[shutil.which("netplan") or "netplan", "generate"], [shutil.which("netplan") or "netplan", "apply"]]
+            commands = [[shutil.which("netplan") or "netplan", "generate"], [shutil.which("netplan") or "netplan", "apply"]]
+            if change.operation == "save_dns" and shutil.which("systemctl"):
+                commands.append([shutil.which("systemctl") or "systemctl", "restart", "systemd-resolved.service"])
+            return commands
         return super().commands(change)
 
 
@@ -488,17 +519,43 @@ def _commands_for_generic(change: NetworkChange) -> list[list[str]]:
             return []
         handle = 0x7000 + int(rule.id[:3], 16) % 0x0FFF
         if rule.direction == "ingress":
-            return [[tc, "qdisc", "replace", "dev", rule.interface, "handle", f"{handle:x}:", "ingress"]]
+            ifb = f"ifbw{rule.id[:8]}"
+            return [
+                [ip, "link", "add", ifb, "type", "ifb"],
+                [ip, "link", "set", "dev", ifb, "up"],
+                [tc, "qdisc", "replace", "dev", rule.interface, "handle", "ffff:", "ingress"],
+                [tc, "filter", "replace", "dev", rule.interface, "parent", "ffff:", "protocol", "all", "u32", "match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", ifb],
+                [tc, "qdisc", "replace", "dev", ifb, "root", "handle", f"{handle:x}:", "htb", "default", "1"],
+                [tc, "class", "replace", "dev", ifb, "parent", f"{handle:x}:", "classid", f"{handle:x}:1", "htb", "rate", f"{rule.guaranteed_kbit or rule.maximum_kbit}kbit", "ceil", f"{rule.maximum_kbit}kbit", "prio", str(rule.priority)],
+            ]
         rate = rule.guaranteed_kbit or rule.maximum_kbit
-        return [
+        commands = [
             [tc, "qdisc", "replace", "dev", rule.interface, "root", "handle", f"{handle:x}:", "htb", "default", "1"],
             [tc, "class", "replace", "dev", rule.interface, "parent", f"{handle:x}:", "classid", f"{handle:x}:1", "htb", "rate", f"{rate}kbit", "ceil", f"{rule.maximum_kbit}kbit", "prio", str(rule.priority)],
         ]
+        filters: list[str] = []
+        family = "ipv6" if any(":" in value for value in (rule.source_cidr or "", rule.destination_cidr or "")) else "ip"
+        if rule.source_cidr:
+            filters += ["src_ip", rule.source_cidr]
+        if rule.destination_cidr:
+            filters += ["dst_ip", rule.destination_cidr]
+        if rule.protocol != "any":
+            filters += ["ip_proto", rule.protocol]
+        if rule.source_port:
+            filters += ["src_port", str(rule.source_port)]
+        if rule.destination_port:
+            filters += ["dst_port", str(rule.destination_port)]
+        if filters:
+            commands.append([tc, "filter", "replace", "dev", rule.interface, "protocol", family, "parent", f"{handle:x}:", "prio", str(rule.priority), "flower", *filters, "flowid", f"{handle:x}:1"])
+        return commands
     if change.operation == "delete_traffic" and change.object_id:
         previous = _managed_state()["traffic"].get(change.object_id)
         if previous:
             rule = TrafficRule.model_validate(previous)
             handle = 0x7000 + int(rule.id[:3], 16) % 0x0FFF
+            if rule.direction == "ingress":
+                ifb = f"ifbw{rule.id[:8]}"
+                return [[tc, "qdisc", "del", "dev", rule.interface, "ingress"], [ip, "link", "del", ifb]]
             return [[tc, "qdisc", "del", "dev", rule.interface, "root", "handle", f"{handle:x}:"]]
     return []
 
@@ -542,6 +599,22 @@ def _conflicts(change: NetworkChange, state: dict[str, Any]) -> list[str]:
                 previous = ManagedRoute.model_validate(existing)
                 if (previous.family, previous.destination, previous.table, previous.route_type) == (route.family, route.destination, route.table, route.route_type):
                     raise HTTPException(409, "A matching managed route already exists")
+    if change.traffic:
+        if not shutil.which("tc"):
+            raise HTTPException(409, "Traffic control is unavailable")
+        if change.traffic.direction == "ingress" and not Path("/sys/module/ifb").exists():
+            raise HTTPException(409, "Ingress shaping requires the IFB kernel module")
+        result = _run_command([shutil.which("tc") or "tc", "-j", "qdisc", "show", "dev", change.traffic.interface])
+        if result.returncode == 0:
+            try:
+                qdiscs = json.loads(result.stdout or "[]")
+            except ValueError:
+                qdiscs = []
+            for qdisc in qdiscs if isinstance(qdiscs, list) else []:
+                handle = str(qdisc.get("handle") or "")
+                root = bool(qdisc.get("root"))
+                if root and handle and not re.fullmatch(r"7[0-9a-f]{3}:", handle):
+                    raise HTTPException(409, "The interface already has unmanaged traffic control configuration")
     return warnings
 
 
@@ -596,18 +669,78 @@ def _provider_by_id(identifier: str) -> NetworkProvider:
 
 
 def _write_provider_files(provider: NetworkProvider, change: NetworkChange, snapshot: dict[str, Any]) -> None:
-    if not change.interface or change.operation != "save_interface":
+    interface_name = change.interface.name if change.interface else change.interface_name
+    if not interface_name or change.operation not in {"save_interface", "delete_interface"}:
         return
     if isinstance(provider, SystemdNetworkdProvider) and not isinstance(provider, NetplanProvider):
         directory = Path("/etc/systemd/network")
-        for name, content in render_networkd(change.interface).items():
+        rendered = render_networkd(change.interface) if change.interface else {}
+        names = set(rendered) | {f"80-webnas-{interface_name}.network", f"80-webnas-{interface_name}.netdev"}
+        for name in names:
             path = directory / name
             snapshot.setdefault("files", {})[str(path)] = path.read_text(encoding="utf-8") if path.exists() else None
-            path.write_text(content, encoding="utf-8")
+            if name in rendered:
+                path.write_text(rendered[name], encoding="utf-8")
+            else:
+                path.unlink(missing_ok=True)
     elif isinstance(provider, NetplanProvider):
-        path = Path("/etc/netplan") / f"90-webnas-{change.interface.name}.yaml"
+        path = Path("/etc/netplan") / f"90-webnas-{interface_name}.yaml"
         snapshot.setdefault("files", {})[str(path)] = path.read_text(encoding="utf-8") if path.exists() else None
-        path.write_text(render_netplan(change.interface), encoding="utf-8")
+        if change.interface:
+            path.write_text(render_netplan(change.interface), encoding="utf-8")
+        else:
+            path.unlink(missing_ok=True)
+
+
+def _write_restore_service(change: NetworkChange, snapshot: dict[str, Any]) -> bool:
+    if change.operation not in {"save_route", "delete_route", "save_traffic", "delete_traffic"}:
+        return False
+    path = Path("/etc/systemd/system/webnas-network-managed.service")
+    snapshot.setdefault("files", {})[str(path)] = path.read_text(encoding="utf-8") if path.exists() else None
+    content = (
+        "[Unit]\nDescription=Restore WebNAS managed routes and traffic control\n"
+        "After=network-online.target\nWants=network-online.target\n\n"
+        "[Service]\nType=oneshot\n"
+        f"ExecStart={sys.executable} -m app.network_management --restore-managed\n"
+        "RemainAfterExit=yes\n\n[Install]\nWantedBy=multi-user.target\n"
+    )
+    path.write_text(content, encoding="utf-8")
+    return True
+
+
+def _capture_provider_state(provider: NetworkProvider, change: NetworkChange, snapshot: dict[str, Any]) -> None:
+    snapshot["live"] = {
+        "interfaces": network_overview(),
+        "routing": routing_snapshot(),
+        "dns": dns_configuration(),
+    }
+    if not isinstance(provider, NetworkManagerProvider):
+        return
+    nmcli = shutil.which("nmcli") or "nmcli"
+    result = _run_command([nmcli, "-t", "-f", "UUID", "connection", "show", "--active"], timeout=8)
+    snapshot["active_nm_uuids"] = [
+        value.strip() for value in result.stdout.splitlines()
+        if re.fullmatch(r"[0-9a-fA-F-]{36}", value.strip())
+    ][:128]
+    target = change.interface.name if change.interface else change.interface_name
+    if not target:
+        return
+    directory = Path("/etc/NetworkManager/system-connections")
+    if directory.is_dir():
+        for path in directory.glob(f"webnas-{target}*.nmconnection"):
+            snapshot.setdefault("files", {})[str(path)] = path.read_text(encoding="utf-8") if path.is_file() else None
+
+
+def _restore_managed_configuration() -> None:
+    state = _managed_state()
+    for value in state.get("routes", {}).values():
+        change = NetworkChange(operation="save_route", route=ManagedRoute.model_validate(value))
+        for command in _commands_for_generic(change):
+            _run_command(command, timeout=30)
+    for value in state.get("traffic", {}).values():
+        change = NetworkChange(operation="save_traffic", traffic=TrafficRule.model_validate(value))
+        for command in _commands_for_generic(change):
+            _run_command(command, timeout=30)
 
 
 def _schedule_rollback(transaction_id: str, seconds: int) -> str | None:
@@ -637,7 +770,9 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
         transaction_dir = _state_root() / "transactions" / transaction_id
         transaction_dir.mkdir(parents=True)
         snapshot = {"state": plan["before"], "files": {}, "commands": plan["commands"], "actor": actor}
+        _capture_provider_state(provider, change, snapshot)
         _write_provider_files(provider, change, snapshot)
+        restore_service_changed = _write_restore_service(change, snapshot)
         _atomic_json(transaction_dir / "snapshot.json", snapshot)
         commands = provider.commands(change) + _commands_for_generic(change)
         executed: list[list[str]] = []
@@ -648,7 +783,19 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
                 rollback_transaction(transaction_id, automatic=True)
                 raise HTTPException(502, "Network configuration failed and was rolled back")
         _atomic_json(_state_root() / "state.json", plan["after"])
+        if restore_service_changed:
+            systemctl = shutil.which("systemctl")
+            if not systemctl:
+                rollback_transaction(transaction_id, automatic=True)
+                raise HTTPException(503, "Persistent network restore requires systemd")
+            for command in ([systemctl, "daemon-reload"], [systemctl, "enable", "webnas-network-managed.service"]):
+                if _run_command(command, timeout=15).returncode:
+                    rollback_transaction(transaction_id, automatic=True)
+                    raise HTTPException(502, "Could not enable persistent network configuration")
         unit = _schedule_rollback(transaction_id, ROLLBACK_SECONDS)
+        if not unit:
+            rollback_transaction(transaction_id, automatic=True)
+            raise HTTPException(503, "A durable rollback timer could not be scheduled")
         transaction = {
             "id": transaction_id, "state": "pending_confirmation", "actor": actor,
             "provider": provider.id, "started_at": time.time(), "deadline": time.time() + ROLLBACK_SECONDS,
@@ -696,6 +843,12 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
             path.unlink(missing_ok=True)
         else:
             path.write_text(str(content), encoding="utf-8")
+    restore_unit = "/etc/systemd/system/webnas-network-managed.service"
+    if restore_unit in snapshot.get("files", {}) and shutil.which("systemctl"):
+        systemctl = shutil.which("systemctl") or "systemctl"
+        if snapshot["files"][restore_unit] is None:
+            _run_command([systemctl, "disable", "webnas-network-managed.service"], timeout=10)
+        _run_command([systemctl, "daemon-reload"], timeout=10)
     _atomic_json(_state_root() / "state.json", snapshot.get("state", {}))
     active = _read_json(directory / "transaction.json", {"id": transaction_id})
     active.update({"state": "rolled_back", "rolled_back_at": time.time(), "automatic": automatic, "rolled_back_by": actor})
@@ -703,7 +856,13 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
     (_state_root() / "active.json").unlink(missing_ok=True)
     provider_id = str(active.get("provider") or "")
     if provider_id == "networkmanager":
-        commands = [[shutil.which("nmcli") or "nmcli", "connection", "reload"]]
+        nmcli = shutil.which("nmcli") or "nmcli"
+        commands = [[nmcli, "connection", "reload"]]
+        commands.extend(
+            [nmcli, "connection", "up", "uuid", identifier]
+            for identifier in snapshot.get("active_nm_uuids", [])
+            if re.fullmatch(r"[0-9a-fA-F-]{36}", str(identifier))
+        )
     elif provider_id == "netplan":
         commands = [[shutil.which("netplan") or "netplan", "generate"], [shutil.which("netplan") or "netplan", "apply"]]
     elif provider_id == "systemd-networkd":
@@ -797,3 +956,5 @@ def rollback_endpoint(payload: TransactionRequest, user: SessionUser = Depends(_
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "--rollback" and re.fullmatch(r"[a-f0-9]{32}", sys.argv[2]):
         rollback_transaction(sys.argv[2], automatic=True)
+    elif len(sys.argv) == 2 and sys.argv[1] == "--restore-managed":
+        _restore_managed_configuration()

@@ -8,6 +8,7 @@ import {
   api,
   type DnsConfiguration,
   type DnsTestResult,
+  type NetworkConnectivityResult,
   type NetworkInterfaceDetail,
   type NetworkOverview,
   type NetworkRoute,
@@ -356,6 +357,31 @@ export function RoutingTable({ t }: { t: Translate }) {
   </section>;
 }
 
+function ConnectivityTester({ t }: { t: Translate }) {
+  const [kind, setKind] = useState<"ping" | "trace" | "tcp">("ping");
+  const [target, setTarget] = useState("1.1.1.1");
+  const [port, setPort] = useState(443);
+  const [result, setResult] = useState<NetworkConnectivityResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  async function run(event: React.FormEvent) {
+    event.preventDefault(); setLoading(true); setError(""); setResult(null);
+    try { setResult(await api.testNetworkConnectivity(kind, target.trim(), kind === "tcp" ? port : null)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); }
+    finally { setLoading(false); }
+  }
+  return <section className="network-diagnostic-panel"><header><div><h3>{t("network.connectivityTests")}</h3><p>{t("network.connectivityTestsDescription")}</p></div></header>
+    <form className="network-connectivity-form" onSubmit={(event) => void run(event)}>
+      <label>{t("network.testType")}<select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}><option value="ping">Ping</option><option value="trace">Tracepath / traceroute</option><option value="tcp">TCP</option></select></label>
+      <label>{t("network.testTarget")}<input required maxLength={253} value={target} onChange={(event) => setTarget(event.target.value)} /></label>
+      {kind === "tcp" && <label>{t("network.port")}<input required type="number" min={1} max={65535} value={port} onChange={(event) => setPort(Number(event.target.value))} /></label>}
+      <button className="button-primary" disabled={loading}>{loading ? t("status.loading") : t("network.runTest")}</button>
+    </form>
+    {error && <p className="error-state" role="alert">{error}</p>}
+    {result && <article className={`network-connectivity-result ${result.success ? "success" : "failure"}`} role="status"><header>{result.success ? <CheckCircle2 /> : <XCircle />}<strong>{result.success ? t("network.testSucceeded") : t("network.testFailed")}</strong><span>{result.duration_ms.toFixed(1)} ms</span></header><pre>{result.output || "—"}</pre></article>}
+  </section>;
+}
+
 export function NetworkSettingsSection({ isAdmin, t }: { isAdmin: boolean; t: Translate }) {
   const [tab, setTab] = useState<NetworkTab>("general");
   const tabs: Array<{ id: NetworkTab; icon: ReactNode; label: string }> = [
@@ -379,7 +405,7 @@ export function NetworkSettingsSection({ isAdmin, t }: { isAdmin: boolean; t: Tr
     <nav className="network-settings-tabs" role="tablist" aria-label={t("settings.category.network")} onKeyDown={keyboard}>{tabs.map((item) => <button id={`network-tab-${item.id}`} key={item.id} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`network-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.icon}<span>{item.label}</span></button>)}</nav>
     <div id={`network-panel-${tab}`} role="tabpanel" aria-labelledby={`network-tab-${tab}`}>
       {tab !== "connectivity" && <NetworkManagementWorkspace tab={tab} t={t} />}
-      {tab === "connectivity" && <div className="network-connectivity-stack"><NetworkMonitor t={t} /><DnsDiagnostics t={t} /><RoutingTable t={t} /></div>}
+      {tab === "connectivity" && <div className="network-connectivity-stack"><ConnectivityTester t={t} /><NetworkMonitor t={t} /><DnsDiagnostics t={t} /><RoutingTable t={t} /></div>}
     </div>
   </section>;
 }
