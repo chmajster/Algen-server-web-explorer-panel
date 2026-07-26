@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.testclient import TestClient
 
 from app.modules.ansible_controller.models import CredentialInput as LegacyCredentialInput
 from app.modules.ansible_controller.models import CredentialType as LegacyCredentialType
@@ -16,6 +18,8 @@ from app.modules.hosts_manager.models import (
     CredentialInput, CredentialType, EnrollmentTokenInput, HostInput, HostsManagerSettingsUpdate,
 )
 from app.modules.hosts_manager.service import SCHEMA_VERSION, HostCapabilityProvider, HostRegistryService
+from app.modules.hosts_manager import router as hosts_router
+from app.security import create_session
 
 
 def service(tmp_path: Path) -> HostRegistryService:
@@ -132,6 +136,78 @@ def test_schema_migration_and_linux_windows_bootstrap(tmp_path: Path):
     assert "#Requires -Version 5.1" in windows_script
     assert "Invoke-RestMethod" in windows_script and "ConvertTo-Json" in windows_script
     assert "Invoke-Expression" not in windows_script
+
+
+def test_bootstrap_script_endpoint_uses_bearer_without_admin_session_and_rejects_inactive_tokens(monkeypatch, tmp_path: Path):
+    store = service(tmp_path)
+    monkeypatch.setattr(hosts_router, "_service", lambda: store)
+    app = FastAPI()
+    app.include_router(hosts_router.router)
+    client = TestClient(app)
+
+    active = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    response = client.get(
+        "/api/modules/hosts-manager/enrollment-script",
+        headers={"Authorization": f"Bearer {active['token']}"},
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.text.startswith("#!/usr/bin/env bash")
+    assert client.get("/api/modules/hosts-manager/enrollment-script").status_code == 401
+
+    revoked = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    store.revoke_enrollment_token(revoked["id"], "admin")
+    assert client.get(
+        "/api/modules/hosts-manager/enrollment-script",
+        headers={"Authorization": f"Bearer {revoked['token']}"},
+    ).status_code == 401
+
+    expired = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("UPDATE enrollment_tokens SET expires_at=0 WHERE id=?", (expired["id"],))
+    assert client.get(
+        "/api/modules/hosts-manager/enrollment-script",
+        headers={"Authorization": f"Bearer {expired['token']}"},
+    ).status_code == 401
+
+    used = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    assert store.claim_enrollment_token(
+        used["token"],
+        {"hostname": used["assigned_hostname"], "address": "192.168.1.88"},
+    )
+    assert client.get(
+        "/api/modules/hosts-manager/enrollment-script",
+        headers={"Authorization": f"Bearer {used['token']}"},
+    ).status_code == 401
+
+
+def test_settings_update_route_requires_configure_permission_and_csrf(monkeypatch):
+    route = next(
+        item for item in hosts_router.router.routes
+        if item.path.endswith("/settings") and "PUT" in item.methods
+    )
+    dependency = route.dependant.dependencies[0].call
+    response = Response()
+    csrf = create_session(response, "operator")
+    cookie = response.headers["set-cookie"].split(";", 1)[0]
+    request = Request({
+        "type": "http",
+        "method": "PUT",
+        "path": route.path,
+        "headers": [
+            (b"cookie", cookie.encode("latin-1")),
+            (b"x-csrf-token", csrf.encode("latin-1")),
+        ],
+    })
+    monkeypatch.setattr("app.identity.permissions.has_permission", lambda username, permission: False)
+    with pytest.raises(HTTPException) as error:
+        dependency(request)
+    assert error.value.status_code == 403
+    monkeypatch.setattr(
+        "app.identity.permissions.has_permission",
+        lambda username, permission: permission == "hosts-manager.configure",
+    )
+    assert dependency(request).username == "operator"
 
 
 def test_migration_is_idempotent_and_preserves_ids_groups_facts_keys_and_credentials(tmp_path: Path):

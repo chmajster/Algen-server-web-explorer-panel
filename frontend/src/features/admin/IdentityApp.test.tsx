@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type IdentityGroup, type IdentityRoles, type IdentityUser } from "../../api";
-import { IdentityApp } from "./IdentityApp";
+import { AccessPolicies, IdentityApp } from "./IdentityApp";
 
 vi.mock("../../api", async () => {
   const actual = await vi.importActual<typeof import("../../api")>("../../api");
@@ -53,6 +53,16 @@ describe("IdentityApp", () => {
     expect(screen.queryByRole("button", { name: "identity.savePolicy" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "identity.openPolicySettings" }));
     expect(openPolicies).toHaveBeenCalledOnce();
+  });
+
+  it("edits user access policies in Settings policies", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(api.saveIdentityUserPolicy).mockResolvedValue(regularUser);
+    render(<AccessPolicies permissions={["access.view", "access.manage_user_permissions", "access.manage_roles"]} t={(key) => key} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "identity.tab.users" }));
+    fireEvent.click(await screen.findByText("alice"));
+    fireEvent.click(screen.getByRole("button", { name: "identity.savePolicy" }));
+    await waitFor(() => expect(api.saveIdentityUserPolicy).toHaveBeenCalledWith("alice", expect.objectContaining({ role: "operator" })));
   });
 
   it("creates a Linux user with optional identity fields from the authenticated session", async () => {

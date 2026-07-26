@@ -26,10 +26,13 @@ describe("HostsManagerApp", () => {
     render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
     expect(await screen.findByText("hosts.dashboard.total")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /module.section.hosts/ }));
-    expect(await screen.findByText("node-01")).toBeInTheDocument();
+    expect((await screen.findAllByText("node-01")).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText("action.search"), { target: { value: "missing" } });
     expect(screen.getByText("hosts.list.empty")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hosts.host.add/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "hosts.host.add" })).toBeInTheDocument();
+    const addressSort = screen.getByRole("button", { name: "hosts.host.address" });
+    fireEvent.click(addressSort);
+    expect(addressSort.closest("th")).toHaveAttribute("aria-sort", "ascending");
   });
 
   it("submits the manual host form through the central API", async () => {
@@ -37,7 +40,7 @@ describe("HostsManagerApp", () => {
     render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
     await screen.findByText("hosts.dashboard.total");
     fireEvent.click(screen.getByRole("button", { name: /module.section.hosts/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /hosts.host.add/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "hosts.host.add" }));
     fireEvent.change(screen.getByLabelText("common.name"), { target: { value: "new-node" } });
     fireEvent.change(screen.getByLabelText("hosts.host.address"), { target: { value: "192.168.1.20" } });
     fireEvent.click(screen.getByRole("button", { name: "action.save" }));
@@ -68,6 +71,8 @@ describe("HostsManagerApp", () => {
     fireEvent.click(generateButtons[generateButtons.length - 1]);
     await waitFor(() => expect(api.createHostsManagerEnrollmentToken).toHaveBeenCalledWith(expect.objectContaining({ bootstrap_os: "windows", apply_hostname: true })));
     expect(await screen.findByText("powershell command")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hosts.enrollment.download/ })).toBeInTheDocument();
+    vi.mocked(api.downloadHostsManagerEnrollmentScript).mockResolvedValue(new Blob(["script"]));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.enrollment.download/ }));
+    await waitFor(() => expect(api.downloadHostsManagerEnrollmentScript).toHaveBeenCalledWith("/api/modules/hosts-manager/enrollment-script", "raw-once"));
   });
 });
