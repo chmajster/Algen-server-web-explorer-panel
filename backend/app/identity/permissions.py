@@ -96,6 +96,8 @@ class Permission(StrEnum):
     NETWORK_CONNECTIONS = "network.manage_connections"
     NETWORK_CONFIRM = "network.confirm"
     NETWORK_ROLLBACK = "network.rollback"
+    NETWORK_POLICY_VIEW = "network.policy.view"
+    NETWORK_POLICY_EDIT = "network.policy.edit"
     DOCKER_VIEW = "docker.view"
     DOCKER_CONTAINERS = "docker.manage_containers"
     DOCKER_IMAGES = "docker.manage_images"

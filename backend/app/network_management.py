@@ -16,7 +16,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from .activity import ActivityCategory, ActivityStatus, record_activity
 from .config import get_config
@@ -29,7 +29,9 @@ from .security import SessionUser, get_session_user, require_csrf
 router = APIRouter(prefix="/api/admin/network", tags=["network-management"])
 IFNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,14}$")
 DOMAIN_RE = re.compile(r"^(?:~?\.|~?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)$")
-ROLLBACK_SECONDS = 15
+DEFAULT_CONFIRMATION_TIMEOUT_SECONDS = 15
+MIN_CONFIRMATION_TIMEOUT_SECONDS = 5
+MAX_CONFIRMATION_TIMEOUT_SECONDS = 300
 MAX_OBJECTS = 256
 _transaction_lock = Lock()
 
@@ -105,6 +107,54 @@ def _validate_ifname(value: str) -> str:
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class NetworkPolicy(StrictModel):
+    change_confirmation_timeout_seconds: StrictInt = Field(
+        default=DEFAULT_CONFIRMATION_TIMEOUT_SECONDS,
+        ge=MIN_CONFIRMATION_TIMEOUT_SECONDS,
+        le=MAX_CONFIRMATION_TIMEOUT_SECONDS,
+    )
+
+
+class NetworkPolicyUpdate(StrictModel):
+    change_confirmation_timeout_seconds: StrictInt = Field(
+        ge=MIN_CONFIRMATION_TIMEOUT_SECONDS,
+        le=MAX_CONFIRMATION_TIMEOUT_SECONDS,
+    )
+    confirm: Literal[True]
+
+
+class PolicyResetRequest(StrictModel):
+    confirm: Literal[True]
+
+
+def _network_policy_path() -> Path:
+    return _state_root() / "policy.json"
+
+
+def read_network_policy() -> NetworkPolicy:
+    value = _read_json(_network_policy_path(), None)
+    if value is None:
+        return NetworkPolicy()
+    try:
+        return NetworkPolicy.model_validate(value)
+    except ValueError:
+        return NetworkPolicy()
+
+
+def _network_policy_response(policy: NetworkPolicy) -> dict[str, int]:
+    return {
+        "change_confirmation_timeout_seconds": policy.change_confirmation_timeout_seconds,
+        "minimum_seconds": MIN_CONFIRMATION_TIMEOUT_SECONDS,
+        "maximum_seconds": MAX_CONFIRMATION_TIMEOUT_SECONDS,
+        "default_seconds": DEFAULT_CONFIRMATION_TIMEOUT_SECONDS,
+    }
+
+
+def write_network_policy(policy: NetworkPolicy) -> NetworkPolicy:
+    _atomic_json(_network_policy_path(), policy.model_dump(mode="json"))
+    return policy
 
 
 class AddressConfig(StrictModel):
@@ -738,12 +788,17 @@ def build_plan(change: NetworkChange, actor: str, client_interface: str | None, 
     elif change.operation == "delete_traffic" and change.object_id:
         after["traffic"].pop(change.object_id, None)
     previous_address, predicted_address, reachable_addresses = _panel_addresses(change, panel_url)
+    confirmation_timeout = read_network_policy().change_confirmation_timeout_seconds
     plan = {
         "id": plan_id, "actor": actor, "created_at": time.time(), "expires_at": time.time() + 600,
         "provider": provider.id, "change": change.model_dump(mode="json"), "target": target,
         "before": before, "after": after, "commands": redact(commands), "warnings": warnings[:32],
         "high_risk": risk, "required_phrase": f"APPLY {target}" if risk else "",
-        "rollback_supported": shutil.which("systemd-run") is not None, "rollback_seconds": ROLLBACK_SECONDS,
+        "rollback_supported": shutil.which("systemd-run") is not None,
+        "rollback_seconds": confirmation_timeout,
+        "confirmation_timeout_seconds": confirmation_timeout,
+        "rollback_method": "systemd_transient_timer",
+        "automatic_rollback_without_confirmation": True,
         "client_interface": client_interface,
         "previous_panel_address": previous_address, "predicted_panel_address": predicted_address,
         "reachable_addresses": reachable_addresses,
@@ -751,7 +806,7 @@ def build_plan(change: NetworkChange, actor: str, client_interface: str | None, 
     plans = _state_root() / "plans"
     plans.mkdir(exist_ok=True)
     _atomic_json(plans / f"{plan_id}.json", plan)
-    record_activity(ActivityCategory.configuration, "network_plan", actor, target=target, details={"provider": provider.id, "operation": change.operation, "warnings": warnings, "high_risk": risk}, source="network")
+    record_activity(ActivityCategory.configuration, "network_plan", actor, target=target, details={"provider": provider.id, "operation": change.operation, "warnings": warnings, "high_risk": risk, "confirmation_timeout_seconds": confirmation_timeout}, source="network")
     return plan
 
 
@@ -920,12 +975,14 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
         _capture_provider_state(provider, change, snapshot)
         _capture_managed_files(provider, change, snapshot)
         _atomic_json(transaction_dir / "snapshot.json", snapshot)
+        confirmation_timeout = read_network_policy().change_confirmation_timeout_seconds
         started_at = time.time()
-        deadline = started_at + ROLLBACK_SECONDS
+        deadline = started_at + confirmation_timeout
         transaction = {
             "id": transaction_id, "transaction_id": transaction_id, "state": "pending_confirmation",
             "status": "pending_confirmation", "actor": actor, "provider": provider.id,
             "started_at": started_at, "created_at": started_at, "deadline": deadline, "deadline_at": deadline,
+            "confirmation_timeout_seconds": confirmation_timeout,
             "rollback_unit": None, "plan_id": plan_id, "target": plan["target"],
             "previous_panel_address": plan.get("previous_panel_address"),
             "predicted_panel_address": plan.get("predicted_panel_address"),
@@ -933,7 +990,7 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
         }
         _atomic_json(transaction_dir / "transaction.json", transaction)
         _atomic_json(_state_root() / "active.json", transaction)
-        unit = _schedule_rollback(transaction_id, ROLLBACK_SECONDS)
+        unit = _schedule_rollback(transaction_id, confirmation_timeout)
         if not unit:
             transaction.update({"state": "failed", "status": "failed", "failed_at": time.time(), "error": "rollback_timer"})
             _atomic_json(transaction_dir / "transaction.json", transaction)
@@ -961,7 +1018,7 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
                 if _run_command(command, timeout=15).returncode:
                     rollback_transaction(transaction_id, automatic=True)
                     raise HTTPException(502, "Could not enable persistent network configuration")
-        record_activity(ActivityCategory.configuration, "network_apply", actor, target=plan["target"], details={"provider": provider.id, "plan_id": plan_id, "warnings": plan["warnings"], "rollback_unit": unit}, source="network")
+        record_activity(ActivityCategory.configuration, "network_apply", actor, target=plan["target"], details={"provider": provider.id, "plan_id": plan_id, "warnings": plan["warnings"], "rollback_unit": unit, "confirmation_timeout_seconds": confirmation_timeout}, source="network")
         return transaction
     finally:
         if process_lock is not None:
@@ -1003,6 +1060,7 @@ def transaction_status(transaction_id: str) -> dict[str, Any]:
         "deadline_at": deadline,
         "remaining_seconds": max(0, deadline - now),
         "current_server_time": now,
+        "server_time": now,
         "reachable_addresses": list(value.get("reachable_addresses") or []),
     }
 
@@ -1152,6 +1210,53 @@ def _permission_for(change: NetworkChange) -> Permission:
     if change.interface and change.interface.kind == "bridge":
         return Permission.NETWORK_BRIDGES
     return Permission.NETWORK_INTERFACES
+
+
+@router.get("/policy")
+def network_policy_endpoint(user: SessionUser = Depends(require_permission(Permission.NETWORK_POLICY_VIEW))):
+    return _network_policy_response(read_network_policy())
+
+
+@router.put("/policy")
+def update_network_policy_endpoint(payload: NetworkPolicyUpdate, user: SessionUser = Depends(_mutating_user)):
+    authorize(user, Permission.NETWORK_POLICY_EDIT)
+    previous = read_network_policy()
+    updated = write_network_policy(NetworkPolicy(change_confirmation_timeout_seconds=payload.change_confirmation_timeout_seconds))
+    record_activity(
+        ActivityCategory.configuration,
+        "network_policy_update",
+        user.username,
+        target="network.change_confirmation_timeout_seconds",
+        details={
+            "old_value": previous.change_confirmation_timeout_seconds,
+            "new_value": updated.change_confirmation_timeout_seconds,
+            "source": "settings-policy",
+            "result": "success",
+        },
+        source="network-policy",
+    )
+    return _network_policy_response(updated)
+
+
+@router.post("/policy/reset")
+def reset_network_policy_endpoint(payload: PolicyResetRequest, user: SessionUser = Depends(_mutating_user)):
+    authorize(user, Permission.NETWORK_POLICY_EDIT)
+    previous = read_network_policy()
+    updated = write_network_policy(NetworkPolicy())
+    record_activity(
+        ActivityCategory.configuration,
+        "network_policy_reset",
+        user.username,
+        target="network.change_confirmation_timeout_seconds",
+        details={
+            "old_value": previous.change_confirmation_timeout_seconds,
+            "new_value": updated.change_confirmation_timeout_seconds,
+            "source": "settings-policy",
+            "result": "success",
+        },
+        source="network-policy",
+    )
+    return _network_policy_response(updated)
 
 
 @router.get("/management")
