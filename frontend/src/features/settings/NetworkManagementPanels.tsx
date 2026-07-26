@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 
 import {
   api,
+  setApiBaseUrl,
   type ManagedNetworkRoute,
   type NetworkChange,
   type NetworkInterfaceConfiguration,
@@ -211,27 +212,167 @@ function PlanModal({ plan, busy, error, onClose, onApply }: { plan: NetworkPlan;
   </div><footer><button type="button" onClick={onClose}>Anuluj</button><button className="button-primary" disabled={busy || !plan.rollback_supported || plan.high_risk && phrase !== plan.required_phrase} onClick={() => onApply(phrase)}>{busy ? "Stosowanie…" : "Zastosuj plan"}</button></footer></Modal>;
 }
 
-function TransactionBanner({ transaction, busy, onConfirm, onRollback }: { transaction: NetworkTransaction; busy: boolean; onConfirm: () => void; onRollback: () => void }) {
-  const [now, setNow] = useState(transaction.started_at);
-  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now() / 1000), 1000); return () => window.clearInterval(timer); }, []);
-  const left = Math.max(0, Math.ceil(transaction.deadline - now));
-  return <aside className="network-transaction-banner" role="status"><RefreshCw /><div><strong>Sprawdź połączenie — rollback za {left} s</strong><p>Zmiany pozostaną tylko po potwierdzeniu.</p></div><button disabled={busy} onClick={onRollback}>Cofnij teraz</button><button className="button-primary" disabled={busy} onClick={onConfirm}><CheckCircle2 />Zachowaj zmiany</button></aside>;
+const NETWORK_TRANSACTION_KEY = "webnas_network_transaction";
+type ConnectionState = "connected" | "reconnecting" | "confirming";
+type PendingAction = "confirm" | "rollback" | null;
+
+function terminalTransaction(transaction: NetworkTransaction) {
+  return ["confirmed", "rolled_back", "failed"].includes(transaction.status || transaction.state);
+}
+
+function loadStoredTransaction(): NetworkTransaction | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(NETWORK_TRANSACTION_KEY) || "null") as NetworkTransaction | null;
+    return value?.id && value.deadline ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeTransaction(transaction: NetworkTransaction | null) {
+  try {
+    if (transaction && !terminalTransaction(transaction)) sessionStorage.setItem(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction));
+    else sessionStorage.removeItem(NETWORK_TRANSACTION_KEY);
+  } catch {
+    // The system timer remains authoritative when browser storage is unavailable.
+  }
+}
+
+function reconnectAddresses(transaction: NetworkTransaction) {
+  const approved = [
+    window.location.origin,
+    transaction.predicted_panel_address,
+    transaction.previous_panel_address,
+    ...(transaction.reachable_addresses || []),
+  ].filter((value): value is string => Boolean(value));
+  return [...new Set(approved)];
+}
+
+function TransactionBanner({ transaction, connection, pendingAction, serverOffset, onConfirm, onRollback }: {
+  transaction: NetworkTransaction; connection: ConnectionState; pendingAction: PendingAction; serverOffset: number;
+  onConfirm: () => void; onRollback: () => void;
+}) {
+  const [now, setNow] = useState(transaction.current_server_time || transaction.started_at);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now() / 1000), 200);
+    return () => window.clearInterval(timer);
+  }, []);
+  const status = transaction.status || transaction.state;
+  const deadline = transaction.deadline_at || transaction.deadline;
+  const left = Math.max(0, Math.ceil(deadline - (now + serverOffset)));
+  const countdown = `00:${String(left).padStart(2, "0")}`;
+  const title = status === "confirmed" ? "Konfiguracja zachowana"
+    : status === "rolled_back" ? "Przywrócono poprzednią konfigurację"
+      : status === "failed" ? "Nie udało się potwierdzić przed upływem czasu"
+        : status === "rollback_started" || status === "rollback_pending" || left === 0 ? "Trwa przywracanie poprzedniej konfiguracji"
+          : pendingAction === "confirm" ? "Wysyłanie potwierdzenia"
+            : connection === "reconnecting" ? "Utracono połączenie — trwa ponowne łączenie"
+              : "Oczekiwanie na potwierdzenie";
+  const active = !terminalTransaction(transaction);
+  return <aside className="network-transaction-banner" role="status"><RefreshCw /><div><strong>{title}</strong>
+    <p>{active && left > 0 ? `Nowa konfiguracja sieci oczekuje na potwierdzenie. Automatyczne przywrócenie za ${countdown}` : title}</p>
+  </div>{active && left > 0 && <><button onClick={onRollback}>Przywróć teraz</button><button className="button-primary" onClick={onConfirm}><CheckCircle2 />Zachowaj konfigurację</button></>}</aside>;
 }
 
 export function NetworkManagementWorkspace({ tab, t, permissions = [], onNavigate }: { tab: "general" | "interfaces" | "traffic" | "routes"; t: Translate; permissions?: string[]; onNavigate: (tab: "interfaces" | "routes" | "connectivity") => void }) {
   const [state, setState] = useState<NetworkManagementState | null>(null);
   const [plan, setPlan] = useState<NetworkPlan | null>(null);
-  const [transaction, setTransaction] = useState<NetworkTransaction | null>(null);
+  const [transaction, setTransaction] = useState<NetworkTransaction | null>(loadStoredTransaction);
+  const [connection, setConnection] = useState<ConnectionState>("connected");
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [serverOffset, setServerOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const transactionRef = useRef(transaction);
+  const pendingActionRef = useRef(pendingAction);
+  const transactionId = transaction?.id;
   const refresh = useCallback(async () => {
     setError("");
-    try { const next = await api.networkManagement(); setState(next); setTransaction(next.transaction); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); }
-    finally { setLoading(false); }
+    try {
+      const [next, active] = await Promise.all([api.networkManagement(), api.activeNetworkTransaction()]);
+      setState(next);
+      setConnection("connected");
+      const recovered = active || next.transaction;
+      if (recovered) {
+        setTransaction(recovered);
+        storeTransaction(recovered);
+      }
+    } catch (reason) {
+      setConnection("reconnecting");
+      setError(reason instanceof Error ? reason.message : t("error.generic"));
+    } finally {
+      setLoading(false);
+    }
   }, [t]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { transactionRef.current = transaction; }, [transaction]);
+  useEffect(() => { pendingActionRef.current = pendingAction; }, [pendingAction]);
+  useEffect(() => {
+    const initial = transactionRef.current;
+    if (!initial || terminalTransaction(initial)) return;
+    let stopped = false;
+    let timeout: number | undefined;
+    let attempts = 0;
+    const poll = async () => {
+      const current = transactionRef.current;
+      if (stopped || !current || terminalTransaction(current)) return;
+      let reached = false;
+      for (const baseUrl of reconnectAddresses(current)) {
+        const controller = new AbortController();
+        const abort = window.setTimeout(() => controller.abort(), 1500);
+        try {
+          const apiBase = baseUrl === window.location.origin ? "" : baseUrl;
+          const status = await api.networkTransactionStatus(current.id, apiBase, controller.signal);
+          window.clearTimeout(abort);
+          if (stopped) return;
+          reached = true;
+          setApiBaseUrl(apiBase);
+          attempts = 0;
+          setConnection("connected");
+          if (status.current_server_time) setServerOffset(status.current_server_time - Date.now() / 1000);
+          setTransaction(status);
+          transactionRef.current = status;
+          storeTransaction(status);
+          if (terminalTransaction(status)) {
+            setPendingAction(null);
+            return;
+          }
+          const action = pendingActionRef.current;
+          if (action) {
+            setConnection(action === "confirm" ? "confirming" : "connected");
+            const actionController = new AbortController();
+            const actionAbort = window.setTimeout(() => actionController.abort(), 1500);
+            const result = action === "confirm"
+              ? await api.confirmNetworkTransaction(status.id, apiBase, actionController.signal)
+              : await api.rollbackNetworkTransaction(status.id, apiBase, actionController.signal);
+            window.clearTimeout(actionAbort);
+            if (stopped) return;
+            setPendingAction(null);
+            pendingActionRef.current = null;
+            setTransaction(result);
+            transactionRef.current = result;
+            storeTransaction(result);
+            return;
+          }
+          break;
+        } catch {
+          window.clearTimeout(abort);
+        }
+      }
+      if (!reached) setConnection("reconnecting");
+      if (!stopped) {
+        attempts += 1;
+        const delay = attempts < 4 ? 500 : attempts < 8 ? 1000 : 2000;
+        timeout = window.setTimeout(() => void poll(), delay);
+      }
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [transactionId]);
   async function prepare(change: NetworkChange) {
     setBusy(true); setError("");
     try { setPlan(await api.planNetworkChange(change)); }
@@ -241,26 +382,48 @@ export function NetworkManagementWorkspace({ tab, t, permissions = [], onNavigat
   async function apply(phrase: string) {
     if (!plan) return;
     setBusy(true); setError("");
-    try { const next = await api.applyNetworkPlan(plan.id, phrase); setPlan(null); await refresh(); setTransaction(next); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); }
+    try {
+      const next = await api.applyNetworkPlan(plan.id, phrase);
+      setPlan(null);
+      setTransaction(next);
+      transactionRef.current = next;
+      storeTransaction(next);
+      if (next.current_server_time) setServerOffset(next.current_server_time - Date.now() / 1000);
+      void refresh();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); }
     finally { setBusy(false); }
   }
   async function finish(action: "confirm" | "rollback") {
     if (!transaction) return;
-    setBusy(true); setError("");
+    setPendingAction(action);
+    pendingActionRef.current = action;
+    setConnection(action === "confirm" ? "confirming" : "connected");
+    setError("");
+    const controller = new AbortController();
+    const abort = window.setTimeout(() => controller.abort(), 1500);
     try {
-      if (action === "confirm") await api.confirmNetworkTransaction(transaction.id);
-      else await api.rollbackNetworkTransaction(transaction.id);
-      setTransaction(null); await refresh();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); }
-    finally { setBusy(false); }
+      const next = action === "confirm"
+        ? await api.confirmNetworkTransaction(transaction.id, "", controller.signal)
+        : await api.rollbackNetworkTransaction(transaction.id, "", controller.signal);
+      setPendingAction(null);
+      pendingActionRef.current = null;
+      setTransaction(next);
+      transactionRef.current = next;
+      storeTransaction(next);
+      void refresh();
+    } catch {
+      setConnection("reconnecting");
+    } finally {
+      window.clearTimeout(abort);
+    }
   }
-  if (loading) return <div className="loading-state">{t("status.loading")}</div>;
-  if (!state) return <p className="error-state" role="alert">{error}</p>;
+  const banner = transaction && <TransactionBanner transaction={transaction} connection={connection} pendingAction={pendingAction} serverOffset={serverOffset} onConfirm={() => void finish("confirm")} onRollback={() => void finish("rollback")} />;
+  if (loading) return <>{banner}<div className="loading-state">{t("status.loading")}</div></>;
+  if (!state) return <>{banner}<p className="error-state" role="alert">{error}</p></>;
   const mayMutate = permissions.length === 0 || permissions.some((permission) => permission.startsWith("network.manage_") || permission === "network.confirm" || permission === "network.rollback");
   const visibleState = mayMutate ? state : { ...state, provider: { ...state.provider, writable: false, warnings: [...state.provider.warnings, "Brak uprawnienia do modyfikacji konfiguracji sieci."] } };
   return <div className="network-management-workspace">
-    {transaction?.state === "pending_confirmation" && <TransactionBanner transaction={transaction} busy={busy} onConfirm={() => void finish("confirm")} onRollback={() => void finish("rollback")} />}
+    {banner}
     {error && !plan && <p className="error-state" role="alert">{error}</p>}
     <div className="network-management-heading"><div><Globe2 /><span><strong>{state.hostname}</strong><small>{state.provider.id} · {state.provider.writable ? "zapis dostępny" : "tylko odczyt"}</small></span></div><button onClick={() => void refresh()}><RefreshCw />Odśwież</button></div>
     {tab === "general" && <GeneralPanel state={visibleState} onChange={(change) => void prepare(change)} onNavigate={onNavigate} />}

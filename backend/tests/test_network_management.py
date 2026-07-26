@@ -147,7 +147,7 @@ def test_high_risk_plan_is_bound_to_actor_and_requires_phrase(monkeypatch):
     plan = management.build_plan(management.NetworkChange(operation="save_interface", interface=interface()), "alice", "eth0")
     assert plan["high_risk"] is True
     assert plan["required_phrase"] == "APPLY eth0"
-    assert plan["rollback_seconds"] == 90
+    assert plan["rollback_seconds"] == 15
     with pytest.raises(HTTPException):
         management.apply_plan(plan["id"], "bob", "APPLY eth0")
 
@@ -208,4 +208,89 @@ def test_mutating_routes_require_csrf_dependency_and_domain_permissions():
     assert ("POST", "/api/admin/network/apply") in routes
     assert ("POST", "/api/admin/network/confirm") in routes
     assert ("POST", "/api/admin/network/rollback") in routes
+    assert ("GET", "/api/admin/network/transactions/active") in routes
+    assert ("GET", "/api/admin/network/transactions/{transaction_id}/status") in routes
+    assert ("POST", "/api/admin/network/transactions/{transaction_id}/confirm") in routes
+    assert ("POST", "/api/admin/network/transactions/{transaction_id}/rollback") in routes
     assert management._permission_for(management.NetworkChange(operation="save_dns", dns=management.DnsSettings())) == management.Permission.NETWORK_DNS
+
+
+def test_systemd_rollback_timer_is_exactly_fifteen_seconds(monkeypatch):
+    calls = []
+    monkeypatch.setattr(management.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        management,
+        "_run_command",
+        lambda command, timeout=0: calls.append(command) or subprocess.CompletedProcess(command, 0, "", ""),
+    )
+    transaction_id = "a" * 32
+    assert management._schedule_rollback(transaction_id, management.ROLLBACK_SECONDS) == f"webnas-network-rollback-{transaction_id}.service"
+    assert "--on-active=15s" in calls[0]
+    assert calls[0][-3:] == ["app.network_management", "--rollback", transaction_id]
+
+
+def test_rollback_is_armed_before_network_commands(monkeypatch):
+    events = []
+    monkeypatch.setattr(management, "detect_provider", lambda: (management.NetworkManagerProvider(), []))
+    monkeypatch.setattr(management, "network_overview", lambda: {"interfaces": []})
+    monkeypatch.setattr(management, "routing_snapshot", lambda: {"gateways": []})
+    monkeypatch.setattr(management.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        management,
+        "_schedule_rollback",
+        lambda transaction_id, seconds: events.append("timer") or f"webnas-network-rollback-{transaction_id}.service",
+    )
+    monkeypatch.setattr(
+        management,
+        "_run_command",
+        lambda command, timeout=0: events.append("apply" if "connection" in command and "delete" in command else "snapshot") or subprocess.CompletedProcess(command, 0, "", ""),
+    )
+    plan = management.build_plan(management.NetworkChange(operation="save_interface", interface=interface()), "alice", None)
+    transaction = management.apply_plan(plan["id"], "alice", "")
+    assert events.index("timer") < events.index("apply")
+    assert (management._state_root() / "transactions" / transaction["id"] / "snapshot.json").exists()
+
+
+def test_confirmation_is_idempotent_and_rejected_after_deadline(monkeypatch):
+    clock = {"now": 1_000.0}
+    monkeypatch.setattr(management.time, "time", lambda: clock["now"])
+    monkeypatch.setattr(management, "detect_provider", lambda: (management.NetworkManagerProvider(), []))
+    monkeypatch.setattr(management, "network_overview", lambda: {"interfaces": []})
+    monkeypatch.setattr(management, "routing_snapshot", lambda: {"gateways": []})
+    monkeypatch.setattr(management.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(management, "_run_command", lambda command, timeout=0: subprocess.CompletedProcess(command, 0, "", ""))
+    monkeypatch.setattr(management, "_schedule_rollback", lambda transaction_id, seconds: f"webnas-network-rollback-{transaction_id}.service")
+    plan = management.build_plan(management.NetworkChange(operation="save_interface", interface=interface()), "alice", None)
+    pending = management.apply_plan(plan["id"], "alice", "")
+    confirmed = management.confirm_transaction(pending["id"], "alice")
+    assert management.confirm_transaction(pending["id"], "alice") == confirmed
+
+    next_plan = management.build_plan(management.NetworkChange(operation="save_interface", interface=interface(mtu=1400)), "alice", None)
+    expired = management.apply_plan(next_plan["id"], "alice", "")
+    clock["now"] = expired["deadline"]
+    with pytest.raises(HTTPException, match="expired"):
+        management.confirm_transaction(expired["id"], "alice")
+    assert management._active_transaction()["id"] == expired["id"]
+
+
+def test_transaction_status_survives_service_restart_and_reports_rollback(monkeypatch):
+    transaction_id = "c" * 32
+    directory = management._state_root() / "transactions" / transaction_id
+    directory.mkdir(parents=True)
+    management._atomic_json(directory / "snapshot.json", {"state": {"interfaces": {}, "dns": None, "routes": {}, "traffic": {}}, "files": {}})
+    management._atomic_json(directory / "transaction.json", {
+        "id": transaction_id, "state": "pending_confirmation", "provider": "networkmanager",
+        "started_at": 100.0, "deadline": 115.0, "rollback_unit": "rollback.service", "target": "eth0",
+        "reachable_addresses": ["https://192.0.2.10"],
+    })
+    management._atomic_json(management._state_root() / "active.json", management._read_json(directory / "transaction.json", {}))
+    monkeypatch.setattr(management.time, "time", lambda: 116.0)
+    status = management.transaction_status(transaction_id)
+    assert status["status"] == "rollback_pending"
+    assert status["remaining_seconds"] == 0
+    assert status["reachable_addresses"] == ["https://192.0.2.10"]
+
+    monkeypatch.setattr(management.shutil, "which", lambda name: None)
+    monkeypatch.setattr(management, "_run_command", lambda command, timeout=0: subprocess.CompletedProcess(command, 0, "", ""))
+    assert management.rollback_transaction(transaction_id, automatic=True)["state"] == "rolled_back"
+    assert management.transaction_status(transaction_id)["rolled_back"] is True

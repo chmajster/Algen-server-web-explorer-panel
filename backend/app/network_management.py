@@ -15,7 +15,7 @@ from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .activity import ActivityCategory, ActivityStatus, record_activity
@@ -683,7 +683,8 @@ def _panel_addresses(change: NetworkChange, panel_url: str | None) -> tuple[str 
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return None, None, []
     port = f":{parsed.port}" if parsed.port else ""
-    current = urlunsplit((parsed.scheme, f"{parsed.hostname}{port}", "", "", "")).rstrip("/")
+    current_host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    current = urlunsplit((parsed.scheme, f"{current_host}{port}", "", "", "")).rstrip("/")
     candidates = [current]
     predicted: str | None = None
     if change.interface:
@@ -912,8 +913,6 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
         transaction_id = uuid.uuid4().hex
         transaction_dir = _state_root() / "transactions" / transaction_id
         transaction_dir.mkdir(parents=True)
-        started_at = time.time()
-        deadline = started_at + ROLLBACK_SECONDS
         snapshot = {
             "state": plan["before"], "files": {}, "commands": plan["commands"], "actor": actor,
             "change": plan["change"],
@@ -921,6 +920,8 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
         _capture_provider_state(provider, change, snapshot)
         _capture_managed_files(provider, change, snapshot)
         _atomic_json(transaction_dir / "snapshot.json", snapshot)
+        started_at = time.time()
+        deadline = started_at + ROLLBACK_SECONDS
         transaction = {
             "id": transaction_id, "transaction_id": transaction_id, "state": "pending_confirmation",
             "status": "pending_confirmation", "actor": actor, "provider": provider.id,
@@ -1006,6 +1007,15 @@ def transaction_status(transaction_id: str) -> dict[str, Any]:
     }
 
 
+def _allow_transaction_origin(request: Request, response: Response, transaction: dict[str, Any]) -> None:
+    origin = request.headers.get("origin", "").rstrip("/")
+    approved = {str(value).rstrip("/") for value in transaction.get("reachable_addresses", [])}
+    if origin and origin in approved:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+    response.headers["Cache-Control"] = "no-store"
+
+
 def confirm_transaction(transaction_id: str, actor: str) -> dict[str, Any]:
     active = _active_transaction()
     existing = _transaction_record(transaction_id)
@@ -1024,7 +1034,7 @@ def confirm_transaction(transaction_id: str, actor: str) -> dict[str, Any]:
     return active
 
 
-def rollback_transaction(transaction_id: str, actor: str = "system", automatic: bool = False) -> dict[str, Any]:
+def _rollback_transaction(transaction_id: str, actor: str = "system", automatic: bool = False) -> dict[str, Any]:
     directory = _state_root() / "transactions" / transaction_id
     snapshot = _read_json(directory / "snapshot.json", None)
     if not isinstance(snapshot, dict):
@@ -1038,6 +1048,7 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
         _cancel_rollback_timer(active.get("rollback_unit"))
     active.update({"state": "rollback_started", "status": "rollback_started", "rollback_started_at": time.time(), "automatic": automatic})
     _atomic_json(directory / "transaction.json", active)
+    record_activity(ActivityCategory.configuration, "network_rollback_started", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic}, source="network")
     for raw_path, content in snapshot.get("files", {}).items():
         path = Path(raw_path)
         if content is None:
@@ -1086,6 +1097,19 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
     (_state_root() / "active.json").unlink(missing_ok=True)
     record_activity(ActivityCategory.configuration, "network_rollback", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic}, source="network")
     return active
+
+
+def rollback_transaction(transaction_id: str, actor: str = "system", automatic: bool = False) -> dict[str, Any]:
+    try:
+        return _rollback_transaction(transaction_id, actor, automatic)
+    except Exception as error:
+        active = _transaction_record(transaction_id)
+        if active:
+            active.update({"state": "failed", "status": "failed", "failed_at": time.time(), "error": type(error).__name__})
+            _atomic_json(_state_root() / "transactions" / transaction_id / "transaction.json", active)
+            (_state_root() / "active.json").unlink(missing_ok=True)
+            record_activity(ActivityCategory.configuration, "network_rollback_failed", actor, target=str(active.get("target") or ""), status=ActivityStatus.failure, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic, "error": type(error).__name__}, source="network")
+        raise
 
 
 def management_state() -> dict[str, Any]:
@@ -1151,19 +1175,22 @@ def apply_endpoint(payload: ApplyRequest, user: SessionUser = Depends(_mutating_
     except ValueError as error:
         raise HTTPException(404, "Network plan is invalid") from error
     authorize(user, _permission_for(change))
-    return apply_plan(payload.plan_id, user.username, payload.confirmation_phrase)
+    transaction = apply_plan(payload.plan_id, user.username, payload.confirmation_phrase)
+    return transaction_status(transaction["id"])
 
 
 @router.post("/confirm")
 def confirm_endpoint(payload: TransactionRequest, user: SessionUser = Depends(_mutating_user)):
     authorize(user, Permission.NETWORK_CONFIRM)
-    return confirm_transaction(payload.transaction_id, user.username)
+    confirm_transaction(payload.transaction_id, user.username)
+    return transaction_status(payload.transaction_id)
 
 
 @router.post("/rollback")
 def rollback_endpoint(payload: TransactionRequest, user: SessionUser = Depends(_mutating_user)):
     authorize(user, Permission.NETWORK_ROLLBACK)
-    return rollback_transaction(payload.transaction_id, user.username)
+    rollback_transaction(payload.transaction_id, user.username)
+    return transaction_status(payload.transaction_id)
 
 
 @router.get("/transactions/active")
@@ -1173,7 +1200,29 @@ def active_transaction_endpoint(user: SessionUser = Depends(require_permission(P
 
 
 @router.get("/transactions/{transaction_id}/status")
-def transaction_status_endpoint(transaction_id: str, user: SessionUser = Depends(require_permission(Permission.NETWORK_CONFIG_VIEW))):
+def transaction_status_endpoint(transaction_id: str, request: Request, response: Response):
+    status = transaction_status(transaction_id)
+    _allow_transaction_origin(request, response, status)
+    return status
+
+
+@router.post("/transactions/{transaction_id}/confirm")
+def reconnect_confirm_endpoint(transaction_id: str, request: Request, response: Response):
+    transaction = _transaction_record(transaction_id)
+    if not transaction:
+        raise HTTPException(404, "Network transaction was not found")
+    _allow_transaction_origin(request, response, transaction)
+    confirm_transaction(transaction_id, "network-reconnect")
+    return transaction_status(transaction_id)
+
+
+@router.post("/transactions/{transaction_id}/rollback")
+def reconnect_rollback_endpoint(transaction_id: str, request: Request, response: Response):
+    transaction = _transaction_record(transaction_id)
+    if not transaction:
+        raise HTTPException(404, "Network transaction was not found")
+    _allow_transaction_origin(request, response, transaction)
+    rollback_transaction(transaction_id, "network-reconnect")
     return transaction_status(transaction_id)
 
 

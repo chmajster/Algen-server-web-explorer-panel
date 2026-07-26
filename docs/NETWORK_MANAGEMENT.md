@@ -26,6 +26,10 @@ All routes are under `/api/admin/network`:
 | POST | `/apply` | Apply a current user-bound plan |
 | POST | `/confirm` | Keep a pending configuration |
 | POST | `/rollback` | Restore a pending snapshot immediately |
+| GET | `/transactions/active` | Recover the active transaction after a service or page restart |
+| GET | `/transactions/{id}/status` | Read the authoritative deadline and rollback status during reconnect |
+| POST | `/transactions/{id}/confirm` | Confirm through a server address approved by the plan |
+| POST | `/transactions/{id}/rollback` | Request rollback through a server address approved by the plan |
 | GET | `/overview` | Existing interface diagnostics |
 | GET | `/dns` | Effective resolver state |
 | POST | `/dns/test` | Bounded direct DNS resolution test |
@@ -41,10 +45,12 @@ Every mutation follows **plan → apply → confirm**:
 1. The plan is bound to the authenticated user for ten minutes.
 2. WebNAS detects the interface used to reach the browser and default-route interfaces. A matching target is marked high-risk and requires the exact phrase shown by the server.
 3. Before apply, WebNAS stores live interface/routing/DNS diagnostics, managed state, affected WebNAS files and active NetworkManager connection UUIDs.
-4. Apply writes only managed files and executes generated commands.
-5. A transient systemd timer starts an independent 90-second rollback. Failure to schedule that timer makes apply fail and starts immediate rollback.
-6. The browser shows a persistent countdown. Confirm stops both timer and service units; manual rollback restores immediately. A partial command failure also rolls back immediately.
-7. Only one pending network transaction is allowed.
+4. WebNAS persists the transaction and arms an independent transient systemd service and timer before changing any managed file or live network state.
+5. Apply writes only managed files and executes generated commands. The timer starts rollback after exactly 15 seconds; failure to arm it blocks the change.
+6. The browser stores only the transaction identifier, deadline and server addresses in `sessionStorage`, keeps counting while offline, and probes the current, predicted, previous and other server-approved addresses with one bounded reconnect loop.
+7. Confirm is accepted only before the persisted server deadline. A durable confirmed state is written before the timer is stopped, so a late timer process cannot undo a confirmed change. Manual rollback restores immediately, and a partial command failure also rolls back immediately.
+8. After the local countdown expires, the browser continues reconnecting until the backend reports `confirmed`, `rolled_back`, or `failed`; reconnect never starts a fresh 15-second window.
+9. Only one pending network transaction is allowed.
 
 The timer does not depend on FastAPI or the browser remaining alive. Snapshots may contain addresses and topology but never cookies, session headers, CSRF tokens or credentials.
 
@@ -54,7 +60,7 @@ The permission family is:
 
 `network.view`, `network.manage_interfaces`, `network.manage_bonds`, `network.manage_vlans`, `network.manage_bridges`, `network.manage_dns`, `network.manage_routes`, `network.manage_traffic`, `network.manage_connections`, `network.confirm`, and `network.rollback`.
 
-Administrators receive all registered permissions. Operators and auditors receive read access only by default; ordinary users receive no new access. Every mutation requires a session, CSRF validation and the operation-specific permission. Plans, apply, confirm and rollback are written to Activity Center with actor, target, provider, warning and transaction metadata.
+Administrators receive all registered permissions. Operators and auditors receive read access only by default; ordinary users receive no new access. Normal mutations require a session, CSRF validation and the operation-specific permission. During the 15-second reconnect window, the random 128-bit transaction identifier acts as a short-lived capability only for status, confirmation and rollback through addresses approved in the server-generated plan; it is invalid for confirmation after the deadline. Plans, apply, confirmation, rollback start, rollback completion and rollback failure are written to Activity Center with actor, target, provider, warning and transaction metadata.
 
 ## Recovery from the local console
 
@@ -73,4 +79,3 @@ For an intentionally confirmed bad configuration, restore the host using its nat
 - Ingress shaping is offered only when the IFB kernel module is already available.
 - WebNAS refuses to replace a foreign root traffic-control configuration.
 - NetworkManager profile restoration is limited to WebNAS profile files plus reactivation of previously active connection UUIDs; arbitrary third-party profile contents are not rewritten.
-

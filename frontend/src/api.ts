@@ -895,10 +895,16 @@ export type NetworkPlan = {
   id: string; provider: string; target: string; before: Record<string, unknown>; after: Record<string, unknown>;
   commands: string[][]; warnings: string[]; high_risk: boolean; required_phrase: string;
   rollback_supported: boolean; rollback_seconds: number; client_interface: string | null;
+  previous_panel_address?: string | null; predicted_panel_address?: string | null; reachable_addresses?: string[];
 };
 export type NetworkTransaction = {
-  id: string; state: "pending_confirmation" | "confirmed" | "rolled_back"; provider: string;
+  id: string; transaction_id?: string; provider: string;
+  state: "pending_confirmation" | "rollback_started" | "confirmed" | "rolled_back" | "failed";
+  status?: "pending_confirmation" | "rollback_pending" | "rollback_started" | "confirmed" | "rolled_back" | "failed";
+  confirmed?: boolean; rollback_pending?: boolean; rollback_started?: boolean; rolled_back?: boolean; failed?: boolean;
   started_at: number; deadline: number; rollback_unit: string | null; target: string;
+  created_at?: number; deadline_at?: number; remaining_seconds?: number; current_server_time?: number;
+  previous_panel_address?: string | null; predicted_panel_address?: string | null; reachable_addresses?: string[];
 };
 export type NetworkManagementState = {
   provider: { id: string; writable: boolean; capabilities: Record<string, boolean>; warnings: string[] };
@@ -920,13 +926,23 @@ export type NetworkConnectivityResult = {
 };
 
 let csrfToken = localStorage.getItem("webnas_csrf") || "";
+let apiBaseUrl = "";
+
+export function setApiBaseUrl(baseUrl: string) {
+  apiBaseUrl = baseUrl.replace(/\/+$/, "");
+}
+
+function apiAt(baseUrl: string, path: string) {
+  return baseUrl ? `${baseUrl.replace(/\/+$/, "")}${path}` : path;
+}
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body instanceof Blob) headers.set("Content-Type", "application/octet-stream");
-  else if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  else if (options.body !== undefined && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (csrfToken && options.method && options.method !== "GET") headers.set("x-csrf-token", csrfToken);
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
+  const target = apiBaseUrl && url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
+  const res = await fetch(target, { ...options, headers, credentials: "include" });
   if (!res.ok) {
     const body = await res.text();
     let message = body || res.statusText;
@@ -1110,8 +1126,14 @@ export const api = {
   testNetworkConnectivity: (kind: "ping" | "trace" | "tcp", target: string, port?: number | null) => request<NetworkConnectivityResult>("/api/admin/network/connectivity/test", { method: "POST", body: JSON.stringify({ kind, target, port: port || null }) }),
   planNetworkChange: (change: NetworkChange) => request<NetworkPlan>("/api/admin/network/plans", { method: "POST", body: JSON.stringify({ change }) }),
   applyNetworkPlan: (plan_id: string, confirmation_phrase = "") => request<NetworkTransaction>("/api/admin/network/apply", { method: "POST", body: JSON.stringify({ plan_id, confirmation_phrase }) }),
-  confirmNetworkTransaction: (transaction_id: string) => request<NetworkTransaction>("/api/admin/network/confirm", { method: "POST", body: JSON.stringify({ transaction_id }) }),
-  rollbackNetworkTransaction: (transaction_id: string) => request<NetworkTransaction>("/api/admin/network/rollback", { method: "POST", body: JSON.stringify({ transaction_id }) }),
+  activeNetworkTransaction: (baseUrl = "", signal?: AbortSignal) => request<NetworkTransaction | null>(apiAt(baseUrl, "/api/admin/network/transactions/active"), { signal }),
+  networkTransactionStatus: (transaction_id: string, baseUrl = "", signal?: AbortSignal) => request<NetworkTransaction>(apiAt(baseUrl, `/api/admin/network/transactions/${encodeURIComponent(transaction_id)}/status`), { signal }),
+  confirmNetworkTransaction: (transaction_id: string, baseUrl = "", signal?: AbortSignal) => baseUrl
+    ? request<NetworkTransaction>(apiAt(baseUrl, `/api/admin/network/transactions/${encodeURIComponent(transaction_id)}/confirm`), { method: "POST", signal })
+    : request<NetworkTransaction>("/api/admin/network/confirm", { method: "POST", body: JSON.stringify({ transaction_id }), signal }),
+  rollbackNetworkTransaction: (transaction_id: string, baseUrl = "", signal?: AbortSignal) => baseUrl
+    ? request<NetworkTransaction>(apiAt(baseUrl, `/api/admin/network/transactions/${encodeURIComponent(transaction_id)}/rollback`), { method: "POST", signal })
+    : request<NetworkTransaction>("/api/admin/network/rollback", { method: "POST", body: JSON.stringify({ transaction_id }), signal }),
   restartSystem: () => request("/api/admin/system/restart", { method: "POST", body: "{}" }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
   updateProgress: () => request<UpdateProgress>("/api/admin/system/updates/progress"),
