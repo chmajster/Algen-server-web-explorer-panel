@@ -85,6 +85,17 @@ class Permission(StrEnum):
     NETWORK_MOUNT = "network_resources.mount"
     NETWORK_UNMOUNT = "network_resources.unmount"
     NETWORK_DELETE = "network_resources.delete"
+    NETWORK_CONFIG_VIEW = "network.view"
+    NETWORK_INTERFACES = "network.manage_interfaces"
+    NETWORK_BONDS = "network.manage_bonds"
+    NETWORK_VLANS = "network.manage_vlans"
+    NETWORK_BRIDGES = "network.manage_bridges"
+    NETWORK_DNS = "network.manage_dns"
+    NETWORK_ROUTES = "network.manage_routes"
+    NETWORK_TRAFFIC = "network.manage_traffic"
+    NETWORK_CONNECTIONS = "network.manage_connections"
+    NETWORK_CONFIRM = "network.confirm"
+    NETWORK_ROLLBACK = "network.rollback"
     DOCKER_VIEW = "docker.view"
     DOCKER_CONTAINERS = "docker.manage_containers"
     DOCKER_IMAGES = "docker.manage_images"
@@ -188,6 +199,7 @@ _APPLICATIONS: dict[str, list[str]] = {
     "services": ["services"],
     "updates": ["modules", "settings"],
     "network_resources": ["settings"],
+    "network": ["settings"],
     "docker": ["module:docker"],
     "dns": ["module:pihole", "module:adguard-home"],
     "databases": ["module:postgresql", "module:mariadb", "module:redis"],
@@ -282,6 +294,7 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.AUDIT_VIEW_OWN.value, Permission.MODULES_VIEW.value, Permission.MODULES_CONFIGURE.value, Permission.MODULES_DIAGNOSTICS.value, Permission.MODULES_LOGS.value, Permission.MODULES_BACKUP_CREATE.value, Permission.MODULES_BACKUP_RESTORE.value,
         Permission.SERVICES_VIEW.value, Permission.SERVICES_START.value, Permission.SERVICES_STOP.value, Permission.SERVICES_RESTART.value, Permission.SERVICES_ENABLE.value, Permission.SERVICES_DISABLE.value, Permission.SERVICES_LOGS.value,
         Permission.UPDATES_VIEW.value, Permission.UPDATES_APPLY.value, Permission.NETWORK_VIEW.value, Permission.NETWORK_CREATE.value, Permission.NETWORK_UPDATE.value, Permission.NETWORK_MOUNT.value, Permission.NETWORK_UNMOUNT.value,
+        Permission.NETWORK_CONFIG_VIEW.value,
         *_DOCKER_OPERATOR,
         Permission.DNS_VIEW.value, Permission.DNS_CONFIGURE.value, Permission.DATABASES_VIEW.value, Permission.DATABASES_CONFIGURE.value, Permission.DATABASES_BACKUP.value, Permission.DATABASES_RESTORE.value,
         Permission.HOMEASSISTANT_VIEW.value, Permission.HOMEASSISTANT_OPERATE.value,
@@ -300,7 +313,7 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.FILES_VIEW.value, Permission.FILES_READ.value, Permission.FILES_DOWNLOAD.value, Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_VIEW_ALL.value,
         Permission.SETTINGS_VIEW_OWN.value, Permission.SETTINGS_VIEW_SYSTEM.value, Permission.USERS_VIEW.value, Permission.GROUPS_VIEW.value, Permission.ACCESS_VIEW.value,
         Permission.AUDIT_VIEW_OWN.value, Permission.AUDIT_VIEW_ALL.value, Permission.AUDIT_EXPORT.value, Permission.MODULES_VIEW.value, Permission.MODULES_DIAGNOSTICS.value, Permission.MODULES_LOGS.value,
-        Permission.SERVICES_VIEW.value, Permission.SERVICES_LOGS.value, Permission.UPDATES_VIEW.value, Permission.NETWORK_VIEW.value,
+        Permission.SERVICES_VIEW.value, Permission.SERVICES_LOGS.value, Permission.UPDATES_VIEW.value, Permission.NETWORK_VIEW.value, Permission.NETWORK_CONFIG_VIEW.value,
         Permission.DOCKER_VIEW.value, Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_INSPECT_CONTAINER.value,
         Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value, Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_DIAGNOSTICS.value,
         Permission.DNS_VIEW.value, Permission.DATABASES_VIEW.value, Permission.HOMEASSISTANT_VIEW.value, Permission.SYSTEM_STATUS.value, Permission.SYSTEM_LOGS.value,
