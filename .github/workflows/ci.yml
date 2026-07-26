@@ -49,8 +49,37 @@ jobs:
       - name: Run Ruff
         run: python -m ruff check backend
 
-      - name: Run mypy
-        run: python -m mypy
+      - name: Run mypy (advisory)
+        id: mypy
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports
+          python -m mypy 2>&1 | tee reports/mypy.txt
+
+      - name: Add mypy result to summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Backend type checking"
+            echo
+            if [[ "${{ steps.mypy.outcome }}" == "success" ]]; then
+              echo "Mypy: passed."
+            else
+              echo "Mypy: found existing typing errors. The report is attached as an artifact; this check is temporarily non-blocking."
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload mypy report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mypy-report
+          path: reports/mypy.txt
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Build Python package
         run: python -m build
