@@ -589,12 +589,12 @@ set -euo pipefail
 die() {{ printf '%s\\n' "Hosts Manager enrollment failed: $1" >&2; exit 1; }}
 [[ "${{EUID}}" -eq 0 ]] || die "run this script as root"
 [[ '{endpoint}' == https://* ]] || die "HTTPS is required"
-for required in curl hostname hostnamectl ip awk python3 uname; do command -v "$required" >/dev/null 2>&1 || die "$required is required"; done
+for required in curl hostname hostnamectl ip awk python3 uname tr; do command -v "$required" >/dev/null 2>&1 || die "$required is required"; done
 ORIGINAL_HOSTNAME="$(hostname)"
 ASSIGNED_HOSTNAME='{token_item["assigned_hostname"]}'
 if [[ '{str(bool(token_item["apply_hostname"])).lower()}' == true ]]; then
   hostnamectl set-hostname "$ASSIGNED_HOSTNAME"
-  [[ "$(hostname)" == "$ASSIGNED_HOSTNAME" ]] || die "hostname change verification failed"
+  [[ "$(hostname | tr '[:upper:]' '[:lower:]')" == "$(printf '%s' "$ASSIGNED_HOSTNAME" | tr '[:upper:]' '[:lower:]')" ]] || die "hostname change verification failed"
 fi
 HOSTNAME_VALUE="$ASSIGNED_HOSTNAME"
 FQDN_VALUE="$(hostname -f 2>/dev/null || printf '%s' "$HOSTNAME_VALUE")"
@@ -604,14 +604,17 @@ ADDRESS_VALUE="${{WEBNAS_ENROLL_ADDRESS:-$(ip -4 route get 1.1.1.1 | awk '{{for(
 case "${{ID:-}}" in debian|ubuntu|raspbian|fedora|rhel|rocky|almalinux|proxmox) ;; *) [[ -f /etc/pve-release ]] || die "unsupported Linux distribution" ;; esac
 OS_VALUE="${{ID:-unknown}}"
 OS_VERSION="${{VERSION_ID:-}}"
+SYSTEM_ID_VALUE=""
+[[ -r /etc/machine-id ]] && IFS= read -r SYSTEM_ID_VALUE </etc/machine-id
+[[ -n "$SYSTEM_ID_VALUE" ]] || SYSTEM_ID_VALUE="$OS_VALUE-$OS_VERSION"
 ARCH_VALUE="$(uname -m)"
 PYTHON_VALUE="$(command -v python3)"
-export HOSTNAME_VALUE FQDN_VALUE ADDRESS_VALUE OS_VALUE OS_VERSION ARCH_VALUE PYTHON_VALUE ORIGINAL_HOSTNAME
+export HOSTNAME_VALUE FQDN_VALUE ADDRESS_VALUE OS_VALUE OS_VERSION SYSTEM_ID_VALUE ARCH_VALUE PYTHON_VALUE ORIGINAL_HOSTNAME
 BODY="$(python3 - <<'PY'
 import json, os
-keys = ("HOSTNAME_VALUE", "FQDN_VALUE", "ADDRESS_VALUE", "OS_VALUE", "OS_VERSION", "ARCH_VALUE", "PYTHON_VALUE", "ORIGINAL_HOSTNAME")
+keys = ("HOSTNAME_VALUE", "FQDN_VALUE", "ADDRESS_VALUE", "OS_VALUE", "OS_VERSION", "SYSTEM_ID_VALUE", "ARCH_VALUE", "PYTHON_VALUE", "ORIGINAL_HOSTNAME")
 v = {{key: os.environ[key] for key in keys}}
-print(json.dumps({{"hostname": v["HOSTNAME_VALUE"], "fqdn": v["FQDN_VALUE"], "address": v["ADDRESS_VALUE"], "os": v["OS_VALUE"], "system_id": v["OS_VALUE"], "system_version": v["OS_VERSION"], "architecture": v["ARCH_VALUE"], "python": v["PYTHON_VALUE"], "original_hostname": v["ORIGINAL_HOSTNAME"]}}))
+print(json.dumps({{"hostname": v["HOSTNAME_VALUE"], "fqdn": v["FQDN_VALUE"], "address": v["ADDRESS_VALUE"], "os": v["OS_VALUE"], "system_id": v["SYSTEM_ID_VALUE"], "system_version": v["OS_VERSION"], "architecture": v["ARCH_VALUE"], "python": v["PYTHON_VALUE"], "original_hostname": v["ORIGINAL_HOSTNAME"]}}))
 PY
 )"
 RESULT="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer {token}' --data "$BODY" '{endpoint}/api/modules/hosts-manager/enroll')" || die "server rejected enrollment"
@@ -651,9 +654,10 @@ if (-not $address) {{
 }}
 if (-not $address) {{ throw 'A primary IPv4 address is required.' }}
 $os = Get-CimInstance Win32_OperatingSystem
+$system = Get-CimInstance Win32_ComputerSystemProduct
 $body = @{{
   hostname = $assignedHostname; original_hostname = $originalHostname; fqdn = $assignedHostname
-  address = $address; os = 'windows'; system_id = $os.Caption; system_version = $os.Version
+  address = $address; os = 'windows'; system_id = $system.UUID; system_version = $os.Version
   architecture = $env:PROCESSOR_ARCHITECTURE; powershell = $PSVersionTable.PSVersion.ToString(); python = ''
 }} | ConvertTo-Json -Compress
 $headers = @{{ Authorization = 'Bearer {token}' }}

@@ -1020,6 +1020,7 @@
   "settings.policyCategoryChecking": "Wykrywanie aktualizacji",
   "settings.policyCategoryInstallation": "Instalowanie i konfiguracja",
   "settings.policyCategoryContainers": "Kontenery",
+  "settings.policyCategoryUpdates": "Aktualizacje",
   "settings.policyCategoryNetwork": "Bezpieczeństwo sieci",
   "settings.policyCategoryAccess": "Kontrola dostępu",
   "settings.accessPolicies": "Polityki dostępu",

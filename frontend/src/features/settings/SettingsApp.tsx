@@ -147,7 +147,7 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
   const [dockerPolicy, setDockerPolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
   const [networkPolicy, setNetworkPolicy] = useState<NetworkPolicy | null>(null);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<"checking" | "installation" | "containers" | "network" | "access">(permissions.includes("access.view") ? "access" : "checking");
+  const [group, setGroup] = useState<"updates" | "containers" | "network" | "access">(permissions.includes("access.view") ? "access" : "updates");
   const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
   const [editing, setEditing] = useState(false);
   useEffect(() => {
@@ -175,13 +175,12 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
     }
   }
   const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
-  function chooseGroup(next: "checking" | "installation" | "containers" | "network" | "access") {
-    setGroup(next); if (next !== "containers") setSelected(next === "checking" ? "check_enabled" : "enabled"); setEditing(false);
+  function chooseGroup(next: "updates" | "containers" | "network" | "access") {
+    setGroup(next); if (next !== "containers") setSelected(next === "updates" ? "check_enabled" : "enabled"); setEditing(false);
   }
   const policyGroups = <aside className="policy-groups">
     <header><FolderOpen />{t("settings.policyCategories")}</header>
-    <button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button>
-    <button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button>
+    <button className={group === "updates" ? "active" : ""} onClick={() => chooseGroup("updates")}><FolderOpen /><span>{t("settings.policyCategoryUpdates")}</span><b>4</b></button>
     <button className={group === "containers" ? "active" : ""} onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>
     <button className={group === "network" ? "active" : ""} onClick={() => chooseGroup("network")}><FolderOpen /><span>{t("settings.policyCategoryNetwork")}</span><b>1</b></button>
     {permissions.includes("access.view") && <button className={group === "access" ? "active" : ""} onClick={() => chooseGroup("access")}><FolderOpen /><span>{t("settings.policyCategoryAccess")}</span><b>4</b></button>}
@@ -231,10 +230,10 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
   if (!policy && !error) return <div className="loading-state">{t("status.loading")}</div>;
   if (!policy) return <div className="error-state" role="alert">{error}</div>;
   const definitions = {
-    check_enabled: { group: "checking" as const, label: t("settings.automaticUpdateChecks"), id: "updates.check_enabled", description: t("settings.automaticUpdateChecksHint"), defaultValue: t("common.enabled") },
-    interval_hours: { group: "checking" as const, label: t("settings.updateInterval"), id: "updates.check_interval_hours", description: t("settings.updateIntervalHint"), defaultValue: "12 h" },
-    enabled: { group: "installation" as const, label: t("settings.automaticUpdates"), id: "updates.auto_install", description: t("settings.automaticInstallUpdatesHint"), defaultValue: t("common.disabled") },
-    update_config: { group: "installation" as const, label: t("settings.updateConfiguration"), id: "updates.update_config", description: t("settings.updateConfigurationHint"), defaultValue: t("common.disabled") },
+    check_enabled: { group: "updates" as const, label: t("settings.automaticUpdateChecks"), id: "updates.check_enabled", description: t("settings.automaticUpdateChecksHint"), defaultValue: t("common.enabled") },
+    interval_hours: { group: "updates" as const, label: t("settings.updateInterval"), id: "updates.check_interval_hours", description: t("settings.updateIntervalHint"), defaultValue: "12 h" },
+    enabled: { group: "updates" as const, label: t("settings.automaticUpdates"), id: "updates.auto_install", description: t("settings.automaticInstallUpdatesHint"), defaultValue: t("common.disabled") },
+    update_config: { group: "updates" as const, label: t("settings.updateConfiguration"), id: "updates.update_config", description: t("settings.updateConfigurationHint"), defaultValue: t("common.disabled") },
   };
   const keys = (Object.keys(definitions) as Array<keyof typeof definitions>).filter((key) => definitions[key].group === group);
   const current = definitions[selected];
