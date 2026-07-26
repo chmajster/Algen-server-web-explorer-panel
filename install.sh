@@ -283,6 +283,10 @@ confirm() {
 }
 
 confirm_npm_audit_fix() {
+    info "Running npm audit"
+    (cd "${INSTALL_DIR}/frontend" && npm audit )
+    info "Running npm found"
+    (cd "${INSTALL_DIR}/frontend" && npm run found)
   local timeout="${1:-5}"
   local answer=""
   [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || timeout="5"
@@ -1075,10 +1079,7 @@ PY
   rm -f -- "$audit_report"
   if [[ "$vulnerability_count" =~ ^[1-9][0-9]*$ ]]; then
     warn "npm found ${vulnerability_count} frontend package vulnerabilities"
-    info "Running npm audit"
-    (cd "${INSTALL_DIR}/frontend" && npm audit )
-    info "Running npm found"
-    (cd "${INSTALL_DIR}/frontend" && npm run found)
+
     if confirm_npm_audit_fix 5; then
       info "Running npm audit fix"
       (cd "${INSTALL_DIR}/frontend" && npm audit fix)
