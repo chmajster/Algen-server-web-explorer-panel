@@ -30,6 +30,9 @@ All routes are under `/api/admin/network`:
 | GET | `/transactions/{id}/status` | Read the authoritative deadline and rollback status during reconnect |
 | POST | `/transactions/{id}/confirm` | Confirm through a server address approved by the plan |
 | POST | `/transactions/{id}/rollback` | Request rollback through a server address approved by the plan |
+| GET | `/policy` | Read the network confirmation policy and its limits |
+| PUT | `/policy` | Confirm and persist a new timeout for future transactions |
+| POST | `/policy/reset` | Confirm and restore the 15-second default |
 | GET | `/overview` | Existing interface diagnostics |
 | GET | `/dns` | Effective resolver state |
 | POST | `/dns/test` | Bounded direct DNS resolution test |
@@ -46,21 +49,23 @@ Every mutation follows **plan → apply → confirm**:
 2. WebNAS detects the interface used to reach the browser and default-route interfaces. A matching target is marked high-risk and requires the exact phrase shown by the server.
 3. Before apply, WebNAS stores live interface/routing/DNS diagnostics, managed state, affected WebNAS files and active NetworkManager connection UUIDs.
 4. WebNAS persists the transaction and arms an independent transient systemd service and timer before changing any managed file or live network state.
-5. Apply writes only managed files and executes generated commands. The timer starts rollback after exactly 15 seconds; failure to arm it blocks the change.
+5. Apply reads the central `network.change_confirmation_timeout_seconds` policy and stores that value with `created_at` and `deadline_at` in the transaction. The timer uses the stored value; failure to arm it blocks the change.
 6. The browser stores only the transaction identifier, deadline and server addresses in `sessionStorage`, keeps counting while offline, and probes the current, predicted, previous and other server-approved addresses with one bounded reconnect loop.
 7. Confirm is accepted only before the persisted server deadline. A durable confirmed state is written before the timer is stopped, so a late timer process cannot undo a confirmed change. Manual rollback restores immediately, and a partial command failure also rolls back immediately.
-8. After the local countdown expires, the browser continues reconnecting until the backend reports `confirmed`, `rolled_back`, or `failed`; reconnect never starts a fresh 15-second window.
+8. After the local countdown expires, the browser continues reconnecting until the backend reports `confirmed`, `rolled_back`, or `failed`; reconnect never starts a fresh confirmation window.
 9. Only one pending network transaction is allowed.
 
 The timer does not depend on FastAPI or the browser remaining alive. Snapshots may contain addresses and topology but never cookies, session headers, CSRF tokens or credentials.
+
+The timeout policy accepts strict integers from 5 through 300 seconds and defaults to 15. It is stored privately below `<data_dir>/network-management/policy.json`. Changing it affects only transactions created afterwards; an active transaction retains its original deadline and systemd timer.
 
 ## Permissions and audit
 
 The permission family is:
 
-`network.view`, `network.manage_interfaces`, `network.manage_bonds`, `network.manage_vlans`, `network.manage_bridges`, `network.manage_dns`, `network.manage_routes`, `network.manage_traffic`, `network.manage_connections`, `network.confirm`, and `network.rollback`.
+`network.view`, `network.manage_interfaces`, `network.manage_bonds`, `network.manage_vlans`, `network.manage_bridges`, `network.manage_dns`, `network.manage_routes`, `network.manage_traffic`, `network.manage_connections`, `network.confirm`, `network.rollback`, `network.policy.view`, and `network.policy.edit`.
 
-Administrators receive all registered permissions. Operators and auditors receive read access only by default; ordinary users receive no new access. Normal mutations require a session, CSRF validation and the operation-specific permission. During the 15-second reconnect window, the random 128-bit transaction identifier acts as a short-lived capability only for status, confirmation and rollback through addresses approved in the server-generated plan; it is invalid for confirmation after the deadline. Plans, apply, confirmation, rollback start, rollback completion and rollback failure are written to Activity Center with actor, target, provider, warning and transaction metadata.
+Administrators receive all registered permissions. Operators and auditors receive read access only by default; ordinary users receive no new access. Normal mutations require a session, CSRF validation and the operation-specific permission. During the active confirmation window, the random 128-bit transaction identifier acts as a short-lived capability only for status, confirmation and rollback through addresses approved in the server-generated plan; it is invalid for confirmation after the deadline. Policy changes audit the old and new values, actor, source and result. Plans and transactions audit the timeout selected for them.
 
 ## Recovery from the local console
 

@@ -1088,7 +1088,7 @@ def confirm_transaction(transaction_id: str, actor: str) -> dict[str, Any]:
     _atomic_json(_state_root() / "transactions" / transaction_id / "transaction.json", active)
     (_state_root() / "active.json").unlink(missing_ok=True)
     _cancel_rollback_timer(active.get("rollback_unit"))
-    record_activity(ActivityCategory.configuration, "network_confirm", actor, target=str(active.get("target") or ""), details={"provider": active.get("provider"), "transaction_id": transaction_id, "confirmed": True}, source="network")
+    record_activity(ActivityCategory.configuration, "network_confirm", actor, target=str(active.get("target") or ""), details={"provider": active.get("provider"), "transaction_id": transaction_id, "confirmed": True, "confirmation_timeout_seconds": active.get("confirmation_timeout_seconds")}, source="network")
     return active
 
 
@@ -1106,7 +1106,7 @@ def _rollback_transaction(transaction_id: str, actor: str = "system", automatic:
         _cancel_rollback_timer(active.get("rollback_unit"))
     active.update({"state": "rollback_started", "status": "rollback_started", "rollback_started_at": time.time(), "automatic": automatic})
     _atomic_json(directory / "transaction.json", active)
-    record_activity(ActivityCategory.configuration, "network_rollback_started", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic}, source="network")
+    record_activity(ActivityCategory.configuration, "network_rollback_started", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic, "confirmation_timeout_seconds": active.get("confirmation_timeout_seconds")}, source="network")
     for raw_path, content in snapshot.get("files", {}).items():
         path = Path(raw_path)
         if content is None:
@@ -1153,7 +1153,7 @@ def _rollback_transaction(transaction_id: str, actor: str = "system", automatic:
     active.update({"state": "rolled_back", "status": "rolled_back", "rolled_back_at": time.time(), "automatic": automatic, "rolled_back_by": actor})
     _atomic_json(directory / "transaction.json", active)
     (_state_root() / "active.json").unlink(missing_ok=True)
-    record_activity(ActivityCategory.configuration, "network_rollback", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic}, source="network")
+    record_activity(ActivityCategory.configuration, "network_rollback", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic, "confirmation_timeout_seconds": active.get("confirmation_timeout_seconds")}, source="network")
     return active
 
 
@@ -1166,7 +1166,7 @@ def rollback_transaction(transaction_id: str, actor: str = "system", automatic: 
             active.update({"state": "failed", "status": "failed", "failed_at": time.time(), "error": type(error).__name__})
             _atomic_json(_state_root() / "transactions" / transaction_id / "transaction.json", active)
             (_state_root() / "active.json").unlink(missing_ok=True)
-            record_activity(ActivityCategory.configuration, "network_rollback_failed", actor, target=str(active.get("target") or ""), status=ActivityStatus.failure, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic, "error": type(error).__name__}, source="network")
+            record_activity(ActivityCategory.configuration, "network_rollback_failed", actor, target=str(active.get("target") or ""), status=ActivityStatus.failure, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic, "error": type(error).__name__, "confirmation_timeout_seconds": active.get("confirmation_timeout_seconds")}, source="network")
         raise
 
 

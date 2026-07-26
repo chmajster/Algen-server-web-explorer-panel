@@ -60,7 +60,7 @@ User preferences are stored by the backend in `paths.data_dir/settings/<username
 
 ## Network diagnostics and resources
 
-**Settings → Network** contains General, Interfaces, Traffic Control, Static Routes, and Connectivity. It supports NetworkManager, systemd-networkd and Netplan writes without changing the host's selected manager; ifupdown and ambiguous hosts remain read-only. Every mutation is planned, previewed and protected by a durable 15-second systemd rollback until explicitly confirmed. Connectivity retains interface traffic/error diagnostics, DNS latency tests and kernel routing views, and adds validated ping, route tracing and TCP tests. See [Linux network management](docs/NETWORK_MANAGEMENT.md).
+**Settings → Network** contains General, Interfaces, Traffic Control, Static Routes, and Connectivity. It supports NetworkManager, systemd-networkd and Netplan writes without changing the host's selected manager; ifupdown and ambiguous hosts remain read-only. Every mutation is planned, previewed and protected by a durable systemd rollback until explicitly confirmed. The confirmation timeout is controlled by the central `network.change_confirmation_timeout_seconds` policy (5–300 seconds, default 15). Connectivity retains interface traffic/error diagnostics, DNS latency tests and kernel routing views, and adds validated ping, route tracing and TCP tests. See [Linux network management](docs/NETWORK_MANAGEMENT.md).
 
 The diagnostic API accepts no command or routing expressions. Route and rule collection uses fixed server-side `ip -j ... show` argument lists, response sizes and item counts are bounded, and the DNS test accepts only a validated IDNA hostname and contacts only servers already present in the system resolver configuration.
 

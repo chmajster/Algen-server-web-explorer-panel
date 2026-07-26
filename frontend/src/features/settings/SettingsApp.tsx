@@ -104,7 +104,6 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
   const [draft, setDraft] = useState(String(policy.change_confirmation_timeout_seconds));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => setDraft(String(policy.change_confirmation_timeout_seconds)), [policy.change_confirmation_timeout_seconds]);
   const numeric = Number(draft);
   const invalid = !/^\d+$/.test(draft) || !Number.isInteger(numeric) || numeric < policy.minimum_seconds || numeric > policy.maximum_seconds;
   async function save() {
@@ -112,7 +111,7 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
     setSaving(true); setError("");
     try {
       const updated = await api.saveNetworkPolicy(numeric);
-      onChange(updated); setEditing(false); toast(t("settings.saved"), "ok", "admin");
+      onChange(updated); setDraft(String(updated.change_confirmation_timeout_seconds)); setEditing(false); toast(t("settings.saved"), "ok", "admin");
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : t("error.generic");
       setError(message); toast(message, "error", "admin");
@@ -122,7 +121,7 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
     setSaving(true); setError("");
     try {
       const updated = await api.resetNetworkPolicy();
-      onChange(updated); setEditing(false); toast(t("settings.networkPolicyDefaultRestored"), "ok", "admin");
+      onChange(updated); setDraft(String(updated.change_confirmation_timeout_seconds)); setEditing(false); toast(t("settings.networkPolicyDefaultRestored"), "ok", "admin");
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : t("error.generic");
       setError(message); toast(message, "error", "admin");
@@ -134,7 +133,7 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
     <article className="policy-detail"><header><h3>{t("settings.networkConfirmationTimeout")}</h3><p>{t("settings.networkConfirmationTimeoutHint")}</p><div><span><b>ID</b><code>network.change_confirmation_timeout_seconds</code></span><span><b>{t("settings.defaultValue")}</b><code>{policy.default_seconds} {t("settings.seconds")}</code></span></div></header>
       <div className="policy-rules-heading"><strong>{t("settings.configuredRules")}</strong><button className="button-primary" onClick={() => setEditing(true)}>+ {t("settings.editRule")}</button></div>
       <section className="policy-rule-card"><header><span className="enabled">{t("common.enabled")}</span><b>{t("settings.priority")}: 100</b></header><dl><div><dt>{t("settings.scope")}</dt><dd>{t("settings.globalScope")}</dd></div><div><dt>{t("settings.value")}</dt><dd><code>{policy.change_confirmation_timeout_seconds} {t("settings.seconds")}</code></dd></div></dl><p>{t("settings.networkConfirmationTimeoutHint")}</p>
-        {editing && <div className="policy-rule-editor"><strong>{t("settings.ruleValue")}</strong><label>{t("settings.networkConfirmationTimeout")}<span className="input-with-unit"><input aria-label={t("settings.networkConfirmationTimeout")} type="number" min={policy.minimum_seconds} max={policy.maximum_seconds} step="1" value={draft} onChange={(event) => setDraft(event.target.value)} /><span>{t("settings.seconds")}</span></span>{invalid && <small className="field-error" role="alert">{t("settings.networkConfirmationTimeoutValidation").replace("{min}", String(policy.minimum_seconds)).replace("{max}", String(policy.maximum_seconds))}</small>}</label><div><button className="button-primary" disabled={saving || invalid} onClick={() => void save()}>{t("action.save")}</button><button disabled={saving} onClick={() => { setEditing(false); setDraft(String(policy.change_confirmation_timeout_seconds)); setError(""); }}>{t("action.cancel")}</button><button disabled={saving || policy.change_confirmation_timeout_seconds === policy.default_seconds} onClick={() => void reset()}>{t("settings.restoreDefault")}</button></div></div>}
+        {editing && <div className="policy-rule-editor network-policy-editor"><strong>{t("settings.ruleValue")}</strong><label>{t("settings.networkConfirmationTimeout")}<span className="input-with-unit"><input aria-label={t("settings.networkConfirmationTimeout")} type="number" min={policy.minimum_seconds} max={policy.maximum_seconds} step="1" value={draft} onChange={(event) => setDraft(event.target.value)} /><span>{t("settings.seconds")}</span></span>{invalid && <small className="field-error" role="alert">{t("settings.networkConfirmationTimeoutValidation").replace("{min}", String(policy.minimum_seconds)).replace("{max}", String(policy.maximum_seconds))}</small>}</label><div><button className="button-primary" disabled={saving || invalid} onClick={() => void save()}>{t("action.save")}</button><button disabled={saving} onClick={() => { setEditing(false); setDraft(String(policy.change_confirmation_timeout_seconds)); setError(""); }}>{t("action.cancel")}</button><button disabled={saving || policy.change_confirmation_timeout_seconds === policy.default_seconds} onClick={() => void reset()}>{t("settings.restoreDefault")}</button></div></div>}
       </section>{error && <p className="update-settings-error" role="alert">{error}</p>}
     </article>
   </section>;
