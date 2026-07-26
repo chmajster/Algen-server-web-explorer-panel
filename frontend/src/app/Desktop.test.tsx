@@ -42,11 +42,17 @@ describe("personalized desktop", () => {
     expect(desktop?.style.getPropertyValue("--taskbar-height-scaled")).toBe("72.5px");
     expect(document.documentElement.style.fontSize).toBe("20px");
 
-    const profile = settingsFixture({ interface_scale: 100, larger_text: true });
+    let profile = settingsFixture({ interface_scale: 100, larger_text: true });
     rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
     expect(desktop).toHaveClass("larger-text");
     expect(desktop?.style.getPropertyValue("--interface-font-size")).toBe("18px");
     expect(document.documentElement.style.fontSize).toBe("18px");
+
+    profile = settingsFixture({ interface_scale: 200, larger_text: false });
+    rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+    expect(desktop?.style.getPropertyValue("--interface-font-size")).toBe("32px");
+    expect(document.documentElement.style.fontSize).toBe("32px");
+
     unmount();
     expect(document.documentElement.style.fontSize).toBe(previousRootFontSize);
   });

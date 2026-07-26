@@ -76,7 +76,7 @@ export type Task = {
   errors: string[];
 };
 
-export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "ansible" | "module";
+export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "ansible" | "hosts" | "module";
 export type WallpaperItem = { id: string; name: string; url: string; size: number; created_at: number };
 
 export type UserPreferences = {

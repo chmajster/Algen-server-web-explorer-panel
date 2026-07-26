@@ -2,9 +2,9 @@
   --taskbar-height: 58px;
   --control-height: 36px;
   --window-opacity: .88;
-  --radius-control: 8px;
-  --radius-panel: 12px;
-  --radius-flyout: 16px;
+  --radius-control: 0.5rem;
+  --radius-panel: 0.75rem;
+  --radius-flyout: 1rem;
 }
 
 .desktop.desktop {
