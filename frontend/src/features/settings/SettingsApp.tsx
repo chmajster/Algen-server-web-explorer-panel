@@ -49,7 +49,7 @@ const categorySettings: Record<SettingsCategory, string[]> = {
   notifications: ["notificationsEnabled", "transferNotifications", "errorNotifications", "adminNotifications", "notificationLimit", "notificationAutoHide"],
   accessibility: ["interfaceScale", "largerText", "reduceMotion", "highContrast", "strongActiveBorders", "alwaysShowFocus"],
   language: ["language", "dateFormat", "timeFormat", "firstDayOfWeek"], account: ["username", "groups", "changePassword"],
-  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], updates: ["updates", "updateStatus", "updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration"], policies: ["containerDefaultsPolicy"], administration: ["serviceInformation", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
+  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], updates: ["updates", "updateStatus"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration", "containerDefaultsPolicy"], administration: ["serviceInformation", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
 };
 
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
@@ -97,19 +97,20 @@ function PasswordSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   return <Card title={t("settings.changePassword")}><form className="password-settings" onSubmit={(event) => void submit(event)}><label>{t("settings.currentPassword")}<input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} /></label><label>{t("settings.newPassword")}<input type="password" autoComplete="new-password" required minLength={8} value={next} onChange={(event) => setNext(event.target.value)} /></label><button className="button-primary" type="submit" disabled={saving}>{saving ? t("settings.saving") : t("settings.changePassword")}</button></form></Card>;
 }
 
-function UpdatePoliciesSection({ mode, t, toast }: { mode: "updates" | "containers"; t: Translate; toast: ToastFn }) {
+function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
   const [dockerPolicy, setDockerPolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<"checking" | "installation" | "containers">(mode === "containers" ? "containers" : "checking");
+  const [group, setGroup] = useState<"checking" | "installation" | "containers">("checking");
   const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
   const [editing, setEditing] = useState(false);
   useEffect(() => {
     let live = true;
-    if (mode === "updates") api.autoUpdate().then((value) => { if (live) setPolicy(value); }).catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
-    if (mode === "containers") api.dockerContainerDefaultsPolicy().then((value) => { if (live) setDockerPolicy(value); }).catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
+    Promise.all([api.autoUpdate(), api.dockerContainerDefaultsPolicy()])
+      .then(([updatePolicy, containerPolicy]) => { if (live) { setPolicy(updatePolicy); setDockerPolicy(containerPolicy); } })
+      .catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
     return () => { live = false; };
-  }, [mode, t]);
+  }, [t]);
   async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "update_config">>) {
     if (!policy) return false;
     const before = policy;
@@ -132,9 +133,9 @@ function UpdatePoliciesSection({ mode, t, toast }: { mode: "updates" | "containe
   }
   const policyGroups = <aside className="policy-groups">
     <header><FolderOpen />{t("settings.policyCategories")}</header>
-    {mode === "updates" && <><button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button>
-    <button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button></>}
-    {mode === "containers" && <button className="active" onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>}
+    <button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button>
+    <button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button>
+    <button className={group === "containers" ? "active" : ""} onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>
   </aside>;
   if (group === "containers") {
     if (!dockerPolicy && !error) return <div className="loading-state">{t("status.loading")}</div>;
@@ -308,7 +309,6 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
       <div className={`admin-overall-state ${updateState}`}><span />{updates?.update_available ? t("settings.updateAvailable") : updateLabel}</div>
     </section>
     <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
-    <UpdatePoliciesSection mode="updates" t={t} toast={toast} />
     {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
   </div>;
   return <div className="administration-dashboard">
@@ -375,7 +375,7 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
     if (category === "network") return <NetworkSettingsSection isAdmin={networkVisible} permissions={settings.permissions} t={t} />;
     if (category === "networkResources") return <NetworkMountsSettingsSection isAdmin={settings.is_admin} t={t} toast={toast} />;
     if (category === "updates") return <AdministrationSection view="updates" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
-    if (category === "policies") return <UpdatePoliciesSection mode="containers" t={t} toast={toast} />;
+    if (category === "policies") return <UpdatePoliciesSection t={t} toast={toast} />;
     if (category === "administration") return <AdministrationSection view="administration" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
     return <div className="settings-card-stack"><Card title="WebNAS"><dl className="settings-details"><dt>{t("settings.applicationName")}</dt><dd>WebNAS</dd><dt>{t("settings.version")}</dt><dd>0.1.0</dd><dt>{t("settings.frontendEnvironment")}</dt><dd>{window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "development" : "production"}</dd><dt>{t("settings.backendEnvironment")}</dt><dd>FastAPI / Linux</dd><dt>{t("settings.technologies")}</dt><dd>React · TypeScript · FastAPI · lucide-react</dd><dt>{t("settings.license")}</dt><dd>{t("settings.licenseInfo")}</dd></dl><a className="settings-repository" href="https://github.com/chmajster/Algen-server-web-explorer-panel" target="_blank" rel="noreferrer">{t("settings.repository")}</a></Card></div>;
   }

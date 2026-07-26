@@ -180,7 +180,7 @@ describe("settings application", () => {
     const saveAuto = vi.spyOn(api, "saveAutoUpdate").mockImplementation(async (payload) => ({ ...payload, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 200 }));
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "settings.category.updates" }));
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.policies" }));
     expect(await screen.findByText("settings.policyCategoryChecking")).toBeInTheDocument();
     expect(screen.getAllByText("updates.check_enabled")).toHaveLength(2);
     fireEvent.click(screen.getByText("updates.check_interval_hours").closest("button")!);
