@@ -221,7 +221,10 @@ jobs:
 
       - name: Require every test job to pass
         run: |
-          test "${{ needs.backend-quality.result }}" = "success"
-          test "${{ needs.backend-tests.result }}" = "success"
-          test "${{ needs.frontend.result }}" = "success"
-          test "${{ needs.shell-syntax.result }}" = "success"
+          if [ "${{ needs.backend-quality.result }}" != "success" ] || \
+             [ "${{ needs.backend-tests.result }}" != "success" ] || \
+             [ "${{ needs.frontend.result }}" != "success" ] || \
+             [ "${{ needs.shell-syntax.result }}" != "success" ]; then
+            echo "One or more required jobs did not succeed."
+            exit 1
+          fi
