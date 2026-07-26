@@ -404,7 +404,7 @@ export function NetworkSettingsSection({ isAdmin, t }: { isAdmin: boolean; t: Tr
     <header className="network-settings-page-header"><span><Gauge aria-hidden="true" /></span><div><h2 id="network-settings-title">{t("settings.category.network")}</h2><p>{t("network.settingsDescription")}</p></div></header>
     <nav className="network-settings-tabs" role="tablist" aria-label={t("settings.category.network")} onKeyDown={keyboard}>{tabs.map((item) => <button id={`network-tab-${item.id}`} key={item.id} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`network-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.icon}<span>{item.label}</span></button>)}</nav>
     <div id={`network-panel-${tab}`} role="tabpanel" aria-labelledby={`network-tab-${tab}`}>
-      {tab !== "connectivity" && <NetworkManagementWorkspace tab={tab} t={t} />}
+      {tab !== "connectivity" && <NetworkManagementWorkspace tab={tab} t={t} onNavigate={setTab} />}
       {tab === "connectivity" && <div className="network-connectivity-stack"><ConnectivityTester t={t} /><NetworkMonitor t={t} /><DnsDiagnostics t={t} /><RoutingTable t={t} /></div>}
     </div>
   </section>;

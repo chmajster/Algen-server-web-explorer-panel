@@ -20,7 +20,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - Modular NAS-style Package Center with validated YAML manifests, dry-run plans, durable jobs, live logs, service control, history, and GitHub source metadata.
 - Shared module-management applications with health, service controls, configuration plans, diagnostics, bounded/redacted logs, private backups, verified restore, and safe uninstall workflows.
 - Administrator-managed SMB/CIFS, NFS, SSHFS, and WebDAV network resources integrated with Settings and File Explorer.
-- Read-only network diagnostics in Settings with per-interface traffic history, errors, link/IP/gateway/DNS details, DNS resolution latency tests, and kernel routing tables/rules.
+- Transactional Linux network management in Settings for interfaces, bonds, VLANs, bridges, DNS, static routes and traffic control, with diagnostics and independent automatic rollback.
 - OS-level USB filesystem automount through udev and a device-bound systemd service, with removable media shown automatically in File Manager.
 - Windows 11-inspired (but independently branded) WebNAS desktop with one bottom taskbar, Start menu search, pinned/running app indicators, notification and transfer flyouts, and responsive application windows.
 - Per-user personalization synchronized by the backend: theme, accent, wallpaper, taskbar alignment, accessibility, notifications, transfer behavior, and File Manager defaults.
@@ -60,7 +60,7 @@ User preferences are stored by the backend in `paths.data_dir/settings/<username
 
 ## Network diagnostics and resources
 
-**Settings → Network** contains four tabs. **Network monitor** samples Linux interface counters every two seconds and keeps a 60-sample browser history for receive/transmit rates; it also shows packets, errors, dropped packets, carrier state, negotiated speed/duplex, MTU, MAC and IP addresses, active gateways, and effective per-link/global DNS servers. **DNS** presents `/etc/resolv.conf` and `systemd-resolved` state and can send bounded direct DNS queries for one validated domain to configured DNS servers, reporting each server's latency and response code. **Routing table** is a read-only view of IPv4/IPv6 routes, policy rules, and default gateways.
+**Settings → Network** contains General, Interfaces, Traffic Control, Static Routes, and Connectivity. It supports NetworkManager, systemd-networkd and Netplan writes without changing the host's selected manager; ifupdown and ambiguous hosts remain read-only. Every mutation is planned, previewed and protected by a durable 90-second systemd rollback until explicitly confirmed. Connectivity retains interface traffic/error diagnostics, DNS latency tests and kernel routing views, and adds validated ping, route tracing and TCP tests. See [Linux network management](docs/NETWORK_MANAGEMENT.md).
 
 The diagnostic API accepts no command or routing expressions. Route and rule collection uses fixed server-side `ip -j ... show` argument lists, response sizes and item counts are bounded, and the DNS test accepts only a validated IDNA hostname and contacts only servers already present in the system resolver configuration.
 

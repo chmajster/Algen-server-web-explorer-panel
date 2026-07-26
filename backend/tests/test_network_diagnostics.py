@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 import struct
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -130,6 +131,7 @@ def test_network_routes_are_registered_read_only():
     assert ("GET", "/api/admin/network/dns") in registered
     assert ("POST", "/api/admin/network/dns/test") in registered
     assert ("GET", "/api/admin/network/routing") in registered
+    assert ("POST", "/api/admin/network/connectivity/test") in registered
     assert not any(method in {"PUT", "PATCH", "DELETE"} for method, _path in registered)
 
 
@@ -137,3 +139,25 @@ def test_endpoints_ignore_session_values_as_command_arguments(monkeypatch):
     monkeypatch.setattr(network_diagnostics, "routing_snapshot", lambda: {"read_only": True})
 
     assert network_diagnostics.routing_endpoint(SimpleNamespace(username="; ip route flush table main")) == {"read_only": True}
+
+
+def test_connectivity_target_validation_rejects_command_text():
+    with pytest.raises(ValidationError):
+        network_diagnostics.ConnectivityTestRequest(kind="ping", target="example.com; reboot")
+    with pytest.raises(ValidationError):
+        network_diagnostics.ConnectivityTestRequest(kind="tcp", target="example.com", port=70000)
+
+
+def test_ping_uses_a_fixed_argument_array(monkeypatch):
+    calls = []
+    monkeypatch.setattr(network_diagnostics.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        network_diagnostics,
+        "_run_command",
+        lambda command, timeout=0: calls.append((command, timeout)) or subprocess.CompletedProcess(command, 0, "ok", ""),
+    )
+
+    result = network_diagnostics.test_connectivity("ping", "192.0.2.1")
+
+    assert calls == [(["/usr/bin/ping", "-c", "3", "-W", "2", "192.0.2.1"], 15)]
+    assert result["success"] is True

@@ -1,5 +1,7 @@
 # Changelog
 
+- Expanded **Settings → Network** into transactional Linux network management with NetworkManager, systemd-networkd and Netplan providers; interface/bond/VLAN/bridge, DNS, static-route and traffic-control models; typed plan/apply/confirm/rollback API; granular RBAC/CSRF/audit; independent 90-second systemd rollback; boot restoration; connectivity tests; responsive PL/EN UI; and backend/frontend tests. ifupdown and ambiguous provider configurations remain read-only.
+
 ## Hosts Manager
 
 - Added the independent `hosts-manager` module with a private versioned SQLite registry, granular RBAC, enrollment, SSH fingerprints, encrypted credentials, inventory/discovery, repositories, power profiles, operations/SSE, diagnostics and checksummed backup/restore.

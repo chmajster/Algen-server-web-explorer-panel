@@ -181,7 +181,8 @@ def test_partial_apply_failure_starts_immediate_rollback(monkeypatch):
 
     def run(command, timeout=0):
         calls["count"] += 1
-        return subprocess.CompletedProcess(command, 1 if calls["count"] == 2 else 0, "", "failed")
+        failed = command[1:3] == ["connection", "add"]
+        return subprocess.CompletedProcess(command, 1 if failed else 0, "", "failed" if failed else "")
 
     monkeypatch.setattr(management, "_run_command", run)
     monkeypatch.setattr(management, "rollback_transaction", lambda *args, **kwargs: calls.__setitem__("rollback", calls["rollback"] + 1))

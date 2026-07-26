@@ -2807,4 +2807,17 @@
   "permissions.hosts-manager.restore": "Przywracanie Hosts Manager",
   "permissions.hosts-manager.configure": "Konfiguracja Hosts Manager",
   "permissions.category.hosts-manager.description": "Centralny rejestr hostów"
+  ,"permissions.category.network": "Konfiguracja sieci",
+  "permissions.category.network.description": "Kontroluje interfejsy Linux, DNS, trasy i sterowanie ruchem.",
+  "permissions.network.view": "Wyświetlanie konfiguracji sieci",
+  "permissions.network.manage_interfaces": "Zarządzanie interfejsami sieciowymi",
+  "permissions.network.manage_bonds": "Zarządzanie bondingiem",
+  "permissions.network.manage_vlans": "Zarządzanie interfejsami VLAN",
+  "permissions.network.manage_bridges": "Zarządzanie mostami sieciowymi",
+  "permissions.network.manage_dns": "Zarządzanie DNS sieci",
+  "permissions.network.manage_routes": "Zarządzanie trasami statycznymi",
+  "permissions.network.manage_traffic": "Zarządzanie sterowaniem ruchem",
+  "permissions.network.manage_connections": "Łączenie i rozłączanie interfejsów",
+  "permissions.network.confirm": "Potwierdzanie konfiguracji sieci",
+  "permissions.network.rollback": "Przywracanie konfiguracji sieci"
 }

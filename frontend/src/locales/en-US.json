@@ -2806,5 +2806,18 @@
   "permissions.hosts-manager.backup": "Back up Hosts Manager",
   "permissions.hosts-manager.restore": "Restore Hosts Manager",
   "permissions.hosts-manager.configure": "Configure Hosts Manager",
-  "permissions.category.hosts-manager.description": "Central host registry"
+  "permissions.category.hosts-manager.description": "Central host registry",
+  "permissions.category.network": "Network configuration",
+  "permissions.category.network.description": "Controls Linux interfaces, DNS, routes, and traffic shaping.",
+  "permissions.network.view": "View network configuration",
+  "permissions.network.manage_interfaces": "Manage network interfaces",
+  "permissions.network.manage_bonds": "Manage network bonds",
+  "permissions.network.manage_vlans": "Manage VLAN interfaces",
+  "permissions.network.manage_bridges": "Manage network bridges",
+  "permissions.network.manage_dns": "Manage network DNS",
+  "permissions.network.manage_routes": "Manage static routes",
+  "permissions.network.manage_traffic": "Manage traffic control",
+  "permissions.network.manage_connections": "Connect and disconnect interfaces",
+  "permissions.network.confirm": "Confirm network configuration",
+  "permissions.network.rollback": "Roll back network configuration"
 }

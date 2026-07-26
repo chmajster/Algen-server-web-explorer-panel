@@ -67,6 +67,8 @@ PUT  /api/identity/groups/{groupname}/policy
 
 Every mutation requires a valid session, CSRF token, a concrete operation permission, and audit logging. The authenticated administrator session is sufficient; identity dialogs do not request or retain a second administrator password. Compatibility routes under `/api/admin/users`, `/api/admin/groups`, and `/api/rbac` call the same identity service. Global transfer review uses the separately protected `GET /api/admin/transfers` endpoint and `transfers.view_all`.
 
+Network configuration uses the granular `network.view`, `network.manage_interfaces`, `network.manage_bonds`, `network.manage_vlans`, `network.manage_bridges`, `network.manage_dns`, `network.manage_routes`, `network.manage_traffic`, `network.manage_connections`, `network.confirm`, and `network.rollback` permissions. Administrators receive all of them; built-in operator and auditor roles receive read-only `network.view`; ordinary users receive none by default. Network mutations additionally require a current user-bound plan and CSRF validation.
+
 ## Migration
 
 On first identity access, WebNAS creates the SQLite schema and imports `<data_dir>/rbac.json` in one transaction. Old permission names such as `rbac.manage`, `docker.operate`, and `audit.view` are mapped to their current granular identifiers. Unknown legacy values are reported in migration metadata and ignored. Before the transaction, the source is copied to:

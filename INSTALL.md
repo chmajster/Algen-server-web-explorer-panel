@@ -70,7 +70,9 @@ The installer installs the packages actually used by WebNAS:
 - Node.js and npm for the React frontend build.
 - `rsync` for copy and move transfers.
 - `sudo`, PAM development/runtime packages, and local account tools.
-- `curl`, `tar`, `gzip`, `iproute2`/`iproute`, and system utilities.
+- `curl`, `tar`, `gzip`, `iproute2`/`iproute` (including `tc`), `ethtool`, `traceroute`, and system utilities.
+
+The installer adds only manager-neutral networking and diagnostic tools. It does not install NetworkManager or Netplan, switch the active network manager, or alter network configuration. See [network management](docs/NETWORK_MANAGEMENT.md) for supported providers and recovery.
 - `udev`/`systemd-udev` and `util-linux` (`mount`, `umount`, and `findmnt`) for USB automount; NTFS/exFAT utilities are installed when the distribution provides them.
 
 ## Logs and journal access

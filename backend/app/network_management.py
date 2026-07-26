@@ -153,6 +153,14 @@ class InterfaceConfiguration(StrictModel):
 
     @model_validator(mode="after")
     def kind_valid(self) -> "InterfaceConfiguration":
+        if any(ipaddress.ip_address(item.address).version != 4 for item in self.ipv4.addresses):
+            raise ValueError("IPv4 configuration contains a non-IPv4 address")
+        if any(ipaddress.ip_address(item.address).version != 6 for item in self.ipv6.addresses):
+            raise ValueError("IPv6 configuration contains a non-IPv6 address")
+        if self.ipv4.method not in {"disabled", "dhcp", "manual"}:
+            raise ValueError("Invalid IPv4 method")
+        if self.ipv6.method not in {"disabled", "slaac", "dhcpv6", "manual"}:
+            raise ValueError("Invalid IPv6 method")
         if self.kind == "vlan" and (not self.parent or self.vlan_id is None):
             raise ValueError("VLAN requires parent and VLAN ID")
         if self.kind in {"bond", "bridge"} and not self.members:
@@ -341,7 +349,19 @@ class NetworkManagerProvider(NetworkProvider):
         if change.operation == "save_dns" and change.dns:
             commands = []
             for interface, servers in change.dns.per_interface.items():
-                commands.append([nmcli, "connection", "modify", f"webnas-{interface}", "ipv4.dns", ",".join(servers), "ipv4.ignore-auto-dns", "yes" if change.dns.ignore_dhcp else "no"])
+                result = _run_command([nmcli, "-g", "GENERAL.CONNECTION", "device", "show", interface], timeout=5)
+                connection = result.stdout.strip().splitlines()[0][:256] if result.returncode == 0 and result.stdout.strip() else f"webnas-{interface}"
+                ipv4 = ",".join(server for server in servers if ipaddress.ip_address(server).version == 4)
+                ipv6 = ",".join(server for server in servers if ipaddress.ip_address(server).version == 6)
+                commands.append([
+                    nmcli, "connection", "modify", connection,
+                    "ipv4.dns", ipv4, "ipv6.dns", ipv6,
+                    "ipv4.dns-search", ",".join(change.dns.search_domains + change.dns.routing_domains),
+                    "ipv6.dns-search", ",".join(change.dns.search_domains + change.dns.routing_domains),
+                    "ipv4.ignore-auto-dns", "yes" if change.dns.ignore_dhcp else "no",
+                    "ipv6.ignore-auto-dns", "yes" if change.dns.ignore_dhcp else "no",
+                ])
+                commands.append([nmcli, "connection", "up", connection])
             return commands
         if change.operation == "save_interface" and change.interface:
             item = change.interface
@@ -599,7 +619,7 @@ def _conflicts(change: NetworkChange, state: dict[str, Any]) -> list[str]:
                 previous = ManagedRoute.model_validate(existing)
                 if (previous.family, previous.destination, previous.table, previous.route_type) == (route.family, route.destination, route.table, route.route_type):
                     raise HTTPException(409, "A matching managed route already exists")
-    if change.traffic:
+    if change.traffic and change.traffic.enabled:
         if not shutil.which("tc"):
             raise HTTPException(409, "Traffic control is unavailable")
         if change.traffic.direction == "ingress" and not Path("/sys/module/ifb").exists():
@@ -669,13 +689,24 @@ def _provider_by_id(identifier: str) -> NetworkProvider:
 
 
 def _write_provider_files(provider: NetworkProvider, change: NetworkChange, snapshot: dict[str, Any]) -> None:
+    if change.operation == "save_dns" and change.dns and isinstance(provider, (SystemdNetworkdProvider, NetplanProvider)):
+        directory = Path("/etc/systemd/resolved.conf.d")
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "80-webnas.conf"
+        snapshot.setdefault("files", {})[str(path)] = path.read_text(encoding="utf-8") if path.exists() else None
+        servers = " ".join(change.dns.servers)
+        domains = " ".join(change.dns.search_domains + change.dns.routing_domains)
+        path.write_text(f"[Resolve]\nDNS={servers}\nDomains={domains}\n", encoding="utf-8")
+        return
     interface_name = change.interface.name if change.interface else change.interface_name
     if not interface_name or change.operation not in {"save_interface", "delete_interface"}:
         return
     if isinstance(provider, SystemdNetworkdProvider) and not isinstance(provider, NetplanProvider):
         directory = Path("/etc/systemd/network")
         rendered = render_networkd(change.interface) if change.interface else {}
-        names = set(rendered) | {f"80-webnas-{interface_name}.network", f"80-webnas-{interface_name}.netdev"}
+        previous = _managed_state().get("interfaces", {}).get(interface_name)
+        previous_names = set(render_networkd(InterfaceConfiguration.model_validate(previous))) if previous else set()
+        names = set(rendered) | previous_names | {f"80-webnas-{interface_name}.network", f"80-webnas-{interface_name}.netdev", f"80-webnas-{interface_name}.link"}
         for name in names:
             path = directory / name
             snapshot.setdefault("files", {})[str(path)] = path.read_text(encoding="utf-8") if path.exists() else None
@@ -734,7 +765,10 @@ def _capture_provider_state(provider: NetworkProvider, change: NetworkChange, sn
 def _restore_managed_configuration() -> None:
     state = _managed_state()
     for value in state.get("routes", {}).values():
-        change = NetworkChange(operation="save_route", route=ManagedRoute.model_validate(value))
+        route = ManagedRoute.model_validate(value)
+        if not route.autostart:
+            continue
+        change = NetworkChange(operation="save_route", route=route)
         for command in _commands_for_generic(change):
             _run_command(command, timeout=30)
     for value in state.get("traffic", {}).values():

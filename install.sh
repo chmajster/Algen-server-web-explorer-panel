@@ -474,7 +474,7 @@ install_dependencies() {
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpam0g-dev rsync sudo curl wget ca-certificates tar gzip \
-        passwd procps iproute2 screen quota util-linux udev
+        passwd procps iproute2 ethtool traceroute screen quota util-linux udev
       DEBIAN_FRONTEND=noninteractive apt_get install -y ntfs-3g || warn "Optional NTFS tools could not be installed"
       DEBIAN_FRONTEND=noninteractive apt_get install -y exfatprogs || warn "Optional exFAT tools could not be installed"
       ;;
@@ -482,14 +482,14 @@ install_dependencies() {
       dnf install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl wget ca-certificates tar gzip \
-        shadow-utils procps-ng iproute screen quota util-linux systemd-udev
+        shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev
       dnf install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
     yum)
       yum install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl wget ca-certificates tar gzip \
-        shadow-utils procps-ng iproute screen quota util-linux systemd-udev
+        shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev
       yum install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
   esac
