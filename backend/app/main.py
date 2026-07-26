@@ -4,6 +4,7 @@ import base64
 import asyncio
 import json
 from pathlib import Path
+from contextlib import asynccontextmanager
 from typing import cast
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
@@ -43,7 +44,15 @@ from .uploads import append_upload, cancel_upload, start_upload
 from .write_policy import assert_write_allowed
 
 configure_logging()
-app = FastAPI(title="WebNAS", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_auto_update_scheduler()
+    package_job_manager(package_repository())
+    start_ansible_scheduler()
+    yield
+
+app = FastAPI(title="WebNAS", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 
@@ -74,13 +83,6 @@ app.include_router(hosts_manager_router)
 app.include_router(modules_router)
 app.include_router(rbac_router)
 app.include_router(activity_router)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    start_auto_update_scheduler()
-    package_job_manager(package_repository())
-    start_ansible_scheduler()
 
 
 @app.get("/api/health")
