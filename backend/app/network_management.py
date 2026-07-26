@@ -680,6 +680,8 @@ def build_plan(change: NetworkChange, actor: str, client_interface: str | None) 
     if not provider.writable and change.operation not in {"save_route", "delete_route", "save_traffic", "delete_traffic"}:
         raise HTTPException(409, "The active network provider is read-only")
     state = _managed_state()
+    if sum(len(state.get(key, {})) for key in ("interfaces", "routes", "traffic")) >= MAX_OBJECTS and change.operation.startswith("save_"):
+        raise HTTPException(409, "The managed network object limit was reached")
     warnings = provider_warnings + _conflicts(change, state)
     target = change.interface.name if change.interface else change.interface_name or change.object_id or "dns"
     routes = routing_snapshot()
