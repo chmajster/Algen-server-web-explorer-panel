@@ -1,17 +1,17 @@
 .desktop .desktop-window {
   grid-template-rows: var(--window-titlebar-height-scaled) minmax(0, 1fr);
   border-color: color-mix(in srgb, var(--border-subtle) 82%, transparent);
-  border-radius: 10px; background: color-mix(in srgb, var(--surface-primary) 94%, transparent);
-  backdrop-filter: blur(22px) saturate(125%); transition: opacity .12s ease, transform .12s ease, box-shadow .12s ease;
+  border-radius: 0.625rem; background: color-mix(in srgb, var(--surface-primary) 94%, transparent);
+  backdrop-filter: blur(1.375rem) saturate(125%); transition: opacity .12s ease, transform .12s ease, box-shadow .12s ease;
 }
-.desktop .desktop-window.inactive { box-shadow: 0 10px 32px rgba(20,35,48,.2); }
+.desktop .desktop-window.inactive { box-shadow: 0 0.625rem 2rem rgba(20,35,48,.2); }
 .desktop .desktop-window.inactive .window-titlebar { color: var(--text-secondary); background: color-mix(in srgb, var(--surface-secondary) 90%, transparent); }
 .desktop .desktop-window.active { border-color: color-mix(in srgb, var(--accent) 36%, var(--border-strong)); }
 .desktop .desktop-window.maximized { border-radius: 0; }
-.desktop .desktop-window.minimizing { opacity: 0; transform: translateY(28px) scale(.92); }
-.desktop .window-titlebar { gap: 8px; padding: 0 0 0 14px; background: color-mix(in srgb, var(--surface-elevated) 88%, transparent); }
+.desktop .desktop-window.minimizing { opacity: 0; transform: translateY(1.75rem) scale(.92); }
+.desktop .window-titlebar { gap: 0.5rem; padding: 0 0 0 0.875rem; background: color-mix(in srgb, var(--surface-elevated) 88%, transparent); }
 .desktop .window-titlebar > strong { font-size: .78em; font-weight: 600; }
 .desktop .window-controls { align-self: stretch; gap: 0; }
-.desktop .window-controls button { width: 46px; height: 100%; border-radius: 0; }
+.desktop .window-controls button { width: 2.875rem; height: 100%; border-radius: 0; }
 .desktop .window-controls .window-close:hover { background: #c42b3a; }
-.desktop .window-app-icon svg { width: 17px; height: 17px; }
+.desktop .window-app-icon svg { width: 1.0625rem; height: 1.0625rem; }

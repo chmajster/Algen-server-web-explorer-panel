@@ -1,6 +1,6 @@
 :root {
-  --taskbar-height: 58px;
-  --control-height: 36px;
+  --taskbar-height: 3.625rem;
+  --control-height: 2.25rem;
   --window-opacity: .88;
   --radius-control: 0.5rem;
   --radius-panel: 0.75rem;
@@ -24,15 +24,15 @@
   --danger: #c42b3a;
   --warning: #a96500;
   --success: #137a4b;
-  --shadow-window: 0 24px 70px rgba(17, 34, 49, .26), 0 3px 12px rgba(17, 34, 49, .14);
-  --shadow-menu: 0 18px 54px rgba(17, 34, 49, .24), 0 2px 9px rgba(17, 34, 49, .12);
+  --shadow-window: 0 1.5rem 4.375rem rgba(17, 34, 49, .26), 0 0.1875rem 0.75rem rgba(17, 34, 49, .14);
+  --shadow-menu: 0 1.125rem 3.375rem rgba(17, 34, 49, .24), 0 2px 0.5625rem rgba(17, 34, 49, .12);
   --radius-small: var(--radius-control);
   --radius-medium: var(--radius-panel);
   --radius-large: var(--radius-flyout);
   --taskbar-height-scaled: var(--taskbar-height);
-  --taskbar-item-size-scaled: 44px;
-  --window-titlebar-height-scaled: 44px;
-  font-size: var(--interface-font-size, 16px);
+  --taskbar-item-size-scaled: 2.75rem;
+  --window-titlebar-height-scaled: 2.75rem;
+  font-size: var(--interface-font-size, 1rem);
 }
 
 .desktop.desktop.dark {
@@ -52,8 +52,8 @@
   --danger: #ff6673;
   --warning: #f3b14b;
   --success: #57c58a;
-  --shadow-window: 0 26px 78px rgba(0, 0, 0, .58), 0 3px 14px rgba(0, 0, 0, .38);
-  --shadow-menu: 0 20px 58px rgba(0, 0, 0, .52);
+  --shadow-window: 0 1.625rem 4.875rem rgba(0, 0, 0, .58), 0 0.1875rem 0.875rem rgba(0, 0, 0, .38);
+  --shadow-menu: 0 1.25rem 3.625rem rgba(0, 0, 0, .52);
 }
 
 .desktop.desktop.accent-blue { --accent: #1878d1; --accent-hover: #1268b8; }
