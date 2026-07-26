@@ -42,6 +42,29 @@ class PowerProvider(StrEnum):
     proxmox = "proxmox"
 
 
+class BootstrapOS(StrEnum):
+    linux = "linux"
+    windows = "windows"
+
+
+def hostname_template_parts(value: str) -> tuple[str, int, str]:
+    value = value.strip()
+    runs = list(re.finditer(r"X+", value))
+    if len(runs) != 1 or not 1 <= len(runs[0].group()) <= 9:
+        raise ValueError("hostname template must contain exactly one run of 1 to 9 uppercase X characters")
+    if len(value) > 63 or not re.fullmatch(r"[A-Za-z0-9-]+", value) or value.startswith("-") or value.endswith("-"):
+        raise ValueError("hostname template must be a valid hostname label of at most 63 characters")
+    match = runs[0]
+    return value[:match.start()], len(match.group()), value[match.end():]
+
+
+def render_hostname(value: str, sequence: int) -> str:
+    prefix, width, suffix = hostname_template_parts(value)
+    if sequence < 1 or sequence > (10**width) - 1:
+        raise OverflowError("hostname sequence is exhausted")
+    return f"{prefix}{sequence:0{width}d}{suffix}"
+
+
 def safe_address(value: str) -> str:
     value = value.strip().rstrip(".")
     try:
@@ -164,8 +187,23 @@ class CredentialInput(StrictModel):
         return self
 
 
+class HostsManagerSettingsUpdate(StrictModel):
+    hostname_template: str = Field(default="SCL000XXX", min_length=1, max_length=63)
+    bootstrap_default_os: BootstrapOS = BootstrapOS.linux
+    bootstrap_apply_hostname: bool = True
+
+    @field_validator("hostname_template")
+    @classmethod
+    def valid_hostname_template(cls, value: str) -> str:
+        hostname_template_parts(value)
+        return value
+
+
 class EnrollmentTokenInput(StrictModel):
-    hostname_pattern: str = Field(default="node-*", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9*?.-]+$")
+    # Retained for old API clients. New tokens always reserve one exact hostname.
+    hostname_pattern: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9*?.-]+$")
+    bootstrap_os: BootstrapOS | None = None
+    apply_hostname: bool | None = None
     expires_minutes: int = Field(default=15, ge=1, le=60)
     port: int = Field(default=22, ge=1, le=65535)
     ssh_user: str = Field(default="algen-ansible", max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
@@ -187,6 +225,10 @@ class EnrollmentClaimInput(StrictModel):
     os: str = Field(default="", max_length=128)
     architecture: str = Field(default="", max_length=64)
     python: str = Field(default="", max_length=128)
+    original_hostname: str = Field(default="", max_length=128)
+    system_id: str = Field(default="", max_length=128)
+    system_version: str = Field(default="", max_length=256)
+    powershell: str = Field(default="", max_length=64)
 
     _address = field_validator("address")(safe_address)
 

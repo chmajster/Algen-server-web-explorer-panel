@@ -282,6 +282,25 @@ confirm() {
   [[ "$answer" =~ ^[Yy] ]]
 }
 
+confirm_npm_audit_fix() {
+  local timeout="${1:-5}"
+  local answer=""
+  [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || timeout="5"
+  if [[ "$ASSUME_YES" == "yes" || ! -e /dev/tty ]]; then
+    printf 'Run npm audit fix now? [y/N] (default in %ss): no\n' "$timeout" >&2
+    return 1
+  fi
+  printf 'Run npm audit fix now? [y/N] (continuing with NO in %ss): ' "$timeout" >/dev/tty
+  if IFS= read -r -t "$timeout" answer </dev/tty; then
+    :
+  else
+    printf '\nNo answer received; continuing with NO.\n' >/dev/tty
+    return 1
+  fi
+  answer="${answer:-no}"
+  [[ "$answer" =~ ^[Yy]([Ee][Ss])?$ ]]
+}
+
 require_root() {
   [[ "${EUID}" -eq 0 ]] || fail "Run as root, for example: sudo ./install.sh"
   command -v systemctl >/dev/null 2>&1 || fail "systemd is required but systemctl was not found"
@@ -1032,12 +1051,43 @@ PY
 }
 
 build_frontend() {
+  local audit_report=""
+  local vulnerability_count=""
   if [[ "$SKIP_BUILD" == "yes" ]]; then
     warn "Frontend build skipped"
     return
   fi
   section "Building frontend"
-  (cd "${INSTALL_DIR}/frontend" && npm install && npm run build)
+  (cd "${INSTALL_DIR}/frontend" && npm install)
+  audit_report="$(mktemp -t webnas-npm-audit.XXXXXX)"
+  (cd "${INSTALL_DIR}/frontend" && npm audit --json > "$audit_report") || true
+  vulnerability_count="$(python3 - "$audit_report" <<'PY'
+import json
+import sys
+
+try:
+    report = json.load(open(sys.argv[1], encoding="utf-8"))
+    print(int(report.get("metadata", {}).get("vulnerabilities", {}).get("total", 0)))
+except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    print("")
+PY
+)"
+  rm -f -- "$audit_report"
+  if [[ "$vulnerability_count" =~ ^[1-9][0-9]*$ ]]; then
+    warn "npm found ${vulnerability_count} frontend package vulnerabilities"
+    if confirm_npm_audit_fix 5; then
+      info "Running npm audit fix"
+      (cd "${INSTALL_DIR}/frontend" && npm audit fix)
+      ok "npm audit fix completed"
+    else
+      warn "npm audit fix skipped"
+    fi
+  elif [[ "$vulnerability_count" == "0" ]]; then
+    ok "npm audit found no frontend package vulnerabilities"
+  else
+    warn "npm audit could not determine the frontend vulnerability count; continuing without automatic changes"
+  fi
+  (cd "${INSTALL_DIR}/frontend" && npm run build)
   chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/frontend"
   ok "Frontend built"
 }

@@ -4,6 +4,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -15,10 +16,13 @@ from typing import Any, Callable
 
 from ...config import get_config
 from ..ansible_controller.security import CredentialCipher, redact
-from .models import CredentialInput, EnrollmentTokenInput, GroupInput, HostInput, PowerProfileInput, RepositoryInput
+from .models import (
+    CredentialInput, EnrollmentTokenInput, GroupInput, HostInput, HostsManagerSettingsUpdate,
+    PowerProfileInput, RepositoryInput, hostname_template_parts, render_hostname,
+)
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 JSON_COLUMNS = {
     "tags_json": "tags", "variables_json": "variables", "group_ids_json": "group_ids",
     "host_ids_json": "host_ids", "facts_json": "facts", "details_json": "details",
@@ -129,7 +133,16 @@ class HostRegistryService:
                     port INTEGER NOT NULL, credential_id TEXT, environment TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '',
                     tags_json TEXT NOT NULL DEFAULT '[]', group_ids_json TEXT NOT NULL DEFAULT '[]', require_approval INTEGER NOT NULL DEFAULT 1,
                     onboard_ansible INTEGER NOT NULL DEFAULT 0, expires_at REAL NOT NULL, used_at REAL, used_hostname TEXT NOT NULL DEFAULT '',
-                    revoked_at REAL, created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
+                    revoked_at REAL, assigned_hostname TEXT NOT NULL DEFAULT '', bootstrap_os TEXT NOT NULL DEFAULT 'linux',
+                    apply_hostname INTEGER NOT NULL DEFAULT 1, reported_hostname TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS hosts_manager_settings(
+                    key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at REAL NOT NULL, updated_by TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS hostname_sequences(
+                    hostname_template TEXT PRIMARY KEY COLLATE NOCASE, next_value INTEGER NOT NULL, updated_at REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS hostname_reservations(
+                    hostname TEXT PRIMARY KEY COLLATE NOCASE, hostname_template TEXT NOT NULL, sequence_value INTEGER NOT NULL,
+                    token_id TEXT NOT NULL UNIQUE, reserved_at REAL NOT NULL, reserved_by TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS repositories(
                     id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', url TEXT NOT NULL,
                     revision TEXT NOT NULL, credential_id TEXT, host_ids_json TEXT NOT NULL DEFAULT '[]',
@@ -157,6 +170,25 @@ class HostRegistryService:
                     created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
                 """
             )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(enrollment_tokens)")}
+            for name, definition in (
+                ("assigned_hostname", "TEXT NOT NULL DEFAULT ''"),
+                ("bootstrap_os", "TEXT NOT NULL DEFAULT 'linux'"),
+                ("apply_hostname", "INTEGER NOT NULL DEFAULT 1"),
+                ("reported_hostname", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if name not in columns:
+                    connection.execute(f"ALTER TABLE enrollment_tokens ADD COLUMN {name} {definition}")
+            defaults = {
+                "hostname_template": "SCL000XXX",
+                "bootstrap_default_os": "linux",
+                "bootstrap_apply_hostname": True,
+            }
+            for key, value in defaults.items():
+                connection.execute(
+                    "INSERT OR IGNORE INTO hosts_manager_settings(key,value_json,updated_at,updated_by) VALUES(?,?,?,?)",
+                    (key, json.dumps(value), now, ""),
+                )
             connection.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(?,?)", (SCHEMA_VERSION, now))
             connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         os.chmod(self.path, 0o600)
@@ -172,7 +204,7 @@ class HostRegistryService:
                     result[target] = json.loads(result.pop(column) or "[]")
                 except (ValueError, TypeError):
                     result[target] = [] if target.endswith("ids") or target == "tags" else {}
-        for key in ("active", "approved", "require_approval", "onboard_ansible", "sync_before_use", "verify_tls", "managed_user_created"):
+        for key in ("active", "approved", "require_approval", "onboard_ansible", "sync_before_use", "verify_tls", "managed_user_created", "apply_hostname"):
             if key in result:
                 result[key] = bool(result[key])
         return result
@@ -408,14 +440,97 @@ class HostRegistryService:
             "credential": self._credential_metadata(credential) if credential else None,
         }
 
+    @staticmethod
+    def _template_sequence(template: str, hostname: str) -> int | None:
+        prefix, width, suffix = hostname_template_parts(template)
+        match = re.fullmatch(rf"{re.escape(prefix)}(\d{{{width}}}){re.escape(suffix)}", hostname, re.IGNORECASE)
+        return int(match.group(1)) if match else None
+
+    def _settings_locked(self, connection: sqlite3.Connection) -> dict[str, Any]:
+        rows = connection.execute("SELECT key,value_json,updated_at,updated_by FROM hosts_manager_settings").fetchall()
+        values = {str(row["key"]): json.loads(row["value_json"]) for row in rows}
+        updated = max(rows, key=lambda row: float(row["updated_at"])) if rows else None
+        return {
+            "hostname_template": str(values.get("hostname_template", "SCL000XXX")),
+            "bootstrap_default_os": str(values.get("bootstrap_default_os", "linux")),
+            "bootstrap_apply_hostname": bool(values.get("bootstrap_apply_hostname", True)),
+            "updated_at": float(updated["updated_at"]) if updated else 0,
+            "updated_by": str(updated["updated_by"]) if updated else "",
+        }
+
+    def _next_sequence_locked(self, connection: sqlite3.Connection, template: str) -> int:
+        row = connection.execute(
+            "SELECT next_value FROM hostname_sequences WHERE hostname_template=? COLLATE NOCASE", (template,)
+        ).fetchone()
+        next_value = max(1, int(row["next_value"])) if row else 1
+        candidates = connection.execute(
+            "SELECT name AS hostname FROM hosts UNION ALL SELECT hostname FROM hosts "
+            "UNION ALL SELECT hostname FROM hostname_reservations"
+        ).fetchall()
+        matched = [value for item in candidates if (value := self._template_sequence(template, str(item["hostname"]))) is not None]
+        next_value = max(next_value, max(matched, default=0) + 1)
+        render_hostname(template, next_value)
+        return next_value
+
+    def settings(self) -> dict[str, Any]:
+        with self._lock, self.connect() as connection:
+            value = self._settings_locked(connection)
+            sequence = self._next_sequence_locked(connection, value["hostname_template"])
+        _, width, _ = hostname_template_parts(value["hostname_template"])
+        return value | {
+            "next_hostname": render_hostname(value["hostname_template"], sequence),
+            "sequence_width": width,
+            "preview_hostnames": [
+                render_hostname(value["hostname_template"], sequence + offset)
+                for offset in range(3)
+                if sequence + offset <= (10**width) - 1
+            ],
+        }
+
+    def save_settings(self, payload: HostsManagerSettingsUpdate, actor: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        now = time.time()
+        values = payload.model_dump(mode="json")
+        with self._lock, self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            previous = self._settings_locked(connection)
+            for key, value in values.items():
+                connection.execute(
+                    "INSERT INTO hosts_manager_settings(key,value_json,updated_at,updated_by) VALUES(?,?,?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by",
+                    (key, json.dumps(value), now, actor),
+                )
+            sequence = self._next_sequence_locked(connection, str(values["hostname_template"]))
+            connection.execute(
+                "INSERT INTO hostname_sequences(hostname_template,next_value,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(hostname_template) DO UPDATE SET next_value=MAX(next_value,excluded.next_value),updated_at=excluded.updated_at",
+                (values["hostname_template"], sequence, now),
+            )
+        return previous, self.settings()
+
     def create_enrollment_token(self, payload: EnrollmentTokenInput, actor: str) -> dict[str, Any]:
         now, item_id, token = time.time(), stable_id(), secrets.token_urlsafe(32)
         value = payload.model_dump(mode="json")
         expires = now + value["expires_minutes"] * 60
-        with self.connect() as connection:
-            connection.execute("""INSERT INTO enrollment_tokens(id,token_hash,hostname_pattern,ssh_user,port,credential_id,environment,location,tags_json,group_ids_json,require_approval,onboard_ansible,expires_at,created_at,updated_at,created_by,updated_by)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (item_id, hashlib.sha256(token.encode()).hexdigest(), value["hostname_pattern"], value["ssh_user"], value["port"], value["credential_id"], value["environment"], value["location"], json.dumps(value["tags"]), json.dumps(value["group_ids"]), int(value["require_approval"]), int(value["onboard_ansible"]), expires, now, now, actor, actor))
-        return {"id": item_id, "token": token, "hostname_pattern": value["hostname_pattern"], "expires_at": expires, "used": False}
+        with self._lock, self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            settings = self._settings_locked(connection)
+            template = str(settings["hostname_template"])
+            sequence = self._next_sequence_locked(connection, template)
+            assigned_hostname = render_hostname(template, sequence)
+            bootstrap_os = str(value["bootstrap_os"] or settings["bootstrap_default_os"])
+            apply_hostname = settings["bootstrap_apply_hostname"] if value["apply_hostname"] is None else bool(value["apply_hostname"])
+            connection.execute(
+                "INSERT INTO hostname_reservations(hostname,hostname_template,sequence_value,token_id,reserved_at,reserved_by) VALUES(?,?,?,?,?,?)",
+                (assigned_hostname, template, sequence, item_id, now, actor),
+            )
+            connection.execute(
+                "INSERT INTO hostname_sequences(hostname_template,next_value,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(hostname_template) DO UPDATE SET next_value=excluded.next_value,updated_at=excluded.updated_at",
+                (template, sequence + 1, now),
+            )
+            connection.execute("""INSERT INTO enrollment_tokens(id,token_hash,hostname_pattern,ssh_user,port,credential_id,environment,location,tags_json,group_ids_json,require_approval,onboard_ansible,expires_at,assigned_hostname,bootstrap_os,apply_hostname,created_at,updated_at,created_by,updated_by)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (item_id, hashlib.sha256(token.encode()).hexdigest(), assigned_hostname, value["ssh_user"], value["port"], value["credential_id"], value["environment"], value["location"], json.dumps(value["tags"]), json.dumps(value["group_ids"]), int(value["require_approval"]), int(value["onboard_ansible"]), expires, assigned_hostname, bootstrap_os, int(apply_hostname), now, now, actor, actor))
+        return {"id": item_id, "token": token, "hostname_pattern": assigned_hostname, "assigned_hostname": assigned_hostname, "bootstrap_os": bootstrap_os, "apply_hostname": apply_hostname, "expires_at": expires, "created_at": now, "created_by": actor, "used": False}
 
     def enrollment_tokens(self) -> list[dict[str, Any]]:
         return [{key: value for key, value in item.items() if key != "token_hash"} | {"used": item.get("used_at") is not None, "expired": item["expires_at"] < time.time(), "revoked": item.get("revoked_at") is not None} for item in self._list("enrollment_tokens")]
@@ -428,9 +543,13 @@ class HostRegistryService:
         now, token_hash, hostname = time.time(), hashlib.sha256(token.encode()).hexdigest(), str(claim["hostname"])
         with self.connect() as connection:
             row = connection.execute("SELECT * FROM enrollment_tokens WHERE token_hash=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at>=?", (token_hash, now)).fetchone()
-            if not row or not fnmatch.fnmatchcase(hostname.casefold(), str(row["hostname_pattern"]).casefold()):
+            if not row:
                 return None
-            changed = connection.execute("UPDATE enrollment_tokens SET used_at=?,used_hostname=?,updated_at=?,updated_by=? WHERE id=? AND used_at IS NULL", (now, hostname, now, f"enrollment:{hostname}", row["id"])).rowcount
+            assigned = str(row["assigned_hostname"] or "")
+            allowed = hostname.casefold() == assigned.casefold() if assigned else fnmatch.fnmatchcase(hostname.casefold(), str(row["hostname_pattern"]).casefold())
+            if not allowed:
+                return None
+            changed = connection.execute("UPDATE enrollment_tokens SET used_at=?,used_hostname=?,reported_hostname=?,updated_at=?,updated_by=? WHERE id=? AND used_at IS NULL", (now, hostname, str(claim.get("original_hostname") or hostname), now, f"enrollment:{hostname}", row["id"])).rowcount
             if not changed:
                 return None
             token_data = self._decode(row) or {}
@@ -439,30 +558,111 @@ class HostRegistryService:
             port=int(token_data["port"]), ssh_user=str(token_data["ssh_user"]), credential_id=token_data.get("credential_id"),
             environment=str(token_data["environment"]), location=str(token_data["location"]), tags=token_data["tags"],
             group_ids=token_data["group_ids"], approved=not bool(token_data["require_approval"]),
-            variables={"enrollment_os": claim.get("os", ""), "enrollment_architecture": claim.get("architecture", ""), "enrollment_python": claim.get("python", "")},
+            variables={
+                "enrollment_os": claim.get("os", ""), "enrollment_architecture": claim.get("architecture", ""),
+                "enrollment_python": claim.get("python", ""), "original_hostname": claim.get("original_hostname", ""),
+                "system_id": claim.get("system_id", ""), "system_version": claim.get("system_version", ""),
+                "powershell": claim.get("powershell", ""),
+            },
         )
         return self.save_host(host_payload, f"enrollment:{hostname}", source="script")
 
-    def enrollment_script(self, token_id: str, token: str, endpoint: str) -> str:
-        token_item = self._get("enrollment_tokens", token_id)
+    def active_enrollment_token(self, token: str) -> dict[str, Any] | None:
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        now = time.time()
+        with self._lock, self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM enrollment_tokens WHERE token_hash=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at>=?",
+                (token_hash, now),
+            ).fetchone()
+        return self._decode(row)
+
+    def enrollment_script(self, token: str, endpoint: str) -> tuple[str, dict[str, Any]]:
+        token_item = self.active_enrollment_token(token)
         if not token_item or token_item.get("used_at") or token_item.get("revoked_at") or token_item["expires_at"] < time.time():
             raise KeyError("enrollment token is not active")
         endpoint = endpoint.rstrip("/")
-        return f"""#!/bin/sh
+        if token_item["bootstrap_os"] == "windows":
+            return self._windows_enrollment_script(token_item, token, endpoint), token_item
+        return f"""#!/usr/bin/env bash
 set -euo pipefail
 die() {{ printf '%s\\n' "Hosts Manager enrollment failed: $1" >&2; exit 1; }}
-command -v curl >/dev/null 2>&1 || die "curl is required"
-HOSTNAME_VALUE="$(hostname 2>/dev/null || true)"
+[[ "${{EUID}}" -eq 0 ]] || die "run this script as root"
+[[ '{endpoint}' == https://* ]] || die "HTTPS is required"
+for required in curl hostname hostnamectl ip awk python3 uname; do command -v "$required" >/dev/null 2>&1 || die "$required is required"; done
+ORIGINAL_HOSTNAME="$(hostname)"
+ASSIGNED_HOSTNAME='{token_item["assigned_hostname"]}'
+if [[ '{str(bool(token_item["apply_hostname"])).lower()}' == true ]]; then
+  hostnamectl set-hostname "$ASSIGNED_HOSTNAME"
+  [[ "$(hostname)" == "$ASSIGNED_HOSTNAME" ]] || die "hostname change verification failed"
+fi
+HOSTNAME_VALUE="$ASSIGNED_HOSTNAME"
 FQDN_VALUE="$(hostname -f 2>/dev/null || printf '%s' "$HOSTNAME_VALUE")"
-ADDRESS_VALUE="${{WEBNAS_ENROLL_ADDRESS:-$(hostname -I 2>/dev/null | awk '{{print $1}}')}}"
-OS_VALUE="$(. /etc/os-release 2>/dev/null && printf '%s' "${{ID:-unknown}} ${{VERSION_ID:-}}" || uname -s)"
+ADDRESS_VALUE="${{WEBNAS_ENROLL_ADDRESS:-$(ip -4 route get 1.1.1.1 | awk '{{for(i=1;i<=NF;i++) if($i=="src") {{print $(i+1); exit}}}}')}}"
+[[ -n "$ADDRESS_VALUE" && "$ADDRESS_VALUE" != 127.* && "$ADDRESS_VALUE" != 169.254.* ]] || die "a primary IPv4 address is required"
+. /etc/os-release 2>/dev/null || die "/etc/os-release is required"
+case "${{ID:-}}" in debian|ubuntu|raspbian|fedora|rhel|rocky|almalinux|proxmox) ;; *) [[ -f /etc/pve-release ]] || die "unsupported Linux distribution" ;; esac
+OS_VALUE="${{ID:-unknown}}"
+OS_VERSION="${{VERSION_ID:-}}"
 ARCH_VALUE="$(uname -m)"
-PYTHON_VALUE="$(command -v python3 2>/dev/null || true)"
-[ -n "$HOSTNAME_VALUE" ] && [ -n "$ADDRESS_VALUE" ] || die "hostname or primary address unavailable"
-json_escape() {{ printf '%s' "$1" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'; }}
-BODY="$(printf '{{"hostname":"%s","fqdn":"%s","address":"%s","os":"%s","architecture":"%s","python":"%s"}}' "$(json_escape "$HOSTNAME_VALUE")" "$(json_escape "$FQDN_VALUE")" "$(json_escape "$ADDRESS_VALUE")" "$(json_escape "$OS_VALUE")" "$(json_escape "$ARCH_VALUE")" "$(json_escape "$PYTHON_VALUE")")"
-curl --fail --silent --show-error --proto '=https' --tlsv1.2 -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer {token}' --data "$BODY" '{endpoint}/api/modules/hosts-manager/enroll' >/dev/null || die "server rejected enrollment"
-printf '%s\\n' 'Enrollment submitted; administrator approval and SSH fingerprint verification are required.'
+PYTHON_VALUE="$(command -v python3)"
+export HOSTNAME_VALUE FQDN_VALUE ADDRESS_VALUE OS_VALUE OS_VERSION ARCH_VALUE PYTHON_VALUE ORIGINAL_HOSTNAME
+BODY="$(python3 - <<'PY'
+import json, os
+keys = ("HOSTNAME_VALUE", "FQDN_VALUE", "ADDRESS_VALUE", "OS_VALUE", "OS_VERSION", "ARCH_VALUE", "PYTHON_VALUE", "ORIGINAL_HOSTNAME")
+v = {{key: os.environ[key] for key in keys}}
+print(json.dumps({{"hostname": v["HOSTNAME_VALUE"], "fqdn": v["FQDN_VALUE"], "address": v["ADDRESS_VALUE"], "os": v["OS_VALUE"], "system_id": v["OS_VALUE"], "system_version": v["OS_VERSION"], "architecture": v["ARCH_VALUE"], "python": v["PYTHON_VALUE"], "original_hostname": v["ORIGINAL_HOSTNAME"]}}))
+PY
+)"
+RESULT="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer {token}' --data "$BODY" '{endpoint}/api/modules/hosts-manager/enroll')" || die "server rejected enrollment"
+python3 - "$RESULT" "$ASSIGNED_HOSTNAME" <<'PY'
+import json, sys
+result = json.loads(sys.argv[1])
+print(f"Assigned hostname: {{sys.argv[2]}}")
+print(f"Host ID: {{result['id']}}")
+print(f"Approval status: {{result['registration_status']}}")
+print("Administrator approval and SSH fingerprint verification are required.")
+PY
+""", token_item
+
+    @staticmethod
+    def _windows_enrollment_script(token_item: dict[str, Any], token: str, endpoint: str) -> str:
+        assigned = str(token_item["assigned_hostname"]).replace("'", "''")
+        return f"""#Requires -Version 5.1
+$ErrorActionPreference = 'Stop'
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = New-Object Security.Principal.WindowsPrincipal($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {{ throw 'Run this script as Administrator.' }}
+if (-not '{endpoint}'.StartsWith('https://')) {{ throw 'HTTPS is required.' }}
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$originalHostname = $env:COMPUTERNAME
+$assignedHostname = '{assigned}'
+$restartRequired = $false
+if (${str(bool(token_item["apply_hostname"])).lower()}) {{
+  Rename-Computer -NewName $assignedHostname -Force
+  $restartRequired = $true
+}}
+$address = $env:WEBNAS_ENROLL_ADDRESS
+if (-not $address) {{
+  $address = Get-NetIPConfiguration | Where-Object {{ $_.NetAdapter.Status -eq 'Up' }} |
+    ForEach-Object {{ $_.IPv4Address.IPAddress }} |
+    Where-Object {{ $_ -and $_ -notlike '127.*' -and $_ -notlike '169.254.*' }} |
+    Select-Object -First 1
+}}
+if (-not $address) {{ throw 'A primary IPv4 address is required.' }}
+$os = Get-CimInstance Win32_OperatingSystem
+$body = @{{
+  hostname = $assignedHostname; original_hostname = $originalHostname; fqdn = $assignedHostname
+  address = $address; os = 'windows'; system_id = $os.Caption; system_version = $os.Version
+  architecture = $env:PROCESSOR_ARCHITECTURE; powershell = $PSVersionTable.PSVersion.ToString(); python = ''
+}} | ConvertTo-Json -Compress
+$headers = @{{ Authorization = 'Bearer {token}' }}
+$result = Invoke-RestMethod -Uri '{endpoint}/api/modules/hosts-manager/enroll' -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+Write-Host "Assigned hostname: $assignedHostname"
+Write-Host "Host ID: $($result.id)"
+Write-Host "Approval status: $($result.registration_status)"
+if ($restartRequired) {{ Write-Warning 'The computer name change will fully apply after restart; this script does not restart Windows.' }}
+Write-Host 'Administrator approval and SSH fingerprint verification are required.'
 """
 
     @staticmethod

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError, type IdentityGroup, type IdentityRoles, type IdentityUser } from "../../api";
+import { api, type IdentityGroup, type IdentityRoles, type IdentityUser } from "../../api";
 import { IdentityApp } from "./IdentityApp";
 
 vi.mock("../../api", async () => {
@@ -46,16 +46,13 @@ describe("IdentityApp", () => {
     expect(screen.queryByPlaceholderText("identity.searchUsers")).not.toBeInTheDocument();
   });
 
-  it("surfaces last-administrator protection returned by the backend", async () => {
-    const toast = vi.fn();
-    vi.mocked(api.saveIdentityUserPolicy).mockRejectedValue(new ApiError("Cannot remove last administrator", 409, "LAST_ADMIN_PROTECTION"));
-    render(<IdentityApp permissions={["users.view", "groups.view", "access.view", "access.manage_user_permissions", "access.manage_roles"]} t={(key) => key} toast={toast} />);
+  it("keeps access policy mutation out of Users and groups", async () => {
+    const openPolicies = vi.fn();
+    render(<IdentityApp permissions={["users.view", "groups.view", "access.view", "access.manage_user_permissions", "access.manage_roles"]} t={(key) => key} toast={vi.fn()} onOpenPolicies={openPolicies} />);
     fireEvent.click(await screen.findByText("alice"));
-    fireEvent.click(await screen.findByRole("button", { name: "identity.savePolicy" }));
-    expect(screen.queryByLabelText("settings.adminPassword")).not.toBeInTheDocument();
-    expect(screen.getByText("admin.confirmAction")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "action.confirm" }));
-    await waitFor(() => expect(toast).toHaveBeenCalledWith("Cannot remove last administrator", "error", "admin"));
+    expect(screen.queryByRole("button", { name: "identity.savePolicy" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "identity.openPolicySettings" }));
+    expect(openPolicies).toHaveBeenCalledOnce();
   });
 
   it("creates a Linux user with optional identity fields from the authenticated session", async () => {

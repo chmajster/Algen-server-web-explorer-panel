@@ -15,6 +15,7 @@ import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSec
 import { WallpaperSettingsPage } from "./WallpaperSettingsPage";
 
 const IdentityApp = lazy(() => import("../admin/IdentityApp").then((module) => ({ default: module.IdentityApp })));
+const AccessPolicies = lazy(() => import("../admin/IdentityApp").then((module) => ({ default: module.AccessPolicies })));
 
 export type SettingsCategory = "system" | "personalization" | "files" | "transfers" | "notifications" | "accessibility" | "language" | "account" | "identity" | "network" | "networkResources" | "updates" | "policies" | "administration" | "about";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -134,27 +135,28 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
     <article className="policy-detail"><header><h3>{t("settings.networkConfirmationTimeout")}</h3><p>{t("settings.networkConfirmationTimeoutHint")}</p><div><span><b>ID</b><code>network.change_confirmation_timeout_seconds</code></span><span><b>{t("settings.defaultValue")}</b><code>{policy.default_seconds} {t("settings.seconds")}</code></span></div></header>
       <div className="policy-rules-heading"><strong>{t("settings.configuredRules")}</strong><button className="button-primary" onClick={() => setEditing(true)}>+ {t("settings.editRule")}</button></div>
       <section className="policy-rule-card"><header><span className="enabled">{t("common.enabled")}</span><b>{t("settings.priority")}: 100</b></header><dl><div><dt>{t("settings.scope")}</dt><dd>{t("settings.globalScope")}</dd></div><div><dt>{t("settings.value")}</dt><dd><code>{policy.change_confirmation_timeout_seconds} {t("settings.seconds")}</code></dd></div></dl><p>{t("settings.networkConfirmationTimeoutHint")}</p>
-        {editing && <div className="policy-rule-editor network-policy-editor"><strong>{t("settings.ruleValue")}</strong><label>{t("settings.networkConfirmationTimeout")}<span className="input-with-unit"><input aria-label={t("settings.networkConfirmationTimeout")} type="number" min={policy.minimum_seconds} max={policy.maximum_seconds} step="1" value={draft} onChange={(event) => setDraft(event.target.value)} /><span>{t("settings.seconds")}</span></span>{invalid && <small className="field-error" role="alert">{t("settings.networkConfirmationTimeoutValidation").replace("{min}", String(policy.minimum_seconds)).replace("{max}", String(policy.maximum_seconds))}</small>}</label><div><button className="button-primary" disabled={saving || invalid} onClick={() => void save()}>{t("action.save")}</button><button disabled={saving} onClick={() => { setEditing(false); setDraft(String(policy.change_confirmation_timeout_seconds)); setError(""); }}>{t("action.cancel")}</button><button disabled={saving || policy.change_confirmation_timeout_seconds === policy.default_seconds} onClick={() => void reset()}>{t("settings.restoreDefault")}</button></div></div>}
+        {editing && <div className="policy-rule-editor network-policy-editor"><strong>{t("settings.ruleValue")}</strong><label>{t("settings.networkConfirmationTimeout")}<span className="input-with-unit"><input aria-label={t("settings.networkConfirmationTimeout")} type="number" min={policy.minimum_seconds} max={policy.maximum_seconds} step="1" value={draft} onChange={(event) => setDraft(event.target.value)} /><span>{t("settings.seconds")}</span></span>{invalid && <small className="field-error" role="alert">{t("settings.networkConfirmationTimeoutValidation").replace("{min}", String(policy.minimum_seconds)).replace("{max}", String(policy.maximum_seconds))}</small>}</label><div><button className="button-primary" disabled={saving || invalid} onClick={() => void save()}>{t("action.save")}</button><button disabled={saving} onClick={() => { setEditing(false); setDraft(String(policy.change_confirmation_timeout_seconds)); setError(""); }}>{t("action.cancel")}</button><button disabled={saving || Number(draft) === policy.default_seconds} onClick={() => void reset()}>{t("settings.restoreDefault")}</button></div></div>}
       </section>{error && <p className="update-settings-error" role="alert">{error}</p>}
     </article>
   </section>;
 }
 
-function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
+function UpdatePoliciesSection({ permissions, t, toast }: { permissions: string[]; t: Translate; toast: ToastFn }) {
   const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
   const [dockerPolicy, setDockerPolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
   const [networkPolicy, setNetworkPolicy] = useState<NetworkPolicy | null>(null);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<"checking" | "installation" | "containers" | "network">("checking");
+  const [group, setGroup] = useState<"checking" | "installation" | "containers" | "network" | "access">(permissions.includes("access.view") ? "access" : "checking");
   const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
   const [editing, setEditing] = useState(false);
   useEffect(() => {
+    if (group === "access") return;
     let live = true;
     Promise.all([api.autoUpdate(), api.dockerContainerDefaultsPolicy(), api.networkPolicy()])
       .then(([updatePolicy, containerPolicy, currentNetworkPolicy]) => { if (live) { setPolicy(updatePolicy); setDockerPolicy(containerPolicy); setNetworkPolicy(currentNetworkPolicy); } })
       .catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
     return () => { live = false; };
-  }, [t]);
+  }, [group, t]);
   async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "update_config">>) {
     if (!policy) return false;
     const before = policy;
@@ -172,7 +174,7 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
     }
   }
   const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
-  function chooseGroup(next: "checking" | "installation" | "containers" | "network") {
+  function chooseGroup(next: "checking" | "installation" | "containers" | "network" | "access") {
     setGroup(next); if (next !== "containers") setSelected(next === "checking" ? "check_enabled" : "enabled"); setEditing(false);
   }
   const policyGroups = <aside className="policy-groups">
@@ -181,7 +183,9 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
     <button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button>
     <button className={group === "containers" ? "active" : ""} onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>
     <button className={group === "network" ? "active" : ""} onClick={() => chooseGroup("network")}><FolderOpen /><span>{t("settings.policyCategoryNetwork")}</span><b>1</b></button>
+    {permissions.includes("access.view") && <button className={group === "access" ? "active" : ""} onClick={() => chooseGroup("access")}><FolderOpen /><span>{t("settings.policyCategoryAccess")}</span><b>4</b></button>}
   </aside>;
+  if (group === "access") return <section className="policy-browser access-policy-browser">{policyGroups}<article className="policy-detail access-policy-detail"><Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><AccessPolicies permissions={permissions} t={t} toast={toast} /></Suspense></article></section>;
   if (group === "network") {
     if (!networkPolicy && !error) return <div className="loading-state">{t("status.loading")}</div>;
     if (!networkPolicy) return <div className="error-state" role="alert">{error}</div>;
@@ -395,7 +399,11 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
   const [saveError, setSaveError] = useState("");
   const saveStatusTimer = useRef<number | null>(null);
   const networkVisible = settings.is_admin || settings.permissions.includes("network.view");
-  const categories = useMemo(() => (Object.keys(categoryIcons) as SettingsCategory[]).filter((item) => item === "network" ? networkVisible : settings.is_admin || !["identity", "networkResources", "updates", "policies", "administration"].includes(item)), [networkVisible, settings.is_admin]);
+  const categories = useMemo(() => (Object.keys(categoryIcons) as SettingsCategory[]).filter((item) => {
+    if (item === "network") return networkVisible;
+    if (item === "policies") return settings.is_admin || settings.permissions.includes("access.view");
+    return settings.is_admin || !["identity", "networkResources", "updates", "administration"].includes(item);
+  }), [networkVisible, settings.is_admin, settings.permissions]);
   const normalizedQuery = query.trim().toLocaleLowerCase(settings.language);
   const searchResults = useMemo(() => normalizedQuery ? categories.flatMap((item) => categorySettings[item].map((key) => ({ category: item, key, label: t(`settings.${key}`) })).filter((entry) => entry.label.toLocaleLowerCase(settings.language).includes(normalizedQuery) || t(`settings.category.${item}`).toLocaleLowerCase(settings.language).includes(normalizedQuery))) : [], [categories, normalizedQuery, settings.language, t]);
 
@@ -421,11 +429,11 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
     if (category === "accessibility") return <Card><SettingRow title={t("settings.interfaceScale")}><InterfaceScaleControl label={t("settings.interfaceScale")} value={settings.interface_scale} onChange={(value) => void save({ interface_scale: value })} /></SettingRow>{yesNo("larger_text", t("settings.largerText"))}{yesNo("reduced_motion", t("settings.reduceMotion"), t("settings.systemPreferencesRespected"))}{yesNo("high_contrast", t("settings.highContrast"), t("settings.systemPreferencesRespected"))}{yesNo("strong_active_borders", t("settings.strongActiveBorders"))}{yesNo("always_show_focus", t("settings.alwaysShowFocus"))}</Card>;
     if (category === "language") return <Card><SettingRow title={t("settings.language")}><Select label={t("settings.language")} value={settings.language} onChange={(value) => void save({ language: value as SettingsMe["language"] })}><option value="pl-PL">Polski</option><option value="en-US">English</option></Select></SettingRow><SettingRow title={t("settings.dateFormat")}><Select label={t("settings.dateFormat")} value={settings.date_format} onChange={(value) => void save({ date_format: value as SettingsMe["date_format"] })}><option value="locale">{t("settings.formatLocale")}</option><option value="short">{t("settings.formatShort")}</option><option value="long">{t("settings.formatLong")}</option><option value="iso">ISO 8601</option></Select></SettingRow><SettingRow title={t("settings.timeFormat")}><Select label={t("settings.timeFormat")} value={settings.time_format} onChange={(value) => void save({ time_format: value as SettingsMe["time_format"] })}><option value="24">24 h</option><option value="12">12 h</option></Select></SettingRow><SettingRow title={t("settings.firstDayOfWeek")}><Select label={t("settings.firstDayOfWeek")} value={settings.first_day_of_week} onChange={(value) => void save({ first_day_of_week: value as SettingsMe["first_day_of_week"] })}><option value="locale">{t("settings.formatLocale")}</option><option value="monday">{t("settings.monday")}</option><option value="sunday">{t("settings.sunday")}</option></Select></SettingRow></Card>;
     if (category === "account") return <div className="settings-card-stack"><Card title={t("settings.accountInformation")}><dl className="settings-details"><dt>{t("settings.username")}</dt><dd>{settings.username}</dd><dt>UID</dt><dd>{settings.uid}</dd><dt>GID</dt><dd>{settings.gid}</dd><dt>{t("settings.homeDirectory")}</dt><dd>{settings.home}</dd><dt>{t("settings.shell")}</dt><dd>{settings.shell}</dd><dt>{t("settings.groupsLabel")}</dt><dd>{settings.groups.join(", ") || "—"}</dd><dt>{t("settings.administratorStatus")}</dt><dd>{settings.is_admin ? t("common.yes") : t("common.no")}</dd></dl></Card><PasswordSection t={t} toast={toast} /></div>;
-    if (category === "identity") return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={settings.permissions} embedded t={t} toast={toast} /></Suspense>;
+    if (category === "identity") return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={settings.permissions} embedded t={t} toast={toast} onOpenPolicies={() => choose("policies")} /></Suspense>;
     if (category === "network") return <NetworkSettingsSection isAdmin={networkVisible} permissions={settings.permissions} t={t} />;
     if (category === "networkResources") return <NetworkMountsSettingsSection isAdmin={settings.is_admin} t={t} toast={toast} />;
     if (category === "updates") return <AdministrationSection view="updates" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
-    if (category === "policies") return <UpdatePoliciesSection t={t} toast={toast} />;
+    if (category === "policies") return <UpdatePoliciesSection permissions={settings.permissions} t={t} toast={toast} />;
     if (category === "administration") return <AdministrationSection view="administration" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
     return <div className="settings-card-stack"><Card title="WebNAS"><dl className="settings-details"><dt>{t("settings.applicationName")}</dt><dd>WebNAS</dd><dt>{t("settings.version")}</dt><dd>0.1.0</dd><dt>{t("settings.frontendEnvironment")}</dt><dd>{window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "development" : "production"}</dd><dt>{t("settings.backendEnvironment")}</dt><dd>FastAPI / Linux</dd><dt>{t("settings.technologies")}</dt><dd>React · TypeScript · FastAPI · lucide-react</dd><dt>{t("settings.license")}</dt><dd>{t("settings.licenseInfo")}</dd></dl><a className="settings-repository" href="https://github.com/chmajster/Algen-server-web-explorer-panel" target="_blank" rel="noreferrer">{t("settings.repository")}</a></Card></div>;
   }

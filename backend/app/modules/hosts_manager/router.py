@@ -27,14 +27,13 @@ from ..ansible_controller.inventory import generate_inventory, inventory_records
 from ..ansible_controller.runner import fingerprint_key, keyscan_args, parse_keyscan
 from .models import (
     BackupInput, CapabilityActionInput, ConfirmationInput, CredentialInput, EnrollmentClaimInput,
-    EnrollmentTokenInput, FingerprintAcceptInput, GroupInput, HostInput, InventoryInput,
+    EnrollmentTokenInput, FingerprintAcceptInput, GroupInput, HostInput, HostsManagerSettingsUpdate, InventoryInput,
     PowerActionInput, PowerProfileInput, RepositoryInput, RestoreInput, ScanImportInput, ScanInput,
 )
 from .service import registry, stable_id
 
 
 router = APIRouter(prefix="/api/modules/hosts-manager", tags=["hosts-manager"])
-_ephemeral_tokens: dict[str, tuple[str, float]] = {}
 
 
 def _service():
@@ -54,6 +53,32 @@ def _activity(actor: str, action: str, target: str = "", details: dict[str, Any]
 @router.get("/dashboard")
 def dashboard(user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_VIEW))):
     return _service().dashboard()
+
+
+@router.get("/settings")
+def hosts_manager_settings(user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_VIEW))):
+    return _service().settings()
+
+
+@router.put("/settings")
+def update_hosts_manager_settings(
+    payload: HostsManagerSettingsUpdate,
+    user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_CONFIGURE)),
+):
+    try:
+        previous, updated = _service().save_settings(payload, user.username)
+    except OverflowError:
+        api_error(409, "HOSTNAME_SEQUENCE_EXHAUSTED", "The hostname sequence is exhausted")
+    _activity(
+        user.username,
+        "hosts_manager_settings_update",
+        "hostname-template",
+        {
+            "old": {key: previous[key] for key in ("hostname_template", "bootstrap_default_os", "bootstrap_apply_hostname")},
+            "new": {key: updated[key] for key in ("hostname_template", "bootstrap_default_os", "bootstrap_apply_hostname")},
+        },
+    )
+    return updated
 
 
 @router.get("/hosts")
@@ -256,28 +281,62 @@ def enrollment_tokens(user: SessionUser = Depends(require_permission(Permission.
 
 @router.post("/enrollment-tokens")
 def create_enrollment_token(payload: EnrollmentTokenInput, request: Request, user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE))):
-    item = _service().create_enrollment_token(payload, user.username)
-    token = item.pop("token")
-    _ephemeral_tokens[item["id"]] = (token, item["expires_at"])
+    try:
+        item = _service().create_enrollment_token(payload, user.username)
+    except OverflowError:
+        api_error(409, "HOSTNAME_SEQUENCE_EXHAUSTED", "The hostname sequence is exhausted")
+    token = item["token"]
     endpoint = str(request.base_url).rstrip("/")
-    item["script_url"] = f"/api/modules/hosts-manager/enrollment-tokens/{item['id']}/script"
-    item["command"] = f"curl --fail --silent --show-error '{endpoint}{item['script_url']}' | sudo sh"
-    _activity(user.username, "enrollment_token_create", item["id"], {"expires_at": item["expires_at"], "hostname_pattern": item["hostname_pattern"]})
+    item["script_url"] = "/api/modules/hosts-manager/enrollment-script"
+    if item["bootstrap_os"] == "windows":
+        item["filename"] = f"webnas-enroll-{item['assigned_hostname']}.ps1"
+        item["command"] = (
+            f"$h=@{{Authorization='Bearer {token}'}}; "
+            f"Invoke-WebRequest -UseBasicParsing -Headers $h -Uri '{endpoint}{item['script_url']}' "
+            f"-OutFile '.\\{item['filename']}'; powershell -ExecutionPolicy Bypass -File '.\\{item['filename']}'"
+        )
+    else:
+        item["filename"] = f"webnas-enroll-{item['assigned_hostname']}.sh"
+        item["command"] = (
+            "curl --fail --silent --show-error "
+            f"-H 'Authorization: Bearer {token}' '{endpoint}{item['script_url']}' | sudo bash"
+        )
+    _activity(user.username, "enrollment_token_create", item["id"], {
+        "expires_at": item["expires_at"], "assigned_hostname": item["assigned_hostname"],
+        "bootstrap_os": item["bootstrap_os"], "apply_hostname": item["apply_hostname"],
+    })
     return item
 
 
 @router.delete("/enrollment-tokens/{token_id}")
 def revoke_enrollment_token(token_id: str, user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE))):
-    _ephemeral_tokens.pop(token_id, None)
     return {"ok": _service().revoke_enrollment_token(token_id, user.username)}
 
 
 @router.get("/enrollment-tokens/{token_id}/script")
-def enrollment_script(token_id: str, request: Request, user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE))):
-    cached = _ephemeral_tokens.get(token_id)
-    if not cached or cached[1] < time.time():
-        api_error(410, "ENROLLMENT_SECRET_UNAVAILABLE", "The one-time script secret is no longer available; create a new token")
-    return PlainTextResponse(_service().enrollment_script(token_id, cached[0], str(request.base_url).rstrip("/")), media_type="text/x-shellscript", headers={"Content-Disposition": f'attachment; filename="webnas-enroll-{token_id}.sh"', "Cache-Control": "no-store"})
+def legacy_enrollment_script(token_id: str, request: Request, authorization: str = Header(default="", max_length=512)):
+    return enrollment_script(request, authorization, expected_token_id=token_id)
+
+
+@router.get("/enrollment-script")
+def enrollment_script(request: Request, authorization: str = Header(default="", max_length=512), expected_token_id: str = ""):
+    if not authorization.startswith("Bearer ") or len(authorization) > 512:
+        api_error(401, "ENROLLMENT_TOKEN_REQUIRED", "A valid enrollment token is required")
+    token = authorization[7:]
+    try:
+        script, item = _service().enrollment_script(token, str(request.base_url).rstrip("/"))
+    except KeyError:
+        api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token is invalid, expired, used or revoked")
+    if expected_token_id and item["id"] != expected_token_id:
+        api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token does not match this script")
+    extension = "ps1" if item["bootstrap_os"] == "windows" else "sh"
+    media_type = "text/plain" if extension == "ps1" else "text/x-shellscript"
+    filename = f"webnas-enroll-{item['assigned_hostname'] or item['id']}.{extension}"
+    return PlainTextResponse(
+        script,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"},
+    )
 
 
 @router.post("/enroll")

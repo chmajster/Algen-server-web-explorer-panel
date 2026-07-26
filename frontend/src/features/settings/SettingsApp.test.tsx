@@ -133,7 +133,7 @@ describe("settings application", () => {
     expect(await screen.findByRole("navigation", { name: "identity.tabs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "identity.tab.users" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "identity.tab.groups" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "identity.tab.roles" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "identity.tab.roles" })).not.toBeInTheDocument();
     await waitFor(() => expect(api.identityUsers).toHaveBeenCalled());
     expect(openApp).not.toHaveBeenCalled();
   });
@@ -234,8 +234,11 @@ describe("settings application", () => {
     fireEvent.click(screen.getByRole("button", { name: "action.save" }));
     expect(confirm).toHaveBeenCalledWith("settings.confirmNetworkPolicyChange");
     await waitFor(() => expect(save).toHaveBeenCalledWith(45));
+    await waitFor(() => expect(screen.queryByLabelText("settings.networkConfirmationTimeout")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
-    fireEvent.click(screen.getByRole("button", { name: "settings.restoreDefault" }));
+    const restore = await screen.findByRole("button", { name: "settings.restoreDefault" });
+    expect(restore).toBeEnabled();
+    fireEvent.click(restore);
     expect(confirm).toHaveBeenCalledWith("settings.confirmNetworkPolicyReset");
     await waitFor(() => expect(reset).toHaveBeenCalledOnce());
   });

@@ -5,7 +5,7 @@ import { HostsManagerApp } from "./HostsManagerApp";
 
 vi.mock("../../../api", async () => {
   const actual = await vi.importActual<typeof import("../../../api")>("../../../api");
-  return { ...actual, api: { ...actual.api, hostsManagerDashboard: vi.fn(), hostsManagerHosts: vi.fn(), hostsManagerGroups: vi.fn(), hostsManagerEnrollmentTokens: vi.fn(), hostsManagerOperations: vi.fn(), hostsManagerCredentials: vi.fn(), hostsManagerRepositories: vi.fn(), hostsManagerPowerProfiles: vi.fn(), hostsManagerDiagnostics: vi.fn(), hostsManagerBackups: vi.fn(), hostsManagerCapabilities: vi.fn(), saveHostsManagerHost: vi.fn(), createHostsManagerEnrollmentToken: vi.fn() } };
+  return { ...actual, api: { ...actual.api, hostsManagerDashboard: vi.fn(), hostsManagerSettings: vi.fn(), saveHostsManagerSettings: vi.fn(), hostsManagerHosts: vi.fn(), hostsManagerGroups: vi.fn(), hostsManagerEnrollmentTokens: vi.fn(), hostsManagerOperations: vi.fn(), hostsManagerCredentials: vi.fn(), hostsManagerRepositories: vi.fn(), hostsManagerPowerProfiles: vi.fn(), hostsManagerDiagnostics: vi.fn(), hostsManagerBackups: vi.fn(), hostsManagerCapabilities: vi.fn(), saveHostsManagerHost: vi.fn(), createHostsManagerEnrollmentToken: vi.fn(), downloadHostsManagerEnrollmentScript: vi.fn() } };
 });
 
 const t = (key: string) => key;
@@ -14,6 +14,7 @@ const permissions = ["hosts-manager.view", "hosts-manager.hosts.view", "hosts-ma
 describe("HostsManagerApp", () => {
   beforeEach(() => {
     vi.mocked(api.hostsManagerDashboard).mockResolvedValue({ total: 1, online: 1, offline: 0, unverified: 1, fingerprint_errors: 0, pending_approval: 1, ansible_available: 0, power_managed: 0, recent_operations: [], recent_errors: [] });
+    vi.mocked(api.hostsManagerSettings).mockResolvedValue({ hostname_template: "SCL000XXX", next_hostname: "SCL000001", sequence_width: 3, preview_hostnames: ["SCL000001", "SCL000002", "SCL000003"], bootstrap_default_os: "linux", bootstrap_apply_hostname: true, updated_at: 0, updated_by: "" });
     vi.mocked(api.hostsManagerHosts).mockResolvedValue([{ id: "a".repeat(32), name: "node-01", hostname: "node-01", fqdn: "", address: "192.168.1.10", management_address: "", port: 22, ssh_user: "ops", credential_id: null, python_interpreter: "auto_silent", connection_type: "ssh", environment: "prod", location: "rack-1", description: "", tags: ["linux"], variables: {}, group_ids: [], approved: false, registration_status: "pending_approval", connection_status: "online", power_status: "unknown", enrollment_source: "manual", fingerprint_status: "unverified", last_error: "", managed_user_created: false, active: true, groups: [], facts: {}, created_at: 1, updated_at: 1 }]);
     vi.mocked(api.hostsManagerGroups).mockResolvedValue([]);
     vi.mocked(api.hostsManagerEnrollmentTokens).mockResolvedValue([]);
@@ -41,5 +42,32 @@ describe("HostsManagerApp", () => {
     fireEvent.change(screen.getByLabelText("hosts.host.address"), { target: { value: "192.168.1.20" } });
     fireEvent.click(screen.getByRole("button", { name: "action.save" }));
     await waitFor(() => expect(api.saveHostsManagerHost).toHaveBeenCalledWith(expect.objectContaining({ name: "new-node", address: "192.168.1.20" }), undefined));
+  });
+
+  it("shows the next hostname and saves the central hostname template", async () => {
+    vi.mocked(api.saveHostsManagerSettings).mockResolvedValue({ hostname_template: "SRV-XXXX", next_hostname: "SRV-0001", sequence_width: 4, preview_hostnames: ["SRV-0001", "SRV-0002", "SRV-0003"], bootstrap_default_os: "windows", bootstrap_apply_hostname: true, updated_at: 2, updated_by: "admin" });
+    render(<HostsManagerApp permissions={[...permissions, "hosts-manager.configure"]} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.settings/ }));
+    expect((await screen.findAllByText("SCL000001")).length).toBeGreaterThan(0);
+    fireEvent.change(await screen.findByDisplayValue("SCL000XXX"), { target: { value: "SRV-XXXX" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "windows" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.save" }));
+    await waitFor(() => expect(api.saveHostsManagerSettings).toHaveBeenCalledWith(expect.objectContaining({ hostname_template: "SRV-XXXX", bootstrap_default_os: "windows" })));
+  });
+
+  it("creates a Windows bootstrap for the reserved hostname", async () => {
+    vi.mocked(api.createHostsManagerEnrollmentToken).mockResolvedValue({ id: "token", hostname_pattern: "SCL000001", assigned_hostname: "SCL000001", bootstrap_os: "windows", apply_hostname: true, expires_at: 100, used: false, token: "raw-once", script_url: "/api/modules/hosts-manager/enrollment-script", command: "powershell command", filename: "webnas-enroll-SCL000001.ps1" });
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.enrollment/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
+    expect(screen.getByText("SCL000001")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("hosts.enrollment.os"), { target: { value: "windows" } });
+    const generateButtons = screen.getAllByRole("button", { name: "hosts.enrollment.generate" });
+    fireEvent.click(generateButtons[generateButtons.length - 1]);
+    await waitFor(() => expect(api.createHostsManagerEnrollmentToken).toHaveBeenCalledWith(expect.objectContaining({ bootstrap_os: "windows", apply_hostname: true })));
+    expect(await screen.findByText("powershell command")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hosts.enrollment.download/ })).toBeInTheDocument();
   });
 });

@@ -87,6 +87,60 @@ NODE
     assert result.returncode == 0, result.stderr
 
 
+def test_frontend_build_offers_audit_fix_and_defaults_to_no(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        INSTALL_DIR="$TEST_ROOT/app"
+        SERVICE_USER=webnas
+        SERVICE_USER_GROUP=webnas
+        mkdir -p "$INSTALL_DIR/frontend"
+        calls="$TEST_ROOT/npm-calls"
+        npm() {
+          printf '%s\n' "$*" >> "$calls"
+          if [[ "$1" == "audit" && "$2" == "--json" ]]; then
+            printf '{"metadata":{"vulnerabilities":{"total":2}}}\n'
+            return 1
+          fi
+        }
+        confirm_npm_audit_fix() { return 1; }
+        chown() { return 0; }
+        build_frontend >/dev/null
+        grep -qx 'install' "$calls"
+        grep -qx 'audit --json' "$calls"
+        grep -qx 'run build' "$calls"
+        ! grep -qx 'audit fix' "$calls"
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_frontend_build_runs_audit_fix_only_after_confirmation(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        INSTALL_DIR="$TEST_ROOT/app"
+        SERVICE_USER=webnas
+        SERVICE_USER_GROUP=webnas
+        mkdir -p "$INSTALL_DIR/frontend"
+        calls="$TEST_ROOT/npm-calls"
+        npm() {
+          printf '%s\n' "$*" >> "$calls"
+          if [[ "$1" == "audit" && "$2" == "--json" ]]; then
+            printf '{"metadata":{"vulnerabilities":{"total":2}}}\n'
+            return 1
+          fi
+        }
+        confirm_npm_audit_fix() { return 0; }
+        chown() { return 0; }
+        build_frontend >/dev/null
+        grep -qx 'audit fix' "$calls"
+        grep -qx 'run build' "$calls"
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_installer_wires_usb_udev_events_to_a_device_bound_systemd_service():
     installer = INSTALLER.read_text(encoding="utf-8")
     uninstaller = UNINSTALLER.read_text(encoding="utf-8")
