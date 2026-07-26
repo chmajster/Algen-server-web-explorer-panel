@@ -25,6 +25,7 @@ from .identity.router import router as identity_router
 from .identity.permissions import authorize
 from .network_mounts import router as mounts_router
 from .network_diagnostics import router as network_diagnostics_router
+from .network_management import router as network_management_router
 from .modules.router import router as modules_router
 from .modules.ansible_controller.router import router as ansible_controller_router
 from .modules.hosts_manager.router import router as hosts_manager_router
@@ -64,6 +65,7 @@ app.include_router(apps_router)
 app.include_router(package_center_router)
 app.include_router(mounts_router)
 app.include_router(network_diagnostics_router)
+app.include_router(network_management_router)
 app.include_router(local_disks_router)
 app.include_router(logs_router)
 app.include_router(docker_manager_router)

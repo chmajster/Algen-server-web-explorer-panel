@@ -812,6 +812,109 @@ export type RoutingSnapshot = {
   warnings: string[];
   read_only: true;
 };
+export type NetworkIPConfiguration = {
+  method: "disabled" | "dhcp" | "slaac" | "dhcpv6" | "manual";
+  addresses: Array<{ address: string; prefix: number }>;
+  gateway?: string | null;
+  metric: number;
+  default_route: boolean;
+  ignore_auto_routes: boolean;
+  ignore_auto_dns: boolean;
+  dns: string[];
+  search_domains: string[];
+  privacy_extensions: boolean;
+};
+export type NetworkInterfaceConfiguration = {
+  name: string;
+  kind: "physical" | "bond" | "vlan" | "bridge";
+  autostart: boolean;
+  mtu: number;
+  parent?: string | null;
+  vlan_id?: number | null;
+  members: string[];
+  bond_mode: "active-backup" | "balance-rr" | "balance-xor" | "broadcast" | "802.3ad" | "balance-tlb" | "balance-alb";
+  primary?: string | null;
+  miimon: number;
+  updelay: number;
+  downdelay: number;
+  lacp_rate: "slow" | "fast";
+  xmit_hash_policy: "layer2" | "layer2+3" | "layer3+4";
+  stp: boolean;
+  forward_delay: number;
+  ipv4: NetworkIPConfiguration;
+  ipv6: NetworkIPConfiguration;
+};
+export type NetworkDnsSettings = {
+  automatic: boolean;
+  servers: string[];
+  search_domains: string[];
+  routing_domains: string[];
+  per_interface: Record<string, string[]>;
+  priority: number;
+  ignore_dhcp: boolean;
+};
+export type ManagedNetworkRoute = {
+  id?: string;
+  name: string;
+  family: "ipv4" | "ipv6";
+  destination: string;
+  route_type: "unicast" | "blackhole" | "unreachable" | "prohibit";
+  gateway?: string | null;
+  interface?: string | null;
+  metric: number;
+  table: number;
+  source?: string | null;
+  autostart: boolean;
+  enabled: boolean;
+};
+export type NetworkTrafficRule = {
+  id?: string;
+  name: string;
+  interface: string;
+  direction: "egress" | "ingress";
+  guaranteed_kbit: number;
+  maximum_kbit: number;
+  priority: number;
+  protocol: "any" | "tcp" | "udp";
+  source_cidr?: string | null;
+  destination_cidr?: string | null;
+  source_port?: number | null;
+  destination_port?: number | null;
+  enabled: boolean;
+};
+export type NetworkChange =
+  | { operation: "save_interface"; interface: NetworkInterfaceConfiguration }
+  | { operation: "delete_interface"; interface_name: string }
+  | { operation: "set_link"; interface_name: string; link_up: boolean }
+  | { operation: "save_dns"; dns: NetworkDnsSettings }
+  | { operation: "save_route"; route: ManagedNetworkRoute }
+  | { operation: "delete_route"; object_id: string }
+  | { operation: "save_traffic"; traffic: NetworkTrafficRule }
+  | { operation: "delete_traffic"; object_id: string };
+export type NetworkPlan = {
+  id: string; provider: string; target: string; before: Record<string, unknown>; after: Record<string, unknown>;
+  commands: string[][]; warnings: string[]; high_risk: boolean; required_phrase: string;
+  rollback_supported: boolean; rollback_seconds: number; client_interface: string | null;
+};
+export type NetworkTransaction = {
+  id: string; state: "pending_confirmation" | "confirmed" | "rolled_back"; provider: string;
+  started_at: number; deadline: number; rollback_unit: string | null; target: string;
+};
+export type NetworkManagementState = {
+  provider: { id: string; writable: boolean; capabilities: Record<string, boolean>; warnings: string[] };
+  hostname: string;
+  interfaces: NetworkInterfaceDetail[];
+  dns: DnsConfiguration;
+  routing: RoutingSnapshot;
+  managed: {
+    interfaces: Record<string, NetworkInterfaceConfiguration>;
+    dns: NetworkDnsSettings | null;
+    routes: Record<string, ManagedNetworkRoute>;
+    traffic: Record<string, NetworkTrafficRule>;
+  };
+  transaction: NetworkTransaction | null;
+  tools: Record<string, boolean>;
+};
 
 let csrfToken = localStorage.getItem("webnas_csrf") || "";
 
@@ -1000,6 +1103,11 @@ export const api = {
   networkDns: () => request<DnsConfiguration>("/api/admin/network/dns"),
   testNetworkDns: (hostname: string) => request<DnsTestResult>("/api/admin/network/dns/test", { method: "POST", body: JSON.stringify({ hostname }) }),
   networkRouting: () => request<RoutingSnapshot>("/api/admin/network/routing"),
+  networkManagement: () => request<NetworkManagementState>("/api/admin/network/management"),
+  planNetworkChange: (change: NetworkChange) => request<NetworkPlan>("/api/admin/network/plans", { method: "POST", body: JSON.stringify({ change }) }),
+  applyNetworkPlan: (plan_id: string, confirmation_phrase = "") => request<NetworkTransaction>("/api/admin/network/apply", { method: "POST", body: JSON.stringify({ plan_id, confirmation_phrase }) }),
+  confirmNetworkTransaction: (transaction_id: string) => request<NetworkTransaction>("/api/admin/network/confirm", { method: "POST", body: JSON.stringify({ transaction_id }) }),
+  rollbackNetworkTransaction: (transaction_id: string) => request<NetworkTransaction>("/api/admin/network/rollback", { method: "POST", body: JSON.stringify({ transaction_id }) }),
   restartSystem: () => request("/api/admin/system/restart", { method: "POST", body: "{}" }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
   updateProgress: () => request<UpdateProgress>("/api/admin/system/updates/progress"),
