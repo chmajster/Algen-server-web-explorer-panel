@@ -915,6 +915,9 @@ export type NetworkManagementState = {
   transaction: NetworkTransaction | null;
   tools: Record<string, boolean>;
 };
+export type NetworkConnectivityResult = {
+  kind: "ping" | "trace" | "tcp"; target: string; port: number | null; success: boolean; duration_ms: number; output: string;
+};
 
 let csrfToken = localStorage.getItem("webnas_csrf") || "";
 
@@ -1104,6 +1107,7 @@ export const api = {
   testNetworkDns: (hostname: string) => request<DnsTestResult>("/api/admin/network/dns/test", { method: "POST", body: JSON.stringify({ hostname }) }),
   networkRouting: () => request<RoutingSnapshot>("/api/admin/network/routing"),
   networkManagement: () => request<NetworkManagementState>("/api/admin/network/management"),
+  testNetworkConnectivity: (kind: "ping" | "trace" | "tcp", target: string, port?: number | null) => request<NetworkConnectivityResult>("/api/admin/network/connectivity/test", { method: "POST", body: JSON.stringify({ kind, target, port: port || null }) }),
   planNetworkChange: (change: NetworkChange) => request<NetworkPlan>("/api/admin/network/plans", { method: "POST", body: JSON.stringify({ change }) }),
   applyNetworkPlan: (plan_id: string, confirmation_phrase = "") => request<NetworkTransaction>("/api/admin/network/apply", { method: "POST", body: JSON.stringify({ plan_id, confirmation_phrase }) }),
   confirmNetworkTransaction: (transaction_id: string) => request<NetworkTransaction>("/api/admin/network/confirm", { method: "POST", body: JSON.stringify({ transaction_id }) }),
