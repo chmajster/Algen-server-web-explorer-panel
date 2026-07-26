@@ -283,10 +283,10 @@ confirm() {
 }
 
 confirm_npm_audit_fix() {
-    info "Running npm audit"
+    info "Running npm audit report"
     (cd "${INSTALL_DIR}/frontend" && npm audit )
     info "Running npm found"
-    (cd "${INSTALL_DIR}/frontend" && npm run found)
+    (cd "${INSTALL_DIR}/frontend" && npm found)
   local timeout="${1:-5}"
   local answer=""
   [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || timeout="5"

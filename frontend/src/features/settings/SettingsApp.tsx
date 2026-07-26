@@ -9,6 +9,7 @@ import {
 } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
 import type { AppId, ToastFn, Translate } from "../../app/types";
+import type { PolicySubject } from "../admin/IdentityApp";
 import { HostInformationSection } from "./HostInformationSection";
 import { NetworkSettingsSection } from "./NetworkSettingsSection";
 import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSection";
@@ -141,7 +142,7 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
   </section>;
 }
 
-function UpdatePoliciesSection({ permissions, t, toast }: { permissions: string[]; t: Translate; toast: ToastFn }) {
+function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { permissions: string[]; initialSubject?: PolicySubject; t: Translate; toast: ToastFn }) {
   const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
   const [dockerPolicy, setDockerPolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
   const [networkPolicy, setNetworkPolicy] = useState<NetworkPolicy | null>(null);
@@ -185,7 +186,7 @@ function UpdatePoliciesSection({ permissions, t, toast }: { permissions: string[
     <button className={group === "network" ? "active" : ""} onClick={() => chooseGroup("network")}><FolderOpen /><span>{t("settings.policyCategoryNetwork")}</span><b>1</b></button>
     {permissions.includes("access.view") && <button className={group === "access" ? "active" : ""} onClick={() => chooseGroup("access")}><FolderOpen /><span>{t("settings.policyCategoryAccess")}</span><b>4</b></button>}
   </aside>;
-  if (group === "access") return <section className="policy-browser access-policy-browser">{policyGroups}<article className="policy-detail access-policy-detail"><Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><AccessPolicies permissions={permissions} t={t} toast={toast} /></Suspense></article></section>;
+  if (group === "access") return <section className="policy-browser access-policy-browser">{policyGroups}<article className="policy-detail access-policy-detail"><Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><AccessPolicies permissions={permissions} initialSubject={initialSubject} t={t} toast={toast} /></Suspense></article></section>;
   if (group === "network") {
     if (!networkPolicy && !error) return <div className="loading-state">{t("status.loading")}</div>;
     if (!networkPolicy) return <div className="error-state" role="alert">{error}</div>;
@@ -383,9 +384,10 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
   </div>;
 }
 
-export function SettingsAppView({ settings, initialSection = "system", t, toast, onSettingsChange, onOpenApp, onSectionChange }: {
+export function SettingsAppView({ settings, initialSection = "system", initialPolicySubject, t, toast, onSettingsChange, onOpenApp, onSectionChange }: {
   settings: SettingsMe;
   initialSection?: SettingsCategory;
+  initialPolicySubject?: PolicySubject;
   t: Translate;
   toast: ToastFn;
   onSettingsChange: (patch: SettingsPatch) => Promise<void>;
@@ -397,6 +399,7 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
   const [personalizationPage, setPersonalizationPage] = useState<"overview" | "wallpaper">("overview");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState("");
+  const [policySubject, setPolicySubject] = useState<PolicySubject | undefined>(initialPolicySubject);
   const saveStatusTimer = useRef<number | null>(null);
   const networkVisible = settings.is_admin || settings.permissions.includes("network.view");
   const categories = useMemo(() => (Object.keys(categoryIcons) as SettingsCategory[]).filter((item) => {
@@ -429,11 +432,11 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
     if (category === "accessibility") return <Card><SettingRow title={t("settings.interfaceScale")}><InterfaceScaleControl label={t("settings.interfaceScale")} value={settings.interface_scale} onChange={(value) => void save({ interface_scale: value })} /></SettingRow>{yesNo("larger_text", t("settings.largerText"))}{yesNo("reduced_motion", t("settings.reduceMotion"), t("settings.systemPreferencesRespected"))}{yesNo("high_contrast", t("settings.highContrast"), t("settings.systemPreferencesRespected"))}{yesNo("strong_active_borders", t("settings.strongActiveBorders"))}{yesNo("always_show_focus", t("settings.alwaysShowFocus"))}</Card>;
     if (category === "language") return <Card><SettingRow title={t("settings.language")}><Select label={t("settings.language")} value={settings.language} onChange={(value) => void save({ language: value as SettingsMe["language"] })}><option value="pl-PL">Polski</option><option value="en-US">English</option></Select></SettingRow><SettingRow title={t("settings.dateFormat")}><Select label={t("settings.dateFormat")} value={settings.date_format} onChange={(value) => void save({ date_format: value as SettingsMe["date_format"] })}><option value="locale">{t("settings.formatLocale")}</option><option value="short">{t("settings.formatShort")}</option><option value="long">{t("settings.formatLong")}</option><option value="iso">ISO 8601</option></Select></SettingRow><SettingRow title={t("settings.timeFormat")}><Select label={t("settings.timeFormat")} value={settings.time_format} onChange={(value) => void save({ time_format: value as SettingsMe["time_format"] })}><option value="24">24 h</option><option value="12">12 h</option></Select></SettingRow><SettingRow title={t("settings.firstDayOfWeek")}><Select label={t("settings.firstDayOfWeek")} value={settings.first_day_of_week} onChange={(value) => void save({ first_day_of_week: value as SettingsMe["first_day_of_week"] })}><option value="locale">{t("settings.formatLocale")}</option><option value="monday">{t("settings.monday")}</option><option value="sunday">{t("settings.sunday")}</option></Select></SettingRow></Card>;
     if (category === "account") return <div className="settings-card-stack"><Card title={t("settings.accountInformation")}><dl className="settings-details"><dt>{t("settings.username")}</dt><dd>{settings.username}</dd><dt>UID</dt><dd>{settings.uid}</dd><dt>GID</dt><dd>{settings.gid}</dd><dt>{t("settings.homeDirectory")}</dt><dd>{settings.home}</dd><dt>{t("settings.shell")}</dt><dd>{settings.shell}</dd><dt>{t("settings.groupsLabel")}</dt><dd>{settings.groups.join(", ") || "—"}</dd><dt>{t("settings.administratorStatus")}</dt><dd>{settings.is_admin ? t("common.yes") : t("common.no")}</dd></dl></Card><PasswordSection t={t} toast={toast} /></div>;
-    if (category === "identity") return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={settings.permissions} embedded t={t} toast={toast} onOpenPolicies={() => choose("policies")} /></Suspense>;
+    if (category === "identity") return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={settings.permissions} embedded t={t} toast={toast} onOpenPolicies={(subject) => { setPolicySubject(subject); choose("policies"); }} /></Suspense>;
     if (category === "network") return <NetworkSettingsSection isAdmin={networkVisible} permissions={settings.permissions} t={t} />;
     if (category === "networkResources") return <NetworkMountsSettingsSection isAdmin={settings.is_admin} t={t} toast={toast} />;
     if (category === "updates") return <AdministrationSection view="updates" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
-    if (category === "policies") return <UpdatePoliciesSection permissions={settings.permissions} t={t} toast={toast} />;
+    if (category === "policies") return <UpdatePoliciesSection permissions={settings.permissions} initialSubject={policySubject} t={t} toast={toast} />;
     if (category === "administration") return <AdministrationSection view="administration" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
     return <div className="settings-card-stack"><Card title="WebNAS"><dl className="settings-details"><dt>{t("settings.applicationName")}</dt><dd>WebNAS</dd><dt>{t("settings.version")}</dt><dd>0.1.0</dd><dt>{t("settings.frontendEnvironment")}</dt><dd>{window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "development" : "production"}</dd><dt>{t("settings.backendEnvironment")}</dt><dd>FastAPI / Linux</dd><dt>{t("settings.technologies")}</dt><dd>React · TypeScript · FastAPI · lucide-react</dd><dt>{t("settings.license")}</dt><dd>{t("settings.licenseInfo")}</dd></dl><a className="settings-repository" href="https://github.com/chmajster/Algen-server-web-explorer-panel" target="_blank" rel="noreferrer">{t("settings.repository")}</a></Card></div>;
   }
