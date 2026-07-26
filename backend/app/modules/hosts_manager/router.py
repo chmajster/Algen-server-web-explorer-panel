@@ -315,11 +315,15 @@ def revoke_enrollment_token(token_id: str, user: SessionUser = Depends(require_p
 
 @router.get("/enrollment-tokens/{token_id}/script")
 def legacy_enrollment_script(token_id: str, request: Request, authorization: str = Header(default="", max_length=512)):
-    return enrollment_script(request, authorization, expected_token_id=token_id)
+    return _enrollment_script_response(request, authorization, token_id)
 
 
 @router.get("/enrollment-script")
-def enrollment_script(request: Request, authorization: str = Header(default="", max_length=512), expected_token_id: str = ""):
+def enrollment_script(request: Request, authorization: str = Header(default="", max_length=512)):
+    return _enrollment_script_response(request, authorization)
+
+
+def _enrollment_script_response(request: Request, authorization: str, expected_token_id: str = ""):
     if not authorization.startswith("Bearer ") or len(authorization) > 512:
         api_error(401, "ENROLLMENT_TOKEN_REQUIRED", "A valid enrollment token is required")
     token = authorization[7:]

@@ -357,6 +357,37 @@ function Hosts({
       ),
     [items, query, statusFilter],
   );
+  const canManage = permissions.includes("hosts-manager.hosts.manage");
+  async function remove(item: HostsManagerHost) {
+    if (!window.confirm(t("hosts.host.deleteConfirm").replace("{name}", item.name))) return;
+    try {
+      await api.deleteHostsManagerHost(item.id);
+      await refresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    }
+  }
+  async function disable(item: HostsManagerHost) {
+    if (!window.confirm(t("hosts.host.disableConfirm").replace("{name}", item.name))) return;
+    try {
+      await api.disableHostsManagerHost(item.id);
+      await refresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    }
+  }
+  const columns: HostsDataColumn<HostsManagerHost>[] = [
+    { id: "name", label: t("common.name"), sortValue: (item) => item.name, cell: (item) => <span><strong>{item.name}</strong><small>{item.hostname || t("common.none")}</small></span> },
+    { id: "address", label: t("hosts.host.address"), sortValue: (item) => item.address, cell: (item) => `${item.address}:${item.port}` },
+    { id: "environment", label: t("hosts.host.environment"), sortValue: (item) => item.environment, cell: (item) => item.environment || t("common.none") },
+    { id: "location", label: t("hosts.host.location"), sortValue: (item) => item.location, cell: (item) => item.location || t("common.none") },
+    { id: "groups", label: t("hosts.groups.title"), sortValue: (item) => (item.groups || []).join(","), cell: (item) => (item.groups || []).join(", ") || t("common.none") },
+    { id: "connection", label: t("common.status"), sortValue: (item) => item.connection_status, cell: (item) => <Status value={item.connection_status} t={t} /> },
+    { id: "fingerprint", label: t("hosts.host.fingerprint"), sortValue: (item) => item.fingerprint_status, cell: (item) => <Status value={item.fingerprint_status} t={t} /> },
+    { id: "approval", label: t("hosts.host.approval"), sortValue: (item) => item.approved ? 1 : 0, cell: (item) => <Status value={item.approved ? "approved" : "pending_approval"} t={t} /> },
+    { id: "activity", label: t("hosts.host.lastActivity"), sortValue: (item) => item.last_test_at || 0, cell: (item) => item.last_test_at ? new Date(item.last_test_at * 1000).toLocaleString() : t("common.none") },
+    { id: "actions", label: t("column.actions"), cell: (item) => <div className="module-row-actions"><button onClick={() => setSelected(item)}>{t("hosts.host.details")}</button>{canManage && <><button onClick={() => setEditing(item)}>{t("action.edit")}</button>{item.active && <button onClick={() => void disable(item)}>{t("action.disable")}</button>}<button className="button-danger" onClick={() => void remove(item)}>{t("action.delete")}</button></>}</div> },
+  ];
   return (
     <section className="ansible-panel">
       <header>
@@ -364,7 +395,7 @@ function Hosts({
           <h3>{t("hosts.list.title")}</h3>
           <p>{t("hosts.list.hint")}</p>
         </div>
-        {permissions.includes("hosts-manager.hosts.manage") && (
+        {canManage && (
           <button className="button-primary" onClick={() => setEditing(null)}>
             <Plus />
             {t("hosts.host.add")}
@@ -422,63 +453,14 @@ function Hosts({
           ))}
         </div>
       ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>{t("common.name")}</th>
-                <th>{t("hosts.host.address")}</th>
-                <th>{t("common.status")}</th>
-                <th>{t("hosts.host.fingerprint")}</th>
-                <th>{t("hosts.host.lastActivity")}</th>
-                <th>{t("column.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <button
-                      className="link-button"
-                      onClick={() => setSelected(item)}
-                    >
-                      {item.name}
-                    </button>
-                  </td>
-                  <td>
-                    {item.address}:{item.port}
-                  </td>
-                  <td>
-                    <Status value={item.connection_status} t={t} />
-                  </td>
-                  <td>
-                    <Status value={item.fingerprint_status} t={t} />
-                  </td>
-                  <td>
-                    {item.last_test_at
-                      ? new Date(item.last_test_at * 1000).toLocaleString()
-                      : t("common.none")}
-                  </td>
-                  <td>
-                    <div className="module-row-actions">
-                      <button onClick={() => setSelected(item)}>
-                        {t("hosts.host.details")}
-                      </button>
-                      {permissions.includes("hosts-manager.hosts.manage") && (
-                        <button onClick={() => setEditing(item)}>
-                          {t("action.edit")}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {!filtered.length && (
-        <div className="empty-state">{t("hosts.list.empty")}</div>
+        <HostsDataTable
+          items={filtered}
+          columns={columns}
+          rowKey={(item) => item.id}
+          empty={t("hosts.list.empty")}
+          onSelect={(item) => setSelected(item)}
+          selectedKey={selected?.id}
+        />
       )}
       {editing !== undefined && (
         <HostForm
@@ -822,29 +804,58 @@ function Groups({
   toast: ToastFn;
   refresh: () => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState<HostsManagerGroup | null | undefined>();
+  const [selected, setSelected] = useState<HostsManagerGroup | null>(null);
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [parentId, setParentId] = useState("");
+  const [active, setActive] = useState(true);
+  const visible = items.filter((item) =>
+    `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()),
+  );
+  function edit(item: HostsManagerGroup | null) {
+    setEditing(item);
+    setName(item?.name || "");
+    setDescription(item?.description || "");
+    setParentId(item?.parent_id || "");
+    setActive(item?.active ?? true);
+  }
   async function save(event: React.FormEvent) {
     event.preventDefault();
     try {
       await api.saveHostsManagerGroup({
         name,
-        description: "",
-        parent_id: null,
-        variables: {},
-        host_ids: [],
-        active: true,
-      });
-      setName("");
-      setOpen(false);
+        description,
+        parent_id: parentId || null,
+        variables: editing?.variables || {},
+        host_ids: editing?.host_ids || [],
+        active,
+      }, editing?.id);
+      setEditing(undefined);
       await refresh();
     } catch (error) {
-      toast(
-        error instanceof Error ? error.message : t("error.generic"),
-        "error",
-      );
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
     }
   }
+  async function remove(item: HostsManagerGroup) {
+    if (!window.confirm(t("hosts.group.deleteConfirm").replace("{name}", item.name))) return;
+    try {
+      await api.deleteHostsManagerGroup(item.id);
+      await refresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    }
+  }
+  const columns: HostsDataColumn<HostsManagerGroup>[] = [
+    { id: "name", label: t("common.name"), sortValue: (item) => item.name, cell: (item) => <strong>{item.name}</strong> },
+    { id: "description", label: t("hosts.host.description"), sortValue: (item) => item.description, cell: (item) => item.description || t("common.none") },
+    { id: "parent", label: t("hosts.group.parent"), sortValue: (item) => items.find((parent) => parent.id === item.parent_id)?.name || "", cell: (item) => items.find((parent) => parent.id === item.parent_id)?.name || t("common.none") },
+    { id: "hosts", label: t("hosts.groups.hosts"), align: "end", sortValue: (item) => item.host_ids.length, cell: (item) => item.host_ids.length },
+    { id: "status", label: t("common.status"), sortValue: (item) => item.active ? 1 : 0, cell: (item) => <Status value={item.active ? "active" : "disabled"} t={t} /> },
+    { id: "updated", label: t("hosts.operation.updated"), sortValue: (item) => item.updated_at, cell: (item) => new Date(item.updated_at * 1000).toLocaleString() },
+    { id: "actions", label: t("column.actions"), cell: (item) => <div className="module-row-actions"><button onClick={() => setSelected(item)}>{t("hosts.group.showHosts")}</button>{canManage && <><button onClick={() => edit(item)}>{t("action.edit")}</button><button className="button-danger" onClick={() => void remove(item)}>{t("action.delete")}</button></>}</div> },
+  ];
   return (
     <section className="ansible-panel">
       <header>
@@ -853,30 +864,24 @@ function Groups({
           <p>{t("hosts.groups.hint")}</p>
         </div>
         {canManage && (
-          <button onClick={() => setOpen(true)}>
+          <button onClick={() => edit(null)}>
             <Plus />
             {t("hosts.group.add")}
           </button>
         )}
       </header>
-      <div className="card-grid">
-        {items.map((item) => (
-          <article className="data-card" key={item.id}>
-            <header>
-              <strong>{item.name}</strong>
-            </header>
-            <p>{item.description || t("common.none")}</p>
-            <small>
-              {item.host_ids.length} {t("hosts.groups.hosts")}
-            </small>
-          </article>
-        ))}
+      <div className="module-section-toolbar">
+        <label>
+          <Search />
+          <input aria-label={t("action.search")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("hosts.search.placeholder")} />
+        </label>
       </div>
-      {open && (
+      <HostsDataTable items={visible} columns={columns} rowKey={(item) => item.id} empty={t("hosts.records.empty")} onSelect={(item) => setSelected(item)} selectedKey={selected?.id} />
+      {editing !== undefined && (
         <Modal
-          title={t("hosts.group.add")}
+          title={t(editing ? "hosts.group.edit" : "hosts.group.add")}
           closeLabel={t("action.close")}
-          onClose={() => setOpen(false)}
+          onClose={() => setEditing(undefined)}
           footer={
             <button
               className="button-primary"
@@ -887,19 +892,18 @@ function Groups({
             </button>
           }
         >
-          <form id="hosts-group-form" onSubmit={save}>
+          <form id="hosts-group-form" className="module-form-grid" onSubmit={save}>
             <label>
               {t("common.name")}
-              <input
-                autoFocus
-                required
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
+              <input autoFocus required value={name} onChange={(event) => setName(event.target.value)} />
             </label>
+            <label>{t("hosts.host.description")}<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+            <label>{t("hosts.group.parent")}<select value={parentId} onChange={(event) => setParentId(event.target.value)}><option value="">{t("common.none")}</option>{items.filter((item) => item.id !== editing?.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <label className="check"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} />{t("common.enabled")}</label>
           </form>
         </Modal>
       )}
+      {selected && <Modal title={selected.name} closeLabel={t("action.close")} onClose={() => setSelected(null)}><h3>{t("hosts.group.memberHosts")}</h3>{selected.host_ids.length ? <ul>{selected.host_ids.map((id) => <li key={id}><code>{id}</code></li>)}</ul> : <div className="empty-state">{t("hosts.list.empty")}</div>}</Modal>}
     </section>
   );
 }
