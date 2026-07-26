@@ -1,5 +1,5 @@
 import {
-  Accessibility, AlertTriangle, Bell, CalendarClock, CheckCircle2, CircleUserRound, FileCog, FolderOpen, Info, Languages,
+  Accessibility, AlertTriangle, Bell, CheckCircle2, CircleUserRound, FileCog, FolderOpen, Info, Languages,
   ChevronLeft, ChevronRight, Image, MonitorCog, Network, Palette, RefreshCw, ScrollText, Search, Server, Settings, ShieldCheck, SlidersHorizontal, Terminal, Users, X
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -16,7 +16,7 @@ import { WallpaperSettingsPage } from "./WallpaperSettingsPage";
 
 const IdentityApp = lazy(() => import("../admin/IdentityApp").then((module) => ({ default: module.IdentityApp })));
 
-export type SettingsCategory = "system" | "personalization" | "files" | "transfers" | "notifications" | "accessibility" | "language" | "account" | "identity" | "network" | "networkResources" | "policies" | "administration" | "about";
+export type SettingsCategory = "system" | "personalization" | "files" | "transfers" | "notifications" | "accessibility" | "language" | "account" | "identity" | "network" | "networkResources" | "updates" | "policies" | "administration" | "about";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type UpdateDialogState = { phase: "checking" | "running" | "completed" | "failed" | "no-update"; progress: UpdateProgress | null; message: string };
 const dismissedUpdateProgressKey = "webnas.dismissed-update-progress";
@@ -34,7 +34,7 @@ function InterfaceScaleControl({ label, value, onChange }: { label: string; valu
 const categoryIcons: Record<SettingsCategory, ReactNode> = {
   system: <MonitorCog />, personalization: <Palette />, files: <FileCog />, transfers: <RefreshCw />,
   notifications: <Bell />, accessibility: <Accessibility />, language: <Languages />, account: <CircleUserRound />,
-  identity: <Users />, network: <Network />, networkResources: <FolderOpen />, policies: <ScrollText />, administration: <ShieldCheck />, about: <Info />,
+  identity: <Users />, network: <Network />, networkResources: <FolderOpen />, updates: <RefreshCw />, policies: <ScrollText />, administration: <ShieldCheck />, about: <Info />,
 };
 
 export function isSettingsCategory(value: string | undefined): value is SettingsCategory {
@@ -49,7 +49,7 @@ const categorySettings: Record<SettingsCategory, string[]> = {
   notifications: ["notificationsEnabled", "transferNotifications", "errorNotifications", "adminNotifications", "notificationLimit", "notificationAutoHide"],
   accessibility: ["interfaceScale", "largerText", "reduceMotion", "highContrast", "strongActiveBorders", "alwaysShowFocus"],
   language: ["language", "dateFormat", "timeFormat", "firstDayOfWeek"], account: ["username", "groups", "changePassword"],
-  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration", "containerDefaultsPolicy"], administration: ["serviceInformation", "updates", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
+  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], updates: ["updates", "updateStatus", "updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration"], policies: ["containerDefaultsPolicy"], administration: ["serviceInformation", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
 };
 
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
@@ -97,19 +97,19 @@ function PasswordSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   return <Card title={t("settings.changePassword")}><form className="password-settings" onSubmit={(event) => void submit(event)}><label>{t("settings.currentPassword")}<input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} /></label><label>{t("settings.newPassword")}<input type="password" autoComplete="new-password" required minLength={8} value={next} onChange={(event) => setNext(event.target.value)} /></label><button className="button-primary" type="submit" disabled={saving}>{saving ? t("settings.saving") : t("settings.changePassword")}</button></form></Card>;
 }
 
-function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
+function UpdatePoliciesSection({ mode, t, toast }: { mode: "updates" | "containers"; t: Translate; toast: ToastFn }) {
   const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
   const [dockerPolicy, setDockerPolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<"checking" | "installation" | "containers">("checking");
+  const [group, setGroup] = useState<"checking" | "installation" | "containers">(mode === "containers" ? "containers" : "checking");
   const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
   const [editing, setEditing] = useState(false);
   useEffect(() => {
     let live = true;
-    api.autoUpdate().then((value) => { if (live) setPolicy(value); }).catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
-    api.dockerContainerDefaultsPolicy().then((value) => { if (live) setDockerPolicy(value); }).catch(() => undefined);
+    if (mode === "updates") api.autoUpdate().then((value) => { if (live) setPolicy(value); }).catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
+    if (mode === "containers") api.dockerContainerDefaultsPolicy().then((value) => { if (live) setDockerPolicy(value); }).catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
     return () => { live = false; };
-  }, [t]);
+  }, [mode, t]);
   async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "update_config">>) {
     if (!policy) return false;
     const before = policy;
@@ -130,15 +130,15 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   function chooseGroup(next: "checking" | "installation" | "containers") {
     setGroup(next); if (next !== "containers") setSelected(next === "checking" ? "check_enabled" : "enabled"); setEditing(false);
   }
-  if (!policy && !error) return <div className="loading-state">{t("status.loading")}</div>;
-  if (!policy) return <div className="error-state" role="alert">{error}</div>;
   const policyGroups = <aside className="policy-groups">
     <header><FolderOpen />{t("settings.policyCategories")}</header>
-    <button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button>
-    <button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button>
-    <button className={group === "containers" ? "active" : ""} onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>
+    {mode === "updates" && <><button className={group === "checking" ? "active" : ""} onClick={() => chooseGroup("checking")}><FolderOpen /><span>{t("settings.policyCategoryChecking")}</span><b>2</b></button>
+    <button className={group === "installation" ? "active" : ""} onClick={() => chooseGroup("installation")}><FolderOpen /><span>{t("settings.policyCategoryInstallation")}</span><b>2</b></button></>}
+    {mode === "containers" && <button className="active" onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>}
   </aside>;
   if (group === "containers") {
+    if (!dockerPolicy && !error) return <div className="loading-state">{t("status.loading")}</div>;
+    if (!dockerPolicy) return <div className="error-state" role="alert">{error}</div>;
     async function saveDockerPolicy() {
       if (!dockerPolicy) return;
       setError("");
@@ -172,6 +172,8 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
       </article>
     </section>;
   }
+  if (!policy && !error) return <div className="loading-state">{t("status.loading")}</div>;
+  if (!policy) return <div className="error-state" role="alert">{error}</div>;
   const definitions = {
     check_enabled: { group: "checking" as const, label: t("settings.automaticUpdateChecks"), id: "updates.check_enabled", description: t("settings.automaticUpdateChecksHint"), defaultValue: t("common.enabled") },
     interval_hours: { group: "checking" as const, label: t("settings.updateInterval"), id: "updates.check_interval_hours", description: t("settings.updateIntervalHint"), defaultValue: "12 h" },
@@ -198,10 +200,9 @@ function UpdatePoliciesSection({ t, toast }: { t: Translate; toast: ToastFn }) {
   </section>;
 }
 
-function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL" | "en-US"; t: Translate; toast: ToastFn; onOpenApp: (app: AppId) => void }) {
+function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "administration" | "updates"; locale: "pl-PL" | "en-US"; t: Translate; toast: ToastFn; onOpenApp: (app: AppId) => void }) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [updates, setUpdates] = useState<UpdateStatus | null>(null);
-  const [automatic, setAutomatic] = useState<AutoUpdateSettings | null>(null);
   const [proxmox, setProxmox] = useState<ProxmoxSafety | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -211,15 +212,20 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
   const [renderedAt] = useState(() => Date.now());
   useEffect(() => {
     let live = true;
-    Promise.allSettled([api.systemStatus(), api.checkUpdates(), api.autoUpdate(), api.proxmoxSafety(), api.updateProgress()]).then((results) => {
-      if (!live) return;
-      if (results[0].status === "fulfilled") setStatus(results[0].value);
-      if (results[1].status === "fulfilled") { setUpdates(results[1].value); setUpdateError(results[1].value.error || ""); }
-      else setUpdateError(results[1].reason instanceof Error ? results[1].reason.message : t("settings.updateUnavailable"));
-      if (results[2].status === "fulfilled") setAutomatic(results[2].value);
-      if (results[3].status === "fulfilled") setProxmox(results[3].value);
-      if (results[4].status === "fulfilled") {
-        const progress = results[4].value;
+    if (view === "administration") {
+      Promise.allSettled([api.systemStatus(), api.proxmoxSafety()]).then((results) => {
+        if (!live) return;
+        if (results[0].status === "fulfilled") setStatus(results[0].value);
+        if (results[1].status === "fulfilled") setProxmox(results[1].value);
+        setLoading(false);
+      });
+    } else {
+      Promise.allSettled([api.checkUpdates(), api.updateProgress()]).then((results) => {
+        if (!live) return;
+        if (results[0].status === "fulfilled") { setUpdates(results[0].value); setUpdateError(results[0].value.error || ""); }
+        else setUpdateError(results[0].reason instanceof Error ? results[0].reason.message : t("settings.updateUnavailable"));
+        if (results[1].status === "fulfilled") {
+          const progress = results[1].value;
         const dismissed = Number(window.sessionStorage.getItem(dismissedUpdateProgressKey) || 0);
         const recent = Boolean(progress.started_at && progress.started_at > Date.now() / 1000 - 86_400);
         if (progress.state === "running" || (recent && progress.started_at !== dismissed && (progress.state === "completed" || progress.state === "failed"))) {
@@ -227,11 +233,12 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
           const message = phase === "running" ? t("settings.updateInstallerRunning") : phase === "completed" ? t("settings.updateCompletedDetails") : t("settings.updateFailedDetails");
           setUpdateDialog({ phase, progress, message });
         }
-      }
-      setLoading(false);
-    });
+        }
+        setLoading(false);
+      });
+    }
     return () => { live = false; };
-  }, [t]);
+  }, [t, view]);
   async function refreshUpdates() {
     setChecking(true); setUpdateError("");
     try { const value = await api.checkUpdates(); setUpdates(value); setUpdateError(value.error || ""); }
@@ -245,7 +252,6 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
     try {
       const result = await api.runAutoUpdate(false);
       toast(result.updated ? t("settings.updateStarted") : t("settings.noUpdateAvailable"), "ok", "admin");
-      setAutomatic(await api.autoUpdate());
       if (!result.updated) { await refreshUpdates(); setUpdateDialog({ phase: "no-update", progress: null, message: t("settings.noUpdateAvailable") }); }
       else setUpdateDialog({ phase: "running", progress: null, message: t("settings.updateInstallerRunning") });
     } catch (error) { const message = error instanceof Error ? error.message : t("error.generic"); toast(message, "error", "admin"); setUpdateDialog({ phase: "failed", progress: null, message }); }
@@ -273,7 +279,6 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
     if (updateDialog?.progress?.started_at) window.sessionStorage.setItem(dismissedUpdateProgressKey, String(updateDialog.progress.started_at));
     setUpdateDialog(null);
   };
-  const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
   const releaseDate = (value: number | null | undefined) => {
     if (!value) return "—";
     const date = new Date(value * 1000);
@@ -296,25 +301,31 @@ function AdministrationSection({ locale, t, toast, onOpenApp }: { locale: "pl-PL
     { id: "services", icon: <SlidersHorizontal />, hint: t("settings.administrationServicesHint") },
     { id: "logs", icon: <Terminal />, hint: t("settings.administrationLogsHint") },
   ];
+  if (view === "updates") return <div className="settings-card-stack updates-dashboard">
+    <section className="admin-overview-hero">
+      <div className="admin-overview-icon"><RefreshCw /></div>
+      <div className="admin-overview-copy"><small>{t("settings.updates")}</small><h3>{t("settings.updateStatus")}</h3><p>{updateLabel}</p></div>
+      <div className={`admin-overall-state ${updateState}`}><span />{updates?.update_available ? t("settings.updateAvailable") : updateLabel}</div>
+    </section>
+    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
+    <UpdatePoliciesSection mode="updates" t={t} toast={toast} />
+    {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
+  </div>;
   return <div className="administration-dashboard">
     <section className="admin-overview-hero">
       <div className="admin-overview-icon"><ShieldCheck /></div>
       <div className="admin-overview-copy"><small>{t("settings.administrationCenter")}</small><h3>{t("settings.administrationOverview")}</h3><p>{t("settings.administrationOverviewHint")}</p></div>
-      <div className={`admin-overall-state ${updateError ? "warning" : "success"}`}><span />{updateError ? t("settings.requiresAttention") : t("settings.systemOperational")}</div>
+      <div className="admin-overall-state success"><span />{t("settings.systemOperational")}</div>
     </section>
     <section className="admin-summary-grid" aria-label={t("settings.administrationOverview")}>
       <article><span className="admin-summary-icon service"><Server /></span><div><small>{t("settings.service")}</small><strong>{status?.service || "WebNAS"}</strong><span>{t("settings.version")} {status?.version || "—"}</span></div></article>
-      <article><span className={`admin-summary-icon ${updateState}`}><RefreshCw /></span><div><small>{t("settings.updateStatus")}</small><strong>{updates?.update_available ? `${t("settings.updateAvailable")}: ${updates.remote?.slice(0, 12) || "—"}` : updateLabel}</strong><span>{updates?.source || t("settings.updateUnavailable")}</span></div></article>
-      <article><span className={`admin-summary-icon ${automatic?.check_enabled ? "success" : "neutral"}`}><CalendarClock /></span><div><small>{t("settings.automaticUpdateChecks")}</small><strong>{automatic?.check_enabled ? t("common.enabled") : t("common.disabled")}</strong><span>{automatic?.check_enabled ? `${t("settings.nextCheck")}: ${dateTime(automatic.next_check)}` : t("settings.automaticUpdateChecksHint")}</span></div></article>
       <article><span className={`admin-summary-icon ${proxmox?.safe_mode_enabled ? "success" : "neutral"}`}><ShieldCheck /></span><div><small>{t("settings.proxmoxSafeMode")}</small><strong>{proxmox?.safe_mode_enabled ? t("common.enabled") : t("common.disabled")}</strong><span>{proxmox?.safe_mode_enabled ? t("settings.proxmoxProtectionActive") : t("settings.proxmoxProtectionInactive")}</span></div></article>
     </section>
     <div className="admin-content-grid">
       <Card title={t("settings.serviceInformation")}><dl className="settings-details"><dt>{t("settings.service")}</dt><dd>{status?.service || "WebNAS"}</dd><dt>{t("settings.version")}</dt><dd>{status?.version || "—"}</dd><dt>{t("settings.port")}</dt><dd>{status?.port || "—"}</dd><dt>{t("settings.dataDirectory")}</dt><dd>{status?.data_dir || "—"}</dd></dl></Card>
       <Card title={t("settings.proxmoxSafeMode")}><SettingRow title={t("settings.proxmoxDetected")} description={proxmox?.safe_mode_enabled ? t("settings.proxmoxProtectionActive") : t("settings.proxmoxProtectionInactive")}><span className={`settings-status-pill ${proxmox?.safe_mode_enabled ? "success" : "neutral"}`}>{proxmox?.is_proxmox ? t("common.yes") : t("common.no")}</span></SettingRow></Card>
     </div>
-    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
     <Card title={t("settings.administrationApps")}><p className="admin-tools-intro">{t("settings.administrationAppsHint")}</p><div className="admin-tool-links">{adminApps.map((app) => <button key={app.id} type="button" onClick={() => onOpenApp(app.id)}><span className="admin-tool-icon">{app.icon}</span><span><strong>{t(`app.${app.id}`)}</strong><small>{app.hint}</small></span><span className="admin-tool-arrow" aria-hidden="true">›</span></button>)}</div></Card>
-    {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
   </div>;
 }
 
@@ -333,7 +344,7 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState("");
   const saveStatusTimer = useRef<number | null>(null);
-  const categories = useMemo(() => (Object.keys(categoryIcons) as SettingsCategory[]).filter((item) => settings.is_admin || !["identity", "network", "networkResources", "policies", "administration"].includes(item)), [settings.is_admin]);
+  const categories = useMemo(() => (Object.keys(categoryIcons) as SettingsCategory[]).filter((item) => settings.is_admin || !["identity", "network", "networkResources", "updates", "policies", "administration"].includes(item)), [settings.is_admin]);
   const normalizedQuery = query.trim().toLocaleLowerCase(settings.language);
   const searchResults = useMemo(() => normalizedQuery ? categories.flatMap((item) => categorySettings[item].map((key) => ({ category: item, key, label: t(`settings.${key}`) })).filter((entry) => entry.label.toLocaleLowerCase(settings.language).includes(normalizedQuery) || t(`settings.category.${item}`).toLocaleLowerCase(settings.language).includes(normalizedQuery))) : [], [categories, normalizedQuery, settings.language, t]);
 
@@ -362,8 +373,9 @@ export function SettingsAppView({ settings, initialSection = "system", t, toast,
     if (category === "identity") return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={settings.permissions} embedded t={t} toast={toast} /></Suspense>;
     if (category === "network") return <NetworkSettingsSection isAdmin={settings.is_admin} t={t} />;
     if (category === "networkResources") return <NetworkMountsSettingsSection isAdmin={settings.is_admin} t={t} toast={toast} />;
-    if (category === "policies") return <UpdatePoliciesSection t={t} toast={toast} />;
-    if (category === "administration") return <AdministrationSection locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
+    if (category === "updates") return <AdministrationSection view="updates" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
+    if (category === "policies") return <UpdatePoliciesSection mode="containers" t={t} toast={toast} />;
+    if (category === "administration") return <AdministrationSection view="administration" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
     return <div className="settings-card-stack"><Card title="WebNAS"><dl className="settings-details"><dt>{t("settings.applicationName")}</dt><dd>WebNAS</dd><dt>{t("settings.version")}</dt><dd>0.1.0</dd><dt>{t("settings.frontendEnvironment")}</dt><dd>{window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "development" : "production"}</dd><dt>{t("settings.backendEnvironment")}</dt><dd>FastAPI / Linux</dd><dt>{t("settings.technologies")}</dt><dd>React · TypeScript · FastAPI · lucide-react</dd><dt>{t("settings.license")}</dt><dd>{t("settings.licenseInfo")}</dd></dl><a className="settings-repository" href="https://github.com/chmajster/Algen-server-web-explorer-panel" target="_blank" rel="noreferrer">{t("settings.repository")}</a></Card></div>;
   }
 

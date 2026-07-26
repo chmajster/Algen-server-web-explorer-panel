@@ -74,6 +74,7 @@
 .log-row.selected { outline: 1px solid color-mix(in srgb,var(--accent) 42%,transparent); outline-offset: -1px; }
 .log-row.severity-emergency,.log-row.severity-alert,.log-row.severity-critical,.log-row.severity-error { border-left-color: var(--danger); }
 .log-row.severity-warning { border-left-color: var(--warning); }
+.log-row.traceback .log-message { font-weight: 600; }
 .log-row time,.log-row small { color: var(--text-muted); white-space: nowrap; }
 .log-row strong,.log-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-severity { color: var(--text-secondary); text-transform: uppercase; font-size: .61rem; font-weight: 700; }
@@ -93,6 +94,7 @@
 .logs-details > header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; }
 .logs-details > header button { width: 31px; height: 31px; display: grid; place-items: center; }
 .logs-detail-message { padding: 12px; }
+.logs-severity-correction { margin: 0; padding: 9px 12px; border-bottom: 1px solid color-mix(in srgb,var(--danger) 24%,var(--border-subtle)); color: var(--danger); background: color-mix(in srgb,var(--danger) 7%,transparent); font-size: .67rem; line-height: 1.4; }
 .logs-detail-message pre,.logs-details details > pre { max-height: 260px; margin: 0 0 8px; padding: 10px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); color: var(--text-primary); background: var(--surface-primary); white-space: pre-wrap; word-break: break-word; font-size: .69rem; }
 .logs-detail-message button,.logs-detail-actions button { min-height: 31px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; }
 .logs-detail-message button svg,.logs-detail-actions svg { width: 13px; }

@@ -402,18 +402,20 @@ def group_traceback_entries(entries: list[LogEntry]) -> list[LogEntry]:
         candidates = [first]
         cursor = index + 1
         terminal = False
+        safe_time = first_time is not None
         while cursor < len(ordered):
             candidate = ordered[cursor]
             candidate_time = _entry_seconds(candidate)
             if (
-                first_time is None
-                or candidate_time is None
-                or candidate_time - first_time > 2
-                or candidate_time < first_time
-                or _traceback_context(candidate) != context
+                _traceback_context(candidate) != context
                 or not _traceback_continuation(candidate.message)
             ):
                 break
+            if first_time is not None and candidate_time is not None:
+                if candidate_time - first_time > 2 or candidate_time < first_time:
+                    break
+            else:
+                safe_time = False
             candidates.append(candidate)
             cursor += 1
             if PYTHON_EXCEPTION_RE.search(candidate.message):
@@ -422,6 +424,17 @@ def group_traceback_entries(entries: list[LogEntry]) -> list[LogEntry]:
         if len(candidates) < 2 or not terminal:
             grouped.append(first)
             index += 1
+            continue
+        if not safe_time:
+            for candidate in candidates:
+                marked = candidate.model_copy(deep=True)
+                original = marked.original_priority if marked.original_priority in LOG_PRIORITIES else marked.priority
+                marked.priority = min(original, 3)
+                marked.severity = LOG_PRIORITIES[marked.priority]
+                marked.severity_inferred = marked.priority < original
+                marked.severity_reason = "python_traceback" if marked.severity_inferred else None
+                grouped.append(marked)
+            index = cursor
             continue
         message = redact_text("\n".join(item.message for item in candidates), limit=MAX_MESSAGE)
         originals = [

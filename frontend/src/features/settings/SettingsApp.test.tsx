@@ -137,7 +137,7 @@ describe("settings application", () => {
     expect(openApp).not.toHaveBeenCalled();
   });
 
-  it("runs an update manually from administration settings", async () => {
+  it("runs an update manually from the updates settings tab", async () => {
     vi.spyOn(api, "systemStatus").mockResolvedValue({ service: "webnas", version: "1", port: 5000, data_dir: "/var/lib/webnas", log_dir: "/var/log/webnas", temp_dir: "/tmp" });
     vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "a".repeat(40), remote: "b".repeat(40), installed_version: "1.4.2", available_version: "1.5.0", update_available: true, available: true, source: "GitHub · example/repository", source_url: "https://github.com/example/repository", released_at: Math.floor((Date.now() - 2 * 86_400_000) / 1000) });
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: true, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: null });
@@ -147,8 +147,8 @@ describe("settings application", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "settings.category.administration" }));
-    await screen.findByText("settings.updateAvailable");
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.updates" }));
+    expect(await screen.findAllByText("settings.updateAvailable")).not.toHaveLength(0);
     expect(screen.getByRole("link", { name: "GitHub · example/repository" })).toHaveAttribute("href", "https://github.com/example/repository");
     expect(screen.getByText(/\(2 d 0 godz\. 0 min desktop\.timeAgo\)/)).toBeInTheDocument();
     expect(screen.getByText("v1.4.2")).toBeInTheDocument();
@@ -161,13 +161,26 @@ describe("settings application", () => {
     expect(screen.getByText(/Installation complete/)).toBeInTheDocument();
   });
 
+  it("keeps update controls out of the administration tab", async () => {
+    vi.spyOn(api, "systemStatus").mockResolvedValue({ service: "webnas", version: "1", port: 5000, data_dir: "/var/lib/webnas", log_dir: "/var/log/webnas", temp_dir: "/tmp" });
+    vi.spyOn(api, "proxmoxSafety").mockResolvedValue({ is_proxmox: false, safe_mode_enabled: false, protected_paths: [], blocked_admin_features: [], allowed_roots_effective: [], service_user: "webnas", warnings: [] });
+    const checkUpdates = vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "a".repeat(40), remote: "a".repeat(40), update_available: false, available: true });
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.administration" }));
+
+    expect(await screen.findByText("settings.serviceInformation")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /settings.updateNow/ })).not.toBeInTheDocument();
+    expect(checkUpdates).not.toHaveBeenCalled();
+  });
+
   it("configures the 12-hour update check policy independently from automatic installation", async () => {
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 100 });
     vi.spyOn(api, "dockerContainerDefaultsPolicy").mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
     const saveAuto = vi.spyOn(api, "saveAutoUpdate").mockImplementation(async (payload) => ({ ...payload, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 200 }));
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "settings.category.policies" }));
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.updates" }));
     expect(await screen.findByText("settings.policyCategoryChecking")).toBeInTheDocument();
     expect(screen.getAllByText("updates.check_enabled")).toHaveLength(2);
     fireEvent.click(screen.getByText("updates.check_interval_hours").closest("button")!);
@@ -204,7 +217,7 @@ describe("settings application", () => {
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: 20, last_error: "", last_pid: 321, next_check: null });
     vi.spyOn(api, "proxmoxSafety").mockResolvedValue({ is_proxmox: false, safe_mode_enabled: false, protected_paths: [], blocked_admin_features: [], allowed_roots_effective: [], service_user: "webnas", warnings: [] });
     vi.spyOn(api, "updateProgress").mockResolvedValue({ state: "completed", running: false, pid: 321, unit: "webnas-self-update-20.service", exit_code: 0, started_at: Math.floor(Date.now() / 1000), finished_at: Math.floor(Date.now() / 1000), log: "/var/log/webnas/update.log", lines: ["Installation complete"] });
-    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="administration" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="updates" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
     expect(await screen.findByRole("dialog", { name: "settings.updateProgressTitle" })).toBeInTheDocument();
     expect(screen.getByText("settings.updatePhase.completed")).toBeInTheDocument();

@@ -107,6 +107,58 @@ describe("LogsApp", () => {
     await waitFor(() => expect(api.logEntries).toHaveBeenCalledWith(expect.objectContaining({ cursor: "next" }), undefined));
   });
 
+  it("renders an inferred traceback as one expandable error and preserves formatting", async () => {
+    const traceback = [
+      "Traceback (most recent call last):",
+      '  File "/app/main.py", line 4, in run',
+      "    value.get()",
+      "AttributeError: list has no attribute get",
+    ].join("\n");
+    vi.mocked(api.logEntries).mockResolvedValue({
+      items: [{
+        ...entry,
+        id: "traceback",
+        message: traceback,
+        original_priority: 6,
+        original_severity: "info",
+        priority: 3,
+        severity: "error",
+        severity_inferred: true,
+        severity_reason: "python_traceback",
+        fields: { merged_count: 4 },
+      }],
+      next_cursor: null, has_more: false, direction: "older", limit: 300, truncated: false,
+    });
+
+    render(<LogsApp permissions={permissions} t={t} toast={vi.fn()} />);
+
+    const summary = await screen.findByText("AttributeError: list has no attribute get");
+    expect(screen.getAllByText("logs.severity.error")).toHaveLength(2);
+    fireEvent.click(summary);
+    expect(screen.getByText("logs.severityCorrected", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("info (6)")).toBeInTheDocument();
+    expect(screen.getByText("error (3)")).toBeInTheDocument();
+    const formatted = screen.getByText((_content, element) => element?.tagName === "PRE" && element.textContent === traceback);
+    expect(formatted.tagName).toBe("PRE");
+    expect(formatted).toHaveTextContent('File "/app/main.py", line 4, in run', { normalizeWhitespace: false });
+
+    fireEvent.click(screen.getByText("logs.copyRecord"));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("[error/3; original=info/6]"));
+  });
+
+  it("uses effective priority for the errors filter and supports legacy entries", async () => {
+    render(<LogsApp permissions={permissions} t={t} toast={vi.fn()} />);
+    expect(await screen.findByText("Example failure")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /logs.filters/ }));
+    fireEvent.click(screen.getByText("logs.onlyErrors"));
+    await waitFor(() => expect(api.logEntries).toHaveBeenLastCalledWith(
+      expect.objectContaining({ priority: [0, 1, 2, 3] }),
+      expect.any(AbortSignal),
+    ));
+    fireEvent.click(screen.getByText("Example failure"));
+    expect(screen.getAllByText("error (3)")).toHaveLength(2);
+  });
+
   it("buffers live entries while paused and closes the stream on unmount", async () => {
     const { unmount } = render(<LogsApp permissions={permissions} t={t} toast={vi.fn()} />);
     await screen.findByText("Example failure");

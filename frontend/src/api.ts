@@ -190,8 +190,12 @@ export type SystemLogs = { source: string; lines: string[] };
 export type LogEntry = {
   id: string;
   timestamp: string | null;
+  original_priority?: number;
+  original_severity?: "emergency" | "alert" | "critical" | "error" | "warning" | "notice" | "info" | "debug";
   priority: number;
   severity: "emergency" | "alert" | "critical" | "error" | "warning" | "notice" | "info" | "debug";
+  severity_inferred?: boolean;
+  severity_reason?: string | null;
   source: string;
   unit: string;
   identifier: string;
