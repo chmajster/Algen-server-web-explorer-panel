@@ -244,6 +244,7 @@ export function HostsManagerApp({ permissions, t, toast }: Props) {
     );
   return (
     <ModuleAppShell
+      className="hosts-manager-app"
       name={t("hosts.name")}
       status={status}
       healthMessage={t("hosts.subtitle")}
@@ -377,7 +378,7 @@ function Hosts({
     }
   }
   const columns: HostsDataColumn<HostsManagerHost>[] = [
-    { id: "name", label: t("common.name"), sortValue: (item) => item.name, cell: (item) => <span><strong>{item.name}</strong><small>{item.hostname || t("common.none")}</small></span> },
+    { id: "name", label: t("common.name"), sortValue: (item) => item.name, cell: (item) => <span className="hosts-primary-cell"><strong>{item.name}</strong><small>{item.hostname || t("common.none")}</small></span> },
     { id: "address", label: t("hosts.host.address"), sortValue: (item) => item.address, cell: (item) => `${item.address}:${item.port}` },
     { id: "environment", label: t("hosts.host.environment"), sortValue: (item) => item.environment, cell: (item) => item.environment || t("common.none") },
     { id: "location", label: t("hosts.host.location"), sortValue: (item) => item.location, cell: (item) => item.location || t("common.none") },
