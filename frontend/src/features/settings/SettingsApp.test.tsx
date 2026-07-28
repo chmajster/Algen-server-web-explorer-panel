@@ -161,6 +161,11 @@ describe("settings application", () => {
     rerender(<SettingsAppView settings={settingsFixture({ interface_scale: 125 })} {...common} />);
     expect(screen.getByLabelText("settings.interfaceScale")).toHaveValue("125");
     expect(screen.getByText("125%")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("settings.interfaceScale"), { target: { value: "50" } });
+    fireEvent.blur(screen.getByLabelText("settings.interfaceScale"));
+    await new Promise((resolve) => window.setTimeout(resolve, 75));
+    expect(screen.getByLabelText("settings.interfaceScale")).toHaveValue("125");
+    expect(save).toHaveBeenCalledTimes(1);
   });
 
   it("renders administrative categories only for administrators", () => {

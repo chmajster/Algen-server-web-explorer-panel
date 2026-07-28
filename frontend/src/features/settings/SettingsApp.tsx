@@ -31,6 +31,8 @@ function InterfaceScaleControl({ label, value, onChange }: { label: string; valu
   const draftRef = useRef(draft);
   const savedRef = useRef(normalizedValue);
   const dirtyRef = useRef(false);
+  const commitTimerRef = useRef<number | null>(null);
+  const ignoreChangesUntilRef = useRef(0);
 
   useEffect(() => {
     const next = normalizeInterfaceScale(value);
@@ -40,23 +42,39 @@ function InterfaceScaleControl({ label, value, onChange }: { label: string; valu
       setDraft(next);
     }
   }, [value]);
+  useEffect(() => () => {
+    if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current);
+  }, []);
 
   function update(nextValue: string) {
+    if (!dirtyRef.current && Date.now() < ignoreChangesUntilRef.current) return;
     const next = normalizeInterfaceScale(Number(nextValue));
     draftRef.current = next;
     dirtyRef.current = true;
     setDraft(next);
   }
 
-  function commit() {
+  function commitLatest() {
+    commitTimerRef.current = null;
     if (!dirtyRef.current) return;
     dirtyRef.current = false;
     const next = draftRef.current;
-    if (next !== savedRef.current) onChange(next);
+    if (next !== savedRef.current) {
+      ignoreChangesUntilRef.current = Date.now() + 250;
+      onChange(next);
+    }
+  }
+
+  function scheduleCommit() {
+    if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current);
+    // Applying the new global rem scale synchronously during pointerup moves the
+    // range track under the cursor and some browsers emit a trailing minimum
+    // value. Wait until the complete pointer/keyboard sequence has settled.
+    commitTimerRef.current = window.setTimeout(commitLatest, 50);
   }
 
   return <div className="interface-scale-control">
-    <input type="range" min={INTERFACE_SCALE_MIN} max={INTERFACE_SCALE_MAX} step={INTERFACE_SCALE_STEP} value={draft} aria-label={label} onChange={(event) => update(event.currentTarget.value)} onPointerUp={commit} onKeyUp={commit} onBlur={commit} />
+    <input type="range" min={INTERFACE_SCALE_MIN} max={INTERFACE_SCALE_MAX} step={INTERFACE_SCALE_STEP} value={draft} aria-label={label} onChange={(event) => update(event.currentTarget.value)} onPointerUp={scheduleCommit} onPointerCancel={scheduleCommit} onKeyUp={scheduleCommit} onBlur={scheduleCommit} />
     <output aria-live="polite">{Math.round(draft)}%</output>
   </div>;
 }
