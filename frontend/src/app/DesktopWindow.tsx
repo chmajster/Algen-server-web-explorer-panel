@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Maximize2, Minimize2, Share2, X } from "lucide-react";
 import { appById } from "./catalog";
-import { clampRect, DESKTOP_TOP, workspaceRect } from "./windowState";
+import { clampRect, DESKTOP_TOP, workspaceRect, type ViewportMetrics } from "./windowState";
 import type { Translate, WindowInstance, WindowRect } from "./types";
 
 type Edge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
@@ -10,9 +10,10 @@ type Gesture = { mode: "move" | "resize"; edge?: Edge; startX: number; startY: n
 
 const moduleTitles: Record<string, string> = { samba: "Samba", docker: "Docker", pihole: "Pi-hole", "adguard-home": "AdGuard Home", postgresql: "PostgreSQL", mariadb: "MariaDB", redis: "Redis", "home-assistant": "Home Assistant", "ansible-controller": "Ansible Automation Controller" };
 
-export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMinimize, onCommit, onToggleMaximize, children, animationsEnabled = false }: {
+export function DesktopWindow({ window: item, active, viewport, t, onFocus, onClose, onMinimize, onCommit, onToggleMaximize, children, animationsEnabled = false }: {
   window: WindowInstance;
   active: boolean;
+  viewport?: ViewportMetrics;
   t: Translate;
   onFocus: () => void;
   onClose: () => void;
@@ -37,7 +38,7 @@ export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMin
       const current = gesture.current;
       if (!current) return;
       if (current.mode === "move") {
-        setDisplayRect(clampRect({ ...current.rect, x: event.clientX - current.offsetX, y: event.clientY - current.offsetY }, definition.minWidth, definition.minHeight));
+        setDisplayRect(clampRect({ ...current.rect, x: event.clientX - current.offsetX, y: event.clientY - current.offsetY }, definition.minWidth, definition.minHeight, viewport));
         return;
       }
       const dx = event.clientX - current.startX;
@@ -52,23 +53,23 @@ export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMin
       const minHeight = definition.minHeight || 280;
       if (width < minWidth) { if (edge.includes("w")) x -= minWidth - width; width = minWidth; }
       if (height < minHeight) { if (edge.includes("n")) y -= minHeight - height; height = minHeight; }
-      setDisplayRect(clampRect({ x, y, width, height }, minWidth, minHeight));
+      setDisplayRect(clampRect({ x, y, width, height }, minWidth, minHeight, viewport));
     }
     function up(event: PointerEvent) {
       if (!gesture.current) return;
       gesture.current = null;
       let rect = displayRect;
       let restoreRect: WindowRect | undefined;
-      if (event.clientY <= DESKTOP_TOP + 8) { restoreRect = rect; rect = workspaceRect(); }
-      else if (event.clientX <= 8) { restoreRect = rect; const work = workspaceRect(); rect = { ...work, width: work.width / 2 }; }
-      else if (event.clientX >= window.innerWidth - 8) { restoreRect = rect; const work = workspaceRect(); rect = { ...work, x: work.x + work.width / 2, width: work.width / 2 }; }
+      if (event.clientY <= DESKTOP_TOP + 8) { restoreRect = rect; rect = workspaceRect(viewport); }
+      else if (event.clientX <= 8) { restoreRect = rect; const work = workspaceRect(viewport); rect = { ...work, width: work.width / 2 }; }
+      else if (event.clientX >= window.innerWidth - 8) { restoreRect = rect; const work = workspaceRect(viewport); rect = { ...work, x: work.x + work.width / 2, width: work.width / 2 }; }
       setDisplayRect(rect);
       onCommit(rect, restoreRect);
     }
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-  }, [definition.minHeight, definition.minWidth, displayRect, onCommit]);
+  }, [definition.minHeight, definition.minWidth, displayRect, onCommit, viewport]);
 
   function startMove(event: React.PointerEvent) {
     if ((event.target as HTMLElement).closest("button")) return;
@@ -77,7 +78,7 @@ export function DesktopWindow({ window: item, active, t, onFocus, onClose, onMin
     let rect = displayRect;
     let offsetX = event.clientX - rect.x;
     if (maximized) {
-      const restored = clampRect(item.restoreRect || { x: 100, y: 80, width: 900, height: 620 }, definition.minWidth, definition.minHeight);
+      const restored = clampRect(item.restoreRect || { x: 100, y: 80, width: 900, height: 620 }, definition.minWidth, definition.minHeight, viewport);
       const ratio = (event.clientX - rect.x) / rect.width;
       rect = { ...restored, x: event.clientX - restored.width * ratio, y: event.clientY - 20 };
       offsetX = event.clientX - rect.x;

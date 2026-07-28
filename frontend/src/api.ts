@@ -77,6 +77,7 @@ export type Task = {
 };
 
 export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "ansible" | "hosts" | "module";
+export type InterfaceFont = "system" | "segoe" | "arial" | "verdana" | "tahoma" | "georgia" | "monospace";
 export type WallpaperItem = { id: string; name: string; url: string; size: number; created_at: number };
 
 export type UserPreferences = {
@@ -102,6 +103,7 @@ export type UserPreferences = {
   date_format: "locale" | "short" | "long" | "iso";
   time_format: "12" | "24";
   interface_scale: number;
+  interface_font: InterfaceFont;
   larger_text: boolean;
   high_contrast: boolean;
   reduced_motion: boolean;

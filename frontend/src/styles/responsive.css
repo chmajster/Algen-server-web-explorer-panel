@@ -43,3 +43,68 @@
 @media (prefers-reduced-motion: reduce) {
   .desktop *, .desktop *::before, .desktop *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* Application-window queries use rem so interface_scale and available window
+   width jointly determine when layouts collapse. */
+@container app-window (max-width: 57.5rem) {
+  .desktop .file-toolbar { flex-wrap: wrap; }
+  .desktop .file-search { order: 10; max-width: none; flex-basis: 100%; }
+  .desktop .toolbar-wide { display: none !important; }
+  .desktop .file-workspace { grid-template-columns: 0 0 minmax(0,1fr) !important; }
+  .desktop .tree-resizer { display: none; }
+  .desktop .directory-tree { position: absolute; z-index: 20; inset: 0 auto 0 0; width: min(82cqw,19.375rem); border-right: 1px solid var(--border-subtle); box-shadow: var(--shadow-menu); }
+  .desktop .tree-mobile-toggle { position: absolute; z-index: 21; top: 0.3125rem; left: 0.3125rem; width: 2.125rem; height: 2.125rem; display: grid; place-items: center; }
+  .desktop .file-list-header .owner, .desktop .file-row .owner,
+  .desktop .file-list-header .group, .desktop .file-row .group,
+  .desktop .file-list-header .permissions, .desktop .file-row .permissions { display: none; }
+}
+
+@container app-window (max-width: 43.75rem) {
+  .desktop .settings-app { display: block; overflow: auto; }
+  .desktop .settings-sidebar { display: none; }
+  .desktop .settings-main { overflow: visible; }
+  .desktop .settings-header { min-height: 5.125rem; flex-wrap: wrap; padding: 0.75rem 1rem; }
+  .desktop .settings-header > div:first-child { flex: 1; }
+  .desktop .settings-header > select { display: block; width: 100%; order: 5; }
+  .desktop .settings-content { padding: 0.75rem 0.625rem 2rem; }
+  .desktop .setting-row { align-items: flex-start; flex-direction: column; gap: 0.5625rem; }
+  .desktop .setting-control, .desktop .setting-control select { width: 100%; }
+  .desktop .settings-switch { margin-left: auto; }
+  .desktop .password-settings, .desktop .credential-field-grid, .desktop .module-form-grid { grid-template-columns: 1fr; }
+  .desktop .policy-browser { display: block; }
+  .desktop .policy-browser > * { border-right: 0; }
+  .desktop .network-interface-grid, .desktop .network-dns-grid { grid-template-columns: 1fr; }
+}
+
+@container app-window (max-width: 37.5rem) {
+  .desktop .file-list-header .type, .desktop .file-row .type,
+  .desktop .file-list-header .modified, .desktop .file-row .modified { display: none; }
+  .desktop .properties-grid, .desktop .upload-progress-dialog dl { grid-template-columns: 1fr; }
+  .desktop .modal-footer > button { flex: 1 1 auto; }
+}
+
+@container app-window (max-width: 56.25rem) {
+  .package-toolbar { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .package-search { grid-column: 1/-1; }
+  .package-plan, .package-detail-grid, .package-source-form { grid-template-columns: 1fr; }
+  .package-plan-summary { grid-row: auto; }
+  .package-detail-wide, .package-source-form > div, .package-source-form > p { grid-column: auto; }
+  .package-history article { grid-template-columns: 1fr 1fr; }
+  .docker-manager-layout { grid-template-columns: 3.875rem minmax(0,1fr); }
+  .docker-manager-layout > nav button { justify-content: center; padding: 0.625rem; }
+  .docker-manager-layout > nav button span { display: none; }
+  .docker-metric-grid { grid-template-columns: repeat(2,minmax(7.5rem,1fr)); }
+  .docker-dashboard-grid { grid-template-columns: 1fr; }
+}
+
+@container app-window (max-width: 38.75rem) {
+  .package-toolbar, .package-grid { grid-template-columns: 1fr; }
+  .package-search { grid-column: auto; }
+  .package-updates { width: 100%; }
+  .package-history article, .package-live-job dl { grid-template-columns: 1fr; }
+  .docker-manager-header { align-items: flex-start; flex-direction: column; }
+  .docker-manager-layout { display: flex; flex-direction: column; }
+  .docker-manager-layout > nav { display: flex; min-height: 3.5rem; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+  .docker-manager-layout > nav button { width: auto; min-width: 2.75rem; }
+  .docker-manager-layout > main { padding: 0.625rem; }
+}

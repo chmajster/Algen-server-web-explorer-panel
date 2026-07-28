@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ModuleSummary } from "../api";
 import { settingsFixture } from "../test/settings";
 import { Desktop } from "./Desktop";
+import { interfaceFontStacks } from "./interfaceFonts";
 
 vi.mock("../features/modules/ModuleApp", () => ({ ModuleApp: ({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) => <button onClick={() => onDirtyChange(true)}>mark-module-dirty</button> }));
 
@@ -38,23 +39,34 @@ describe("personalized desktop", () => {
     const previousRootFontSize = document.documentElement.style.fontSize;
     const { container, rerender, unmount } = renderDesktop({ interface_scale: 125, larger_text: false });
     const desktop = container.querySelector<HTMLElement>(".desktop");
-    expect(desktop?.style.getPropertyValue("--interface-font-size")).toBe("20px");
-    expect(desktop?.style.getPropertyValue("--taskbar-height-scaled")).toBe("72.5px");
+    expect(desktop?.style.getPropertyValue("--ui-scale")).toBe("1.25");
+    expect(desktop?.style.getPropertyValue("--text-scale")).toBe("1");
     expect(document.documentElement.style.fontSize).toBe("20px");
 
     let profile = settingsFixture({ interface_scale: 100, larger_text: true });
     rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
     expect(desktop).toHaveClass("larger-text");
-    expect(desktop?.style.getPropertyValue("--interface-font-size")).toBe("18px");
-    expect(document.documentElement.style.fontSize).toBe("18px");
+    expect(desktop?.style.getPropertyValue("--text-scale")).toBe("1.125");
+    expect(document.documentElement.style.fontSize).toBe("16px");
 
     profile = settingsFixture({ interface_scale: 200, larger_text: false });
     rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
-    expect(desktop?.style.getPropertyValue("--interface-font-size")).toBe("32px");
+    expect(desktop?.style.getPropertyValue("--ui-scale")).toBe("2");
     expect(document.documentElement.style.fontSize).toBe("32px");
 
     unmount();
     expect(document.documentElement.style.fontSize).toBe(previousRootFontSize);
+  });
+
+  it("applies and reapplies the selected global interface font", () => {
+    const { container, rerender } = renderDesktop({ interface_font: "verdana" });
+    const desktop = container.querySelector<HTMLElement>(".desktop");
+    expect(desktop?.style.getPropertyValue("--font-family-ui")).toBe(interfaceFontStacks.verdana);
+    expect(document.documentElement.style.getPropertyValue("--font-family-ui")).toBe(interfaceFontStacks.verdana);
+
+    const profile = settingsFixture({ interface_font: "georgia" });
+    rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+    expect(desktop?.style.getPropertyValue("--font-family-ui")).toBe(interfaceFontStacks.georgia);
   });
 
   it("does not expose administrative module applications to a standard user", () => {

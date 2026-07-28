@@ -9,6 +9,7 @@ import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
 import { appById, apps } from "./catalog";
 import { DesktopWindow } from "./DesktopWindow";
+import { interfaceFontStacks } from "./interfaceFonts";
 import { Taskbar, type TaskbarWindowAction } from "./Taskbar";
 import type { AppId, RecentApp, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
 import { initialWindowState, restoreWindowState, windowReducer } from "./windowState";
@@ -58,6 +59,15 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   onTheme: (theme: Theme) => void;
   onLoggedOut: () => void;
 }) {
+  const interfaceScale = profile.interface_scale / 100;
+  const textScale = profile.larger_text ? 1.125 : 1;
+  const viewportMetrics = useCallback(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    bottom: 58 * interfaceScale + 10 * interfaceScale,
+    scale: interfaceScale,
+  }), [interfaceScale]);
+  const initialViewportMetrics = useRef(viewportMetrics());
   const storageKey = `webnas_windows_${user.username}`;
   const sessionWindowKey = `${storageKey}_session`;
   const recentAppsKey = `webnas_recent_apps_${user.username}`;
@@ -107,7 +117,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
 
   useEffect(() => {
     const sessionState = sessionStorage.getItem(sessionWindowKey);
-    const restoredState = restoreWindowState(sessionState || (profile.startup_windows === "last" ? localStorage.getItem(storageKey) : null));
+    const restoredState = restoreWindowState(sessionState || (profile.startup_windows === "last" ? localStorage.getItem(storageKey) : null), initialViewportMetrics.current);
     const windows = restoredState.windows.filter((item) => canUseApp(item.app));
     dispatch({ type: "hydrate", state: { ...restoredState, windows, activeId: windows.some((item) => item.id === restoredState.activeId) ? restoredState.activeId : "" } });
     setWindowsHydrated(true);
@@ -153,10 +163,11 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     return () => media.removeEventListener("change", change);
   }, []);
   useEffect(() => {
-    const resize = () => dispatch({ type: "viewport", viewport: { width: window.innerWidth, height: window.innerHeight } });
+    const resize = () => dispatch({ type: "viewport", viewport: viewportMetrics() });
+    resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, []);
+  }, [viewportMetrics]);
   useEffect(() => {
     if (profile.show_notifications) return;
     setNotificationsOpen(false);
@@ -177,9 +188,9 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       localStorage.setItem(recentAppsKey, JSON.stringify(next));
       return next;
     });
-    dispatch({ type: "open", app, initialPath, moduleId, viewport: { width: window.innerWidth, height: window.innerHeight } });
+    dispatch({ type: "open", app, initialPath, moduleId, viewport: viewportMetrics() });
     setLauncherOpen(false);
-  }, [canUseApp, recentAppsKey, t, toast]);
+  }, [canUseApp, recentAppsKey, t, toast, viewportMetrics]);
   useEffect(() => {
     if (!tasksInitialized.current) {
       tasks.forEach((task) => previousTaskStatus.current.set(task.id, task.status));
@@ -305,7 +316,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     if (action === "close") closeWindow(item);
     else if (action === "focus") dispatch({ type: "focus", id: item.id });
     else if (action === "minimize") dispatch({ type: "minimize", id: item.id });
-    else dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } });
+    else dispatch({ type: "toggleMaximize", id: item.id, viewport: viewportMetrics() });
   }
   function closeAppWindows(app: AppId) { state.windows.filter((item) => item.app === app).forEach(closeWindow); }
   function closeModuleWindows(moduleId: string) { state.windows.filter((item) => item.app === "module" && item.moduleId === moduleId).forEach(closeWindow); }
@@ -334,20 +345,22 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     }
   }
 
-  const interfaceScale = profile.interface_scale / 100;
-  const textScale = interfaceScale * (profile.larger_text ? 1.125 : 1);
   useEffect(() => {
     const root = document.documentElement;
     const previousFontSize = root.style.fontSize;
-    root.style.fontSize = `${16 * textScale}px`;
-    return () => { root.style.fontSize = previousFontSize; };
-  }, [textScale]);
+    const previousFont = root.style.getPropertyValue("--font-family-ui");
+    root.style.fontSize = `${16 * interfaceScale}px`;
+    root.style.setProperty("--font-family-ui", interfaceFontStacks[profile.interface_font]);
+    return () => {
+      root.style.fontSize = previousFontSize;
+      if (previousFont) root.style.setProperty("--font-family-ui", previousFont);
+      else root.style.removeProperty("--font-family-ui");
+    };
+  }, [interfaceScale, profile.interface_font]);
   const rootStyle = {
     "--ui-scale": interfaceScale,
-    "--interface-font-size": `${16 * textScale}px`,
-    "--taskbar-height-scaled": `${58 * interfaceScale}px`,
-    "--taskbar-item-size-scaled": `${44 * interfaceScale}px`,
-    "--window-titlebar-height-scaled": `${44 * interfaceScale}px`,
+    "--text-scale": textScale,
+    "--font-family-ui": interfaceFontStacks[profile.interface_font],
   } as CSSProperties;
   const rootClasses = ["desktop", resolvedTheme, `accent-${profile.accent_color}`, `taskbar-align-${profile.taskbar_alignment}`, profile.window_transparency ? "" : "no-transparency", profile.animations_enabled && !profile.reduced_motion ? "" : "no-animations", profile.high_contrast ? "high-contrast" : "", profile.larger_text ? "larger-text" : "", profile.strong_active_borders ? "strong-active-borders" : "", profile.always_show_focus ? "always-show-focus" : ""].filter(Boolean).join(" ");
   const visibleToasts = profile.show_notifications ? toasts.filter((item) => (item.type !== "error" || profile.notification_errors) && (item.category !== "admin" || profile.notification_admin) && (item.category !== "transfer" || profile.notification_transfer)).slice(-profile.notification_limit) : [];
@@ -358,7 +371,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       {profile.show_desktop_shortcuts && <div className={`desktop-shortcuts shortcuts-${profile.desktop_shortcut_size}`} aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => desktopShortcuts.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} selected={selectedShortcut === app.id} onSelect={() => setSelectedShortcut(app.id)} onOpen={() => openApp(app.id)} />)}</div>}
       {profile.show_welcome_widget && <div className="desktop-welcome"><span>WebNAS</span><strong>{t("desktop.welcome")}, {user.username}</strong><small>{t("desktop.welcomeHint")}</small></div>}
       <Suspense fallback={null}><DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} /></Suspense>
-      {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: { width: window.innerWidth, height: window.innerHeight } })}>{renderApp(item)}</DesktopWindow>)}
+      {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} viewport={viewportMetrics()} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: viewportMetrics() })}>{renderApp(item)}</DesktopWindow>)}
     </main>
     {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onOpenProfile={() => openApp("settings", "account")} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
     <Taskbar apps={taskbarApps} pinned={pinned} pinnedModules={pinnedModules} moduleNames={moduleNames} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setNotificationsOpen((value) => !value); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onModule={selectModule} onOpenNew={(app) => openApp(app)} onOpenModuleNew={(moduleId) => openApp("module", undefined, moduleId)} onTogglePin={togglePin} onToggleModulePin={toggleModulePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onCloseModule={closeModuleWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />

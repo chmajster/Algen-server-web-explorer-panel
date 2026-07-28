@@ -13,14 +13,36 @@
   backdrop-filter: none !important;
 }
 
+.desktop,
+.desktop button,
+.desktop input,
+.desktop select,
+.desktop textarea,
+.desktop table {
+  font-family: var(--font-family-ui);
+}
+
+.desktop * { min-width: 0; }
+.desktop img, .desktop svg { max-width: 100%; }
+.desktop p, .desktop dd, .desktop td, .desktop th, .desktop label, .desktop strong, .desktop small {
+  overflow-wrap: anywhere;
+}
+.desktop [class*="table-wrap"], .desktop [class*="table-container"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.desktop form, .desktop fieldset { max-width: 100%; }
+
 table, button, input, select, textarea {
-  font-family: inherit;
   font-size: inherit;
 }
 
+code, pre, kbd, samp { font-family: var(--font-family-monospace); }
+
 .desktop.high-contrast { --border-subtle: currentColor; --border-strong: currentColor; }
 .desktop.high-contrast button, .desktop.high-contrast input, .desktop.high-contrast select { border-width: 2px; }
-.desktop.larger-text { font-size: var(--interface-font-size, 1.125rem); }
+.desktop.larger-text { --text-scale: 1.125; }
 .desktop.strong-active-borders .active, .desktop.strong-active-borders .selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 .desktop.always-show-focus :focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 

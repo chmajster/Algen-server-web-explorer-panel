@@ -3,43 +3,50 @@ import type { AppId, WindowInstance, WindowRect } from "./types";
 export const DESKTOP_TOP = 10;
 export const DESKTOP_BOTTOM = 64;
 const MARGIN = 10;
+export type ViewportMetrics = { width: number; height: number; bottom?: number; scale?: number };
 
 export type WindowState = { windows: WindowInstance[]; activeId: string; counter: number; topZ: number };
 export type WindowAction =
   | { type: "hydrate"; state: WindowState }
-  | { type: "open"; app: AppId; initialPath?: string; moduleId?: string; viewport?: { width: number; height: number } }
+  | { type: "open"; app: AppId; initialPath?: string; moduleId?: string; viewport?: ViewportMetrics }
   | { type: "close"; id: string }
   | { type: "focus"; id: string }
   | { type: "minimize"; id: string }
   | { type: "setInitialPath"; id: string; initialPath: string }
   | { type: "commit"; id: string; rect: WindowRect; restoreRect?: WindowRect }
-  | { type: "toggleMaximize"; id: string; viewport: { width: number; height: number } }
-  | { type: "viewport"; viewport: { width: number; height: number } };
+  | { type: "toggleMaximize"; id: string; viewport: ViewportMetrics }
+  | { type: "viewport"; viewport: ViewportMetrics };
 
 export const initialWindowState: WindowState = { windows: [], activeId: "", counter: 0, topZ: 10 };
 
-export function workspaceRect(viewport = { width: window.innerWidth, height: window.innerHeight }): WindowRect {
+export function workspaceRect(viewport: ViewportMetrics = { width: window.innerWidth, height: window.innerHeight }): WindowRect {
+  const scale = viewport.scale ?? 1;
+  const margin = MARGIN * scale;
+  const bottom = viewport.bottom ?? (DESKTOP_BOTTOM + MARGIN) * scale;
   return {
-    x: MARGIN,
-    y: MARGIN,
-    width: Math.max(360, viewport.width - MARGIN * 2),
-    height: Math.max(280, viewport.height - DESKTOP_BOTTOM - MARGIN * 2)
+    x: margin,
+    y: margin,
+    width: Math.max(0, viewport.width - margin * 2),
+    height: Math.max(0, viewport.height - bottom - margin)
   };
 }
 
-export function clampRect(rect: WindowRect, minWidth = 360, minHeight = 280, viewport = { width: window.innerWidth, height: window.innerHeight }): WindowRect {
+export function clampRect(rect: WindowRect, minWidth = 360, minHeight = 280, viewport: ViewportMetrics = { width: window.innerWidth, height: window.innerHeight }): WindowRect {
   const workspace = workspaceRect(viewport);
-  const width = Math.min(workspace.width, Math.max(minWidth, rect.width));
-  const height = Math.min(workspace.height, Math.max(minHeight, rect.height));
+  const scale = viewport.scale ?? 1;
+  const effectiveMinWidth = Math.min(workspace.width, minWidth * scale);
+  const effectiveMinHeight = Math.min(workspace.height, minHeight * scale);
+  const width = Math.min(workspace.width, Math.max(effectiveMinWidth, rect.width));
+  const height = Math.min(workspace.height, Math.max(effectiveMinHeight, rect.height));
   return {
-    x: Math.min(Math.max(MARGIN, rect.x), Math.max(MARGIN, viewport.width - MARGIN - width)),
-    y: Math.min(Math.max(MARGIN, rect.y), Math.max(MARGIN, viewport.height - DESKTOP_BOTTOM - MARGIN - height)),
+    x: Math.min(Math.max(workspace.x, rect.x), workspace.x + workspace.width - width),
+    y: Math.min(Math.max(workspace.y, rect.y), workspace.y + workspace.height - height),
     width,
     height
   };
 }
 
-function defaultRect(app: AppId, count: number, viewport?: { width: number; height: number }): WindowRect {
+function defaultRect(app: AppId, count: number, viewport?: ViewportMetrics): WindowRect {
   const large = app === "files" || app === "settings" || app === "samba" || app === "store" || app === "module" || app === "identity";
   return clampRect({
     x: 84 + (count * 28) % 190,
@@ -116,12 +123,16 @@ export function windowReducer(state: WindowState, action: WindowAction): WindowS
   return focus({ ...state, windows: state.windows.map((item) => item.id === action.id ? { ...item, rect, restoreRect } : item) }, action.id);
 }
 
-export function restoreWindowState(raw: string | null): WindowState {
+export function restoreWindowState(raw: string | null, viewport?: ViewportMetrics): WindowState {
   if (!raw) return initialWindowState;
   try {
     const value = JSON.parse(raw) as WindowState;
     if (!Array.isArray(value.windows)) return initialWindowState;
-    const windows = value.windows.filter((item) => item.id && item.app && item.rect).map((item) => ({ ...item, rect: clampRect(item.rect) }));
+    const windows = value.windows.filter((item) => item.id && item.app && item.rect).map((item) => ({
+      ...item,
+      rect: clampRect(item.rect, item.app === "files" ? 680 : 360, item.app === "files" ? 440 : 280, viewport),
+      restoreRect: item.restoreRect ? clampRect(item.restoreRect, item.app === "files" ? 680 : 360, item.app === "files" ? 440 : 280, viewport) : undefined,
+    }));
     return { windows, activeId: windows.some((item) => item.id === value.activeId) ? value.activeId : "", counter: value.counter || windows.length, topZ: value.topZ || 10 };
   } catch {
     return initialWindowState;

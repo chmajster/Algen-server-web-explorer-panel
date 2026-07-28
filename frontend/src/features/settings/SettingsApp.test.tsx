@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type HostInfo } from "../../api";
 import { settingsFixture } from "../../test/settings";
 import { SettingsAppView } from "./SettingsApp";
+import { defaultUserPreferences } from "../../app/defaultSettings";
 
 const t = (key: string) => key;
 const hostInfo: HostInfo = {
@@ -89,6 +90,26 @@ describe("settings application", () => {
 
     await waitFor(() => expect(save).toHaveBeenCalledWith({ theme: "dark" }));
     expect(save).toHaveBeenCalledWith({ taskbar_alignment: "left" });
+  });
+
+  it("previews, saves, searches and resets the interface font", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<SettingsAppView settings={settingsFixture({ interface_font: "arial" })} t={t} toast={vi.fn()} onSettingsChange={save} onOpenApp={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.personalization" }));
+
+    const fonts = screen.getByRole("radiogroup", { name: "settings.interfaceFont" });
+    expect(fonts).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /settings.font.verdana/ }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_font: "verdana" }));
+
+    fireEvent.change(screen.getByLabelText("settings.search"), { target: { value: "interfaceFont" } });
+    expect(screen.getByRole("button", { name: "settings.interfaceFontsettings.category.personalization" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("settings.search"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.system" }));
+    fireEvent.click(screen.getByRole("button", { name: /settings.restoreDefaults/ }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(defaultUserPreferences));
+    expect(defaultUserPreferences.interface_font).toBe("system");
   });
 
   it("saves interface scale and larger text accessibility settings", async () => {

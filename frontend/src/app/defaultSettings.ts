@@ -23,6 +23,7 @@ export const defaultUserPreferences: UserPreferences = {
   date_format: "short",
   time_format: "24",
   interface_scale: 100,
+  interface_font: "system",
   larger_text: false,
   high_contrast: false,
   reduced_motion: false,

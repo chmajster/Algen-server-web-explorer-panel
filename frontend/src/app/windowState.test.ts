@@ -65,4 +65,15 @@ describe("window manager reducer", () => {
     expect(rect.x + rect.width).toBeLessThanOrEqual(width - 10);
     expect(rect.y + rect.height).toBeLessThanOrEqual(height - 74);
   });
+
+  it.each([0.5, 1, 1.5, 2])("clamps restored windows for interface scale %s", (scale) => {
+    const scaledViewport = { width: 1024, height: 768, bottom: 68 * scale, scale };
+    const raw = JSON.stringify({ windows: [{ id: "settings-1", app: "settings", rect: { x: 900, y: 700, width: 900, height: 700 }, minimized: false, zIndex: 11 }], activeId: "settings-1", counter: 1, topZ: 11 });
+    const state = restoreWindowState(raw, scaledViewport);
+    const rect = state.windows[0].rect;
+    expect(rect.x).toBeGreaterThanOrEqual(10 * scale);
+    expect(rect.y).toBeGreaterThanOrEqual(10 * scale);
+    expect(rect.x + rect.width).toBeLessThanOrEqual(1024 - 10 * scale);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(768 - 68 * scale);
+  });
 });

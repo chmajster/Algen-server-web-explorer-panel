@@ -135,6 +135,7 @@ PinnedAppId = Literal[
     "files", "transfers", "activity", "identity", "users", "groups", "mounts", "samba",
     "services", "store", "logs", "settings", "monitor", "modules", "access", "containers", "ansible", "module",
 ]
+InterfaceFont = Literal["system", "segoe", "arial", "verdana", "tahoma", "georgia", "monospace"]
 DEFAULT_PINNED_APPS: list[PinnedAppId] = ["files", "transfers", "monitor", "settings"]
 
 
@@ -161,6 +162,7 @@ class UserSettings(BaseModel):
     date_format: Literal["locale", "short", "long", "iso"] = "short"
     time_format: Literal["12", "24"] = "24"
     interface_scale: int = Field(default=100, ge=50, le=200)
+    interface_font: InterfaceFont = "system"
     larger_text: bool = False
     high_contrast: bool = False
     reduced_motion: bool = False
@@ -244,6 +246,7 @@ class MePatch(BaseModel):
     date_format: Literal["locale", "short", "long", "iso"] | None = None
     time_format: Literal["12", "24"] | None = None
     interface_scale: int | None = Field(default=None, ge=50, le=200)
+    interface_font: InterfaceFont | None = None
     larger_text: bool | None = None
     high_contrast: bool | None = None
     reduced_motion: bool | None = None

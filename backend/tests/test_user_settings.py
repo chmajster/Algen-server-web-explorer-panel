@@ -25,6 +25,7 @@ def test_defaults_cover_every_user_preference():
     assert values["file_page_size"] == 50
     assert values["notification_limit"] == 5
     assert values["animations_enabled"] is True
+    assert values["interface_font"] == "system"
 
 
 def test_update_policy_checks_every_twelve_hours_by_default():
@@ -67,6 +68,7 @@ def test_old_settings_file_keeps_valid_fields_and_repairs_invalid_fields(monkeyp
     assert result["theme"] == "dark"
     assert result["wallpaper"] == "https://example.com/wallpaper.jpg"
     assert result["notification_limit"] == 5
+    assert result["interface_font"] == "system"
     assert "legacy_unknown_field" not in result
 
 
@@ -76,6 +78,7 @@ def test_old_settings_file_keeps_valid_fields_and_repairs_invalid_fields(monkeyp
         ("accent_color", "expression(alert(1))"),
         ("taskbar_alignment", "right"),
         ("interface_scale", 500),
+        ("interface_font", "Comic Sans MS"),
         ("file_page_size", 20),
         ("notification_limit", 0),
         ("wallpaper", "javascript:alert(1)"),
@@ -99,6 +102,12 @@ def test_interface_scale_accepts_full_supported_range():
         settings.MePatch(interface_scale=49)
     with pytest.raises(ValidationError):
         settings.MePatch(interface_scale=201)
+
+
+def test_interface_font_accepts_only_supported_values():
+    assert settings.MePatch(interface_font="verdana").interface_font == "verdana"
+    with pytest.raises(ValidationError):
+        settings.MePatch(interface_font="url(https://example.com/font.woff2)")
 
 
 def test_wallpaper_validator_accepts_gallery_urls_and_rejects_unsafe_local_paths():
@@ -173,7 +182,19 @@ def test_patch_merges_a_partial_legacy_file(monkeypatch):
     assert written["theme"] == "dark"
     assert written["startup_windows"] == "none"
     assert written["taskbar_alignment"] == "left"
+    assert written["interface_font"] == "system"
     assert result["username"] == "alice"
+
+
+def test_patch_persists_interface_font(monkeypatch):
+    written = {}
+    monkeypatch.setattr(settings, "_read_settings", lambda username: {})
+    monkeypatch.setattr(settings, "_write_settings", lambda username, data: written.update(data))
+    monkeypatch.setattr(settings, "_user_info", lambda username: {"username": username, "is_admin": False})
+
+    settings.settings_patch(settings.MePatch(interface_font="georgia"), SimpleNamespace(username="alice"))
+
+    assert written["interface_font"] == "georgia"
 
 
 def test_patch_persists_each_application_pin_destination(monkeypatch):

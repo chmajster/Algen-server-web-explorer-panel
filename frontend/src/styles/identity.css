@@ -63,7 +63,7 @@
 .identity-history article div { display: grid; gap: 2px; }
 .identity-history article span, .identity-history time { color: var(--text-muted); }
 
-@container (max-width: 850px) {
+@container (max-width: 53.125rem) {
   .identity-workspace.has-details { grid-template-columns: 1fr; }
   .identity-workspace.has-details .identity-list-pane { display: none; }
   .identity-details { border-left: 0; }
