@@ -1399,7 +1399,7 @@ def admin_system_restart(payload: AdminSessionAction, request: Request, user: Se
 @router.get("/api/admin/system/updates/check")
 def admin_updates_check(user: SessionUser = Depends(_current_user)):
     authorize(user, "updates.view")
-    return _update_status()
+    return {**_update_status(), "checked_at": time.time()}
 
 
 @router.post("/api/admin/system/updates/download")

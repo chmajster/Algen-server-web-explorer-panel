@@ -249,6 +249,16 @@ def test_update_status_uses_installed_revision_without_git_checkout(monkeypatch,
     assert result == {"branch": "main", "local": revision, "remote": revision, "installed_version": "1.4.2", "available_version": "1.5.0", "update_available": False, "available": True, "error": "", "source": settings.UPDATE_SOURCE, "source_url": settings.UPDATE_SOURCE_URL, "released_at": 1_720_000_000}
 
 
+def test_update_check_response_contains_check_timestamp(monkeypatch):
+    monkeypatch.setattr(settings, "authorize", lambda user, permission: None)
+    monkeypatch.setattr(settings, "_update_status", lambda: {"update_available": False})
+    monkeypatch.setattr(settings.time, "time", lambda: 1_720_000_300)
+
+    result = settings.admin_updates_check(SimpleNamespace(username="alice"))
+
+    assert result == {"update_available": False, "checked_at": 1_720_000_300}
+
+
 def test_legacy_install_without_revision_offers_initial_update(monkeypatch, tmp_path):
     remote = "b" * 40
     monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)

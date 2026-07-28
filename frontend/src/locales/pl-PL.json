@@ -1062,6 +1062,7 @@
   "settings.updateConfiguration": "Aktualizuj konfigurację",
   "settings.updateConfigurationHint": "Domyślnie istniejący config.yaml jest zachowywany. Włącz tylko, jeśli instalator ma również odświeżać konfigurację.",
   "settings.lastChecked": "Ostatnie sprawdzenie",
+  "settings.minutesAgo": "min temu",
   "settings.lastUpdateRun": "Ostatnie uruchomienie aktualizacji",
   "settings.nextCheck": "Następne sprawdzenie",
   "settings.updateUnavailable": "Status aktualizacji jest obecnie niedostępny.",

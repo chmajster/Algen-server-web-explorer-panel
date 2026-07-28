@@ -1062,6 +1062,7 @@
   "settings.updateConfiguration": "Update configuration",
   "settings.updateConfigurationHint": "The existing config.yaml is preserved by default. Enable this only when the installer should refresh configuration too.",
   "settings.lastChecked": "Last checked",
+  "settings.minutesAgo": "min ago",
   "settings.lastUpdateRun": "Last update run",
   "settings.nextCheck": "Next check",
   "settings.updateUnavailable": "Update status is currently unavailable.",

@@ -301,7 +301,12 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
   const [runningUpdate, setRunningUpdate] = useState(false);
   const [updateDialog, setUpdateDialog] = useState<UpdateDialogState | null>(null);
   const [updateError, setUpdateError] = useState("");
-  const [renderedAt] = useState(() => Date.now());
+  const [renderedAt, setRenderedAt] = useState(() => Date.now());
+  useEffect(() => {
+    if (view !== "updates") return;
+    const timer = window.setInterval(() => setRenderedAt(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [view]);
   useEffect(() => {
     let live = true;
     if (view === "administration") {
@@ -389,6 +394,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
   if (loading) return <div className="loading-state">{t("status.loading")}</div>;
   const updateState = updateError ? "danger" : updates?.update_available ? "warning" : "success";
   const updateLabel = updateError || (updates?.update_available ? t("settings.updateAvailable") : updates ? t("settings.upToDate") : t("settings.updateUnavailable"));
+  const checkedMinutesAgo = updates?.checked_at ? Math.max(0, Math.floor((renderedAt - updates.checked_at * 1000) / 60_000)) : null;
   const adminApps: Array<{ id: AppId; icon: ReactNode; hint: string }> = [
     { id: "services", icon: <SlidersHorizontal />, hint: t("settings.administrationServicesHint") },
     { id: "logs", icon: <Terminal />, hint: t("settings.administrationLogsHint") },
@@ -399,7 +405,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
       <div className="admin-overview-copy"><small>{t("settings.updates")}</small><h3>{t("settings.updateStatus")}</h3><p>{updateLabel}</p></div>
       <div className={`admin-overall-state ${updateState}`}><span />{updates?.update_available ? t("settings.updateAvailable") : updateLabel}</div>
     </section>
-    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
+    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.lastChecked")}</dt><dd>{checkedMinutesAgo === null ? "—" : `${checkedMinutesAgo} ${t("settings.minutesAgo")}`}</dd><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
     {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
   </div>;
   return <div className="administration-dashboard">

@@ -218,6 +218,24 @@ describe("settings application", () => {
     expect(screen.getByText(/Installation complete/)).toBeInTheDocument();
   });
 
+  it("shows how many minutes ago updates were checked and refreshes the value", async () => {
+    const status = { branch: "main", local: "a".repeat(40), remote: "a".repeat(40), update_available: false, available: true };
+    const checkedFiveMinutesAgo = Math.floor(Date.now() / 1000) - 5 * 60;
+    const checkUpdates = vi.spyOn(api, "checkUpdates")
+      .mockResolvedValueOnce({ ...status, checked_at: checkedFiveMinutesAgo })
+      .mockResolvedValueOnce({ ...status, checked_at: Math.floor(Date.now() / 1000) });
+    vi.spyOn(api, "updateProgress").mockResolvedValue({ state: "idle", running: false, pid: null, exit_code: null, started_at: null, finished_at: null, log: "", lines: [] });
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="updates" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    expect(await screen.findByText("5 settings.minutesAgo")).toBeInTheDocument();
+    expect(screen.getByText("settings.lastChecked")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /settings.checkNow/ }));
+
+    await waitFor(() => expect(checkUpdates).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("0 settings.minutesAgo")).toBeInTheDocument();
+  });
+
   it("keeps update controls out of the administration tab", async () => {
     vi.spyOn(api, "systemStatus").mockResolvedValue({ service: "webnas", version: "1", port: 5000, data_dir: "/var/lib/webnas", log_dir: "/var/log/webnas", temp_dir: "/tmp" });
     vi.spyOn(api, "proxmoxSafety").mockResolvedValue({ is_proxmox: false, safe_mode_enabled: false, protected_paths: [], blocked_admin_features: [], allowed_roots_effective: [], service_user: "webnas", warnings: [] });
