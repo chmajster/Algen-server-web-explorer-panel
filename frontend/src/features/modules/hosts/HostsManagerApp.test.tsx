@@ -35,6 +35,29 @@ describe("HostsManagerApp", () => {
     expect(addressSort.closest("th")).toHaveAttribute("aria-sort", "ascending");
   });
 
+  it("uses the global interface scale without resetting the section or fetching again", async () => {
+    const toast = vi.fn();
+    const originalFontSize = document.documentElement.style.fontSize;
+    const { container, rerender } = render(<HostsManagerApp permissions={permissions} t={t} toast={toast} />);
+    await screen.findByText("hosts.dashboard.total");
+    const root = container.querySelector(".module-app");
+    expect(root).toHaveClass("hosts-manager-app");
+    expect((root as HTMLElement).style.zoom).toBe("");
+    expect((root as HTMLElement).style.transform).toBe("");
+    expect((root as HTMLElement).style.getPropertyValue("--ui-scale")).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: /module.section.enrollment/ }));
+    expect(screen.getByRole("button", { name: /module.section.enrollment/ })).toHaveAttribute("aria-current", "page");
+    const dashboardCalls = vi.mocked(api.hostsManagerDashboard).mock.calls.length;
+
+    document.documentElement.style.fontSize = "20px";
+    rerender(<HostsManagerApp permissions={permissions} t={t} toast={toast} />);
+
+    expect(screen.getByRole("button", { name: /module.section.enrollment/ })).toHaveAttribute("aria-current", "page");
+    expect(api.hostsManagerDashboard).toHaveBeenCalledTimes(dashboardCalls);
+    document.documentElement.style.fontSize = originalFontSize;
+  });
+
   it("submits the manual host form through the central API", async () => {
     vi.mocked(api.saveHostsManagerHost).mockResolvedValue({} as never);
     render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);

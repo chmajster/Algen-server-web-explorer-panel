@@ -7,6 +7,7 @@ const css = (name) => readFileSync(resolve(cwd(), `src/styles/${name}`), "utf8")
 const tokens = css("tokens.css");
 const base = css("base.css");
 const responsive = css("responsive.css");
+const modules = css("modules.css");
 
 describe("global interface scale and typography", () => {
   it.each([
@@ -36,5 +37,33 @@ describe("global interface scale and typography", () => {
     expect(responsive).toContain(".desktop .file-workspace");
     expect(responsive).toContain(".docker-manager-layout");
     expect(responsive).toContain(".package-toolbar");
+  });
+
+  it("keeps Hosts Manager dimensions tied to the global rem scale", () => {
+    const hostsRules = [...modules.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, selectors]) => selectors.includes(".hosts-manager-app"))
+      .map((match) => match[0])
+      .join("\n");
+
+    expect(modules).toContain(".hosts-manager-app {");
+    for (const token of [
+      "--hosts-control-height: var(--control-height)",
+      "--hosts-icon-size: var(--icon-size)",
+      "--hosts-panel-padding: var(--panel-padding)",
+    ]) {
+      expect(hostsRules).toContain(token);
+    }
+    expect(hostsRules).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
+    expect(hostsRules).not.toMatch(/\bzoom\s*:/i);
+    expect(hostsRules).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
+    expect(hostsRules).not.toContain("--ui-scale:");
+    expect(hostsRules).toMatch(/(?:\d*\.?\d+rem|\d*\.?\d+em|var\(--hosts-)/);
+    expect(hostsRules).toContain("min-width: max-content");
+  });
+
+  it("scopes Hosts overrides without replacing Ansible Controller rules", () => {
+    expect(modules).toContain(".ansible-panel {");
+    expect(modules).toContain(".hosts-manager-app .ansible-panel {");
+    expect(modules).toContain(".hosts-manager-app .hosts-data-table");
   });
 });
