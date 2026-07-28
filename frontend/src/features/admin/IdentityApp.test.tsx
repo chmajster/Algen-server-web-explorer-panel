@@ -65,6 +65,14 @@ describe("IdentityApp", () => {
     await waitFor(() => expect(api.saveIdentityUserPolicy).toHaveBeenCalledWith("alice", expect.objectContaining({ role: "operator" })));
   });
 
+  it("keeps the role matrix inside the embedded access policy workspace", async () => {
+    const { container } = render(<AccessPolicies permissions={["access.view"]} t={(key) => key} toast={vi.fn()} />);
+
+    expect(await screen.findByRole("button", { name: "identity.tab.roles" })).toHaveClass("active");
+    expect(container.querySelector(".access-policy-editor > .identity-role-matrix")).toBeInTheDocument();
+    expect(container.querySelector(".access-policy-editor > .identity-tabs")).toBeInTheDocument();
+  });
+
   it("creates a Linux user with optional identity fields from the authenticated session", async () => {
     vi.mocked(api.createIdentityUser).mockResolvedValue(regularUser);
     render(<IdentityApp permissions={["users.view", "users.create"]} t={(key) => key} toast={vi.fn()} />);

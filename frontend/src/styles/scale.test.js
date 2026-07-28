@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cwd } from "node:process";
 import { describe, expect, it } from "vitest";
@@ -8,6 +8,12 @@ const tokens = css("tokens.css");
 const base = css("base.css");
 const responsive = css("responsive.css");
 const modules = css("modules.css");
+const settings = css("settings.css");
+const identity = css("identity.css");
+const allStyles = readdirSync(resolve(cwd(), "src/styles"))
+  .filter((name) => name.endsWith(".css"))
+  .map((name) => css(name))
+  .join("\n");
 
 describe("global interface scale and typography", () => {
   it.each([
@@ -65,5 +71,60 @@ describe("global interface scale and typography", () => {
     expect(modules).toContain(".ansible-panel {");
     expect(modules).toContain(".hosts-manager-app .ansible-panel {");
     expect(modules).toContain(".hosts-manager-app .hosts-data-table");
+  });
+
+  it("binds policy views and their native controls directly to the root rem scale", () => {
+    const policyRules = settings.slice(
+      settings.indexOf(".desktop .policy-browser {"),
+      settings.indexOf(".desktop .docker-policy-editor {"),
+    );
+
+    expect(policyRules).toContain("font-size: 1rem");
+    expect(policyRules).toContain("height: var(--control-height)");
+    expect(policyRules).toContain("font-size: var(--font-size-base)");
+    expect(policyRules).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
+    expect(policyRules).not.toMatch(/font-size\s*:\s*\d*\.?\d+em\b/i);
+    expect(policyRules).not.toMatch(/\bzoom\s*:/i);
+    expect(policyRules).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
+  });
+
+  it("scales every select and its native options from the root rem size", () => {
+    const selectRules = [...allStyles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, selectors]) => /\b(?:select|option|optgroup)(?=[\s:.[\]#>,+~]|$)/i.test(selectors))
+      .map((match) => match[0])
+      .join("\n");
+
+    expect(base).toContain(".desktop select {");
+    expect(base).toContain("font-size: 1rem");
+    expect(base).toContain(".desktop select option");
+    expect(base).toContain(".desktop select optgroup");
+    expect(selectRules).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
+    expect(selectRules).not.toMatch(/font-size\s*:\s*\d*\.?\d+em\b/i);
+    expect(selectRules).not.toMatch(/\bzoom\s*:/i);
+    expect(selectRules).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
+  });
+
+  it("keeps every table font connected to the interface scale", () => {
+    const tableRules = [...allStyles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(([, selectors]) => /\b(?:table|thead|tbody|tfoot|tr|th|td)(?=[\s:.[\]#>,+~]|$)/i.test(selectors))
+      .map((match) => match[0])
+      .join("\n");
+
+    for (const element of ["table", "thead", "tbody", "tfoot", "tr", "th", "td"]) {
+      expect(base).toContain(`.desktop ${element}`);
+    }
+    expect(base).toContain("font-size: inherit");
+    expect(tableRules).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
+    expect(tableRules).not.toMatch(/font-size\s*:\s*(?![^;{}]*rem\b)\d*\.?\d+em\b/i);
+    expect(tableRules).not.toMatch(/\bzoom\s*:/i);
+    expect(tableRules).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
+  });
+
+  it("gives embedded access policies the full second column without breaking table cells", () => {
+    expect(settings).toContain(".desktop .access-policy-browser { grid-template-columns: minmax(11.25rem,25%) minmax(0,75%); }");
+    expect(settings).toContain(".desktop .access-policy-detail { min-width: 0; overflow: hidden; }");
+    expect(identity).toContain(".access-policy-editor { grid-template-rows: auto minmax(0,1fr); overflow: hidden; }");
+    expect(identity).toContain(".identity-role-matrix td:first-child { min-width: 15rem; }");
+    expect(identity).not.toContain(".identity-role-matrix td:first-child { display: grid");
   });
 });

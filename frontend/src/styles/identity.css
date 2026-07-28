@@ -1,6 +1,6 @@
 .identity-app { height: 100%; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); color: var(--text-primary); background: var(--surface-primary); }
 .identity-tabs { display: flex; gap: 0.1875rem; overflow-x: auto; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-subtle); background: var(--surface-secondary); }
-.identity-tabs button { min-height: 2.25rem; display: inline-flex; align-items: center; gap: 0.4375rem; padding: 0 0.75rem; border: 1px solid transparent; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; white-space: nowrap; }
+.identity-tabs button { min-height: 2.25rem; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.4375rem; padding: 0 0.75rem; border: 1px solid transparent; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; white-space: nowrap; }
 .identity-tabs button.active { border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle)); color: var(--accent); background: var(--surface-selected); }
 .identity-tabs svg { width: 1rem; height: 1rem; }
 .identity-workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
@@ -52,11 +52,18 @@
 .identity-member-list { display: flex; flex-wrap: wrap; gap: 0.3125rem; margin-bottom: 0.5rem; }
 .identity-member-list span { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.4375rem; border-radius: 62.4375rem; background: var(--surface-secondary); font-size: .7rem; }
 .identity-member-list button { width: 1.125rem; height: 1.125rem; padding: 0; border: 0; border-radius: 50%; background: var(--surface-hover); }
-.identity-role-matrix { height: calc(100% - 1.75rem); margin: 0.875rem; }
+.identity-role-matrix { width: calc(100% - 1.75rem); height: calc(100% - 1.75rem); margin: 0.875rem; }
 .identity-role-matrix table { min-width: 47.5rem; }
 .identity-role-matrix td:not(:first-child), .identity-role-matrix th:not(:first-child) { width: 6.875rem; text-align: center; }
-.identity-role-matrix td:first-child { display: grid; gap: 2px; }
-.identity-role-matrix td small { color: var(--text-muted); font-size: .63rem; }
+.identity-role-matrix td:first-child { min-width: 15rem; }
+.identity-role-matrix td:first-child strong, .identity-role-matrix td:first-child small { display: block; }
+.identity-role-matrix td small { margin-top: 2px; color: var(--text-muted); font-size: .63rem; }
+.access-policy-editor { grid-template-rows: auto minmax(0,1fr); overflow: hidden; }
+.access-policy-editor .identity-role-matrix { min-height: 0; }
+.access-policy-editor .identity-role-matrix th:first-child,
+.access-policy-editor .identity-role-matrix td:first-child { position: sticky; left: 0; }
+.access-policy-editor .identity-role-matrix th:first-child { z-index: 3; }
+.access-policy-editor .identity-role-matrix td:first-child { z-index: 1; background: var(--surface-elevated); }
 .identity-history { min-height: 0; overflow: auto; display: grid; align-content: start; gap: 0.4375rem; padding: 0.875rem; }
 .identity-history article { display: grid; grid-template-columns: auto minmax(11.25rem, 1fr) auto auto; align-items: center; gap: 0.625rem; padding: 0.625rem 0.75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-elevated); font-size: .72rem; }
 .identity-history article > svg { width: 1rem; height: 1rem; color: var(--accent); }

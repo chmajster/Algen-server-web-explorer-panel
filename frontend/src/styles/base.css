@@ -22,6 +22,28 @@
   font-family: var(--font-family-ui);
 }
 
+.desktop select {
+  font-family: var(--font-family-ui);
+  font-size: 1rem;
+}
+
+.desktop select option,
+.desktop select optgroup {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.desktop table,
+.desktop thead,
+.desktop tbody,
+.desktop tfoot,
+.desktop tr,
+.desktop th,
+.desktop td {
+  font-family: inherit;
+  font-size: inherit;
+}
+
 .desktop * { min-width: 0; }
 .desktop img, .desktop svg { max-width: 100%; }
 .desktop p, .desktop dd, .desktop td, .desktop th, .desktop label, .desktop strong, .desktop small {
