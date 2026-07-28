@@ -390,7 +390,7 @@
 .hosts-manager-app .module-section-toolbar select,
 .hosts-manager-app .module-form-grid input:not([type="checkbox"]):not([type="radio"]),
 .hosts-manager-app .module-form-grid select {
-  min-height: var(--hosts-control-height);
+  height: var(--hosts-control-height);
   font: inherit;
 }
 .hosts-manager-app .module-form-grid textarea { min-height: calc(var(--hosts-control-height) * 2.5); font: inherit; }

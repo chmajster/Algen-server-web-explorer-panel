@@ -313,6 +313,7 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
 function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "administration" | "updates"; locale: "pl-PL" | "en-US"; t: Translate; toast: ToastFn; onOpenApp: (app: AppId) => void }) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [updates, setUpdates] = useState<UpdateStatus | null>(null);
+  const [updatePolicy, setUpdatePolicy] = useState<AutoUpdateSettings | null>(null);
   const [proxmox, setProxmox] = useState<ProxmoxSafety | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -335,7 +336,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
         setLoading(false);
       });
     } else {
-      Promise.allSettled([api.checkUpdates(), api.updateProgress()]).then((results) => {
+      Promise.allSettled([api.checkUpdates(), api.updateProgress(), api.autoUpdate()]).then((results) => {
         if (!live) return;
         if (results[0].status === "fulfilled") { setUpdates(results[0].value); setUpdateError(results[0].value.error || ""); }
         else setUpdateError(results[0].reason instanceof Error ? results[0].reason.message : t("settings.updateUnavailable"));
@@ -349,6 +350,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
           setUpdateDialog({ phase, progress, message });
         }
         }
+        if (results[2].status === "fulfilled") setUpdatePolicy(results[2].value);
         setLoading(false);
       });
     }
@@ -356,7 +358,13 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
   }, [t, view]);
   async function refreshUpdates() {
     setChecking(true); setUpdateError("");
-    try { const value = await api.checkUpdates(); setUpdates(value); setUpdateError(value.error || ""); }
+    try {
+      const value = await api.checkUpdates();
+      setUpdates(value);
+      setUpdateError(value.error || "");
+      if (value.checked_at) setUpdatePolicy((current) => current ? { ...current, last_checked: value.checked_at! } : current);
+      setRenderedAt(Date.now());
+    }
     catch (error) { setUpdateError(error instanceof Error ? error.message : t("settings.updateUnavailable")); }
     finally { setChecking(false); }
   }
@@ -412,7 +420,11 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
   if (loading) return <div className="loading-state">{t("status.loading")}</div>;
   const updateState = updateError ? "danger" : updates?.update_available ? "warning" : "success";
   const updateLabel = updateError || (updates?.update_available ? t("settings.updateAvailable") : updates ? t("settings.upToDate") : t("settings.updateUnavailable"));
-  const checkedMinutesAgo = updates?.checked_at ? Math.max(0, Math.floor((renderedAt - updates.checked_at * 1000) / 60_000)) : null;
+  const lastCheckedAt = updatePolicy ? updatePolicy.last_checked : updates?.checked_at;
+  const checkedMinutesAgo = lastCheckedAt ? Math.max(0, Math.floor((renderedAt - lastCheckedAt * 1000) / 60_000)) : null;
+  const updateCheckInterval = updatePolicy
+    ? updatePolicy.check_enabled ? `${updatePolicy.interval_hours} ${t("settings.hoursShort")}` : t("common.disabled")
+    : "—";
   const adminApps: Array<{ id: AppId; icon: ReactNode; hint: string }> = [
     { id: "services", icon: <SlidersHorizontal />, hint: t("settings.administrationServicesHint") },
     { id: "logs", icon: <Terminal />, hint: t("settings.administrationLogsHint") },
@@ -423,7 +435,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
       <div className="admin-overview-copy"><small>{t("settings.updates")}</small><h3>{t("settings.updateStatus")}</h3><p>{updateLabel}</p></div>
       <div className={`admin-overall-state ${updateState}`}><span />{updates?.update_available ? t("settings.updateAvailable") : updateLabel}</div>
     </section>
-    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.lastChecked")}</dt><dd>{checkedMinutesAgo === null ? "—" : `${checkedMinutesAgo} ${t("settings.minutesAgo")}`}</dd><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
+    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.lastChecked")}</dt><dd>{checkedMinutesAgo === null ? "—" : `${checkedMinutesAgo} ${t("settings.minutesAgo")}`}</dd><dt>{t("settings.updateInterval")}</dt><dd>{updateCheckInterval}</dd><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
     {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
   </div>;
   return <div className="administration-dashboard">

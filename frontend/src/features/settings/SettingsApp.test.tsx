@@ -227,13 +227,16 @@ describe("settings application", () => {
     const status = { branch: "main", local: "a".repeat(40), remote: "a".repeat(40), update_available: false, available: true };
     const checkedFiveMinutesAgo = Math.floor(Date.now() / 1000) - 5 * 60;
     const checkUpdates = vi.spyOn(api, "checkUpdates")
-      .mockResolvedValueOnce({ ...status, checked_at: checkedFiveMinutesAgo })
+      .mockResolvedValueOnce({ ...status, checked_at: Math.floor(Date.now() / 1000) })
       .mockResolvedValueOnce({ ...status, checked_at: Math.floor(Date.now() / 1000) });
+    vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: checkedFiveMinutesAgo, last_run: null, last_error: "", last_pid: null, next_check: checkedFiveMinutesAgo + 12 * 3600 });
     vi.spyOn(api, "updateProgress").mockResolvedValue({ state: "idle", running: false, pid: null, exit_code: null, started_at: null, finished_at: null, log: "", lines: [] });
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="updates" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
     expect(await screen.findByText("5 settings.minutesAgo")).toBeInTheDocument();
     expect(screen.getByText("settings.lastChecked")).toBeInTheDocument();
+    expect(screen.getByText("settings.updateInterval")).toBeInTheDocument();
+    expect(screen.getByText("12 settings.hoursShort")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /settings.checkNow/ }));
 
