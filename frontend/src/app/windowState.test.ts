@@ -73,6 +73,34 @@ describe("window manager reducer", () => {
     ]);
   });
 
+  it("preserves maximize geometry through minimize and taskbar restore", () => {
+    const viewportWithNavbar = { width: 1280, height: 720, top: 64, bottom: 58 };
+    let state = windowReducer(initialWindowState, { type: "open", app: "settings", viewport: viewportWithNavbar });
+    const previous = state.windows[0].rect;
+    state = windowReducer(state, { type: "toggleMaximize", id: "settings-1", viewport: viewportWithNavbar });
+    state = windowReducer(state, { type: "minimize", id: "settings-1" });
+    state = windowReducer(state, { type: "focus", id: "settings-1" });
+
+    expect(state.windows[0].minimized).toBe(false);
+    expect(state.windows[0].rect).toEqual({ x: 0, y: 64, width: 1280, height: 598 });
+
+    state = windowReducer(state, { type: "toggleMaximize", id: "settings-1", viewport: viewportWithNavbar });
+    expect(state.windows[0].rect).toEqual(previous);
+  });
+
+  it("keeps the exact restore rectangle while a maximized viewport is resized", () => {
+    const initialViewport = { width: 1440, height: 900, top: 64, bottom: 58 };
+    let state = windowReducer(initialWindowState, { type: "open", app: "monitor", viewport: initialViewport });
+    const previous = state.windows[0].rect;
+    state = windowReducer(state, { type: "toggleMaximize", id: "monitor-1", viewport: initialViewport });
+    state = windowReducer(state, { type: "viewport", viewport: { width: 390, height: 844, top: 88, bottom: 58 } });
+    state = windowReducer(state, { type: "viewport", viewport: initialViewport });
+
+    expect(state.windows[0].restoreRect).toEqual(previous);
+    state = windowReducer(state, { type: "toggleMaximize", id: "monitor-1", viewport: initialViewport });
+    expect(state.windows[0].rect).toEqual(previous);
+  });
+
   it("keeps a dragged window titlebar below the navbar", () => {
     const viewportWithNavbar = { width: 1024, height: 768, top: 80, bottom: 58 };
     const raw = JSON.stringify({ windows: [{ id: "logs-1", app: "logs", rect: { x: 30, y: -500, width: 800, height: 500 }, minimized: false, zIndex: 12 }], activeId: "logs-1", counter: 1, topZ: 12 });

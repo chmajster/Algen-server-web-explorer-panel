@@ -94,7 +94,7 @@ export function windowReducer(state: WindowState, action: WindowAction): WindowS
       windows: state.windows.map((item) => ({
         ...item,
         rect: item.restoreRect ? workspaceRect(action.viewport) : clampRect(item.rect, item.app === "files" ? 680 : 360, item.app === "files" ? 440 : 280, action.viewport),
-        restoreRect: item.restoreRect ? clampRect(item.restoreRect, item.app === "files" ? 680 : 360, item.app === "files" ? 440 : 280, action.viewport) : undefined,
+        restoreRect: item.restoreRect,
       })),
     };
   }
