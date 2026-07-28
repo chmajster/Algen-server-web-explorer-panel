@@ -9,6 +9,7 @@ import {
 } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
 import { interfaceFontOptions, interfaceFontStacks } from "../../app/interfaceFonts";
+import { INTERFACE_SCALE_MAX, INTERFACE_SCALE_MIN, INTERFACE_SCALE_STEP, normalizeInterfaceScale } from "../../app/interfaceScale";
 import type { AppId, ToastFn, Translate } from "../../app/types";
 import type { PolicySubject } from "../admin/IdentityApp";
 import { HostInformationSection } from "./HostInformationSection";
@@ -25,12 +26,38 @@ type UpdateDialogState = { phase: "checking" | "running" | "completed" | "failed
 const dismissedUpdateProgressKey = "webnas.dismissed-update-progress";
 
 function InterfaceScaleControl({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  const commit = () => { if (draft !== value) onChange(draft); };
+  const normalizedValue = normalizeInterfaceScale(value);
+  const [draft, setDraft] = useState(normalizedValue);
+  const draftRef = useRef(draft);
+  const savedRef = useRef(normalizedValue);
+  const dirtyRef = useRef(false);
+
+  useEffect(() => {
+    const next = normalizeInterfaceScale(value);
+    savedRef.current = next;
+    if (!dirtyRef.current) {
+      draftRef.current = next;
+      setDraft(next);
+    }
+  }, [value]);
+
+  function update(nextValue: string) {
+    const next = normalizeInterfaceScale(Number(nextValue));
+    draftRef.current = next;
+    dirtyRef.current = true;
+    setDraft(next);
+  }
+
+  function commit() {
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
+    const next = draftRef.current;
+    if (next !== savedRef.current) onChange(next);
+  }
+
   return <div className="interface-scale-control">
-    <input type="range" min={50} max={200} step={5} value={draft} aria-label={label} onChange={(event) => setDraft(Number(event.target.value))} onPointerUp={commit} onKeyUp={commit} onBlur={commit} />
-    <output aria-live="polite">{draft}%</output>
+    <input type="range" min={INTERFACE_SCALE_MIN} max={INTERFACE_SCALE_MAX} step={INTERFACE_SCALE_STEP} value={draft} aria-label={label} onChange={(event) => update(event.currentTarget.value)} onPointerUp={commit} onKeyUp={commit} onBlur={commit} />
+    <output aria-live="polite">{Math.round(draft)}%</output>
   </div>;
 }
 

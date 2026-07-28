@@ -95,9 +95,12 @@ def test_patch_rejects_invalid_preferences(field, value):
         settings.MePatch(**{field: value})
 
 
-def test_interface_scale_accepts_full_supported_range():
-    assert settings.MePatch(interface_scale=50).interface_scale == 50
-    assert settings.MePatch(interface_scale=200).interface_scale == 200
+@pytest.mark.parametrize("value", [50, 75, 100, 115, 125, 150, 200])
+def test_interface_scale_accepts_supported_values(value):
+    assert settings.MePatch(interface_scale=value).interface_scale == value
+
+
+def test_interface_scale_rejects_values_outside_supported_range():
     with pytest.raises(ValidationError):
         settings.MePatch(interface_scale=49)
     with pytest.raises(ValidationError):
@@ -195,6 +198,19 @@ def test_patch_persists_interface_font(monkeypatch):
     settings.settings_patch(settings.MePatch(interface_font="georgia"), SimpleNamespace(username="alice"))
 
     assert written["interface_font"] == "georgia"
+
+
+def test_patch_persists_interface_scale_for_the_current_user(monkeypatch):
+    written = {}
+    monkeypatch.setattr(settings, "_read_settings", lambda username: {})
+    monkeypatch.setattr(settings, "_write_settings", lambda username, data: written.update({"username": username, "settings": data}))
+    monkeypatch.setattr(settings, "_user_info", lambda username: {"username": username, "is_admin": False})
+
+    result = settings.settings_patch(settings.MePatch(interface_scale=115), SimpleNamespace(username="alice"))
+
+    assert written["username"] == "alice"
+    assert written["settings"]["interface_scale"] == 115
+    assert result["interface_scale"] == 115
 
 
 def test_patch_persists_each_application_pin_destination(monkeypatch):

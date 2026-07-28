@@ -10,6 +10,7 @@ import { AppLauncher } from "./AppLauncher";
 import { appById, apps } from "./catalog";
 import { DesktopWindow } from "./DesktopWindow";
 import { interfaceFontStacks } from "./interfaceFonts";
+import { interfaceScaleFactor, normalizeInterfaceScale } from "./interfaceScale";
 import { Taskbar, type TaskbarWindowAction } from "./Taskbar";
 import type { AppId, RecentApp, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
 import { initialWindowState, restoreWindowState, windowReducer, type ViewportMetrics } from "./windowState";
@@ -60,7 +61,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   onTheme: (theme: Theme) => void;
   onLoggedOut: () => void;
 }) {
-  const interfaceScale = profile.interface_scale / 100;
+  const normalizedProfileScale = normalizeInterfaceScale(profile.interface_scale);
+  const interfaceScale = interfaceScaleFactor(normalizedProfileScale);
   const textScale = profile.larger_text ? 1.125 : 1;
   const [viewport, setViewport] = useState<ViewportMetrics>(() => ({
     width: window.innerWidth,
@@ -390,16 +392,21 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     const root = document.documentElement;
     const previousFontSize = root.style.fontSize;
     const previousFont = root.style.getPropertyValue("--font-family-ui");
+    const previousInterfaceScale = root.style.getPropertyValue("--interface-scale");
     root.style.fontSize = `${16 * interfaceScale}px`;
     root.style.setProperty("--font-family-ui", interfaceFontStacks[profile.interface_font]);
+    root.style.setProperty("--interface-scale", String(interfaceScale));
     return () => {
       root.style.fontSize = previousFontSize;
       if (previousFont) root.style.setProperty("--font-family-ui", previousFont);
       else root.style.removeProperty("--font-family-ui");
+      if (previousInterfaceScale) root.style.setProperty("--interface-scale", previousInterfaceScale);
+      else root.style.removeProperty("--interface-scale");
     };
   }, [interfaceScale, profile.interface_font]);
   const rootStyle = {
     "--ui-scale": interfaceScale,
+    "--interface-scale": interfaceScale,
     "--text-scale": textScale,
     "--font-family-ui": interfaceFontStacks[profile.interface_font],
   } as CSSProperties;

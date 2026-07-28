@@ -40,18 +40,22 @@ describe("personalized desktop", () => {
     const { container, rerender, unmount } = renderDesktop({ interface_scale: 125, larger_text: false });
     const desktop = container.querySelector<HTMLElement>(".desktop");
     expect(desktop?.style.getPropertyValue("--ui-scale")).toBe("1.25");
+    expect(desktop?.style.getPropertyValue("--interface-scale")).toBe("1.25");
     expect(desktop?.style.getPropertyValue("--text-scale")).toBe("1");
     expect(document.documentElement.style.fontSize).toBe("20px");
+    expect(document.documentElement.style.getPropertyValue("--interface-scale")).toBe("1.25");
 
     let profile = settingsFixture({ interface_scale: 100, larger_text: true });
     rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
     expect(desktop).toHaveClass("larger-text");
     expect(desktop?.style.getPropertyValue("--text-scale")).toBe("1.125");
+    expect(desktop?.style.getPropertyValue("--interface-scale")).toBe("1");
     expect(document.documentElement.style.fontSize).toBe("16px");
 
     profile = settingsFixture({ interface_scale: 200, larger_text: false });
     rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
     expect(desktop?.style.getPropertyValue("--ui-scale")).toBe("2");
+    expect(desktop?.style.getPropertyValue("--interface-scale")).toBe("2");
     expect(document.documentElement.style.fontSize).toBe("32px");
 
     unmount();
