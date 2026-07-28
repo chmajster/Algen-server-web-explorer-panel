@@ -46,6 +46,41 @@ describe("window manager reducer", () => {
     expect(state.windows[0].restoreRect).toBeUndefined();
   });
 
+  it("maximizes below a dynamically measured navbar", () => {
+    const viewportWithNavbar = { width: 1440, height: 900, top: 72, bottom: 58 };
+    let state = windowReducer(initialWindowState, { type: "open", app: "monitor", viewport: viewportWithNavbar });
+    const previous = state.windows[0].rect;
+
+    state = windowReducer(state, { type: "toggleMaximize", id: "monitor-1", viewport: viewportWithNavbar });
+    expect(state.windows[0].rect).toEqual({ x: 0, y: 72, width: 1440, height: 770 });
+
+    state = windowReducer(state, { type: "toggleMaximize", id: "monitor-1", viewport: viewportWithNavbar });
+    expect(state.windows[0].rect).toEqual(previous);
+  });
+
+  it("updates every maximized window when the navbar or viewport changes", () => {
+    let state = windowReducer(initialWindowState, { type: "open", app: "monitor", viewport });
+    state = windowReducer(state, { type: "toggleMaximize", id: "monitor-1", viewport });
+    state = windowReducer(state, { type: "open", app: "settings", viewport });
+    state = windowReducer(state, { type: "toggleMaximize", id: "settings-2", viewport });
+
+    const resizedViewport = { width: 390, height: 844, top: 88, bottom: 58 };
+    state = windowReducer(state, { type: "viewport", viewport: resizedViewport });
+
+    expect(state.windows.map((item) => item.rect)).toEqual([
+      { x: 0, y: 88, width: 390, height: 698 },
+      { x: 0, y: 88, width: 390, height: 698 },
+    ]);
+  });
+
+  it("keeps a dragged window titlebar below the navbar", () => {
+    const viewportWithNavbar = { width: 1024, height: 768, top: 80, bottom: 58 };
+    const raw = JSON.stringify({ windows: [{ id: "logs-1", app: "logs", rect: { x: 30, y: -500, width: 800, height: 500 }, minimized: false, zIndex: 12 }], activeId: "logs-1", counter: 1, topZ: 12 });
+    const state = restoreWindowState(raw, viewportWithNavbar);
+
+    expect(state.windows[0].rect.y).toBe(90);
+  });
+
   it("restores persisted state and clamps an off-screen rectangle", () => {
     const raw = JSON.stringify({ windows: [{ id: "logs-3", app: "logs", rect: { x: 99999, y: -20, width: 800, height: 500 }, minimized: false, zIndex: 12 }], activeId: "logs-3", counter: 3, topZ: 12 });
     const state = restoreWindowState(raw);

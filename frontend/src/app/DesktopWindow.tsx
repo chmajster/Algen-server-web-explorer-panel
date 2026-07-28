@@ -31,8 +31,8 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
   const [minimizing, setMinimizing] = useState(false);
   const gesture = useRef<Gesture | null>(null);
   const maximized = Boolean(item.restoreRect);
-  const localX = (clientX: number) => clientX - (viewport?.originX ?? 0);
-  const localY = (clientY: number) => clientY - (viewport?.originY ?? 0);
+  const originX = viewport?.originX ?? 0;
+  const originY = viewport?.originY ?? 0;
 
   useEffect(() => { if (!gesture.current) setDisplayRect(item.rect); }, [item.rect]);
   useEffect(() => {
@@ -40,7 +40,7 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
       const current = gesture.current;
       if (!current) return;
       if (current.mode === "move") {
-        setDisplayRect(clampRect({ ...current.rect, x: localX(event.clientX) - current.offsetX, y: localY(event.clientY) - current.offsetY }, definition.minWidth, definition.minHeight, viewport));
+        setDisplayRect(clampRect({ ...current.rect, x: event.clientX - originX - current.offsetX, y: event.clientY - originY - current.offsetY }, definition.minWidth, definition.minHeight, viewport));
         return;
       }
       const dx = event.clientX - current.startX;
@@ -62,8 +62,8 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
       gesture.current = null;
       let rect = displayRect;
       let restoreRect: WindowRect | undefined;
-      const pointerX = localX(event.clientX);
-      const pointerY = localY(event.clientY);
+      const pointerX = event.clientX - originX;
+      const pointerY = event.clientY - originY;
       const work = workspaceRect(viewport);
       if (pointerY <= work.y + DESKTOP_TOP) { restoreRect = rect; rect = work; }
       else if (pointerX <= work.x + 8) { restoreRect = rect; rect = { ...work, width: work.width / 2 }; }
@@ -74,15 +74,15 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-  }, [definition.minHeight, definition.minWidth, displayRect, onCommit, viewport]);
+  }, [definition.minHeight, definition.minWidth, displayRect, onCommit, originX, originY, viewport]);
 
   function startMove(event: React.PointerEvent) {
     if ((event.target as HTMLElement).closest("button")) return;
     event.preventDefault();
     onFocus();
     let rect = displayRect;
-    const pointerX = localX(event.clientX);
-    const pointerY = localY(event.clientY);
+    const pointerX = event.clientX - originX;
+    const pointerY = event.clientY - originY;
     let offsetX = pointerX - rect.x;
     if (maximized) {
       const restored = clampRect(item.restoreRect || { x: 100, y: 80, width: 900, height: 620 }, definition.minWidth, definition.minHeight, viewport);

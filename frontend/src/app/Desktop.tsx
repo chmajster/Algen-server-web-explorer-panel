@@ -1,5 +1,5 @@
 import { Bell, ShieldCheck, X } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
 import type { SettingsCategory } from "../features/settings/SettingsApp";
@@ -12,7 +12,8 @@ import { DesktopWindow } from "./DesktopWindow";
 import { interfaceFontStacks } from "./interfaceFonts";
 import { Taskbar, type TaskbarWindowAction } from "./Taskbar";
 import type { AppId, RecentApp, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
-import { initialWindowState, restoreWindowState, windowReducer } from "./windowState";
+import { initialWindowState, restoreWindowState, windowReducer, type ViewportMetrics } from "./windowState";
+import { measureWorkspaceMetrics, navbarElements, sameViewportMetrics } from "./workspaceMetrics";
 
 const ActivityCenter = lazy(() => import("../features/activity/ActivityCenter").then((module) => ({ default: module.ActivityCenter })));
 const DesktopWidgets = lazy(() => import("../features/widgets/DesktopWidgets").then((module) => ({ default: module.DesktopWidgets })));
@@ -61,13 +62,15 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
 }) {
   const interfaceScale = profile.interface_scale / 100;
   const textScale = profile.larger_text ? 1.125 : 1;
-  const viewportMetrics = useCallback(() => ({
+  const [viewport, setViewport] = useState<ViewportMetrics>(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
-    bottom: 58 * interfaceScale + 10 * interfaceScale,
+    bottom: 58 * interfaceScale,
     scale: interfaceScale,
-  }), [interfaceScale]);
-  const initialViewportMetrics = useRef(viewportMetrics());
+  }));
+  const desktopRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLElement>(null);
+  const initialViewportMetrics = useRef(viewport);
   const storageKey = `webnas_windows_${user.username}`;
   const sessionWindowKey = `${storageKey}_session`;
   const recentAppsKey = `webnas_recent_apps_${user.username}`;
@@ -162,12 +165,50 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     media.addEventListener("change", change);
     return () => media.removeEventListener("change", change);
   }, []);
+  useLayoutEffect(() => {
+    const desktop = desktopRef.current;
+    const surface = surfaceRef.current;
+    if (!desktop || !surface) return;
+
+    let animationFrame = 0;
+    const measure = () => {
+      const next = measureWorkspaceMetrics(desktop, surface, interfaceScale);
+      initialViewportMetrics.current = next;
+      setViewport((current) => sameViewportMetrics(current, next) ? current : next);
+    };
+    const scheduleMeasure = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(measure);
+    };
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleMeasure);
+    resizeObserver?.observe(desktop);
+    resizeObserver?.observe(surface);
+    const observeChrome = () => {
+      const taskbar = desktop.querySelector<HTMLElement>(".taskbar");
+      if (taskbar) resizeObserver?.observe(taskbar);
+      navbarElements().forEach((navbar) => resizeObserver?.observe(navbar));
+      scheduleMeasure();
+    };
+    const mutationObserver = typeof MutationObserver === "undefined" ? null : new MutationObserver(observeChrome);
+    if (document.body) mutationObserver?.observe(document.body, { childList: true, subtree: true });
+
+    measure();
+    observeChrome();
+    window.addEventListener("resize", scheduleMeasure);
+    window.addEventListener("orientationchange", scheduleMeasure);
+    window.visualViewport?.addEventListener("resize", scheduleMeasure);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      window.removeEventListener("resize", scheduleMeasure);
+      window.removeEventListener("orientationchange", scheduleMeasure);
+      window.visualViewport?.removeEventListener("resize", scheduleMeasure);
+    };
+  }, [interfaceScale]);
   useEffect(() => {
-    const resize = () => dispatch({ type: "viewport", viewport: viewportMetrics() });
-    resize();
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, [viewportMetrics]);
+    dispatch({ type: "viewport", viewport });
+  }, [viewport]);
   useEffect(() => {
     if (profile.show_notifications) return;
     setNotificationsOpen(false);
@@ -188,9 +229,9 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       localStorage.setItem(recentAppsKey, JSON.stringify(next));
       return next;
     });
-    dispatch({ type: "open", app, initialPath, moduleId, viewport: viewportMetrics() });
+    dispatch({ type: "open", app, initialPath, moduleId, viewport });
     setLauncherOpen(false);
-  }, [canUseApp, recentAppsKey, t, toast, viewportMetrics]);
+  }, [canUseApp, recentAppsKey, t, toast, viewport]);
   useEffect(() => {
     if (!tasksInitialized.current) {
       tasks.forEach((task) => previousTaskStatus.current.set(task.id, task.status));
@@ -316,7 +357,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     if (action === "close") closeWindow(item);
     else if (action === "focus") dispatch({ type: "focus", id: item.id });
     else if (action === "minimize") dispatch({ type: "minimize", id: item.id });
-    else dispatch({ type: "toggleMaximize", id: item.id, viewport: viewportMetrics() });
+    else dispatch({ type: "toggleMaximize", id: item.id, viewport });
   }
   function closeAppWindows(app: AppId) { state.windows.filter((item) => item.app === app).forEach(closeWindow); }
   function closeModuleWindows(moduleId: string) { state.windows.filter((item) => item.app === "module" && item.moduleId === moduleId).forEach(closeWindow); }
@@ -366,12 +407,12 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const visibleToasts = profile.show_notifications ? toasts.filter((item) => (item.type !== "error" || profile.notification_errors) && (item.category !== "admin" || profile.notification_admin) && (item.category !== "transfer" || profile.notification_transfer)).slice(-profile.notification_limit) : [];
   const clockText = clock.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", second: profile.clock_show_seconds ? "2-digit" : undefined, hour12: profile.time_format === "12" });
 
-  return <div className={rootClasses} style={rootStyle}>
-    <main className="desktop-surface" style={wallpaperStyle(profile)} onPointerDown={(event) => { if (event.target === event.currentTarget) setSelectedShortcut(null); }}>
+  return <div ref={desktopRef} className={rootClasses} style={rootStyle}>
+    <main ref={surfaceRef} className="desktop-surface" style={wallpaperStyle(profile)} onPointerDown={(event) => { if (event.target === event.currentTarget) setSelectedShortcut(null); }}>
       {profile.show_desktop_shortcuts && <div className={`desktop-shortcuts shortcuts-${profile.desktop_shortcut_size}`} aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => desktopShortcuts.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} selected={selectedShortcut === app.id} onSelect={() => setSelectedShortcut(app.id)} onOpen={() => openApp(app.id)} />)}</div>}
       {profile.show_welcome_widget && <div className="desktop-welcome"><span>WebNAS</span><strong>{t("desktop.welcome")}, {user.username}</strong><small>{t("desktop.welcomeHint")}</small></div>}
       <Suspense fallback={null}><DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} /></Suspense>
-      {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} viewport={viewportMetrics()} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport: viewportMetrics() })}>{renderApp(item)}</DesktopWindow>)}
+      {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} viewport={viewport} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport })}>{renderApp(item)}</DesktopWindow>)}
     </main>
     {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onOpenProfile={() => openApp("settings", "account")} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
     <Taskbar apps={taskbarApps} pinned={pinned} pinnedModules={pinnedModules} moduleNames={moduleNames} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setNotificationsOpen((value) => !value); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onModule={selectModule} onOpenNew={(app) => openApp(app)} onOpenModuleNew={(moduleId) => openApp("module", undefined, moduleId)} onTogglePin={togglePin} onToggleModulePin={toggleModulePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onCloseModule={closeModuleWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
