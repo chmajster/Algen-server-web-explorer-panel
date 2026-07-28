@@ -6,7 +6,8 @@
 
 @media (max-width: 920px) {
   .desktop .desktop-surface { inset: 0 0 var(--taskbar-height-scaled); }
-  .desktop .desktop-window, .desktop .desktop-window.maximized { inset: 0 0 var(--taskbar-height-scaled) !important; width: auto !important; height: auto !important; min-width: 0; min-height: 0; border-width: 0; border-radius: 0; box-shadow: none; }
+  .desktop .desktop-window { min-width: 0; min-height: 0; }
+  .desktop .desktop-window.maximized { border-width: 0; border-radius: 0; box-shadow: none; }
   .desktop .taskbar-primary, .desktop.taskbar-align-left .taskbar-primary { left: 0.5rem; max-width: calc(100% - 16.875rem); transform: none; }
   .desktop .system-tray > button { min-width: 2.375rem; padding: 0 0.4375rem; }
   .desktop .settings-app { grid-template-columns: 13.125rem minmax(0,1fr); }

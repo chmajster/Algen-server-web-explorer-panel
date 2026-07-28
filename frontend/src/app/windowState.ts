@@ -3,7 +3,17 @@ import type { AppId, WindowInstance, WindowRect } from "./types";
 export const DESKTOP_TOP = 10;
 export const DESKTOP_BOTTOM = 64;
 const MARGIN = 10;
-export type ViewportMetrics = { width: number; height: number; bottom?: number; scale?: number };
+export type ViewportMetrics = {
+  width: number;
+  height: number;
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+  originX?: number;
+  originY?: number;
+  scale?: number;
+};
 
 export type WindowState = { windows: WindowInstance[]; activeId: string; counter: number; topZ: number };
 export type WindowAction =
@@ -21,19 +31,29 @@ export const initialWindowState: WindowState = { windows: [], activeId: "", coun
 
 export function workspaceRect(viewport: ViewportMetrics = { width: window.innerWidth, height: window.innerHeight }): WindowRect {
   const scale = viewport.scale ?? 1;
-  const margin = MARGIN * scale;
-  const bottom = viewport.bottom ?? (DESKTOP_BOTTOM + MARGIN) * scale;
+  const top = Math.max(0, viewport.top ?? 0);
+  const right = Math.max(0, viewport.right ?? 0);
+  const bottom = Math.max(0, viewport.bottom ?? DESKTOP_BOTTOM * scale);
+  const left = Math.max(0, viewport.left ?? 0);
   return {
-    x: margin,
-    y: margin,
-    width: Math.max(0, viewport.width - margin * 2),
-    height: Math.max(0, viewport.height - bottom - margin)
+    x: left,
+    y: top,
+    width: Math.max(0, viewport.width - left - right),
+    height: Math.max(0, viewport.height - top - bottom)
   };
 }
 
 export function clampRect(rect: WindowRect, minWidth = 360, minHeight = 280, viewport: ViewportMetrics = { width: window.innerWidth, height: window.innerHeight }): WindowRect {
-  const workspace = workspaceRect(viewport);
+  const available = workspaceRect(viewport);
   const scale = viewport.scale ?? 1;
+  const marginX = Math.min(MARGIN * scale, available.width / 2);
+  const marginY = Math.min(MARGIN * scale, available.height / 2);
+  const workspace = {
+    x: available.x + marginX,
+    y: available.y + marginY,
+    width: Math.max(0, available.width - marginX * 2),
+    height: Math.max(0, available.height - marginY * 2),
+  };
   const effectiveMinWidth = Math.min(workspace.width, minWidth * scale);
   const effectiveMinHeight = Math.min(workspace.height, minHeight * scale);
   const width = Math.min(workspace.width, Math.max(effectiveMinWidth, rect.width));

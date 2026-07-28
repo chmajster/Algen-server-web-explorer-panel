@@ -31,6 +31,8 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
   const [minimizing, setMinimizing] = useState(false);
   const gesture = useRef<Gesture | null>(null);
   const maximized = Boolean(item.restoreRect);
+  const localX = (clientX: number) => clientX - (viewport?.originX ?? 0);
+  const localY = (clientY: number) => clientY - (viewport?.originY ?? 0);
 
   useEffect(() => { if (!gesture.current) setDisplayRect(item.rect); }, [item.rect]);
   useEffect(() => {
@@ -38,7 +40,7 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
       const current = gesture.current;
       if (!current) return;
       if (current.mode === "move") {
-        setDisplayRect(clampRect({ ...current.rect, x: event.clientX - current.offsetX, y: event.clientY - current.offsetY }, definition.minWidth, definition.minHeight, viewport));
+        setDisplayRect(clampRect({ ...current.rect, x: localX(event.clientX) - current.offsetX, y: localY(event.clientY) - current.offsetY }, definition.minWidth, definition.minHeight, viewport));
         return;
       }
       const dx = event.clientX - current.startX;
@@ -60,9 +62,12 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
       gesture.current = null;
       let rect = displayRect;
       let restoreRect: WindowRect | undefined;
-      if (event.clientY <= DESKTOP_TOP + 8) { restoreRect = rect; rect = workspaceRect(viewport); }
-      else if (event.clientX <= 8) { restoreRect = rect; const work = workspaceRect(viewport); rect = { ...work, width: work.width / 2 }; }
-      else if (event.clientX >= window.innerWidth - 8) { restoreRect = rect; const work = workspaceRect(viewport); rect = { ...work, x: work.x + work.width / 2, width: work.width / 2 }; }
+      const pointerX = localX(event.clientX);
+      const pointerY = localY(event.clientY);
+      const work = workspaceRect(viewport);
+      if (pointerY <= work.y + DESKTOP_TOP) { restoreRect = rect; rect = work; }
+      else if (pointerX <= work.x + 8) { restoreRect = rect; rect = { ...work, width: work.width / 2 }; }
+      else if (pointerX >= work.x + work.width - 8) { restoreRect = rect; rect = { ...work, x: work.x + work.width / 2, width: work.width / 2 }; }
       setDisplayRect(rect);
       onCommit(rect, restoreRect);
     }
@@ -76,15 +81,17 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
     event.preventDefault();
     onFocus();
     let rect = displayRect;
-    let offsetX = event.clientX - rect.x;
+    const pointerX = localX(event.clientX);
+    const pointerY = localY(event.clientY);
+    let offsetX = pointerX - rect.x;
     if (maximized) {
       const restored = clampRect(item.restoreRect || { x: 100, y: 80, width: 900, height: 620 }, definition.minWidth, definition.minHeight, viewport);
-      const ratio = (event.clientX - rect.x) / rect.width;
-      rect = { ...restored, x: event.clientX - restored.width * ratio, y: event.clientY - 20 };
-      offsetX = event.clientX - rect.x;
+      const ratio = (pointerX - rect.x) / rect.width;
+      rect = clampRect({ ...restored, x: pointerX - restored.width * ratio, y: pointerY - 20 }, definition.minWidth, definition.minHeight, viewport);
+      offsetX = pointerX - rect.x;
       setDisplayRect(rect);
     }
-    gesture.current = { mode: "move", startX: event.clientX, startY: event.clientY, rect, offsetX, offsetY: event.clientY - rect.y };
+    gesture.current = { mode: "move", startX: event.clientX, startY: event.clientY, rect, offsetX, offsetY: pointerY - rect.y };
   }
 
   function startResize(edge: Edge, event: React.PointerEvent) {
