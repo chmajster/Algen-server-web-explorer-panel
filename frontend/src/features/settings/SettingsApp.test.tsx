@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type HostInfo } from "../../api";
 import { settingsFixture } from "../../test/settings";
@@ -112,60 +112,38 @@ describe("settings application", () => {
     expect(defaultUserPreferences.interface_font).toBe("system");
   });
 
-  it("saves interface scale and larger text accessibility settings", async () => {
+  it("saves interface scale without exposing a separate larger-text setting", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={save} onOpenApp={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "settings.category.accessibility" }));
 
     const scale = screen.getByLabelText("settings.interfaceScale");
-    expect(scale).toHaveAttribute("min", "50");
-    expect(scale).toHaveAttribute("max", "200");
-    expect(scale).toHaveAttribute("step", "5");
-    fireEvent.change(scale, { target: { value: "75" } });
-    fireEvent.change(scale, { target: { value: "115" } });
-    fireEvent.change(scale, { target: { value: "175" } });
-    expect(screen.getByText("175%")).toBeInTheDocument();
-    expect(save).not.toHaveBeenCalled();
-    fireEvent.pointerUp(scale);
-    fireEvent.click(screen.getByLabelText("settings.largerText"));
+    expect(scale).toHaveValue("100");
+    expect(within(scale).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["80", "90", "100", "110", "125"]);
+    fireEvent.change(scale, { target: { value: "110" } });
 
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: 175 }));
-    expect(save).toHaveBeenCalledWith({ larger_text: true });
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: 110 }));
+    expect(screen.queryByLabelText("settings.largerText")).not.toBeInTheDocument();
   });
 
-  it.each([50, 75, 100, 125, 150, 200])("keeps and saves interface scale %s", async (value) => {
+  it.each([80, 90, 110, 125])("keeps and saves interface scale %s", async (value) => {
     const save = vi.fn().mockResolvedValue(undefined);
     render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={save} onOpenApp={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "settings.category.accessibility" }));
 
     const scale = screen.getByLabelText("settings.interfaceScale");
     fireEvent.change(scale, { target: { value: String(value) } });
-    fireEvent.blur(scale);
 
-    expect(scale).toHaveValue(String(value));
-    expect(screen.getByText(`${value}%`)).toBeInTheDocument();
-    if (value === 100) expect(save).not.toHaveBeenCalled();
-    else await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: value }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: value }));
   });
 
-  it("restores the saved scale when settings are rendered again", async () => {
+  it("restores the saved scale when settings are rendered again", () => {
     const save = vi.fn().mockResolvedValue(undefined);
     const common = { t, toast: vi.fn(), onSettingsChange: save, onOpenApp: vi.fn(), initialSection: "accessibility" as const };
     const { rerender } = render(<SettingsAppView settings={settingsFixture({ interface_scale: 100 })} {...common} />);
-    const scale = screen.getByLabelText("settings.interfaceScale");
-
-    fireEvent.change(scale, { target: { value: "125" } });
-    fireEvent.pointerUp(scale);
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: 125 }));
-
     rerender(<SettingsAppView settings={settingsFixture({ interface_scale: 125 })} {...common} />);
     expect(screen.getByLabelText("settings.interfaceScale")).toHaveValue("125");
-    expect(screen.getByText("125%")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("settings.interfaceScale"), { target: { value: "50" } });
-    fireEvent.blur(screen.getByLabelText("settings.interfaceScale"));
-    await new Promise((resolve) => window.setTimeout(resolve, 75));
-    expect(screen.getByLabelText("settings.interfaceScale")).toHaveValue("125");
-    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("renders administrative categories only for administrators", () => {

@@ -10,7 +10,7 @@ import { AppLauncher } from "./AppLauncher";
 import { appById, apps } from "./catalog";
 import { DesktopWindow } from "./DesktopWindow";
 import { interfaceFontStacks } from "./interfaceFonts";
-import { interfaceScaleFactor, normalizeInterfaceScale } from "./interfaceScale";
+import { interfaceScaleFactor, migrateLegacyInterfaceScale } from "./interfaceScale";
 import { Taskbar, type TaskbarWindowAction } from "./Taskbar";
 import type { AppId, RecentApp, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
 import { initialWindowState, restoreWindowState, windowReducer, type ViewportMetrics } from "./windowState";
@@ -61,9 +61,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   onTheme: (theme: Theme) => void;
   onLoggedOut: () => void;
 }) {
-  const normalizedProfileScale = normalizeInterfaceScale(profile.interface_scale);
-  const interfaceScale = interfaceScaleFactor(normalizedProfileScale);
-  const textScale = profile.larger_text ? 1.125 : 1;
+  const migratedProfileScale = migrateLegacyInterfaceScale(profile.interface_scale, profile.larger_text);
+  const interfaceScale = interfaceScaleFactor(migratedProfileScale);
   const [viewport, setViewport] = useState<ViewportMetrics>(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -100,6 +99,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   });
   const [moduleNames, setModuleNames] = useState<Map<string, string>>(new Map());
   const migrateLegacyPins = useRef(localStorage.getItem(legacyPinnedKey) !== null);
+  const scaleMigrationAttempt = useRef("");
   const [clock, setClock] = useState(new Date());
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [windowsHydrated, setWindowsHydrated] = useState(false);
@@ -157,6 +157,15 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     setDesktopShortcuts(new Set(pinned));
     void onSettingsChange({ pinned_apps: [...pinned], start_pinned_apps: [...pinned], desktop_shortcut_apps: [...pinned] }).then(() => localStorage.removeItem(legacyPinnedKey)).catch(() => undefined);
   }, [legacyPinnedKey, onSettingsChange, pinned]);
+  useEffect(() => {
+    const migrationKey = `${profile.interface_scale}:${profile.larger_text}`;
+    if ((!profile.larger_text && migratedProfileScale === profile.interface_scale) || scaleMigrationAttempt.current === migrationKey) return;
+    scaleMigrationAttempt.current = migrationKey;
+    void onSettingsChange({
+      interface_scale: migratedProfileScale,
+      ...(profile.larger_text ? { larger_text: false } : {}),
+    }).catch(() => undefined);
+  }, [migratedProfileScale, onSettingsChange, profile.interface_scale, profile.larger_text]);
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), profile.clock_show_seconds ? 1000 : 30000);
     return () => window.clearInterval(timer);
@@ -388,29 +397,24 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     }
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
-    const previousFontSize = root.style.fontSize;
     const previousFont = root.style.getPropertyValue("--font-family-ui");
-    const previousInterfaceScale = root.style.getPropertyValue("--interface-scale");
-    root.style.fontSize = `${16 * interfaceScale}px`;
+    const previousUiScale = root.style.getPropertyValue("--ui-scale");
     root.style.setProperty("--font-family-ui", interfaceFontStacks[profile.interface_font]);
-    root.style.setProperty("--interface-scale", String(interfaceScale));
+    root.style.setProperty("--ui-scale", String(interfaceScale));
     return () => {
-      root.style.fontSize = previousFontSize;
       if (previousFont) root.style.setProperty("--font-family-ui", previousFont);
       else root.style.removeProperty("--font-family-ui");
-      if (previousInterfaceScale) root.style.setProperty("--interface-scale", previousInterfaceScale);
-      else root.style.removeProperty("--interface-scale");
+      if (previousUiScale) root.style.setProperty("--ui-scale", previousUiScale);
+      else root.style.removeProperty("--ui-scale");
     };
   }, [interfaceScale, profile.interface_font]);
   const rootStyle = {
     "--ui-scale": interfaceScale,
-    "--interface-scale": interfaceScale,
-    "--text-scale": textScale,
     "--font-family-ui": interfaceFontStacks[profile.interface_font],
   } as CSSProperties;
-  const rootClasses = ["desktop", resolvedTheme, `accent-${profile.accent_color}`, `taskbar-align-${profile.taskbar_alignment}`, profile.window_transparency ? "" : "no-transparency", profile.animations_enabled && !profile.reduced_motion ? "" : "no-animations", profile.high_contrast ? "high-contrast" : "", profile.larger_text ? "larger-text" : "", profile.strong_active_borders ? "strong-active-borders" : "", profile.always_show_focus ? "always-show-focus" : ""].filter(Boolean).join(" ");
+  const rootClasses = ["desktop", resolvedTheme, `accent-${profile.accent_color}`, `taskbar-align-${profile.taskbar_alignment}`, profile.window_transparency ? "" : "no-transparency", profile.animations_enabled && !profile.reduced_motion ? "" : "no-animations", profile.high_contrast ? "high-contrast" : "", profile.strong_active_borders ? "strong-active-borders" : "", profile.always_show_focus ? "always-show-focus" : ""].filter(Boolean).join(" ");
   const visibleToasts = profile.show_notifications ? toasts.filter((item) => (item.type !== "error" || profile.notification_errors) && (item.category !== "admin" || profile.notification_admin) && (item.category !== "transfer" || profile.notification_transfer)).slice(-profile.notification_limit) : [];
   const clockText = clock.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", second: profile.clock_show_seconds ? "2-digit" : undefined, hour12: profile.time_format === "12" });
 

@@ -10,6 +10,6 @@ describe("taskbar layout styles", () => {
     expect(taskbarCss).toContain(".desktop > .taskbar");
     expect(taskbarCss).toMatch(/\.desktop > \.taskbar\s*\{[^}]*position:\s*absolute/);
     expect(taskbarCss).toMatch(/\.desktop > \.taskbar\s*\{[^}]*bottom:\s*0/);
-    expect(taskbarCss).toMatch(/\.desktop > \.taskbar\s*\{[^}]*max-height:\s*var\(--taskbar-height-scaled\)/);
+    expect(taskbarCss).toMatch(/\.desktop > \.taskbar\s*\{[^}]*max-height:\s*var\(--taskbar-height\)/);
   });
 });

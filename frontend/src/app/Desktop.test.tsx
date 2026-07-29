@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ModuleSummary } from "../api";
 import { settingsFixture } from "../test/settings";
@@ -35,31 +36,49 @@ describe("personalized desktop", () => {
     expect(container.querySelector(".desktop")).toHaveClass("no-animations");
   });
 
-  it("applies interface scale and larger text to the desktop typography", () => {
-    const previousRootFontSize = document.documentElement.style.fontSize;
+  it("applies interface scale as the only typography multiplier", () => {
+    const previousRootUiScale = document.documentElement.style.getPropertyValue("--ui-scale");
     const { container, rerender, unmount } = renderDesktop({ interface_scale: 125, larger_text: false });
     const desktop = container.querySelector<HTMLElement>(".desktop");
     expect(desktop?.style.getPropertyValue("--ui-scale")).toBe("1.25");
-    expect(desktop?.style.getPropertyValue("--interface-scale")).toBe("1.25");
-    expect(desktop?.style.getPropertyValue("--text-scale")).toBe("1");
-    expect(document.documentElement.style.fontSize).toBe("20px");
-    expect(document.documentElement.style.getPropertyValue("--interface-scale")).toBe("1.25");
+    expect(desktop?.style.getPropertyValue("--text-scale")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe("1.25");
 
-    let profile = settingsFixture({ interface_scale: 100, larger_text: true });
+    const profile = settingsFixture({ interface_scale: 110, larger_text: false });
     rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
-    expect(desktop).toHaveClass("larger-text");
-    expect(desktop?.style.getPropertyValue("--text-scale")).toBe("1.125");
-    expect(desktop?.style.getPropertyValue("--interface-scale")).toBe("1");
-    expect(document.documentElement.style.fontSize).toBe("16px");
-
-    profile = settingsFixture({ interface_scale: 200, larger_text: false });
-    rerender(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
-    expect(desktop?.style.getPropertyValue("--ui-scale")).toBe("2");
-    expect(desktop?.style.getPropertyValue("--interface-scale")).toBe("2");
-    expect(document.documentElement.style.fontSize).toBe("32px");
+    expect(desktop?.style.getPropertyValue("--ui-scale")).toBe("1.1");
+    expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe("1.1");
 
     unmount();
-    expect(document.documentElement.style.fontSize).toBe(previousRootFontSize);
+    expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe(previousRootUiScale);
+  });
+
+  it("migrates larger text into interface scale without a second class or variable", async () => {
+    const profile = settingsFixture({ interface_scale: 100, larger_text: true });
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={save} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+    const desktop = container.querySelector<HTMLElement>(".desktop");
+
+    expect(desktop).not.toHaveClass("larger-text");
+    expect(desktop?.style.getPropertyValue("--ui-scale")).toBe("1.1");
+    expect(desktop?.style.getPropertyValue("--text-scale")).toBe("");
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ interface_scale: 110, larger_text: false }));
+  });
+
+  it("applies the Large 110% setting immediately without reloading", async () => {
+    function ScaleHarness() {
+      const [profile, setProfile] = useState(() => settingsFixture({ startup_windows: "none" }));
+      return <Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={async (patch) => setProfile((current) => ({ ...current, ...patch }))} onTheme={vi.fn()} onLoggedOut={vi.fn()} />;
+    }
+    render(<ScaleHarness />);
+    const desktop = document.querySelector<HTMLElement>(".desktop");
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: /desktop.openUserSettings/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "settings.category.accessibility" }));
+    fireEvent.change(screen.getByLabelText("settings.interfaceScale"), { target: { value: "110" } });
+
+    await waitFor(() => expect(document.querySelector<HTMLElement>(".desktop")?.style.getPropertyValue("--ui-scale")).toBe("1.1"));
+    expect(document.querySelector(".desktop")).toBe(desktop);
   });
 
   it("applies and reapplies the selected global interface font", () => {

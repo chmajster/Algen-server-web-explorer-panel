@@ -20,11 +20,12 @@
 .desktop textarea,
 .desktop table {
   font-family: var(--font-family-ui);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
 }
 
 .desktop select {
   font-family: var(--font-family-ui);
-  font-size: 1rem;
 }
 
 .desktop select option,
@@ -33,15 +34,36 @@
   font-size: inherit;
 }
 
-.desktop table,
-.desktop thead,
-.desktop tbody,
-.desktop tfoot,
-.desktop tr,
-.desktop th,
-.desktop td {
+.desktop table {
+  width: 100%;
   font-family: inherit;
-  font-size: inherit;
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+}
+
+.desktop th {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.desktop td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-md);
+  vertical-align: middle;
+}
+
+.desktop button,
+.desktop input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.desktop select {
+  min-height: var(--control-height);
+}
+
+.desktop input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.desktop select,
+.desktop textarea {
+  padding-inline: var(--control-padding-x);
+  padding-block: var(--control-padding-y);
 }
 
 .desktop * { min-width: 0; }
@@ -64,7 +86,6 @@ code, pre, kbd, samp { font-family: var(--font-family-monospace); }
 
 .desktop.high-contrast { --border-subtle: currentColor; --border-strong: currentColor; }
 .desktop.high-contrast button, .desktop.high-contrast input, .desktop.high-contrast select { border-width: 2px; }
-.desktop.larger-text { --text-scale: 1.125; }
 .desktop.strong-active-borders .active, .desktop.strong-active-borders .selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 .desktop.always-show-focus :focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 

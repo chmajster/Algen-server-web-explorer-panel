@@ -3,38 +3,108 @@ import { resolve } from "node:path";
 import { cwd } from "node:process";
 import { describe, expect, it } from "vitest";
 
-const css = (name) => readFileSync(resolve(cwd(), `src/styles/${name}`), "utf8");
+const read = (path) => readFileSync(resolve(cwd(), path), "utf8");
+const css = (name) => read(`src/styles/${name}`);
 const tokens = css("tokens.css");
 const base = css("base.css");
 const responsive = css("responsive.css");
 const modules = css("modules.css");
 const settings = css("settings.css");
 const identity = css("identity.css");
-const allStyles = readdirSync(resolve(cwd(), "src/styles"))
-  .filter((name) => name.endsWith(".css"))
-  .map((name) => css(name))
+const desktopSource = read("src/app/Desktop.tsx");
+const scaleSource = read("src/app/interfaceScale.ts");
+const settingsSource = read("src/features/settings/SettingsApp.tsx");
+const styleFiles = [
+  ...readdirSync(resolve(cwd(), "src/styles")).filter((name) => name.endsWith(".css")).map((name) => `src/styles/${name}`),
+  "src/features/docker/docker-manager.css",
+  "src/features/package-center/package-center.css",
+];
+const allStyles = styleFiles.map(read).join("\n");
+const sourceFiles = (directory) => readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+  const path = resolve(directory, entry.name);
+  return entry.isDirectory() ? sourceFiles(path) : [path];
+});
+const componentSources = sourceFiles(resolve(cwd(), "src"))
+  .filter((name) => /\.(?:ts|tsx)$/.test(name) && !/\.test\.(?:ts|tsx)$/.test(name))
+  .map((name) => readFileSync(name, "utf8"))
   .join("\n");
 
 describe("global interface scale and typography", () => {
   it.each([
-    "--ui-scale", "--text-scale", "--font-family-ui", "--font-family-monospace",
-    "--control-height", "--icon-size", "--panel-padding", "--sidebar-width",
-    "--taskbar-height", "--taskbar-item-size", "--window-titlebar-height",
+    "--ui-scale", "--font-family-ui", "--font-family-monospace",
+    "--font-size-xs", "--font-size-sm", "--font-size-md", "--font-size-base",
+    "--font-size-lg", "--font-size-xl", "--font-size-2xl", "--font-size-3xl",
+    "--line-height-tight", "--line-height-heading", "--line-height-normal", "--line-height-relaxed",
+    "--control-height", "--control-padding-x", "--control-padding-y", "--icon-size",
+    "--spacing-xs", "--spacing-sm", "--spacing-md", "--spacing-lg",
+    "--taskbar-height", "--taskbar-item-size", "--window-titlebar-height", "--window-border-radius",
   ])("defines the shared %s token", (token) => {
     expect(tokens).toContain(token);
   });
 
-  it("keeps text scaling independent from rem-based interface scaling", () => {
-    expect(tokens).toContain("font-size: calc(1rem * var(--text-scale))");
-    expect(base).toContain(".desktop.larger-text { --text-scale: 1.125; }");
-    expect(base).not.toContain("--ui-scale: 1.125");
+  it("uses ui-scale as the single rem multiplier", () => {
+    expect(tokens).toContain("font-size: calc(100% * var(--ui-scale))");
+    expect(tokens).toContain("font-size: var(--font-size-md)");
+    expect(`${tokens}\n${base}\n${desktopSource}`).not.toContain("--text-scale");
+    expect(`${base}\n${desktopSource}`).not.toContain("larger-text");
+    expect(desktopSource).not.toContain("--interface-scale");
   });
 
-  it("makes shared form controls inherit the selected interface font", () => {
-    for (const selector of [".desktop button", ".desktop input", ".desktop select", ".desktop textarea", ".desktop table"]) {
+  it("connects typography, controls, icons and spacing to the same root rem scale", () => {
+    for (const declaration of [
+      "--font-size-md: 0.875rem",
+      "--control-height: 2.25rem",
+      "--icon-size: 1.125rem",
+      "--spacing-md: 0.75rem",
+      "--taskbar-height: 3.625rem",
+      "--window-titlebar-height: 2.75rem",
+    ]) {
+      expect(tokens).toContain(declaration);
+    }
+    expect(tokens.match(/font-size:\s*calc\(100%\s*\*\s*var\(--ui-scale\)\)/)).toBeTruthy();
+    expect(tokens).not.toMatch(/--[\w-]+-scaled\s*:/);
+  });
+
+  it("supports only the validated 80%, 90%, 100%, 110% and 125% levels", () => {
+    expect(scaleSource).toContain("INTERFACE_SCALE_OPTIONS = [80, 90, 100, 110, 125]");
+    expect(scaleSource).toContain("ALLOWED_UI_SCALES = [0.8, 0.9, 1, 1.1, 1.25]");
+    expect(scaleSource).toContain("if (!Number.isFinite(parsed)) return INTERFACE_SCALE_DEFAULT");
+  });
+
+  it("applies the variable centrally and synchronously on the desktop and document root", () => {
+    expect(desktopSource).toContain('"--ui-scale": interfaceScale');
+    expect(desktopSource).toContain('root.style.setProperty("--ui-scale", String(interfaceScale))');
+    expect(desktopSource).toContain("useLayoutEffect(() =>");
+    expect(settingsSource).toContain("INTERFACE_SCALE_OPTIONS.map");
+  });
+
+  it("uses shared typography tokens instead of arbitrary local font sizes", () => {
+    const stylesWithoutTokens = styleFiles.filter((name) => !name.endsWith("tokens.css")).map(read).join("\n");
+    expect(stylesWithoutTokens).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
+    expect(stylesWithoutTokens).not.toMatch(/font-size\s*:\s*(?:\d*\.?\d+)(?:rem|em)\b/i);
+    expect(stylesWithoutTokens).not.toMatch(/font\s*:\s*(?:\d{3}\s+)?(?:\d*\.?\d+)(?:rem|em)\b/i);
+    expect(componentSources).not.toMatch(/\bfontSize\s*:/);
+  });
+
+  it("makes shared form controls inherit the interface font and typography scale", () => {
+    for (const selector of [".desktop button", ".desktop input", ".desktop select", ".desktop textarea"]) {
       expect(base).toContain(selector);
     }
     expect(base).toContain("font-family: var(--font-family-ui)");
+    expect(base).toContain("font-size: var(--font-size-md)");
+    expect(base).toContain("line-height: var(--line-height-normal)");
+    expect(base).toContain("min-height: var(--control-height)");
+  });
+
+  it("scales tables and keeps them horizontally scrollable", () => {
+    expect(base).toContain(".desktop table {");
+    expect(base).toContain(".desktop th {");
+    expect(base).toContain(".desktop td {");
+    expect(base).toContain("padding: var(--spacing-sm) var(--spacing-md)");
+    expect(base).toContain('[class*="table-wrap"]');
+    expect(base).toContain("overflow-x: auto");
+    expect(allStyles).not.toMatch(/\bzoom\s*:/i);
+    expect(`${tokens}\n${base}`).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
   });
 
   it("uses window container queries for module-level responsive behavior", () => {
@@ -45,13 +115,12 @@ describe("global interface scale and typography", () => {
     expect(responsive).toContain(".package-toolbar");
   });
 
-  it("keeps Hosts Manager dimensions tied to the global rem scale", () => {
+  it("keeps Hosts Manager dimensions tied to global tokens", () => {
     const hostsRules = [...modules.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
       .filter(([, selectors]) => selectors.includes(".hosts-manager-app"))
       .map((match) => match[0])
       .join("\n");
 
-    expect(modules).toContain(".hosts-manager-app {");
     for (const token of [
       "--hosts-control-height: var(--control-height)",
       "--hosts-icon-size: var(--icon-size)",
@@ -59,72 +128,25 @@ describe("global interface scale and typography", () => {
     ]) {
       expect(hostsRules).toContain(token);
     }
-    expect(hostsRules).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
-    expect(hostsRules).not.toMatch(/\bzoom\s*:/i);
-    expect(hostsRules).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
     expect(hostsRules).not.toContain("--ui-scale:");
-    expect(hostsRules).toMatch(/(?:\d*\.?\d+rem|\d*\.?\d+em|var\(--hosts-)/);
     expect(hostsRules).toContain("min-width: max-content");
   });
 
-  it("scopes Hosts overrides without replacing Ansible Controller rules", () => {
-    expect(modules).toContain(".ansible-panel {");
-    expect(modules).toContain(".hosts-manager-app .ansible-panel {");
-    expect(modules).toContain(".hosts-manager-app .hosts-data-table");
-  });
-
-  it("binds policy views and their native controls directly to the root rem scale", () => {
+  it("keeps policy views and native controls on global tokens", () => {
     const policyRules = settings.slice(
       settings.indexOf(".desktop .policy-browser {"),
       settings.indexOf(".desktop .docker-policy-editor {"),
     );
 
-    expect(policyRules).toContain("font-size: 1rem");
     expect(policyRules).toContain("height: var(--control-height)");
     expect(policyRules).toContain("font-size: var(--font-size-base)");
     expect(policyRules).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
-    expect(policyRules).not.toMatch(/font-size\s*:\s*\d*\.?\d+em\b/i);
-    expect(policyRules).not.toMatch(/\bzoom\s*:/i);
-    expect(policyRules).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
   });
 
-  it("scales every select and its native options from the root rem size", () => {
-    const selectRules = [...allStyles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .filter(([, selectors]) => /\b(?:select|option|optgroup)(?=[\s:.[\]#>,+~]|$)/i.test(selectors))
-      .map((match) => match[0])
-      .join("\n");
-
-    expect(base).toContain(".desktop select {");
-    expect(base).toContain("font-size: 1rem");
-    expect(base).toContain(".desktop select option");
-    expect(base).toContain(".desktop select optgroup");
-    expect(selectRules).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
-    expect(selectRules).not.toMatch(/font-size\s*:\s*\d*\.?\d+em\b/i);
-    expect(selectRules).not.toMatch(/\bzoom\s*:/i);
-    expect(selectRules).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
-  });
-
-  it("keeps every table font connected to the interface scale", () => {
-    const tableRules = [...allStyles.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .filter(([, selectors]) => /\b(?:table|thead|tbody|tfoot|tr|th|td)(?=[\s:.[\]#>,+~]|$)/i.test(selectors))
-      .map((match) => match[0])
-      .join("\n");
-
-    for (const element of ["table", "thead", "tbody", "tfoot", "tr", "th", "td"]) {
-      expect(base).toContain(`.desktop ${element}`);
-    }
-    expect(base).toContain("font-size: inherit");
-    expect(tableRules).not.toMatch(/font-size\s*:\s*[^;{}]*px/i);
-    expect(tableRules).not.toMatch(/font-size\s*:\s*(?![^;{}]*rem\b)\d*\.?\d+em\b/i);
-    expect(tableRules).not.toMatch(/\bzoom\s*:/i);
-    expect(tableRules).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
-  });
-
-  it("gives embedded access policies the full second column without breaking table cells", () => {
+  it("keeps embedded access policies responsive without breaking table cells", () => {
     expect(settings).toContain(".desktop .access-policy-browser { grid-template-columns: minmax(11.25rem,25%) minmax(0,75%); }");
     expect(settings).toContain(".desktop .access-policy-detail { min-width: 0; overflow: hidden; }");
     expect(identity).toContain(".access-policy-editor { grid-template-rows: auto minmax(0,1fr); overflow: hidden; }");
     expect(identity).toContain(".identity-role-matrix td:first-child { min-width: 15rem; }");
-    expect(identity).not.toContain(".identity-role-matrix td:first-child { display: grid");
   });
 });

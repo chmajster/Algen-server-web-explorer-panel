@@ -187,7 +187,7 @@
   z-index: 1;
   color: var(--text-secondary);
   background: var(--surface-secondary);
-  font-size: 0.84rem;
+  font-size: var(--font-size-sm);
 }
 .docker-table td {
   max-width: 17.5rem;
@@ -234,7 +234,7 @@
   flex: 1 1 9.0625rem;
   gap: 0.25rem;
   color: var(--text-secondary);
-  font-size: .72rem;
+  font-size: var(--font-size-xs);
 }
 .registry-catalog-toolbar > label:nth-of-type(2) {
   min-width: 10.9375rem;
@@ -267,7 +267,7 @@
   border-radius: 62.4375rem;
   color: var(--text-secondary);
   background: var(--surface-secondary);
-  font-size: .72rem;
+  font-size: var(--font-size-xs);
   font-weight: 700;
 }
 .registry-boolean.yes {
@@ -284,12 +284,12 @@
 }
 .registry-image-details > header strong {
   overflow-wrap: anywhere;
-  font-size: 1rem;
+  font-size: var(--font-size-base);
 }
 .registry-image-details > header span,
 .registry-image-details .field-label small {
   color: var(--text-secondary);
-  font-size: .75rem;
+  font-size: var(--font-size-xs);
   line-height: 1.45;
 }
 .registry-image-details dl {
@@ -311,19 +311,19 @@
 }
 .registry-image-details dt {
   color: var(--text-muted);
-  font-size: .7rem;
+  font-size: var(--font-size-xs);
 }
 .registry-image-details dd {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: .75rem;
+  font-size: var(--font-size-xs);
 }
 .registry-image-details .field-label {
   display: grid;
   gap: 0.3125rem;
   color: var(--text-secondary);
-  font-size: .75rem;
+  font-size: var(--font-size-xs);
 }
 .registry-image-details input,
 .registry-image-details select {
@@ -358,7 +358,7 @@
   border-radius: 62.4375rem;
   color: var(--text-secondary);
   background: var(--surface-secondary);
-  font-size: 0.65rem;
+  font-size: var(--font-size-xs);
 }
 .docker-network-tags {
   max-width: 15rem;
@@ -377,7 +377,7 @@
 }
 .docker-network-tags > span {
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
 }
 .docker-empty-value {
   color: var(--text-muted);
@@ -412,7 +412,7 @@
   gap: 0.3125rem;
   min-width: 0;
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: var(--font-size-sm);
 }
 .docker-network-ipam label:first-child {
   grid-column: 1 / -1;
@@ -435,11 +435,11 @@
 .docker-form-hint {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: var(--font-size-sm);
 }
 .docker-field-error {
   color: var(--danger);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
 }
 .docker-network-advanced {
   padding: 0.75rem;
@@ -516,7 +516,7 @@
   border-radius: 62.4375rem;
   color: var(--text-secondary);
   background: var(--surface-secondary);
-  font-size: 0.78rem;
+  font-size: var(--font-size-sm);
   font-weight: 700;
 }
 .docker-status-running,
@@ -587,10 +587,10 @@
 }
 .docker-metric-grid article span {
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: var(--font-size-sm);
 }
 .docker-metric-grid article strong {
-  font-size: 1.3rem;
+  font-size: var(--font-size-xl);
 }
 .docker-dashboard-grid {
   display: grid;
@@ -720,7 +720,7 @@
 .docker-inspect-grid span {
   display: block;
   color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-size: var(--font-size-sm);
 }
 .docker-inspect-grid strong {
   display: block;
@@ -758,7 +758,7 @@
   display: grid;
   gap: 0.3125rem;
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
 }
 .docker-unit-input {
   display: flex;
@@ -879,7 +879,7 @@
 }
 .docker-wizard > header h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--font-size-base);
   white-space: nowrap;
 }
 .docker-wizard > header svg,
@@ -940,7 +940,7 @@
 .docker-resource-options > span {
   padding: 0.5625rem;
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--font-size-xs);
 }
 .docker-registry-name {
   display: flex;
@@ -953,7 +953,7 @@
   border-radius: 62.4375rem;
   color: var(--accent);
   background: var(--surface-selected);
-  font-size: 0.62rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
 }
 .docker-compose-import {
@@ -976,7 +976,7 @@
   border-bottom: 0.1875rem solid var(--border-subtle);
   color: var(--text-muted);
   text-align: center;
-  font-size: 0.8rem;
+  font-size: var(--font-size-sm);
 }
 .docker-wizard-steps li.active,
 .docker-wizard-steps li.done {
@@ -1220,13 +1220,13 @@
   height: 1.375rem !important;
 }
 .docker-wizard-heading h2 {
-  font-size: 1.06rem !important;
+  font-size: var(--font-size-lg) !important;
 }
 .docker-wizard-heading small {
   max-width: 35.625rem;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: .72rem;
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1248,7 +1248,7 @@
   background: var(--surface-secondary);
   cursor: pointer;
   list-style: none;
-  font-size: .78rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
 }
 .docker-wizard-import-menu summary::-webkit-details-marker {
@@ -1297,7 +1297,7 @@
 }
 .docker-wizard-import-menu > div button small {
   color: var(--text-muted);
-  font-size: .65rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard-header-actions > .icon-button {
   width: 2.5rem !important;
@@ -1362,7 +1362,7 @@
   border: 2px solid var(--border-strong);
   border-radius: 50%;
   background: var(--surface-elevated);
-  font-size: .73rem;
+  font-size: var(--font-size-xs);
   font-weight: 700;
 }
 .docker-wizard-step-number svg {
@@ -1377,11 +1377,11 @@
 }
 .docker-wizard-stepper strong {
   color: var(--text-secondary);
-  font-size: .75rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard-stepper small {
   overflow: hidden;
-  font-size: .64rem;
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1463,12 +1463,12 @@
   margin: 0;
 }
 .docker-wizard-form-section h3 {
-  font-size: .8rem;
+  font-size: var(--font-size-sm);
 }
 .docker-wizard-form-section p {
   margin-top: 0.1875rem;
   color: var(--text-secondary);
-  font-size: .67rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard-section-content {
   display: grid;
@@ -1490,14 +1490,14 @@
 .docker-wizard label > span:first-child,
 .docker-secret-fields legend {
   color: var(--text-secondary);
-  font-size: .7rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
 }
 .docker-wizard label > small,
 .docker-field-meta small,
 .docker-wizard-section-content > .field-hint {
   color: var(--text-muted);
-  font-size: .65rem;
+  font-size: var(--font-size-xs);
   line-height: 1.45;
 }
 .docker-wizard input,
@@ -1530,7 +1530,7 @@
   border-radius: 62.4375rem;
   color: var(--warning);
   background: var(--surface-secondary);
-  font-size: .62rem;
+  font-size: var(--font-size-xs);
   font-style: normal;
   font-weight: 600;
 }
@@ -1543,7 +1543,7 @@
 }
 .docker-field-counter {
   color: var(--success);
-  font-size: .65rem;
+  font-size: var(--font-size-xs);
 }
 .docker-field-counter.invalid,
 .docker-invalid-line {
@@ -1553,7 +1553,7 @@
   padding: 0.25rem 0.4375rem;
   border-radius: var(--radius-small);
   background: var(--surface-secondary);
-  font-size: .65rem;
+  font-size: var(--font-size-xs);
 }
 .docker-secret-fields,
 .docker-mount-fields {
@@ -1592,11 +1592,11 @@
   gap: 0.1875rem;
 }
 .docker-switch-field > span strong {
-  font-size: .72rem;
+  font-size: var(--font-size-xs);
 }
 .docker-switch-field > span small {
   color: var(--text-muted);
-  font-size: .64rem;
+  font-size: var(--font-size-xs);
 }
 .docker-switch-field input {
   position: absolute;
@@ -1656,7 +1656,7 @@
   border-radius: 0 var(--radius-small) var(--radius-small) 0;
   color: var(--text-muted);
   background: var(--surface-secondary);
-  font-size: .64rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
 }
 .docker-wizard-validation {
@@ -1668,7 +1668,7 @@
   border-radius: var(--radius-small);
   color: var(--danger);
   background: var(--surface-secondary);
-  font-size: .7rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard-validation svg {
   width: 1.0625rem;
@@ -1690,12 +1690,12 @@
 }
 .docker-wizard-help h3 {
   margin-bottom: 0.4375rem;
-  font-size: .74rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard-help p,
 .docker-wizard-help li {
   color: var(--text-secondary);
-  font-size: .67rem;
+  font-size: var(--font-size-xs);
   line-height: 1.5;
 }
 .docker-wizard-help dl {
@@ -1714,7 +1714,7 @@
 .docker-wizard-help dd {
   min-width: 0;
   margin: 0;
-  font-size: .66rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard-help dt {
   color: var(--text-muted);
@@ -1740,7 +1740,7 @@
   border-radius: var(--radius-small);
   color: var(--text-secondary);
   background: var(--surface-primary);
-  font-size: .63rem;
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1764,7 +1764,7 @@
   margin-bottom: 0.625rem;
 }
 .docker-summary-card h3 {
-  font-size: .74rem;
+  font-size: var(--font-size-xs);
 }
 .docker-summary-card header button {
   min-height: 1.875rem;
@@ -1772,7 +1772,7 @@
   border: 0;
   color: var(--accent);
   background: transparent;
-  font-size: .65rem;
+  font-size: var(--font-size-xs);
 }
 .docker-summary-card dl {
   display: grid;
@@ -1789,7 +1789,7 @@
 .docker-summary-card dd {
   min-width: 0;
   margin: 0;
-  font-size: .66rem;
+  font-size: var(--font-size-xs);
 }
 .docker-summary-card dt {
   color: var(--text-muted);
@@ -1823,12 +1823,12 @@
   color: var(--danger);
 }
 .docker-preflight h3 {
-  font-size: .76rem;
+  font-size: var(--font-size-sm);
 }
 .docker-preflight p,
 .docker-preflight li {
   color: var(--text-secondary);
-  font-size: .67rem;
+  font-size: var(--font-size-xs);
 }
 .docker-preflight ul {
   margin: 0.625rem 0 0 1.75rem;
@@ -1849,11 +1849,11 @@
   gap: 0.1875rem;
 }
 .docker-wizard-draft-status strong {
-  font-size: .7rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard-draft-status small {
   color: var(--text-muted);
-  font-size: .64rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard-footer-actions {
   display: flex;
@@ -1864,7 +1864,7 @@
 .docker-wizard-block-reason {
   max-width: 16.25rem;
   color: var(--danger);
-  font-size: .64rem;
+  font-size: var(--font-size-xs);
   text-align: right;
 }
 .docker-wizard-primary-action {
@@ -2029,7 +2029,7 @@
   }
   .docker-wizard-steps li::after {
     content: counter(list-item);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
   }
 }
 
@@ -2069,7 +2069,7 @@
 }
 .docker-compact-header h2 {
   margin: 0;
-  font-size: .82rem !important;
+  font-size: var(--font-size-sm) !important;
 }
 .docker-compact-header button {
   min-height: 1.875rem;
@@ -2077,7 +2077,7 @@
   padding: 0 0.5rem;
   border-radius: 0.1875rem;
   background: var(--surface-secondary);
-  font-size: .65rem;
+  font-size: var(--font-size-xs);
   white-space: nowrap;
 }
 .docker-compact-header button svg {
@@ -2100,7 +2100,7 @@
 .docker-compact-form {
   display: grid;
   gap: 0.8125rem;
-  font-size: .72rem;
+  font-size: var(--font-size-xs);
 }
 .docker-config-section {
   min-width: 0;
@@ -2116,7 +2116,7 @@
   border-radius: 2px;
   color: var(--accent);
   background: transparent;
-  font-size: .72rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-align: left;
 }
@@ -2155,7 +2155,7 @@
 }
 .docker-config-label {
   color: var(--text-secondary);
-  font-size: .67rem;
+  font-size: var(--font-size-xs);
 }
 .docker-config-label b {
   margin-left: 0.1875rem;
@@ -2170,13 +2170,13 @@
 .docker-compact-hint {
   margin: 0;
   color: var(--text-muted);
-  font-size: .6rem;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
 }
 .docker-wizard:not(.docker-compose-wizard) input,
 .docker-wizard:not(.docker-compose-wizard) select,
 .docker-wizard:not(.docker-compose-wizard) button {
-  font-size: .68rem;
+  font-size: var(--font-size-xs);
 }
 .docker-wizard:not(.docker-compose-wizard) input,
 .docker-wizard:not(.docker-compose-wizard) select {
@@ -2189,7 +2189,7 @@
   min-height: 5.125rem;
   padding: 0.4375rem 0.5rem;
   border-radius: 0.1875rem;
-  font-size: .68rem;
+  font-size: var(--font-size-xs);
   resize: vertical;
 }
 .docker-wizard:not(.docker-compose-wizard) input:focus,
@@ -2201,7 +2201,7 @@
 }
 .docker-inline-error {
   color: var(--danger);
-  font-size: .59rem;
+  font-size: var(--font-size-xs);
 }
 .docker-compact-check {
   min-height: 1.625rem;
@@ -2209,7 +2209,7 @@
   align-items: center;
   gap: 0.375rem !important;
   color: var(--text-secondary);
-  font-size: .66rem;
+  font-size: var(--font-size-xs);
 }
 .docker-compact-check input {
   width: 0.875rem;
@@ -2234,7 +2234,7 @@
   gap: 0.3125rem;
   padding: 0 0 0.1875rem;
   color: var(--text-muted);
-  font-size: .59rem;
+  font-size: var(--font-size-xs);
 }
 .docker-port-table,
 .docker-volume-table,
@@ -2256,7 +2256,7 @@
 .docker-port-row > small {
   grid-column: 1 / -1;
   color: var(--danger);
-  font-size: .59rem;
+  font-size: var(--font-size-xs);
 }
 .docker-port-row > button,
 .docker-volume-row > button,
@@ -2284,7 +2284,7 @@
   border-radius: 0.1875rem;
   color: var(--text-secondary);
   background: var(--surface-secondary);
-  font-size: .63rem;
+  font-size: var(--font-size-xs);
 }
 .docker-compact-add svg {
   width: 0.8125rem;
@@ -2322,7 +2322,7 @@
 .docker-compact-empty {
   margin: 0;
   color: var(--text-muted);
-  font-size: .62rem;
+  font-size: var(--font-size-xs);
 }
 .docker-kv-row {
   min-width: 0;
@@ -2356,7 +2356,7 @@
   border-radius: 0 0.1875rem 0.1875rem 0;
   color: var(--text-muted);
   background: var(--surface-secondary);
-  font-size: .59rem;
+  font-size: var(--font-size-xs);
 }
 .docker-limits-disabled {
   opacity: .58;
@@ -2366,7 +2366,7 @@
   border-left: 2px solid var(--danger);
   color: var(--danger);
   background: var(--surface-secondary);
-  font-size: .62rem;
+  font-size: var(--font-size-xs);
 }
 .docker-compact-errors ul {
   margin: 0;
@@ -2389,7 +2389,7 @@
   padding: 0.3125rem 0.4375rem;
   border-right: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
-  font-size: .63rem;
+  font-size: var(--font-size-xs);
 }
 .docker-compact-summary dt {
   color: var(--text-muted);
@@ -2411,12 +2411,12 @@
   min-height: 1.875rem;
   padding: 0 0.625rem;
   border-radius: 0.1875rem;
-  font-size: .67rem;
+  font-size: var(--font-size-xs);
 }
 .docker-compact-footer > span {
   overflow: hidden;
   color: var(--danger);
-  font-size: .59rem;
+  font-size: var(--font-size-xs);
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2554,11 +2554,11 @@
     flex-basis: 2.25rem;
   }
   .docker-wizard-heading h2 {
-    font-size: .88rem !important;
+    font-size: var(--font-size-md) !important;
   }
   .docker-wizard-heading small {
     max-width: min(48vw, 13.75rem);
-    font-size: .59rem;
+    font-size: var(--font-size-xs);
   }
   .docker-wizard-header-actions {
     flex: 0 0 auto;
@@ -2591,13 +2591,13 @@
   }
   .docker-wizard-mobile-progress > span {
     color: var(--text-muted);
-    font-size: .62rem;
+    font-size: var(--font-size-xs);
   }
   .docker-wizard-mobile-progress > strong {
     grid-column: 2;
     grid-row: 1;
     color: var(--text-primary);
-    font-size: .68rem;
+    font-size: var(--font-size-xs);
   }
   .docker-wizard-mobile-progress > i {
     height: 0.25rem;
