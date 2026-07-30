@@ -46,7 +46,7 @@ import {
   type HostsDataColumn,
 } from "./components/HostsDataTable";
 
-type Props = { permissions: string[]; t: Translate; toast: ToastFn };
+type Props = { permissions: string[]; initialOperationId?: string; t: Translate; toast: ToastFn; onDeepLinkClose?: () => void };
 const status: ModuleStatus = {
   installed: true,
   update_available: false,
@@ -71,7 +71,7 @@ const sections: ModuleSection[] = [
   "audit",
 ];
 
-export function HostsManagerApp({ permissions, t, toast }: Props) {
+export function HostsManagerApp({ permissions, initialOperationId, t, toast, onDeepLinkClose }: Props) {
   const [section, setSection] = useState<ModuleSection>("overview");
   const [dashboard, setDashboard] = useState<HostsManagerDashboard | null>(
     null,
@@ -97,6 +97,9 @@ export function HostsManagerApp({ permissions, t, toast }: Props) {
   const [backups, setBackups] = useState<HostsManagerBackup[]>([]);
   const [loading, setLoading] = useState(true);
   const can = (permission: string) => permissions.includes(permission);
+  useEffect(() => {
+    if (initialOperationId) setSection("audit");
+  }, [initialOperationId]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -188,7 +191,7 @@ export function HostsManagerApp({ permissions, t, toast }: Props) {
     );
   else if (section === "audit")
     content = can("hosts-manager.audit.view") ? (
-      <Operations items={operations} t={t} />
+      <Operations items={operations} initialOperationId={initialOperationId} t={t} toast={toast} onDeepLinkClose={onDeepLinkClose} />
     ) : (
       <div className="empty-state">{t("hosts.audit.permissionRequired")}</div>
     );
@@ -233,7 +236,7 @@ export function HostsManagerApp({ permissions, t, toast }: Props) {
       section={section}
       sections={sections}
       t={t}
-      onSection={setSection}
+      onSection={(next) => { setSection(next); if (initialOperationId && next !== "audit") onDeepLinkClose?.(); }}
       actions={
         <button type="button" onClick={() => void refresh()}>
           <RefreshCw className={loading ? "spin" : ""} />
@@ -1812,11 +1815,22 @@ function Enrollment({
 
 function Operations({
   items,
+  initialOperationId,
   t,
+  toast,
+  onDeepLinkClose,
 }: {
   items: HostsManagerOperation[];
+  initialOperationId?: string;
   t: Translate;
+  toast?: ToastFn;
+  onDeepLinkClose?: () => void;
 }) {
+  const [selected, setSelected] = useState<HostsManagerOperation | null>(null);
+  useEffect(() => {
+    if (!initialOperationId) return;
+    void api.hostsManagerOperation(initialOperationId).then(setSelected).catch((error: unknown) => toast?.(error instanceof Error ? error.message : t("error.generic"), "error"));
+  }, [initialOperationId, t, toast]);
   const columns: HostsDataColumn<HostsManagerOperation>[] = [
     {
       id: "host",
@@ -1867,12 +1881,26 @@ function Operations({
     },
   ];
   return (
-    <HostsDataTable
-      items={items}
-      columns={columns}
-      rowKey={(item) => item.id}
-      empty={t("hosts.operations.empty")}
-    />
+    <>
+      <HostsDataTable
+        items={items}
+        columns={columns}
+        rowKey={(item) => item.id}
+        empty={t("hosts.operations.empty")}
+        selectedKey={selected?.id}
+        onSelect={(item) => { if (initialOperationId && item.id !== initialOperationId) onDeepLinkClose?.(); setSelected(item); }}
+      />
+      {selected && <Modal wide title={t("actions.hostsOperationDetails")} closeLabel={t("action.close")} onClose={() => { setSelected(null); if (selected.id === initialOperationId) onDeepLinkClose?.(); }}>
+        <dl className="settings-details">
+          <dt>{t("hosts.operation.action")}</dt><dd>{selected.capability_id}</dd>
+          <dt>{t("common.status")}</dt><dd><Status value={selected.status} t={t} /></dd>
+          <dt>{t("hosts.operation.progress")}</dt><dd>{selected.progress}%</dd>
+          <dt>{t("hosts.operation.details")}</dt><dd>{selected.stage || t("common.none")}</dd>
+        </dl>
+        {selected.error && <pre className="error-log">{selected.error}</pre>}
+        <pre>{JSON.stringify(selected.details, null, 2)}</pre>
+      </Modal>}
+    </>
   );
 }
 function Discovery({

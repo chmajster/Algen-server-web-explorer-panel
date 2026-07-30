@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type AppJob, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
@@ -18,12 +18,22 @@ import "./package-center.css";
 
 type CredentialAction = { job: AppJob; operation: "cancel" | "retry" } | null;
 
-export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void }) {
+export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSelectedJobClose }: { selectedJobId?: string; t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void; onSelectedJobClose?: () => void }) {
   const state = usePackageCenter();
   const [selected, setSelected] = useState<ModuleSummary | null>(null);
   const [action, setAction] = useState<{ item: ModuleSummary; action: PackageAction } | null>(null);
   const [liveJob, setLiveJob] = useState<{ job: AppJob; name: string } | null>(null);
   const [credential, setCredential] = useState<CredentialAction>(null);
+  useEffect(() => {
+    if (!selectedJobId) return;
+    let active = true;
+    void api.appJob(selectedJobId).then((job) => {
+      if (!active) return;
+      const module = state.modules.find((item) => item.id === job.module_id);
+      setLiveJob({ job, name: module?.manifest.name || job.module_id });
+    }).catch((error: unknown) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
+    return () => { active = false; };
+  }, [selectedJobId, state.modules, t, toast]);
   const counts = useMemo(() => ({
     all: state.modules.length,
     installed: state.modules.filter((item) => item.state.installed).length,
@@ -71,7 +81,7 @@ export function PackageCenterApp({ t, toast, onOpenModule }: { t: Translate; toa
       </main>}
     {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => openSelectedModule(selected) : undefined} />}
     {action && <PackageActionDialog item={action.item} action={action.action} t={t} toast={toast} onClose={() => setAction(null)} onStarted={(job) => { setLiveJob({ job, name: action.item.manifest.name }); void state.refreshModule(action.item.id); void state.refresh(true); }} />}
-    {liveJob && <PackageJobDialog initialJob={liveJob.job} moduleName={liveJob.name} t={t} onClose={() => setLiveJob(null)} />}
+    {liveJob && <PackageJobDialog initialJob={liveJob.job} moduleName={liveJob.name} t={t} onClose={() => { setLiveJob(null); if (selectedJobId === liveJob.job.id) onSelectedJobClose?.(); }} />}
     {credential && <AdminActionDialog title={t(credential.operation === "cancel" ? "package.cancelJob" : "action.retry")} fields={[]} danger={credential.operation === "cancel"} t={t} onClose={() => setCredential(null)} onSubmit={jobOperation} />}
   </section>;
 }

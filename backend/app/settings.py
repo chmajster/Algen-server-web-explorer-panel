@@ -156,6 +156,7 @@ class UserSettings(BaseModel):
     show_welcome_widget: bool = True
     show_notifications: bool = True
     show_transfer_indicator: bool = True
+    show_background_actions_indicator: bool = True
     window_transparency: bool = True
     animations_enabled: bool = True
     clock_show_seconds: bool = False
@@ -240,6 +241,7 @@ class MePatch(BaseModel):
     show_welcome_widget: bool | None = None
     show_notifications: bool | None = None
     show_transfer_indicator: bool | None = None
+    show_background_actions_indicator: bool | None = None
     window_transparency: bool | None = None
     animations_enabled: bool | None = None
     clock_show_seconds: bool | None = None

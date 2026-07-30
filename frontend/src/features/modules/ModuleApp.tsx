@@ -1,7 +1,7 @@
 import { Play, RefreshCw, RotateCcw, Stethoscope } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, type ModuleBackup, type ModuleDiagnostic, type ModuleJob, type ModuleStatus, type ModuleSummary } from "../../api";
-import type { ToastFn, Translate } from "../../app/types";
+import type { ToastFn, Translate, WindowDeepLink } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { PackageJobDialog } from "../package-center/PackageJobDialog";
 import { ModuleAppShell, ModuleHealthCard, translateServiceState, type ModuleSection } from "./common/ModuleAppShell";
@@ -15,13 +15,15 @@ import { HostsManagerApp } from "./hosts/HostsManagerApp";
 
 const emptyStatus: ModuleStatus = { installed: false, update_available: false, service_state: "unknown", service_enabled: false, services: {}, health: "unknown", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} };
 
-export function ModuleApp({ moduleId, initialPath, draftKey, permissions = [], t, toast, onOpenFolder, onDirtyChange }: { moduleId: string; initialPath?: string; draftKey?: string; permissions?: string[]; t: Translate; toast: ToastFn; onOpenFolder: (path: string) => void; onDirtyChange: (dirty: boolean) => void }) {
-  if (moduleId === "samba") return <SambaModuleApp initialSharePath={initialPath} readOnly={!permissions.includes("modules.configure")} canReinstall={permissions.includes("modules.update")} t={t} toast={toast} onOpenFolder={onOpenFolder} onDirtyChange={onDirtyChange} />;
-  if (moduleId === "docker") return <DockerManagerApp draftKey={draftKey} permissions={permissions} t={t} toast={toast} onDirtyChange={onDirtyChange} />;
-  if (moduleId === "ansible-controller") return <AnsibleControllerApp permissions={permissions} t={t} toast={toast} />;
-  if (moduleId === "hosts-manager") return <HostsManagerApp permissions={permissions} t={t} toast={toast} />;
-  if (["linux-updates", "pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"].includes(moduleId)) return <ManagedModuleApp moduleId={moduleId} permissions={permissions} t={t} toast={toast} />;
-  return <GenericModuleApp moduleId={moduleId} t={t} toast={toast} />;
+export function ModuleApp({ moduleId, initialPath, deepLink, draftKey, permissions = [], t, toast, onOpenFolder, onDirtyChange, onDeepLinkClose }: { moduleId: string; initialPath?: string; deepLink?: WindowDeepLink; draftKey?: string; permissions?: string[]; t: Translate; toast: ToastFn; onOpenFolder: (path: string) => void; onDirtyChange: (dirty: boolean) => void; onDeepLinkClose?: () => void }) {
+  let content: React.ReactNode;
+  if (moduleId === "samba") content = <SambaModuleApp initialSharePath={initialPath} readOnly={!permissions.includes("modules.configure")} canReinstall={permissions.includes("modules.update")} t={t} toast={toast} onOpenFolder={onOpenFolder} onDirtyChange={onDirtyChange} />;
+  else if (moduleId === "docker") content = <DockerManagerApp draftKey={draftKey} permissions={permissions} t={t} toast={toast} onDirtyChange={onDirtyChange} />;
+  else if (moduleId === "ansible-controller") content = <AnsibleControllerApp permissions={permissions} initialJobId={deepLink?.type === "ansible-job" ? deepLink.id : undefined} initialScanId={deepLink?.type === "ansible-scan" ? deepLink.id : undefined} t={t} toast={toast} onDeepLinkClose={onDeepLinkClose} />;
+  else if (moduleId === "hosts-manager") content = <HostsManagerApp permissions={permissions} initialOperationId={deepLink?.type === "hosts-operation" ? deepLink.id : undefined} t={t} toast={toast} onDeepLinkClose={onDeepLinkClose} />;
+  else if (["linux-updates", "pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"].includes(moduleId)) content = <ManagedModuleApp moduleId={moduleId} permissions={permissions} t={t} toast={toast} />;
+  else content = <GenericModuleApp moduleId={moduleId} t={t} toast={toast} />;
+  return <>{content}{deepLink?.type === "package-job" && <PackageJobDialog jobId={deepLink.jobId || deepLink.id} moduleName={moduleId} t={t} onClose={() => onDeepLinkClose?.()} />}</>;
 }
 
 function GenericModuleApp({ moduleId, t, toast }: { moduleId: string; t: Translate; toast: ToastFn }) {

@@ -97,6 +97,7 @@ export type UserPreferences = {
   show_welcome_widget: boolean;
   show_notifications: boolean;
   show_transfer_indicator: boolean;
+  show_background_actions_indicator: boolean;
   window_transparency: boolean;
   animations_enabled: boolean;
   clock_show_seconds: boolean;
@@ -477,7 +478,7 @@ export type HostsManagerCredential = AnsibleCredential & {
   environment_id?: string | null; last_used_at?: number | null; host_count?: number;
 };
 export type HostsManagerCapability = { id: string; name: string; icon: string; permission: string; module_id: string; deep_link: string };
-export type HostsManagerOperation = { id: string; host_id?: string | null; capability_id: string; module_id: string; status: string; stage: string; progress: number; error: string; details: Record<string, unknown>; created_at: number; updated_at: number };
+export type HostsManagerOperation = { id: string; host_id?: string | null; capability_id: string; module_id: string; status: string; stage: string; progress: number; package_job_id?: string | null; error: string; details: Record<string, unknown>; created_at: number; updated_at: number };
 export type HostsManagerBootstrapOS = "linux" | "windows";
 export type HostsManagerEnvironment = {
   id: string; name: string; slug: string; description: string; color: string; default_hostname_pattern_id?: string | null;
@@ -1203,6 +1204,7 @@ export const api = {
   testNetworkDns: (hostname: string) => request<DnsTestResult>("/api/admin/network/dns/test", { method: "POST", body: JSON.stringify({ hostname }) }),
   networkRouting: () => request<RoutingSnapshot>("/api/admin/network/routing"),
   networkManagement: () => request<NetworkManagementState>("/api/admin/network/management"),
+  activeNetworkTransaction: () => request<NetworkTransaction | null>("/api/admin/network/transactions/active"),
   testNetworkConnectivity: (kind: "ping" | "trace" | "tcp", target: string, port?: number | null) => request<NetworkConnectivityResult>("/api/admin/network/connectivity/test", { method: "POST", body: JSON.stringify({ kind, target, port: port || null }) }),
   planNetworkChange: (change: NetworkChange) => request<NetworkPlan>("/api/admin/network/plans", { method: "POST", body: JSON.stringify({ change }) }),
   networkPolicy: () => request<NetworkPolicy>("/api/admin/network/policy"),
@@ -1301,6 +1303,7 @@ export const api = {
   hostsManagerActionPlan: (id: string, capability: string, parameters: Record<string, unknown> = {}) => request<Record<string, unknown>>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/actions/${encodeURIComponent(capability)}/plan`, { method: "POST", body: JSON.stringify({ parameters, confirm: false, confirmation_text: "" }) }),
   executeHostsManagerAction: (id: string, capability: string, parameters: Record<string, unknown> = {}, confirmationText = "") => request<Record<string, unknown>>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/actions/${encodeURIComponent(capability)}/execute`, { method: "POST", body: JSON.stringify({ parameters, confirm: true, confirmation_text: confirmationText }) }),
   hostsManagerOperations: () => request<HostsManagerOperation[]>("/api/modules/hosts-manager/operations"),
+  hostsManagerOperation: (id: string) => request<HostsManagerOperation>(`/api/modules/hosts-manager/operations/${encodeURIComponent(id)}`),
   hostsManagerRepositories: () => request<HostsManagerRepository[]>("/api/modules/hosts-manager/repositories"),
   saveHostsManagerRepository: (payload: Record<string, unknown>, id = "") => request<Record<string, unknown>>(id ? `/api/modules/hosts-manager/repositories/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/repositories", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
   syncHostsManagerRepository: (id: string) => request<Record<string, unknown>>(`/api/modules/hosts-manager/repositories/${encodeURIComponent(id)}/sync`, { method: "POST", body: JSON.stringify({ confirm: true, confirmation_text: "" }) }),

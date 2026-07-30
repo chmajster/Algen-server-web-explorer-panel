@@ -1,4 +1,4 @@
-import { AlignCenter, AlignLeft, AppWindow, Bell, ChevronUp, Clock3, LayoutGrid, LogOut, Maximize2, Minimize2, Moon, Pin, PinOff, Settings2, Sun, UserRound, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AppWindow, Bell, ChevronUp, Clock3, LayoutGrid, ListTodo, LogOut, Maximize2, Minimize2, Moon, Pin, PinOff, Settings2, Sun, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { SettingsMe } from "../api";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
@@ -8,7 +8,7 @@ export type TaskbarWindowAction = "focus" | "minimize" | "toggleMaximize" | "clo
 type TaskbarContext = { x: number; y: number; app: AppDefinition | null; moduleId?: string; portalTarget: Element | null };
 type TaskbarItem = { key: string; app: AppDefinition; moduleId?: string };
 
-export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, activeId, profile, resolvedTheme, clockText, dateText, clockDateTime, activeTransfers, launcherOpen, notificationsOpen, calendarOpen, clockButtonRef, t, onToggleLauncher, onToggleNotifications, onToggleCalendar, onOpenLocalPanel, onToggleTheme, onApp, onModule, onOpenNew, onOpenModuleNew, onTogglePin, onToggleModulePin, onWindow, onCloseApp, onCloseModule, onTaskbarSettings, onAlignment, onLogout }: {
+export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, activeId, profile, resolvedTheme, clockText, dateText, clockDateTime, activeTransfers, activeActions, launcherOpen, notificationsOpen, actionsOpen, calendarOpen, actionButtonRef, clockButtonRef, t, onToggleLauncher, onToggleNotifications, onToggleActions, onToggleCalendar, onOpenLocalPanel, onToggleTheme, onApp, onModule, onOpenNew, onOpenModuleNew, onTogglePin, onToggleModulePin, onWindow, onCloseApp, onCloseModule, onTaskbarSettings, onAlignment, onLogout }: {
   apps: AppDefinition[];
   pinned: Set<AppId>;
   pinnedModules: Set<string>;
@@ -21,13 +21,17 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
   dateText: string;
   clockDateTime: string;
   activeTransfers: number;
+  activeActions: number;
   launcherOpen: boolean;
   notificationsOpen: boolean;
+  actionsOpen: boolean;
   calendarOpen: boolean;
+  actionButtonRef: RefObject<HTMLButtonElement>;
   clockButtonRef: RefObject<HTMLButtonElement>;
   t: Translate;
   onToggleLauncher: () => void;
   onToggleNotifications: () => void;
+  onToggleActions: () => void;
   onToggleCalendar: () => void;
   onOpenLocalPanel: () => void;
   onToggleTheme: () => void;
@@ -79,10 +83,10 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key); };
   }, []);
   useEffect(() => {
-    if (!launcherOpen && !notificationsOpen && !calendarOpen) return;
+    if (!launcherOpen && !notificationsOpen && !actionsOpen && !calendarOpen) return;
     setSessionOpen(false);
     setContext(null);
-  }, [calendarOpen, launcherOpen, notificationsOpen]);
+  }, [actionsOpen, calendarOpen, launcherOpen, notificationsOpen]);
 
   function openContext(value: TaskbarContext) {
     onOpenLocalPanel();
@@ -142,6 +146,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
     </div>
     <div className="system-tray">
       {profile.show_transfer_indicator && <button className="transfer-indicator" type="button" title={t("transfers.title")} aria-label={`${t("transfers.title")}: ${activeTransfers}`} onClick={() => onApp("transfers")}><Clock3 />{activeTransfers > 0 && <b>{activeTransfers}</b>}</button>}
+      {profile.show_background_actions_indicator && <button ref={actionButtonRef} className={`actions-indicator ${actionsOpen ? "active" : ""}`} type="button" title={t("actions.title")} aria-label={`${t("actions.title")}: ${activeActions}`} aria-expanded={actionsOpen} aria-controls="actions-center" onClick={() => { setSessionOpen(false); setContext(null); onToggleActions(); }}><ListTodo />{activeActions > 0 && <b>{activeActions > 99 ? "99+" : activeActions}</b>}</button>}
       {profile.show_notifications && <button className={notificationsOpen ? "active" : ""} type="button" title={t("desktop.notifications")} aria-label={t("desktop.notifications")} aria-expanded={notificationsOpen} onClick={onToggleNotifications}><Bell /></button>}
       <button type="button" title={t("notify.theme")} aria-label={t("notify.theme")} onClick={onToggleTheme}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</button>
       <div ref={sessionRef} className="session-menu-wrap">

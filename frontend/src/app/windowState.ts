@@ -1,4 +1,4 @@
-import type { AppId, WindowInstance, WindowRect } from "./types";
+import type { AppId, WindowDeepLink, WindowInstance, WindowRect } from "./types";
 
 export const DESKTOP_TOP = 10;
 export const DESKTOP_BOTTOM = 64;
@@ -19,10 +19,13 @@ export type WindowState = { windows: WindowInstance[]; activeId: string; counter
 export type WindowAction =
   | { type: "hydrate"; state: WindowState }
   | { type: "open"; app: AppId; initialPath?: string; moduleId?: string; viewport?: ViewportMetrics }
+  | { type: "openOrFocus"; app: AppId; initialPath?: string; moduleId?: string; deepLink: WindowDeepLink; viewport?: ViewportMetrics }
   | { type: "close"; id: string }
   | { type: "focus"; id: string }
   | { type: "minimize"; id: string }
   | { type: "setInitialPath"; id: string; initialPath: string }
+  | { type: "setDeepLink"; id: string; deepLink: WindowDeepLink }
+  | { type: "clearDeepLink"; id: string }
   | { type: "commit"; id: string; rect: WindowRect; restoreRect?: WindowRect }
   | { type: "toggleMaximize"; id: string; viewport: ViewportMetrics }
   | { type: "viewport"; viewport: ViewportMetrics };
@@ -98,7 +101,27 @@ export function windowReducer(state: WindowState, action: WindowAction): WindowS
       })),
     };
   }
-  if (action.type === "open") {
+  if (action.type === "open" || action.type === "openOrFocus") {
+    if (action.type === "openOrFocus") {
+      const existing = state.windows
+        .filter((item) => item.app === action.app && (action.app !== "module" || item.moduleId === action.moduleId))
+        .sort((left, right) => right.zIndex - left.zIndex)[0];
+      if (existing) {
+        const topZ = state.topZ + 1;
+        return {
+          ...state,
+          activeId: existing.id,
+          topZ,
+          windows: state.windows.map((item) => item.id === existing.id ? {
+            ...item,
+            minimized: false,
+            zIndex: topZ,
+            initialPath: action.initialPath ?? item.initialPath,
+            deepLink: action.deepLink,
+          } : item),
+        };
+      }
+    }
     const counter = state.counter + 1;
     const id = `${action.app}-${counter}`;
     const topZ = state.topZ + 1;
@@ -111,7 +134,8 @@ export function windowReducer(state: WindowState, action: WindowAction): WindowS
         minimized: false,
         zIndex: topZ,
         initialPath: action.initialPath,
-        moduleId: action.moduleId
+        moduleId: action.moduleId,
+        deepLink: action.type === "openOrFocus" ? action.deepLink : undefined,
       }],
       activeId: id,
       counter,
@@ -131,6 +155,12 @@ export function windowReducer(state: WindowState, action: WindowAction): WindowS
   }
   if (action.type === "setInitialPath") {
     return { ...state, windows: state.windows.map((item) => item.id === action.id ? { ...item, initialPath: action.initialPath } : item) };
+  }
+  if (action.type === "setDeepLink") {
+    return { ...state, windows: state.windows.map((item) => item.id === action.id ? { ...item, deepLink: action.deepLink } : item) };
+  }
+  if (action.type === "clearDeepLink") {
+    return { ...state, windows: state.windows.map((item) => item.id === action.id ? { ...item, deepLink: undefined } : item) };
   }
   if (action.type === "commit") {
     return { ...state, windows: state.windows.map((item) => item.id === action.id ? { ...item, rect: action.rect, restoreRect: action.restoreRect } : item) };

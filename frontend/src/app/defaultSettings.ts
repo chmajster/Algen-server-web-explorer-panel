@@ -17,6 +17,7 @@ export const defaultUserPreferences: UserPreferences = {
   show_welcome_widget: true,
   show_notifications: true,
   show_transfer_indicator: true,
+  show_background_actions_indicator: true,
   window_transparency: true,
   animations_enabled: true,
   clock_show_seconds: false,

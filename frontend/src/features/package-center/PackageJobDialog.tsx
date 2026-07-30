@@ -1,21 +1,40 @@
 import { CheckCircle2, CircleX, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { AppJob } from "../../api";
+import { api, type AppJob } from "../../api";
 import type { Translate } from "../../app/types";
 import { Modal } from "../../components/Modal";
 import "./package-center.css";
 
 const TERMINAL_STATUSES = new Set<AppJob["status"]>(["completed", "failed", "cancelled"]);
 
-export function PackageJobDialog({ initialJob, moduleName, t, onClose }: { initialJob: AppJob; moduleName?: string; t: Translate; onClose: () => void }) {
-  const [job, setJob] = useState(initialJob);
+export function PackageJobDialog({ initialJob, jobId, moduleName, t, onClose }: { initialJob?: AppJob; jobId?: string; moduleName?: string; t: Translate; onClose: () => void }) {
+  const [job, setJob] = useState<AppJob | null>(initialJob || null);
   const [connected, setConnected] = useState(false);
+  const [error, setError] = useState("");
   const log = useRef<HTMLPreElement>(null);
+  const trackedId = jobId || initialJob?.id || "";
+  const jobStatus = job?.status;
 
-  useEffect(() => { setJob(initialJob); }, [initialJob]);
   useEffect(() => {
-    if (typeof EventSource === "undefined" || TERMINAL_STATUSES.has(initialJob.status)) return;
-    const source = new EventSource(`/api/apps/jobs/${encodeURIComponent(initialJob.id)}/events`);
+    if (initialJob) {
+      setJob(initialJob);
+      setError("");
+    }
+  }, [initialJob]);
+  useEffect(() => {
+    if (!jobId) return;
+    let active = true;
+    setError("");
+    void api.appJob(jobId).then((next) => {
+      if (active) setJob(next);
+    }).catch((reason: unknown) => {
+      if (active) setError(reason instanceof Error ? reason.message : t("error.generic"));
+    });
+    return () => { active = false; };
+  }, [jobId, t]);
+  useEffect(() => {
+    if (!trackedId || !jobStatus || typeof EventSource === "undefined" || TERMINAL_STATUSES.has(jobStatus)) return;
+    const source = new EventSource(`/api/apps/jobs/${encodeURIComponent(trackedId)}/events`, { withCredentials: true });
     source.onopen = () => setConnected(true);
     source.onmessage = (event) => {
       try {
@@ -28,11 +47,19 @@ export function PackageJobDialog({ initialJob, moduleName, t, onClose }: { initi
     };
     source.onerror = () => setConnected(false);
     return () => source.close();
-  }, [initialJob.id, initialJob.status]);
+  }, [jobStatus, trackedId]);
+  useEffect(() => {
+    if (!trackedId || !jobStatus || TERMINAL_STATUSES.has(jobStatus)) return;
+    const timer = window.setInterval(() => {
+      void api.appJob(trackedId).then(setJob).catch(() => setConnected(false));
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [jobStatus, trackedId]);
 
-  const lastLogId = job.log_tail[job.log_tail.length - 1]?.id;
+  const lastLogId = job?.log_tail[job.log_tail.length - 1]?.id;
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [lastLogId]);
 
+  if (!job) return <Modal wide title={moduleName || t("package.liveJobTitle").replace("{name}", "")} closeLabel={t("action.close")} onClose={onClose}>{error ? <div className="error-state" role="alert">{error}</div> : <div className="loading-state">{t("status.loading")}</div>}</Modal>;
   const active = !TERMINAL_STATUSES.has(job.status);
   const progress = Math.max(0, Math.min(100, job.progress));
   const name = moduleName || job.module_id;

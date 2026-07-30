@@ -5,6 +5,10 @@ import { AppIcon } from "../components/AppIcon";
 import type { SettingsCategory } from "../features/settings/SettingsApp";
 import type { PolicySubject } from "../features/admin/IdentityApp";
 import type { UploadControls } from "../features/transfers/useUploadManager";
+import { ActionsCenter } from "../features/actions/ActionsCenter";
+import { useBackgroundActions } from "../features/actions/useBackgroundActions";
+import { backgroundOnly, deepLinkForAction } from "../features/actions/windowTargets";
+import { isActiveAction, type BackgroundAction } from "../features/actions/types";
 import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
 import { CalendarFlyout } from "./CalendarFlyout";
@@ -79,6 +83,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [state, dispatch] = useReducer(windowReducer, initialWindowState);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedShortcut, setSelectedShortcut] = useState<AppId | null>(null);
   const [dirtyWindows, setDirtyWindows] = useState<Set<string>>(new Set());
@@ -113,6 +118,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const moduleNotificationsInitialized = useRef(false);
   const notifiedModuleEvents = useRef<Set<string>>(new Set());
   const notificationRef = useRef<HTMLElement>(null);
+  const actionButtonRef = useRef<HTMLButtonElement>(null);
   const clockButtonRef = useRef<HTMLButtonElement>(null);
   const canUseApp = useCallback((appId: AppId) => { const definition = appById[appId]; return Boolean(definition && (!definition.admin || profile.is_admin) && (!definition.permission || profile.permissions.includes(definition.permission)) && (!definition.permissionAny || definition.permissionAny.some((permission) => profile.permissions.includes(permission)))); }, [profile.is_admin, profile.permissions]);
   const moduleAppAvailable = useCallback((appId: AppId) => (appId !== "ansible" || moduleNames.has("ansible-controller")) && (appId !== "hosts" || moduleNames.has("hosts-manager")), [moduleNames]);
@@ -120,6 +126,9 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const taskbarApps = useMemo(() => apps.filter((app) => canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const activeTransfers = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status)).length;
+  const backgroundManager = useBackgroundActions({ tasks, profile, moduleNames, t });
+  const backgroundActions = useMemo(() => backgroundOnly(backgroundManager.actions, state.windows), [backgroundManager.actions, state.windows]);
+  const activeBackgroundActions = backgroundActions.filter(isActiveAction).length;
 
   useEffect(() => { windowStateRef.current = state; }, [state]);
 
@@ -228,6 +237,10 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     setNotificationsOpen(false);
   }, [profile.show_notifications]);
   useEffect(() => {
+    if (profile.show_background_actions_indicator) return;
+    setActionsOpen(false);
+  }, [profile.show_background_actions_indicator]);
+  useEffect(() => {
     if (!notificationsOpen) return;
     function click(event: MouseEvent) { if (!notificationRef.current?.contains(event.target as Node) && !(event.target as HTMLElement).closest(".system-tray")) setNotificationsOpen(false); }
     function key(event: KeyboardEvent) { if (event.key === "Escape") setNotificationsOpen(false); }
@@ -246,8 +259,26 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     dispatch({ type: "open", app, initialPath, moduleId, viewport });
     setLauncherOpen(false);
     setNotificationsOpen(false);
+    setActionsOpen(false);
     setCalendarOpen(false);
   }, [canUseApp, recentAppsKey, t, toast, viewport]);
+  const openActionTarget = useCallback((action: BackgroundAction) => {
+    if (!canUseApp(action.target.app)) {
+      toast(t("error.permissionRequired"), "error");
+      void backgroundManager.refresh();
+      return;
+    }
+    dispatch({
+      type: "openOrFocus",
+      app: action.target.app,
+      initialPath: action.target.initialPath,
+      moduleId: action.target.moduleId,
+      deepLink: deepLinkForAction(action),
+      viewport,
+    });
+    backgroundManager.markOpened(action);
+    setActionsOpen(false);
+  }, [backgroundManager, canUseApp, t, toast, viewport]);
   useEffect(() => {
     if (!tasksInitialized.current) {
       tasks.forEach((task) => previousTaskStatus.current.set(task.id, task.status));
@@ -381,24 +412,24 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   function renderApp(item: WindowInstance) {
     switch (item.app) {
       case "files": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><FileManager homePath={user.home} initialPath={item.initialPath} settings={profile} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onUploadCancel={uploadControls.cancel} onUploadRetry={uploadControls.retry} onSettingsChange={onSettingsChange} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={(path) => openApp("module", path, "samba")} /></Suspense>;
-      case "transfers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><TransferCenter tasks={tasks} settings={profile} t={t} toast={toast} uploadControls={uploadControls} /></Suspense>;
+      case "transfers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><TransferCenter tasks={tasks} settings={profile} selectedTaskId={item.deepLink?.type === "transfer" ? item.deepLink.id : undefined} t={t} toast={toast} uploadControls={uploadControls} onSelectedTaskClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
       case "activity": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ActivityCenter locale={profile.language} t={t} /></Suspense>;
       case "identity": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} t={t} toast={toast} onOpenPolicies={(subject) => openApp("settings", "policies", `policy:${subject.type}:${subject.id}`)} /></Suspense>;
       case "users": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="users" t={t} toast={toast} onOpenPolicies={(subject) => openApp("settings", "policies", `policy:${subject.type}:${subject.id}`)} /></Suspense>;
       case "groups": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="groups" t={t} toast={toast} onOpenPolicies={(subject) => openApp("settings", "policies", `policy:${subject.type}:${subject.id}`)} /></Suspense>;
       case "mounts": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection="networkResources" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} /></Suspense>;
-      case "samba": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="samba" initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
+      case "samba": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="samba" initialPath={item.initialPath} deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
       case "modules": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleHub t={t} toast={toast} onOpen={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
-      case "containers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="docker" draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
-      case "ansible": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="ansible-controller" draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
-      case "hosts": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="hosts-manager" draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
+      case "containers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="docker" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
+      case "ansible": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="ansible-controller" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
+      case "hosts": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="hosts-manager" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
       case "access": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection="policies" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} /></Suspense>;
       case "services": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ServicesApp t={t} toast={toast} /></Suspense>;
-      case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
+      case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp selectedJobId={item.deepLink?.type === "package-job" ? item.deepLink.jobId || item.deepLink.id : undefined} t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} onSelectedJobClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
       case "logs": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><LogsApp permissions={profile.permissions} t={t} toast={toast} /></Suspense>;
-      case "settings": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection={isSettingsCategory(item.initialPath) ? item.initialPath : "system"} initialPolicySubject={policySubject(item.moduleId)} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} onSectionChange={(section) => dispatch({ type: "setInitialPath", id: item.id, initialPath: section })} /></Suspense>;
+      case "settings": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection={isSettingsCategory(item.initialPath) ? item.initialPath : "system"} initialPolicySubject={policySubject(item.moduleId)} deepLink={item.deepLink} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} onSectionChange={(section) => { dispatch({ type: "setInitialPath", id: item.id, initialPath: section }); if (item.deepLink && section !== item.deepLink.section) dispatch({ type: "clearDeepLink", id: item.id }); }} /></Suspense>;
       case "monitor": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><MonitorApp t={t} /></Suspense>;
-      case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
+      case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
     }
   }
 
@@ -431,7 +462,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} viewport={viewport} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport })}>{renderApp(item)}</DesktopWindow>)}
     </main>
     {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onOpenProfile={() => openApp("settings", "account")} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
-    <Taskbar apps={taskbarApps} pinned={pinned} pinnedModules={pinnedModules} moduleNames={moduleNames} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} clockDateTime={clock.toISOString()} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} calendarOpen={calendarOpen} clockButtonRef={clockButtonRef} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setCalendarOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setCalendarOpen(false); setNotificationsOpen((value) => !value); }} onToggleCalendar={() => { setLauncherOpen(false); setNotificationsOpen(false); setCalendarOpen((value) => !value); }} onOpenLocalPanel={() => { setLauncherOpen(false); setNotificationsOpen(false); setCalendarOpen(false); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onModule={selectModule} onOpenNew={(app) => openApp(app)} onOpenModuleNew={(moduleId) => openApp("module", undefined, moduleId)} onTogglePin={togglePin} onToggleModulePin={toggleModulePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onCloseModule={closeModuleWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
+    <Taskbar apps={taskbarApps} pinned={pinned} pinnedModules={pinnedModules} moduleNames={moduleNames} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} clockDateTime={clock.toISOString()} activeTransfers={activeTransfers} activeActions={activeBackgroundActions} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} actionsOpen={actionsOpen} calendarOpen={calendarOpen} actionButtonRef={actionButtonRef} clockButtonRef={clockButtonRef} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setActionsOpen(false); setCalendarOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setActionsOpen(false); setCalendarOpen(false); setNotificationsOpen((value) => !value); }} onToggleActions={() => { setLauncherOpen(false); setNotificationsOpen(false); setCalendarOpen(false); setActionsOpen((value) => !value); }} onToggleCalendar={() => { setLauncherOpen(false); setNotificationsOpen(false); setActionsOpen(false); setCalendarOpen((value) => !value); }} onOpenLocalPanel={() => { setLauncherOpen(false); setNotificationsOpen(false); setActionsOpen(false); setCalendarOpen(false); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onModule={selectModule} onOpenNew={(app) => openApp(app)} onOpenModuleNew={(moduleId) => openApp("module", undefined, moduleId)} onTogglePin={togglePin} onToggleModulePin={toggleModulePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onCloseModule={closeModuleWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
+    {actionsOpen && <ActionsCenter actions={backgroundActions} locale={profile.language} t={t} triggerRef={actionButtonRef} onOpen={openActionTarget} onDismiss={backgroundManager.dismiss} onClose={() => setActionsOpen(false)} />}
     {calendarOpen && <CalendarFlyout now={clock} locale={profile.language} t={t} triggerRef={clockButtonRef} onClose={() => setCalendarOpen(false)} />}
     {notificationsOpen && <aside ref={notificationRef} className="notification-center" aria-label={t("desktop.notifications")}><header><div><Bell /><strong>{t("desktop.notifications")}</strong></div><button type="button" aria-label={t("action.close")} onClick={() => setNotificationsOpen(false)}><X /></button></header>{visibleToasts.length === 0 && (!profile.notification_transfer || tasks.length === 0) ? <div className="empty-state">{t("desktop.noNotifications")}</div> : <>{visibleToasts.slice().reverse().map((item) => <article className={item.type} key={item.id} role={item.moduleId ? "button" : undefined} tabIndex={item.moduleId ? 0 : undefined} onClick={() => { if (!item.moduleId) return; openApp("module", undefined, item.moduleId); setNotificationsOpen(false); }} onKeyDown={(event) => { if (item.moduleId && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openApp("module", undefined, item.moduleId); setNotificationsOpen(false); } }}><strong>{item.type === "error" ? t("status.error") : "WebNAS"}</strong><span>{item.text}</span></article>)}{profile.notification_transfer && tasks.slice(-profile.notification_limit).reverse().map((task) => <article key={task.id}><strong>{t(`transfers.${task.type}`)}</strong><span>{t(`task.${task.status}`)} · {Math.round(task.progress_percent ?? task.progress ?? 0)}%</span></article>)}</>}</aside>}
     <div className="toasts" role="status" aria-live="polite">{visibleToasts.map((item) => <div className={item.type} key={item.id}>{item.type === "error" && <ShieldCheck />}{item.text}</div>)}</div>
