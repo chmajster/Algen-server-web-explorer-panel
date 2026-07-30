@@ -7,17 +7,18 @@ function matchingWindow(action: BackgroundAction, window: WindowInstance) {
   return true;
 }
 
-export function actionTargetIsVisible(action: BackgroundAction, windows: WindowInstance[]) {
+export function actionTargetIsVisible(action: BackgroundAction, windows: WindowInstance[], activeId?: string) {
   return windows.some(
     (window) =>
       matchingWindow(action, window) &&
       !window.minimized &&
+      (!activeId || window.id === activeId) &&
       window.deepLink?.actionKey === action.key,
   );
 }
 
-export function backgroundOnly(actions: BackgroundAction[], windows: WindowInstance[]) {
-  return actions.filter((action) => !actionTargetIsVisible(action, windows));
+export function backgroundOnly(actions: BackgroundAction[], windows: WindowInstance[], activeId?: string) {
+  return actions.filter((action) => !actionTargetIsVisible(action, windows, activeId));
 }
 
 export function deepLinkForAction(action: BackgroundAction): WindowDeepLink {

@@ -276,13 +276,14 @@ function MountForm({ mount, t, onClose, onSaved }: { mount?: NetworkMount; t: Tr
   </Modal>;
 }
 
-export function NetworkMountsSettingsSection({ isAdmin, t, toast }: { isAdmin: boolean; t: Translate; toast: ToastFn }) {
+export function NetworkMountsSettingsSection({ isAdmin, selectedJobId, t, toast, onSelectedJobClose }: { isAdmin: boolean; selectedJobId?: string; t: Translate; toast: ToastFn; onSelectedJobClose?: () => void }) {
   const [mounts, setMounts] = useState<NetworkMount[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<NetworkMount | "new" | null>(null);
   const [actionDialog, setActionDialog] = useState<{ mount: NetworkMount; action: MountAction } | null>(null);
   const [logs, setLogs] = useState<{ name: string; lines: string[] } | null>(null);
+  const [jobDetails, setJobDetails] = useState<{ name: string; job: NetworkMount["jobs"][number] } | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [protocolFilter, setProtocolFilter] = useState<ProtocolFilter>("all");
@@ -296,6 +297,16 @@ export function NetworkMountsSettingsSection({ isAdmin, t, toast }: { isAdmin: b
     finally { setLoading(false); }
   }, [isAdmin, t]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!selectedJobId) return;
+    const mount = mounts.find((item) => item.jobs.some((job) => job.id === selectedJobId));
+    const job = mount?.jobs.find((item) => item.id === selectedJobId);
+    if (!mount || !job) return;
+    setQuery("");
+    setStatusFilter("all");
+    setProtocolFilter("all");
+    setJobDetails({ name: mount.name, job });
+  }, [mounts, selectedJobId]);
   const activeKey = useMemo(() => mounts.flatMap((mount) => mount.jobs).filter((job) => ["queued", "running"].includes(job.status)).map((job) => job.id).join("|"), [mounts]);
   useEffect(() => { if (!activeKey) return; const timer = window.setInterval(() => void refresh(), 1200); return () => window.clearInterval(timer); }, [activeKey, refresh]);
   useEffect(() => {
@@ -339,5 +350,6 @@ export function NetworkMountsSettingsSection({ isAdmin, t, toast }: { isAdmin: b
     {editing && <MountForm mount={editing === "new" ? undefined : editing} t={t} onClose={() => setEditing(null)} onSaved={refresh} />}
     {actionDialog && <AdminActionDialog title={`${t(`mounts.${actionDialog.action}`)}: ${actionDialog.mount.name}`} fields={[]} danger={["delete", "unmount", "remount", "migrate"].includes(actionDialog.action)} t={t} onClose={() => setActionDialog(null)} onSubmit={runAction} />}
     {logs && <Modal wide title={`${t("mounts.logs")}: ${logs.name}`} closeLabel={t("action.close")} onClose={() => setLogs(null)} footer={<button onClick={() => setLogs(null)}>{t("action.close")}</button>}><pre className="log-view">{logs.lines.join("\n") || t("mounts.noLogs")}</pre></Modal>}
+    {jobDetails && <Modal wide title={`${t("actions.mountOperationDetails")}: ${jobDetails.name}`} closeLabel={t("action.close")} onClose={() => { setJobDetails(null); if (selectedJobId === jobDetails.job.id) onSelectedJobClose?.(); }} footer={<button onClick={() => { setJobDetails(null); if (selectedJobId === jobDetails.job.id) onSelectedJobClose?.(); }}>{t("action.close")}</button>}><dl className="settings-details"><dt>{t("hosts.operation.action")}</dt><dd>{jobDetails.job.action}</dd><dt>{t("common.status")}</dt><dd>{t(`actions.status.${jobDetails.job.status}`)}</dd></dl>{jobDetails.job.error && <pre className="error-log">{jobDetails.job.error}</pre>}<pre className="log-view">{jobDetails.job.log_tail.join("\n") || t("mounts.noLogs")}</pre></Modal>}
   </section>;
 }

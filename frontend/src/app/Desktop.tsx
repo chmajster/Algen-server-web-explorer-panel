@@ -127,7 +127,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const activeTransfers = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status)).length;
   const backgroundManager = useBackgroundActions({ tasks, profile, moduleNames, t });
-  const backgroundActions = useMemo(() => backgroundOnly(backgroundManager.actions, state.windows), [backgroundManager.actions, state.windows]);
+  const backgroundActions = useMemo(() => backgroundOnly(backgroundManager.actions, state.windows, state.activeId), [backgroundManager.actions, state.activeId, state.windows]);
   const activeBackgroundActions = backgroundActions.filter(isActiveAction).length;
 
   useEffect(() => { windowStateRef.current = state; }, [state]);

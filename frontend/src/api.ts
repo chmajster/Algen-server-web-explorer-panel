@@ -1204,7 +1204,6 @@ export const api = {
   testNetworkDns: (hostname: string) => request<DnsTestResult>("/api/admin/network/dns/test", { method: "POST", body: JSON.stringify({ hostname }) }),
   networkRouting: () => request<RoutingSnapshot>("/api/admin/network/routing"),
   networkManagement: () => request<NetworkManagementState>("/api/admin/network/management"),
-  activeNetworkTransaction: () => request<NetworkTransaction | null>("/api/admin/network/transactions/active"),
   testNetworkConnectivity: (kind: "ping" | "trace" | "tcp", target: string, port?: number | null) => request<NetworkConnectivityResult>("/api/admin/network/connectivity/test", { method: "POST", body: JSON.stringify({ kind, target, port: port || null }) }),
   planNetworkChange: (change: NetworkChange) => request<NetworkPlan>("/api/admin/network/plans", { method: "POST", body: JSON.stringify({ change }) }),
   networkPolicy: () => request<NetworkPolicy>("/api/admin/network/policy"),

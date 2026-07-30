@@ -74,6 +74,60 @@
 .desktop.no-animations .calendar-flyout { animation: none; }
 .desktop.high-contrast .calendar-flyout { border: 2px solid currentColor; background: var(--surface-elevated); backdrop-filter: none; }
 .desktop.high-contrast .calendar-week button.today, .desktop.high-contrast .calendar-week button.selected { border-width: 2px; }
+.desktop .actions-center {
+  position: absolute; z-index: 1400; right: 0.625rem; bottom: calc(var(--taskbar-height) + 0.625rem);
+  width: min(23rem, calc(100vw - 0.75rem)); max-height: calc(100vh - var(--taskbar-height) - 1.25rem);
+  display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-flyout);
+  color: var(--text-primary); background: color-mix(in srgb, var(--surface-elevated) 90%, transparent);
+  backdrop-filter: blur(1.75rem) saturate(140%); box-shadow: var(--shadow-menu);
+  animation: taskbar-flyout .16s ease-out;
+}
+.desktop .actions-center > header { min-height: 3.75rem; display: flex; align-items: center; gap: var(--spacing-sm); padding: 0.625rem 0.75rem; border-bottom: 1px solid var(--border-subtle); }
+.desktop .actions-center > header > div { min-width: 0; display: flex; align-items: center; gap: 0.625rem; }
+.desktop .actions-center > header > div > svg { width: 1.25rem; color: var(--accent); }
+.desktop .actions-center > header span { min-width: 0; display: grid; }
+.desktop .actions-center > header strong { font-size: var(--font-size-md); }
+.desktop .actions-center > header small { overflow: hidden; color: var(--text-muted); font-size: var(--font-size-xs); text-overflow: ellipsis; white-space: nowrap; }
+.desktop .actions-center > header > button { width: 2rem; height: 2rem; display: grid; place-items: center; margin-left: auto; padding: 0; border-radius: var(--radius-control); background: transparent; }
+.desktop .actions-center > header > button:hover { background: var(--surface-hover); }
+.desktop .actions-center > header > button svg { width: 1rem; height: 1rem; }
+.desktop .actions-center-list { min-height: 0; display: grid; align-content: start; gap: 0.375rem; overflow: auto; padding: 0.5rem; }
+.desktop .actions-center-empty { min-height: 13rem; display: grid; place-items: center; align-content: center; gap: 0.375rem; padding: 1.5rem; color: var(--text-muted); text-align: center; }
+.desktop .actions-center-empty svg { width: 2rem; height: 2rem; margin-bottom: 0.25rem; opacity: .65; }
+.desktop .actions-center-empty strong { color: var(--text-primary); font-size: var(--font-size-md); }
+.desktop .actions-center-empty span { max-width: 17rem; font-size: var(--font-size-xs); }
+.desktop .background-action { position: relative; overflow: hidden; border: 1px solid transparent; border-radius: var(--radius-panel); background: color-mix(in srgb, var(--surface-secondary) 82%, transparent); }
+.desktop .background-action:hover { border-color: var(--border-subtle); background: var(--surface-hover); }
+.desktop .background-action.failed { border-color: color-mix(in srgb, var(--danger) 38%, var(--border-subtle)); }
+.desktop .background-action-open { width: 100%; display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.6875rem; padding-right: 2.25rem; color: inherit; background: transparent; text-align: left; }
+.desktop .background-action-icon { width: 2rem; height: 2rem; flex: 0 0 2rem; display: grid; place-items: center; border-radius: 0.625rem; color: var(--accent); background: var(--surface-selected); }
+.desktop .background-action.failed .background-action-icon { color: var(--danger); }
+.desktop .background-action-icon svg { width: 1.0625rem; height: 1.0625rem; }
+.desktop .background-action-copy { min-width: 0; flex: 1; display: grid; gap: 0.25rem; }
+.desktop .background-action-copy > span:first-child { display: flex; align-items: center; gap: 0.375rem; }
+.desktop .background-action-copy strong { min-width: 0; overflow: hidden; font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
+.desktop .background-action-copy > span:not(:first-child, .background-action-progress, .background-action-meta, .background-action-error) { overflow: hidden; color: var(--text-secondary); font-size: var(--font-size-xs); text-overflow: ellipsis; white-space: nowrap; }
+.desktop .background-action-copy > small { overflow: hidden; color: var(--text-muted); font-size: var(--font-size-xs); text-overflow: ellipsis; white-space: nowrap; }
+.desktop .background-action .status-badge { margin-left: auto; flex: 0 0 auto; font-size: var(--font-size-xs); }
+.desktop .background-action-progress { position: relative; height: 0.25rem; overflow: hidden; border-radius: 1rem; background: var(--border-subtle); }
+.desktop .background-action-progress i { position: absolute; inset: 0 auto 0 0; background: var(--accent); transition: width .18s ease; }
+.desktop .background-action.failed .background-action-progress i { background: var(--danger); }
+.desktop .background-action-progress.indeterminate i { width: 42%; animation: action-progress 1.2s ease-in-out infinite; }
+@keyframes action-progress { from { transform: translateX(-110%); } to { transform: translateX(340%); } }
+.desktop .background-action-meta { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: var(--font-size-xs); }
+.desktop .background-action-meta b { color: var(--text-secondary); }
+.desktop .background-action-meta time { margin-left: auto; }
+.desktop .background-action-error { display: flex; align-items: flex-start; gap: 0.3125rem; color: var(--danger); font-size: var(--font-size-xs); }
+.desktop .background-action-error svg { width: 0.875rem; height: 0.875rem; flex: 0 0 auto; margin-top: 1px; }
+.desktop .background-action-dismiss { position: absolute; top: 0.4375rem; right: 0.4375rem; width: 1.75rem; height: 1.75rem; display: grid; place-items: center; padding: 0; border-radius: var(--radius-control); background: transparent; }
+.desktop .background-action-dismiss:hover { background: var(--surface-secondary); }
+.desktop .background-action-dismiss svg { width: 0.875rem; height: 0.875rem; }
+.desktop.no-transparency .actions-center { background: var(--surface-elevated); backdrop-filter: none; }
+.desktop.no-animations .actions-center, .desktop.no-animations .background-action-progress.indeterminate i { animation: none; }
+.desktop.high-contrast .actions-center, .desktop.high-contrast .background-action { border-width: 2px; }
+.desktop .action-target-highlight { outline: 2px solid var(--accent); outline-offset: -2px; animation: action-target-highlight 1.8s ease-out; }
+@keyframes action-target-highlight { from { box-shadow: 0 0 0 0.375rem color-mix(in srgb, var(--accent) 35%, transparent); } }
 .desktop .session-menu-wrap { position: relative; }
 .desktop .session-menu { position: absolute; right: 0; bottom: calc(var(--taskbar-height) - 1px); width: 15rem; overflow: hidden; padding: 0.375rem; border: 1px solid var(--border-subtle); border-radius: 0.75rem; background: var(--surface-elevated); box-shadow: var(--shadow-menu); animation: taskbar-flyout .14s ease-out; }
 .desktop .session-menu header { display: flex; align-items: center; gap: 0.625rem; padding: 0.75rem; border-bottom: 1px solid var(--border-subtle); }
@@ -112,4 +166,6 @@
   .desktop .calendar-flyout { border-color: CanvasText; background: Canvas; box-shadow: none; }
   .desktop .calendar-week button.selected { border-color: Highlight; color: HighlightText; background: Highlight; }
   .desktop .calendar-week button.today { border-color: Highlight; color: LinkText; }
+  .desktop .actions-center, .desktop .background-action { border-color: CanvasText; background: Canvas; }
+  .desktop .background-action-progress i { background: Highlight; }
 }

@@ -69,12 +69,14 @@ function moduleSource(moduleId: string): BackgroundActionSource {
 function translatedOperation(t: Translate, action: string) {
   const key = `actions.operation.${action}`;
   const translated = t(key);
-  return translated === key ? action.replaceAll("_", " ") : translated;
+  return translated === key ? action.replace(/_/g, " ") : translated;
 }
 
 export function normalizeTransfer(task: Task, t: Translate): BackgroundAction {
   const source = task.type === "upload" ? "upload" : "transfer";
-  const name = task.current_file || task.source_paths.at(-1)?.split("/").at(-1) || task.destination_path;
+  const sourcePath = task.source_paths[task.source_paths.length - 1] || "";
+  const sourceParts = sourcePath.split("/");
+  const name = task.current_file || sourceParts[sourceParts.length - 1] || task.destination_path;
   return {
     key: actionKey(source, task.id),
     id: task.id,
@@ -266,8 +268,8 @@ export function normalizeSystemUpdate(item: UpdateProgress, t: Translate): Backg
     title: t("actions.systemUpdate"),
     subtitle: "WebNAS",
     status: item.running ? "running" : item.exit_code === 0 ? "completed" : item.exit_code === null ? "queued" : "failed",
-    currentStep: item.lines.at(-1) || undefined,
-    error: !item.running && item.exit_code !== 0 ? item.lines.at(-1) || item.log || undefined : undefined,
+    currentStep: item.lines[item.lines.length - 1] || undefined,
+    error: !item.running && item.exit_code !== 0 ? item.lines[item.lines.length - 1] || item.log || undefined : undefined,
     createdAt: item.started_at * 1000,
     updatedAt: (item.finished_at || item.started_at) * 1000,
     finishedAt: item.finished_at ? item.finished_at * 1000 : undefined,

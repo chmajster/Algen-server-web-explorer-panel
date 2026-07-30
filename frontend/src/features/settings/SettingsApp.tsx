@@ -10,7 +10,7 @@ import {
 import { defaultUserPreferences } from "../../app/defaultSettings";
 import { interfaceFontOptions, interfaceFontStacks } from "../../app/interfaceFonts";
 import { INTERFACE_SCALE_OPTIONS, normalizeInterfaceScale } from "../../app/interfaceScale";
-import type { AppId, ToastFn, Translate } from "../../app/types";
+import type { AppId, ToastFn, Translate, WindowDeepLink } from "../../app/types";
 import type { PolicySubject } from "../admin/IdentityApp";
 import { HostInformationSection } from "./HostInformationSection";
 import { NetworkSettingsSection } from "./NetworkSettingsSection";
@@ -409,15 +409,17 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
   </div>;
 }
 
-export function SettingsAppView({ settings, initialSection = "system", initialPolicySubject, t, toast, onSettingsChange, onOpenApp, onSectionChange }: {
+export function SettingsAppView({ settings, initialSection = "system", initialPolicySubject, deepLink, t, toast, onSettingsChange, onOpenApp, onSectionChange, onDeepLinkClose }: {
   settings: SettingsMe;
   initialSection?: SettingsCategory;
   initialPolicySubject?: PolicySubject;
+  deepLink?: WindowDeepLink;
   t: Translate;
   toast: ToastFn;
   onSettingsChange: (patch: SettingsPatch) => Promise<void>;
   onOpenApp: (app: AppId) => void;
   onSectionChange?: (section: SettingsCategory) => void;
+  onDeepLinkClose?: () => void;
 }) {
   const [category, setCategory] = useState<SettingsCategory>(initialSection);
   const [query, setQuery] = useState("");
@@ -436,6 +438,9 @@ export function SettingsAppView({ settings, initialSection = "system", initialPo
   const searchResults = useMemo(() => normalizedQuery ? categories.flatMap((item) => categorySettings[item].map((key) => ({ category: item, key, label: t(`settings.${key}`) })).filter((entry) => entry.label.toLocaleLowerCase(settings.language).includes(normalizedQuery) || t(`settings.category.${item}`).toLocaleLowerCase(settings.language).includes(normalizedQuery))) : [], [categories, normalizedQuery, settings.language, t]);
 
   useEffect(() => () => { if (saveStatusTimer.current) window.clearTimeout(saveStatusTimer.current); }, []);
+  useEffect(() => {
+    setCategory(initialSection);
+  }, [initialSection]);
 
   async function save(patch: SettingsPatch) {
     if (saveStatusTimer.current) window.clearTimeout(saveStatusTimer.current);
@@ -459,7 +464,7 @@ export function SettingsAppView({ settings, initialSection = "system", initialPo
     if (category === "account") return <div className="settings-card-stack"><Card title={t("settings.accountInformation")}><dl className="settings-details"><dt>{t("settings.username")}</dt><dd>{settings.username}</dd><dt>UID</dt><dd>{settings.uid}</dd><dt>GID</dt><dd>{settings.gid}</dd><dt>{t("settings.homeDirectory")}</dt><dd>{settings.home}</dd><dt>{t("settings.shell")}</dt><dd>{settings.shell}</dd><dt>{t("settings.groupsLabel")}</dt><dd>{settings.groups.join(", ") || "—"}</dd><dt>{t("settings.administratorStatus")}</dt><dd>{settings.is_admin ? t("common.yes") : t("common.no")}</dd></dl></Card><PasswordSection t={t} toast={toast} /></div>;
     if (category === "identity") return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={settings.permissions} embedded t={t} toast={toast} onOpenPolicies={(subject) => { setPolicySubject(subject); choose("policies"); }} /></Suspense>;
     if (category === "network") return <NetworkSettingsSection isAdmin={networkVisible} permissions={settings.permissions} t={t} />;
-    if (category === "networkResources") return <NetworkMountsSettingsSection isAdmin={settings.is_admin} t={t} toast={toast} />;
+    if (category === "networkResources") return <NetworkMountsSettingsSection isAdmin={settings.is_admin} selectedJobId={deepLink?.type === "mount-job" ? deepLink.jobId || deepLink.id : undefined} t={t} toast={toast} onSelectedJobClose={onDeepLinkClose} />;
     if (category === "updates") return <AdministrationSection view="updates" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
     if (category === "policies") return <UpdatePoliciesSection permissions={settings.permissions} initialSubject={policySubject} t={t} toast={toast} />;
     if (category === "administration") return <AdministrationSection view="administration" locale={settings.language} t={t} toast={toast} onOpenApp={onOpenApp} />;
