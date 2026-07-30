@@ -18,6 +18,22 @@ describe("API errors", () => {
     expect(error).toMatchObject({ message: "Already exists", status: 409, code: "already_exists", field: "name" });
   });
 
+  it("uses the public no-cache health check and treats only server errors as unavailable", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 401, statusText: "Unauthorized" })
+      .mockResolvedValueOnce({ ok: false, status: 503, statusText: "Service Unavailable" });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.health(controller.signal)).resolves.toEqual({ status: "ok", service: "webnas" });
+    await expect(api.health(controller.signal)).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/health", expect.objectContaining({
+      cache: "no-store",
+      credentials: "include",
+      signal: controller.signal,
+    }));
+  });
+
   it("requests a package operation plan with POST", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type NetworkMountRoot } from "../../api";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 
 export const MOUNTS_CHANGED_EVENT = "webnas:mounts-changed";
 
@@ -66,6 +67,7 @@ export function stopWatchingNetworkMountChanges() {
 
 export function useNetworkMounts() {
   const [current, setCurrent] = useState(snapshot);
+  useRefreshOnConnectionRestored(() => { void refreshNetworkMounts(); });
 
   useEffect(() => {
     const update = () => setCurrent(snapshot);

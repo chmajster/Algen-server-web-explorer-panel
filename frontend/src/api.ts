@@ -1064,6 +1064,20 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function health(signal?: AbortSignal): Promise<HealthStatus> {
+  const target = apiBaseUrl ? `${apiBaseUrl}/api/health` : "/api/health";
+  const response = await fetch(target, {
+    cache: "no-store",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  if (response.status >= 500) {
+    throw new ApiError(response.statusText || "Backend health check failed", response.status);
+  }
+  return { status: "ok", service: "webnas" };
+}
+
 async function enrollmentScript(url: string, token: string): Promise<Blob> {
   const target = apiBaseUrl && url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
   const response = await fetch(target, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
@@ -1096,7 +1110,7 @@ export function logout() {
 }
 
 export const api = {
-  health: (signal?: AbortSignal) => request<HealthStatus>("/api/health", { cache: "no-store", signal }),
+  health,
   list: (path?: string, params: Record<string, string | number | boolean | null | undefined> = {}) => {
     const query = new URLSearchParams({ path: path || "" });
     Object.entries(params).forEach(([key, value]) => {

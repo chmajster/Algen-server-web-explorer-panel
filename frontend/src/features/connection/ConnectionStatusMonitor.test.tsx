@@ -1,6 +1,11 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ConnectionStatusMonitor } from "./ConnectionStatusMonitor";
+import {
+  CONNECTION_RESTORED_EVENT,
+  ConnectionRefreshScope,
+  ConnectionStatusMonitor,
+  useRefreshOnConnectionRestored,
+} from "./ConnectionStatusMonitor";
 
 const t = (key: string) => key;
 const language = "pl-PL";
@@ -62,6 +67,18 @@ describe("ConnectionStatusMonitor", () => {
     expect(screen.getByText("connection.reconnecting")).toBeInTheDocument();
   });
 
+  it("treats two timed-out requests as a confirmed connection loss", async () => {
+    const check = vi.fn((signal: AbortSignal) => new Promise<unknown>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("timed out", "AbortError")));
+    }));
+    render(<ConnectionStatusMonitor check={check} t={t} language={language} />);
+    await settle();
+    await advance(5500);
+
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("alert")).toHaveClass("offline");
+  });
+
   it("updates the outage timer every second", async () => {
     const check = vi.fn().mockRejectedValue(new TypeError("network error"));
     render(<ConnectionStatusMonitor check={check} t={t} language={language} />);
@@ -111,6 +128,36 @@ describe("ConnectionStatusMonitor", () => {
     });
     await advance(3000);
     expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks immediately when the browser tab becomes active again", async () => {
+    const check = vi.fn(async () => ({ status: "ok" }));
+    render(<ConnectionStatusMonitor check={check} t={t} language={language} />);
+    await settle();
+    await advance(300);
+
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes only the active application view after recovery", () => {
+    const activeRefresh = vi.fn();
+    const inactiveRefresh = vi.fn();
+    function RefreshProbe({ refresh }: { refresh: () => void }) {
+      useRefreshOnConnectionRestored(refresh);
+      return null;
+    }
+    render(<>
+      <ConnectionRefreshScope active><RefreshProbe refresh={activeRefresh} /></ConnectionRefreshScope>
+      <ConnectionRefreshScope active={false}><RefreshProbe refresh={inactiveRefresh} /></ConnectionRefreshScope>
+    </>);
+
+    act(() => window.dispatchEvent(new CustomEvent(CONNECTION_RESTORED_EVENT)));
+
+    expect(activeRefresh).toHaveBeenCalledTimes(1);
+    expect(inactiveRefresh).not.toHaveBeenCalled();
   });
 
   it("cleans up requests, timers and listeners when unmounted", async () => {
