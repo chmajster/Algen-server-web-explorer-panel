@@ -98,6 +98,50 @@
 .module-path-state.ok::before { background: var(--success); }
 .module-path-state.error::before { background: var(--danger); }
 
+.apmid-panel {
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-medium);
+  background: var(--surface-elevated);
+}
+.apmid-panel > h3 { margin: 0; font-size: var(--font-size-md); }
+.apmid-toolbar { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.apmid-toolbar label { min-width: min(18rem, 100%); flex: 1; display: flex; align-items: center; gap: 0.4rem; }
+.apmid-toolbar label input { width: 100%; }
+.apmid-toolbar svg, .apmid-panel button svg { width: 0.9rem; height: 0.9rem; }
+.apmid-toolbar > span { margin-left: auto; color: var(--text-muted); font-size: var(--font-size-xs); }
+.apmid-toolbar button { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.125rem; }
+.apmid-code-link { padding: 0; color: var(--accent); background: none; font-weight: 700; }
+.apmid-code-link:hover { text-decoration: underline; }
+.apmid-state { display: inline-flex; align-items: center; gap: 0.35rem; }
+.apmid-state::before { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--text-muted); content: ""; }
+.apmid-state.active::before { background: var(--success); }
+.apmid-detail { min-width: 0; display: grid; gap: 0.875rem; }
+.apmid-detail > nav { display: flex; gap: 0.25rem; overflow-x: auto; border-bottom: 1px solid var(--border-subtle); }
+.apmid-detail > nav button { flex: 0 0 auto; padding: 0.55rem 0.7rem; border-bottom: 0.14rem solid transparent; color: var(--text-secondary); background: none; }
+.apmid-detail > nav button.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 650; }
+.apmid-info { display: grid; grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr); margin: 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); overflow: hidden; }
+.apmid-info dt, .apmid-info dd { min-width: 0; margin: 0; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border-subtle); }
+.apmid-info dt { color: var(--text-secondary); background: var(--surface-secondary); }
+.apmid-info dd { overflow-wrap: anywhere; }
+.apmid-member-picker { display: grid; gap: 0.75rem; }
+.apmid-member-picker > label { display: grid; gap: 0.3rem; }
+.apmid-member-picker > div { max-height: 18rem; display: grid; gap: 0.2rem; overflow: auto; padding: 0.4rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); }
+.apmid-member-picker > div label { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem; border-radius: var(--radius-control); }
+.apmid-member-picker > div label:hover { background: var(--surface-hover); }
+.apmid-permissions table { min-width: 82rem; }
+.apmid-permissions td { min-width: 8.5rem; }
+.apmid-permissions td:first-child { min-width: 10rem; }
+.apmid-permissions td small { display: block; margin-top: 0.2rem; color: var(--text-muted); }
+@container (max-width: 46rem) {
+  .apmid-info { grid-template-columns: 1fr; }
+  .apmid-info dt { border-bottom: 0; }
+  .apmid-toolbar > span { width: 100%; margin-left: 0; }
+}
+
 .samba-shares, .samba-sessions, .samba-global-config, .module-backups, .module-info, .module-danger-zone { min-width: 0; display: grid; gap: 0.8125rem; }
 .samba-shares > header, .samba-sessions > header, .samba-global-config > header, .module-backups > header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .samba-shares h3, .samba-sessions h3, .samba-global-config h3, .module-backups h3, .module-info h3, .module-danger-zone h3 { margin: 0; font-size: var(--font-size-md); }

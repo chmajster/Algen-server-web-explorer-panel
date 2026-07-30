@@ -1,0 +1,46 @@
+id: apmid
+name: APMID
+description: Central application ownership identifiers, members, permissions and audit.
+long_description: Manage APMID records shared with Hosts Manager, assign existing WebNAS users and enforce per-APMID roles and permissions.
+category: system_tools
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: workflow
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, centos, opensuse, sles, arch, manjaro, alpine, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages: {apt: [], dnf: [], yum: []}
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: false
+  reload: false
+  logs: false
+  diagnostics: true
+  backups: true
+  import_export: false
+  healthcheck: true
+  resources: [items, members, permissions, history]
+  actions: [backup, restore, purge]
+ports: []
+dependencies: []
+conflicts: []
+permissions: []
+config_paths: []
+data_paths: [/var/lib/webnas/apmid]
+backup_paths: [/var/lib/webnas/apmid]
+proxmox_safe: true
+requires_reboot: false
+requires_root: false
+configurable: false
+removable: true
+healthcheck: health.py
+ui:
+  hidden: false
+changelog:
+  - Initial APMID registry with membership, resource RBAC, history and Hosts Manager migration.
+

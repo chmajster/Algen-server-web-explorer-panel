@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .base import ModuleProvider
 from .ansible_controller import AnsibleControllerProvider
+from .apmid import ApmidProvider
 from .databases import MariaDBProvider, PostgreSQLProvider, RedisProvider
 from .dns import AdGuardHomeProvider, PiHoleProvider
 from .docker import DockerProvider
@@ -22,6 +23,7 @@ def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
         "redis": RedisProvider,
         "home-assistant": HomeAssistantProvider,
         "ansible-controller": AnsibleControllerProvider,
+        "apmid": ApmidProvider,
     }
     provider = providers.get(module_id)
     if provider:
@@ -31,4 +33,4 @@ def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
     return ModuleProvider(module_id)
 
 
-__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider"]
+__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApmidProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider"]

@@ -172,7 +172,7 @@ def update_apmid(
     payload: ApmidInput,
     user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE)),
 ):
-    _require(_service()._get("apmids", apmid_id), "APMID_NOT_FOUND", "APMID not found")
+    _require(_service().apmid_service.get(apmid_id), "APMID_NOT_FOUND", "APMID not found")
     try:
         item = _service().save_apmid(payload, user.username, apmid_id)
     except ManagedGroupConflictError as error:

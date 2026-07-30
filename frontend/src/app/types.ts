@@ -19,6 +19,7 @@ export type AppId =
   | "containers"
   | "ansible"
   | "hosts"
+  | "apmid"
   | "module";
 
 export type Theme = "light" | "dark" | "system";

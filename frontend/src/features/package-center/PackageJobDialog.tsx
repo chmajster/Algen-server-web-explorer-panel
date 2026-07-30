@@ -17,6 +17,7 @@ export function PackageJobDialog({ initialJob, jobId, moduleName, t, onClose }: 
   const latestAppliedPoll = useRef(0);
   const trackedId = jobId || initialJob?.id || "";
   const jobStatus = job?.status;
+  const announcedTerminal = useRef("");
 
   useEffect(() => {
     if (initialJob) {
@@ -76,6 +77,11 @@ export function PackageJobDialog({ initialJob, jobId, moduleName, t, onClose }: 
 
   const lastLogId = job?.log_tail[job.log_tail.length - 1]?.id;
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [lastLogId]);
+  useEffect(() => {
+    if (!job || !TERMINAL_STATUSES.has(job.status) || announcedTerminal.current === `${job.id}:${job.status}`) return;
+    announcedTerminal.current = `${job.id}:${job.status}`;
+    window.dispatchEvent(new CustomEvent("webnas:modules-changed", { detail: { moduleId: job.module_id, status: job.status, action: job.action } }));
+  }, [job]);
 
   if (!job) return <Modal wide title={moduleName || t("package.liveJobTitle").replace("{name}", "")} closeLabel={t("action.close")} onClose={onClose}>{error ? <div className="error-state" role="alert">{error}</div> : <div className="loading-state">{t("status.loading")}</div>}</Modal>;
   const active = !TERMINAL_STATUSES.has(job.status);

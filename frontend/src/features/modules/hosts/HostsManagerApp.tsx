@@ -68,7 +68,6 @@ const sections: ModuleSection[] = [
   "overview",
   "hosts",
   "environment",
-  "apmid",
   "credentials",
   "installer",
   "settings",
@@ -190,16 +189,6 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
         items={environments}
         patterns={hostnamePatterns}
         credentials={credentials}
-        canManage={can("hosts-manager.hosts.manage")}
-        t={t}
-        toast={toast}
-        refresh={refresh}
-      />
-    );
-  else if (section === "apmid")
-    content = (
-      <ApmidManager
-        items={apmids}
         canManage={can("hosts-manager.hosts.manage")}
         t={t}
         toast={toast}

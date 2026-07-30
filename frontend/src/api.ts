@@ -76,7 +76,7 @@ export type Task = {
   errors: string[];
 };
 
-export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "ansible" | "hosts" | "module";
+export type PinnedAppId = "files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "ansible" | "hosts" | "apmid" | "module";
 export type InterfaceFont = "system" | "segoe" | "arial" | "verdana" | "tahoma" | "georgia" | "monospace";
 export type WallpaperItem = { id: string; name: string; url: string; size: number; created_at: number };
 
@@ -526,6 +526,21 @@ export type HostsManagerApmid = {
     group_id: string; group_name: string; active: boolean;
   }>;
 };
+
+export type ApmidResourcePermission = "view" | "update" | "members.view" | "members.manage" | "permissions.view" | "permissions.manage" | "audit.view" | "delete";
+export type ApmidRole = "viewer" | "operator" | "manager" | "owner";
+export type ApmidItem = {
+  id: string; code: string; name: string; description: string; active: boolean;
+  business_owner: string | null; member_count: number; related_count?: number;
+  created_at: number; updated_at: number; created_by: string; updated_by: string;
+  effective_permissions?: { username: string; role: ApmidRole | null; allow: ApmidResourcePermission[]; deny: ApmidResourcePermission[]; effective: ApmidResourcePermission[]; sources: Record<ApmidResourcePermission, string> };
+};
+export type ApmidMember = {
+  apmid_id: string; username: string; role: ApmidRole; assigned_at: number; assigned_by: string; updated_at: number; updated_by: string;
+  permissions: { username: string; role: ApmidRole; allow: ApmidResourcePermission[]; deny: ApmidResourcePermission[]; effective: ApmidResourcePermission[]; sources: Record<ApmidResourcePermission, string> };
+};
+export type ApmidHistory = { id: number; apmid_id: string | null; action: string; actor: string; target: string; details: Record<string, unknown>; created_at: number };
+export type ApmidDashboard = { total: number; active: number; members: number; without_owner: number; recent: ApmidHistory[] };
 export type HostsManagerHostnamePattern = {
   id: string; name: string; prefix: string; suffix: string; digits: number; start_value: number; step: number;
   next_value: number; last_value?: number | null; description: string; active: boolean; template: string;
@@ -1132,6 +1147,26 @@ export function logout() {
 
 export const api = {
   health,
+  apmidAccess: () => request<{ installed: boolean; allowed: boolean }>("/api/modules/apmid/access"),
+  apmidDashboard: () => request<ApmidDashboard>("/api/modules/apmid/dashboard"),
+  apmidItems: (params: { page?: number; page_size?: number; search?: string; status?: string; sort?: string; direction?: string } = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => value !== undefined && value !== "" && query.set(key, String(value)));
+    return request<{ items: ApmidItem[]; page: number; page_size: number; total: number }>(`/api/modules/apmid/items?${query}`);
+  },
+  apmidItem: (id: string) => request<ApmidItem>(`/api/modules/apmid/items/${encodeURIComponent(id)}`),
+  saveApmidItem: (payload: Pick<ApmidItem, "code" | "name" | "description" | "active" | "business_owner">, id = "") => request<ApmidItem>(id ? `/api/modules/apmid/items/${encodeURIComponent(id)}` : "/api/modules/apmid/items", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  deleteApmidItem: (id: string) => request<{ ok: boolean }>(`/api/modules/apmid/items/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  apmidMembers: (id: string) => request<ApmidMember[]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/members`),
+  apmidUsers: (search = "") => request<AdminUser[]>(`/api/modules/apmid/users?search=${encodeURIComponent(search)}`),
+  addApmidMembers: (id: string, usernames: string[], role: ApmidRole) => request<ApmidMember[]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/members`, { method: "POST", body: JSON.stringify({ usernames, role }) }),
+  updateApmidMember: (id: string, username: string, role: ApmidRole) => request<ApmidMember[]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}`, { method: "PUT", body: JSON.stringify({ role }) }),
+  deleteApmidMember: (id: string, username: string) => request<{ ok: boolean }>(`/api/modules/apmid/items/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}`, { method: "DELETE" }),
+  apmidPermissions: (id: string) => request<Array<ApmidMember["permissions"]>>(`/api/modules/apmid/items/${encodeURIComponent(id)}/permissions`),
+  updateApmidPermissions: (id: string, username: string, allow: ApmidResourcePermission[], deny: ApmidResourcePermission[]) => request<ApmidMember["permissions"]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}/permissions`, { method: "PUT", body: JSON.stringify({ allow, deny }) }),
+  resetApmidPermissions: (id: string, username: string) => request<ApmidMember["permissions"]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}/permissions`, { method: "DELETE" }),
+  apmidItemHistory: (id: string) => request<ApmidHistory[]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/history`),
+  apmidHistory: () => request<ApmidHistory[]>("/api/modules/apmid/history"),
   list: (path?: string, params: Record<string, string | number | boolean | null | undefined> = {}) => {
     const query = new URLSearchParams({ path: path || "" });
     Object.entries(params).forEach(([key, value]) => {

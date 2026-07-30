@@ -172,6 +172,17 @@ class Permission(StrEnum):
     HOSTS_MANAGER_BACKUP = "hosts-manager.backup"
     HOSTS_MANAGER_RESTORE = "hosts-manager.restore"
     HOSTS_MANAGER_CONFIGURE = "hosts-manager.configure"
+    APMID_VIEW = "apmid.view"
+    APMID_CREATE = "apmid.create"
+    APMID_UPDATE = "apmid.update"
+    APMID_DELETE = "apmid.delete"
+    APMID_MEMBERS_VIEW = "apmid.members.view"
+    APMID_MEMBERS_MANAGE = "apmid.members.manage"
+    APMID_PERMISSIONS_VIEW = "apmid.permissions.view"
+    APMID_PERMISSIONS_MANAGE = "apmid.permissions.manage"
+    APMID_AUDIT_VIEW = "apmid.audit.view"
+    APMID_BACKUP = "apmid.backup"
+    APMID_RESTORE = "apmid.restore"
     LOGS_VIEW_OWN = "logs.view_own"
     LOGS_VIEW_SYSTEM = "logs.view_system"
     LOGS_VIEW_KERNEL = "logs.view_kernel"
@@ -188,7 +199,7 @@ class Permission(StrEnum):
 
 
 _READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics", "live", "export"}
-_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE}
+_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE, Permission.APMID_DELETE, Permission.APMID_PERMISSIONS_MANAGE, Permission.APMID_RESTORE}
 _APPLICATIONS: dict[str, list[str]] = {
     "files": ["files"],
     "transfers": ["transfers"],
@@ -208,6 +219,7 @@ _APPLICATIONS: dict[str, list[str]] = {
     "homeassistant": ["module:home-assistant"],
     "ansible-controller": ["module:ansible-controller"],
     "hosts-manager": ["module:hosts-manager"],
+    "apmid": ["module:apmid"],
     "logs": ["logs"],
     "system": ["monitor", "logs", "settings"],
 }
@@ -310,6 +322,9 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_MANAGE.value,
         Permission.HOSTS_MANAGER_POWER_VIEW.value, Permission.HOSTS_MANAGER_POWER_ON.value,
         Permission.HOSTS_MANAGER_ACTIONS_EXECUTE.value, Permission.HOSTS_MANAGER_BACKUP.value, Permission.HOSTS_MANAGER_CONFIGURE.value,
+        Permission.APMID_VIEW.value, Permission.APMID_CREATE.value, Permission.APMID_UPDATE.value,
+        Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_MEMBERS_MANAGE.value,
+        Permission.APMID_PERMISSIONS_VIEW.value, Permission.APMID_AUDIT_VIEW.value, Permission.APMID_BACKUP.value,
     },
     Role.auditor: {
         Permission.FILES_VIEW.value, Permission.FILES_READ.value, Permission.FILES_DOWNLOAD.value, Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_VIEW_ALL.value,
@@ -326,6 +341,8 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value, Permission.ANSIBLE_AUDIT_VIEW.value,
         Permission.HOSTS_MANAGER_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_VIEW.value, Permission.HOSTS_MANAGER_POWER_VIEW.value,
         Permission.HOSTS_MANAGER_AUDIT_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value,
+        Permission.APMID_VIEW.value, Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_PERMISSIONS_VIEW.value,
+        Permission.APMID_AUDIT_VIEW.value,
     },
     Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.LOGS_VIEW_OWN.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value, Permission.SYSTEM_STATUS.value},
 }

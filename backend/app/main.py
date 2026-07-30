@@ -30,6 +30,7 @@ from .network_management import router as network_management_router
 from .modules.router import router as modules_router
 from .modules.ansible_controller.router import router as ansible_controller_router
 from .modules.hosts_manager.router import router as hosts_manager_router
+from .modules.apmid.router import router as apmid_router
 from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
 from .modules.docker_manager.router import router as docker_manager_router
 from .package_center.router import router as package_center_router
@@ -91,6 +92,7 @@ app.include_router(logs_router)
 app.include_router(docker_manager_router)
 app.include_router(ansible_controller_router)
 app.include_router(hosts_manager_router)
+app.include_router(apmid_router)
 app.include_router(modules_router)
 app.include_router(rbac_router)
 app.include_router(activity_router)

@@ -21,6 +21,7 @@ export const apps: AppDefinition[] = [
   { id: "containers", labelKey: "app.containers", icon: <Boxes />, permission: "docker.view", minWidth: 900, minHeight: 580 },
   { id: "ansible", labelKey: "ansible.name", icon: <Workflow />, permission: "modules.view", minWidth: 900, minHeight: 580 },
   { id: "hosts", labelKey: "hosts.name", icon: <Server />, permission: "modules.view", minWidth: 900, minHeight: 580 },
+  { id: "apmid", labelKey: "apmid.name", icon: <Workflow />, minWidth: 900, minHeight: 580 },
   { id: "access", labelKey: "app.access", icon: <ShieldCheck />, permission: "access.view", hidden: true, minWidth: 760, minHeight: 500 },
   { id: "services", labelKey: "app.services", icon: <ServerCog />, permission: "services.view" },
   { id: "store", labelKey: "app.store", icon: <Package />, permission: "modules.install" },

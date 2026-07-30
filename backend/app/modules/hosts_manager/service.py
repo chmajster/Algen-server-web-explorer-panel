@@ -18,6 +18,13 @@ from typing import Any, Callable
 
 from ...config import get_config
 from ..ansible_controller.security import CredentialCipher, redact
+from ..apmid.models import ApmidInput as DomainApmidInput
+from ..apmid.service import (
+    ApmidService,
+    ApmidConflictError as DomainApmidConflictError,
+    ApmidInUseError as DomainApmidInUseError,
+    ApmidNotFoundError as DomainApmidNotFoundError,
+)
 from .models import (
     ApmidInput, CredentialInput, EnrollmentTokenInput, EnvironmentInput, GroupInput, HostInput, HostnamePatternInput,
     HostsManagerSettingsUpdate, PowerProfileInput, RepositoryInput, hostname_template_parts, render_hostname,
@@ -88,6 +95,7 @@ class HostRegistryService:
         self._lock = threading.RLock()
         self._capabilities: dict[str, HostCapabilityProvider] = {}
         self._initialize()
+        self.apmid_service = ApmidService(path=root.parent / "apmid" / "apmid.sqlite3", legacy_path=self.path)
         self.migrate_ansible_controller()
 
     def connect(self) -> sqlite3.Connection:
@@ -592,7 +600,20 @@ class HostRegistryService:
 
     def _sync_apmid_environment_groups_locked(self, connection: sqlite3.Connection, actor: str) -> dict[str, int]:
         now = time.time()
-        apmids = connection.execute("SELECT id,code,active FROM apmids ORDER BY code").fetchall()
+        apmids = self.apmid_service.all_for_hosts()
+        # Compatibility rows only satisfy the legacy relation foreign key and
+        # remain a rollback snapshot. Reads and writes use ApmidService.
+        for apmid in apmids:
+            connection.execute(
+                """INSERT INTO apmids(id,code,description,active,created_at,updated_at,created_by,updated_by)
+                   VALUES(?,?,?,?,?,?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET code=excluded.code,description=excluded.description,
+                     active=excluded.active,updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
+                (
+                    apmid["id"], apmid["code"], apmid["description"], int(apmid["active"]),
+                    apmid["created_at"], apmid["updated_at"], apmid["created_by"], apmid["updated_by"],
+                ),
+            )
         environments = connection.execute("SELECT id,slug,active FROM environments ORDER BY slug").fetchall()
         relations = {
             (str(row["apmid_id"]), str(row["environment_id"])): str(row["group_id"])
@@ -600,7 +621,7 @@ class HostRegistryService:
                 "SELECT apmid_id,environment_id,group_id FROM apmid_environment_groups"
             ).fetchall()
         }
-        planned: list[tuple[sqlite3.Row, sqlite3.Row, str, str | None]] = []
+        planned: list[tuple[dict[str, Any], sqlite3.Row, str, str | None]] = []
         for apmid in apmids:
             for environment in environments:
                 key = (str(apmid["id"]), str(environment["id"]))
@@ -659,7 +680,7 @@ class HostRegistryService:
             return self._sync_apmid_environment_groups_locked(connection, actor)
 
     def apmids(self) -> list[dict[str, Any]]:
-        items = self._list("apmids", order="code")
+        items = self.apmid_service.all_for_hosts()
         with self.connect() as connection:
             relations = connection.execute(
                 """SELECT relation.apmid_id,relation.environment_id,relation.group_id,
@@ -685,45 +706,53 @@ class HostRegistryService:
         return items
 
     def save_apmid(self, payload: ApmidInput, actor: str, apmid_id: str | None = None) -> dict[str, Any]:
-        now, item_id, value = time.time(), apmid_id or stable_id(), payload.model_dump(mode="json")
-        with self._lock, self.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            conflict = connection.execute(
-                "SELECT id FROM apmids WHERE code=? COLLATE NOCASE AND id<>?",
-                (value["code"], item_id),
-            ).fetchone()
-            if conflict:
-                raise ManagedGroupConflictError("APMID code already exists")
-            old = connection.execute("SELECT created_at,created_by FROM apmids WHERE id=?", (item_id,)).fetchone()
-            created_at, created_by = (old["created_at"], old["created_by"]) if old else (now, actor)
-            connection.execute(
-                """INSERT INTO apmids(id,code,description,active,created_at,updated_at,created_by,updated_by)
-                   VALUES(?,?,?,?,?,?,?,?)
-                   ON CONFLICT(id) DO UPDATE SET code=excluded.code,description=excluded.description,
-                     active=excluded.active,updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
-                (item_id, value["code"], value["description"], int(value["active"]), created_at, now, created_by, actor),
-            )
-            self._sync_apmid_environment_groups_locked(connection, actor)
-        return next(item for item in self.apmids() if item["id"] == item_id)
+        previous = self.apmid_service.get(apmid_id) if apmid_id else None
+        domain_payload = DomainApmidInput(
+            code=payload.code, name=payload.code, description=payload.description, active=payload.active,
+        )
+        try:
+            item = self.apmid_service.update(apmid_id, domain_payload, actor) if apmid_id else self.apmid_service.create(domain_payload, actor)
+        except DomainApmidConflictError as error:
+            raise ManagedGroupConflictError(str(error)) from error
+        except DomainApmidNotFoundError as error:
+            raise KeyError("APMID not found") from error
+        try:
+            with self._lock, self.connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                self._sync_apmid_environment_groups_locked(connection, actor)
+        except Exception:
+            if previous:
+                self.apmid_service.update(
+                    str(previous["id"]),
+                    DomainApmidInput(
+                        code=str(previous["code"]), name=str(previous["name"]), description=str(previous["description"]),
+                        active=bool(previous["active"]), business_owner=previous.get("business_owner"),
+                    ),
+                    actor,
+                )
+            else:
+                self.apmid_service.delete(str(item["id"]), actor)
+            raise
+        return next(value for value in self.apmids() if value["id"] == item["id"])
 
     def delete_apmid(self, apmid_id: str) -> bool:
+        if not self.apmid_service.get(apmid_id):
+            return False
+        usages = self.apmid_service.usages(apmid_id)
+        if usages:
+            raise ApmidInUseError("APMID is referenced by Hosts Manager")
         with self._lock, self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            if not connection.execute("SELECT 1 FROM apmids WHERE id=?", (apmid_id,)).fetchone():
-                return False
-            if connection.execute("SELECT 1 FROM enrollment_tokens WHERE apmid_id=? LIMIT 1", (apmid_id,)).fetchone():
-                raise ApmidInUseError("APMID is referenced by enrollment tokens")
             relations = connection.execute(
                 "SELECT group_id FROM apmid_environment_groups WHERE apmid_id=?", (apmid_id,)
             ).fetchall()
-            for relation in relations:
-                if connection.execute(
-                    "SELECT 1 FROM memberships WHERE group_id=? LIMIT 1", (relation["group_id"],)
-                ).fetchone():
-                    raise ApmidInUseError("APMID managed group contains hosts")
             connection.execute("DELETE FROM apmid_environment_groups WHERE apmid_id=?", (apmid_id,))
             connection.executemany("DELETE FROM groups WHERE id=?", [(row["group_id"],) for row in relations])
-            return bool(connection.execute("DELETE FROM apmids WHERE id=?", (apmid_id,)).rowcount)
+        try:
+            self.apmid_service.delete(apmid_id, "hosts-manager")
+        except DomainApmidInUseError as error:
+            raise ApmidInUseError("APMID is referenced by Hosts Manager") from error
+        return True
 
     def environments(self) -> list[dict[str, Any]]:
         items = self._list("environments", order="name")
@@ -1046,6 +1075,9 @@ class HostRegistryService:
         now, item_id, token = time.time(), stable_id(), secrets.token_urlsafe(32)
         value = payload.model_dump(mode="json")
         expires = 0 if value["mode"] == "permanent" else now + int(value["expires_minutes"]) * 60
+        apmid = self.apmid_service.active(str(value["apmid_id"]))
+        if not apmid:
+            raise KeyError("APMID not found or inactive")
         with self._lock, self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             settings = self._settings_locked(connection)
@@ -1054,11 +1086,6 @@ class HostRegistryService:
             ).fetchone()
             if not environment:
                 raise KeyError("environment not found or inactive")
-            apmid = connection.execute(
-                "SELECT * FROM apmids WHERE id=? AND active=1", (value["apmid_id"],)
-            ).fetchone()
-            if not apmid:
-                raise KeyError("APMID not found or inactive")
             self._sync_apmid_environment_groups_locked(connection, actor)
             managed = connection.execute(
                 """SELECT relation.group_id,groups.name
@@ -1156,7 +1183,7 @@ class HostRegistryService:
 
     def enrollment_tokens(self) -> list[dict[str, Any]]:
         with self.connect() as connection:
-            apmids = {str(row["id"]): dict(row) for row in connection.execute("SELECT id,code FROM apmids").fetchall()}
+            apmids = {str(row["id"]): row for row in self.apmid_service.all_for_hosts()}
             environments = {
                 str(row["id"]): dict(row)
                 for row in connection.execute("SELECT id,name,slug FROM environments").fetchall()
@@ -1233,9 +1260,10 @@ class HostRegistryService:
             if row["apmid_id"] or row["environment_id"]:
                 if not row["apmid_id"] or not row["environment_id"]:
                     return None
+                if not self.apmid_service.active(str(row["apmid_id"])):
+                    return None
                 relation = connection.execute(
                     """SELECT relation.group_id FROM apmid_environment_groups relation
-                       JOIN apmids ON apmids.id=relation.apmid_id AND apmids.active=1
                        JOIN environments ON environments.id=relation.environment_id AND environments.active=1
                        JOIN groups ON groups.id=relation.group_id AND groups.active=1
                        WHERE relation.apmid_id=? AND relation.environment_id=?""",

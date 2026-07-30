@@ -106,6 +106,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     } catch { return []; }
   });
   const [moduleNames, setModuleNames] = useState<Map<string, string>>(new Map());
+  const [apmidAvailable, setApmidAvailable] = useState(false);
+  const [apmidResolved, setApmidResolved] = useState(false);
   const migrateLegacyPins = useRef(localStorage.getItem(legacyPinnedKey) !== null);
   const scaleMigrationAttempt = useRef("");
   const [clock, setClock] = useState(new Date());
@@ -117,12 +119,13 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const previousModuleJobs = useRef<Map<string, AppJob["status"]>>(new Map());
   const previousModuleHealth = useRef<Map<string, string>>(new Map());
   const moduleNotificationsInitialized = useRef(false);
+  const apmidUnavailableHandled = useRef(false);
   const notifiedModuleEvents = useRef<Set<string>>(new Set());
   const notificationRef = useRef<HTMLElement>(null);
   const actionButtonRef = useRef<HTMLButtonElement>(null);
   const clockButtonRef = useRef<HTMLButtonElement>(null);
   const canUseApp = useCallback((appId: AppId) => { const definition = appById[appId]; return Boolean(definition && (!definition.admin || profile.is_admin) && (!definition.permission || profile.permissions.includes(definition.permission)) && (!definition.permissionAny || definition.permissionAny.some((permission) => profile.permissions.includes(permission)))); }, [profile.is_admin, profile.permissions]);
-  const moduleAppAvailable = useCallback((appId: AppId) => (appId !== "ansible" || moduleNames.has("ansible-controller")) && (appId !== "hosts" || moduleNames.has("hosts-manager")), [moduleNames]);
+  const moduleAppAvailable = useCallback((appId: AppId) => (appId !== "ansible" || moduleNames.has("ansible-controller")) && (appId !== "hosts" || moduleNames.has("hosts-manager")) && (appId !== "apmid" || apmidAvailable), [apmidAvailable, moduleNames]);
   const availableApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const taskbarApps = useMemo(() => apps.filter((app) => canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
@@ -250,7 +253,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   }, [notificationsOpen]);
 
   const openApp = useCallback((app: AppId, initialPath?: string, moduleId?: string) => {
-    if (!canUseApp(app)) { toast(t("error.permissionRequired"), "error"); return; }
+    if (!canUseApp(app) || !moduleAppAvailable(app)) { toast(t("error.permissionRequired"), "error"); return; }
     const usedAt = Date.now();
     setRecentApps((current) => {
       const next = [{ id: app, usedAt }, ...current.filter((item) => item.id !== app)].slice(0, 8);
@@ -262,7 +265,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     setNotificationsOpen(false);
     setActionsOpen(false);
     setCalendarOpen(false);
-  }, [canUseApp, recentAppsKey, t, toast, viewport]);
+  }, [canUseApp, moduleAppAvailable, recentAppsKey, t, toast, viewport]);
   const openActionTarget = useCallback((action: BackgroundAction) => {
     if (!canUseApp(action.target.app)) {
       toast(t("error.permissionRequired"), "error");
@@ -343,6 +346,37 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     const timer = window.setInterval(() => { if (!document.hidden) void refreshModules(); }, 5000);
     return () => window.clearInterval(timer);
   }, [profile.notification_admin, profile.permissions, profile.show_notifications, t, toast]);
+  useEffect(() => {
+    let active = true;
+    let polling = false;
+    async function refreshApmidAccess() {
+      if (polling) return;
+      polling = true;
+      try {
+        const value = await api.apmidAccess();
+        if (active) { setApmidAvailable(value.installed && value.allowed); setApmidResolved(true); }
+      } catch {
+        // Keep the last confirmed state during a transient backend outage.
+      } finally { polling = false; }
+    }
+    const changed = () => { void refreshApmidAccess(); };
+    void refreshApmidAccess();
+    const timer = window.setInterval(() => { if (!document.hidden) void refreshApmidAccess(); }, 5000);
+    window.addEventListener("webnas:modules-changed", changed);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("webnas:modules-changed", changed); };
+  }, []);
+  useEffect(() => {
+    if (apmidAvailable) { apmidUnavailableHandled.current = false; return; }
+    if (!apmidResolved || apmidUnavailableHandled.current) return;
+    apmidUnavailableHandled.current = true;
+    state.windows.filter((item) => item.app === "apmid").forEach((item) => dispatch({ type: "close", id: item.id }));
+    const nextPinned = new Set(pinned); nextPinned.delete("apmid"); setPinned(nextPinned);
+    const nextStart = new Set(startPinned); nextStart.delete("apmid"); setStartPinned(nextStart);
+    const nextDesktop = new Set(desktopShortcuts); nextDesktop.delete("apmid"); setDesktopShortcuts(nextDesktop);
+    if (pinned.has("apmid") || startPinned.has("apmid") || desktopShortcuts.has("apmid")) {
+      void onSettingsChange({ pinned_apps: [...nextPinned], start_pinned_apps: [...nextStart], desktop_shortcut_apps: [...nextDesktop] }).catch(() => undefined);
+    }
+  }, [apmidAvailable, apmidResolved, desktopShortcuts, onSettingsChange, pinned, startPinned, state.windows]);
 
   function selectTask(item: WindowInstance) {
     if (state.activeId === item.id && !item.minimized) dispatch({ type: "minimize", id: item.id });
@@ -424,6 +458,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       case "containers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="docker" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
       case "ansible": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="ansible-controller" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
       case "hosts": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="hosts-manager" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
+      case "apmid": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="apmid" permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
       case "access": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection="policies" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} /></Suspense>;
       case "services": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ServicesApp t={t} toast={toast} /></Suspense>;
       case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp selectedJobId={item.deepLink?.type === "package-job" ? item.deepLink.jobId || item.deepLink.id : undefined} t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} onSelectedJobClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
