@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Clock3, HardDriveDownload, LogIn, RefreshCw, RotateCcw, Terminal } from "lucide-react";
+import { useLayoutEffect, useRef } from "react";
 import type { UpdateCompletionNotice, UpdateProgress } from "../../api";
 import type { Translate } from "../../app/types";
 
@@ -27,6 +28,12 @@ export function UpdateStatusPage({
   const failed = value.state === "failed";
   const phase = failed ? value.failed_phase || value.phase || value.state : value.phase || value.state;
   const percent = value.progress ?? (value.state === "completed" || failed ? 100 : 0);
+  const logRef = useRef<HTMLPreElement | null>(null);
+  const logContent = value.lines.length ? value.lines.join("\n") : t(active ? "settings.updateWaitingForLog" : "settings.updateNoLog");
+  useLayoutEffect(() => {
+    const log = logRef.current;
+    if (log) log.scrollTop = log.scrollHeight;
+  }, [logContent]);
   return <main className={`update-status-page ${value.state}`}>
     <section className="update-status-shell" aria-labelledby="update-status-title">
       <header className="update-status-header">
@@ -70,7 +77,7 @@ export function UpdateStatusPage({
 
       <section className="update-status-log">
         <header><Terminal /><strong>{t("settings.updateLiveLog")}</strong></header>
-        <pre>{value.lines.length ? value.lines.join("\n") : t(active ? "settings.updateWaitingForLog" : "settings.updateNoLog")}</pre>
+        <pre ref={logRef}>{logContent}</pre>
       </section>
 
       <footer className="update-status-footer">

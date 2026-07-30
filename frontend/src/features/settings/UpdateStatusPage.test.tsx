@@ -52,6 +52,27 @@ describe("UpdateStatusPage", () => {
     expect(screen.queryByRole("button", { name: "updateStatus.returnToPanel" })).not.toBeInTheDocument();
   });
 
+  it("keeps the live update log scrolled to the newest line", () => {
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(480);
+    const props = {
+      connectionError: false,
+      t,
+      onRetry: vi.fn(),
+      onReturn: vi.fn(),
+      onLogin: vi.fn(),
+    };
+    const { container, rerender } = render(<UpdateStatusPage value={progress({ lines: ["Pierwszy wpis"] })} {...props} />);
+    const log = container.querySelector<HTMLPreElement>(".update-status-log pre");
+
+    expect(log).not.toBeNull();
+    expect(log?.scrollTop).toBe(480);
+
+    if (log) log.scrollTop = 0;
+    rerender(<UpdateStatusPage value={progress({ lines: ["Pierwszy wpis", "Najnowszy wpis"] })} {...props} />);
+    expect(log?.scrollTop).toBe(480);
+    scrollHeight.mockRestore();
+  });
+
   it("keeps a failed update on the status page and exposes safe recovery actions", () => {
     const retry = vi.fn();
     const returnToPanel = vi.fn();
