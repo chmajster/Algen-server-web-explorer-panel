@@ -738,7 +738,8 @@ class HostRegistryService:
 
     def save_environment(self, payload: EnvironmentInput, actor: str, environment_id: str | None = None) -> dict[str, Any]:
         now, item_id, value = time.time(), environment_id or stable_id(), payload.model_dump(mode="json")
-        with self.connect() as connection:
+        with self._lock, self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             old = connection.execute("SELECT created_at,created_by FROM environments WHERE id=?", (item_id,)).fetchone()
             created_at, created_by = (old["created_at"], old["created_by"]) if old else (now, actor)
             if value["default_hostname_pattern_id"] and not connection.execute(
@@ -773,7 +774,12 @@ class HostRegistryService:
         environment = self._get("environments", environment_id)
         if not environment:
             return False
-        with self.connect() as connection:
+        with self._lock, self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM enrollment_tokens WHERE environment_id=? LIMIT 1", (environment_id,)
+            ).fetchone():
+                raise ValueError("environment is referenced by enrollment tokens")
             assigned = connection.execute(
                 "SELECT COUNT(*) FROM hosts WHERE active=1 AND environment IN (?,?)",
                 (environment_id, environment["slug"]),

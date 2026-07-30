@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ApiError,
   api,
   type HostsManagerApmid,
   type HostsManagerBackup,
@@ -72,6 +73,21 @@ const sections: ModuleSection[] = [
   "settings",
   "audit",
 ];
+
+function hostsManagerError(error: unknown, t: Translate): string {
+  if (error instanceof ApiError) {
+    const translated: Record<string, string> = {
+      APMID_INACTIVE: "hosts.apmid.inactive",
+      ENVIRONMENT_INACTIVE: "hosts.environment.inactive",
+      APMID_GROUP_CONFLICT: "hosts.apmid.groupConflict",
+      APMID_GROUP_SYNC_FAILED: "hosts.apmid.syncError",
+      MANAGED_GROUP_PROTECTED: "hosts.group.managedProtected",
+    };
+    const key = error.code ? translated[error.code] : undefined;
+    if (key) return t(key);
+  }
+  return error instanceof Error ? error.message : t("error.generic");
+}
 
 export function HostsManagerApp({ permissions, initialOperationId, t, toast, onDeepLinkClose }: Props) {
   const [section, setSection] = useState<ModuleSection>("overview");
@@ -1135,7 +1151,7 @@ function ApmidManager({
       toast(t("hosts.apmid.saved"), "ok");
       await refresh();
     } catch (error) {
-      toast(error instanceof Error ? error.message : t("hosts.apmid.groupConflict"), "error");
+      toast(hostsManagerError(error, t), "error");
     }
   }
   async function remove(item: HostsManagerApmid) {
@@ -1153,8 +1169,8 @@ function ApmidManager({
       const result = await api.syncHostsManagerApmidGroups();
       toast(t("hosts.apmid.syncComplete").replace("{count}", String(result.total)), "ok");
       await refresh();
-    } catch {
-      toast(t("hosts.apmid.syncError"), "error");
+    } catch (error) {
+      toast(hostsManagerError(error, t), "error");
     } finally {
       setSyncing(false);
     }
@@ -1592,10 +1608,7 @@ function Enrollment({
       setOpen(false);
       await refresh();
     } catch (error) {
-      toast(
-        error instanceof Error ? error.message : t("error.generic"),
-        "error",
-      );
+      toast(hostsManagerError(error, t), "error");
     }
   }
   async function copy(value: string) {
