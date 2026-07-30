@@ -26,6 +26,7 @@ from .proxmox_guard import safe_mode_active
 from .security import SessionUser, get_session_user, require_csrf
 from .settings import _is_admin
 from .identity.permissions import authorize
+from .update_coordination import operation_admission
 
 router = APIRouter(prefix="/api/mounts")
 
@@ -451,6 +452,33 @@ def recent_jobs(mount_id: str) -> list[dict]:
     return result
 
 
+def active_mount_jobs() -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT jobs.id, jobs.action, jobs.status, jobs.created_at, jobs.finished_at,
+                   mounts.name, mounts.owner
+            FROM mount_jobs AS jobs
+            JOIN mounts ON mounts.id = jobs.mount_id
+            WHERE jobs.status IN ('queued', 'running')
+            ORDER BY jobs.created_at
+            """
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "type": f"mount.{row['action']}",
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "finished_at": row["finished_at"],
+            "progress": None,
+            "description": row["name"],
+            "user_id": row["owner"],
+        }
+        for row in rows
+    ]
+
+
 def _decode_mountinfo(value: str) -> str:
     return re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), value)
 
@@ -828,13 +856,14 @@ def _perform_migration(mount: dict) -> subprocess.CompletedProcess[str]:
 
 
 def enqueue(mount_id: str, action: str) -> dict:
-    with connect() as conn:
-        conflict = conn.execute("SELECT id FROM mount_jobs WHERE mount_id=? AND status IN ('queued','running')", (mount_id,)).fetchone()
-        if conflict:
-            raise HTTPException(409, {"code": "operation_in_progress", "message": "Another operation is already running"})
-        job_id = uuid4().hex
-        conn.execute("INSERT INTO mount_jobs (id, mount_id, action, status, created_at) VALUES (?, ?, ?, 'queued', ?)", (job_id, mount_id, action, time.time()))
-        conn.commit()
+    with operation_admission():
+        with connect() as conn:
+            conflict = conn.execute("SELECT id FROM mount_jobs WHERE mount_id=? AND status IN ('queued','running')", (mount_id,)).fetchone()
+            if conflict:
+                raise HTTPException(409, {"code": "operation_in_progress", "message": "Another operation is already running"})
+            job_id = uuid4().hex
+            conn.execute("INSERT INTO mount_jobs (id, mount_id, action, status, created_at) VALUES (?, ?, ?, 'queued', ?)", (job_id, mount_id, action, time.time()))
+            conn.commit()
 
     def worker() -> None:
         with _mount_lock(mount_id):

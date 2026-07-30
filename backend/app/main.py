@@ -24,7 +24,7 @@ from .local_disks import router as local_disks_router
 from .logs import router as logs_router
 from .identity.router import router as identity_router
 from .identity.permissions import authorize
-from .network_mounts import router as mounts_router
+from .network_mounts import active_mount_jobs, router as mounts_router
 from .network_diagnostics import router as network_diagnostics_router
 from .network_management import router as network_management_router
 from .modules.router import router as modules_router
@@ -40,15 +40,26 @@ from .rbac import router as rbac_router
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
 from .settings import router as settings_router, start_auto_update_scheduler
 from .tasks import task_store
-from .uploads import append_upload, cancel_upload, start_upload
+from .update_coordination import active_transient_operations, register_operation_provider, transient_operation
+from .uploads import active_uploads, append_upload, cancel_upload, start_upload
 from .write_policy import assert_write_allowed
 
 configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    package_repository_instance = package_repository()
+    package_manager = package_job_manager(package_repository_instance)
+    register_operation_provider(
+        "file",
+        lambda: [task.to_dict() for task in task_store.list_all() if task.status.value in {"queued", "running"}],
+        task_store.schedule_pending,
+    )
+    register_operation_provider("package", package_repository_instance.active_jobs, package_manager.schedule_pending)
+    register_operation_provider("mount", active_mount_jobs)
+    register_operation_provider("upload", active_uploads)
+    register_operation_provider("direct", active_transient_operations)
     start_auto_update_scheduler()
-    package_job_manager(package_repository())
     start_ansible_scheduler()
     yield
 
@@ -262,7 +273,8 @@ def mkdir(payload: PathRequest, user=Depends(csrf_user)):
     authorize(user, "files.create")
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    result = run_user_op(user.username, "mkdir", {"path": str(target)})
+    with transient_operation("file.mkdir", description=target.name, user_id=user.username):
+        result = run_user_op(user.username, "mkdir", {"path": str(target)})
     record_activity(ActivityCategory.file, "mkdir", user.username, target=str(target), source="files")
     return result
 
@@ -272,7 +284,8 @@ def create(payload: PathRequest, user=Depends(csrf_user)):
     authorize(user, "files.create")
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    result = run_user_op(user.username, "create", {"path": str(target)})
+    with transient_operation("file.create", description=target.name, user_id=user.username):
+        result = run_user_op(user.username, "create", {"path": str(target)})
     record_activity(ActivityCategory.file, "create", user.username, target=str(target), source="files")
     return result
 
@@ -310,7 +323,8 @@ def rename(payload: RenameRequest, user=Depends(csrf_user)):
     dst = resolve_user_path(user.username, payload.dst)
     assert_write_allowed(src)
     assert_write_allowed(dst)
-    result = run_user_op(user.username, "rename", {"src": str(src), "dst": str(dst)})
+    with transient_operation("file.rename", description=src.name, user_id=user.username):
+        result = run_user_op(user.username, "rename", {"src": str(src), "dst": str(dst)})
     record_activity(ActivityCategory.file, "rename", user.username, target=str(dst), details={"source": str(src)}, source="files")
     return result
 
@@ -336,7 +350,8 @@ def trash(payload: PathRequest, user=Depends(csrf_user)):
     authorize(user, "files.delete")
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    result = run_user_op(user.username, "trash", {"path": str(target)})
+    with transient_operation("file.trash", description=target.name, user_id=user.username):
+        result = run_user_op(user.username, "trash", {"path": str(target)})
     record_activity(ActivityCategory.file, "trash", user.username, target=str(target), source="files")
     return result
 
@@ -344,7 +359,8 @@ def trash(payload: PathRequest, user=Depends(csrf_user)):
 @app.post("/api/files/upload")
 async def upload(path: str = Form(...), file: UploadFile = File(...), user=Depends(csrf_user)):
     authorize(user, "files.upload")
-    result = await save_upload(user.username, path, file)
+    with transient_operation("upload", description=Path(file.filename or "upload.bin").name, user_id=user.username):
+        result = await save_upload(user.username, path, file)
     record_activity(ActivityCategory.file, "upload", user.username, target=str(result.get("path", path)), details={"filename": file.filename or ""}, source="files")
     return result
 
@@ -407,18 +423,19 @@ def write_text_file(payload: TextFileWriteRequest, user=Depends(csrf_user)):
         raise HTTPException(413, {"code": "file_too_large", "message": "This file is too large for the text editor"})
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    result = cast(
-        dict[str, object],
-        run_user_op(
-            user.username,
-            "write_text",
-            {
-                "path": str(target),
-                "content": payload.content,
-                "expected_mtime_ns": int(payload.expected_mtime_ns) if payload.expected_mtime_ns is not None else None,
-            },
-        ),
-    )
+    with transient_operation("file.write", description=target.name, user_id=user.username):
+        result = cast(
+            dict[str, object],
+            run_user_op(
+                user.username,
+                "write_text",
+                {
+                    "path": str(target),
+                    "content": payload.content,
+                    "expected_mtime_ns": int(payload.expected_mtime_ns) if payload.expected_mtime_ns is not None else None,
+                },
+            ),
+        )
     result["mtime_ns"] = str(result["mtime_ns"])
     record_activity(ActivityCategory.file, "write_text", user.username, target=str(target), details={"size": len(payload.content.encode("utf-8"))}, source="files")
     return {"path": str(target), **result}
@@ -445,7 +462,8 @@ def chmod(payload: ChmodRequest, user=Depends(csrf_user)):
         raise HTTPException(403, "chmod is disabled")
     target = resolve_user_path(user.username, payload.path)
     assert_write_allowed(target)
-    result = run_user_op(user.username, "chmod", {"path": str(target), "mode": payload.mode})
+    with transient_operation("file.chmod", description=target.name, user_id=user.username):
+        result = run_user_op(user.username, "chmod", {"path": str(target), "mode": payload.mode})
     record_activity(ActivityCategory.file, "chmod", user.username, target=str(target), details={"mode": payload.mode}, source="files")
     return result
 

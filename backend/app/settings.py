@@ -37,6 +37,13 @@ from .proxmox_guard import (
 from .resource_dashboard import collect_dashboard
 from .security import SessionUser, get_session_user, require_csrf
 from .rbac import access_profile, authorize
+from .update_coordination import (
+    active_operations,
+    coordination_lock,
+    read_update_request,
+    resume_registered_operations,
+    write_update_request,
+)
 
 router = APIRouter()
 
@@ -802,8 +809,170 @@ def _write_json_atomic(path: Path, value: dict) -> None:
     os.chmod(path, 0o600)
 
 
+def _safe_update_lines(lines: list[str]) -> list[str]:
+    safe: list[str] = []
+    for line in lines[-120:]:
+        value = re.sub(r"(?i)(authorization:\s*bearer|token|password|secret)(\s*[:=]\s*|\s+)\S+", r"\1\2***", line)
+        value = re.sub(r"(?i)(https?://[^/\s:@]+:)[^@\s/]+@", r"\1***@", value)
+        value = re.sub(r"/(?:home/[^/\s]+|root)(?:/[^\s]*)?", "/***/…", value)
+        safe.append(value[-4000:])
+    return safe
+
+
+def _update_phase(lines: list[str], *, running: bool, state: str, fallback: str) -> str:
+    if state == "waiting":
+        return "waiting"
+    if state in {"completed", "failed"}:
+        return state
+    if not running:
+        return fallback or "preparing"
+    recent = "\n".join(lines[-30:]).lower()
+    if any(token in recent for token in ("verification", "verify", "health check")):
+        return "verifying"
+    if any(token in recent for token in ("restart", "systemctl daemon-reload")):
+        return "restarting"
+    if any(token in recent for token in ("migration", "migrate")):
+        return "migrating"
+    if any(token in recent for token in ("dependency", "pip install", "npm ci", "apt-get")):
+        return "dependencies"
+    if any(token in recent for token in ("download", "fetch", "clone", "pull")):
+        return "downloading"
+    return "installing"
+
+
+def _phase_progress(phase: str) -> int | None:
+    return {
+        "waiting": 5,
+        "preparing": 15,
+        "downloading": 30,
+        "installing": 55,
+        "dependencies": 68,
+        "migrating": 78,
+        "restarting": 88,
+        "verifying": 94,
+        "completed": 100,
+        "failed": 100,
+    }.get(phase)
+
+
+def _safe_blockers(blockers: list[dict]) -> list[dict]:
+    return [
+        {
+            "id": str(item.get("id") or ""),
+            "type": str(item.get("type") or "operation"),
+            "status": str(item.get("status") or "running"),
+            "started_at": item.get("started_at"),
+            "progress": item.get("progress"),
+            "description": str(item.get("description") or "")[:300],
+        }
+        for item in blockers
+    ]
+
+
+def _request_update(*, actor: str, update_config: bool, status: dict | None = None) -> dict:
+    status = status or _update_status()
+    now = time.time()
+    log_path = Path(get_config().paths.log_dir) / "update.log"
+    try:
+        log_offset = log_path.stat().st_size
+    except OSError:
+        log_offset = 0
+    with coordination_lock():
+        current = read_update_request()
+        if current.get("state") in {"waiting", "preparing", "running"}:
+            blockers = _safe_blockers(active_operations()) if current.get("state") == "waiting" else []
+            raise HTTPException(
+                409,
+                {
+                    "code": "UPDATE_ALREADY_ACTIVE",
+                    "message": "Aktualizacja jest już oczekująca lub trwa.",
+                    "update_id": current.get("id"),
+                    "state": current.get("state"),
+                    "active_count": len(blockers),
+                    "blockers": blockers,
+                },
+            )
+        request_state = write_update_request({
+            "id": secrets.token_hex(16),
+            "state": "waiting",
+            "phase": "waiting",
+            "actor": actor,
+            "requested_at": now,
+            "started_at": None,
+            "finished_at": None,
+            "update_config": update_config,
+            "previous_version": status.get("installed_version"),
+            "target_version": status.get("available_version"),
+            "current_version": status.get("installed_version"),
+            "message": "Oczekiwanie na zakończenie aktywnych operacji.",
+            "acknowledged_users": [],
+            "log_offset": log_offset,
+        })
+        try:
+            _update_progress_path().unlink(missing_ok=True)
+        except OSError:
+            pass
+    return _process_waiting_update(request_state["id"])
+
+
+def _process_waiting_update(request_id: str | None = None) -> dict:
+    with coordination_lock():
+        request_state = read_update_request()
+        if request_id and request_state.get("id") != request_id:
+            return _update_progress()
+        if request_state.get("state") != "waiting":
+            return _update_progress()
+        blockers = active_operations()
+        if blockers:
+            request_state.update({
+                "phase": "waiting",
+                "message": f"Oczekiwanie na zakończenie {len(blockers)} aktywnych operacji.",
+            })
+            write_update_request(request_state)
+            return _update_progress()
+        request_state.update({
+            "state": "preparing",
+            "phase": "preparing",
+            "started_at": time.time(),
+            "message": "Przygotowywanie aktualizacji.",
+        })
+        write_update_request(request_state)
+
+    try:
+        result = _start_update_process(bool(request_state.get("update_config")), actor=str(request_state.get("actor") or "system"))
+    except Exception as error:  # noqa: BLE001 - failure is persisted for restart-safe status.
+        message = str(error.detail) if isinstance(error, HTTPException) else str(error)
+        with coordination_lock():
+            latest = read_update_request()
+            if latest.get("id") == request_state.get("id"):
+                latest.update({
+                    "state": "failed",
+                    "phase": "failed",
+                    "failed_phase": latest.get("phase") or "preparing",
+                    "finished_at": time.time(),
+                    "message": message or "Aktualizacja nie powiodła się.",
+                })
+                write_update_request(latest)
+        resume_registered_operations()
+        return _update_progress()
+
+    with coordination_lock():
+        latest = read_update_request()
+        if latest.get("id") == request_state.get("id"):
+            latest.update({
+                "state": "running",
+                "phase": "installing",
+                "pid": result.get("pid"),
+                "unit": result.get("unit"),
+                "message": "Aktualizacja jest instalowana.",
+            })
+            write_update_request(latest)
+    return _update_progress()
+
+
 def _update_progress() -> dict:
     state = _read_auto_update_state()
+    request_state = read_update_request()
     progress_path = _update_progress_path()
     progress: dict = {"running": False, "exit_code": None, "started_at": None, "finished_at": None, "pid": None, "unit": None}
     try:
@@ -833,26 +1002,98 @@ def _update_progress() -> dict:
     try:
         if log_path.exists():
             with log_path.open("rb") as handle:
+                offset = int(request_state.get("log_offset") or 0) if request_state.get("state") != "idle" else 0
                 handle.seek(0, os.SEEK_END)
                 size = handle.tell()
-                handle.seek(max(0, size - 64 * 1024))
+                handle.seek(max(offset, size - 64 * 1024))
                 lines = handle.read().decode("utf-8", errors="replace").splitlines()[-120:]
     except OSError:
         pass
+    lines = _safe_update_lines(lines)
     running = bool(progress.get("running"))
     exit_code = progress.get("exit_code")
+    request_status = str(request_state.get("state") or "idle")
+    request_started_at = float(request_state.get("started_at") or request_state.get("requested_at") or 0)
+    if request_status in {"preparing", "running"} and not running and exit_code is None and request_started_at and time.time() - request_started_at > 120:
+        with coordination_lock():
+            latest = read_update_request()
+            if latest.get("id") == request_state.get("id") and latest.get("state") in {"preparing", "running"}:
+                latest.update({
+                    "state": "failed",
+                    "phase": "failed",
+                    "failed_phase": latest.get("phase") or "preparing",
+                    "finished_at": time.time(),
+                    "message": "Nie udało się odzyskać stanu aktualizacji po ponownym uruchomieniu usługi.",
+                })
+                request_state = write_update_request(latest)
+        resume_registered_operations()
+        request_status = "failed"
+    if request_status in {"preparing", "running"} and not running and exit_code is not None:
+        final_state = "completed" if exit_code == 0 else "failed"
+        with coordination_lock():
+            latest = read_update_request()
+            if latest.get("id") == request_state.get("id") and latest.get("state") in {"preparing", "running"}:
+                latest.update({
+                    "state": final_state,
+                    "phase": final_state,
+                    "failed_phase": _update_phase(lines, running=True, state="running", fallback=str(latest.get("phase") or "installing")) if final_state == "failed" else None,
+                    "finished_at": progress.get("finished_at") or time.time(),
+                    "current_version": _installed_publication_version(),
+                    "message": "Aktualizacja została wykonana pomyślnie." if final_state == "completed" else "Aktualizacja nie powiodła się.",
+                })
+                request_state = write_update_request(latest)
+        resume_registered_operations()
+        request_status = final_state
+    elif request_status == "preparing" and running:
+        with coordination_lock():
+            latest = read_update_request()
+            if latest.get("id") == request_state.get("id"):
+                latest["state"] = "running"
+                request_state = write_update_request(latest)
+        request_status = "running"
+
+    blockers = _safe_blockers(active_operations()) if request_status == "waiting" else []
+    effective_running = request_status in {"preparing", "running"} or running
+    effective_state = request_status if request_status != "idle" else ("running" if running else "completed" if exit_code == 0 else "failed" if exit_code is not None else "idle")
+    phase = _update_phase(lines, running=effective_running, state=effective_state, fallback=str(request_state.get("phase") or ""))
     return {
         **progress,
-        "running": running,
-        "state": "running" if running else "completed" if exit_code == 0 else "failed" if exit_code is not None else "idle",
+        "id": request_state.get("id") or None,
+        "running": effective_running,
+        "state": effective_state,
+        "phase": phase,
+        "failed_phase": request_state.get("failed_phase"),
+        "progress": _phase_progress(phase),
         "pid": progress.get("pid") or state.get("last_pid"),
-        "log": str(log_path),
+        "log": log_path.name,
         "lines": lines,
+        "requested_at": request_state.get("requested_at"),
+        "started_at": request_state.get("started_at") or progress.get("started_at"),
+        "finished_at": request_state.get("finished_at") or progress.get("finished_at"),
+        "previous_version": request_state.get("previous_version"),
+        "target_version": request_state.get("target_version"),
+        "current_version": request_state.get("current_version"),
+        "message": _safe_update_lines([str(request_state.get("message") or "")])[0] if request_state.get("message") else "",
+        "active_count": len(blockers),
+        "blockers": blockers,
     }
 
 
 def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_config: bool | None = None) -> dict:
     with auto_update_lock:
+        active_request = read_update_request()
+        if active_request.get("state") in {"waiting", "preparing", "running"}:
+            if force:
+                blockers = _safe_blockers(active_operations()) if active_request.get("state") == "waiting" else []
+                raise HTTPException(409, {
+                    "code": "UPDATE_ALREADY_ACTIVE",
+                    "message": "Aktualizacja jest już oczekująca lub trwa.",
+                    "update_id": active_request.get("id"),
+                    "state": active_request.get("state"),
+                    "active_count": len(blockers),
+                    "blockers": blockers,
+                })
+            return {"ok": True, "skipped": True, "reason": "update_active", "state": active_request.get("state"), "update_id": active_request.get("id")}
         state = _read_auto_update_state()
         now = time.time()
         if not force:
@@ -879,15 +1120,19 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
                 state.update({"last_error": "", "next_check": now + interval * 3600})
                 _write_auto_update_state(state)
                 return {"ok": True, "updated": False, "update_available": True, "status": status}
-            result = _start_update_process(bool(state.get("update_config") if update_config is None else update_config), actor=actor)
+            result = _request_update(
+                actor=actor,
+                update_config=bool(state.get("update_config") if update_config is None else update_config),
+                status=status,
+            )
             state.update({
                 "last_run": now,
-                "last_error": "",
-                "last_pid": result["pid"],
+                "last_error": result.get("message", "") if result.get("state") == "failed" else "",
+                "last_pid": result.get("pid"),
                 "next_check": now + interval * 3600,
             })
             _write_auto_update_state(state)
-            return {"ok": True, "updated": True, "status": status, **result}
+            return {"ok": result.get("state") != "failed", "updated": True, "status": status, **result}
         except HTTPException as exc:
             state.update({"last_error": str(exc.detail), "next_check": now + 3600})
             _write_auto_update_state(state)
@@ -910,9 +1155,20 @@ def start_auto_update_scheduler() -> None:
 
     def worker() -> None:
         time.sleep(5)
+        next_automatic_check = 0.0
         while True:
-            _run_auto_update_once()
-            time.sleep(60)
+            try:
+                request_state = read_update_request()
+                if request_state.get("state") == "waiting":
+                    _process_waiting_update(str(request_state.get("id") or ""))
+                elif request_state.get("state") in {"preparing", "running"}:
+                    _update_progress()
+                if time.time() >= next_automatic_check:
+                    _run_auto_update_once()
+                    next_automatic_check = time.time() + 60
+            except Exception as error:  # noqa: BLE001 - scheduler retries durable state.
+                logger.warning("update_scheduler_iteration_failed error=%s", type(error).__name__)
+            time.sleep(1)
 
     threading.Thread(target=worker, daemon=True, name="webnas-auto-update").start()
 
@@ -1407,13 +1663,87 @@ def admin_updates_check(user: SessionUser = Depends(_current_user)):
 @router.post("/api/admin/system/updates/download")
 def admin_updates_download(payload: UpdateAction, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin_session(user, request, "download_update", "updates.apply")
-    return _start_update_process(payload.update_config, actor=user.username)
+    status = _update_status()
+    if not status.get("available", True):
+        raise HTTPException(503, status.get("error") or "Update status unavailable")
+    if not status.get("update_available"):
+        return {"ok": True, "updated": False, "status": status, **_update_progress()}
+    return {"ok": True, "updated": True, "status": status, **_request_update(actor=user.username, update_config=payload.update_config, status=status)}
 
 
 @router.get("/api/admin/system/updates/progress")
 def admin_updates_progress(user: SessionUser = Depends(_current_user)):
     authorize(user, "updates.view")
     return _update_progress()
+
+
+@router.get("/api/system/update-status")
+def system_update_status(_user: SessionUser = Depends(_current_user)):
+    """Expose only the minimum state needed to hide the desktop during an update."""
+    value = _update_progress()
+    blockers = [
+        {
+            "id": f"operation-{index}",
+            "type": item.get("type") or "operation",
+            "status": item.get("status") or "running",
+            "started_at": item.get("started_at"),
+            "progress": item.get("progress"),
+            "description": "",
+        }
+        for index, item in enumerate(value.get("blockers") or [], start=1)
+    ]
+    return {
+        "id": value.get("id"),
+        "state": value.get("state"),
+        "phase": value.get("phase"),
+        "failed_phase": value.get("failed_phase"),
+        "running": value.get("running"),
+        "progress": value.get("progress"),
+        "pid": None,
+        "unit": None,
+        "exit_code": None,
+        "requested_at": value.get("requested_at"),
+        "started_at": value.get("started_at"),
+        "finished_at": value.get("finished_at"),
+        "previous_version": value.get("previous_version"),
+        "target_version": value.get("target_version"),
+        "current_version": value.get("current_version"),
+        "message": value.get("message"),
+        "active_count": value.get("active_count"),
+        "blockers": blockers,
+        "log": "",
+        "lines": [],
+    }
+
+
+@router.get("/api/admin/system/updates/completion")
+def admin_updates_completion(user: SessionUser = Depends(_current_user)):
+    authorize(user, "updates.view")
+    state = read_update_request()
+    acknowledged = {str(value) for value in state.get("acknowledged_users", [])}
+    if state.get("state") != "completed" or user.username in acknowledged:
+        return {"notice": None}
+    return {
+        "notice": {
+            "id": state.get("id"),
+            "previous_version": state.get("previous_version"),
+            "current_version": state.get("current_version"),
+            "finished_at": state.get("finished_at"),
+        }
+    }
+
+
+@router.post("/api/admin/system/updates/completion/acknowledge")
+def admin_updates_completion_acknowledge(user: SessionUser = Depends(_current_user)):
+    authorize(user, "updates.view")
+    with coordination_lock():
+        state = read_update_request()
+        acknowledged = [str(value) for value in state.get("acknowledged_users", [])]
+        if user.username not in acknowledged:
+            acknowledged.append(user.username)
+            state["acknowledged_users"] = acknowledged[-1000:]
+            write_update_request(state)
+    return {"ok": True}
 
 
 @router.get("/api/admin/system/updates/auto")

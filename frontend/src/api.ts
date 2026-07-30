@@ -176,8 +176,31 @@ export type HostInfo = {
   storage: UsageMetric & { path: string } | null;
 };
 export type UpdateStatus = { branch: string; local: string; remote: string; installed_version?: string | null; available_version?: string | null; update_available: boolean; available?: boolean; error?: string; source?: string; source_url?: string; released_at?: number | null; checked_at?: number };
-export type UpdateStart = { ok: boolean; pid: number; log: string };
-export type UpdateProgress = { state: "idle" | "running" | "completed" | "failed"; running: boolean; pid: number | null; unit?: string | null; exit_code: number | null; started_at: number | null; finished_at: number | null; log: string; lines: string[] };
+export type UpdateBlocker = { id: string; type: string; status: "queued" | "running"; started_at: number | null; progress: number | null; description: string };
+export type UpdateProgress = {
+  id?: string | null;
+  state: "idle" | "waiting" | "preparing" | "running" | "completed" | "failed";
+  phase?: "idle" | "waiting" | "preparing" | "downloading" | "installing" | "dependencies" | "migrating" | "restarting" | "verifying" | "completed" | "failed";
+  failed_phase?: UpdateProgress["phase"] | null;
+  running: boolean;
+  progress?: number | null;
+  pid: number | null;
+  unit?: string | null;
+  exit_code: number | null;
+  requested_at?: number | null;
+  started_at: number | null;
+  finished_at: number | null;
+  previous_version?: string | null;
+  target_version?: string | null;
+  current_version?: string | null;
+  message?: string;
+  active_count?: number;
+  blockers?: UpdateBlocker[];
+  log: string;
+  lines: string[];
+};
+export type UpdateStart = UpdateProgress & { ok: boolean; updated?: boolean; skipped?: boolean; reason?: string };
+export type UpdateCompletionNotice = { id: string; previous_version: string | null; current_version: string | null; finished_at: number | null };
 export type AutoUpdateSettings = {
   check_enabled: boolean;
   enabled: boolean;
@@ -1221,10 +1244,13 @@ export const api = {
   restartSystem: () => request("/api/admin/system/restart", { method: "POST", body: "{}" }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
   updateProgress: () => request<UpdateProgress>("/api/admin/system/updates/progress"),
+  updatePublicProgress: () => request<UpdateProgress>("/api/system/update-status"),
   downloadUpdates: (update_config = false) => request<UpdateStart>("/api/admin/system/updates/download", { method: "POST", body: JSON.stringify({ update_config }) }),
   autoUpdate: () => request<AutoUpdateSettings>("/api/admin/system/updates/auto"),
   saveAutoUpdate: (payload: { check_enabled: boolean; enabled: boolean; interval_hours: number; update_config: boolean }) => request<AutoUpdateSettings>("/api/admin/system/updates/auto", { method: "PATCH", body: JSON.stringify(payload) }),
-  runAutoUpdate: (update_config = false) => request<UpdateStart & { updated?: boolean; skipped?: boolean; reason?: string }>("/api/admin/system/updates/auto/run", { method: "POST", body: JSON.stringify({ update_config }) }),
+  runAutoUpdate: (update_config = false) => request<UpdateStart>("/api/admin/system/updates/auto/run", { method: "POST", body: JSON.stringify({ update_config }) }),
+  updateCompletion: () => request<{ notice: UpdateCompletionNotice | null }>("/api/admin/system/updates/completion"),
+  acknowledgeUpdateCompletion: () => request<{ ok: boolean }>("/api/admin/system/updates/completion/acknowledge", { method: "POST", body: "{}" }),
   systemdServices: () => request<SystemdService[]>("/api/admin/system/services"),
   systemdServiceAction: (service: string, action: "start" | "stop" | "restart" | "enable" | "disable", confirm_restart = false) => request<SystemdService>(`/api/admin/system/services/${encodeURIComponent(service)}/${action}`, { method: "POST", body: JSON.stringify({ confirm_restart }) }),
   systemdServiceLogs: (service: string, lines = 200) => request<SystemLogs>(`/api/admin/system/services/${encodeURIComponent(service)}/logs?lines=${lines}`),

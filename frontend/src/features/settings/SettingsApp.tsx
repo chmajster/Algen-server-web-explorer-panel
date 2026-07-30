@@ -23,7 +23,6 @@ const AccessPolicies = lazy(() => import("../admin/IdentityApp").then((module) =
 export type SettingsCategory = "system" | "personalization" | "files" | "transfers" | "notifications" | "accessibility" | "language" | "account" | "identity" | "network" | "networkResources" | "updates" | "policies" | "administration" | "about";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type UpdateDialogState = { phase: "checking" | "running" | "completed" | "failed" | "no-update"; progress: UpdateProgress | null; message: string };
-const dismissedUpdateProgressKey = "webnas.dismissed-update-progress";
 
 export function InterfaceScaleControl({ label, value, t, onChange }: { label: string; value: number; t: Translate; onChange: (value: number) => void }) {
   const normalizedValue = normalizeInterfaceScale(value);
@@ -295,13 +294,10 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
         else setUpdateError(results[0].reason instanceof Error ? results[0].reason.message : t("settings.updateUnavailable"));
         if (results[1].status === "fulfilled") {
           const progress = results[1].value;
-        const dismissed = Number(window.sessionStorage.getItem(dismissedUpdateProgressKey) || 0);
-        const recent = Boolean(progress.started_at && progress.started_at > Date.now() / 1000 - 86_400);
-        if (progress.state === "running" || (recent && progress.started_at !== dismissed && (progress.state === "completed" || progress.state === "failed"))) {
-          const phase = progress.state === "running" ? "running" : progress.state;
-          const message = phase === "running" ? t("settings.updateInstallerRunning") : phase === "completed" ? t("settings.updateCompletedDetails") : t("settings.updateFailedDetails");
-          setUpdateDialog({ phase, progress, message });
-        }
+          if (["waiting", "preparing", "running"].includes(progress.state)) {
+            window.history.replaceState({}, "", "/update-status");
+            window.dispatchEvent(new Event("webnas:update-status"));
+          }
         }
         if (results[2].status === "fulfilled") setUpdatePolicy(results[2].value);
         setLoading(false);
@@ -329,7 +325,11 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
       const result = await api.runAutoUpdate(false);
       toast(result.updated ? t("settings.updateStarted") : t("settings.noUpdateAvailable"), "ok", "admin");
       if (!result.updated) { await refreshUpdates(); setUpdateDialog({ phase: "no-update", progress: null, message: t("settings.noUpdateAvailable") }); }
-      else setUpdateDialog({ phase: "running", progress: null, message: t("settings.updateInstallerRunning") });
+      else {
+        setUpdateDialog(null);
+        window.history.replaceState({}, "", "/update-status");
+        window.dispatchEvent(new Event("webnas:update-status"));
+      }
     } catch (error) { const message = error instanceof Error ? error.message : t("error.generic"); toast(message, "error", "admin"); setUpdateDialog({ phase: "failed", progress: null, message }); }
     finally { setRunningUpdate(false); }
   }
@@ -342,7 +342,11 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
         if (!live) return;
         if (progress.state === "completed") { setUpdateDialog({ phase: "completed", progress, message: t("settings.updateCompletedDetails") }); void refreshUpdates(); }
         else if (progress.state === "failed") setUpdateDialog({ phase: "failed", progress, message: t("settings.updateFailedDetails") });
-        else setUpdateDialog({ phase: "running", progress, message: t("settings.updateInstallerRunning") });
+        else if (["waiting", "preparing", "running"].includes(progress.state)) {
+          setUpdateDialog(null);
+          window.history.replaceState({}, "", "/update-status");
+          window.dispatchEvent(new Event("webnas:update-status"));
+        }
       } catch {
         if (live) setUpdateDialog((current) => current?.phase === "running" ? { ...current, message: t("settings.updateReconnecting") } : current);
       }
@@ -351,10 +355,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     const timer = window.setInterval(() => void poll(), 1200);
     return () => { live = false; window.clearInterval(timer); };
   }, [refreshUpdates, updateDialog?.phase, t]);
-  const closeUpdateDialog = () => {
-    if (updateDialog?.progress?.started_at) window.sessionStorage.setItem(dismissedUpdateProgressKey, String(updateDialog.progress.started_at));
-    setUpdateDialog(null);
-  };
+  const closeUpdateDialog = () => setUpdateDialog(null);
   const releaseDate = (value: number | null | undefined) => {
     if (!value) return "—";
     const date = new Date(value * 1000);

@@ -16,6 +16,7 @@ from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..config import get_config
 from ..file_ops import run_user_op
 from ..proxmox_guard import assert_path_allowed
+from ..update_coordination import coordination_lock, operation_admission, update_blocks_operations
 from .rsync_tasks import (
     build_rsync_command,
     cleanup_partial_files,
@@ -246,11 +247,12 @@ class FileTaskManager:
             sources = payload.get("srcs") or payload.get("source_paths") or [payload["src"]]
             destination = payload.get("dst") or payload.get("destination_path")
             return self.create_transfer(username, op, [str(source) for source in sources], str(destination), int(payload.get("priority", 0)))
-        task = FileTask(id=uuid4().hex, username=username, type=op, source_paths=[payload.get("path", "")], destination_path="")
-        with self._lock:
-            self._tasks[task.id] = task
-            self._persist(task)
-        self._schedule()
+        with operation_admission():
+            task = FileTask(id=uuid4().hex, username=username, type=op, source_paths=[payload.get("path", "")], destination_path="")
+            with self._lock:
+                self._tasks[task.id] = task
+                self._persist(task)
+            self._schedule()
         return task
 
     def create_transfer(self, username: str, transfer_type: str, source_paths: list[str], destination_path: str, priority: int = 0) -> FileTask:
@@ -263,18 +265,19 @@ class FileTaskManager:
         assert_path_allowed(destination_path, transfer_type, include_parent=True)
         if transfer_type == "move":
             self._reject_self_or_child_move([Path(source).resolve(strict=False) for source in source_paths], Path(destination_path).resolve(strict=False))
-        task = FileTask(
-            id=uuid4().hex,
-            username=username,
-            type=transfer_type,
-            source_paths=source_paths,
-            destination_path=destination_path,
-            priority=priority,
-        )
-        with self._lock:
-            self._tasks[task.id] = task
-            self._persist(task)
-        self._schedule()
+        with operation_admission():
+            task = FileTask(
+                id=uuid4().hex,
+                username=username,
+                type=transfer_type,
+                source_paths=source_paths,
+                destination_path=destination_path,
+                priority=priority,
+            )
+            with self._lock:
+                self._tasks[task.id] = task
+                self._persist(task)
+            self._schedule()
         return task
 
     def _reject_self_or_child_move(self, sources: list[Path], destination: Path) -> None:
@@ -296,23 +299,29 @@ class FileTaskManager:
         return len(running), per_user
 
     def _schedule(self) -> None:
-        with self._lock:
-            cfg = get_config().file_tasks
-            total_running, per_user = self._running_counts()
-            candidates = sorted(
-                [task for task in self._tasks.values() if task.status == TaskStatus.queued],
-                key=lambda task: (-task.priority, task.created_at),
-            )
-            for task in candidates:
-                if total_running >= cfg.max_parallel:
-                    break
-                if per_user.get(task.username, 0) >= cfg.max_parallel_per_user:
-                    continue
-                total_running += 1
-                per_user[task.username] = per_user.get(task.username, 0) + 1
-                task.status = TaskStatus.running
-                self._persist(task)
-                threading.Thread(target=self._run, args=(task,), daemon=True).start()
+        with coordination_lock():
+            if update_blocks_operations():
+                return
+            with self._lock:
+                cfg = get_config().file_tasks
+                total_running, per_user = self._running_counts()
+                candidates = sorted(
+                    [task for task in self._tasks.values() if task.status == TaskStatus.queued],
+                    key=lambda task: (-task.priority, task.created_at),
+                )
+                for task in candidates:
+                    if total_running >= cfg.max_parallel:
+                        break
+                    if per_user.get(task.username, 0) >= cfg.max_parallel_per_user:
+                        continue
+                    total_running += 1
+                    per_user[task.username] = per_user.get(task.username, 0) + 1
+                    task.status = TaskStatus.running
+                    self._persist(task)
+                    threading.Thread(target=self._run, args=(task,), daemon=True).start()
+
+    def schedule_pending(self) -> None:
+        self._schedule()
 
     def _run(self, task: FileTask) -> None:
         try:
@@ -512,40 +521,42 @@ class FileTaskManager:
         return False
 
     def resume(self, username: str, task_id: str) -> bool:
-        task = self.get(username, task_id)
-        if not task:
-            return False
-        if task.status not in {TaskStatus.paused, TaskStatus.failed}:
-            return False
-        task.status = TaskStatus.queued
-        task.error_message = ""
-        task.pause_requested = False
-        task.cancel_requested = False
-        task.finished_at = None
-        self._persist(task)
-        self._schedule()
-        return True
+        with operation_admission():
+            task = self.get(username, task_id)
+            if not task:
+                return False
+            if task.status not in {TaskStatus.paused, TaskStatus.failed}:
+                return False
+            task.status = TaskStatus.queued
+            task.error_message = ""
+            task.pause_requested = False
+            task.cancel_requested = False
+            task.finished_at = None
+            self._persist(task)
+            self._schedule()
+            return True
 
     def retry(self, username: str, task_id: str) -> FileTask | None:
-        task = self.get(username, task_id)
-        if not task:
-            return None
-        if task.status not in {TaskStatus.failed, TaskStatus.cancelled}:
-            raise HTTPException(400, "Only failed or cancelled transfers can be retried")
-        retry = FileTask(
-            id=uuid4().hex,
-            username=task.username,
-            type=task.type,
-            source_paths=list(task.source_paths),
-            destination_path=task.destination_path,
-            priority=task.priority,
-            retry_count=task.retry_count + 1,
-        )
-        with self._lock:
-            self._tasks[retry.id] = retry
-            self._persist(retry)
-        self._schedule()
-        return retry
+        with operation_admission():
+            task = self.get(username, task_id)
+            if not task:
+                return None
+            if task.status not in {TaskStatus.failed, TaskStatus.cancelled}:
+                raise HTTPException(400, "Only failed or cancelled transfers can be retried")
+            retry = FileTask(
+                id=uuid4().hex,
+                username=task.username,
+                type=task.type,
+                source_paths=list(task.source_paths),
+                destination_path=task.destination_path,
+                priority=task.priority,
+                retry_count=task.retry_count + 1,
+            )
+            with self._lock:
+                self._tasks[retry.id] = retry
+                self._persist(retry)
+            self._schedule()
+            return retry
 
     def set_priority(self, username: str, task_id: str, priority: int) -> bool:
         task = self.get(username, task_id)

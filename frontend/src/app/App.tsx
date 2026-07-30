@@ -1,10 +1,11 @@
 import { HardDrive } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, login, me, type SettingsMe, type SettingsPatch, type Task, type UserPreferences } from "../api";
+import { api, ApiError, login, logout, me, type SettingsMe, type SettingsPatch, type Task, type UpdateCompletionNotice, type UpdateProgress, type UserPreferences } from "../api";
 import { detectLanguage, type Language, translate } from "../i18n";
 import type { Theme, Toast, User } from "./types";
 import { Desktop } from "./Desktop";
 import { useUploadManager } from "../features/transfers/useUploadManager";
+import { UpdateCompletionDialog, UpdateStatusPage } from "../features/settings/UpdateStatusPage";
 
 export function Login({ language, onLogin }: { language: Language; onLogin: (user: User) => void }) {
   const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [rememberMe, setRememberMe] = useState(false); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
@@ -20,6 +21,11 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem("webnas_theme") as Theme) || "system");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
+  const [updateChecked, setUpdateChecked] = useState(false);
+  const [updateConnectionError, setUpdateConnectionError] = useState(false);
+  const [dismissedFailureId, setDismissedFailureId] = useState("");
+  const [completionNotice, setCompletionNotice] = useState<UpdateCompletionNotice | null>(null);
   const profileRef = useRef<SettingsMe | null>(null);
   const settingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const settingsRevision = useRef(0);
@@ -42,6 +48,66 @@ export function App() {
     const refresh = () => (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);
     void refresh(); const timer = setInterval(refresh, 1500); return () => clearInterval(timer);
   }, [profile, user]);
+  const refreshUpdateProgress = useCallback(async (detailed = true) => {
+    try {
+      const value = await (detailed ? api.updateProgress() : api.updatePublicProgress());
+      setUpdateProgress(value);
+      setUpdateConnectionError(false);
+      return value;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        profileRef.current = null;
+        setUser(null);
+        setProfile(null);
+        setTasks([]);
+      }
+      setUpdateConnectionError(true);
+      return null;
+    } finally {
+      setUpdateChecked(true);
+    }
+  }, []);
+  useEffect(() => {
+    if (!user || !profile) {
+      setUpdateChecked(false);
+      setUpdateProgress(null);
+      return;
+    }
+    const detailed = profile.permissions.includes("updates.view");
+    void refreshUpdateProgress(detailed);
+    const timer = window.setInterval(() => void refreshUpdateProgress(detailed), 1500);
+    const refresh = () => void refreshUpdateProgress(detailed);
+    window.addEventListener("webnas:update-status", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("webnas:update-status", refresh);
+    };
+  }, [profile, refreshUpdateProgress, user]);
+  useEffect(() => {
+    if (!updateProgress) return;
+    const active = ["waiting", "preparing", "running"].includes(updateProgress.state);
+    if (active && window.location.pathname !== "/update-status") {
+      window.history.replaceState({}, "", "/update-status");
+    }
+    if (updateProgress.state === "failed" && updateProgress.id !== dismissedFailureId && window.location.pathname !== "/update-status") {
+      window.history.replaceState({}, "", "/update-status");
+    }
+    if (updateProgress.state === "completed" && window.location.pathname === "/update-status") {
+      const marker = `webnas.update-reloaded.${updateProgress.id || updateProgress.started_at || "latest"}`;
+      window.history.replaceState({}, "", "/");
+      if (!window.sessionStorage.getItem(marker)) {
+        window.sessionStorage.setItem(marker, "1");
+        window.location.reload();
+      }
+    }
+  }, [dismissedFailureId, updateProgress]);
+  useEffect(() => {
+    if (!user || !profile?.permissions.includes("updates.view") || !updateChecked) return;
+    if (updateProgress && ["waiting", "preparing", "running"].includes(updateProgress.state)) return;
+    let live = true;
+    void api.updateCompletion().then((value) => { if (live) setCompletionNotice(value.notice); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [profile, updateChecked, updateProgress, user]);
   async function updateSettings(patch: SettingsPatch) {
     const currentProfile = profileRef.current || profile;
     if (!currentProfile) return;
@@ -85,5 +151,44 @@ export function App() {
   function changeTheme(value: Theme) { void updateSettings({ theme: value }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error")); }
   if (!user) return <Login language={language} onLogin={setUser} />;
   if (!profile) return <div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div>;
-  return <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={() => { profileRef.current = null; setUser(null); setProfile(null); setTasks([]); }} />;
+  if (!updateChecked) return <div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div>;
+  if (updateProgress && (
+    ["waiting", "preparing", "running"].includes(updateProgress.state)
+    || (updateProgress.state === "failed" && updateProgress.id !== dismissedFailureId)
+  )) {
+    return <UpdateStatusPage
+      value={updateProgress}
+      connectionError={updateConnectionError}
+      canRetry={profile.permissions.includes("updates.apply")}
+      t={t}
+      onRetry={() => {
+        void api.runAutoUpdate(false).then((value) => { setDismissedFailureId(""); setUpdateProgress(value); }).catch(() => void refreshUpdateProgress());
+      }}
+      onReturn={() => {
+        setDismissedFailureId(updateProgress.id || "latest");
+        window.history.replaceState({}, "", "/");
+      }}
+      onLogin={() => {
+        void logout().catch(() => undefined).finally(() => {
+          profileRef.current = null;
+          setUser(null);
+          setProfile(null);
+          setTasks([]);
+          window.history.replaceState({}, "", "/");
+        });
+      }}
+    />;
+  }
+  return <>
+    <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={() => { profileRef.current = null; setUser(null); setProfile(null); setTasks([]); }} />
+    {completionNotice && <UpdateCompletionDialog
+      notice={completionNotice}
+      t={t}
+      onClose={() => {
+        const notice = completionNotice;
+        setCompletionNotice(null);
+        void api.acknowledgeUpdateCompletion().catch(() => setCompletionNotice(notice));
+      }}
+    />}
+  </>;
 }

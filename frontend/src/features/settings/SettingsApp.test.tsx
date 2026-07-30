@@ -24,7 +24,11 @@ describe("settings application", () => {
     vi.spyOn(api, "identityHistory").mockResolvedValue([]);
     vi.spyOn(api, "networkPolicy").mockResolvedValue({ change_confirmation_timeout_seconds: 15, minimum_seconds: 5, maximum_seconds: 300, default_seconds: 15 });
   });
-  afterEach(() => { vi.restoreAllMocks(); window.sessionStorage.clear(); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.sessionStorage.clear();
+    window.history.replaceState({}, "", "/");
+  });
 
   it("loads host information and presents it in expandable panels", async () => {
     render(<SettingsAppView settings={settingsFixture()} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
@@ -201,7 +205,7 @@ describe("settings application", () => {
     vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "a".repeat(40), remote: "b".repeat(40), installed_version: "1.4.2", available_version: "1.5.0", update_available: true, available: true, source: "GitHub · example/repository", source_url: "https://github.com/example/repository", released_at: Math.floor((Date.now() - 2 * 86_400_000) / 1000) });
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: true, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: null });
     vi.spyOn(api, "proxmoxSafety").mockResolvedValue({ is_proxmox: false, safe_mode_enabled: false, protected_paths: [], blocked_admin_features: [], allowed_roots_effective: [], service_user: "webnas", warnings: [] });
-    const run = vi.spyOn(api, "runAutoUpdate").mockResolvedValue({ ok: true, pid: 123, log: "/var/log/webnas/update.log", updated: true });
+    const run = vi.spyOn(api, "runAutoUpdate").mockResolvedValue({ ok: true, id: "update-1", state: "running", phase: "installing", running: true, progress: 55, pid: 123, unit: null, exit_code: null, started_at: 10, finished_at: null, log: "update.log", lines: [], updated: true });
     const progress = vi.spyOn(api, "updateProgress").mockResolvedValue({ state: "completed", running: false, pid: 123, exit_code: 0, started_at: 10, finished_at: 20, log: "/var/log/webnas/update.log", lines: ["Downloading", "Installation complete"] });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
@@ -215,10 +219,9 @@ describe("settings application", () => {
     expect(screen.getByRole("button", { name: "settings.updateNow" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "settings.updateAvailable" }));
     await waitFor(() => expect(run).toHaveBeenCalledWith(false));
-    expect(await screen.findByRole("dialog", { name: "settings.updateProgressTitle" })).toBeInTheDocument();
     await waitFor(() => expect(progress).toHaveBeenCalled());
-    expect(await screen.findByText("settings.updatePhase.completed")).toBeInTheDocument();
-    expect(screen.getByText(/Installation complete/)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/update-status");
+    expect(screen.queryByRole("dialog", { name: "settings.updateProgressTitle" })).not.toBeInTheDocument();
   });
 
   it("shows how many minutes ago updates were checked and refreshes the value", async () => {
@@ -325,7 +328,7 @@ describe("settings application", () => {
     await waitFor(() => expect(reset).toHaveBeenCalledOnce());
   });
 
-  it("restores a persisted update result after the service reconnects", async () => {
+  it("leaves persisted completion handling to the global one-time notification", async () => {
     vi.spyOn(api, "systemStatus").mockResolvedValue({ service: "webnas", version: "1", port: 5000, data_dir: "/var/lib/webnas", log_dir: "/var/log/webnas", temp_dir: "/tmp" });
     vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "b".repeat(40), remote: "b".repeat(40), update_available: false, available: true });
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: 20, last_error: "", last_pid: 321, next_check: null });
@@ -333,9 +336,8 @@ describe("settings application", () => {
     vi.spyOn(api, "updateProgress").mockResolvedValue({ state: "completed", running: false, pid: 321, unit: "webnas-self-update-20.service", exit_code: 0, started_at: Math.floor(Date.now() / 1000), finished_at: Math.floor(Date.now() / 1000), log: "/var/log/webnas/update.log", lines: ["Installation complete"] });
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="updates" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
-    expect(await screen.findByRole("dialog", { name: "settings.updateProgressTitle" })).toBeInTheDocument();
-    expect(screen.getByText("settings.updatePhase.completed")).toBeInTheDocument();
-    expect(screen.getByText("Installation complete")).toBeInTheDocument();
+    await waitFor(() => expect(api.updateProgress).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog", { name: "settings.updateProgressTitle" })).not.toBeInTheDocument();
   });
 
   it("reports a failed automatic save", async () => {

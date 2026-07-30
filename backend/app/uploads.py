@@ -14,6 +14,7 @@ from .config import get_config
 from .file_ops import ensure_temp_dir, run_user_op
 from .path_policy import resolve_user_path
 from .proxmox_guard import assert_path_allowed
+from .update_coordination import operation_admission
 from .write_policy import assert_write_allowed
 
 
@@ -44,14 +45,33 @@ def start_upload(username: str, destination_dir: str, filename: str, size: int) 
     destination = resolve_user_path(username, str(directory / safe_name))
     assert_path_allowed(destination, "upload", include_parent=True)
     assert_write_allowed(destination)
-    temporary = ensure_temp_dir() / f"{uuid4().hex}.upload"
-    temporary.touch(mode=0o600, exist_ok=False)
-    upload_id = uuid4().hex
-    with _lock:
-        _sessions[upload_id] = UploadSession(username=username, destination=destination, temporary=temporary, size=size, created_at=time.time())
-    if size == 0:
-        _complete(upload_id, _sessions[upload_id])
+    with operation_admission():
+        temporary = ensure_temp_dir() / f"{uuid4().hex}.upload"
+        temporary.touch(mode=0o600, exist_ok=False)
+        upload_id = uuid4().hex
+        with _lock:
+            _sessions[upload_id] = UploadSession(username=username, destination=destination, temporary=temporary, size=size, created_at=time.time())
+        if size == 0:
+            _complete(upload_id, _sessions[upload_id])
     return {"upload_id": upload_id, "offset": 0, "size": size, "path": str(destination), "completed": size == 0}
+
+
+def active_uploads() -> list[dict]:
+    with _lock:
+        sessions = list(_sessions.items())
+    return [
+        {
+            "id": upload_id,
+            "type": "upload",
+            "status": "running",
+            "created_at": session.created_at,
+            "finished_at": None,
+            "progress": round(session.received * 100 / session.size) if session.size else 100,
+            "description": session.destination.name,
+            "user_id": session.username,
+        }
+        for upload_id, session in sessions
+    ]
 
 
 def append_upload(username: str, upload_id: str, offset: int, chunk: bytes) -> dict:

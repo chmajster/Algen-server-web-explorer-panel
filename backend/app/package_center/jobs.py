@@ -6,6 +6,7 @@ import time
 
 from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..audit import logger
+from ..update_coordination import coordination_lock, operation_admission, update_blocks_operations
 from .detached_updates import detached_update_session
 from .executor import execute
 from .manifests import load_manifest
@@ -23,33 +24,40 @@ class PackageJobManager:
         self._schedule()
 
     def enqueue(self, plan: PackagePlan, actor: str, *, retry_of: str | None = None) -> dict:
-        if self.repository.active_jobs(plan.module_id):
-            api_error(409, "JOB_ALREADY_RUNNING", "An operation for this module is already queued or running")
-        job = self.repository.create_job(plan, actor, previous_version=plan.previous_version, retry_of=retry_of)
-        logger.info("package_action actor=%s module=%s action=%s job=%s result=queued", actor, plan.module_id, plan.action.value, job["id"])
-        record_activity(
-            ActivityCategory.module,
-            str(plan.payload.get("operation") or plan.action.value),
-            actor,
-            target=plan.module_id,
-            status=ActivityStatus.queued,
-            details={"job_id": job["id"], "package_action": plan.action.value},
-            source="modules",
-        )
-        self._schedule()
+        with operation_admission():
+            if self.repository.active_jobs(plan.module_id):
+                api_error(409, "JOB_ALREADY_RUNNING", "An operation for this module is already queued or running")
+            job = self.repository.create_job(plan, actor, previous_version=plan.previous_version, retry_of=retry_of)
+            logger.info("package_action actor=%s module=%s action=%s job=%s result=queued", actor, plan.module_id, plan.action.value, job["id"])
+            record_activity(
+                ActivityCategory.module,
+                str(plan.payload.get("operation") or plan.action.value),
+                actor,
+                target=plan.module_id,
+                status=ActivityStatus.queued,
+                details={"job_id": job["id"], "package_action": plan.action.value},
+                source="modules",
+            )
+            self._schedule()
         return self.repository.get_job(job["id"]) or job
 
     def _schedule(self) -> None:
-        with self._lock:
-            running = [job for job in self.repository.active_jobs() if job["status"] == PackageJobStatus.running.value]
-            if running:
+        with coordination_lock():
+            if update_blocks_operations():
                 return
-            queued = [job for job in self.repository.active_jobs() if job["status"] == PackageJobStatus.queued.value]
-            if not queued:
-                return
-            job = queued[0]
-            self.repository.update_job(job["id"], status=PackageJobStatus.running.value, started_at=time.time(), current_step="Starting")
-            threading.Thread(target=self._run, args=(job["id"],), daemon=True, name=f"package-{job['id'][:8]}").start()
+            with self._lock:
+                running = [job for job in self.repository.active_jobs() if job["status"] == PackageJobStatus.running.value]
+                if running:
+                    return
+                queued = [job for job in self.repository.active_jobs() if job["status"] == PackageJobStatus.queued.value]
+                if not queued:
+                    return
+                job = queued[0]
+                self.repository.update_job(job["id"], status=PackageJobStatus.running.value, started_at=time.time(), current_step="Starting")
+                threading.Thread(target=self._run, args=(job["id"],), daemon=True, name=f"package-{job['id'][:8]}").start()
+
+    def schedule_pending(self) -> None:
+        self._schedule()
 
     def _run(self, job_id: str) -> None:
         job = self.repository.get_job(job_id)
