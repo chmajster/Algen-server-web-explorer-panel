@@ -1,0 +1,19 @@
+{
+  "server": {
+    "url": "https://hosts-manager.example.com",
+    "timeout_seconds": 15,
+    "verify_tls": true
+  },
+  "agent": {
+    "heartbeat_interval": 30,
+    "report_interval": 300,
+    "max_retries": 10
+  },
+  "authentication": {
+    "enrollment_token": "SET_ONLY_FOR_FIRST_REGISTRATION"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "/var/log/hosts-manager-agent/agent.log"
+  }
+}

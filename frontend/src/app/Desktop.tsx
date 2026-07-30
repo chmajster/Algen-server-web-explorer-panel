@@ -7,6 +7,7 @@ import type { PolicySubject } from "../features/admin/IdentityApp";
 import type { UploadControls } from "../features/transfers/useUploadManager";
 import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
+import { CalendarFlyout } from "./CalendarFlyout";
 import { appById, apps } from "./catalog";
 import { DesktopWindow } from "./DesktopWindow";
 import { interfaceFontStacks } from "./interfaceFonts";
@@ -78,6 +79,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [state, dispatch] = useReducer(windowReducer, initialWindowState);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedShortcut, setSelectedShortcut] = useState<AppId | null>(null);
   const [dirtyWindows, setDirtyWindows] = useState<Set<string>>(new Set());
   const legacyPinnedKey = `webnas_pinned_apps_${user.username}`;
@@ -111,6 +113,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const moduleNotificationsInitialized = useRef(false);
   const notifiedModuleEvents = useRef<Set<string>>(new Set());
   const notificationRef = useRef<HTMLElement>(null);
+  const clockButtonRef = useRef<HTMLButtonElement>(null);
   const canUseApp = useCallback((appId: AppId) => { const definition = appById[appId]; return Boolean(definition && (!definition.admin || profile.is_admin) && (!definition.permission || profile.permissions.includes(definition.permission)) && (!definition.permissionAny || definition.permissionAny.some((permission) => profile.permissions.includes(permission)))); }, [profile.is_admin, profile.permissions]);
   const moduleAppAvailable = useCallback((appId: AppId) => (appId !== "ansible" || moduleNames.has("ansible-controller")) && (appId !== "hosts" || moduleNames.has("hosts-manager")), [moduleNames]);
   const availableApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
@@ -242,6 +245,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     });
     dispatch({ type: "open", app, initialPath, moduleId, viewport });
     setLauncherOpen(false);
+    setNotificationsOpen(false);
+    setCalendarOpen(false);
   }, [canUseApp, recentAppsKey, t, toast, viewport]);
   useEffect(() => {
     if (!tasksInitialized.current) {
@@ -426,7 +431,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} viewport={viewport} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport })}>{renderApp(item)}</DesktopWindow>)}
     </main>
     {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onOpenProfile={() => openApp("settings", "account")} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
-    <Taskbar apps={taskbarApps} pinned={pinned} pinnedModules={pinnedModules} moduleNames={moduleNames} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setNotificationsOpen((value) => !value); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onModule={selectModule} onOpenNew={(app) => openApp(app)} onOpenModuleNew={(moduleId) => openApp("module", undefined, moduleId)} onTogglePin={togglePin} onToggleModulePin={toggleModulePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onCloseModule={closeModuleWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
+    <Taskbar apps={taskbarApps} pinned={pinned} pinnedModules={pinnedModules} moduleNames={moduleNames} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} clockDateTime={clock.toISOString()} activeTransfers={activeTransfers} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} calendarOpen={calendarOpen} clockButtonRef={clockButtonRef} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setCalendarOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setCalendarOpen(false); setNotificationsOpen((value) => !value); }} onToggleCalendar={() => { setLauncherOpen(false); setNotificationsOpen(false); setCalendarOpen((value) => !value); }} onOpenLocalPanel={() => { setLauncherOpen(false); setNotificationsOpen(false); setCalendarOpen(false); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onModule={selectModule} onOpenNew={(app) => openApp(app)} onOpenModuleNew={(moduleId) => openApp("module", undefined, moduleId)} onTogglePin={togglePin} onToggleModulePin={toggleModulePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onCloseModule={closeModuleWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onLogout={signOut} />
+    {calendarOpen && <CalendarFlyout now={clock} locale={profile.language} t={t} triggerRef={clockButtonRef} onClose={() => setCalendarOpen(false)} />}
     {notificationsOpen && <aside ref={notificationRef} className="notification-center" aria-label={t("desktop.notifications")}><header><div><Bell /><strong>{t("desktop.notifications")}</strong></div><button type="button" aria-label={t("action.close")} onClick={() => setNotificationsOpen(false)}><X /></button></header>{visibleToasts.length === 0 && (!profile.notification_transfer || tasks.length === 0) ? <div className="empty-state">{t("desktop.noNotifications")}</div> : <>{visibleToasts.slice().reverse().map((item) => <article className={item.type} key={item.id} role={item.moduleId ? "button" : undefined} tabIndex={item.moduleId ? 0 : undefined} onClick={() => { if (!item.moduleId) return; openApp("module", undefined, item.moduleId); setNotificationsOpen(false); }} onKeyDown={(event) => { if (item.moduleId && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openApp("module", undefined, item.moduleId); setNotificationsOpen(false); } }}><strong>{item.type === "error" ? t("status.error") : "WebNAS"}</strong><span>{item.text}</span></article>)}{profile.notification_transfer && tasks.slice(-profile.notification_limit).reverse().map((task) => <article key={task.id}><strong>{t(`transfers.${task.type}`)}</strong><span>{t(`task.${task.status}`)} · {Math.round(task.progress_percent ?? task.progress ?? 0)}%</span></article>)}</>}</aside>}
     <div className="toasts" role="status" aria-live="polite">{visibleToasts.map((item) => <div className={item.type} key={item.id}>{item.type === "error" && <ShieldCheck />}{item.text}</div>)}</div>
   </div>;

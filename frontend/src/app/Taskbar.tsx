@@ -1,5 +1,5 @@
 import { AlignCenter, AlignLeft, AppWindow, Bell, ChevronUp, Clock3, LayoutGrid, LogOut, Maximize2, Minimize2, Moon, Pin, PinOff, Settings2, Sun, UserRound, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { SettingsMe } from "../api";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import type { AppDefinition, AppId, Translate, WindowInstance } from "./types";
@@ -8,7 +8,7 @@ export type TaskbarWindowAction = "focus" | "minimize" | "toggleMaximize" | "clo
 type TaskbarContext = { x: number; y: number; app: AppDefinition | null; moduleId?: string; portalTarget: Element | null };
 type TaskbarItem = { key: string; app: AppDefinition; moduleId?: string };
 
-export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, activeId, profile, resolvedTheme, clockText, dateText, activeTransfers, launcherOpen, notificationsOpen, t, onToggleLauncher, onToggleNotifications, onToggleTheme, onApp, onModule, onOpenNew, onOpenModuleNew, onTogglePin, onToggleModulePin, onWindow, onCloseApp, onCloseModule, onTaskbarSettings, onAlignment, onLogout }: {
+export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, activeId, profile, resolvedTheme, clockText, dateText, clockDateTime, activeTransfers, launcherOpen, notificationsOpen, calendarOpen, clockButtonRef, t, onToggleLauncher, onToggleNotifications, onToggleCalendar, onOpenLocalPanel, onToggleTheme, onApp, onModule, onOpenNew, onOpenModuleNew, onTogglePin, onToggleModulePin, onWindow, onCloseApp, onCloseModule, onTaskbarSettings, onAlignment, onLogout }: {
   apps: AppDefinition[];
   pinned: Set<AppId>;
   pinnedModules: Set<string>;
@@ -19,12 +19,17 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
   resolvedTheme: "light" | "dark";
   clockText: string;
   dateText: string;
+  clockDateTime: string;
   activeTransfers: number;
   launcherOpen: boolean;
   notificationsOpen: boolean;
+  calendarOpen: boolean;
+  clockButtonRef: RefObject<HTMLButtonElement>;
   t: Translate;
   onToggleLauncher: () => void;
   onToggleNotifications: () => void;
+  onToggleCalendar: () => void;
+  onOpenLocalPanel: () => void;
   onToggleTheme: () => void;
   onApp: (app: AppId) => void;
   onModule: (moduleId: string) => void;
@@ -73,6 +78,17 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
     document.addEventListener("keydown", key);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key); };
   }, []);
+  useEffect(() => {
+    if (!launcherOpen && !notificationsOpen && !calendarOpen) return;
+    setSessionOpen(false);
+    setContext(null);
+  }, [calendarOpen, launcherOpen, notificationsOpen]);
+
+  function openContext(value: TaskbarContext) {
+    onOpenLocalPanel();
+    setSessionOpen(false);
+    setContext(value);
+  }
 
   function appMenu(app: AppDefinition, moduleId?: string): ContextMenuItem[] {
     const appWindows = windows.filter((item) => item.app === app.id && (!moduleId || item.moduleId === moduleId)).sort((left, right) => right.zIndex - left.zIndex);
@@ -107,7 +123,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
     ];
   }
 
-  return <footer className={`taskbar taskbar-${profile.taskbar_alignment}`} aria-label={t("desktop.taskbar")} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, app: null, portalTarget: event.currentTarget.parentElement }); }}>
+  return <footer className={`taskbar taskbar-${profile.taskbar_alignment}`} aria-label={t("desktop.taskbar")} onContextMenu={(event) => { event.preventDefault(); openContext({ x: event.clientX, y: event.clientY, app: null, portalTarget: event.currentTarget.parentElement }); }}>
     <div className="taskbar-primary">
       <button className={`taskbar-start ${launcherOpen ? "active" : ""}`} type="button" title={t("desktop.mainMenu")} aria-label={t("desktop.mainMenu")} aria-expanded={launcherOpen} onClick={onToggleLauncher}><LayoutGrid /></button>
       <div className="taskbar-items" aria-label={t("desktop.runningApps")}>
@@ -118,7 +134,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
           const minimized = running && appWindows.every((item) => item.minimized);
           const label = moduleId ? moduleLabel(moduleId) : t(app.labelKey);
           const itemPinned = moduleId ? pinnedModules.has(moduleId) : pinned.has(app.id);
-          return <button key={key} type="button" className={`${itemPinned ? "pinned" : ""} ${active ? "active" : ""} ${running ? "running" : ""} ${minimized ? "minimized" : ""}`} title={label} aria-label={label} aria-pressed={active} onClick={() => moduleId ? onModule(moduleId) : onApp(app.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, app, moduleId, portalTarget: event.currentTarget.closest(".taskbar")?.parentElement ?? null }); }}>
+          return <button key={key} type="button" className={`${itemPinned ? "pinned" : ""} ${active ? "active" : ""} ${running ? "running" : ""} ${minimized ? "minimized" : ""}`} title={label} aria-label={label} aria-pressed={active} onClick={() => moduleId ? onModule(moduleId) : onApp(app.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openContext({ x: event.clientX, y: event.clientY, app, moduleId, portalTarget: event.currentTarget.closest(".taskbar")?.parentElement ?? null }); }}>
             {app.icon}<span>{label}</span>{running && <i aria-hidden="true" />}{appWindows.length > 1 && <b aria-label={`${t("taskbar.windowCount")}: ${appWindows.length}`}>{appWindows.length}</b>}
           </button>;
         })}
@@ -129,10 +145,25 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
       {profile.show_notifications && <button className={notificationsOpen ? "active" : ""} type="button" title={t("desktop.notifications")} aria-label={t("desktop.notifications")} aria-expanded={notificationsOpen} onClick={onToggleNotifications}><Bell /></button>}
       <button type="button" title={t("notify.theme")} aria-label={t("notify.theme")} onClick={onToggleTheme}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</button>
       <div ref={sessionRef} className="session-menu-wrap">
-        <button className={`taskbar-user ${sessionOpen ? "active" : ""}`} type="button" aria-label={t("desktop.sessionMenu")} aria-expanded={sessionOpen} onClick={() => setSessionOpen((value) => !value)}><UserRound /><span>{profile.username}</span><ChevronUp /></button>
+        <button className={`taskbar-user ${sessionOpen ? "active" : ""}`} type="button" aria-label={t("desktop.sessionMenu")} aria-expanded={sessionOpen} onClick={() => { setContext(null); if (!sessionOpen) onOpenLocalPanel(); setSessionOpen((value) => !value); }}><UserRound /><span>{profile.username}</span><ChevronUp /></button>
         {sessionOpen && <div className="session-menu" role="menu"><header><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? t("desktop.administrator") : t("desktop.standardUser")}</small></span></header><button type="button" role="menuitem" onClick={onLogout}><LogOut />{t("notify.logout")}</button></div>}
       </div>
-      <time className="system-clock" dateTime={new Date().toISOString()}><span>{clockText}</span><small>{dateText}</small></time>
+      <button
+        ref={clockButtonRef}
+        className={`system-clock ${calendarOpen ? "active" : ""}`}
+        type="button"
+        title={t("calendar.open")}
+        aria-label={t("calendar.open")}
+        aria-expanded={calendarOpen}
+        aria-controls="calendar-flyout"
+        onClick={() => {
+          setSessionOpen(false);
+          setContext(null);
+          onToggleCalendar();
+        }}
+      >
+        <time dateTime={clockDateTime}><span>{clockText}</span><small>{dateText}</small></time>
+      </button>
     </div>
     {context && <ContextMenu className="taskbar-context-menu" portalTarget={context.portalTarget} x={context.x} y={context.y} items={context.app ? appMenu(context.app, context.moduleId) : taskbarMenu()} onClose={() => setContext(null)} />}
   </footer>;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -18,15 +19,16 @@ from typing import Any, Callable
 from ...config import get_config
 from ..ansible_controller.security import CredentialCipher, redact
 from .models import (
-    CredentialInput, EnrollmentTokenInput, GroupInput, HostInput, HostsManagerSettingsUpdate,
-    PowerProfileInput, RepositoryInput, hostname_template_parts, render_hostname,
+    CredentialInput, EnrollmentTokenInput, EnvironmentInput, GroupInput, HostInput, HostnamePatternInput,
+    HostsManagerSettingsUpdate, PowerProfileInput, RepositoryInput, hostname_template_parts, render_hostname,
 )
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 JSON_COLUMNS = {
     "tags_json": "tags", "variables_json": "variables", "group_ids_json": "group_ids",
     "host_ids_json": "host_ids", "facts_json": "facts", "details_json": "details",
+    "report_json": "report",
 }
 
 
@@ -94,6 +96,7 @@ class HostRegistryService:
                 CREATE TABLE IF NOT EXISTS credentials(
                     id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT NOT NULL, username TEXT NOT NULL DEFAULT '',
                     description TEXT NOT NULL DEFAULT '', encrypted_secret TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+                    environment_id TEXT, last_used_at REAL,
                     created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS hosts(
                     id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, hostname TEXT NOT NULL DEFAULT '', fqdn TEXT NOT NULL DEFAULT '',
@@ -136,6 +139,9 @@ class HostRegistryService:
                     onboard_ansible INTEGER NOT NULL DEFAULT 0, expires_at REAL NOT NULL, used_at REAL, used_hostname TEXT NOT NULL DEFAULT '',
                     revoked_at REAL, assigned_hostname TEXT NOT NULL DEFAULT '', bootstrap_os TEXT NOT NULL DEFAULT 'linux',
                     apply_hostname INTEGER NOT NULL DEFAULT 1, reported_hostname TEXT NOT NULL DEFAULT '',
+                    mode TEXT NOT NULL DEFAULT 'one_time', hostname_pattern_id TEXT, bound_address TEXT NOT NULL DEFAULT '',
+                    agent_port INTEGER NOT NULL DEFAULT 8443, report_interval_seconds INTEGER NOT NULL DEFAULT 300,
+                    use_count INTEGER NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS hosts_manager_settings(
                     key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at REAL NOT NULL, updated_by TEXT NOT NULL);
@@ -143,7 +149,51 @@ class HostRegistryService:
                     hostname_template TEXT PRIMARY KEY COLLATE NOCASE, next_value INTEGER NOT NULL, updated_at REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS hostname_reservations(
                     hostname TEXT PRIMARY KEY COLLATE NOCASE, hostname_template TEXT NOT NULL, sequence_value INTEGER NOT NULL,
-                    token_id TEXT NOT NULL UNIQUE, reserved_at REAL NOT NULL, reserved_by TEXT NOT NULL);
+                    token_id TEXT NOT NULL, pattern_id TEXT,
+                    reserved_at REAL NOT NULL, reserved_by TEXT NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_hm_reservation_token_hostname ON hostname_reservations(token_id,hostname);
+                CREATE TABLE IF NOT EXISTS hostname_patterns(
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, prefix TEXT NOT NULL DEFAULT '', suffix TEXT NOT NULL DEFAULT '',
+                    digits INTEGER NOT NULL, start_value INTEGER NOT NULL, step INTEGER NOT NULL, next_value INTEGER NOT NULL,
+                    last_value INTEGER, description TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1,
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS hostname_skips(
+                    id TEXT PRIMARY KEY, pattern_id TEXT NOT NULL, sequence_value INTEGER NOT NULL, hostname TEXT NOT NULL,
+                    reason TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, created_by TEXT NOT NULL,
+                    FOREIGN KEY(pattern_id) REFERENCES hostname_patterns(id) ON DELETE CASCADE);
+                CREATE TABLE IF NOT EXISTS environments(
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, slug TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '',
+                    color TEXT NOT NULL DEFAULT '#187eb1', default_hostname_pattern_id TEXT, default_credential_id TEXT,
+                    default_agent_port INTEGER NOT NULL DEFAULT 8443, report_interval_seconds INTEGER NOT NULL DEFAULT 300,
+                    active INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS host_agents(
+                    id TEXT PRIMARY KEY, host_id TEXT NOT NULL UNIQUE, installation_id TEXT NOT NULL UNIQUE,
+                    token_hash TEXT NOT NULL, agent_version TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
+                    communication_port INTEGER NOT NULL DEFAULT 8443, report_interval_seconds INTEGER NOT NULL DEFAULT 300,
+                    installed_at REAL NOT NULL, last_heartbeat_at REAL, last_report_at REAL, last_error TEXT NOT NULL DEFAULT '',
+                    certificate_status TEXT NOT NULL DEFAULT 'token', auth_failures INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL,
+                    FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE CASCADE);
+                CREATE TABLE IF NOT EXISTS host_identity_salts(
+                    id TEXT PRIMARY KEY, host_id TEXT NOT NULL, agent_id TEXT NOT NULL, salt TEXT NOT NULL,
+                    identity_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'valid', generated_at REAL NOT NULL,
+                    regenerated_at REAL, invalidated_at REAL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL,
+                    FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE CASCADE,
+                    FOREIGN KEY(agent_id) REFERENCES host_agents(id) ON DELETE CASCADE);
+                CREATE INDEX IF NOT EXISTS idx_hm_identity_host ON host_identity_salts(host_id,generated_at DESC);
+                CREATE TABLE IF NOT EXISTS host_reports(
+                    id TEXT PRIMARY KEY, host_id TEXT NOT NULL, agent_id TEXT NOT NULL, report_json TEXT NOT NULL,
+                    checksum TEXT NOT NULL, created_at REAL NOT NULL,
+                    FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE CASCADE,
+                    FOREIGN KEY(agent_id) REFERENCES host_agents(id) ON DELETE CASCADE);
+                CREATE INDEX IF NOT EXISTS idx_hm_reports_host ON host_reports(host_id,created_at DESC);
+                CREATE TABLE IF NOT EXISTS agent_versions(
+                    id TEXT PRIMARY KEY, host_id TEXT NOT NULL, agent_id TEXT NOT NULL, version TEXT NOT NULL,
+                    source TEXT NOT NULL, reported_at REAL NOT NULL, reported_by TEXT NOT NULL,
+                    FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE CASCADE,
+                    FOREIGN KEY(agent_id) REFERENCES host_agents(id) ON DELETE CASCADE);
+                CREATE INDEX IF NOT EXISTS idx_hm_agent_versions_host ON agent_versions(host_id,reported_at DESC);
                 CREATE TABLE IF NOT EXISTS repositories(
                     id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', url TEXT NOT NULL,
                     revision TEXT NOT NULL, credential_id TEXT, host_ids_json TEXT NOT NULL DEFAULT '[]',
@@ -171,25 +221,48 @@ class HostRegistryService:
                     created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
                 """
             )
-            columns = {row[1] for row in connection.execute("PRAGMA table_info(enrollment_tokens)")}
+            token_columns = {row[1] for row in connection.execute("PRAGMA table_info(enrollment_tokens)")}
             for name, definition in (
                 ("assigned_hostname", "TEXT NOT NULL DEFAULT ''"),
                 ("bootstrap_os", "TEXT NOT NULL DEFAULT 'linux'"),
                 ("apply_hostname", "INTEGER NOT NULL DEFAULT 1"),
                 ("reported_hostname", "TEXT NOT NULL DEFAULT ''"),
+                ("mode", "TEXT NOT NULL DEFAULT 'one_time'"),
+                ("hostname_pattern_id", "TEXT"),
+                ("bound_address", "TEXT NOT NULL DEFAULT ''"),
+                ("agent_port", "INTEGER NOT NULL DEFAULT 8443"),
+                ("report_interval_seconds", "INTEGER NOT NULL DEFAULT 300"),
+                ("use_count", "INTEGER NOT NULL DEFAULT 0"),
             ):
-                if name not in columns:
+                if name not in token_columns:
                     connection.execute(f"ALTER TABLE enrollment_tokens ADD COLUMN {name} {definition}")
-            defaults = {
-                "hostname_template": "SCL000XXX",
-                "bootstrap_default_os": "linux",
-                "bootstrap_apply_hostname": True,
-            }
+            credential_columns = {row[1] for row in connection.execute("PRAGMA table_info(credentials)")}
+            for name, definition in (("environment_id", "TEXT"), ("last_used_at", "REAL")):
+                if name not in credential_columns:
+                    connection.execute(f"ALTER TABLE credentials ADD COLUMN {name} {definition}")
+            reservation_columns = {row[1] for row in connection.execute("PRAGMA table_info(hostname_reservations)")}
+            if "pattern_id" not in reservation_columns:
+                connection.execute("ALTER TABLE hostname_reservations ADD COLUMN pattern_id TEXT")
+            defaults = HostsManagerSettingsUpdate().model_dump(mode="json")
             for key, value in defaults.items():
                 connection.execute(
                     "INSERT OR IGNORE INTO hosts_manager_settings(key,value_json,updated_at,updated_by) VALUES(?,?,?,?)",
                     (key, json.dumps(value), now, ""),
                 )
+            connection.execute(
+                """INSERT OR IGNORE INTO hostname_patterns(
+                    id,name,prefix,suffix,digits,start_value,step,next_value,description,active,
+                    created_at,updated_at,created_by,updated_by
+                ) VALUES('default','Default SCL','SCL000','',3,1,1,1,'Migrated default hostname pattern',1,?,?,?,?)""",
+                (now, now, "system", "system"),
+            )
+            connection.execute(
+                """INSERT OR IGNORE INTO environments(
+                    id,name,slug,description,color,default_hostname_pattern_id,default_agent_port,report_interval_seconds,
+                    active,created_at,updated_at,created_by,updated_by
+                ) VALUES('default','Default','default','Default environment','#187eb1','default',8443,300,1,?,?,?,?)""",
+                (now, now, "system", "system"),
+            )
             connection.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(?,?)", (SCHEMA_VERSION, now))
             connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         os.chmod(self.path, 0o600)
@@ -211,7 +284,11 @@ class HostRegistryService:
         return result
 
     def _list(self, table: str, *, where: str = "", values: tuple[Any, ...] = (), order: str = "updated_at DESC", limit: int = 5000) -> list[dict[str, Any]]:
-        allowed = {"hosts", "groups", "credentials", "host_keys", "facts", "enrollment_tokens", "repositories", "repository_syncs", "power_profiles", "operations", "scans", "memberships"}
+        allowed = {
+            "hosts", "groups", "credentials", "host_keys", "facts", "enrollment_tokens", "repositories",
+            "repository_syncs", "power_profiles", "operations", "scans", "memberships", "environments",
+            "hostname_patterns", "hostname_skips", "host_agents", "host_identity_salts", "host_reports", "agent_versions",
+        }
         if table not in allowed:
             raise ValueError("unsupported registry table")
         clause = f" WHERE {where}" if where else ""
@@ -331,8 +408,62 @@ class HostRegistryService:
         item["group_ids"] = [group["id"] for group in item["groups"]]
         facts = self._list("facts", where="host_id=?", values=(host_id,), limit=1)
         item["facts"] = facts[0].get("facts", {}) if facts else {}
+        agents = self._list("host_agents", where="host_id=?", values=(host_id,), order="updated_at DESC", limit=1)
+        agent = agents[0] if agents else None
+        reports = self._list("host_reports", where="host_id=?", values=(host_id,), order="created_at DESC", limit=1)
+        report = reports[0].get("report", {}) if reports else {}
+        identities = self._list(
+            "host_identity_salts", where="host_id=?", values=(host_id,), order="generated_at DESC", limit=1
+        )
+        if agent:
+            agent = {key: value for key, value in agent.items() if key != "token_hash"}
+            heartbeat_interval = int(self._settings_value("heartbeat_interval_seconds", 30))
+            last_heartbeat = float(agent.get("last_heartbeat_at") or 0)
+            if last_heartbeat and time.time() - last_heartbeat > max(heartbeat_interval * 3, 60):
+                agent["status"] = "offline"
+                item["connection_status"] = "offline"
+            elif agent.get("status") in {"online", "warning", "error"}:
+                item["connection_status"] = str(agent["status"])
+        item["agent"] = agent
+        item["agent_status"] = str(agent["status"]) if agent else "not_installed"
+        item["latest_report"] = report
+        item["identity"] = (
+            {key: value for key, value in identities[0].items() if key != "salt"}
+            if identities else None
+        )
+        environment = None
+        if item.get("environment"):
+            with self.connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM environments WHERE id=? OR slug=? LIMIT 1",
+                    (item["environment"], item["environment"]),
+                ).fetchone()
+            environment = self._decode(row)
+        item["environment_details"] = environment
+        basic = report.get("basic", {}) if isinstance(report, dict) else {}
+        packages = report.get("packages", {}) if isinstance(report, dict) else {}
+        item["distribution"] = basic.get("distribution") or item["facts"].get("distribution", "")
+        item["system_version"] = basic.get("system_version") or item["facts"].get("distribution_version", "")
+        item["agent_version"] = (agent or {}).get("agent_version", "")
+        item["available_updates"] = int(packages.get("available_updates_count") or 0)
+        item["security_updates"] = int(packages.get("security_updates_count") or 0)
+        if not item.get("active"):
+            item["status"] = "disabled"
+        elif not item.get("approved"):
+            item["status"] = "pending"
+        elif item["agent_status"] == "not_installed":
+            item["status"] = "unregistered"
+        elif item["agent_status"] in {"warning", "error", "offline", "online"}:
+            item["status"] = item["agent_status"]
+        else:
+            item["status"] = str(item.get("registration_status") or "pending")
         item["credential"] = self.connection_data(host_id).get("credential")
         return item
+
+    def _settings_value(self, key: str, default: Any) -> Any:
+        with self.connect() as connection:
+            row = connection.execute("SELECT value_json FROM hosts_manager_settings WHERE key=?", (key,)).fetchone()
+        return json.loads(row["value_json"]) if row else default
 
     def save_host(self, payload: HostInput, actor: str, host_id: str | None = None, *, source: str = "manual") -> dict[str, Any]:
         now, item_id, value = time.time(), host_id or stable_id(), payload.model_dump(mode="json")
@@ -398,8 +529,177 @@ class HostRegistryService:
         with self.connect() as connection:
             return bool(connection.execute("DELETE FROM groups WHERE id=?", (group_id,)).rowcount)
 
+    def environments(self) -> list[dict[str, Any]]:
+        items = self._list("environments", order="name")
+        with self.connect() as connection:
+            counts = {
+                str(row["environment"]): int(row["count"])
+                for row in connection.execute(
+                    "SELECT environment,COUNT(*) AS count FROM hosts WHERE active=1 GROUP BY environment"
+                ).fetchall()
+            }
+        return [item | {"host_count": counts.get(item["id"], counts.get(item["slug"], 0))} for item in items]
+
+    def save_environment(self, payload: EnvironmentInput, actor: str, environment_id: str | None = None) -> dict[str, Any]:
+        now, item_id, value = time.time(), environment_id or stable_id(), payload.model_dump(mode="json")
+        with self.connect() as connection:
+            old = connection.execute("SELECT created_at,created_by FROM environments WHERE id=?", (item_id,)).fetchone()
+            created_at, created_by = (old["created_at"], old["created_by"]) if old else (now, actor)
+            if value["default_hostname_pattern_id"] and not connection.execute(
+                "SELECT 1 FROM hostname_patterns WHERE id=? AND active=1", (value["default_hostname_pattern_id"],)
+            ).fetchone():
+                raise KeyError("hostname pattern not found")
+            if value["default_credential_id"] and not connection.execute(
+                "SELECT 1 FROM credentials WHERE id=? AND active=1 AND type IN ('ssh_password','ssh_private_key')",
+                (value["default_credential_id"],),
+            ).fetchone():
+                raise KeyError("credential not found")
+            connection.execute(
+                """INSERT INTO environments(
+                    id,name,slug,description,color,default_hostname_pattern_id,default_credential_id,
+                    default_agent_port,report_interval_seconds,active,created_at,updated_at,created_by,updated_by
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET name=excluded.name,slug=excluded.slug,description=excluded.description,
+                    color=excluded.color,default_hostname_pattern_id=excluded.default_hostname_pattern_id,
+                    default_credential_id=excluded.default_credential_id,default_agent_port=excluded.default_agent_port,
+                    report_interval_seconds=excluded.report_interval_seconds,active=excluded.active,
+                    updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
+                (
+                    item_id, value["name"], value["slug"], value["description"], value["color"],
+                    value["default_hostname_pattern_id"], value["default_credential_id"], value["default_agent_port"],
+                    value["report_interval_seconds"], int(value["active"]), created_at, now, created_by, actor,
+                ),
+            )
+        return next(item for item in self.environments() if item["id"] == item_id)
+
+    def delete_environment(self, environment_id: str) -> bool:
+        environment = self._get("environments", environment_id)
+        if not environment:
+            return False
+        with self.connect() as connection:
+            assigned = connection.execute(
+                "SELECT COUNT(*) FROM hosts WHERE active=1 AND environment IN (?,?)",
+                (environment_id, environment["slug"]),
+            ).fetchone()[0]
+            if assigned:
+                raise ValueError("environment has assigned hosts")
+            return bool(connection.execute("DELETE FROM environments WHERE id=?", (environment_id,)).rowcount)
+
+    @staticmethod
+    def _pattern_template(item: dict[str, Any]) -> str:
+        return f"{item['prefix']}{'X' * int(item['digits'])}{item['suffix']}"
+
+    @staticmethod
+    def _render_pattern(item: dict[str, Any], sequence: int) -> str:
+        width = int(item["digits"])
+        if sequence < 1 or sequence > (10**width) - 1:
+            raise OverflowError("hostname sequence is exhausted")
+        return f"{item['prefix']}{sequence:0{width}d}{item['suffix']}"
+
+    def _next_pattern_value_locked(self, connection: sqlite3.Connection, item: dict[str, Any]) -> int:
+        candidate = max(int(item["start_value"]), int(item["next_value"]))
+        step = int(item["step"])
+        while candidate <= (10 ** int(item["digits"])) - 1:
+            hostname = self._render_pattern(item, candidate)
+            collision = connection.execute(
+                "SELECT 1 FROM hosts WHERE name=? COLLATE NOCASE OR hostname=? COLLATE NOCASE "
+                "UNION ALL SELECT 1 FROM hostname_reservations WHERE hostname=? COLLATE NOCASE LIMIT 1",
+                (hostname, hostname, hostname),
+            ).fetchone()
+            if not collision:
+                return candidate
+            candidate += step
+        raise OverflowError("hostname sequence is exhausted")
+
+    def hostname_patterns(self) -> list[dict[str, Any]]:
+        items = self._list("hostname_patterns", order="name")
+        with self.connect() as connection:
+            result = []
+            for item in items:
+                sequence = self._next_pattern_value_locked(connection, item)
+                maximum = (10 ** int(item["digits"])) - 1
+                preview = [
+                    self._render_pattern(item, value)
+                    for value in (sequence + offset * int(item["step"]) for offset in range(3))
+                    if value <= maximum
+                ]
+                result.append(item | {
+                    "template": self._pattern_template(item),
+                    "next_hostname": self._render_pattern(item, sequence),
+                    "preview_hostnames": preview,
+                })
+        return result
+
+    def save_hostname_pattern(self, payload: HostnamePatternInput, actor: str, pattern_id: str | None = None) -> dict[str, Any]:
+        now, item_id, value = time.time(), pattern_id or stable_id(), payload.model_dump(mode="json")
+        with self.connect() as connection:
+            old = connection.execute(
+                "SELECT created_at,created_by,next_value,last_value FROM hostname_patterns WHERE id=?", (item_id,)
+            ).fetchone()
+            created_at, created_by = (old["created_at"], old["created_by"]) if old else (now, actor)
+            next_value = max(value["start_value"], int(old["next_value"])) if old else value["start_value"]
+            last_value = old["last_value"] if old else None
+            connection.execute(
+                """INSERT INTO hostname_patterns(
+                    id,name,prefix,suffix,digits,start_value,step,next_value,last_value,description,active,
+                    created_at,updated_at,created_by,updated_by
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET name=excluded.name,prefix=excluded.prefix,suffix=excluded.suffix,
+                    digits=excluded.digits,start_value=excluded.start_value,step=excluded.step,next_value=excluded.next_value,
+                    description=excluded.description,active=excluded.active,updated_at=excluded.updated_at,
+                    updated_by=excluded.updated_by""",
+                (
+                    item_id, value["name"], value["prefix"], value["suffix"], value["digits"], value["start_value"],
+                    value["step"], next_value, last_value, value["description"], int(value["active"]),
+                    created_at, now, created_by, actor,
+                ),
+            )
+        return next(item for item in self.hostname_patterns() if item["id"] == item_id)
+
+    def delete_hostname_pattern(self, pattern_id: str) -> bool:
+        with self.connect() as connection:
+            referenced = connection.execute(
+                "SELECT 1 FROM environments WHERE default_hostname_pattern_id=? AND active=1 LIMIT 1", (pattern_id,)
+            ).fetchone()
+            if referenced:
+                raise ValueError("hostname pattern is assigned to an environment")
+            return bool(connection.execute("UPDATE hostname_patterns SET active=0 WHERE id=?", (pattern_id,)).rowcount)
+
+    def skip_hostname_pattern(self, pattern_id: str, count: int, reason: str, actor: str) -> dict[str, Any]:
+        now = time.time()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM hostname_patterns WHERE id=? AND active=1", (pattern_id,)).fetchone()
+            if not row:
+                raise KeyError("hostname pattern not found")
+            item = self._decode(row) or {}
+            sequence = self._next_pattern_value_locked(connection, item)
+            skipped: list[str] = []
+            for _ in range(count):
+                hostname = self._render_pattern(item, sequence)
+                skipped.append(hostname)
+                connection.execute(
+                    "INSERT INTO hostname_skips(id,pattern_id,sequence_value,hostname,reason,created_at,created_by) VALUES(?,?,?,?,?,?,?)",
+                    (stable_id(), pattern_id, sequence, hostname, reason, now, actor),
+                )
+                sequence += int(item["step"])
+            connection.execute(
+                "UPDATE hostname_patterns SET next_value=?,updated_at=?,updated_by=? WHERE id=?",
+                (sequence, now, actor, pattern_id),
+            )
+        pattern = next(item for item in self.hostname_patterns() if item["id"] == pattern_id)
+        return {"skipped": skipped, "pattern": pattern}
+
     def credentials(self) -> list[dict[str, Any]]:
-        return [self._credential_metadata(item) for item in self._list("credentials", order="name")]
+        items = self._list("credentials", order="name")
+        with self.connect() as connection:
+            counts = {
+                str(row["credential_id"]): int(row["count"])
+                for row in connection.execute(
+                    "SELECT credential_id,COUNT(*) AS count FROM hosts WHERE credential_id IS NOT NULL GROUP BY credential_id"
+                ).fetchall()
+            }
+        return [self._credential_metadata(item) | {"host_count": counts.get(item["id"], 0)} for item in items]
 
     @staticmethod
     def _credential_metadata(item: dict[str, Any]) -> dict[str, Any]:
@@ -411,9 +711,9 @@ class HostRegistryService:
         with self.connect() as connection:
             old = connection.execute("SELECT created_at,created_by FROM credentials WHERE id=?", (item_id,)).fetchone()
             created_at, created_by = (old["created_at"], old["created_by"]) if old else (now, actor)
-            connection.execute("""INSERT INTO credentials(id,name,type,username,description,encrypted_secret,active,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,?,1,?,?,?,?)
-                ON CONFLICT(id) DO UPDATE SET name=excluded.name,type=excluded.type,username=excluded.username,description=excluded.description,encrypted_secret=excluded.encrypted_secret,active=1,updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
-                (item_id, payload.name, payload.type.value, payload.username, payload.description, envelope, created_at, now, created_by, actor))
+            connection.execute("""INSERT INTO credentials(id,name,type,username,description,encrypted_secret,active,environment_id,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,?,1,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET name=excluded.name,type=excluded.type,username=excluded.username,description=excluded.description,encrypted_secret=excluded.encrypted_secret,active=1,environment_id=excluded.environment_id,updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
+                (item_id, payload.name, payload.type.value, payload.username, payload.description, envelope, payload.environment_id, created_at, now, created_by, actor))
         return self._credential_metadata(self._get("credentials", item_id) or {})
 
     def verified_credential(self, credential_id: str, *, module_id: str, purpose: str) -> dict[str, str]:
@@ -423,10 +723,28 @@ class HostRegistryService:
         if not item or not item.get("active") or not item.get("encrypted_secret"):
             raise KeyError("credential not found")
         value = json.loads(self.cipher.decrypt(str(item["encrypted_secret"]), associated_data=credential_id))
+        with self.connect() as connection:
+            connection.execute("UPDATE credentials SET last_used_at=? WHERE id=?", (time.time(), credential_id))
+        self.operation(
+            None,
+            "credential.use",
+            module_id,
+            status="completed",
+            stage="audit",
+            progress=100,
+            details={"credential_id": credential_id, "module_id": module_id, "purpose": purpose},
+        )
         return {"id": credential_id, "type": str(item["type"]), "username": str(item["username"]), "secret": str(value.get("secret", "")), "passphrase": str(value.get("passphrase", ""))}
 
     def delete_credential(self, credential_id: str) -> bool:
         with self.connect() as connection:
+            referenced = connection.execute(
+                "SELECT 1 FROM hosts WHERE credential_id=? AND active=1 "
+                "UNION ALL SELECT 1 FROM environments WHERE default_credential_id=? AND active=1 LIMIT 1",
+                (credential_id, credential_id),
+            ).fetchone()
+            if referenced:
+                raise ValueError("credential is assigned to an active host or environment")
             return bool(connection.execute("UPDATE credentials SET active=0,encrypted_secret='' WHERE id=?", (credential_id,)).rowcount)
 
     def connection_data(self, host_id: str) -> dict[str, Any]:
@@ -450,11 +768,9 @@ class HostRegistryService:
     def _settings_locked(self, connection: sqlite3.Connection) -> dict[str, Any]:
         rows = connection.execute("SELECT key,value_json,updated_at,updated_by FROM hosts_manager_settings").fetchall()
         values = {str(row["key"]): json.loads(row["value_json"]) for row in rows}
+        defaults = HostsManagerSettingsUpdate().model_dump(mode="json")
         updated = max(rows, key=lambda row: float(row["updated_at"])) if rows else None
-        return {
-            "hostname_template": str(values.get("hostname_template", "SCL000XXX")),
-            "bootstrap_default_os": str(values.get("bootstrap_default_os", "linux")),
-            "bootstrap_apply_hostname": bool(values.get("bootstrap_apply_hostname", True)),
+        return defaults | values | {
             "updated_at": float(updated["updated_at"]) if updated else 0,
             "updated_by": str(updated["updated_by"]) if updated else "",
         }
@@ -494,6 +810,12 @@ class HostRegistryService:
         with self._lock, self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             previous = self._settings_locked(connection)
+            pattern_id = values.get("default_hostname_pattern_id")
+            if pattern_id and not connection.execute(
+                "SELECT 1 FROM hostname_patterns WHERE id=? AND active=1",
+                (pattern_id,),
+            ).fetchone():
+                raise KeyError("default hostname pattern not found")
             for key, value in values.items():
                 connection.execute(
                     "INSERT INTO hosts_manager_settings(key,value_json,updated_at,updated_by) VALUES(?,?,?,?) "
@@ -511,30 +833,91 @@ class HostRegistryService:
     def create_enrollment_token(self, payload: EnrollmentTokenInput, actor: str) -> dict[str, Any]:
         now, item_id, token = time.time(), stable_id(), secrets.token_urlsafe(32)
         value = payload.model_dump(mode="json")
-        expires = now + value["expires_minutes"] * 60
+        expires = 0 if value["mode"] == "permanent" else now + value["expires_minutes"] * 60
         with self._lock, self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             settings = self._settings_locked(connection)
-            template = str(settings["hostname_template"])
-            sequence = self._next_sequence_locked(connection, template)
-            assigned_hostname = render_hostname(template, sequence)
+            environment = None
+            if value["environment"]:
+                environment = connection.execute(
+                    "SELECT * FROM environments WHERE (id=? OR slug=?) AND active=1 LIMIT 1",
+                    (value["environment"], value["environment"]),
+                ).fetchone()
+                if not environment:
+                    raise KeyError("environment not found")
+            if value["credential_id"] and not connection.execute(
+                "SELECT 1 FROM credentials WHERE id=? AND active=1 AND type IN ('ssh_password','ssh_private_key')",
+                (value["credential_id"],),
+            ).fetchone():
+                raise KeyError("SSH credential not found")
+            pattern_id = value["hostname_pattern_id"] or (
+                environment["default_hostname_pattern_id"] if environment else None
+            ) or settings.get("default_hostname_pattern_id")
+            pattern_row = connection.execute(
+                "SELECT * FROM hostname_patterns WHERE id=? AND active=1", (pattern_id,)
+            ).fetchone() if pattern_id else None
+            if pattern_id and not pattern_row:
+                raise KeyError("hostname pattern not found")
+            pattern = self._decode(pattern_row) if pattern_row else None
+            assigned_hostname = ""
+            sequence = 0
+            if value["mode"] == "one_time":
+                if pattern:
+                    sequence = self._next_pattern_value_locked(connection, pattern)
+                    assigned_hostname = self._render_pattern(pattern, sequence)
+                    template = self._pattern_template(pattern)
+                    connection.execute(
+                        "UPDATE hostname_patterns SET next_value=?,last_value=?,updated_at=?,updated_by=? WHERE id=?",
+                        (sequence + int(pattern["step"]), sequence, now, actor, pattern["id"]),
+                    )
+                else:
+                    template = str(settings["hostname_template"])
+                    sequence = self._next_sequence_locked(connection, template)
+                    assigned_hostname = render_hostname(template, sequence)
+                    connection.execute(
+                        "INSERT INTO hostname_sequences(hostname_template,next_value,updated_at) VALUES(?,?,?) "
+                        "ON CONFLICT(hostname_template) DO UPDATE SET next_value=excluded.next_value,updated_at=excluded.updated_at",
+                        (template, sequence + 1, now),
+                    )
+                connection.execute(
+                    "INSERT INTO hostname_reservations(hostname,hostname_template,sequence_value,token_id,pattern_id,reserved_at,reserved_by) VALUES(?,?,?,?,?,?,?)",
+                    (assigned_hostname, template, sequence, item_id, pattern_id, now, actor),
+                )
+            else:
+                template = self._pattern_template(pattern) if pattern else str(settings["hostname_template"])
             bootstrap_os = str(value["bootstrap_os"] or settings["bootstrap_default_os"])
             apply_hostname = settings["bootstrap_apply_hostname"] if value["apply_hostname"] is None else bool(value["apply_hostname"])
-            connection.execute(
-                "INSERT INTO hostname_reservations(hostname,hostname_template,sequence_value,token_id,reserved_at,reserved_by) VALUES(?,?,?,?,?,?)",
-                (assigned_hostname, template, sequence, item_id, now, actor),
-            )
-            connection.execute(
-                "INSERT INTO hostname_sequences(hostname_template,next_value,updated_at) VALUES(?,?,?) "
-                "ON CONFLICT(hostname_template) DO UPDATE SET next_value=excluded.next_value,updated_at=excluded.updated_at",
-                (template, sequence + 1, now),
-            )
-            connection.execute("""INSERT INTO enrollment_tokens(id,token_hash,hostname_pattern,ssh_user,port,credential_id,environment,location,tags_json,group_ids_json,require_approval,onboard_ansible,expires_at,assigned_hostname,bootstrap_os,apply_hostname,created_at,updated_at,created_by,updated_by)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (item_id, hashlib.sha256(token.encode()).hexdigest(), assigned_hostname, value["ssh_user"], value["port"], value["credential_id"], value["environment"], value["location"], json.dumps(value["tags"]), json.dumps(value["group_ids"]), int(value["require_approval"]), int(value["onboard_ansible"]), expires, assigned_hostname, bootstrap_os, int(apply_hostname), now, now, actor, actor))
-        return {"id": item_id, "token": token, "hostname_pattern": assigned_hostname, "assigned_hostname": assigned_hostname, "bootstrap_os": bootstrap_os, "apply_hostname": apply_hostname, "expires_at": expires, "created_at": now, "created_by": actor, "used": False}
+            agent_port = int(value["agent_port"] or (environment["default_agent_port"] if environment else settings["agent_default_port"]))
+            report_interval = int(value["report_interval_seconds"] or (environment["report_interval_seconds"] if environment else settings["report_interval_seconds"]))
+            connection.execute("""INSERT INTO enrollment_tokens(
+                    id,token_hash,hostname_pattern,ssh_user,port,credential_id,environment,location,tags_json,group_ids_json,
+                    require_approval,onboard_ansible,expires_at,assigned_hostname,bootstrap_os,apply_hostname,mode,
+                    hostname_pattern_id,bound_address,agent_port,report_interval_seconds,created_at,updated_at,created_by,updated_by
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    item_id, hashlib.sha256(token.encode()).hexdigest(), assigned_hostname or template, value["ssh_user"],
+                    value["port"], value["credential_id"], value["environment"], value["location"], json.dumps(value["tags"]),
+                    json.dumps(value["group_ids"]), int(value["require_approval"]), int(value["onboard_ansible"]), expires,
+                    assigned_hostname, bootstrap_os, int(apply_hostname), value["mode"], pattern_id, value["bound_address"],
+                    agent_port, report_interval, now, now, actor, actor,
+                ))
+        return {
+            "id": item_id, "token": token, "hostname_pattern": assigned_hostname or template,
+            "assigned_hostname": assigned_hostname, "bootstrap_os": bootstrap_os, "apply_hostname": apply_hostname,
+            "mode": value["mode"], "hostname_pattern_id": pattern_id, "bound_address": value["bound_address"],
+            "agent_port": agent_port, "report_interval_seconds": report_interval, "expires_at": expires,
+            "created_at": now, "created_by": actor, "used": False,
+        }
 
     def enrollment_tokens(self) -> list[dict[str, Any]]:
-        return [{key: value for key, value in item.items() if key != "token_hash"} | {"used": item.get("used_at") is not None, "expired": item["expires_at"] < time.time(), "revoked": item.get("revoked_at") is not None} for item in self._list("enrollment_tokens")]
+        return [
+            {key: value for key, value in item.items() if key != "token_hash"} | {
+                "used": item.get("used_at") is not None,
+                "expired": bool(item["expires_at"] and item["expires_at"] < time.time()),
+                "revoked": item.get("revoked_at") is not None,
+            }
+            for item in self._list("enrollment_tokens")
+        ]
 
     def revoke_enrollment_token(self, token_id: str, actor: str) -> bool:
         with self.connect() as connection:
@@ -542,15 +925,70 @@ class HostRegistryService:
 
     def claim_enrollment_token(self, token: str, claim: dict[str, Any]) -> dict[str, Any] | None:
         now, token_hash, hostname = time.time(), hashlib.sha256(token.encode()).hexdigest(), str(claim["hostname"])
+        existing_host_id: str | None = None
         with self.connect() as connection:
-            row = connection.execute("SELECT * FROM enrollment_tokens WHERE token_hash=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at>=?", (token_hash, now)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM enrollment_tokens WHERE token_hash=? AND revoked_at IS NULL "
+                "AND (expires_at=0 OR expires_at>=?) AND (mode='permanent' OR used_at IS NULL)",
+                (token_hash, now),
+            ).fetchone()
             if not row:
                 return None
+            try:
+                claim_address = ipaddress.ip_address(str(claim["address"]))
+            except ValueError:
+                return None
+            settings = self._settings_locked(connection)
+            if not any(
+                claim_address in ipaddress.ip_network(value, strict=False)
+                for value in settings["allowed_registration_networks"]
+            ):
+                return None
+            if row["bound_address"] and ipaddress.ip_address(str(row["bound_address"])) != claim_address:
+                return None
             assigned = str(row["assigned_hostname"] or "")
-            allowed = hostname.casefold() == assigned.casefold() if assigned else fnmatch.fnmatchcase(hostname.casefold(), str(row["hostname_pattern"]).casefold())
+            permanent = str(row["mode"]) == "permanent"
+            allowed = permanent or (
+                hostname.casefold() == assigned.casefold()
+                if assigned else fnmatch.fnmatchcase(hostname.casefold(), str(row["hostname_pattern"]).casefold())
+            )
             if not allowed:
                 return None
-            changed = connection.execute("UPDATE enrollment_tokens SET used_at=?,used_hostname=?,reported_hostname=?,updated_at=?,updated_by=? WHERE id=? AND used_at IS NULL", (now, hostname, str(claim.get("original_hostname") or hostname), now, f"enrollment:{hostname}", row["id"])).rowcount
+            existing_host = connection.execute(
+                "SELECT id,registration_status FROM hosts WHERE active=1 AND "
+                "(name=? COLLATE NOCASE OR hostname=? COLLATE NOCASE OR address=?) LIMIT 1",
+                (hostname, hostname, str(claim["address"])),
+            ).fetchone()
+            installation_id = str(claim.get("installation_id") or "")
+            installation = connection.execute(
+                "SELECT host_id FROM host_agents WHERE installation_id=?",
+                (installation_id,),
+            ).fetchone() if installation_id else None
+            if installation and existing_host and str(installation["host_id"]) != str(existing_host["id"]):
+                return None
+            if installation and not existing_host:
+                existing_host = connection.execute(
+                    "SELECT id,registration_status FROM hosts WHERE id=? AND active=1",
+                    (installation["host_id"],),
+                ).fetchone()
+            if existing_host and installation_id:
+                paired = connection.execute(
+                    "SELECT installation_id,status FROM host_agents WHERE host_id=? ORDER BY updated_at DESC LIMIT 1",
+                    (existing_host["id"],),
+                ).fetchone()
+                if (
+                    paired
+                    and str(paired["installation_id"]) != installation_id
+                    and str(paired["status"]) != "authentication_required"
+                ):
+                    return None
+            existing_host_id = str(existing_host["id"]) if existing_host else None
+            changed = connection.execute(
+                "UPDATE enrollment_tokens SET used_at=CASE WHEN mode='one_time' THEN ? ELSE used_at END,"
+                "used_hostname=?,reported_hostname=?,use_count=use_count+1,updated_at=?,updated_by=? "
+                "WHERE id=? AND (mode='permanent' OR used_at IS NULL)",
+                (now, hostname, str(claim.get("original_hostname") or hostname), now, f"enrollment:{hostname}", row["id"]),
+            ).rowcount
             if not changed:
                 return None
             token_data = self._decode(row) or {}
@@ -566,21 +1004,39 @@ class HostRegistryService:
                 "powershell": claim.get("powershell", ""),
             },
         )
-        return self.save_host(host_payload, f"enrollment:{hostname}", source="script")
+        host = self.save_host(
+            host_payload,
+            f"enrollment:{hostname}",
+            existing_host_id,
+            source="script",
+        )
+        if claim.get("installation_id"):
+            agent = self.register_agent(
+                host["id"], str(claim["installation_id"]), str(claim.get("agent_version") or "1.0.0"),
+                int(token_data.get("agent_port") or 8443), int(token_data.get("report_interval_seconds") or 300),
+                f"enrollment:{hostname}",
+            )
+            host["agent_credentials"] = agent
+        return host
 
     def active_enrollment_token(self, token: str) -> dict[str, Any] | None:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         now = time.time()
         with self._lock, self.connect() as connection:
             row = connection.execute(
-                "SELECT * FROM enrollment_tokens WHERE token_hash=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at>=?",
+                "SELECT * FROM enrollment_tokens WHERE token_hash=? AND revoked_at IS NULL "
+                "AND (expires_at=0 OR expires_at>=?) AND (mode='permanent' OR used_at IS NULL)",
                 (token_hash, now),
             ).fetchone()
         return self._decode(row)
 
     def enrollment_script(self, token: str, endpoint: str) -> tuple[str, dict[str, Any]]:
         token_item = self.active_enrollment_token(token)
-        if not token_item or token_item.get("used_at") or token_item.get("revoked_at") or token_item["expires_at"] < time.time():
+        if not token_item or token_item.get("revoked_at") or (
+            token_item.get("mode") != "permanent" and (
+                token_item.get("used_at") or token_item["expires_at"] < time.time()
+            )
+        ):
             raise KeyError("enrollment token is not active")
         endpoint = endpoint.rstrip("/")
         if token_item["bootstrap_os"] == "windows":
@@ -590,35 +1046,158 @@ set -euo pipefail
 die() {{ printf '%s\\n' "Hosts Manager enrollment failed: $1" >&2; exit 1; }}
 [[ "${{EUID}}" -eq 0 ]] || die "run this script as root"
 [[ '{endpoint}' == https://* ]] || die "HTTPS is required"
-for required in curl hostname hostnamectl ip awk python3 uname tr; do command -v "$required" >/dev/null 2>&1 || die "$required is required"; done
+MISSING_DEPENDENCY=false
+for required in curl hostname ip awk python3 uname tr install; do
+  command -v "$required" >/dev/null 2>&1 || MISSING_DEPENDENCY=true
+done
+if [[ "$MISSING_DEPENDENCY" == true ]]; then
+  . /etc/os-release 2>/dev/null || die "/etc/os-release is required to install dependencies"
+  case "${{ID:-}}" in
+    debian|ubuntu|raspbian|proxmox)
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl python3 iproute2 hostname coreutils gawk
+      ;;
+    fedora|rhel|rocky|almalinux|centos)
+      manager=dnf; command -v dnf >/dev/null 2>&1 || manager=yum
+      "$manager" install -y curl python3 iproute hostname coreutils gawk
+      ;;
+    opensuse*|sles)
+      zypper --non-interactive install curl python3 iproute2 hostname coreutils gawk
+      ;;
+    arch|manjaro)
+      pacman --noconfirm --needed -S curl python iproute2 inetutils coreutils gawk
+      ;;
+    alpine)
+      apk add --no-cache curl python3 iproute2 coreutils gawk
+      ;;
+    *) die "unsupported distribution and required dependencies are missing" ;;
+  esac
+fi
+for required in curl hostname ip awk python3 uname tr install; do command -v "$required" >/dev/null 2>&1 || die "$required is required"; done
 ORIGINAL_HOSTNAME="$(hostname)"
 ASSIGNED_HOSTNAME='{token_item["assigned_hostname"]}'
-if [[ '{str(bool(token_item["apply_hostname"])).lower()}' == true ]]; then
-  hostnamectl set-hostname "$ASSIGNED_HOSTNAME"
+if [[ '{str(bool(token_item["apply_hostname"])).lower()}' == true && -n "$ASSIGNED_HOSTNAME" ]]; then
+  if command -v hostnamectl >/dev/null 2>&1; then hostnamectl set-hostname "$ASSIGNED_HOSTNAME"; else
+    printf '%s\\n' "$ASSIGNED_HOSTNAME" >/etc/hostname
+    hostname "$ASSIGNED_HOSTNAME"
+  fi
   [[ "$(hostname | tr '[:upper:]' '[:lower:]')" == "$(printf '%s' "$ASSIGNED_HOSTNAME" | tr '[:upper:]' '[:lower:]')" ]] || die "hostname change verification failed"
 fi
-HOSTNAME_VALUE="$ASSIGNED_HOSTNAME"
+HOSTNAME_VALUE="${{ASSIGNED_HOSTNAME:-$(hostname)}}"
 FQDN_VALUE="$(hostname -f 2>/dev/null || printf '%s' "$HOSTNAME_VALUE")"
 ADDRESS_VALUE="${{WEBNAS_ENROLL_ADDRESS:-$(ip -4 route get 1.1.1.1 | awk '{{for(i=1;i<=NF;i++) if($i=="src") {{print $(i+1); exit}}}}')}}"
 [[ -n "$ADDRESS_VALUE" && "$ADDRESS_VALUE" != 127.* && "$ADDRESS_VALUE" != 169.254.* ]] || die "a primary IPv4 address is required"
 . /etc/os-release 2>/dev/null || die "/etc/os-release is required"
-case "${{ID:-}}" in debian|ubuntu|raspbian|fedora|rhel|rocky|almalinux|proxmox) ;; *) [[ -f /etc/pve-release ]] || die "unsupported Linux distribution" ;; esac
+case "${{ID:-}}" in
+  debian|ubuntu|raspbian|fedora|rhel|rocky|almalinux|centos|opensuse*|sles|arch|manjaro|alpine|proxmox) ;;
+  *) [[ -f /etc/pve-release ]] || die "unsupported Linux distribution" ;;
+esac
 OS_VALUE="${{ID:-unknown}}"
 OS_VERSION="${{VERSION_ID:-}}"
 SYSTEM_ID_VALUE=""
 [[ -r /etc/machine-id ]] && IFS= read -r SYSTEM_ID_VALUE </etc/machine-id
 [[ -n "$SYSTEM_ID_VALUE" ]] || SYSTEM_ID_VALUE="$OS_VALUE-$OS_VERSION"
+install -d -m 0700 /var/lib/hosts-manager-agent
+INSTALLATION_ID_FILE=/var/lib/hosts-manager-agent/installation-id
+if [[ ! -s "$INSTALLATION_ID_FILE" ]]; then
+  python3 - <<'PY' >"$INSTALLATION_ID_FILE"
+import uuid
+print(uuid.uuid4())
+PY
+  chmod 0600 "$INSTALLATION_ID_FILE"
+fi
+INSTALLATION_ID="$(cat "$INSTALLATION_ID_FILE")"
 ARCH_VALUE="$(uname -m)"
 PYTHON_VALUE="$(command -v python3)"
-export HOSTNAME_VALUE FQDN_VALUE ADDRESS_VALUE OS_VALUE OS_VERSION SYSTEM_ID_VALUE ARCH_VALUE PYTHON_VALUE ORIGINAL_HOSTNAME
+export HOSTNAME_VALUE FQDN_VALUE ADDRESS_VALUE OS_VALUE OS_VERSION SYSTEM_ID_VALUE ARCH_VALUE PYTHON_VALUE ORIGINAL_HOSTNAME INSTALLATION_ID
 BODY="$(python3 - <<'PY'
 import json, os
-keys = ("HOSTNAME_VALUE", "FQDN_VALUE", "ADDRESS_VALUE", "OS_VALUE", "OS_VERSION", "SYSTEM_ID_VALUE", "ARCH_VALUE", "PYTHON_VALUE", "ORIGINAL_HOSTNAME")
+keys = ("HOSTNAME_VALUE", "FQDN_VALUE", "ADDRESS_VALUE", "OS_VALUE", "OS_VERSION", "SYSTEM_ID_VALUE", "ARCH_VALUE", "PYTHON_VALUE", "ORIGINAL_HOSTNAME", "INSTALLATION_ID")
 v = {{key: os.environ[key] for key in keys}}
-print(json.dumps({{"hostname": v["HOSTNAME_VALUE"], "fqdn": v["FQDN_VALUE"], "address": v["ADDRESS_VALUE"], "os": v["OS_VALUE"], "system_id": v["SYSTEM_ID_VALUE"], "system_version": v["OS_VERSION"], "architecture": v["ARCH_VALUE"], "python": v["PYTHON_VALUE"], "original_hostname": v["ORIGINAL_HOSTNAME"]}}))
+print(json.dumps({{"hostname": v["HOSTNAME_VALUE"], "fqdn": v["FQDN_VALUE"], "address": v["ADDRESS_VALUE"], "os": v["OS_VALUE"], "system_id": v["SYSTEM_ID_VALUE"], "system_version": v["OS_VERSION"], "architecture": v["ARCH_VALUE"], "python": v["PYTHON_VALUE"], "original_hostname": v["ORIGINAL_HOSTNAME"], "installation_id": v["INSTALLATION_ID"], "agent_version": "1.0.0"}}))
 PY
 )"
 RESULT="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer {token}' --data "$BODY" '{endpoint}/api/modules/hosts-manager/enroll')" || die "server rejected enrollment"
+install -d -m 0755 /opt/hosts-manager-agent /etc/hosts-manager-agent /var/log/hosts-manager-agent
+curl --fail --silent --show-error --proto '=https' --tlsv1.2 '{endpoint}/api/modules/hosts-manager/agent/source' -o /opt/hosts-manager-agent/agent.py
+chmod 0755 /opt/hosts-manager-agent/agent.py
+RESULT_FILE=/var/lib/hosts-manager-agent/enrollment-result.json
+printf '%s' "$RESULT" >"$RESULT_FILE"
+chmod 0600 "$RESULT_FILE"
+python3 - "$RESULT_FILE" <<'PY'
+import json, os, sys, time
+path = sys.argv[1]
+with open(path, encoding="utf-8") as source:
+    result = json.load(source)
+credentials = result.get("agent_credentials") or {{}}
+required = ("agent_id", "host_id", "token")
+if any(not credentials.get(key) for key in required):
+    raise SystemExit("server did not return agent credentials")
+config = {{
+    "server": {{"url": "{endpoint}", "timeout_seconds": {int(self._settings_value("connection_timeout_seconds", 15))}, "verify_tls": {str(bool(self._settings_value("agent_enforce_tls", True)))} }},
+    "agent": {{
+        "heartbeat_interval": {int(self._settings_value("heartbeat_interval_seconds", 30))},
+        "report_interval": {int(token_item.get("report_interval_seconds") or 300)},
+        "max_retries": {int(self._settings_value("max_connection_retries", 10))}
+    }},
+    "authentication": {{}},
+    "logging": {{"level": "{str(self._settings_value("agent_log_level", "INFO"))}", "file": "/var/log/hosts-manager-agent/agent.log"}}
+}}
+state = {{
+    "installation_id": open("/var/lib/hosts-manager-agent/installation-id", encoding="utf-8").read().strip(),
+    "host_id": credentials["host_id"], "agent_id": credentials["agent_id"], "token": credentials["token"],
+    "identity_hash": credentials.get("identity_hash", ""), "registered_at": time.time()
+}}
+for target, value in (("/etc/hosts-manager-agent/config.yaml", config), ("/var/lib/hosts-manager-agent/state.json", state)):
+    temporary = target + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as output:
+        json.dump(value, output, indent=2, sort_keys=True)
+        output.write("\\n")
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, target)
+os.remove(path)
+PY
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+  cat >/etc/systemd/system/hosts-manager-agent.service <<'UNIT'
+[Unit]
+Description=Hosts Manager Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env python3 /opt/hosts-manager-agent/agent.py run
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/hosts-manager-agent /var/lib/hosts-manager-agent /var/log/hosts-manager-agent /etc/hosts-manager-agent
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now hosts-manager-agent.service
+elif command -v rc-update >/dev/null 2>&1; then
+  cat >/etc/init.d/hosts-manager-agent <<'RC'
+#!/sbin/openrc-run
+name="Hosts Manager Agent"
+command="/usr/bin/env"
+command_args="python3 /opt/hosts-manager-agent/agent.py run"
+command_background="yes"
+pidfile="/run/hosts-manager-agent.pid"
+output_log="/var/log/hosts-manager-agent/agent.log"
+error_log="/var/log/hosts-manager-agent/agent.log"
+depend() {{ need net; }}
+RC
+  chmod 0755 /etc/init.d/hosts-manager-agent
+  rc-update add hosts-manager-agent default
+  rc-service hosts-manager-agent restart
+else
+  (crontab -l 2>/dev/null || true; printf '%s\\n' '@reboot /usr/bin/env python3 /opt/hosts-manager-agent/agent.py run') | sort -u | crontab -
+  nohup /usr/bin/env python3 /opt/hosts-manager-agent/agent.py run >/var/log/hosts-manager-agent/agent.log 2>&1 &
+fi
 python3 - "$RESULT" "$ASSIGNED_HOSTNAME" <<'PY'
 import json, sys
 result = json.loads(sys.argv[1])
@@ -642,10 +1221,11 @@ if (-not '{endpoint}'.StartsWith('https://')) {{ throw 'HTTPS is required.' }}
 $originalHostname = $env:COMPUTERNAME
 $assignedHostname = '{assigned}'
 $restartRequired = $false
-if (${str(bool(token_item["apply_hostname"])).lower()}) {{
+if (${str(bool(token_item["apply_hostname"])).lower()} -and $assignedHostname) {{
   Rename-Computer -NewName $assignedHostname -Force
   $restartRequired = $true
 }}
+if (-not $assignedHostname) {{ $assignedHostname = $originalHostname }}
 $address = $env:WEBNAS_ENROLL_ADDRESS
 if (-not $address) {{
   $address = Get-NetIPConfiguration | Where-Object {{ $_.NetAdapter.Status -eq 'Up' }} |
@@ -669,6 +1249,269 @@ Write-Host "Approval status: $($result.registration_status)"
 if ($restartRequired) {{ Write-Warning 'The computer name change will fully apply after restart; this script does not restart Windows.' }}
 Write-Host 'Administrator approval and SSH fingerprint verification are required.'
 """
+
+    @staticmethod
+    def _agent_token_hash(token: str, salt: str) -> str:
+        return hashlib.sha256(f"{salt}:{token}".encode()).hexdigest()
+
+    def register_agent(
+        self,
+        host_id: str,
+        installation_id: str,
+        agent_version: str,
+        communication_port: int,
+        report_interval_seconds: int,
+        actor: str,
+    ) -> dict[str, Any]:
+        now, raw_token, salt = time.time(), secrets.token_urlsafe(48), secrets.token_hex(32)
+        agent_id = stable_id()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            host = connection.execute("SELECT id FROM hosts WHERE id=?", (host_id,)).fetchone()
+            if not host:
+                raise KeyError("host not found")
+            existing = connection.execute(
+                "SELECT * FROM host_agents WHERE installation_id=?", (installation_id,)
+            ).fetchone()
+            if existing and str(existing["host_id"]) != host_id:
+                raise PermissionError("agent installation identity is already paired with another host")
+            if existing:
+                agent_id = str(existing["id"])
+                connection.execute(
+                    "UPDATE host_identity_salts SET status='invalidated',invalidated_at=?,updated_by=? "
+                    "WHERE agent_id=? AND status='valid'",
+                    (now, actor, agent_id),
+                )
+                connection.execute(
+                    "UPDATE host_agents SET token_hash=?,agent_version=?,status='online',communication_port=?,"
+                    "report_interval_seconds=?,last_heartbeat_at=?,last_error='',auth_failures=0,updated_at=?,updated_by=? "
+                    "WHERE id=?",
+                    (
+                        self._agent_token_hash(raw_token, salt), agent_version, communication_port,
+                        report_interval_seconds, now, now, actor, agent_id,
+                    ),
+                )
+            else:
+                connection.execute(
+                    """INSERT INTO host_agents(
+                        id,host_id,installation_id,token_hash,agent_version,status,communication_port,
+                        report_interval_seconds,installed_at,last_heartbeat_at,created_at,updated_at,created_by,updated_by
+                    ) VALUES(?,?,?,?,?,'online',?,?,?,?,?,?,?,?)""",
+                    (
+                        agent_id, host_id, installation_id, self._agent_token_hash(raw_token, salt), agent_version,
+                        communication_port, report_interval_seconds, now, now, now, now, actor, actor,
+                    ),
+                )
+            identity_id = stable_id()
+            identity_hash = hashlib.sha256(f"{host_id}:{agent_id}:{salt}".encode()).hexdigest()
+            connection.execute(
+                """INSERT INTO host_identity_salts(
+                    id,host_id,agent_id,salt,identity_hash,status,generated_at,created_by,updated_by
+                ) VALUES(?,?,?,?,?,'valid',?,?,?)""",
+                (identity_id, host_id, agent_id, salt, identity_hash, now, actor, actor),
+            )
+            connection.execute(
+                "INSERT INTO agent_versions(id,host_id,agent_id,version,source,reported_at,reported_by) VALUES(?,?,?,?,?,?,?)",
+                (stable_id(), host_id, agent_id, agent_version, "pairing", now, actor),
+            )
+        self._update_host(
+            host_id, actor, connection_status="online", registration_status="registered",
+            last_seen_at=now, last_error="",
+        )
+        self.operation(
+            host_id, "agent.pair", actor, status="completed",
+            details={"agent_id": agent_id, "installation_id": installation_id},
+        )
+        return {
+            "agent_id": agent_id,
+            "host_id": host_id,
+            "token": raw_token,
+            "identity_hash": identity_hash,
+            "identity_generated_at": now,
+        }
+
+    def _verified_agent(self, agent_id: str, token: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            agent_row = connection.execute("SELECT * FROM host_agents WHERE id=?", (agent_id,)).fetchone()
+            identity_row = connection.execute(
+                "SELECT * FROM host_identity_salts WHERE agent_id=? AND status='valid' ORDER BY generated_at DESC LIMIT 1",
+                (agent_id,),
+            ).fetchone()
+        if not agent_row or not identity_row:
+            return None
+        if str(agent_row["status"]) == "authentication_required":
+            return None
+        expected = self._agent_token_hash(token, str(identity_row["salt"]))
+        if not secrets.compare_digest(expected, str(agent_row["token_hash"])):
+            failures = int(agent_row["auth_failures"]) + 1
+            locked = failures >= int(self._settings_value("max_auth_failures", 5))
+            now = time.time()
+            with self.connect() as connection:
+                connection.execute(
+                    "UPDATE host_agents SET auth_failures=?,status=?,last_error=?,updated_at=? WHERE id=?",
+                    (
+                        failures,
+                        "authentication_required" if locked else str(agent_row["status"]),
+                        "Agent authentication failure limit exceeded" if locked else str(agent_row["last_error"]),
+                        now,
+                        agent_id,
+                    ),
+                )
+                if locked:
+                    connection.execute(
+                        "UPDATE host_identity_salts SET status='invalidated',invalidated_at=?,updated_by=? "
+                        "WHERE agent_id=? AND status='valid'",
+                        (now, f"agent:{agent_id}", agent_id),
+                    )
+            if locked:
+                self._update_host(
+                    str(agent_row["host_id"]),
+                    f"agent:{agent_id}",
+                    connection_status="offline",
+                    registration_status="authentication_required",
+                    last_error="Agent authentication failure limit exceeded",
+                )
+                self.operation(
+                    str(agent_row["host_id"]),
+                    "agent.authentication.lock",
+                    f"agent:{agent_id}",
+                    status="completed",
+                    details={"agent_id": agent_id, "failures": failures},
+                )
+            return None
+        return self._decode(agent_row)
+
+    def agent_heartbeat(self, agent_id: str, token: str, heartbeat: dict[str, Any]) -> dict[str, Any] | None:
+        agent = self._verified_agent(agent_id, token)
+        if not agent:
+            return None
+        now = time.time()
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE host_agents SET agent_version=?,status=?,last_heartbeat_at=?,last_error=?,auth_failures=0,"
+                "updated_at=?,updated_by=? WHERE id=?",
+                (
+                    heartbeat["agent_version"], heartbeat["status"], now, heartbeat.get("error", ""),
+                    now, f"agent:{agent_id}", agent_id,
+                ),
+            )
+            if str(agent.get("agent_version") or "") != str(heartbeat["agent_version"]):
+                connection.execute(
+                    "INSERT INTO agent_versions(id,host_id,agent_id,version,source,reported_at,reported_by) VALUES(?,?,?,?,?,?,?)",
+                    (
+                        stable_id(),
+                        agent["host_id"],
+                        agent_id,
+                        heartbeat["agent_version"],
+                        "heartbeat",
+                        now,
+                        f"agent:{agent_id}",
+                    ),
+                )
+        self._update_host(
+            str(agent["host_id"]), f"agent:{agent_id}", connection_status=heartbeat["status"],
+            last_seen_at=now, last_error=heartbeat.get("error", ""),
+        )
+        if str(agent.get("agent_version") or "") != str(heartbeat["agent_version"]):
+            self.operation(
+                str(agent["host_id"]),
+                "agent.update",
+                f"agent:{agent_id}",
+                status="completed",
+                stage="reported",
+                progress=100,
+                details={
+                    "previous_version": str(agent.get("agent_version") or ""),
+                    "agent_version": str(heartbeat["agent_version"]),
+                },
+            )
+        agent_source = Path(__file__).with_name("agent.py")
+        source_checksum = hashlib.sha256(agent_source.read_bytes()).hexdigest()
+        return {
+            "ok": True,
+            "server_time": now,
+            "next_heartbeat_seconds": int(self._settings_value("heartbeat_interval_seconds", 30)),
+            "enforce_tls": bool(self._settings_value("agent_enforce_tls", True)),
+            "agent_update": {
+                "enabled": bool(self._settings_value("agent_auto_update", False)),
+                "minimum_version": str(self._settings_value("agent_min_version", "1.0.0")),
+                "channel": str(self._settings_value("agent_update_channel", "stable")),
+                "url": str(self._settings_value("agent_repository_url", "")),
+                "sha256": source_checksum,
+                "max_size": 2 * 1024 * 1024,
+            },
+        }
+
+    def save_agent_report(self, agent_id: str, token: str, report: dict[str, Any]) -> dict[str, Any] | None:
+        agent = self._verified_agent(agent_id, token)
+        if not agent:
+            return None
+        now = time.time()
+        encoded = json.dumps(report, ensure_ascii=False, sort_keys=True)
+        checksum = hashlib.sha256(encoded.encode()).hexdigest()
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO host_reports(id,host_id,agent_id,report_json,checksum,created_at) VALUES(?,?,?,?,?,?)",
+                (stable_id(), agent["host_id"], agent_id, encoded, checksum, now),
+            )
+            connection.execute(
+                "UPDATE host_agents SET status='online',last_report_at=?,last_heartbeat_at=?,last_error='',"
+                "auth_failures=0,updated_at=?,updated_by=? WHERE id=?",
+                (now, now, now, f"agent:{agent_id}", agent_id),
+            )
+        self._update_host(
+            str(agent["host_id"]), f"agent:{agent_id}", connection_status="online",
+            last_seen_at=now, last_facts_at=now, last_error="",
+        )
+        return {"ok": True, "checksum": checksum, "received_at": now}
+
+    def rotate_agent_identity(self, host_id: str, actor: str) -> dict[str, Any]:
+        agents = self._list("host_agents", where="host_id=?", values=(host_id,), order="updated_at DESC", limit=1)
+        if not agents:
+            raise KeyError("agent not found")
+        agent = agents[0]
+        return self.register_agent(
+            host_id, str(agent["installation_id"]), str(agent.get("agent_version") or "1.0.0"),
+            int(agent["communication_port"]), int(agent["report_interval_seconds"]), actor,
+        )
+
+    def invalidate_agent_identity(self, host_id: str, actor: str) -> bool:
+        now = time.time()
+        with self.connect() as connection:
+            agent = connection.execute("SELECT id FROM host_agents WHERE host_id=?", (host_id,)).fetchone()
+            if not agent:
+                return False
+            connection.execute(
+                "UPDATE host_identity_salts SET status='invalidated',invalidated_at=?,updated_by=? "
+                "WHERE agent_id=? AND status='valid'",
+                (now, actor, agent["id"]),
+            )
+            connection.execute(
+                "UPDATE host_agents SET status='authentication_required',token_hash='',updated_at=?,updated_by=? WHERE id=?",
+                (now, actor, agent["id"]),
+            )
+        self._update_host(
+            host_id, actor, connection_status="offline", registration_status="authentication_required",
+            last_error="Agent identity was invalidated; pairing is required",
+        )
+        self.operation(host_id, "agent.identity.invalidate", actor, status="completed")
+        return True
+
+    def agent_history(self, host_id: str) -> dict[str, Any]:
+        identities = self._list(
+            "host_identity_salts", where="host_id=?", values=(host_id,), order="generated_at DESC", limit=100
+        )
+        reports = self._list("host_reports", where="host_id=?", values=(host_id,), order="created_at DESC", limit=25)
+        versions = self._list("agent_versions", where="host_id=?", values=(host_id,), order="reported_at DESC", limit=100)
+        return {
+            "identities": [{key: value for key, value in item.items() if key != "salt"} for item in identities],
+            "reports": [
+                {"id": item["id"], "checksum": item["checksum"], "created_at": item["created_at"]}
+                for item in reports
+            ],
+            "versions": versions,
+            "operations": self.operations(host_id, limit=100),
+        }
 
     @staticmethod
     def sanitize_facts(raw: dict[str, Any]) -> dict[str, Any]:
@@ -770,20 +1613,93 @@ Write-Host 'Administrator approval and SSH fingerprint verification are required
                 (item_id, host_id, capability_id, module_id, status, stage, progress, package_job_id, json.dumps(safe_details), error[:2000], now, now, actor, actor))
         return self._get("operations", item_id) or {}
 
+    def update_operation(
+        self,
+        operation_id: str,
+        actor: str,
+        *,
+        status: str,
+        stage: str,
+        progress: int,
+        details: dict[str, Any] | None = None,
+        error: str = "",
+    ) -> dict[str, Any]:
+        item = self._get("operations", operation_id)
+        if not item:
+            raise KeyError("operation not found")
+        safe_details = redact(details) if details is not None else item.get("details", {})
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE operations SET status=?,stage=?,progress=?,details_json=?,error=?,updated_at=?,updated_by=? WHERE id=?",
+                (
+                    status,
+                    stage,
+                    max(0, min(100, progress)),
+                    json.dumps(safe_details),
+                    error[:2000],
+                    time.time(),
+                    actor,
+                    operation_id,
+                ),
+            )
+        return self._get("operations", operation_id) or {}
+
     def operations(self, host_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
         return self._list("operations", where="host_id=?" if host_id else "", values=(host_id,) if host_id else (), limit=limit)
 
     def dashboard(self) -> dict[str, Any]:
         hosts = self.list_hosts()
+        now = time.time()
+        environments: dict[str, int] = {}
+        updates = security_updates = without_agent = stale = low_disk = high_cpu = high_memory = errors = 0
+        for item in hosts:
+            environment = str(item.get("environment") or "unassigned")
+            environments[environment] = environments.get(environment, 0) + 1
+            updates += int(item.get("available_updates") or 0)
+            security_updates += int(item.get("security_updates") or 0)
+            without_agent += item.get("agent") is None
+            agent = item.get("agent") or {}
+            report = item.get("latest_report") or {}
+            system = report.get("system", {}) if isinstance(report, dict) else {}
+            hardware = report.get("hardware", {}) if isinstance(report, dict) else {}
+            last_report = float(agent.get("last_report_at") or 0)
+            interval = int(agent.get("report_interval_seconds") or 300)
+            stale += bool(agent and (not last_report or now - last_report > max(interval * 3, 900)))
+            errors += bool(item.get("last_error") or item.get("agent_status") == "error")
+            high_cpu += float(system.get("cpu_percent") or 0) >= 90
+            high_memory += float(system.get("memory_percent") or 0) >= 90
+            filesystems = hardware.get("filesystems", []) if isinstance(hardware, dict) else []
+            low_disk += any(float(fs.get("free_percent") or 100) < 10 for fs in filesystems if isinstance(fs, dict))
+        operations = self.operations(limit=100)
         return {
+            "generated_at": now,
             "total": len(hosts), "online": sum(item["connection_status"] == "online" for item in hosts),
             "offline": sum(item["connection_status"] == "offline" for item in hosts),
+            "errors": errors,
             "unverified": sum(item["fingerprint_status"] in {"unverified", "scanned"} for item in hosts),
             "fingerprint_errors": sum(item["fingerprint_status"] == "changed" for item in hosts),
             "pending_approval": sum(not item["approved"] for item in hosts),
+            "pending_registration": sum(item.get("status") in {"pending", "installing"} for item in hosts),
             "ansible_available": sum(any(c["id"].startswith("ansible.") for c in self.capabilities(item["id"])) for item in hosts),
             "power_managed": sum(bool(item.get("power_profile_id")) for item in hosts),
-            "recent_operations": self.operations(limit=10),
+            "available_updates": updates,
+            "security_updates": security_updates,
+            "without_agent": without_agent,
+            "stale_reports": stale,
+            "low_disk": low_disk,
+            "high_cpu": high_cpu,
+            "high_memory": high_memory,
+            "by_environment": environments,
+            "recent_hosts": sorted(hosts, key=lambda item: item.get("created_at", 0), reverse=True)[:8],
+            "recent_connections": sorted(
+                [item for item in hosts if (item.get("agent") or {}).get("last_heartbeat_at")],
+                key=lambda item: (item.get("agent") or {}).get("last_heartbeat_at", 0),
+                reverse=True,
+            )[:8],
+            "onboarding_history": [item for item in operations if item["capability_id"] in {"host.create", "agent.pair"}][:8],
+            "hostname_changes": [item for item in operations if item["capability_id"] == "host.hostname.change"][:8],
+            "administrative_operations": operations[:10],
+            "recent_operations": operations[:10],
             "recent_errors": [item for item in hosts if item.get("last_error")][:10],
         }
 

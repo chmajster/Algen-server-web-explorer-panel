@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { settingsFixture } from "../test/settings";
 import { apps } from "./catalog";
@@ -7,12 +8,12 @@ import type { WindowInstance } from "./types";
 
 const runningFile: WindowInstance = { id: "files-1", app: "files", rect: { x: 20, y: 20, width: 800, height: 600 }, minimized: false, zIndex: 12 };
 const handlers = () => ({
-  onToggleLauncher: vi.fn(), onToggleNotifications: vi.fn(), onToggleTheme: vi.fn(), onApp: vi.fn(), onModule: vi.fn(), onOpenNew: vi.fn(), onOpenModuleNew: vi.fn(), onTogglePin: vi.fn(), onToggleModulePin: vi.fn(), onWindow: vi.fn(), onCloseApp: vi.fn(), onCloseModule: vi.fn(), onTaskbarSettings: vi.fn(), onAlignment: vi.fn(), onLogout: vi.fn(),
+  onToggleLauncher: vi.fn(), onToggleNotifications: vi.fn(), onToggleCalendar: vi.fn(), onOpenLocalPanel: vi.fn(), onToggleTheme: vi.fn(), onApp: vi.fn(), onModule: vi.fn(), onOpenNew: vi.fn(), onOpenModuleNew: vi.fn(), onTogglePin: vi.fn(), onToggleModulePin: vi.fn(), onWindow: vi.fn(), onCloseApp: vi.fn(), onCloseModule: vi.fn(), onTaskbarSettings: vi.fn(), onAlignment: vi.fn(), onLogout: vi.fn(),
 });
 
-function renderTaskbar(overrides: { pinned?: Set<"files" | "monitor">; pinnedModules?: Set<string>; moduleNames?: Map<string, string>; windows?: WindowInstance[]; activeId?: string } = {}) {
+function renderTaskbar(overrides: { pinned?: Set<"files" | "monitor">; pinnedModules?: Set<string>; moduleNames?: Map<string, string>; windows?: WindowInstance[]; activeId?: string; calendarOpen?: boolean } = {}) {
   const events = handlers();
-  render(<Taskbar apps={apps.filter((app) => ["files", "monitor", "settings", "module"].includes(app.id))} pinned={overrides.pinned || new Set(["monitor"])} pinnedModules={overrides.pinnedModules || new Set()} moduleNames={overrides.moduleNames || new Map()} windows={overrides.windows || [runningFile]} activeId={overrides.activeId ?? runningFile.id} profile={settingsFixture()} resolvedTheme="light" clockText="12:00" dateText="17.07.2026" activeTransfers={0} launcherOpen={false} notificationsOpen={false} t={(key) => key} {...events} />);
+  render(<Taskbar apps={apps.filter((app) => ["files", "monitor", "settings", "module"].includes(app.id))} pinned={overrides.pinned || new Set(["monitor"])} pinnedModules={overrides.pinnedModules || new Set()} moduleNames={overrides.moduleNames || new Map()} windows={overrides.windows || [runningFile]} activeId={overrides.activeId ?? runningFile.id} profile={settingsFixture()} resolvedTheme="light" clockText="12:00" dateText="17.07.2026" clockDateTime="2026-07-17T12:00:00.000Z" activeTransfers={0} launcherOpen={false} notificationsOpen={false} calendarOpen={overrides.calendarOpen || false} clockButtonRef={createRef<HTMLButtonElement>()} t={(key) => key} {...events} />);
   return events;
 }
 
@@ -73,5 +74,16 @@ describe("Windows-like taskbar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Aktualizacje systemu" }));
     expect(events.onModule).toHaveBeenCalledWith("linux-updates");
+  });
+
+  it("exposes the clock as an accessible calendar trigger with a consistent datetime", () => {
+    const events = renderTaskbar({ calendarOpen: true });
+    const clock = screen.getByRole("button", { name: "calendar.open" });
+    expect(clock).toHaveAttribute("aria-expanded", "true");
+    expect(clock).toHaveAttribute("aria-controls", "calendar-flyout");
+    expect(within(clock).getByText("12:00").closest("time")).toHaveAttribute("datetime", "2026-07-17T12:00:00.000Z");
+
+    fireEvent.click(clock);
+    expect(events.onToggleCalendar).toHaveBeenCalledOnce();
   });
 });

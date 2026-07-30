@@ -15,7 +15,15 @@ from app.modules.ansible_controller.models import GroupInput as LegacyGroupInput
 from app.modules.ansible_controller.models import HostInput as LegacyHostInput
 from app.modules.ansible_controller.repository import AnsibleRepository
 from app.modules.hosts_manager.models import (
-    CredentialInput, CredentialType, EnrollmentTokenInput, HostInput, HostsManagerSettingsUpdate,
+    AgentReportInput,
+    CredentialInput,
+    CredentialType,
+    EnrollmentTokenInput,
+    EnvironmentInput,
+    HostInput,
+    HostnamePatternInput,
+    HostsManagerSettingsUpdate,
+    SshOnboardingProbeInput,
 )
 from app.modules.hosts_manager.service import SCHEMA_VERSION, HostCapabilityProvider, HostRegistryService
 from app.modules.hosts_manager import router as hosts_router
@@ -85,6 +93,222 @@ def test_hostname_reservations_are_monotonic_concurrent_and_never_reused(tmp_pat
     assert fourth["assigned_hostname"] == "SCL000004"
 
 
+def test_environments_store_defaults_and_cannot_be_removed_with_assigned_hosts(tmp_path: Path):
+    store = service(tmp_path)
+    pattern = store.save_hostname_pattern(
+        HostnamePatternInput(name="Production", prefix="PRD-", digits=4),
+        "admin",
+    )
+    credential = store.save_credential(
+        CredentialInput(
+            name="Production SSH",
+            type=CredentialType.ssh_private_key,
+            username="ops",
+            secret="-----BEGIN PRIVATE KEY-----\nexample\n-----END PRIVATE KEY-----",
+        ),
+        "admin",
+    )
+    environment = store.save_environment(
+        EnvironmentInput(
+            name="Production",
+            slug="production",
+            color="#c2410c",
+            default_hostname_pattern_id=pattern["id"],
+            default_credential_id=credential["id"],
+            default_agent_port=9443,
+            report_interval_seconds=600,
+        ),
+        "admin",
+    )
+    host = store.save_host(
+        HostInput(
+            name="prd-existing",
+            address="10.10.0.15",
+            environment=environment["id"],
+        ),
+        "admin",
+    )
+    saved = next(item for item in store.environments() if item["id"] == environment["id"])
+    assert saved["host_count"] == 1
+    assert saved["default_agent_port"] == 9443
+    with pytest.raises(ValueError, match="assigned hosts"):
+        store.delete_environment(environment["id"])
+    with pytest.raises(ValueError, match="assigned"):
+        store.delete_credential(credential["id"])
+    assert store.host(host["id"])["environment_details"]["name"] == "Production"
+
+
+def test_hostname_patterns_preview_skip_and_token_assignment_are_monotonic(tmp_path: Path):
+    store = service(tmp_path)
+    pattern = store.save_hostname_pattern(
+        HostnamePatternInput(
+            name="Edge",
+            prefix="EDGE-",
+            suffix="-PL",
+            digits=3,
+            start_value=7,
+            step=2,
+        ),
+        "admin",
+    )
+    assert pattern["preview_hostnames"] == ["EDGE-007-PL", "EDGE-009-PL", "EDGE-011-PL"]
+    skipped = store.skip_hostname_pattern(pattern["id"], 2, "reserved rack slots", "admin")
+    assert skipped["skipped"] == ["EDGE-007-PL", "EDGE-009-PL"]
+    created = store.create_enrollment_token(
+        EnrollmentTokenInput(hostname_pattern_id=pattern["id"]),
+        "admin",
+    )
+    assert created["assigned_hostname"] == "EDGE-011-PL"
+    current = next(item for item in store.hostname_patterns() if item["id"] == pattern["id"])
+    assert current["last_value"] == 11
+
+
+def test_registration_network_policy_and_ssh_onboarding_input_are_private(tmp_path: Path):
+    store = service(tmp_path)
+    store.save_settings(
+        HostsManagerSettingsUpdate(allowed_registration_networks=["10.0.0.0/8"]),
+        "admin",
+    )
+    blocked = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    assert store.claim_enrollment_token(
+        blocked["token"],
+        {"hostname": blocked["assigned_hostname"], "address": "192.168.50.10"},
+    ) is None
+    allowed = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    assert store.claim_enrollment_token(
+        allowed["token"],
+        {"hostname": allowed["assigned_hostname"], "address": "10.50.0.10"},
+    )
+    with pytest.raises(KeyError):
+        store.save_settings(
+            HostsManagerSettingsUpdate(default_hostname_pattern_id="missing"),
+            "admin",
+        )
+    with pytest.raises(ValueError):
+        SshOnboardingProbeInput(
+            address="127.0.0.1",
+            ssh_user="root",
+            credential_id="a" * 32,
+        )
+
+
+def test_permanent_enrollment_token_is_reusable_and_honors_address_binding(tmp_path: Path):
+    store = service(tmp_path)
+    bound = store.create_enrollment_token(
+        EnrollmentTokenInput(
+            mode="permanent",
+            bound_address="192.168.40.20",
+            agent_port=9443,
+            report_interval_seconds=900,
+        ),
+        "admin",
+    )
+    assert bound["expires_at"] == 0
+    assert store.claim_enrollment_token(
+        bound["token"],
+        {"hostname": "edge-wrong-address", "address": "192.168.40.21"},
+    ) is None
+    created = store.create_enrollment_token(
+        EnrollmentTokenInput(mode="permanent", agent_port=9443, report_interval_seconds=900),
+        "admin",
+    )
+    first = store.claim_enrollment_token(
+        created["token"],
+        {
+            "hostname": "edge-one",
+            "address": "192.168.40.20",
+            "installation_id": "install-edge-one",
+            "agent_version": "1.2.0",
+        },
+    )
+    second = store.claim_enrollment_token(
+        created["token"],
+        {"hostname": "edge-two", "address": "192.168.40.21"},
+    )
+    repeated = store.claim_enrollment_token(
+        created["token"],
+        {
+            "hostname": "edge-one",
+            "address": "192.168.40.20",
+            "installation_id": "install-edge-one",
+            "agent_version": "1.2.1",
+        },
+    )
+    assert first and second and first["id"] != second["id"]
+    assert repeated and repeated["id"] == first["id"]
+    assert first["agent_credentials"]["token"]
+    token_row = next(item for item in store.enrollment_tokens() if item["id"] == created["id"])
+    assert token_row["mode"] == "permanent"
+    assert token_row["use_count"] == 3
+    assert token_row["used"] is False
+
+
+def test_agent_identity_rotation_heartbeat_reports_and_invalidation(tmp_path: Path):
+    store = service(tmp_path)
+    store.save_settings(HostsManagerSettingsUpdate(max_auth_failures=2), "admin")
+    host = store.save_host(
+        HostInput(name="agent-node", address="10.20.30.40", approved=True),
+        "admin",
+    )
+    paired = store.register_agent(host["id"], "install-123", "1.0.0", 8443, 300, "admin")
+    heartbeat = store.agent_heartbeat(
+        paired["agent_id"],
+        paired["token"],
+        {"agent_version": "1.0.1", "status": "online", "error": ""},
+    )
+    assert heartbeat and heartbeat["ok"] is True
+    report = AgentReportInput(
+        agent_id=paired["agent_id"],
+        basic={"hostname": "agent-node", "uptime_seconds": 7200},
+        hardware={"cpu": {"model": "Test CPU"}, "memory_bytes": 8_000_000_000},
+        system={"cpu_percent": 12.5, "memory_percent": 40.0},
+        packages={"manager": "apt", "available_updates_count": 3},
+    )
+    received = store.save_agent_report(
+        paired["agent_id"],
+        paired["token"],
+        report.model_dump(exclude={"agent_id"}),
+    )
+    assert received and len(received["checksum"]) == 64
+    assert store.host(host["id"])["latest_report"]["packages"]["manager"] == "apt"
+    for _ in range(2):
+        assert store.agent_heartbeat(
+            paired["agent_id"],
+            "invalid-agent-token",
+            {"agent_version": "1.0.1", "status": "online", "error": ""},
+        ) is None
+    assert store.agent_heartbeat(
+        paired["agent_id"],
+        paired["token"],
+        {"agent_version": "1.0.1", "status": "online", "error": ""},
+    ) is None
+    rotated = store.rotate_agent_identity(host["id"], "admin")
+    assert store.agent_heartbeat(
+        paired["agent_id"],
+        paired["token"],
+        {"agent_version": "1.0.1", "status": "online", "error": ""},
+    ) is None
+    assert store.agent_heartbeat(
+        rotated["agent_id"],
+        rotated["token"],
+        {"agent_version": "1.0.2", "status": "online", "error": ""},
+    )
+    assert store.invalidate_agent_identity(host["id"], "admin") is True
+    assert store.agent_heartbeat(
+        rotated["agent_id"],
+        rotated["token"],
+        {"agent_version": "1.0.2", "status": "online", "error": ""},
+    ) is None
+    history = store.agent_history(host["id"])
+    assert history["reports"] and all("salt" not in item for item in history["identities"])
+    assert history["versions"] and history["versions"][0]["version"] == "1.0.2"
+    with pytest.raises(ValueError):
+        AgentReportInput(
+            agent_id=paired["agent_id"],
+            basic={"api_token": "must-never-be-reported"},
+        )
+
+
 @pytest.mark.parametrize("template", ["SCL", "XX-XX", "-XXX", "XXX-", "A X", "A_XXX", "A-XXXXXXXXXX"])
 def test_invalid_hostname_templates_are_rejected(template: str):
     with pytest.raises(ValueError):
@@ -131,6 +355,9 @@ def test_schema_migration_and_linux_windows_bootstrap(tmp_path: Path):
     linux_script, _ = store.enrollment_script(linux["token"], "https://webnas.example")
     assert linux_script.startswith("#!/usr/bin/env bash")
     assert "--tlsv1.2" in linux_script and "hostnamectl set-hostname" in linux_script and "eval" not in linux_script
+    assert all(manager in linux_script for manager in ("apt-get", "dnf", "yum", "zypper", "pacman", "apk"))
+    assert "hosts-manager-agent.service" in linux_script and "rc-update add hosts-manager-agent" in linux_script
+    assert '"enrollment_token"' not in linux_script
     windows = store.create_enrollment_token(EnrollmentTokenInput(bootstrap_os="windows"), "admin")
     windows_script, _ = store.enrollment_script(windows["token"], "https://webnas.example")
     assert "#Requires -Version 5.1" in windows_script
@@ -138,8 +365,51 @@ def test_schema_migration_and_linux_windows_bootstrap(tmp_path: Path):
     assert "Invoke-Expression" not in windows_script
 
 
+def test_ssh_onboarding_probe_parser_only_accepts_bounded_markers():
+    parsed = hosts_router._parse_onboarding_probe(
+        "\n".join(
+            (
+                "noise=ignored",
+                "__HM_DISTRIBUTION__=ubuntu",
+                "__HM_VERSION__=24.04",
+                "__HM_PACKAGE_MANAGER__=apt",
+                "__HM_INIT__=systemd",
+                "__HM_PRIVILEGE__=sudo",
+            )
+        )
+    )
+    assert parsed == {
+        "distribution": "ubuntu",
+        "version": "24.04",
+        "package_manager": "apt",
+        "init": "systemd",
+        "privilege": "sudo",
+    }
+    with pytest.raises(ValueError):
+        SshOnboardingProbeInput(
+            address="127.0.0.1",
+            ssh_user="root",
+            credential_id="ssh",
+        )
+    with pytest.raises(ValueError):
+        HostsManagerSettingsUpdate(server_url="http://webnas.example")
+
+
+def test_installer_generation_requires_configured_public_https_url(monkeypatch, tmp_path: Path):
+    store = service(tmp_path)
+    monkeypatch.setattr(hosts_router, "_service", lambda: store)
+    with pytest.raises(HTTPException) as error:
+        hosts_router._public_hosts_manager_endpoint()
+    assert error.value.status_code == 422
+    assert store.enrollment_tokens() == []
+
+
 def test_bootstrap_script_endpoint_uses_bearer_without_admin_session_and_rejects_inactive_tokens(monkeypatch, tmp_path: Path):
     store = service(tmp_path)
+    store.save_settings(
+        HostsManagerSettingsUpdate(server_url="https://webnas.example"),
+        "admin",
+    )
     monkeypatch.setattr(hosts_router, "_service", lambda: store)
     app = FastAPI()
     app.include_router(hosts_router.router)

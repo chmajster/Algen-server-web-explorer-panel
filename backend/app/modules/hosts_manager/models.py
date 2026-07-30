@@ -47,6 +47,28 @@ class BootstrapOS(StrEnum):
     windows = "windows"
 
 
+class EnrollmentTokenMode(StrEnum):
+    one_time = "one_time"
+    permanent = "permanent"
+
+
+class AgentProtocol(StrEnum):
+    https = "https"
+    wss = "wss"
+
+
+class HostKeyPolicy(StrEnum):
+    ask = "ask"
+    reject = "reject"
+    accept_new = "accept_new"
+
+
+class AgentUpdateChannel(StrEnum):
+    stable = "stable"
+    beta = "beta"
+    pinned = "pinned"
+
+
 def hostname_template_parts(value: str) -> tuple[str, int, str]:
     value = value.strip()
     runs = list(re.finditer(r"X+", value))
@@ -174,6 +196,7 @@ class CredentialInput(StrictModel):
     secret: str = Field(default="", max_length=131072)
     passphrase: str = Field(default="", max_length=4096)
     description: str = Field(default="", max_length=500)
+    environment_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
     confirm: bool = False
 
     @model_validator(mode="after")
@@ -191,6 +214,32 @@ class HostsManagerSettingsUpdate(StrictModel):
     hostname_template: str = Field(default="SCL000XXX", min_length=1, max_length=63)
     bootstrap_default_os: BootstrapOS = BootstrapOS.linux
     bootstrap_apply_hostname: bool = True
+    default_hostname_pattern_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
+    agent_default_port: int = Field(default=8443, ge=1, le=65535)
+    server_url: str = Field(default="", max_length=2048)
+    agent_protocol: AgentProtocol = AgentProtocol.https
+    connection_timeout_seconds: int = Field(default=15, ge=1, le=300)
+    report_interval_seconds: int = Field(default=300, ge=30, le=86400)
+    heartbeat_interval_seconds: int = Field(default=30, ge=5, le=3600)
+    max_connection_retries: int = Field(default=10, ge=0, le=1000)
+    ssh_default_port: int = Field(default=22, ge=1, le=65535)
+    ssh_timeout_seconds: int = Field(default=10, ge=1, le=300)
+    ssh_max_concurrency: int = Field(default=10, ge=1, le=128)
+    ssh_verify_fingerprint: bool = True
+    ssh_new_host_key_policy: HostKeyPolicy = HostKeyPolicy.ask
+    agent_min_version: str = Field(default="1.0.0", max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$")
+    agent_auto_update: bool = False
+    agent_update_channel: AgentUpdateChannel = AgentUpdateChannel.stable
+    agent_repository_url: str = Field(default="", max_length=2048)
+    agent_enforce_tls: bool = True
+    agent_log_level: str = Field(default="INFO", pattern=r"^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    token_ttl_minutes: int = Field(default=15, ge=1, le=525600)
+    allowed_registration_networks: list[str] = Field(
+        default_factory=lambda: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+        min_length=1,
+        max_length=64,
+    )
+    max_auth_failures: int = Field(default=5, ge=1, le=100)
 
     @field_validator("hostname_template")
     @classmethod
@@ -198,13 +247,78 @@ class HostsManagerSettingsUpdate(StrictModel):
         hostname_template_parts(value)
         return value
 
+    @field_validator("server_url", "agent_repository_url")
+    @classmethod
+    def secure_url(cls, value: str) -> str:
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("URL must use HTTPS without embedded credentials")
+        return value.rstrip("/")
+
+    @field_validator("allowed_registration_networks")
+    @classmethod
+    def private_registration_networks(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            network = ipaddress.ip_network(value, strict=False)
+            if not network.is_private or network.is_loopback or network.is_multicast:
+                raise ValueError("registration networks must be private unicast CIDRs")
+            normalized.append(str(network))
+        return list(dict.fromkeys(normalized))
+
+
+class EnvironmentInput(StrictModel):
+    name: str = Field(min_length=1, max_length=128)
+    slug: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
+    description: str = Field(default="", max_length=1000)
+    color: str = Field(default="#187eb1", pattern=r"^#[0-9A-Fa-f]{6}$")
+    default_hostname_pattern_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
+    default_credential_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
+    default_agent_port: int = Field(default=8443, ge=1, le=65535)
+    report_interval_seconds: int = Field(default=300, ge=30, le=86400)
+    active: bool = True
+
+
+class HostnamePatternInput(StrictModel):
+    name: str = Field(min_length=1, max_length=128)
+    prefix: str = Field(default="", max_length=48, pattern=r"^[A-Za-z0-9-]*$")
+    suffix: str = Field(default="", max_length=48, pattern=r"^[A-Za-z0-9-]*$")
+    digits: int = Field(default=4, ge=1, le=9)
+    start_value: int = Field(default=1, ge=1, le=999_999_999)
+    step: int = Field(default=1, ge=1, le=1_000_000)
+    description: str = Field(default="", max_length=1000)
+    active: bool = True
+
+    @model_validator(mode="after")
+    def valid_hostname(self) -> "HostnamePatternInput":
+        if len(self.prefix) + len(self.suffix) + self.digits > 63:
+            raise ValueError("rendered hostname cannot exceed 63 characters")
+        if not self.prefix and not self.suffix:
+            raise ValueError("hostname prefix or suffix is required")
+        sample = f"{self.prefix}{self.start_value:0{self.digits}d}{self.suffix}"
+        if len(str(self.start_value)) > self.digits or not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", sample):
+            raise ValueError("hostname pattern renders an invalid hostname")
+        return self
+
+
+class HostnamePatternSkipInput(StrictModel):
+    count: int = Field(default=1, ge=1, le=1000)
+    reason: str = Field(default="", max_length=500)
+
 
 class EnrollmentTokenInput(StrictModel):
     # Retained for old API clients. New tokens always reserve one exact hostname.
     hostname_pattern: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9*?.-]+$")
     bootstrap_os: BootstrapOS | None = None
     apply_hostname: bool | None = None
-    expires_minutes: int = Field(default=15, ge=1, le=60)
+    expires_minutes: int = Field(default=15, ge=1, le=525600)
+    mode: EnrollmentTokenMode = EnrollmentTokenMode.one_time
+    hostname_pattern_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
+    bound_address: str = Field(default="", max_length=64)
+    agent_port: int | None = Field(default=None, ge=1, le=65535)
+    report_interval_seconds: int | None = Field(default=None, ge=30, le=86400)
     port: int = Field(default=22, ge=1, le=65535)
     ssh_user: str = Field(default="algen-ansible", max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
     credential_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
@@ -216,6 +330,16 @@ class EnrollmentTokenInput(StrictModel):
     onboard_ansible: bool = False
 
     _tags = field_validator("tags")(HostInput.safe_tags)
+
+    @field_validator("bound_address")
+    @classmethod
+    def valid_bound_address(cls, value: str) -> str:
+        if not value:
+            return value
+        address = ipaddress.ip_address(value)
+        if not address.is_private or address.is_loopback or address.is_multicast:
+            raise ValueError("token address binding must be a private unicast address")
+        return str(address)
 
 
 class EnrollmentClaimInput(StrictModel):
@@ -229,8 +353,65 @@ class EnrollmentClaimInput(StrictModel):
     system_id: str = Field(default="", max_length=128)
     system_version: str = Field(default="", max_length=256)
     powershell: str = Field(default="", max_length=64)
+    installation_id: str = Field(default="", max_length=128, pattern=r"^[A-Za-z0-9_.:-]*$")
+    agent_version: str = Field(default="", max_length=64)
 
     _address = field_validator("address")(safe_address)
+
+
+class AgentHeartbeatInput(StrictModel):
+    agent_id: str = Field(min_length=1, max_length=64, pattern=ID_PATTERN)
+    agent_version: str = Field(min_length=1, max_length=64)
+    uptime_seconds: int = Field(default=0, ge=0)
+    current_time: float
+    status: str = Field(default="online", pattern=r"^(online|warning|error)$")
+    error: str = Field(default="", max_length=2000)
+
+
+class AgentReportInput(StrictModel):
+    agent_id: str = Field(min_length=1, max_length=64, pattern=ID_PATTERN)
+    basic: dict[str, Any] = Field(default_factory=dict)
+    hardware: dict[str, Any] = Field(default_factory=dict)
+    system: dict[str, Any] = Field(default_factory=dict)
+    packages: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def safe_report(self) -> "AgentReportInput":
+        report = {
+            "basic": self.basic,
+            "hardware": self.hardware,
+            "system": self.system,
+            "packages": self.packages,
+        }
+        encoded = json.dumps(report, ensure_ascii=False)
+        if len(encoded.encode()) > 2 * 1024 * 1024:
+            raise ValueError("agent report exceeds 2 MiB")
+        no_secrets(report)
+        return self
+
+
+class SshOnboardingProbeInput(StrictModel):
+    address: str = Field(min_length=1, max_length=253)
+    port: int = Field(default=22, ge=1, le=65535)
+    ssh_user: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
+    credential_id: str = Field(min_length=1, max_length=64, pattern=ID_PATTERN)
+    use_sudo: bool = True
+    accepted_fingerprint: str = Field(
+        default="",
+        max_length=256,
+        pattern=r"^(?:|SHA256:[A-Za-z0-9+/=]{16,})$",
+    )
+
+    _address = field_validator("address")(safe_address)
+
+
+class SshOnboardingInstallInput(SshOnboardingProbeInput):
+    environment: str = Field(default="", max_length=64)
+    hostname_pattern_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
+    agent_port: int = Field(default=8443, ge=1, le=65535)
+    report_interval_seconds: int = Field(default=300, ge=30, le=86400)
+    apply_hostname: bool = True
+    confirm: bool = False
 
 
 class ConfirmationInput(StrictModel):

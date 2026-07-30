@@ -4,23 +4,34 @@ Hosts Manager (`hosts-manager`) is the central WebNAS registry for remote server
 
 ## Architecture and migration
 
-The registry owns hosts, groups/memberships, connection credentials, accepted SSH keys, sanitized facts, enrollment tokens, hostname settings and reservations, Git repository assignments, power profiles and host-correlated operations. Schema version 2 adds the settings, monotonic sequence and permanent reservation tables plus the Linux/Windows bootstrap fields on existing enrollment tokens. Startup migrations use additive, idempotent DDL and retain every existing row.
+The registry owns hosts, environments, groups/memberships, connection credentials, accepted SSH keys, sanitized facts, enrollment tokens, hostname patterns and reservations, agent identities/reports/version history, Git repository assignments, power profiles and host-correlated operations. Schema version 4 adds environment defaults, independent monotonic hostname patterns, reusable enrollment, per-host identity salts, Linux agent reports and agent version history. Startup migrations use additive, idempotent DDL and retain every existing row.
 
 At first initialization the service detects the Ansible database, creates a mode-`0600` SQLite backup, and transactionally copies central records. Host/group IDs are unchanged, so templates, `host_ids_json`, schedules, history and per-host results remain valid. Credential envelopes are re-encrypted with `/var/lib/webnas/secrets/hosts-manager.key`. A migration marker makes the operation idempotent. Legacy tables remain as a rollback artifact, but the production Ansible adapter no longer writes registry data there.
 
 ## Security
 
-The data directory is `0700`; databases, backups, keys and secret-bearing artifacts are `0600`. Credential APIs return metadata and `secret_configured`, never plaintext or an envelope. Backend consumers supply a module and purpose to `verified_credential`. Variables reject secret-like keys. Facts use an allowlist and hash `machine-id`.
+The data directory is `0700`; databases, backups, keys and secret-bearing artifacts are `0600`. Credential APIs return metadata and `secret_configured`, never plaintext or an envelope. Backend consumers supply a module and purpose to `verified_credential`. Variables and agent reports reject secret-like keys. Facts use an allowlist and hash `machine-id`. Agent tokens are stored only as salted hashes; each identity rotation invalidates the previous salt and returns the new raw token once.
 
 Remote addresses reject loopback, unspecified and multicast targets. Discovery accepts bounded private networks. SSH uses fixed argument arrays, timeouts and `StrictHostKeyChecking=yes`. Enrollment never grants SSH trust: a host cannot connect until its SHA-256 fingerprint is scanned, compared out of band and explicitly accepted. A changed key blocks trust.
 
 ## Enrollment and inventory
 
-Token creation atomically reserves the next hostname from the configured template (default `SCL000XXX`) with `BEGIN IMMEDIATE`. Reservations are case-insensitive, monotonic and never released after use, expiry, revocation or host deletion. Existing hosts and reservations determine the next number whenever a template is saved.
+One-time token creation atomically reserves the next hostname from the selected pattern with `BEGIN IMMEDIATE`. Multiple patterns can define independent prefix, suffix, digit width, start and step values. Reservations are case-insensitive, monotonic and never released after use, expiry, revocation or host deletion. Administrators can explicitly skip values, but cannot rewind a sequence.
 
-Each token is cryptographically random, single-use and valid for at most 60 minutes; only its SHA-256 hash is stored. The raw value is returned once and is never kept in process memory. Linux `.sh` and Windows PowerShell `.ps1` scripts are downloaded without an administrator cookie from `/enrollment-script`, using the active token only in the `Authorization: Bearer` header. Responses are `no-store`; expired, used and revoked tokens fail closed, including after a WebNAS restart.
+Tokens are cryptographically random and stored only as SHA-256 hashes. One-time tokens have a configurable lifetime and reserve an exact hostname. Permanent tokens do not expire, can enroll multiple hosts and can be bound to one private IP address; they remain explicitly revocable. The raw value is returned once. Linux `.sh` and Windows PowerShell `.ps1` scripts are downloaded without an administrator cookie from `/enrollment-script`, using the active token only in the `Authorization: Bearer` header. Responses are `no-store`; inactive tokens fail closed, including after a WebNAS restart.
 
-Both scripts require HTTPS/TLS 1.2, support `WEBNAS_ENROLL_ADDRESS`, collect bounded system metadata and do not install packages, configure SSH or modify the firewall. Optional hostname changes use `hostnamectl` on Linux and `Rename-Computer` without an automatic reboot on Windows. `/enroll` atomically consumes the bearer token, requires an exact match for newly assigned hostnames and retains glob matching only for migrated legacy tokens. Every enrolled host remains unapproved with an unverified SSH fingerprint.
+Both scripts require HTTPS/TLS 1.2, support `WEBNAS_ENROLL_ADDRESS`, collect bounded system metadata and do not configure SSH or modify the firewall. Optional hostname changes use `hostnamectl` with a non-systemd fallback on Linux and `Rename-Computer` without an automatic reboot on Windows. `/enroll` atomically consumes one-time tokens, requires the reserved hostname and retains glob matching only for migrated legacy tokens. Every enrolled host remains unapproved with an unverified SSH fingerprint.
+
+Before generating a script or starting SSH onboarding, configure the public HTTPS Hosts Manager URL in Settings. The backend refuses to derive installer URLs from an untrusted request host header or to generate an HTTP installer.
+
+## Linux agent
+
+The dependency-free Python agent supports Debian/Ubuntu/Raspberry Pi OS, Fedora/RHEL/Rocky/Alma/CentOS, openSUSE/SLES, Arch/Manjaro, Alpine and Proxmox. The Linux installer downloads the agent, writes a private JSON document compatible with YAML 1.2 to `/etc/hosts-manager-agent/config.yaml`, stores the one-time returned identity under `/var/lib/hosts-manager-agent/state.json` and starts a systemd or OpenRC service. A cron/nohup fallback is available where neither init system is present.
+
+The agent sends heartbeats and bounded inventory reports over HTTPS. Reports cover OS/DMI identity, CPU, memory, disks, filesystems, network interfaces, services, package-manager metadata, repositories and update counts. It uses fixed subprocess argument arrays, command timeouts, retries with backoff and rotating logs. It never reports credential values. Reinstalling or rotating an identity invalidates its old salt and token; manual invalidation moves the host to `authentication_required`.
+
+Configuration, installation, removal and troubleshooting are documented in [docs/HOSTS_MANAGER_AGENT.md](docs/HOSTS_MANAGER_AGENT.md).
+The repository also includes `.env.example` for selecting the WebNAS YAML configuration and for the optional standalone agent installer variables; enrollment token values must remain empty until generated for a specific installation.
 
 Inventory endpoints validate/preview YAML, JSON and Ansible YAML/INI before confirmed import. Export is generated from active central hosts/groups and rejects plaintext secrets.
 
@@ -34,7 +45,7 @@ External modules register `HostCapabilityProvider` entries with an ID, permissio
 
 ## API and permissions
 
-The `/api/modules/hosts-manager` API covers dashboard/host CRUD, approval, fingerprints, test/facts, capability plan/execute, groups, inventory, enrollment, discovery, credentials, repositories, power, operations/SSE, diagnostics and checksummed backups. `GET /settings` requires `hosts-manager.view`; `PUT /settings` requires `hosts-manager.configure`. The public script download endpoint accepts an enrollment Bearer token but no browser session.
+The `/api/modules/hosts-manager` API covers dashboard/host CRUD and CSV export, environments, hostname patterns/skips, approval, fingerprints, test/facts, agent heartbeat/report/history/identity rotation, capability plan/execute, groups, inventory, one-time and permanent enrollment, discovery, credentials, repositories, power, operations/SSE, diagnostics and checksummed backups. `GET /settings` requires `hosts-manager.view`; `PUT /settings` requires `hosts-manager.configure`. Agent and installer endpoints use scoped Bearer tokens and do not require a browser session.
 
 Permissions are:
 
@@ -55,12 +66,14 @@ Backup creates a consistent SQLite snapshot and versioned manifest in a checksum
 ## Manual verification
 
 1. Install/open Hosts Manager and add a private-network host.
-2. Configure `SCL000XXX`, generate Linux and Windows scripts, confirm consecutive reserved names, enroll the exact assigned hostname and verify token reuse fails.
-3. Approve it; scan, independently compare and accept its SSH fingerprint.
-4. Test SSH and gather facts, then verify Ansible Controller shows the same host ID.
-5. Select the host in a template and launch a playbook from both applications.
-6. Review and launch managed-key rotation.
-7. Configure Wake-on-LAN and verify the result says only that a request was sent.
-8. Assign/sync a Git repository and inspect its recorded commit.
-9. Create/validate/restore a backup.
-10. Verify operator/auditor RBAC restrictions.
+2. Create two hostname patterns, skip one value and confirm each sequence remains monotonic.
+3. Generate a one-time Linux script, enroll the reserved hostname and verify token reuse fails.
+4. Generate an IP-bound permanent token, enroll two hosts and then revoke it.
+5. Verify the Linux agent service, heartbeat, inventory report, rotating identity and invalidation flow.
+6. Approve it; scan, independently compare and accept its SSH fingerprint.
+7. Test SSH and gather facts, then verify Ansible Controller shows the same host ID.
+8. Select the host in a template and launch a playbook from both applications.
+9. Review and launch managed-key rotation.
+10. Configure Wake-on-LAN and verify the result says only that a request was sent.
+11. Assign/sync a Git repository and inspect its recorded commit.
+12. Create/validate/restore a backup and verify operator/auditor RBAC restrictions.

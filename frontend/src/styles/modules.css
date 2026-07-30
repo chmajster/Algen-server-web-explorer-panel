@@ -424,6 +424,151 @@
 .hosts-manager-app .hosts-settings-form { max-width: 45rem; display: grid; gap: var(--hosts-spacing-md); }
 .hosts-manager-app .hosts-settings-preview { display: flex; flex-wrap: wrap; gap: var(--hosts-spacing-sm); }
 .hosts-manager-app .hosts-settings-preview code { padding: var(--hosts-spacing-xs) var(--hosts-spacing-sm); border-radius: var(--radius-medium); background: var(--surface-secondary); }
+.hosts-manager-app .hosts-dashboard-toolbar { display: flex; justify-content: flex-end; }
+.hosts-manager-app .hosts-dashboard-toolbar label { min-width: min(100%, 17.5rem); display: grid; gap: var(--hosts-spacing-xs); color: var(--text-secondary); font-size: var(--font-size-xs); font-weight: 650; }
+.hosts-manager-app .hosts-dashboard-toolbar select { width: 100%; height: var(--hosts-control-height); }
+.hosts-manager-app .hosts-dashboard-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr)); }
+.hosts-manager-app .hosts-dashboard-columns { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: var(--hosts-spacing-md); }
+.hosts-manager-app .hosts-dashboard-columns > section { padding: var(--hosts-panel-padding); border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: var(--surface-elevated); }
+.hosts-manager-app .hosts-dashboard-activity-grid { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--hosts-spacing-md); }
+.hosts-manager-app .hosts-dashboard-activity-grid > section { min-width: 0; }
+.hosts-manager-app .hosts-dashboard-columns h3,
+.hosts-manager-app .hosts-detail-card h3 { margin: 0; font-size: var(--font-size-md); }
+.hosts-manager-app .hosts-environment-summary,
+.hosts-manager-app .hosts-compact-list { display: grid; gap: var(--hosts-spacing-xs); }
+.hosts-manager-app .hosts-environment-summary > div,
+.hosts-manager-app .hosts-compact-list > div { min-width: 0; min-height: var(--hosts-control-height); display: flex; align-items: center; gap: var(--hosts-spacing-sm); padding: var(--hosts-spacing-sm); border-radius: var(--radius-medium); background: var(--surface-secondary); }
+.hosts-manager-app .hosts-environment-summary i { width: .65rem; height: .65rem; flex: 0 0 auto; border-radius: 50%; }
+.hosts-manager-app .hosts-environment-summary span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hosts-manager-app .hosts-compact-list > div > svg { width: var(--hosts-icon-size); flex: 0 0 auto; color: var(--accent); }
+.hosts-manager-app .hosts-compact-list > div > span { min-width: 0; flex: 1; display: grid; }
+.hosts-manager-app .hosts-compact-list strong,
+.hosts-manager-app .hosts-compact-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hosts-manager-app .hosts-compact-list small { color: var(--text-muted); font-size: var(--font-size-xs); }
+.hosts-manager-app .hosts-pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--hosts-spacing-md); color: var(--text-secondary); font-size: var(--font-size-xs); }
+.hosts-manager-app .hosts-pagination > div { display: flex; gap: var(--hosts-spacing-xs); }
+.hosts-manager-app .hosts-pagination button { min-width: var(--hosts-control-height); min-height: var(--hosts-control-height); }
+.hosts-manager-app .hosts-table-actions { display: flex; align-items: center; gap: var(--hosts-spacing-xs); }
+.hosts-manager-app .hosts-table-actions button { min-height: var(--hosts-control-height); white-space: nowrap; }
+.hosts-manager-app .hosts-detail-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--hosts-spacing-md); padding: var(--hosts-panel-padding); border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, var(--surface-elevated)), var(--surface-elevated)); }
+.hosts-manager-app .hosts-detail-hero > div { min-width: 0; display: flex; align-items: center; gap: var(--hosts-spacing-sm); }
+.hosts-manager-app .hosts-detail-hero > div > svg { width: 2rem; height: 2rem; flex: 0 0 auto; color: var(--accent); }
+.hosts-manager-app .hosts-detail-hero > div > span { min-width: 0; display: grid; }
+.hosts-manager-app .hosts-detail-hero strong,
+.hosts-manager-app .hosts-detail-hero small { overflow-wrap: anywhere; }
+.hosts-manager-app .hosts-detail-hero small { color: var(--text-muted); }
+.hosts-manager-app .hosts-detail-hero > dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--hosts-spacing-sm); margin: 0; }
+.hosts-manager-app .hosts-detail-hero > dl > div { min-width: 0; display: grid; gap: var(--hosts-spacing-xs); padding: var(--hosts-spacing-sm); border-radius: var(--radius-medium); background: color-mix(in srgb, var(--surface-secondary) 82%, transparent); }
+.hosts-manager-app .hosts-detail-hero dt { color: var(--text-muted); font-size: var(--font-size-xs); }
+.hosts-manager-app .hosts-detail-hero dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-weight: 650; }
+.hosts-manager-app .hosts-detail-tabs { display: flex; gap: var(--hosts-spacing-xs); overflow-x: auto; padding-bottom: var(--hosts-spacing-xs); border-bottom: 1px solid var(--border-subtle); }
+.hosts-manager-app .hosts-detail-tabs button,
+.hosts-manager-app .hosts-settings-nav button { min-height: var(--hosts-control-height); flex: 0 0 auto; border-color: transparent; background: transparent; white-space: nowrap; }
+.hosts-manager-app .hosts-detail-tabs button.active,
+.hosts-manager-app .hosts-settings-nav button.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle)); color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--surface-secondary)); }
+.hosts-manager-app .hosts-detail-content,
+.hosts-manager-app .hosts-summary-layout,
+.hosts-manager-app .hosts-agent-panel,
+.hosts-manager-app .hosts-history-panels { min-width: 0; display: grid; gap: var(--hosts-spacing-md); }
+.hosts-manager-app .hosts-detail-card { min-width: 0; display: grid; gap: var(--hosts-spacing-md); padding: var(--hosts-panel-padding); border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: var(--surface-elevated); }
+.hosts-manager-app .hosts-detail-card pre { max-height: 32rem; margin: 0; overflow: auto; padding: var(--hosts-spacing-md); border-radius: var(--radius-medium); color: var(--text-primary); background: var(--surface-secondary); font: var(--font-size-xs)/1.55 var(--font-family-monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.hosts-manager-app .hosts-definition-grid { display: grid; grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr); gap: var(--hosts-spacing-sm) var(--hosts-spacing-md); margin: 0; }
+.hosts-manager-app .hosts-definition-grid dt { color: var(--text-muted); }
+.hosts-manager-app .hosts-definition-grid dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.hosts-manager-app .hosts-secret-once { display: block; padding: var(--hosts-spacing-md); overflow-wrap: anywhere; border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border-subtle)); border-radius: var(--radius-medium); background: color-mix(in srgb, var(--warning) 7%, var(--surface-secondary)); }
+.hosts-manager-app .hosts-environment-grid,
+.hosts-manager-app .hosts-pattern-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: var(--hosts-spacing-md); }
+.hosts-manager-app .hosts-environment-card,
+.hosts-manager-app .hosts-pattern-card { position: relative; min-width: 0; display: grid; align-content: start; gap: var(--hosts-spacing-md); padding: var(--hosts-panel-padding); overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: var(--surface-elevated); box-shadow: var(--shadow-card); }
+.hosts-manager-app .hosts-environment-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: .25rem; background: var(--environment-color, var(--accent)); }
+.hosts-manager-app .hosts-environment-card > header { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--hosts-spacing-sm); }
+.hosts-manager-app .hosts-environment-card > header > i { width: 1rem; height: 1rem; border-radius: 50%; background: var(--environment-color, var(--accent)); }
+.hosts-manager-app .hosts-environment-card > header > div { min-width: 0; display: grid; }
+.hosts-manager-app .hosts-environment-card > header strong,
+.hosts-manager-app .hosts-environment-card > header small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hosts-manager-app .hosts-environment-card > header small,
+.hosts-manager-app .hosts-environment-card > p,
+.hosts-manager-app .hosts-pattern-card > p { margin: 0; color: var(--text-muted); font-size: var(--font-size-xs); }
+.hosts-manager-app .hosts-environment-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--border-subtle); }
+.hosts-manager-app .hosts-environment-card dl > div { min-width: 0; display: grid; gap: var(--hosts-spacing-xs); padding: var(--hosts-spacing-sm); background: var(--surface-secondary); }
+.hosts-manager-app .hosts-environment-card dt { color: var(--text-muted); font-size: var(--font-size-xs); }
+.hosts-manager-app .hosts-environment-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.hosts-manager-app .hosts-environment-card footer { display: flex; justify-content: flex-end; gap: var(--hosts-spacing-xs); margin-top: auto; }
+.hosts-manager-app .hosts-pattern-card > header { display: grid; gap: var(--hosts-spacing-sm); }
+.hosts-manager-app .hosts-pattern-card > header > div { display: flex; align-items: center; justify-content: space-between; gap: var(--hosts-spacing-sm); }
+.hosts-manager-app .hosts-pattern-card > header > code { overflow-wrap: anywhere; color: var(--accent); }
+.hosts-manager-app .hosts-pattern-card dl { display: grid; grid-template-columns: auto 1fr; gap: var(--hosts-spacing-xs) var(--hosts-spacing-sm); margin: 0; }
+.hosts-manager-app .hosts-pattern-card dt { color: var(--text-muted); }
+.hosts-manager-app .hosts-pattern-card dd { margin: 0; }
+.hosts-manager-app .hosts-installer,
+.hosts-manager-app .hosts-settings-stack { min-width: 0; display: grid; gap: var(--hosts-spacing-md); }
+.hosts-manager-app .hosts-installer-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--hosts-spacing-sm); }
+.hosts-manager-app .hosts-installer-actions > button { min-width: 0; min-height: 5rem; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--hosts-spacing-md); padding: var(--hosts-spacing-md); text-align: left; }
+.hosts-manager-app .hosts-installer-actions > button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-secondary)); box-shadow: inset 0 -.1875rem 0 var(--accent); }
+.hosts-manager-app .hosts-installer-actions svg { width: 1.5rem; height: 1.5rem; color: var(--accent); }
+.hosts-manager-app .hosts-installer-actions span { min-width: 0; display: grid; gap: var(--hosts-spacing-xs); }
+.hosts-manager-app .hosts-installer-actions small { color: var(--text-muted); font-size: var(--font-size-xs); line-height: 1.4; }
+.hosts-manager-app .hosts-wizard-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--hosts-spacing-xs); margin: 0; padding: 0; list-style: none; }
+.hosts-manager-app .hosts-wizard-steps li { min-width: 0; display: grid; justify-items: center; gap: var(--hosts-spacing-xs); color: var(--text-muted); font-size: var(--font-size-xs); text-align: center; }
+.hosts-manager-app .hosts-wizard-steps li > span { width: 2rem; height: 2rem; display: grid; place-items: center; border: 1px solid var(--border-subtle); border-radius: 50%; background: var(--surface-secondary); }
+.hosts-manager-app .hosts-wizard-steps li svg { width: var(--hosts-icon-size); }
+.hosts-manager-app .hosts-wizard-steps li.active,
+.hosts-manager-app .hosts-wizard-steps li.done { color: var(--accent); font-weight: 650; }
+.hosts-manager-app .hosts-wizard-steps li.active > span,
+.hosts-manager-app .hosts-wizard-steps li.done > span { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-secondary)); }
+.hosts-manager-app .hosts-wizard-body { min-height: 16rem; display: grid; align-content: center; padding: var(--hosts-panel-padding); border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: var(--surface-secondary); }
+.hosts-manager-app .hosts-connection-test,
+.hosts-manager-app .hosts-fingerprint-confirm,
+.hosts-manager-app .hosts-install-plan,
+.hosts-manager-app .hosts-registration-ready { max-width: 42rem; display: grid; justify-items: center; gap: var(--hosts-spacing-md); margin: auto; text-align: center; }
+.hosts-manager-app .hosts-connection-test > svg,
+.hosts-manager-app .hosts-fingerprint-confirm > svg,
+.hosts-manager-app .hosts-install-plan > svg,
+.hosts-manager-app .hosts-registration-ready > svg { width: 2.5rem; height: 2.5rem; color: var(--accent); }
+.hosts-manager-app .hosts-fingerprint-confirm { width: min(100%, 42rem); }
+.hosts-manager-app .hosts-fingerprint-confirm > button { width: 100%; min-width: 0; display: grid; gap: var(--hosts-spacing-xs); padding: var(--hosts-spacing-md); text-align: left; }
+.hosts-manager-app .hosts-fingerprint-confirm > button span { color: var(--text-muted); font-size: var(--font-size-xs); }
+.hosts-manager-app .hosts-fingerprint-confirm > button code { min-width: 0; overflow-wrap: anywhere; color: var(--accent); }
+.hosts-manager-app .hosts-install-plan ol { text-align: left; }
+.hosts-manager-app .hosts-registration-ready pre { max-width: 100%; overflow: auto; padding: var(--hosts-spacing-md); border-radius: var(--radius-medium); background: var(--surface-primary); white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+.hosts-manager-app .hosts-wizard-footer { display: flex; justify-content: space-between; gap: var(--hosts-spacing-sm); }
+.hosts-manager-app .hosts-discovery-form { display: grid; grid-template-columns: minmax(13rem, 2fr) repeat(5, minmax(8rem, 1fr)) auto; align-items: end; gap: var(--hosts-spacing-sm); }
+.hosts-manager-app .hosts-discovery-form label { min-width: 0; display: grid; gap: var(--hosts-spacing-xs); color: var(--text-secondary); font-size: var(--font-size-xs); font-weight: 650; }
+.hosts-manager-app .hosts-discovery-form input,
+.hosts-manager-app .hosts-discovery-form select { width: 100%; height: var(--hosts-control-height); }
+.hosts-manager-app .hosts-security-note { display: flex; align-items: flex-start; gap: var(--hosts-spacing-sm); margin: 0; padding: var(--hosts-spacing-sm) var(--hosts-spacing-md); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border-subtle)); border-radius: var(--radius-medium); color: var(--text-secondary); background: color-mix(in srgb, var(--success) 6%, var(--surface-secondary)); font-size: var(--font-size-xs); }
+.hosts-manager-app .hosts-security-note svg { width: var(--hosts-icon-size); flex: 0 0 auto; color: var(--success); }
+.hosts-manager-app .hosts-settings-workspace { min-width: 0; display: grid; grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr); gap: var(--hosts-spacing-md); align-items: start; }
+.hosts-manager-app .hosts-settings-nav { position: sticky; top: var(--hosts-spacing-md); display: grid; gap: var(--hosts-spacing-xs); padding: var(--hosts-spacing-sm); border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: var(--surface-elevated); }
+.hosts-manager-app .hosts-settings-nav button { width: 100%; justify-content: flex-start; text-align: left; }
+.hosts-manager-app .hosts-settings-content { min-width: 0; }
+.hosts-manager-app .hosts-settings-form { max-width: none; }
+.hosts-manager-app .hosts-settings-form fieldset { min-width: 0; display: grid; gap: var(--hosts-spacing-md); margin: 0; padding: var(--hosts-panel-padding); border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: var(--surface-elevated); }
+.hosts-manager-app .hosts-settings-form legend { padding: 0 var(--hosts-spacing-xs); font-weight: 700; }
+.hosts-manager-app .hosts-settings-form .module-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.hosts-manager-app .hosts-settings-form .module-form-span { grid-column: 1 / -1; }
+.hosts-manager-app .hosts-settings-form textarea { min-height: 6rem; resize: vertical; }
+.hosts-manager-app .hosts-settings-save { justify-self: end; min-width: 10rem; }
+@container (max-width: 68rem) {
+  .hosts-manager-app .hosts-discovery-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 48rem) {
+  .hosts-manager-app .hosts-dashboard-columns,
+  .hosts-manager-app .hosts-dashboard-activity-grid,
+  .hosts-manager-app .hosts-settings-workspace { grid-template-columns: 1fr; }
+  .hosts-manager-app .hosts-settings-nav { position: static; grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
+  .hosts-manager-app .hosts-installer-actions { grid-template-columns: 1fr; }
+  .hosts-manager-app .hosts-wizard-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--hosts-spacing-md); }
+}
+@container (max-width: 32rem) {
+  .hosts-manager-app .hosts-discovery-form,
+  .hosts-manager-app .hosts-settings-form .module-form-grid,
+  .hosts-manager-app .hosts-detail-hero > dl { grid-template-columns: 1fr; }
+  .hosts-manager-app .hosts-pagination { align-items: stretch; flex-direction: column; }
+  .hosts-manager-app .hosts-pagination > div { justify-content: flex-end; }
+  .hosts-manager-app .hosts-detail-hero { grid-template-columns: 1fr; }
+  .hosts-manager-app .hosts-detail-hero > dl { grid-column: auto; }
+}
 .identity-policy-summary { display: grid; gap: 0.3125rem; padding: 0.75rem; border: 1px solid var(--border-color, rgba(127,127,127,.25)); border-radius: 0.625rem; }
 .identity-policy-summary small { overflow-wrap: anywhere; }
 .ansible-enrollment { border: 1px solid color-mix(in srgb,var(--accent) 28%,var(--border-subtle)); border-radius: var(--radius-medium); background: var(--surface-elevated); }

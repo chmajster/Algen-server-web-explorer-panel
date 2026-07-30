@@ -448,27 +448,72 @@ export type AnsibleScanHost = { id: string; address: string; hostname: string; p
 export type AnsibleScan = { id: string; request: Record<string, unknown>; status: string; progress: number; discovered: number; package_job_id?: string | null; error: string; created_at: number; hosts?: AnsibleScanHost[] };
 export type AnsibleSchedule = { id: string; name: string; template_id: string; kind: "once" | "hourly" | "daily" | "weekly" | "monthly" | "cron"; expression: string; timezone: string; missed_policy: "skip" | "run_once"; next_run_at?: number | null; last_run_at?: number | null; active: boolean };
 export type AnsibleValidation = { ok: boolean; errors: AnsibleRisk[]; warnings: AnsibleRisk[]; blocked: AnsibleRisk[]; task_count: number; documents?: number };
-export type HostsManagerDashboard = { total: number; online: number; offline: number; unverified: number; fingerprint_errors: number; pending_approval: number; ansible_available: number; power_managed: number; recent_operations: HostsManagerOperation[]; recent_errors: HostsManagerHost[] };
-export type HostsManagerHost = AnsibleHost & { hostname: string; fqdn: string; management_address: string; description: string; approved: boolean; registration_status: string; connection_status: string; power_status: string; enrollment_source: string; group_ids: string[]; capabilities?: HostsManagerCapability[] };
+export type HostsManagerDashboard = {
+  generated_at?: number;
+  total: number; online: number; offline: number; errors?: number; unverified: number; fingerprint_errors: number;
+  pending_approval: number; pending_registration?: number; ansible_available: number; power_managed: number;
+  available_updates?: number; security_updates?: number; without_agent?: number; stale_reports?: number;
+  low_disk?: number; high_cpu?: number; high_memory?: number; by_environment?: Record<string, number>;
+  recent_hosts?: HostsManagerHost[]; recent_connections?: HostsManagerHost[]; onboarding_history?: HostsManagerOperation[];
+  hostname_changes?: HostsManagerOperation[]; administrative_operations?: HostsManagerOperation[];
+  recent_operations: HostsManagerOperation[]; recent_errors: HostsManagerHost[];
+};
+export type HostsManagerAgent = {
+  id: string; host_id: string; installation_id: string; agent_version: string; status: string;
+  communication_port: number; report_interval_seconds: number; installed_at: number;
+  last_heartbeat_at?: number | null; last_report_at?: number | null; last_error: string; certificate_status: string;
+};
+export type HostsManagerHost = AnsibleHost & {
+  hostname: string; fqdn: string; management_address: string; description: string; approved: boolean;
+  registration_status: string; connection_status: string; power_status: string; enrollment_source: string;
+  group_ids: string[]; status?: string; distribution?: string; system_version?: string; agent_version?: string;
+  agent_status?: string; available_updates?: number; security_updates?: number; agent?: HostsManagerAgent | null;
+  identity?: Record<string, unknown> | null; latest_report?: Record<string, Record<string, unknown>>;
+  environment_details?: HostsManagerEnvironment | null; capabilities?: HostsManagerCapability[];
+};
 export type HostsManagerGroup = AnsibleGroup;
-export type HostsManagerCredential = AnsibleCredential & { type: AnsibleCredential["type"] | "redfish" | "ipmi" | "proxmox_api" | "wol" };
+export type HostsManagerCredential = AnsibleCredential & {
+  type: AnsibleCredential["type"] | "redfish" | "ipmi" | "proxmox_api" | "wol";
+  environment_id?: string | null; last_used_at?: number | null; host_count?: number;
+};
 export type HostsManagerCapability = { id: string; name: string; icon: string; permission: string; module_id: string; deep_link: string };
 export type HostsManagerOperation = { id: string; host_id?: string | null; capability_id: string; module_id: string; status: string; stage: string; progress: number; error: string; details: Record<string, unknown>; created_at: number; updated_at: number };
 export type HostsManagerBootstrapOS = "linux" | "windows";
+export type HostsManagerEnvironment = {
+  id: string; name: string; slug: string; description: string; color: string; default_hostname_pattern_id?: string | null;
+  default_credential_id?: string | null; default_agent_port: number; report_interval_seconds: number; active: boolean;
+  host_count: number; created_at: number; updated_at: number;
+};
+export type HostsManagerHostnamePattern = {
+  id: string; name: string; prefix: string; suffix: string; digits: number; start_value: number; step: number;
+  next_value: number; last_value?: number | null; description: string; active: boolean; template: string;
+  next_hostname: string; preview_hostnames: string[]; created_at: number; updated_at: number;
+};
 export type HostsManagerSettings = {
   hostname_template: string; next_hostname: string; sequence_width: number; preview_hostnames: string[];
-  bootstrap_default_os: HostsManagerBootstrapOS; bootstrap_apply_hostname: boolean; updated_at: number; updated_by: string;
+  bootstrap_default_os: HostsManagerBootstrapOS; bootstrap_apply_hostname: boolean;
+  default_hostname_pattern_id?: string | null; agent_default_port: number; server_url: string; agent_protocol: "https" | "wss";
+  connection_timeout_seconds: number; report_interval_seconds: number; heartbeat_interval_seconds: number;
+  max_connection_retries: number; ssh_default_port: number; ssh_timeout_seconds: number; ssh_max_concurrency: number;
+  ssh_verify_fingerprint: boolean; ssh_new_host_key_policy: "ask" | "reject" | "accept_new";
+  agent_min_version: string; agent_auto_update: boolean; agent_update_channel: "stable" | "beta" | "pinned";
+  agent_repository_url: string; agent_enforce_tls: boolean; agent_log_level: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  token_ttl_minutes: number; allowed_registration_networks: string[]; max_auth_failures: number;
+  updated_at: number; updated_by: string;
 };
-export type HostsManagerSettingsUpdate = Pick<HostsManagerSettings, "hostname_template" | "bootstrap_default_os" | "bootstrap_apply_hostname">;
+export type HostsManagerSettingsUpdate = Omit<HostsManagerSettings, "next_hostname" | "sequence_width" | "preview_hostnames" | "updated_at" | "updated_by">;
 export type HostsManagerEnrollmentInput = {
   bootstrap_os: HostsManagerBootstrapOS; apply_hostname: boolean; expires_minutes: number; port: number; ssh_user: string;
   credential_id: string | null; environment: string; location: string; tags: string[]; group_ids: string[];
-  require_approval: boolean; onboard_ansible: boolean;
+  require_approval: boolean; onboard_ansible: boolean; mode?: "one_time" | "permanent";
+  hostname_pattern_id?: string | null; bound_address?: string; agent_port?: number | null; report_interval_seconds?: number | null;
 };
 export type HostsManagerEnrollmentToken = {
   id: string; hostname_pattern: string; assigned_hostname: string; bootstrap_os: HostsManagerBootstrapOS;
   apply_hostname: boolean; expires_at: number; created_at?: number; created_by?: string; used_hostname?: string;
-  used: boolean; expired?: boolean; revoked?: boolean; token?: string; script_url?: string; command?: string; filename?: string;
+  used: boolean; expired?: boolean; revoked?: boolean; mode?: "one_time" | "permanent"; hostname_pattern_id?: string | null;
+  bound_address?: string; agent_port?: number; report_interval_seconds?: number; token?: string; script_url?: string;
+  command?: string; filename?: string;
 };
 export type HostsManagerRepository = { id: string; name: string; description: string; url: string; revision: string; last_commit: string; last_sync_at?: number | null; last_sync_status: string; active: boolean; updated_at: number };
 export type HostsManagerPowerProfile = { id: string; name: string; provider: "none" | "wol" | "redfish" | "ipmi" | "proxmox"; address: string; mac_address: string; active: boolean; updated_at: number };
@@ -1226,12 +1271,24 @@ export const api = {
   hostsManagerDashboard: () => request<HostsManagerDashboard>("/api/modules/hosts-manager/dashboard"),
   hostsManagerSettings: () => request<HostsManagerSettings>("/api/modules/hosts-manager/settings"),
   saveHostsManagerSettings: (payload: HostsManagerSettingsUpdate) => request<HostsManagerSettings>("/api/modules/hosts-manager/settings", { method: "PUT", body: JSON.stringify(payload) }),
+  hostsManagerEnvironments: () => request<HostsManagerEnvironment[]>("/api/modules/hosts-manager/environments"),
+  saveHostsManagerEnvironment: (payload: Record<string, unknown>, id = "") => request<HostsManagerEnvironment>(id ? `/api/modules/hosts-manager/environments/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/environments", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  deleteHostsManagerEnvironment: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/environments/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  hostsManagerHostnamePatterns: () => request<HostsManagerHostnamePattern[]>("/api/modules/hosts-manager/hostname-patterns"),
+  saveHostsManagerHostnamePattern: (payload: Record<string, unknown>, id = "") => request<HostsManagerHostnamePattern>(id ? `/api/modules/hosts-manager/hostname-patterns/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/hostname-patterns", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  deleteHostsManagerHostnamePattern: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/hostname-patterns/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  skipHostsManagerHostnamePattern: (id: string, count = 1, reason = "") => request<{ skipped: string[]; pattern: HostsManagerHostnamePattern }>(`/api/modules/hosts-manager/hostname-patterns/${encodeURIComponent(id)}/skip`, { method: "POST", body: JSON.stringify({ count, reason }) }),
+  probeHostsManagerSshOnboarding: (payload: Record<string, unknown>) => request<Record<string, unknown> & { keys?: Array<{ key_type: string; public_key: string; fingerprint: string }>; accepted_key?: { key_type: string; public_key: string; fingerprint: string }; login_available?: boolean; requires_fingerprint_confirmation?: boolean }>("/api/modules/hosts-manager/onboarding/ssh/probe", { method: "POST", body: JSON.stringify(payload) }),
+  installHostsManagerAgentOverSsh: (payload: Record<string, unknown>) => request<{ status: string; host: HostsManagerHost; log: string; operation_id: string }>("/api/modules/hosts-manager/onboarding/ssh/install", { method: "POST", body: JSON.stringify(payload) }),
   hostsManagerHosts: (query = "") => request<HostsManagerHost[]>(`/api/modules/hosts-manager/hosts${query ? `?${query}` : ""}`),
   hostsManagerHost: (id: string) => request<HostsManagerHost>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}`),
   saveHostsManagerHost: (payload: Record<string, unknown>, id = "") => request<HostsManagerHost>(id ? `/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/hosts", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
-  deleteHostsManagerHost: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  deleteHostsManagerHost: (id: string, name: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ confirm: true, confirmation_text: name }) }),
   approveHostsManagerHost: (id: string) => request<HostsManagerHost>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/approve`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   disableHostsManagerHost: (id: string) => request<HostsManagerHost>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/disable`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  hostsManagerAgentHistory: (id: string) => request<{ identities: Array<Record<string, unknown>>; reports: Array<Record<string, unknown>>; versions: Array<Record<string, unknown>>; operations: HostsManagerOperation[] }>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/agent/history`),
+  regenerateHostsManagerAgentIdentity: (id: string) => request<{ agent_id: string; host_id: string; token: string; identity_hash: string }>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/agent/identity/regenerate`, { method: "POST", body: JSON.stringify({ confirm: true, confirmation_text: "" }) }),
+  invalidateHostsManagerAgentIdentity: (id: string) => request<{ ok: boolean; pairing_required: boolean }>(`/api/modules/hosts-manager/hosts/${encodeURIComponent(id)}/agent/identity/invalidate`, { method: "POST", body: JSON.stringify({ confirm: true, confirmation_text: "" }) }),
   hostsManagerGroups: () => request<HostsManagerGroup[]>("/api/modules/hosts-manager/groups"),
   saveHostsManagerGroup: (payload: Record<string, unknown>, id = "") => request<HostsManagerGroup>(id ? `/api/modules/hosts-manager/groups/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/groups", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
   deleteHostsManagerGroup: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/groups/${encodeURIComponent(id)}`, { method: "DELETE" }),
@@ -1255,6 +1312,7 @@ export const api = {
   validateHostsManagerInventory: (content: string, format = "yaml") => request<Record<string, unknown>>("/api/modules/hosts-manager/inventory/validate", { method: "POST", body: JSON.stringify({ content, format, confirm: false }) }),
   importHostsManagerInventory: (content: string, format = "yaml") => request<Record<string, unknown>>("/api/modules/hosts-manager/inventory/import", { method: "POST", body: JSON.stringify({ content, format, confirm: true }) }),
   saveHostsManagerCredential: (payload: Record<string, unknown>, id = "") => request<Record<string, unknown>>(id ? `/api/modules/hosts-manager/credentials/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/credentials", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  deleteHostsManagerCredential: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/credentials/${encodeURIComponent(id)}`, { method: "DELETE" }),
   hostsManagerDiagnostics: () => request<{ schema_version: number; checks: Array<{ id: string; status: string; message: string }> }>("/api/modules/hosts-manager/diagnostics"),
   hostsManagerBackups: () => request<HostsManagerBackup[]>("/api/modules/hosts-manager/backups"),
   createHostsManagerBackup: (description = "") => request<Record<string, unknown>>("/api/modules/hosts-manager/backups", { method: "POST", body: JSON.stringify({ description, include_credentials: false, include_repositories: false, confirm: true }) }),

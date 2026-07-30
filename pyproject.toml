@@ -26,7 +26,7 @@ package-dir = {"" = "backend"}
 where = ["backend"]
 
 [tool.setuptools.package-data]
-"app.modules" = ["*/manifest.yaml", "*/*.py", "*/*.sh"]
+"app.modules" = ["*/manifest.yaml", "*/*.py", "*/*.sh", "*/*.yaml"]
 
 [tool.ruff]
 target-version = "py311"

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ModuleSummary } from "../api";
 import { settingsFixture } from "../test/settings";
 import { Desktop } from "./Desktop";
@@ -286,5 +286,79 @@ describe("personalized desktop", () => {
     fireEvent.contextMenu(monitor);
     fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
     expect(save).toHaveBeenCalledWith({ pinned_apps: ["monitor"] });
+  });
+
+  describe("calendar flyout", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 6, 30, 12));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("toggles from the clock and resets to today when reopened", () => {
+      renderDesktop({ language: "en-US" });
+      const clock = screen.getByRole("button", { name: "calendar.open" });
+
+      fireEvent.click(clock);
+      expect(clock).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("dialog", { name: "calendar.title" })).toBeInTheDocument();
+      expect(document.querySelector('[data-date="2026-07-30"]')).toHaveAttribute("aria-current", "date");
+      const differentDay = screen.getAllByRole("gridcell").find(
+        (cell) => !cell.hasAttribute("aria-current") && !cell.classList.contains("outside-month"),
+      );
+      expect(differentDay).toBeDefined();
+      fireEvent.click(differentDay as HTMLElement);
+      expect(differentDay).toHaveAttribute("aria-selected", "true");
+
+      fireEvent.click(clock);
+      expect(screen.queryByRole("dialog", { name: "calendar.title" })).not.toBeInTheDocument();
+      expect(clock).toHaveAttribute("aria-expanded", "false");
+      expect(clock).toHaveFocus();
+
+      fireEvent.click(clock);
+      expect(document.querySelector('[data-date="2026-07-30"]')).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("never overlaps with Start or the notification center", () => {
+      const { container } = renderDesktop();
+      const clock = screen.getByRole("button", { name: "calendar.open" });
+      const start = screen.getByRole("button", { name: "desktop.mainMenu" });
+      const notifications = screen.getByRole("button", { name: "desktop.notifications" });
+
+      fireEvent.click(start);
+      expect(screen.getByRole("dialog", { name: "desktop.mainMenu" })).toBeInTheDocument();
+      fireEvent.click(clock);
+      expect(screen.queryByRole("dialog", { name: "desktop.mainMenu" })).not.toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "calendar.title" })).toBeInTheDocument();
+
+      fireEvent.click(notifications);
+      expect(screen.queryByRole("dialog", { name: "calendar.title" })).not.toBeInTheDocument();
+      expect(container.querySelector(".notification-center")).toBeInTheDocument();
+      fireEvent.click(clock);
+      expect(container.querySelector(".notification-center")).not.toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "calendar.title" })).toBeInTheDocument();
+    });
+
+    it("never overlaps with the session or taskbar context menu", () => {
+      renderDesktop();
+      const clock = screen.getByRole("button", { name: "calendar.open" });
+      const session = screen.getByRole("button", { name: "desktop.sessionMenu" });
+
+      fireEvent.click(clock);
+      fireEvent.click(session);
+      expect(screen.queryByRole("dialog", { name: "calendar.title" })).not.toBeInTheDocument();
+      expect(screen.getByRole("menu")).toBeInTheDocument();
+
+      fireEvent.click(clock);
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "calendar.title" })).toBeInTheDocument();
+
+      fireEvent.contextMenu(screen.getByLabelText("desktop.taskbar"));
+      expect(screen.queryByRole("dialog", { name: "calendar.title" })).not.toBeInTheDocument();
+      expect(screen.getByRole("menu")).toHaveClass("taskbar-context-menu");
+    });
   });
 });
