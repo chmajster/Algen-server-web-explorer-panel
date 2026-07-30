@@ -2,6 +2,7 @@ import { Lock, PackagePlus, Play, Plus, Power, RefreshCw, RotateCcw, Square, Tra
 import { useEffect, useRef, useState } from "react";
 import { api, type AdminGroup, type AdminUser, type SambaConfig, type SambaShare, type SambaStatus, type StoreApp, type SystemdService } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { NetworkMountsSettingsSection } from "../mounts/NetworkMountsSettingsSection";
 import { AdminActionDialog, type AdminField } from "./AdminActionDialog";
 
@@ -16,6 +17,7 @@ function useLoader<T>(load: () => Promise<T>) {
   const refresh = async () => { setLoading(true); setError(""); try { setData(await load()); } catch (reason) { setError(reason instanceof Error ? reason.message : "Error"); } finally { setLoading(false); } };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- each window owns one initial request
   useEffect(() => { void refresh(); }, []);
+  useRefreshOnConnectionRestored(() => { void refresh(); });
   return { data, loading, error, refresh };
 }
 

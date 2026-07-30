@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type ModuleBackup, type ModuleDiagnostic, type ModuleJob, type ModuleStatus, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate, WindowDeepLink } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { PackageJobDialog } from "../package-center/PackageJobDialog";
 import { ModuleAppShell, ModuleHealthCard, translateServiceState, type ModuleSection } from "./common/ModuleAppShell";
 import { ModuleBackups, ModuleDangerZone, ModuleDiagnostics, ModuleJobProgress, ModuleLogs, ModuleServiceControls } from "./common/ModuleComponents";
@@ -29,6 +30,7 @@ export function ModuleApp({ moduleId, initialPath, deepLink, draftKey, permissio
 function GenericModuleApp({ moduleId, t, toast }: { moduleId: string; t: Translate; toast: ToastFn }) {
   const [summary, setSummary] = useState<ModuleSummary | null>(null); const [status, setStatus] = useState(emptyStatus); const [section, setSection] = useState<ModuleSection>("overview"); const [job, setJob] = useState<ModuleJob | null>(null); const [liveJob, setLiveJob] = useState<ModuleJob | null>(null); const [diagnostics, setDiagnostics] = useState<ModuleDiagnostic[]>([]); const [backups, setBackups] = useState<ModuleBackup[]>([]); const [uninstallOpen, setUninstallOpen] = useState(false); const [dialog, setDialog] = useState<{ type: "service"; action: "start" | "stop" | "restart" | "reload" | "enable" | "disable" } | { type: "diagnostics" } | { type: "backup" } | { type: "restore" | "delete"; backup: ModuleBackup } | null>(null);
   const refresh = useCallback(async () => { try { const data = await api.module(moduleId); setSummary(data); setStatus(data.module_status); setJob(data.active_job || null); } catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin"); } }, [moduleId, t, toast]);
+  useRefreshOnConnectionRestored(() => { void refresh(); });
   useEffect(() => { void refresh(); const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 5000); return () => window.clearInterval(timer); }, [refresh]);
   useEffect(() => { if (section === "diagnostics") void api.moduleDiagnostics(moduleId).then((data) => setDiagnostics(data.diagnostics)); if (section === "backups") void api.moduleBackups(moduleId).then(setBackups); }, [moduleId, section]);
   function trackJob(next: ModuleJob) { setJob(next); setLiveJob(next); }

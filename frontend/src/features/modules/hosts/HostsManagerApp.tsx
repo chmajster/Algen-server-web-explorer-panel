@@ -36,6 +36,7 @@ import {
 } from "../../../api";
 import type { ToastFn, Translate } from "../../../app/types";
 import { Modal } from "../../../components/Modal";
+import { useRefreshOnConnectionRestored } from "../../connection/ConnectionStatusMonitor";
 import {
   ModuleAppShell,
   ModuleHealthCard,
@@ -144,6 +145,7 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
     }
   }, [permissions, t, toast]);
 
+  useRefreshOnConnectionRestored(() => { void refresh(); });
   useEffect(() => {
     void refresh();
   }, [refresh]);

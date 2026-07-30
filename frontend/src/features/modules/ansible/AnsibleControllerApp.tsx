@@ -6,6 +6,7 @@ import {
   type AnsibleValidation, type ModuleBackup, type ModuleDiagnostic, type ModuleStatus,
 } from "../../../api";
 import type { ToastFn, Translate } from "../../../app/types";
+import { useRefreshOnConnectionRestored } from "../../connection/ConnectionStatusMonitor";
 import { ModuleAppShell, ModuleHealthCard, type ModuleSection } from "../common/ModuleAppShell";
 import { ModuleBackups, ModuleDiagnostics } from "../common/ModuleComponents";
 
@@ -59,6 +60,7 @@ export function AnsibleControllerApp({ permissions, initialJobId, initialScanId,
     } finally { setLoading(false); }
   }, [can, section, t, toast]);
 
+  useRefreshOnConnectionRestored(() => { void refresh(); });
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => { const timer = window.setInterval(() => { if (!document.hidden && ["overview", "jobs", "discovery"].includes(section)) void refresh(); }, 8000); return () => window.clearInterval(timer); }, [refresh, section]);
 

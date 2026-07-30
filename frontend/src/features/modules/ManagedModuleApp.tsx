@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type ModuleBackup, type ModuleDiagnostic, type ModuleJob, type ModuleResource, type ModuleStatus, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog, type AdminField } from "../admin/AdminActionDialog";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { PackageJobDialog } from "../package-center/PackageJobDialog";
 import { ModuleHeader, ModuleHealthCard, translateServiceState } from "./common/ModuleAppShell";
 import { ModuleBackups, ModuleDiagnostics, ModuleJobProgress, ModuleLogs } from "./common/ModuleComponents";
@@ -36,6 +37,7 @@ export function ManagedModuleApp({ moduleId, permissions, t, toast }: { moduleId
   const summaryReady = summary !== null;
   const requestedResourceSupported = summary?.capabilities.resources.includes(requestedResource) ?? false;
   const refresh = useCallback(async () => { try { const data = await api.module(moduleId); setSummary(data); setStatus(data.module_status); setJob(data.active_job || null); } catch (error) { toast(message(error, t), "error", "admin"); } }, [moduleId, t, toast]);
+  useRefreshOnConnectionRestored(() => { void refresh(); });
   const loadResource = useCallback(async (name: string, query = "") => {
     const request = ++resourceRequest.current;
     setResourceLoading(true); setResourceError(""); setResource(null);

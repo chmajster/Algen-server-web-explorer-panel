@@ -106,7 +106,7 @@ export function useConnectionMonitor({
         requestController?.abort();
       }, timeoutMs);
 
-      let successful = false;
+      let successful: boolean;
       try {
         await check(requestController.signal);
         successful = !timedOut;

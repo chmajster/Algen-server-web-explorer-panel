@@ -23,6 +23,7 @@ import {
 } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { PackageJobDialog } from "../package-center/PackageJobDialog";
 import { ComposeManager } from "./ComposeManager";
 import { ContainersList } from "./ContainersList";
@@ -104,6 +105,7 @@ export function DockerManagerApp({
       loadInProgress.current = false;
     }
   }, [section, t]);
+  useRefreshOnConnectionRestored(() => { void load(); });
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => {

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, type DiskMetric, type ProcessMetric, type ResourceAlert, type ResourceDashboard } from "../../api";
 import type { Translate } from "../../app/types";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { formatSize } from "../files/utils";
 
 const MAX_SAMPLES = 60;
@@ -113,6 +114,7 @@ export function MonitorApp({ t }: { t: Translate }) {
       if (mounted.current) setLoading(false);
     }
   }, [t]);
+  useRefreshOnConnectionRestored(() => { void refresh(); });
 
   useEffect(() => {
     mounted.current = true;
