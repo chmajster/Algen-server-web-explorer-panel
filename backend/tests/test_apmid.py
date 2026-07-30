@@ -13,6 +13,8 @@ from app.modules.apmid.service import (
     ApmidConflictError, ApmidService, LastOwnerError,
 )
 from app.modules.apmid import service as apmid_module
+from app.identity.models import Role
+from app.identity.permissions import Permission, ROLE_PERMISSIONS
 
 
 def store(tmp_path: Path, legacy: Path | None = None) -> ApmidService:
@@ -22,6 +24,16 @@ def store(tmp_path: Path, legacy: Path | None = None) -> ApmidService:
 def permit_admin_only(monkeypatch) -> None:
     monkeypatch.setattr(apmid_module, "has_permission", lambda username, permission: username == "admin")
     monkeypatch.setattr(ApmidService, "_validate_user", staticmethod(lambda username: None))
+
+
+def test_global_role_matrix_matches_apmid_policy():
+    assert Permission.APMID_RESTORE.value in ROLE_PERMISSIONS[Role.admin]
+    assert Permission.APMID_UPDATE.value in ROLE_PERMISSIONS[Role.operator]
+    assert Permission.APMID_MEMBERS_MANAGE.value in ROLE_PERMISSIONS[Role.operator]
+    assert Permission.APMID_DELETE.value not in ROLE_PERMISSIONS[Role.operator]
+    assert Permission.APMID_RESTORE.value not in ROLE_PERMISSIONS[Role.operator]
+    assert Permission.APMID_AUDIT_VIEW.value in ROLE_PERMISSIONS[Role.auditor]
+    assert not any(value.startswith("apmid.") for value in ROLE_PERMISSIONS[Role.user])
 
 
 def test_crud_normalizes_code_and_rejects_case_insensitive_duplicate(monkeypatch, tmp_path: Path):

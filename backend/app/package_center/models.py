@@ -160,6 +160,7 @@ class ModuleManifest(BaseModel):
     requires_root: bool = True
     configurable: bool = False
     removable: bool = True
+    package_less: bool = False
     healthcheck: str | None = "health.py"
     ui: ModuleUi = Field(default_factory=ModuleUi)
     changelog: list[str] = Field(default_factory=list)
@@ -243,7 +244,9 @@ class ModuleManifest(BaseModel):
         self.backup_paths = list(dict.fromkeys([*self.backup_paths, *self.config.backup_paths]))
         if self.configurable:
             self.capabilities.configure = True
-        if not self.apt_packages and not self.dnf_packages and not self.ui.hidden:
+        if self.package_less and (self.apt_packages or self.dnf_packages or self.yum_packages or self.services or self.requires_root):
+            raise ValueError("package-less modules cannot declare packages, services, or root requirement")
+        if not self.apt_packages and not self.dnf_packages and not self.ui.hidden and not self.package_less:
             raise ValueError("installable module has no packages")
         return self
 

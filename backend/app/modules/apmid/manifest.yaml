@@ -38,9 +38,9 @@ requires_reboot: false
 requires_root: false
 configurable: false
 removable: true
+package_less: true
 healthcheck: health.py
 ui:
   hidden: false
 changelog:
   - Initial APMID registry with membership, resource RBAC, history and Hosts Manager migration.
-

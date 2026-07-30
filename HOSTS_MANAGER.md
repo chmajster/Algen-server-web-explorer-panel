@@ -1,5 +1,10 @@
 # Hosts Manager
 
+APMID record ownership has moved to the installable [APMID module](APMID.md).
+Hosts Manager retains its enrollment selectors, generated
+`<APMID>.<ENVIRONMENT>` groups and compatibility endpoints, but delegates all
+APMID CRUD to the authoritative APMID domain.
+
 Hosts Manager (`hosts-manager`) is the central WebNAS registry for remote servers. Its source of truth is the private, versioned SQLite database at `/var/lib/webnas/hosts-manager/hosts.sqlite3`. Other modules use `HostRegistryService`; they must not open this database directly.
 
 ## Architecture and migration

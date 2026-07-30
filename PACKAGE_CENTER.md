@@ -1,5 +1,10 @@
 # WebNAS Package Center
 
+APMID is installed as a service-free module. Completed Package Center jobs
+trigger an in-page module-list refresh so its launcher entry appears or
+disappears without a full reload. Normal uninstall preserves data; full removal
+requires exact `APMID` confirmation and a Hosts Manager usage check.
+
 `hosts-manager` is a regular manifest-driven Package Center module and opens in its own WebNAS window. Uninstall preserves its central registry by default because Ansible Controller and other modules retain logical host-ID references. Full data removal is a separate high-risk, explicitly confirmed operation.
 
 Package Center is the administrator-only package and service manager built into WebNAS. It discovers trusted modules from `backend/app/modules`, validates their YAML manifests, creates a dry-run plan, and executes approved operations as durable SQLite jobs. The browser receives live progress through Server-Sent Events and falls back to polling.

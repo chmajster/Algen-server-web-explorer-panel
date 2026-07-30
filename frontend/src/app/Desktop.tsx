@@ -369,14 +369,15 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     if (apmidAvailable) { apmidUnavailableHandled.current = false; return; }
     if (!apmidResolved || apmidUnavailableHandled.current) return;
     apmidUnavailableHandled.current = true;
-    state.windows.filter((item) => item.app === "apmid").forEach((item) => dispatch({ type: "close", id: item.id }));
+    state.windows.filter((item) => item.app === "apmid" || (item.app === "module" && item.moduleId === "apmid")).forEach((item) => dispatch({ type: "close", id: item.id }));
     const nextPinned = new Set(pinned); nextPinned.delete("apmid"); setPinned(nextPinned);
+    const nextPinnedModules = new Set(pinnedModules); nextPinnedModules.delete("apmid"); setPinnedModules(nextPinnedModules);
     const nextStart = new Set(startPinned); nextStart.delete("apmid"); setStartPinned(nextStart);
     const nextDesktop = new Set(desktopShortcuts); nextDesktop.delete("apmid"); setDesktopShortcuts(nextDesktop);
-    if (pinned.has("apmid") || startPinned.has("apmid") || desktopShortcuts.has("apmid")) {
-      void onSettingsChange({ pinned_apps: [...nextPinned], start_pinned_apps: [...nextStart], desktop_shortcut_apps: [...nextDesktop] }).catch(() => undefined);
+    if (pinned.has("apmid") || pinnedModules.has("apmid") || startPinned.has("apmid") || desktopShortcuts.has("apmid")) {
+      void onSettingsChange({ pinned_apps: [...nextPinned], pinned_modules: [...nextPinnedModules], start_pinned_apps: [...nextStart], desktop_shortcut_apps: [...nextDesktop] }).catch(() => undefined);
     }
-  }, [apmidAvailable, apmidResolved, desktopShortcuts, onSettingsChange, pinned, startPinned, state.windows]);
+  }, [apmidAvailable, apmidResolved, desktopShortcuts, onSettingsChange, pinned, pinnedModules, startPinned, state.windows]);
 
   function selectTask(item: WindowInstance) {
     if (state.activeId === item.id && !item.minimized) dispatch({ type: "minimize", id: item.id });

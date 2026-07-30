@@ -735,7 +735,7 @@ class HostRegistryService:
             raise
         return next(value for value in self.apmids() if value["id"] == item["id"])
 
-    def delete_apmid(self, apmid_id: str) -> bool:
+    def delete_apmid(self, apmid_id: str, actor: str = "hosts-manager") -> bool:
         if not self.apmid_service.get(apmid_id):
             return False
         usages = self.apmid_service.usages(apmid_id)
@@ -749,7 +749,7 @@ class HostRegistryService:
             connection.execute("DELETE FROM apmid_environment_groups WHERE apmid_id=?", (apmid_id,))
             connection.executemany("DELETE FROM groups WHERE id=?", [(row["group_id"],) for row in relations])
         try:
-            self.apmid_service.delete(apmid_id, "hosts-manager")
+            self.apmid_service.delete(apmid_id, actor)
         except DomainApmidInUseError as error:
             raise ApmidInUseError("APMID is referenced by Hosts Manager") from error
         return True

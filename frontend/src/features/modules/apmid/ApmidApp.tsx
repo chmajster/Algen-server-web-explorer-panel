@@ -1,7 +1,7 @@
 import { Pencil, Plus, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
-  ApiError, api, type AdminUser, type ApmidDashboard, type ApmidHistory, type ApmidItem,
+  ApiError, api, type AdminUser, type ApmidBackup, type ApmidDashboard, type ApmidHistory, type ApmidItem,
   type ApmidMember, type ApmidResourcePermission, type ApmidRole, type ModuleStatus,
 } from "../../../api";
 import type { ToastFn, Translate } from "../../../app/types";
@@ -24,44 +24,56 @@ export function ApmidApp({ permissions, t, toast }: { permissions: string[]; t: 
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("");
+  const [sort, setSort] = useState("code");
+  const [direction, setDirection] = useState("asc");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [editing, setEditing] = useState<ApmidItem | null | undefined>();
   const [selected, setSelected] = useState<ApmidItem | null>(null);
   const [history, setHistory] = useState<ApmidHistory[]>([]);
+  const [backups, setBackups] = useState<ApmidBackup[]>([]);
   const canCreate = permissions.includes("apmid.create");
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const [summary, listing] = await Promise.all([
         api.apmidDashboard(),
-        api.apmidItems({ search, status: filter, sort: "code", direction: "asc" }),
+        api.apmidItems({ page, page_size: 50, search, status: filter, sort, direction }),
       ]);
       setDashboard(summary); setItems(listing.items); setTotal(listing.total);
     } catch (error) {
+      setLoadError(message(error, t));
       toast(message(error, t), "error", "admin", "apmid");
     } finally {
       setLoading(false);
     }
-  }, [filter, search, t, toast]);
+  }, [direction, filter, page, search, sort, t, toast]);
+  useEffect(() => { setPage(1); }, [direction, filter, search, sort]);
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 200); return () => window.clearTimeout(timer); }, [refresh]);
   useEffect(() => { if (section === "audit") void api.apmidHistory().then(setHistory).catch((error: unknown) => toast(message(error, t), "error")); }, [section, t, toast]);
+  useEffect(() => { if (section === "backups") void api.apmidBackups().then(setBackups).catch((error: unknown) => toast(message(error, t), "error")); }, [section, t, toast]);
   useRefreshOnConnectionRestored(() => { void refresh(); });
 
   let content: React.ReactNode;
   if (section === "overview") content = <Dashboard value={dashboard} t={t} />;
   else if (section === "audit") content = <History items={history} t={t} />;
+  else if (section === "backups") content = <Backups values={backups} canCreate={permissions.includes("apmid.backup")} canRestore={permissions.includes("apmid.restore")} t={t} toast={toast} onRefresh={async () => setBackups(await api.apmidBackups())} />;
   else content = <section className="apmid-panel">
     <header className="apmid-toolbar">
       <label><Search /><input aria-label={t("action.search")} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("apmid.search")} /></label>
       <select aria-label={t("apmid.filter.status")} value={filter} onChange={(event) => setFilter(event.target.value)}>
         <option value="">{t("apmid.filter.all")}</option><option value="active">{t("common.enabled")}</option><option value="inactive">{t("common.disabled")}</option>
       </select>
+      <select aria-label={t("apmid.sort")} value={sort} onChange={(event) => setSort(event.target.value)}><option value="code">{t("apmid.code")}</option><option value="name">{t("common.name")}</option><option value="status">{t("common.status")}</option><option value="updated_at">{t("apmid.updated")}</option></select>
+      <select aria-label={t("apmid.direction")} value={direction} onChange={(event) => setDirection(event.target.value)}><option value="asc">{t("apmid.ascending")}</option><option value="desc">{t("apmid.descending")}</option></select>
       <span>{t("apmid.total").replace("{count}", String(total))}</span>
       <button type="button" onClick={() => void refresh()}><RefreshCw />{t("action.refresh")}</button>
       {canCreate && <button className="button-primary" type="button" onClick={() => setEditing(null)}><Plus />{t("apmid.create")}</button>}
     </header>
-    {loading ? <div className="loading-state">{t("status.loading")}</div> : items.length ? <div className="module-table-wrap"><table>
+    {loading ? <div className="loading-state">{t("status.loading")}</div> : loadError ? <div className="error-state" role="alert">{loadError}<button onClick={() => void refresh()}>{t("action.retry")}</button></div> : items.length ? <><div className="module-table-wrap"><table>
       <thead><tr><th>{t("apmid.code")}</th><th>{t("common.name")}</th><th>{t("common.status")}</th><th>{t("apmid.businessOwner")}</th><th>{t("apmid.members")}</th><th>{t("apmid.relations")}</th><th>{t("apmid.updated")}</th><th>{t("column.actions")}</th></tr></thead>
       <tbody>{items.map((item) => <tr key={item.id}>
         <td><button className="apmid-code-link" onClick={() => setSelected(item)}>{item.code}</button></td>
@@ -70,9 +82,9 @@ export function ApmidApp({ permissions, t, toast }: { permissions: string[]; t: 
         <td>{new Date(item.updated_at * 1000).toLocaleString()}</td>
         <td><div className="module-row-actions"><button onClick={() => setSelected(item)}>{t("action.open")}</button>{permissions.includes("apmid.update") && <button onClick={() => setEditing(item)}><Pencil />{t("action.edit")}</button>}</div></td>
       </tr>)}</tbody>
-    </table></div> : <div className="empty-state">{t("apmid.empty")}</div>}
+    </table></div>{total > 50 && <nav className="apmid-pagination" aria-label={t("apmid.pagination")}><button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t("action.previous")}</button><span>{t("apmid.page").replace("{page}", String(page)).replace("{pages}", String(Math.ceil(total / 50)))}</span><button disabled={page * 50 >= total} onClick={() => setPage((value) => value + 1)}>{t("action.next")}</button></nav>}</> : <div className="empty-state">{t("apmid.empty")}</div>}
   </section>;
-  return <ModuleAppShell className="apmid-app" name={t("apmid.name")} status={status} healthMessage={t("apmid.description")} section={section} sections={["overview", "apmid", ...(permissions.includes("apmid.audit.view") ? ["audit" as const] : [])]} t={t} onSection={setSection} actions={<button onClick={() => void refresh()}><RefreshCw />{t("action.refresh")}</button>}>{content}
+  return <ModuleAppShell className="apmid-app" name={t("apmid.name")} status={status} healthMessage={t("apmid.description")} section={section} sections={["overview", "apmid", ...(permissions.includes("apmid.audit.view") ? ["audit" as const] : []), ...(permissions.includes("apmid.backup") || permissions.includes("apmid.restore") ? ["backups" as const] : [])]} t={t} onSection={setSection} actions={<button onClick={() => void refresh()}><RefreshCw />{t("action.refresh")}</button>}>{content}
     {editing !== undefined && <ItemEditor item={editing} t={t} toast={toast} onClose={() => setEditing(undefined)} onSaved={async () => { setEditing(undefined); await refresh(); }} />}
     {selected && <ApmidDetail itemId={selected.id} t={t} toast={toast} onClose={() => setSelected(null)} onChanged={refresh} />}
   </ModuleAppShell>;
@@ -118,11 +130,13 @@ function ApmidDetail({ itemId, t, toast, onClose, onChanged }: { itemId: string;
   const [item, setItem] = useState<ApmidItem | null>(null);
   const [members, setMembers] = useState<ApmidMember[]>([]);
   const [history, setHistory] = useState<ApmidHistory[]>([]);
+  const [relations, setRelations] = useState<Array<{ module: string; resource: string; count: number }>>([]);
   const [tab, setTab] = useState<DetailTab>("info");
   const [adding, setAdding] = useState(false);
   const effective = new Set(item?.effective_permissions?.effective || []);
   const refresh = useCallback(async () => {
     const next = await api.apmidItem(itemId); setItem(next);
+    setRelations(await api.apmidItemRelations(itemId));
     const allowed = new Set(next.effective_permissions?.effective || []);
     if (allowed.has("members.view")) setMembers(await api.apmidMembers(itemId));
     if (allowed.has("audit.view")) setHistory(await api.apmidItemHistory(itemId));
@@ -140,7 +154,7 @@ function ApmidDetail({ itemId, t, toast, onClose, onChanged }: { itemId: string;
       {tab === "info" && <dl className="apmid-info"><dt>{t("apmid.code")}</dt><dd>{item.code}</dd><dt>{t("common.name")}</dt><dd>{item.name}</dd><dt>{t("common.status")}</dt><dd>{t(item.active ? "common.enabled" : "common.disabled")}</dd><dt>{t("apmid.businessOwner")}</dt><dd>{item.business_owner || t("common.none")}</dd><dt>{t("apmid.descriptionField")}</dt><dd>{item.description || t("common.none")}</dd><dt>{t("apmid.created")}</dt><dd>{new Date(item.created_at * 1000).toLocaleString()} · {item.created_by}</dd><dt>{t("apmid.updated")}</dt><dd>{new Date(item.updated_at * 1000).toLocaleString()} · {item.updated_by}</dd></dl>}
       {tab === "members" && <Members itemId={itemId} values={members} canManage={effective.has("members.manage")} t={t} toast={toast} onRefresh={async () => { await refresh(); await onChanged(); }} onAdd={() => setAdding(true)} />}
       {tab === "permissions" && <Permissions itemId={itemId} values={members} canManage={effective.has("permissions.manage")} t={t} toast={toast} onRefresh={refresh} />}
-      {tab === "relations" && <div className="empty-state">{t("apmid.relationsHint")}</div>}
+      {tab === "relations" && (relations.length ? <div className="module-table-wrap"><table><thead><tr><th>{t("apmid.relation.module")}</th><th>{t("apmid.relation.resource")}</th><th>{t("apmid.relation.count")}</th></tr></thead><tbody>{relations.map((relation) => <tr key={`${relation.module}:${relation.resource}`}><td>{relation.module}</td><td>{relation.resource}</td><td>{relation.count}</td></tr>)}</tbody></table></div> : <div className="empty-state">{t("apmid.relationsHint")}</div>)}
       {tab === "history" && <History items={history} t={t} />}
     </div>
     {adding && <AddMembers itemId={itemId} existing={new Set(members.map((member) => member.username))} t={t} toast={toast} onClose={() => setAdding(false)} onSaved={async () => { setAdding(false); await refresh(); await onChanged(); }} />}
@@ -148,12 +162,12 @@ function ApmidDetail({ itemId, t, toast, onClose, onChanged }: { itemId: string;
 }
 
 function Members({ itemId, values, canManage, t, toast, onRefresh, onAdd }: { itemId: string; values: ApmidMember[]; canManage: boolean; t: Translate; toast: ToastFn; onRefresh: () => Promise<void>; onAdd: () => void }) {
-  const [query, setQuery] = useState(""); const [role, setRole] = useState("");
-  const visible = values.filter((item) => (!query || item.username.toLowerCase().includes(query.toLowerCase())) && (!role || item.role === role));
+  const [query, setQuery] = useState(""); const [role, setRole] = useState(""); const [accountStatus, setAccountStatus] = useState("");
+  const visible = values.filter((item) => (!query || item.username.toLowerCase().includes(query.toLowerCase())) && (!role || item.role === role) && (!accountStatus || item.status === accountStatus));
   async function change(member: ApmidMember, next: ApmidRole) { try { await api.updateApmidMember(itemId, member.username, next); await onRefresh(); } catch (error) { toast(message(error, t), "error"); } }
   async function remove(member: ApmidMember) { if (!window.confirm(t("apmid.member.removeConfirm").replace("{username}", member.username))) return; try { await api.deleteApmidMember(itemId, member.username); await onRefresh(); } catch (error) { toast(message(error, t), "error"); } }
-  return <section><header className="apmid-toolbar"><label><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("apmid.member.search")} /></label><select value={role} onChange={(event) => setRole(event.target.value)}><option value="">{t("apmid.filter.all")}</option>{roles.map((value) => <option key={value} value={value}>{t(`apmid.role.${value}`)}</option>)}</select>{canManage && <button className="button-primary" onClick={onAdd}><UserPlus />{t("apmid.member.add")}</button>}</header>
-    <div className="module-table-wrap"><table><thead><tr><th>{t("apmid.member.user")}</th><th>{t("apmid.member.role")}</th><th>{t("apmid.member.assigned")}</th><th>{t("apmid.member.assignedBy")}</th><th>{t("column.actions")}</th></tr></thead><tbody>{visible.map((member) => <tr key={member.username}><td>{member.username}</td><td>{canManage ? <select value={member.role} onChange={(event) => void change(member, event.target.value as ApmidRole)}>{roles.map((value) => <option key={value} value={value}>{t(`apmid.role.${value}`)}</option>)}</select> : t(`apmid.role.${member.role}`)}</td><td>{new Date(member.assigned_at * 1000).toLocaleString()}</td><td>{member.assigned_by}</td><td>{canManage && <button className="button-danger" onClick={() => void remove(member)}>{t("action.delete")}</button>}</td></tr>)}</tbody></table></div>
+  return <section><header className="apmid-toolbar"><label><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("apmid.member.search")} /></label><select value={role} onChange={(event) => setRole(event.target.value)}><option value="">{t("apmid.filter.all")}</option>{roles.map((value) => <option key={value} value={value}>{t(`apmid.role.${value}`)}</option>)}</select><select value={accountStatus} onChange={(event) => setAccountStatus(event.target.value)}><option value="">{t("apmid.filter.all")}</option><option value="active">{t("apmid.member.active")}</option><option value="locked">{t("apmid.member.locked")}</option><option value="missing">{t("apmid.member.missing")}</option></select>{canManage && <button className="button-primary" onClick={onAdd}><UserPlus />{t("apmid.member.add")}</button>}</header>
+    <div className="module-table-wrap"><table><thead><tr><th>{t("apmid.member.user")}</th><th>{t("apmid.member.role")}</th><th>{t("common.status")}</th><th>{t("apmid.member.assigned")}</th><th>{t("apmid.member.assignedBy")}</th><th>{t("column.actions")}</th></tr></thead><tbody>{visible.map((member) => <tr key={member.username}><td>{member.username}</td><td>{canManage ? <select value={member.role} onChange={(event) => void change(member, event.target.value as ApmidRole)}>{roles.map((value) => <option key={value} value={value}>{t(`apmid.role.${value}`)}</option>)}</select> : t(`apmid.role.${member.role}`)}</td><td>{t(`apmid.member.${member.status}`)}</td><td>{new Date(member.assigned_at * 1000).toLocaleString()}</td><td>{member.assigned_by}</td><td>{canManage && <button className="button-danger" onClick={() => void remove(member)}>{t("action.delete")}</button>}</td></tr>)}</tbody></table></div>
   </section>;
 }
 
@@ -177,6 +191,19 @@ function Permissions({ itemId, values, canManage, t, toast, onRefresh }: { itemI
 
 function History({ items, t }: { items: ApmidHistory[]; t: Translate }) {
   return items.length ? <div className="module-table-wrap"><table><thead><tr><th>{t("apmid.history.date")}</th><th>{t("apmid.history.action")}</th><th>{t("apmid.history.actor")}</th><th>{t("apmid.history.target")}</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{new Date(item.created_at * 1000).toLocaleString()}</td><td>{t(`apmid.history.${item.action}`)}</td><td>{item.actor}</td><td>{item.target || "—"}</td></tr>)}</tbody></table></div> : <div className="empty-state">{t("apmid.history.empty")}</div>;
+}
+
+function Backups({ values, canCreate, canRestore, t, toast, onRefresh }: { values: ApmidBackup[]; canCreate: boolean; canRestore: boolean; t: Translate; toast: ToastFn; onRefresh: () => Promise<void> }) {
+  async function create() {
+    const description = window.prompt(t("apmid.backup.description"), "") ?? "";
+    try { await api.createApmidBackup(description); await onRefresh(); toast(t("apmid.backup.created"), "ok"); } catch (error) { toast(message(error, t), "error"); }
+  }
+  async function restore(backup: ApmidBackup) {
+    const confirmation = window.prompt(t("apmid.backup.restoreConfirm"), "") ?? "";
+    if (!confirmation) return;
+    try { await api.restoreApmidBackup(backup.id, confirmation); await onRefresh(); toast(t("apmid.backup.restored"), "ok"); } catch (error) { toast(message(error, t), "error"); }
+  }
+  return <section className="apmid-panel"><header className="apmid-toolbar"><div><h3>{t("apmid.backup.title")}</h3></div>{canCreate && <button className="button-primary" onClick={() => void create()}>{t("apmid.backup.create")}</button>}</header>{values.length ? <div className="module-table-wrap"><table><thead><tr><th>{t("apmid.history.date")}</th><th>{t("apmid.history.actor")}</th><th>{t("apmid.backup.description")}</th><th>{t("apmid.backup.checksum")}</th><th>{t("column.actions")}</th></tr></thead><tbody>{values.map((backup) => <tr key={backup.id}><td>{new Date(backup.created_at * 1000).toLocaleString()}</td><td>{backup.created_by}</td><td>{backup.description || "—"}</td><td><code>{backup.sha256}</code></td><td>{canRestore && <button className="button-danger" onClick={() => void restore(backup)}>{t("apmid.backup.restore")}</button>}</td></tr>)}</tbody></table></div> : <div className="empty-state">{t("apmid.backup.empty")}</div>}</section>;
 }
 
 function message(error: unknown, t: Translate): string {

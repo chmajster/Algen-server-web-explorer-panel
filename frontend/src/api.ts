@@ -537,10 +537,12 @@ export type ApmidItem = {
 };
 export type ApmidMember = {
   apmid_id: string; username: string; role: ApmidRole; assigned_at: number; assigned_by: string; updated_at: number; updated_by: string;
+  status: "active" | "locked" | "missing";
   permissions: { username: string; role: ApmidRole; allow: ApmidResourcePermission[]; deny: ApmidResourcePermission[]; effective: ApmidResourcePermission[]; sources: Record<ApmidResourcePermission, string> };
 };
 export type ApmidHistory = { id: number; apmid_id: string | null; action: string; actor: string; target: string; details: Record<string, unknown>; created_at: number };
 export type ApmidDashboard = { total: number; active: number; members: number; without_owner: number; recent: ApmidHistory[] };
+export type ApmidBackup = { id: string; schema_version: number; created_at: number; created_by: string; description: string; sha256: string; database: string };
 export type HostsManagerHostnamePattern = {
   id: string; name: string; prefix: string; suffix: string; digits: number; start_value: number; step: number;
   next_value: number; last_value?: number | null; description: string; active: boolean; template: string;
@@ -1166,7 +1168,11 @@ export const api = {
   updateApmidPermissions: (id: string, username: string, allow: ApmidResourcePermission[], deny: ApmidResourcePermission[]) => request<ApmidMember["permissions"]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}/permissions`, { method: "PUT", body: JSON.stringify({ allow, deny }) }),
   resetApmidPermissions: (id: string, username: string) => request<ApmidMember["permissions"]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}/permissions`, { method: "DELETE" }),
   apmidItemHistory: (id: string) => request<ApmidHistory[]>(`/api/modules/apmid/items/${encodeURIComponent(id)}/history`),
+  apmidItemRelations: (id: string) => request<Array<{ module: string; resource: string; count: number }>>(`/api/modules/apmid/items/${encodeURIComponent(id)}/relations`),
   apmidHistory: () => request<ApmidHistory[]>("/api/modules/apmid/history"),
+  apmidBackups: () => request<ApmidBackup[]>("/api/modules/apmid/backups"),
+  createApmidBackup: (description = "") => request<ApmidBackup>("/api/modules/apmid/backups", { method: "POST", body: JSON.stringify({ description }) }),
+  restoreApmidBackup: (id: string, confirmation: string) => request<{ ok: boolean; backup_id: string; safety_backup: string }>(`/api/modules/apmid/backups/${encodeURIComponent(id)}/restore`, { method: "POST", body: JSON.stringify({ confirmation }) }),
   list: (path?: string, params: Record<string, string | number | boolean | null | undefined> = {}) => {
     const query = new URLSearchParams({ path: path || "" });
     Object.entries(params).forEach(([key, value]) => {

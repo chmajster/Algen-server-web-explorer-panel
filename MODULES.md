@@ -1,5 +1,10 @@
 # WebNAS module-management framework
 
+The `apmid` module is a zero-package, Proxmox-safe administration module with a
+dedicated application and private SQLite domain. Manifest installation state
+and `/api/modules/apmid/access` jointly control launcher visibility, including
+access granted by per-APMID membership. See [APMID.md](APMID.md).
+
 WebNAS modules extend the existing Package Center. A module is discovered from a validated repository-owned manifest, installed by the existing package executor, and tracked in the existing SQLite database. The module-management layer adds a controlled provider, a common API, and a shared application shell. It does not load executable providers from uploaded manifests or third-party metadata.
 
 Samba is the reference infrastructure implementation. Ansible Automation Controller is the reference complex application module with a dedicated versioned domain database, typed router and app-shell sections; see [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md). Nginx, Squid Proxy, and Syncthing use the generic shell for the capabilities their manifests declare and can gain dedicated providers without changing Package Center, window persistence, or the job schema.

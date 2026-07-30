@@ -19,7 +19,7 @@ class ApmidProvider(ModuleProvider):
                 integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
                 version = int(connection.execute("PRAGMA user_version").fetchone()[0])
             checks.append(ModuleDiagnostic(
-                status="ok" if integrity == "ok" else "error", title="SQLite integrity",
+                status="ok" if integrity == "ok" else "critical", title="SQLite integrity",
                 description="APMID private database integrity", details=integrity,
                 severity="ok" if integrity == "ok" else "critical",
                 recommended_action="" if integrity == "ok" else "Restore a verified APMID backup",
@@ -31,7 +31,7 @@ class ApmidProvider(ModuleProvider):
                 recommended_action="" if version == SCHEMA_VERSION else "Run the module update",
             ))
         except (OSError, sqlite3.Error) as error:
-            checks.append(ModuleDiagnostic(status="error", title="APMID database", description="Database cannot be opened", details=str(error), severity="critical", recommended_action="Review data directory permissions"))
+            checks.append(ModuleDiagnostic(status="critical", title="APMID database", description="Database cannot be opened", details=str(error), severity="critical", recommended_action="Review data directory permissions"))
         return checks
 
     def list_backups(self) -> list[dict]:
@@ -42,5 +42,7 @@ class ApmidProvider(ModuleProvider):
 
     def cleanup_after_uninstall(self, actor: str, remove_config: bool) -> dict:
         # The normal module uninstall always preserves authoritative APMID data.
-        return {"managed_config_removed": False, "data_preserved": True}
-
+        data_preserved = service().path.is_file()
+        if data_preserved:
+            service().record_event("apmid_uninstall", actor, "apmid", {"data_preserved": True})
+        return {"managed_config_removed": False, "data_preserved": data_preserved}

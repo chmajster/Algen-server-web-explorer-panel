@@ -7,6 +7,7 @@ from ...identity.permissions import Permission, has_permission, require_permissi
 from ...package_center.models import api_error
 from ...package_center.service import repository as package_repository
 from ...security import SessionUser, get_session_user, require_csrf
+from ..hosts_manager.service import ManagedGroupConflictError, ManagedGroupProtectedError, registry as hosts_registry
 from .models import (
     ApmidBackupInput, ApmidInput, ApmidMemberCreate, ApmidMemberUpdate, ApmidPermissionUpdate,
     ApmidResourcePermission, ApmidRestoreInput,
@@ -89,7 +90,13 @@ def items(
 @router.post("/items")
 def create_item(payload: ApmidInput, user: SessionUser = Depends(require_permission(Permission.APMID_CREATE))):
     _module_ready()
-    return _controlled(lambda: service().create(payload, user.username))
+    item = _controlled(lambda: service().create(payload, user.username))
+    try:
+        hosts_registry().sync_apmid_environment_groups(user.username)
+    except (ManagedGroupConflictError, ManagedGroupProtectedError) as error:
+        service().delete(str(item["id"]), user.username)
+        api_error(409, "APMID_GROUP_CONFLICT", str(error))
+    return item
 
 
 @router.get("/items/{apmid_id}")
@@ -103,14 +110,29 @@ def item(apmid_id: str, user: SessionUser = Depends(get_session_user)):
 @router.put("/items/{apmid_id}")
 def update_item(apmid_id: str, payload: ApmidInput, request: Request, user: SessionUser = Depends(get_session_user)):
     _mutation(request, user, apmid_id, ApmidResourcePermission.update)
-    return _controlled(lambda: service().update(apmid_id, payload, user.username))
+    previous = service().get(apmid_id)
+    item = _controlled(lambda: service().update(apmid_id, payload, user.username))
+    try:
+        hosts_registry().sync_apmid_environment_groups(user.username)
+    except (ManagedGroupConflictError, ManagedGroupProtectedError) as error:
+        if previous:
+            service().update(
+                apmid_id,
+                ApmidInput(
+                    code=str(previous["code"]), name=str(previous["name"]), description=str(previous["description"]),
+                    active=bool(previous["active"]), business_owner=previous.get("business_owner"),
+                ),
+                user.username,
+            )
+        api_error(409, "APMID_GROUP_CONFLICT", str(error))
+    return item
 
 
 @router.delete("/items/{apmid_id}")
 def delete_item(apmid_id: str, request: Request, user: SessionUser = Depends(get_session_user)):
     _mutation(request, user, apmid_id, ApmidResourcePermission.delete)
     try:
-        service().delete(apmid_id, user.username)
+        hosts_registry().delete_apmid(apmid_id, user.username)
     except ApmidInUseError as error:
         api_error(409, "APMID_IN_USE", "APMID is used by another resource", details={"usages": error.usages})
     except ApmidNotFoundError:
@@ -186,6 +208,12 @@ def item_history(apmid_id: str, limit: int = Query(200, ge=1, le=1000), user: Se
     return service().history(user.username, apmid_id, limit)
 
 
+@router.get("/items/{apmid_id}/relations")
+def item_relations(apmid_id: str, user: SessionUser = Depends(get_session_user)):
+    _resource(user, apmid_id, ApmidResourcePermission.view)
+    return service().usages(apmid_id, include_managed_groups=True)
+
+
 @router.get("/history")
 def history(limit: int = Query(200, ge=1, le=1000), user: SessionUser = Depends(require_permission(Permission.APMID_AUDIT_VIEW))):
     _module_ready()
@@ -207,4 +235,10 @@ def create_backup(payload: ApmidBackupInput, user: SessionUser = Depends(require
 @router.post("/backups/{backup_id}/restore")
 def restore(backup_id: str, payload: ApmidRestoreInput, user: SessionUser = Depends(require_permission(Permission.APMID_RESTORE))):
     _module_ready()
-    return _controlled(lambda: service().restore(backup_id, user.username, payload.confirmation))
+    result = _controlled(lambda: service().restore(backup_id, user.username, payload.confirmation))
+    try:
+        hosts_registry().sync_apmid_environment_groups(user.username)
+    except (ManagedGroupConflictError, ManagedGroupProtectedError) as error:
+        service().restore(str(result["safety_backup"]), user.username, "APMID")
+        api_error(409, "APMID_RESTORE_INCOMPATIBLE", str(error))
+    return result

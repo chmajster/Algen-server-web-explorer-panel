@@ -353,6 +353,18 @@ def _package_action(module_id: str, action: PackageAction, payload: ModuleAdminR
         api_error(400, "MODULE_NAME_CONFIRMATION_REQUIRED", "Type Samba to confirm removal of module data")
     if action == PackageAction.uninstall and payload.remove_data and module_id == "ansible-controller" and payload.confirm_name != "Ansible":
         api_error(400, "MODULE_NAME_CONFIRMATION_REQUIRED", "Type Ansible to confirm removal of all local controller data")
+    if action == PackageAction.uninstall and payload.remove_data and module_id == "apmid":
+        if payload.confirm_name != "APMID":
+            api_error(400, "MODULE_NAME_CONFIRMATION_REQUIRED", "Type APMID to confirm removal of all APMID data")
+        from .apmid.service import service as apmid_service
+
+        used = [
+            {"id": item["id"], "code": item["code"], "usages": usages}
+            for item in apmid_service().all_for_hosts()
+            if (usages := apmid_service().usages(str(item["id"]), include_managed_groups=True))
+        ]
+        if used:
+            api_error(409, "APMID_IN_USE", "APMID data is still used by Hosts Manager", details={"items": used})
     plan = plan_operation(module_id, action, remove_data=payload.remove_data)
     if module_id == "ansible-controller" and action == PackageAction.uninstall:
         managed = [host for host in getattr(provider, "store").list_hosts() if host.get("managed_user_created")]

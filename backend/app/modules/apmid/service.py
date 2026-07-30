@@ -13,6 +13,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
+from fastapi import HTTPException
 from ...activity import ActivityCategory, ActivityStatus, record_activity
 from ...config import get_config
 from ...identity import linux_accounts
@@ -89,6 +90,8 @@ class ApmidService:
         self.migrate_hosts_manager()
 
     def connect(self) -> sqlite3.Connection:
+        self.root.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.root, 0o700)
         connection = sqlite3.connect(self.path, timeout=15, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
@@ -209,13 +212,13 @@ class ApmidService:
         finally:
             source.close()
 
-    def _history(self, connection: sqlite3.Connection, apmid_id: str | None, action: str, actor: str, target: str = "", details: dict[str, Any] | None = None) -> None:
+    def _history(self, connection: sqlite3.Connection, apmid_id: str | None, action: str, actor: str, target: str = "", details: dict[str, Any] | None = None, *, activity_status: ActivityStatus = ActivityStatus.success) -> None:
         safe = details or {}
         connection.execute(
             "INSERT INTO apmid_history(apmid_id,action,actor,target,details_json,created_at) VALUES(?,?,?,?,?,?)",
             (apmid_id, action, actor, target[:256], json.dumps(safe, separators=(",", ":")), time.time()),
         )
-        record_activity(ActivityCategory.module, action, actor, target=target or apmid_id or "apmid", status=ActivityStatus.success, details=safe, source="apmid")
+        record_activity(ActivityCategory.module, action, actor, target=target or apmid_id or "apmid", status=activity_status, details=safe, source="apmid")
 
     def get(self, apmid_id: str) -> dict[str, Any] | None:
         with self.connect() as connection:
@@ -262,7 +265,7 @@ class ApmidService:
             ).fetchall()
         items = [self._item(row) for row in rows]
         for item in items:
-            item["related_count"] = sum(int(usage["count"]) for usage in self.usages(str(item["id"])))
+            item["related_count"] = sum(int(usage["count"]) for usage in self.usages(str(item["id"]), include_managed_groups=True))
         return {"items": items, "page": page, "page_size": page_size, "total": total}
 
     def create(self, payload: ApmidInput, actor: str) -> dict[str, Any]:
@@ -303,7 +306,7 @@ class ApmidService:
             self._history(connection, apmid_id, action, actor, apmid_id, {"code": payload.code, "active": payload.active})
         return self.get(apmid_id) or {}
 
-    def usages(self, apmid_id: str) -> list[dict[str, Any]]:
+    def usages(self, apmid_id: str, *, include_managed_groups: bool = False) -> list[dict[str, Any]]:
         if not self.legacy_path.is_file():
             return []
         with sqlite3.connect(self.legacy_path) as connection:
@@ -315,6 +318,12 @@ class ApmidService:
                 if count:
                     usages.append({"module": "hosts-manager", "resource": "enrollment_tokens", "count": count})
             if {"apmid_environment_groups", "memberships"} <= tables:
+                if include_managed_groups:
+                    group_count = int(connection.execute(
+                        "SELECT COUNT(*) FROM apmid_environment_groups WHERE apmid_id=?", (apmid_id,),
+                    ).fetchone()[0])
+                    if group_count:
+                        usages.append({"module": "hosts-manager", "resource": "managed_groups", "count": group_count})
                 count = int(connection.execute(
                     """SELECT COUNT(*) FROM memberships m JOIN apmid_environment_groups r ON r.group_id=m.group_id
                        WHERE r.apmid_id=?""", (apmid_id,),
@@ -329,8 +338,7 @@ class ApmidService:
         usages = self.usages(apmid_id)
         if usages:
             with self.connect() as connection:
-                self._history(connection, apmid_id, "apmid_delete_blocked", actor, apmid_id, {"usages": usages})
-            record_activity(ActivityCategory.module, "apmid_delete_blocked", actor, target=apmid_id, status=ActivityStatus.failure, details={"usages": usages}, source="apmid")
+                self._history(connection, apmid_id, "apmid_delete_blocked", actor, apmid_id, {"usages": usages}, activity_status=ActivityStatus.failure)
             raise ApmidInUseError(usages)
         with self._lock, self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -347,9 +355,13 @@ class ApmidService:
         role_values = ROLE_PERMISSIONS[role] if role else set()
         allows = {ApmidResourcePermission(str(row["permission"])) for row in overrides if row["effect"] == "allow"}
         denies = {ApmidResourcePermission(str(row["permission"])) for row in overrides if row["effect"] == "deny"}
-        effective = (role_values | allows) - denies
+        global_values = {
+            permission for permission, global_permission in GLOBAL_RESOURCE_PERMISSION.items()
+            if has_permission(username, global_permission)
+        }
+        effective = ((role_values | allows) - denies) | global_values
         sources = {
-            permission.value: "deny" if permission in denies else "allow" if permission in allows else f"role:{role.value}" if permission in role_values and role else "none"
+            permission.value: "global" if permission in global_values else "deny" if permission in denies else "allow" if permission in allows else f"role:{role.value}" if permission in role_values and role else "none"
             for permission in ApmidResourcePermission
         }
         return {
@@ -373,7 +385,16 @@ class ApmidService:
     def members(self, apmid_id: str) -> list[dict[str, Any]]:
         with self.connect() as connection:
             rows = connection.execute("SELECT * FROM apmid_members WHERE apmid_id=? ORDER BY username COLLATE NOCASE", (apmid_id,)).fetchall()
-        return [self._item(row) | {"permissions": self.effective_permissions(apmid_id, str(row["username"]))} for row in rows]
+        result = []
+        for row in rows:
+            username = str(row["username"])
+            try:
+                identity = linux_accounts.user_record(username)
+                account_status = "locked" if identity.get("locked") else "active"
+            except (KeyError, HTTPException):
+                account_status = "missing"
+            result.append(self._item(row) | {"status": account_status, "permissions": self.effective_permissions(apmid_id, username)})
+        return result
 
     @staticmethod
     def _validate_user(username: str) -> None:
@@ -505,6 +526,10 @@ class ApmidService:
             "recent": self.history(username, limit=10),
         }
 
+    def record_event(self, action: str, actor: str, target: str = "", details: dict[str, Any] | None = None) -> None:
+        with self.connect() as connection:
+            self._history(connection, None, action, actor, target, details)
+
     def create_backup(self, actor: str, description: str = "") -> dict[str, Any]:
         backup_id = f"apmid-{int(time.time())}-{secrets.token_hex(4)}"
         target = self.backups_root / f"{backup_id}.sqlite3"
@@ -545,6 +570,18 @@ class ApmidService:
         with sqlite3.connect(source) as check:
             if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError("Backup SQLite integrity check failed")
+            backup_ids = {str(row[0]) for row in check.execute("SELECT id FROM apmids")}
+        required_ids: set[str] = set()
+        if self.legacy_path.is_file():
+            with sqlite3.connect(self.legacy_path) as hosts:
+                tables = {str(row[0]) for row in hosts.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if "enrollment_tokens" in tables:
+                    required_ids.update(str(row[0]) for row in hosts.execute("SELECT DISTINCT apmid_id FROM enrollment_tokens WHERE apmid_id IS NOT NULL"))
+                if "apmid_environment_groups" in tables:
+                    required_ids.update(str(row[0]) for row in hosts.execute("SELECT DISTINCT apmid_id FROM apmid_environment_groups"))
+        missing_references = sorted(required_ids - backup_ids)
+        if missing_references:
+            raise ValueError(f"Backup would break Hosts Manager references: {', '.join(missing_references[:20])}")
         safety = self.create_backup(actor, "Automatic safety backup before restore")
         temporary = self.root / f".restore-{secrets.token_hex(8)}.sqlite3"
         shutil.copy2(source, temporary)
@@ -562,5 +599,13 @@ class ApmidService:
 
 
 @lru_cache
-def service() -> ApmidService:
+def _service() -> ApmidService:
     return ApmidService()
+
+
+def service() -> ApmidService:
+    instance = _service()
+    if not instance.path.is_file():
+        instance._initialize()
+        instance.migrate_hosts_manager()
+    return instance
