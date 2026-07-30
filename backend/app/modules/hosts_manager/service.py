@@ -1171,13 +1171,21 @@ class HostRegistryService:
                        FROM apmid_environment_groups relation JOIN groups ON groups.id=relation.group_id"""
                 ).fetchall()
             }
+            group_names = {
+                str(row["id"]): str(row["name"])
+                for row in connection.execute("SELECT id,name FROM groups").fetchall()
+            }
         def enrich(item: dict[str, Any]) -> dict[str, Any]:
             apmid = apmids.get(str(item.get("apmid_id") or ""))
             environment = environments.get(str(item.get("environment_id") or ""))
-            automatic_group = managed.get((
-                str(item.get("apmid_id") or ""),
-                str(item.get("environment_id") or ""),
-            ))
+            stored_group_id = str(item.get("managed_group_id") or "")
+            automatic_group = (
+                {"id": stored_group_id, "name": group_names.get(stored_group_id)}
+                if stored_group_id else managed.get((
+                    str(item.get("apmid_id") or ""),
+                    str(item.get("environment_id") or ""),
+                ))
+            )
             return {key: value for key, value in item.items() if key != "token_hash"} | {
                 "used": item.get("used_at") is not None,
                 "expired": bool(item["expires_at"] and item["expires_at"] < time.time()),
@@ -1236,6 +1244,8 @@ class HostRegistryService:
                 if not relation:
                     return None
                 automatic_group_id = str(relation["group_id"])
+                if row["managed_group_id"] and str(row["managed_group_id"]) != automatic_group_id:
+                    return None
                 managed_group_ids = {
                     str(item["group_id"])
                     for item in connection.execute("SELECT group_id FROM apmid_environment_groups").fetchall()

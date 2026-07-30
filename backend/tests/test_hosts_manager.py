@@ -218,6 +218,8 @@ def test_enrollment_requires_apmid_environment_and_assigns_managed_and_manual_gr
     assert listed["apmid_code"] == "APP"
     assert listed["environment_slug"] == "default"
     assert listed["managed_group_name"] == "APP.DEFAULT"
+    with pytest.raises(ValueError, match="enrollment tokens"):
+        store.delete_environment("default")
     with pytest.raises(ManagedGroupProtectedError):
         store.create_enrollment_token(enrollment_input(store, group_ids=[other_managed["id"]]), "admin")
     host = store.claim_enrollment_token(

@@ -169,4 +169,32 @@ describe("HostsManagerApp", () => {
     fireEvent.change(screen.getByLabelText("hosts.enrollment.mode"), { target: { value: "one_time" } });
     expect(screen.getByLabelText("hosts.enrollment.minutes")).toBeInTheDocument();
   });
+
+  it("sends no expiration for a permanent token", async () => {
+    vi.mocked(api.createHostsManagerEnrollmentToken).mockResolvedValue({
+      id: "permanent", hostname_pattern: "SCL000XXX", assigned_hostname: "", bootstrap_os: "linux",
+      apply_hostname: true, expires_at: 0, used: false, mode: "permanent", command: "curl command",
+    });
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
+    fireEvent.change(screen.getByLabelText("hosts.enrollment.mode"), { target: { value: "permanent" } });
+    const generateButtons = screen.getAllByRole("button", { name: "hosts.enrollment.generate" });
+    fireEvent.click(generateButtons[generateButtons.length - 1]);
+    await waitFor(() => expect(api.createHostsManagerEnrollmentToken).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "permanent", expires_minutes: null, apmid_id: "apmid-app", environment_id: "default",
+    })));
+  });
+
+  it("blocks generation when no active environment exists", async () => {
+    vi.mocked(api.hostsManagerEnvironments).mockResolvedValue([]);
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    expect(await screen.findByText("hosts.enrollment.noActiveEnvironment")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "hosts.enrollment.generate" })).toBeDisabled();
+  });
 });

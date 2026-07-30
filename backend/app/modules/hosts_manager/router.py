@@ -247,7 +247,7 @@ def delete_environment(
     try:
         removed = _service().delete_environment(environment_id)
     except ValueError:
-        api_error(409, "ENVIRONMENT_NOT_EMPTY", "Move assigned hosts before deleting this environment")
+        api_error(409, "ENVIRONMENT_NOT_EMPTY", "Remove assigned hosts and enrollment token references before deleting this environment")
     _require(removed, "ENVIRONMENT_NOT_FOUND", "Environment not found")
     _activity(user.username, "environment_delete", environment_id)
     return {"ok": True}
@@ -1378,6 +1378,7 @@ def restore_backup(backup_id: str, payload: RestoreInput, user: SessionUser = De
                 api_error(422, "BACKUP_DATABASE_INVALID", "Restored database failed integrity check")
         os.replace(temporary, _service().path)
         os.chmod(_service().path, 0o600)
+        _service()._initialize()
     finally:
         temporary.unlink(missing_ok=True)
     _activity(user.username, "hosts_backup_restore", backup_id, {"safety_backup_id": safety["id"]})

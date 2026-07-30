@@ -1063,6 +1063,8 @@
   "settings.transferNotifications": "Powiadomienia transferów",
   "settings.transferSuccess": "Powiadamiaj po zakończeniu transferu",
   "settings.updateAvailable": "Dostępna jest aktualizacja.",
+  "settings.updateAvailableAction": "Dostępna aktualizacja — kliknij, aby zaktualizować",
+  "settings.clickToUpdate": "Kliknij tutaj, aby rozpocząć aktualizację",
   "settings.updateStatus": "Status aktualizacji",
   "settings.checkNow": "Sprawdź teraz",
   "settings.updateNow": "Aktualizuj teraz",

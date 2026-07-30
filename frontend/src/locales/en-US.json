@@ -1063,6 +1063,8 @@
   "settings.transferNotifications": "Transfer notifications",
   "settings.transferSuccess": "Notify when a transfer finishes",
   "settings.updateAvailable": "An update is available.",
+  "settings.updateAvailableAction": "Update available — click to update",
+  "settings.clickToUpdate": "Click here to start the update",
   "settings.updateStatus": "Update status",
   "settings.checkNow": "Check now",
   "settings.updateNow": "Update now",

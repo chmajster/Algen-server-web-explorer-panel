@@ -217,7 +217,10 @@ describe("settings application", () => {
     expect(screen.getByText("v1.4.2")).toBeInTheDocument();
     expect(screen.getByText("v1.5.0")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "settings.updateNow" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "settings.updateAvailable" }));
+    const availableUpdate = screen.getByRole("button", { name: "settings.updateAvailableAction" });
+    expect(availableUpdate).toHaveClass("update-available-cta");
+    expect(screen.getByText("settings.clickToUpdate")).toBeInTheDocument();
+    fireEvent.click(availableUpdate);
     await waitFor(() => expect(run).toHaveBeenCalledWith(false));
     await waitFor(() => expect(progress).toHaveBeenCalled());
     expect(window.location.pathname).toBe("/update-status");
@@ -236,7 +239,7 @@ describe("settings application", () => {
 
     expect(await screen.findByText("5 settings.minutesAgo")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "settings.updateNow" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "settings.updateAvailable" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "settings.updateAvailableAction" })).not.toBeInTheDocument();
     expect(screen.getByText("settings.lastChecked")).toBeInTheDocument();
     expect(screen.getByText("settings.updateInterval")).toBeInTheDocument();
     expect(screen.getByText("12 settings.hoursShort")).toBeInTheDocument();

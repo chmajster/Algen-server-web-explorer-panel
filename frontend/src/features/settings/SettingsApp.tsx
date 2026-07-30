@@ -400,13 +400,19 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
       <div className="admin-overview-copy"><small>{t("settings.updates")}</small><h3>{t("settings.updateStatus")}</h3><p>{updateLabel}</p></div>
       {updateAvailable
         ? <button
-          className={`admin-overall-state ${updateState} actionable`}
+          className={`admin-overall-state ${updateState} actionable update-available-cta`}
           type="button"
-          title={t("settings.updateNow")}
+          aria-label={t("settings.updateAvailableAction")}
+          title={t("settings.updateAvailableAction")}
           disabled={runningUpdate}
           onClick={() => void runUpdateNow()}
         >
-          <span />{t("settings.updateAvailable")}
+          <span aria-hidden="true" />
+          <div>
+            <strong>{t("settings.updateAvailable")}</strong>
+            <small>{t("settings.clickToUpdate")}</small>
+          </div>
+          <RefreshCw className={runningUpdate ? "spin" : ""} aria-hidden="true" />
         </button>
         : <div className={`admin-overall-state ${updateState}`}><span />{updateLabel}</div>}
     </section>
