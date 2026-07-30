@@ -27,12 +27,48 @@ describe("window manager reducer", () => {
     expect(state.windows).toHaveLength(0);
   });
 
+  it("restores and reuses a minimized action target without opening a duplicate", () => {
+    const deepLink = { type: "package-job" as const, id: "job-7", actionKey: "module:job-7", jobId: "job-7", issuedAt: 7 };
+    let state = windowReducer(initialWindowState, { type: "open", app: "module", moduleId: "samba", viewport });
+    state = windowReducer(state, { type: "minimize", id: "module-1" });
+    state = windowReducer(state, { type: "openOrFocus", app: "module", moduleId: "samba", deepLink, viewport });
+
+    expect(state.windows).toHaveLength(1);
+    expect(state.activeId).toBe("module-1");
+    expect(state.windows[0]).toMatchObject({ minimized: false, moduleId: "samba", deepLink });
+  });
+
+  it("opens a new exact action target only when its module window does not exist", () => {
+    const firstLink = { type: "package-job" as const, id: "job-a", actionKey: "module:job-a", issuedAt: 1 };
+    const secondLink = { type: "package-job" as const, id: "job-b", actionKey: "module:job-b", issuedAt: 2 };
+    let state = windowReducer(initialWindowState, { type: "openOrFocus", app: "module", moduleId: "samba", deepLink: firstLink, viewport });
+    state = windowReducer(state, { type: "openOrFocus", app: "module", moduleId: "docker", deepLink: secondLink, viewport });
+
+    expect(state.windows).toHaveLength(2);
+    expect(state.windows.map((item) => item.moduleId)).toEqual(["samba", "docker"]);
+    expect(state.windows[1].deepLink).toEqual(secondLink);
+  });
+
   it("persists the active path independently for each application window", () => {
     let state = windowReducer(initialWindowState, { type: "open", app: "settings", viewport });
     state = windowReducer(state, { type: "setInitialPath", id: "settings-1", initialPath: "administration" });
     const restored = restoreWindowState(JSON.stringify(state));
 
     expect(restored.windows[0].initialPath).toBe("administration");
+  });
+
+  it("restores legacy saved windows without deep-link metadata", () => {
+    const raw = JSON.stringify({
+      windows: [{ id: "settings-1", app: "settings", rect: { x: 40, y: 60, width: 800, height: 500 }, minimized: false, zIndex: 11 }],
+      activeId: "settings-1",
+      counter: 1,
+      topZ: 11,
+    });
+
+    const restored = restoreWindowState(raw, viewport);
+
+    expect(restored.windows[0].deepLink).toBeUndefined();
+    expect(restored.activeId).toBe("settings-1");
   });
 
   it("maximizes and restores the previous rectangle", () => {

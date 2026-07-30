@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppJob } from "../../api";
+import { api, type AppJob } from "../../api";
 import { PackageJobDialog } from "./PackageJobDialog";
 
 class FakeEventSource {
@@ -25,7 +25,7 @@ const queued: AppJob = { id: "job-1", module_id: "samba", action: "install", sta
 
 describe("PackageJobDialog", () => {
   beforeEach(() => { FakeEventSource.instances = []; vi.stubGlobal("EventSource", FakeEventSource); });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it("streams progress and logs while the durable job runs", () => {
     render(<PackageJobDialog initialJob={queued} moduleName="Samba" t={(key) => key} onClose={vi.fn()} />);
@@ -54,5 +54,16 @@ describe("PackageJobDialog", () => {
     const closeButtons = screen.getAllByRole("button", { name: "action.close" });
     fireEvent.click(closeButtons[closeButtons.length - 1]);
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("loads a durable job by id before subscribing to its stream", async () => {
+    vi.spyOn(api, "appJob").mockResolvedValue({ ...queued, status: "running", progress: 18 });
+
+    render(<PackageJobDialog jobId="job-1" moduleName="Samba" t={(key) => key} onClose={vi.fn()} />);
+
+    expect(screen.getByText("common.loading")).toBeInTheDocument();
+    await waitFor(() => expect(api.appJob).toHaveBeenCalledWith("job-1"));
+    expect(await screen.findByText("18%")).toBeInTheDocument();
+    expect(FakeEventSource.instances.at(-1)?.url).toContain("/api/apps/jobs/job-1/events");
   });
 });

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Task } from "../../api";
 import { settingsFixture } from "../../test/settings";
@@ -28,5 +28,28 @@ describe("TransferCenter permissions", () => {
     expect(screen.queryByTitle("transfers.cancel")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTitle("transfers.details"));
     expect(screen.getByRole("combobox")).toBeDisabled();
+  });
+
+  it("reveals and highlights the exact transfer selected from Actions Center", async () => {
+    const close = vi.fn();
+    const settings = settingsFixture({ permissions: ["transfers.view_own"] });
+    const { container } = render(
+      <TransferCenter
+        tasks={[{ ...task, username: settings.username }]}
+        settings={settings}
+        selectedTaskId="task-1"
+        onSelectedTaskClose={close}
+        t={(key) => key}
+        toast={vi.fn()}
+        uploadControls={uploadControls}
+      />,
+    );
+
+    const card = container.querySelector('[data-task-id="task-1"]');
+    await waitFor(() => expect(card).toHaveClass("action-target-highlight"));
+    expect(screen.getByText("/home/bob/source")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("transfers.details"));
+    expect(close).toHaveBeenCalledOnce();
   });
 });

@@ -30,7 +30,7 @@ export function TransferCenter({ tasks, settings, selectedTaskId, t, toast, uplo
     });
     setExpanded((current) => new Set(current).add(selectedTaskId));
     setHighlighted(selectedTaskId);
-    const frame = window.requestAnimationFrame(() => cards.current.get(selectedTaskId)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+    const frame = window.requestAnimationFrame(() => cards.current.get(selectedTaskId)?.scrollIntoView?.({ block: "center", behavior: "smooth" }));
     const timer = window.setTimeout(() => setHighlighted(""), 1800);
     return () => {
       window.cancelAnimationFrame(frame);
