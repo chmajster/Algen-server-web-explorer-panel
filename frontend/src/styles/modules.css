@@ -363,6 +363,71 @@
   --hosts-spacing-lg: var(--spacing-lg);
   --hosts-panel-padding: var(--panel-padding);
 }
+.hosts-manager-app :where(
+  .hosts-header-actions > button,
+  .hosts-pagination button,
+  .hosts-table-actions button,
+  .hosts-environment-card > footer button,
+  .data-card > button,
+  .hosts-installer-actions > button,
+  .hosts-connection-test > button,
+  .hosts-fingerprint-confirm > button,
+  .hosts-wizard-footer > button,
+  .hosts-data-table td > button,
+  .hosts-secret-once + button
+):not(.button-primary):not(.button-danger) {
+  min-height: var(--hosts-control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hosts-spacing-xs);
+  padding: 0 var(--control-padding-x);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background: linear-gradient(180deg, var(--surface-elevated), var(--surface-secondary));
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 7%, transparent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  text-decoration: none;
+  transition: border-color .14s ease, color .14s ease, background .14s ease, box-shadow .14s ease, transform .14s ease;
+}
+.hosts-manager-app :where(
+  .hosts-header-actions > button,
+  .hosts-pagination button,
+  .hosts-table-actions button,
+  .hosts-environment-card > footer button,
+  .data-card > button,
+  .hosts-installer-actions > button,
+  .hosts-connection-test > button,
+  .hosts-fingerprint-confirm > button,
+  .hosts-wizard-footer > button,
+  .hosts-data-table td > button,
+  .hosts-secret-once + button
+):not(.button-primary):not(.button-danger):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-elevated));
+  box-shadow: 0 0.25rem 0.625rem color-mix(in srgb, var(--accent) 13%, transparent);
+  transform: translateY(-1px);
+}
+.hosts-manager-app :where(
+  .hosts-header-actions > button,
+  .hosts-pagination button,
+  .hosts-table-actions button,
+  .hosts-environment-card > footer button,
+  .data-card > button,
+  .hosts-installer-actions > button,
+  .hosts-connection-test > button,
+  .hosts-fingerprint-confirm > button,
+  .hosts-wizard-footer > button,
+  .hosts-data-table td > button,
+  .hosts-secret-once + button
+):not(.button-primary):not(.button-danger):active:not(:disabled) {
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text-primary) 10%, transparent);
+  transform: translateY(0);
+}
 .hosts-manager-app .module-header { gap: var(--hosts-spacing-lg); padding: var(--hosts-spacing-lg) var(--hosts-panel-padding); }
 .hosts-manager-app .module-content { gap: var(--hosts-spacing-md); padding: var(--hosts-panel-padding); }
 .hosts-manager-app .module-navigation { gap: var(--hosts-spacing-xs); padding: var(--hosts-spacing-md) var(--hosts-spacing-sm); }

@@ -44,7 +44,7 @@
 html, body, #root { width: 100%; min-width: 20rem; height: 100%; margin: 0; overflow: hidden; }
 body, button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
-button { border: 0; color: inherit; cursor: pointer; }
+button { appearance: none; border: 0; color: inherit; background: transparent; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .42; }
 svg { width: 1.125rem; height: 1.125rem; flex: 0 0 auto; stroke-width: 1.8; }
 code, pre { font-family: var(--font-family-monospace); }
@@ -88,10 +88,13 @@ code, pre { font-family: var(--font-family-monospace); }
 .login-panel .remember-me-option { width: max-content; display: inline-flex; align-items: center; gap: 0.5625rem; color: var(--text-primary); cursor: pointer; user-select: none; }
 .login-panel .remember-me-option input { width: 1.0625rem; height: 1.0625rem; margin: 0; padding: 0; accent-color: var(--accent); }
 :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea) { min-width: 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-small); padding: 0.5625rem 0.6875rem; color: var(--text-primary); background: var(--surface-elevated); }
-.button-primary, .button-danger, .modal-footer button, .feature-header > button { min-height: 2.25rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.4375rem; padding: 0 0.875rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-small); background: var(--surface-secondary); text-decoration: none; color: var(--text-primary); }
+.button, .button-secondary, .button-primary, .button-danger, .modal-footer button, .feature-header > button { min-height: 2.25rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.4375rem; padding: 0 0.875rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-small); color: var(--text-primary); background: var(--surface-secondary); box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 7%, transparent); text-decoration: none; transition: border-color .14s ease, color .14s ease, background .14s ease, box-shadow .14s ease, transform .14s ease; }
+#root :where(.button, .button-secondary, .modal-footer button, .feature-header > button):hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 42%, var(--border-subtle)); background: var(--surface-hover); box-shadow: 0 0.1875rem 0.5rem color-mix(in srgb, var(--text-primary) 10%, transparent); transform: translateY(-1px); }
 #root .button-primary { border-color: var(--accent); color: var(--text-on-accent); background: var(--accent); }
 #root .button-primary:hover:not(:disabled) { color: var(--text-on-accent); background: var(--accent-hover); }
 #root .button-danger { border-color: var(--danger); color: var(--text-on-danger); background: var(--danger); }
+#root .button-danger:hover:not(:disabled) { border-color: color-mix(in srgb, var(--danger) 82%, #000); background: color-mix(in srgb, var(--danger) 86%, #000); box-shadow: 0 0.1875rem 0.5rem color-mix(in srgb, var(--danger) 24%, transparent); transform: translateY(-1px); }
+#root :where(.button, .button-secondary, .button-primary, .button-danger, .modal-footer button, .feature-header > button):active:not(:disabled) { box-shadow: none; transform: translateY(0); }
 .boot-screen { align-content: center; gap: 0.875rem; }.boot-screen svg { width: 2.625rem; height: 2.625rem; color: var(--accent); }
 
 .desktop { position: relative; width: 100%; height: 100%; overflow: hidden; color: var(--text-primary); background: #c8d8df; }
