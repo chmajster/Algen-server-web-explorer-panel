@@ -1829,8 +1829,11 @@ function Operations({
   const [selected, setSelected] = useState<HostsManagerOperation | null>(null);
   useEffect(() => {
     if (!initialOperationId) return;
-    void api.hostsManagerOperation(initialOperationId).then(setSelected).catch((error: unknown) => toast?.(error instanceof Error ? error.message : t("error.generic"), "error"));
-  }, [initialOperationId, t, toast]);
+    void api.hostsManagerOperation(initialOperationId).then(setSelected).catch((error: unknown) => {
+      toast?.(error instanceof Error ? error.message : t("error.generic"), "error");
+      onDeepLinkClose?.();
+    });
+  }, [initialOperationId, onDeepLinkClose, t, toast]);
   const columns: HostsDataColumn<HostsManagerOperation>[] = [
     {
       id: "host",

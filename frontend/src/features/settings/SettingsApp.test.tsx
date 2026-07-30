@@ -92,6 +92,25 @@ describe("settings application", () => {
     expect(save).toHaveBeenCalledWith({ taskbar_alignment: "left" });
   });
 
+  it("persists the background Actions indicator preference from Transfers settings", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SettingsAppView
+        settings={settingsFixture({ show_background_actions_indicator: true })}
+        initialSection="transfers"
+        t={t}
+        toast={vi.fn()}
+        onSettingsChange={save}
+        onOpenApp={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "settings.showBackgroundActionsIndicator" }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ show_background_actions_indicator: false }));
+    expect(screen.getByText("settings.showBackgroundActionsIndicatorHint")).toBeInTheDocument();
+  });
+
   it("previews, saves, searches and resets the interface font", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     render(<SettingsAppView settings={settingsFixture({ interface_font: "arial" })} t={t} toast={vi.fn()} onSettingsChange={save} onOpenApp={vi.fn()} />);
@@ -193,7 +212,8 @@ describe("settings application", () => {
     expect(screen.getByText(/\(2 d 0 godz\. 0 min desktop\.timeAgo\)/)).toBeInTheDocument();
     expect(screen.getByText("v1.4.2")).toBeInTheDocument();
     expect(screen.getByText("v1.5.0")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /settings.updateNow/ }));
+    expect(screen.getByRole("button", { name: "settings.updateNow" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "settings.updateAvailable" }));
     await waitFor(() => expect(run).toHaveBeenCalledWith(false));
     expect(await screen.findByRole("dialog", { name: "settings.updateProgressTitle" })).toBeInTheDocument();
     await waitFor(() => expect(progress).toHaveBeenCalled());
@@ -212,6 +232,8 @@ describe("settings application", () => {
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="updates" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
     expect(await screen.findByText("5 settings.minutesAgo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "settings.updateNow" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "settings.updateAvailable" })).not.toBeInTheDocument();
     expect(screen.getByText("settings.lastChecked")).toBeInTheDocument();
     expect(screen.getByText("settings.updateInterval")).toBeInTheDocument();
     expect(screen.getByText("12 settings.hoursShort")).toBeInTheDocument();

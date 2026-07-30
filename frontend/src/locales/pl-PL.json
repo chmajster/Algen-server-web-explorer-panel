@@ -828,6 +828,7 @@
   "actions.openDetails": "Otwórz szczegóły",
   "actions.restoreWindow": "Przywróć okno",
   "actions.dismiss": "Odrzuć akcję",
+  "actions.unavailable": "Ta operacja nie jest już dostępna.",
   "actions.started": "Rozpoczęto",
   "actions.source.upload": "Wysyłanie pliku",
   "actions.source.transfer": "Transfer plików",

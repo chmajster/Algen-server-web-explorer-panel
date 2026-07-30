@@ -86,4 +86,16 @@ describe("Windows-like taskbar", () => {
     fireEvent.click(clock);
     expect(events.onToggleCalendar).toHaveBeenCalledOnce();
   });
+
+  it("shows the background Actions indicator after Transfers with an active badge", () => {
+    const events = renderTaskbar();
+    const transfer = screen.getByRole("button", { name: "transfers.title: 0" });
+    const actions = screen.getByRole("button", { name: "actions.title: 3" });
+
+    expect(transfer.nextElementSibling).toBe(actions);
+    expect(actions).toHaveTextContent("3");
+    expect(actions).toHaveAttribute("aria-controls", "actions-center");
+    fireEvent.click(actions);
+    expect(events.onToggleActions).toHaveBeenCalledOnce();
+  });
 });

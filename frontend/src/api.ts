@@ -718,7 +718,7 @@ export type NetworkMount = {
   allowed_groups: string[];
   config: Record<string, unknown> & { has_secret?: boolean; automount?: boolean };
   fs: { total: number; used: number; free: number; fs_type: string } | null;
-  jobs: Array<{ id: string; action: string; status: string; exit_code: number | null; error: string; log_tail: string[] }>;
+  jobs: Array<{ id: string; action: string; status: string; created_at?: number; finished_at?: number | null; exit_code: number | null; error: string; log_tail: string[] }>;
 };
 export type NetworkMountPayload = {
   name: string;

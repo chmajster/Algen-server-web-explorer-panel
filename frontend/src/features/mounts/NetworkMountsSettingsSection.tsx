@@ -279,6 +279,7 @@ function MountForm({ mount, t, onClose, onSaved }: { mount?: NetworkMount; t: Tr
 export function NetworkMountsSettingsSection({ isAdmin, selectedJobId, t, toast, onSelectedJobClose }: { isAdmin: boolean; selectedJobId?: string; t: Translate; toast: ToastFn; onSelectedJobClose?: () => void }) {
   const [mounts, setMounts] = useState<NetworkMount[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<NetworkMount | "new" | null>(null);
   const [actionDialog, setActionDialog] = useState<{ mount: NetworkMount; action: MountAction } | null>(null);
@@ -289,24 +290,33 @@ export function NetworkMountsSettingsSection({ isAdmin, selectedJobId, t, toast,
   const [protocolFilter, setProtocolFilter] = useState<ProtocolFilter>("all");
   const [sort, setSort] = useState<SortOrder>("name-asc");
   const trackedJobs = useRef(new Set<string>());
+  const unavailableJobHandled = useRef("");
   const refresh = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!isAdmin) { setHasLoaded(true); return; }
     setLoading(true); setError("");
     try { setMounts(await api.mounts()); }
     catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setHasLoaded(true); }
   }, [isAdmin, t]);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
-    if (!selectedJobId) return;
+    if (!selectedJobId) { unavailableJobHandled.current = ""; return; }
     const mount = mounts.find((item) => item.jobs.some((job) => job.id === selectedJobId));
     const job = mount?.jobs.find((item) => item.id === selectedJobId);
-    if (!mount || !job) return;
+    if (!mount || !job) {
+      if (hasLoaded && !loading && !error && unavailableJobHandled.current !== selectedJobId) {
+        unavailableJobHandled.current = selectedJobId;
+        toast(t("actions.unavailable"), "error");
+        onSelectedJobClose?.();
+      }
+      return;
+    }
+    unavailableJobHandled.current = "";
     setQuery("");
     setStatusFilter("all");
     setProtocolFilter("all");
     setJobDetails({ name: mount.name, job });
-  }, [mounts, selectedJobId]);
+  }, [error, hasLoaded, loading, mounts, onSelectedJobClose, selectedJobId, t, toast]);
   const activeKey = useMemo(() => mounts.flatMap((mount) => mount.jobs).filter((job) => ["queued", "running"].includes(job.status)).map((job) => job.id).join("|"), [mounts]);
   useEffect(() => { if (!activeKey) return; const timer = window.setInterval(() => void refresh(), 1200); return () => window.clearInterval(timer); }, [activeKey, refresh]);
   useEffect(() => {

@@ -2,7 +2,7 @@ import {
   Accessibility, AlertTriangle, Bell, CheckCircle2, CircleUserRound, FileCog, FolderOpen, Info, Languages,
   ChevronLeft, ChevronRight, Image, MonitorCog, Network, Palette, RefreshCw, ScrollText, Search, Server, Settings, ShieldCheck, SlidersHorizontal, Terminal, Users, X
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   api, type AutoUpdateSettings, type DockerContainerDefaultsPolicy, type NetworkPolicy, type ProxmoxSafety, type SettingsMe, type SettingsPatch,
   type SystemStatus, type UpdateProgress, type UpdateStatus
@@ -55,7 +55,7 @@ const categorySettings: Record<SettingsCategory, string[]> = {
   system: ["hostInformation", "hostname", "operatingSystem", "cpuModel", "physicalCores", "logicalThreads", "totalMemory", "graphicsProcessors", "architecture", "ipAddresses", "applicationVersion", "systemUptime", "availableDiskSpace", "startupBehavior", "restoreWindows", "emptyDesktop", "showNotificationCenter", "showClockSeconds", "dateFormat", "welcomeWidget", "resetInterface"],
   personalization: ["theme", "accentColor", "interfaceFont", "fontPreview", "wallpaper", "wallpaperUrl", "wallpaperFit", "windowTransparency", "animations", "taskbarAlignment", "desktopShortcuts", "desktopShortcutSize", "desktopWidgets"],
   files: ["defaultView", "compactRows", "showHiddenFiles", "confirmDelete", "confirmOverwrite", "pageSize", "defaultSort", "sortDirection", "rememberLastPath"],
-  transfers: ["transferSuccess", "transferError", "openFailedTransfer", "showTransferIndicator", "rememberTransferFilter"],
+  transfers: ["transferSuccess", "transferError", "openFailedTransfer", "showTransferIndicator", "showBackgroundActionsIndicator", "rememberTransferFilter"],
   notifications: ["notificationsEnabled", "transferNotifications", "errorNotifications", "adminNotifications", "notificationLimit", "notificationAutoHide"],
   accessibility: ["interfaceScale", "reduceMotion", "highContrast", "strongActiveBorders", "alwaysShowFocus"],
   language: ["language", "dateFormat", "timeFormat", "firstDayOfWeek"], account: ["username", "groups", "changePassword"],
@@ -309,7 +309,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     }
     return () => { live = false; };
   }, [t, view]);
-  async function refreshUpdates() {
+  const refreshUpdates = useCallback(async () => {
     setChecking(true); setUpdateError("");
     try {
       const value = await api.checkUpdates();
@@ -320,7 +320,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     }
     catch (error) { setUpdateError(error instanceof Error ? error.message : t("settings.updateUnavailable")); }
     finally { setChecking(false); }
-  }
+  }, [t]);
   async function runUpdateNow() {
     if (!window.confirm(t("settings.confirmUpdateNow"))) return;
     setRunningUpdate(true);
@@ -350,7 +350,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     void poll();
     const timer = window.setInterval(() => void poll(), 1200);
     return () => { live = false; window.clearInterval(timer); };
-  }, [updateDialog?.phase, t]);
+  }, [refreshUpdates, updateDialog?.phase, t]);
   const closeUpdateDialog = () => {
     if (updateDialog?.progress?.started_at) window.sessionStorage.setItem(dismissedUpdateProgressKey, String(updateDialog.progress.started_at));
     setUpdateDialog(null);
@@ -371,8 +371,9 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     return `${date.toLocaleString(locale, { dateStyle: "medium", timeStyle: "medium" })} (${parts.join(" ")} ${t("desktop.timeAgo")})`;
   };
   if (loading) return <div className="loading-state">{t("status.loading")}</div>;
-  const updateState = updateError ? "danger" : updates?.update_available ? "warning" : "success";
-  const updateLabel = updateError || (updates?.update_available ? t("settings.updateAvailable") : updates ? t("settings.upToDate") : t("settings.updateUnavailable"));
+  const updateAvailable = Boolean(updates?.update_available);
+  const updateState = updateError ? "danger" : updateAvailable ? "warning" : "success";
+  const updateLabel = updateError || (updateAvailable ? t("settings.updateAvailable") : updates ? t("settings.upToDate") : t("settings.updateUnavailable"));
   const lastCheckedAt = updatePolicy ? updatePolicy.last_checked : updates?.checked_at;
   const checkedMinutesAgo = lastCheckedAt ? Math.max(0, Math.floor((renderedAt - lastCheckedAt * 1000) / 60_000)) : null;
   const updateCheckInterval = updatePolicy
@@ -386,9 +387,19 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     <section className="admin-overview-hero">
       <div className="admin-overview-icon"><RefreshCw /></div>
       <div className="admin-overview-copy"><small>{t("settings.updates")}</small><h3>{t("settings.updateStatus")}</h3><p>{updateLabel}</p></div>
-      <div className={`admin-overall-state ${updateState}`}><span />{updates?.update_available ? t("settings.updateAvailable") : updateLabel}</div>
+      {updateAvailable
+        ? <button
+          className={`admin-overall-state ${updateState} actionable`}
+          type="button"
+          title={t("settings.updateNow")}
+          disabled={runningUpdate}
+          onClick={() => void runUpdateNow()}
+        >
+          <span />{t("settings.updateAvailable")}
+        </button>
+        : <div className={`admin-overall-state ${updateState}`}><span />{updateLabel}</div>}
     </section>
-    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updates?.update_available ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.lastChecked")}</dt><dd>{checkedMinutesAgo === null ? "—" : `${checkedMinutesAgo} ${t("settings.minutesAgo")}`}</dd><dt>{t("settings.updateInterval")}</dt><dd>{updateCheckInterval}</dd><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
+    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updateAvailable ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.lastChecked")}</dt><dd>{checkedMinutesAgo === null ? "—" : `${checkedMinutesAgo} ${t("settings.minutesAgo")}`}</dd><dt>{t("settings.updateInterval")}</dt><dd>{updateCheckInterval}</dd><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={!updateAvailable || runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div></Card>
     {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
   </div>;
   return <div className="administration-dashboard">

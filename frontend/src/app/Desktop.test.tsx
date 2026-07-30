@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type ModuleSummary } from "../api";
+import { api, type ModuleSummary, type Task } from "../api";
 import { settingsFixture } from "../test/settings";
 import { Desktop } from "./Desktop";
 import { interfaceFontStacks } from "./interfaceFonts";
@@ -10,6 +10,40 @@ vi.mock("../features/modules/ModuleApp", () => ({ ModuleApp: ({ onDirtyChange }:
 
 const controls = { add: vi.fn(() => []), pause: vi.fn(), resume: vi.fn(), cancel: vi.fn(), retry: vi.fn(), setPriority: vi.fn() };
 const t = (key: string) => key;
+const actionTask: Task = {
+  id: "transfer-action",
+  username: "test",
+  type: "copy",
+  op: "copy",
+  status: "running",
+  priority: 0,
+  created_at: Date.now() / 1000,
+  source_paths: ["/home/test/archive.zip"],
+  destination_path: "/srv/backups",
+  started_at: Date.now() / 1000,
+  finished_at: null,
+  paused_at: null,
+  bytes_transferred: 25,
+  total_bytes: 100,
+  progress_percent: 25,
+  progress: 25,
+  speed_bps: 1,
+  speed_human: "1 B/s",
+  average_speed_bps: 1,
+  average_speed_human: "1 B/s",
+  eta_seconds: 75,
+  eta_human: "75s",
+  current_file: "archive.zip",
+  files_done: 0,
+  files_total: 1,
+  rsync_exit_code: null,
+  error_message: "",
+  log_tail: [],
+  stderr_tail: [],
+  command_preview: [],
+  retry_count: 0,
+  errors: [],
+};
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -18,9 +52,9 @@ beforeEach(() => {
   localStorage.removeItem("webnas_recent_apps_test");
 });
 
-function renderDesktop(overrides = {}) {
+function renderDesktop(overrides = {}, tasks: Task[] = []) {
   const profile = settingsFixture(overrides);
-  return render(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+  return render(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={tasks} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
 }
 
 describe("personalized desktop", () => {
@@ -124,6 +158,44 @@ describe("personalized desktop", () => {
     expect(screen.queryByRole("button", { name: "app.samba" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "app.modules" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "app.store" })).toBeInTheDocument();
+  });
+
+  it("restores an exact minimized transfer from Actions Center without duplicating its window", async () => {
+    renderDesktop({ animations_enabled: false }, [actionTask]);
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.title: 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "actions.openDetails: actions.source.transfer" }));
+
+    const transferWindow = await screen.findByRole("dialog", { name: "app.transfers" });
+    await waitFor(() => expect(transferWindow).toHaveTextContent("/home/test/archive.zip → /srv/backups"));
+    fireEvent.click(within(transferWindow).getByRole("button", { name: "window.minimize" }));
+    expect(screen.queryByRole("dialog", { name: "app.transfers" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.title: 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "actions.openDetails: actions.source.transfer" }));
+
+    expect(await screen.findAllByRole("dialog", { name: "app.transfers" })).toHaveLength(1);
+  });
+
+  it("keeps Actions Center mutually exclusive with Start, notifications, and calendar", () => {
+    renderDesktop({}, [actionTask]);
+    const actions = screen.getByRole("button", { name: "actions.title: 1" });
+
+    fireEvent.click(actions);
+    expect(screen.getByRole("complementary", { name: "actions.backgroundTitle" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    expect(screen.queryByRole("complementary", { name: "actions.backgroundTitle" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "desktop.mainMenu" })).toBeInTheDocument();
+
+    fireEvent.click(actions);
+    expect(screen.queryByRole("dialog", { name: "desktop.mainMenu" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "desktop.notifications" }));
+    expect(screen.queryByRole("complementary", { name: "actions.backgroundTitle" })).not.toBeInTheDocument();
+
+    fireEvent.click(actions);
+    fireEvent.click(screen.getByRole("button", { name: "calendar.open" }));
+    expect(screen.queryByRole("complementary", { name: "actions.backgroundTitle" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "calendar.title" })).toBeInTheDocument();
   });
 
   it("opens current-user information when the profile in Start is clicked", async () => {

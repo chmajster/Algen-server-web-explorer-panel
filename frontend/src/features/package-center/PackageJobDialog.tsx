@@ -12,6 +12,9 @@ export function PackageJobDialog({ initialJob, jobId, moduleName, t, onClose }: 
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const log = useRef<HTMLPreElement>(null);
+  const streamRevision = useRef(0);
+  const pollSequence = useRef(0);
+  const latestAppliedPoll = useRef(0);
   const trackedId = jobId || initialJob?.id || "";
   const jobStatus = job?.status;
 
@@ -25,6 +28,7 @@ export function PackageJobDialog({ initialJob, jobId, moduleName, t, onClose }: 
     if (!jobId) return;
     let active = true;
     setError("");
+    setJob((current) => current?.id === jobId ? current : null);
     void api.appJob(jobId).then((next) => {
       if (active) setJob(next);
     }).catch((reason: unknown) => {
@@ -39,6 +43,7 @@ export function PackageJobDialog({ initialJob, jobId, moduleName, t, onClose }: 
     source.onmessage = (event) => {
       try {
         const next = JSON.parse(event.data) as AppJob;
+        streamRevision.current += 1;
         setJob(next);
         if (TERMINAL_STATUSES.has(next.status)) source.close();
       } catch {
@@ -50,10 +55,23 @@ export function PackageJobDialog({ initialJob, jobId, moduleName, t, onClose }: 
   }, [jobStatus, trackedId]);
   useEffect(() => {
     if (!trackedId || !jobStatus || TERMINAL_STATUSES.has(jobStatus)) return;
+    let active = true;
+    let polling = false;
     const timer = window.setInterval(() => {
-      void api.appJob(trackedId).then(setJob).catch(() => setConnected(false));
+      if (polling) return;
+      polling = true;
+      const sequence = ++pollSequence.current;
+      const revisionAtStart = streamRevision.current;
+      void api.appJob(trackedId).then((next) => {
+        if (!active || sequence < latestAppliedPoll.current || revisionAtStart !== streamRevision.current) return;
+        latestAppliedPoll.current = sequence;
+        setJob(next);
+      }).catch(() => { if (active) setConnected(false); }).finally(() => { polling = false; });
     }, 2500);
-    return () => window.clearInterval(timer);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [jobStatus, trackedId]);
 
   const lastLogId = job?.log_tail[job.log_tail.length - 1]?.id;

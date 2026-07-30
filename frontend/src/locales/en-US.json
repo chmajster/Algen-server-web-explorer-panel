@@ -828,6 +828,7 @@
   "actions.openDetails": "Open details",
   "actions.restoreWindow": "Restore window",
   "actions.dismiss": "Dismiss action",
+  "actions.unavailable": "This operation is no longer available.",
   "actions.started": "Started",
   "actions.source.upload": "File upload",
   "actions.source.transfer": "File transfer",

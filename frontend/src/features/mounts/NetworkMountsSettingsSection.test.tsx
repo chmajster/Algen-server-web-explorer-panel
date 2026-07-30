@@ -184,6 +184,31 @@ describe("network mount settings", () => {
     expect(within(card).getByText("mounts.operation.mounting")).toBeInTheDocument();
   });
 
+  it("opens the exact mount job selected from Actions Center", async () => {
+    vi.mocked(api.mounts).mockResolvedValue([mount({
+      jobs: [{ id: "mount-job-1", action: "mount", status: "failed", created_at: 10, finished_at: 11, exit_code: 1, error: "Permission denied", log_tail: ["mount failed"] }],
+    })] as never);
+    const close = vi.fn();
+
+    render(<NetworkMountsSettingsSection isAdmin selectedJobId="mount-job-1" onSelectedJobClose={close} t={t} toast={vi.fn()} />);
+
+    const dialog = await screen.findByRole("dialog", { name: "actions.mountOperationDetails: media" });
+    expect(dialog).toHaveTextContent("Permission denied");
+    expect(dialog).toHaveTextContent("mount failed");
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "action.close" })[0]);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("reports a mount job that disappeared before its details could be opened", async () => {
+    const toast = vi.fn();
+    const close = vi.fn();
+
+    render(<NetworkMountsSettingsSection isAdmin selectedJobId="missing-job" onSelectedJobClose={close} t={t} toast={toast} />);
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("actions.unavailable", "error"));
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("copies the remote path and reports success", async () => {
     const toast = vi.fn();
     vi.mocked(api.mounts).mockResolvedValue([mount()] as never);

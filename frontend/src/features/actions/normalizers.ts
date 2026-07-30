@@ -132,7 +132,8 @@ export function normalizeAppJob(job: AppJob, moduleNames: Map<string, string>, t
 }
 
 export function normalizeMountJob(mount: NetworkMount, job: NetworkMount["jobs"][number], t: Translate): BackgroundAction {
-  const createdAt = (mount.last_operation_at || Date.now() / 1000) * 1000;
+  const createdAt = (job.created_at || mount.last_operation_at || Date.now() / 1000) * 1000;
+  const finishedAt = job.finished_at ? job.finished_at * 1000 : undefined;
   return {
     key: actionKey("mount", job.id),
     id: job.id,
@@ -143,8 +144,8 @@ export function normalizeMountJob(mount: NetworkMount, job: NetworkMount["jobs"]
     currentStep: t("actions.source.mount"),
     error: job.error || undefined,
     createdAt,
-    updatedAt: createdAt,
-    finishedAt: ["completed", "failed", "cancelled"].includes(job.status) ? createdAt : undefined,
+    updatedAt: finishedAt || createdAt,
+    finishedAt: ["completed", "failed", "cancelled"].includes(job.status) ? finishedAt || createdAt : undefined,
     target: {
       app: "settings",
       initialPath: "networkResources",

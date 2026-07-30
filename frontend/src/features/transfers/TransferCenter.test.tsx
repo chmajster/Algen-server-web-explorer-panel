@@ -47,7 +47,7 @@ describe("TransferCenter permissions", () => {
 
     const card = container.querySelector('[data-task-id="task-1"]');
     await waitFor(() => expect(card).toHaveClass("action-target-highlight"));
-    expect(screen.getByText("/home/bob/source")).toBeInTheDocument();
+    expect(card).toHaveTextContent("/home/bob/source → /home/bob/target");
 
     fireEvent.click(screen.getByTitle("transfers.details"));
     expect(close).toHaveBeenCalledOnce();

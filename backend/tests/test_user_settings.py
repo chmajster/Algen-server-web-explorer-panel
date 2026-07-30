@@ -26,6 +26,7 @@ def test_defaults_cover_every_user_preference():
     assert values["notification_limit"] == 5
     assert values["animations_enabled"] is True
     assert values["interface_font"] == "system"
+    assert values["show_background_actions_indicator"] is True
 
 
 def test_update_policy_checks_every_twelve_hours_by_default():
@@ -211,6 +212,21 @@ def test_patch_persists_interface_scale_for_the_current_user(monkeypatch):
     assert written["username"] == "alice"
     assert written["settings"]["interface_scale"] == 115
     assert result["interface_scale"] == 115
+
+
+def test_patch_persists_background_actions_indicator_for_the_current_user(monkeypatch):
+    written = {}
+    monkeypatch.setattr(settings, "_read_settings", lambda username: {})
+    monkeypatch.setattr(settings, "_write_settings", lambda username, data: written.update(data))
+    monkeypatch.setattr(settings, "_user_info", lambda username: {"username": username, "is_admin": False})
+
+    result = settings.settings_patch(
+        settings.MePatch(show_background_actions_indicator=False),
+        SimpleNamespace(username="alice"),
+    )
+
+    assert written["show_background_actions_indicator"] is False
+    assert result["show_background_actions_indicator"] is False
 
 
 def test_patch_persists_each_application_pin_destination(monkeypatch):

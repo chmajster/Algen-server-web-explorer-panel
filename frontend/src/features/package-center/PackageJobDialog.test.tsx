@@ -25,7 +25,7 @@ const queued: AppJob = { id: "job-1", module_id: "samba", action: "install", sta
 
 describe("PackageJobDialog", () => {
   beforeEach(() => { FakeEventSource.instances = []; vi.stubGlobal("EventSource", FakeEventSource); });
-  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it("streams progress and logs while the durable job runs", () => {
     render(<PackageJobDialog initialJob={queued} moduleName="Samba" t={(key) => key} onClose={vi.fn()} />);
@@ -61,9 +61,25 @@ describe("PackageJobDialog", () => {
 
     render(<PackageJobDialog jobId="job-1" moduleName="Samba" t={(key) => key} onClose={vi.fn()} />);
 
-    expect(screen.getByText("common.loading")).toBeInTheDocument();
+    expect(screen.getByText("status.loading")).toBeInTheDocument();
     await waitFor(() => expect(api.appJob).toHaveBeenCalledWith("job-1"));
     expect(await screen.findByText("18%")).toBeInTheDocument();
-    expect(FakeEventSource.instances.at(-1)?.url).toContain("/api/apps/jobs/job-1/events");
+    expect(FakeEventSource.instances[FakeEventSource.instances.length - 1]?.url).toContain("/api/apps/jobs/job-1/events");
+  });
+
+  it("keeps a newer terminal SSE state when an older polling request finishes later", async () => {
+    vi.useFakeTimers();
+    let resolvePoll: ((job: AppJob) => void) | undefined;
+    vi.spyOn(api, "appJob").mockImplementation(() => new Promise((resolve) => { resolvePoll = resolve; }));
+    render(<PackageJobDialog initialJob={queued} moduleName="Samba" t={(key) => key} onClose={vi.fn()} />);
+    const source = FakeEventSource.instances[0];
+
+    act(() => vi.advanceTimersByTime(2500));
+    act(() => source.emit({ ...queued, status: "completed", progress: 100, current_step: "Completed" }));
+    await act(async () => resolvePoll?.({ ...queued, status: "running", progress: 30, current_step: "Stale" }));
+
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.queryByText("Stale")).not.toBeInTheDocument();
   });
 });
