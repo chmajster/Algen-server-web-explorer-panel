@@ -89,7 +89,14 @@ describe("UpdateStatusPage", () => {
   it("shows the version transition in the one-time completion dialog", () => {
     const close = vi.fn();
     render(<UpdateCompletionDialog
-      notice={{ id: "update-1", previous_version: "1.0.0", current_version: "2.0.0", finished_at: 200 }}
+      notice={{
+        id: "update-1",
+        previous_version: "1.0.0",
+        current_version: "2.0.0",
+        finished_at: 200,
+        commit_revision: "abcdef1234567890abcdef1234567890abcdef12",
+        commit_date: 300,
+      }}
       t={t}
       onClose={close}
     />);
@@ -97,6 +104,8 @@ describe("UpdateStatusPage", () => {
     expect(screen.getByRole("dialog", { name: "updateStatus.successTitle" })).toBeInTheDocument();
     expect(screen.getByText("1.0.0")).toBeInTheDocument();
     expect(screen.getByText("2.0.0")).toBeInTheDocument();
+    expect(screen.getByText("abcdef123456")).toHaveAttribute("title", "abcdef1234567890abcdef1234567890abcdef12");
+    expect(screen.getByText(new Date(300 * 1000).toLocaleString())).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "action.close" }));
     expect(close).toHaveBeenCalledOnce();
   });

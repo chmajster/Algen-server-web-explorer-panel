@@ -200,7 +200,14 @@ export type UpdateProgress = {
   lines: string[];
 };
 export type UpdateStart = UpdateProgress & { ok: boolean; updated?: boolean; skipped?: boolean; reason?: string };
-export type UpdateCompletionNotice = { id: string; previous_version: string | null; current_version: string | null; finished_at: number | null };
+export type UpdateCompletionNotice = {
+  id: string;
+  previous_version: string | null;
+  current_version: string | null;
+  finished_at: number | null;
+  commit_revision: string | null;
+  commit_date: number | null;
+};
 export type AutoUpdateSettings = {
   check_enabled: boolean;
   enabled: boolean;
@@ -495,7 +502,10 @@ export type HostsManagerHost = AnsibleHost & {
   identity?: Record<string, unknown> | null; latest_report?: Record<string, Record<string, unknown>>;
   environment_details?: HostsManagerEnvironment | null; capabilities?: HostsManagerCapability[];
 };
-export type HostsManagerGroup = AnsibleGroup;
+export type HostsManagerGroup = AnsibleGroup & {
+  managed?: boolean;
+  managed_by?: { apmid_id: string; environment_id: string } | null;
+};
 export type HostsManagerCredential = AnsibleCredential & {
   type: AnsibleCredential["type"] | "redfish" | "ipmi" | "proxmox_api" | "wol";
   environment_id?: string | null; last_used_at?: number | null; host_count?: number;
@@ -507,6 +517,14 @@ export type HostsManagerEnvironment = {
   id: string; name: string; slug: string; description: string; color: string; default_hostname_pattern_id?: string | null;
   default_credential_id?: string | null; default_agent_port: number; report_interval_seconds: number; active: boolean;
   host_count: number; created_at: number; updated_at: number;
+};
+export type HostsManagerApmid = {
+  id: string; code: string; description: string; active: boolean;
+  created_at: number; updated_at: number; created_by: string; updated_by: string;
+  environment_groups: Array<{
+    environment_id: string; environment_name: string; environment_slug: string;
+    group_id: string; group_name: string; active: boolean;
+  }>;
 };
 export type HostsManagerHostnamePattern = {
   id: string; name: string; prefix: string; suffix: string; digits: number; start_value: number; step: number;
@@ -527,8 +545,8 @@ export type HostsManagerSettings = {
 };
 export type HostsManagerSettingsUpdate = Omit<HostsManagerSettings, "next_hostname" | "sequence_width" | "preview_hostnames" | "updated_at" | "updated_by">;
 export type HostsManagerEnrollmentInput = {
-  bootstrap_os: HostsManagerBootstrapOS; apply_hostname: boolean; expires_minutes: number; port: number; ssh_user: string;
-  credential_id: string | null; environment: string; location: string; tags: string[]; group_ids: string[];
+  bootstrap_os: HostsManagerBootstrapOS; apply_hostname: boolean; expires_minutes?: number | null;
+  apmid_id: string; environment_id: string; location: string; tags: string[]; group_ids: string[];
   require_approval: boolean; onboard_ansible: boolean; mode?: "one_time" | "permanent";
   hostname_pattern_id?: string | null; bound_address?: string; agent_port?: number | null; report_interval_seconds?: number | null;
 };
@@ -538,6 +556,9 @@ export type HostsManagerEnrollmentToken = {
   used: boolean; expired?: boolean; revoked?: boolean; mode?: "one_time" | "permanent"; hostname_pattern_id?: string | null;
   bound_address?: string; agent_port?: number; report_interval_seconds?: number; token?: string; script_url?: string;
   command?: string; filename?: string;
+  apmid_id?: string | null; apmid_code?: string | null; environment_id?: string | null;
+  environment_name?: string | null; environment_slug?: string | null;
+  managed_group_id?: string | null; managed_group_name?: string | null; group_ids?: string[];
 };
 export type HostsManagerRepository = { id: string; name: string; description: string; url: string; revision: string; last_commit: string; last_sync_at?: number | null; last_sync_status: string; active: boolean; updated_at: number };
 export type HostsManagerPowerProfile = { id: string; name: string; provider: "none" | "wol" | "redfish" | "ipmi" | "proxmox"; address: string; mac_address: string; active: boolean; updated_at: number };
@@ -1317,6 +1338,10 @@ export const api = {
   hostsManagerEnvironments: () => request<HostsManagerEnvironment[]>("/api/modules/hosts-manager/environments"),
   saveHostsManagerEnvironment: (payload: Record<string, unknown>, id = "") => request<HostsManagerEnvironment>(id ? `/api/modules/hosts-manager/environments/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/environments", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
   deleteHostsManagerEnvironment: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/environments/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  hostsManagerApmids: () => request<HostsManagerApmid[]>("/api/modules/hosts-manager/apmids"),
+  saveHostsManagerApmid: (payload: { code: string; description: string; active: boolean }, id = "") => request<HostsManagerApmid>(id ? `/api/modules/hosts-manager/apmids/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/apmids", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  deleteHostsManagerApmid: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/apmids/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  syncHostsManagerApmidGroups: () => request<{ created: number; updated: number; total: number }>("/api/modules/hosts-manager/apmids/sync-groups", { method: "POST", body: "{}" }),
   hostsManagerHostnamePatterns: () => request<HostsManagerHostnamePattern[]>("/api/modules/hosts-manager/hostname-patterns"),
   saveHostsManagerHostnamePattern: (payload: Record<string, unknown>, id = "") => request<HostsManagerHostnamePattern>(id ? `/api/modules/hosts-manager/hostname-patterns/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/hostname-patterns", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
   deleteHostsManagerHostnamePattern: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/hostname-patterns/${encodeURIComponent(id)}`, { method: "DELETE" }),

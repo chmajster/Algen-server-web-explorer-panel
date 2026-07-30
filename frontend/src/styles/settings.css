@@ -298,6 +298,7 @@
 .update-completion-dialog dl > div { min-width: 0; display: grid; grid-template-columns: minmax(8rem, .8fr) minmax(0, 1.2fr); gap: 0.75rem; padding: 0.625rem; background: var(--surface-primary); }
 .update-completion-dialog dt { color: var(--text-muted); font-size: var(--font-size-xs); }
 .update-completion-dialog dd { min-width: 0; margin: 0; font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+.update-completion-dialog dd code { color: inherit; font: inherit; font-family: var(--font-family-monospace); }
 
 @media (max-width: 74.9375rem) {
   .update-status-shell { width: 94vw; }

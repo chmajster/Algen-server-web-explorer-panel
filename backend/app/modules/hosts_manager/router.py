@@ -37,13 +37,20 @@ from ..ansible_controller.runner import (
 )
 from ..ansible_controller.security import atomic_private_write, redact_text
 from .models import (
-    AgentHeartbeatInput, AgentReportInput, BackupInput, CapabilityActionInput, ConfirmationInput, CredentialInput,
+    AgentHeartbeatInput, AgentReportInput, ApmidInput, BackupInput, CapabilityActionInput, ConfirmationInput, CredentialInput,
     BootstrapOS, EnrollmentClaimInput, EnrollmentTokenInput, EnrollmentTokenMode, EnvironmentInput, FingerprintAcceptInput, GroupInput, HostInput,
     HostnamePatternInput, HostnamePatternSkipInput, HostsManagerSettingsUpdate, InventoryInput, PowerActionInput,
     PowerProfileInput, RepositoryInput, RestoreInput, ScanImportInput, ScanInput, SshOnboardingInstallInput,
     SshOnboardingProbeInput,
 )
-from .service import SCHEMA_VERSION, registry, stable_id
+from .service import (
+    SCHEMA_VERSION,
+    ApmidInUseError,
+    ManagedGroupConflictError,
+    ManagedGroupProtectedError,
+    registry,
+    stable_id,
+)
 
 
 router = APIRouter(prefix="/api/modules/hosts-manager", tags=["hosts-manager"])
@@ -141,6 +148,65 @@ def environments(user: SessionUser = Depends(require_permission(Permission.HOSTS
     return _service().environments()
 
 
+@router.get("/apmids")
+def apmids(user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_VIEW))):
+    return _service().apmids()
+
+
+@router.post("/apmids")
+def create_apmid(
+    payload: ApmidInput,
+    user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE)),
+):
+    try:
+        item = _service().save_apmid(payload, user.username)
+    except ManagedGroupConflictError as error:
+        api_error(409, "APMID_GROUP_CONFLICT", str(error))
+    _activity(user.username, "apmid_create", item["id"], {"code": item["code"], "active": item["active"]})
+    return item
+
+
+@router.put("/apmids/{apmid_id}")
+def update_apmid(
+    apmid_id: str,
+    payload: ApmidInput,
+    user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE)),
+):
+    _require(_service()._get("apmids", apmid_id), "APMID_NOT_FOUND", "APMID not found")
+    try:
+        item = _service().save_apmid(payload, user.username, apmid_id)
+    except ManagedGroupConflictError as error:
+        api_error(409, "APMID_GROUP_CONFLICT", str(error))
+    _activity(user.username, "apmid_update", apmid_id, {"code": item["code"], "active": item["active"]})
+    return item
+
+
+@router.delete("/apmids/{apmid_id}")
+def delete_apmid(
+    apmid_id: str,
+    user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE)),
+):
+    try:
+        removed = _service().delete_apmid(apmid_id)
+    except ApmidInUseError as error:
+        api_error(409, "APMID_IN_USE", str(error))
+    _require(removed, "APMID_NOT_FOUND", "APMID not found")
+    _activity(user.username, "apmid_delete", apmid_id)
+    return {"ok": True}
+
+
+@router.post("/apmids/sync-groups")
+def sync_apmid_groups(
+    user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE)),
+):
+    try:
+        result = _service().sync_apmid_environment_groups(user.username)
+    except (ManagedGroupConflictError, ManagedGroupProtectedError) as error:
+        api_error(409, "APMID_GROUP_SYNC_FAILED", str(error))
+    _activity(user.username, "apmid_groups_sync", "all", result)
+    return result
+
+
 @router.post("/environments")
 def create_environment(
     payload: EnvironmentInput,
@@ -150,6 +216,8 @@ def create_environment(
         item = _service().save_environment(payload, user.username)
     except KeyError as error:
         api_error(422, "ENVIRONMENT_DEFAULT_NOT_FOUND", str(error))
+    except ManagedGroupConflictError as error:
+        api_error(409, "APMID_GROUP_CONFLICT", str(error))
     _activity(user.username, "environment_create", item["id"])
     return item
 
@@ -165,6 +233,8 @@ def update_environment(
         item = _service().save_environment(payload, user.username, environment_id)
     except KeyError as error:
         api_error(422, "ENVIRONMENT_DEFAULT_NOT_FOUND", str(error))
+    except ManagedGroupConflictError as error:
+        api_error(409, "APMID_GROUP_CONFLICT", str(error))
     _activity(user.username, "environment_update", environment_id)
     return item
 
@@ -406,21 +476,32 @@ def groups(user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAG
 
 @router.post("/groups")
 def create_group(payload: GroupInput, user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE))):
-    item = _service().save_group(payload, user.username)
+    try:
+        item = _service().save_group(payload, user.username)
+    except ManagedGroupConflictError as error:
+        api_error(409, "GROUP_NAME_CONFLICT", str(error))
     _activity(user.username, "group_create", item["id"])
     return item
 
 
 @router.put("/groups/{group_id}")
 def update_group(group_id: str, payload: GroupInput, user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE))):
-    item = _service().save_group(payload, user.username, group_id)
+    try:
+        item = _service().save_group(payload, user.username, group_id)
+    except ManagedGroupProtectedError as error:
+        api_error(409, "MANAGED_GROUP_PROTECTED", str(error))
+    except ManagedGroupConflictError as error:
+        api_error(409, "GROUP_NAME_CONFLICT", str(error))
     _activity(user.username, "group_update", group_id)
     return item
 
 
 @router.delete("/groups/{group_id}")
 def delete_group(group_id: str, user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE))):
-    removed = _service().delete_group(group_id)
+    try:
+        removed = _service().delete_group(group_id)
+    except ManagedGroupProtectedError as error:
+        api_error(409, "MANAGED_GROUP_PROTECTED", str(error))
     if removed:
         _activity(user.username, "group_delete", group_id)
     return {"ok": removed}
@@ -675,20 +756,18 @@ def install_agent_over_ssh(
                 bootstrap_os=BootstrapOS.linux,
                 apply_hostname=payload.apply_hostname,
                 expires_minutes=int(settings["token_ttl_minutes"]),
+                apmid_id=payload.apmid_id,
+                environment_id=payload.environment_id,
                 hostname_pattern_id=payload.hostname_pattern_id,
                 bound_address=payload.address,
                 agent_port=payload.agent_port,
                 report_interval_seconds=payload.report_interval_seconds,
-                port=payload.port,
-                ssh_user=payload.ssh_user,
-                credential_id=payload.credential_id,
-                environment=payload.environment,
                 require_approval=True,
             ),
             user.username,
         )
     except KeyError:
-        api_error(422, "ONBOARDING_DEFAULT_NOT_FOUND", "The selected environment, pattern, or SSH credential is unavailable")
+        api_error(422, "ONBOARDING_DEFAULT_NOT_FOUND", "The selected APMID, environment, or pattern is unavailable")
     operation = _service().operation(
         None,
         "agent.install",
@@ -787,8 +866,17 @@ def create_enrollment_token(payload: EnrollmentTokenInput, user: SessionUser = D
         item = _service().create_enrollment_token(payload, user.username)
     except OverflowError:
         api_error(409, "HOSTNAME_SEQUENCE_EXHAUSTED", "The hostname sequence is exhausted")
-    except KeyError:
-        api_error(422, "ENROLLMENT_DEFAULT_NOT_FOUND", "The selected hostname pattern, environment, or SSH credential is unavailable")
+    except KeyError as error:
+        detail = str(error).casefold()
+        if "apmid" in detail:
+            api_error(422, "APMID_INACTIVE", "The selected APMID does not exist or is inactive")
+        if "environment" in detail:
+            api_error(422, "ENVIRONMENT_INACTIVE", "The selected environment does not exist or is inactive")
+        api_error(422, "ENROLLMENT_DEFAULT_NOT_FOUND", "The selected hostname pattern or additional group is unavailable")
+    except ManagedGroupProtectedError as error:
+        api_error(409, "MANAGED_GROUP_PROTECTED", str(error))
+    except ManagedGroupConflictError as error:
+        api_error(409, "APMID_GROUP_CONFLICT", str(error))
     token = item["token"]
     item["script_url"] = "/api/modules/hosts-manager/enrollment-script"
     if item["bootstrap_os"] == "windows":
@@ -807,6 +895,9 @@ def create_enrollment_token(payload: EnrollmentTokenInput, user: SessionUser = D
     _activity(user.username, "enrollment_token_create", item["id"], {
         "expires_at": item["expires_at"], "assigned_hostname": item["assigned_hostname"],
         "bootstrap_os": item["bootstrap_os"], "apply_hostname": item["apply_hostname"],
+        "apmid_id": item["apmid_id"], "apmid_code": item["apmid_code"],
+        "environment_id": item["environment_id"], "environment_slug": item["environment_slug"],
+        "managed_group_id": item["managed_group_id"], "managed_group_name": item["managed_group_name"],
     })
     return item
 

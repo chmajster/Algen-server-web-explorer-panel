@@ -281,6 +281,20 @@ class EnvironmentInput(StrictModel):
     active: bool = True
 
 
+class ApmidInput(StrictModel):
+    code: str = Field(min_length=1, max_length=64)
+    description: str = Field(default="", max_length=1000)
+    active: bool = True
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9_-]+", normalized):
+            raise ValueError("APMID code may contain only letters, digits, underscores, and hyphens")
+        return normalized
+
+
 class HostnamePatternInput(StrictModel):
     name: str = Field(min_length=1, max_length=128)
     prefix: str = Field(default="", max_length=48, pattern=r"^[A-Za-z0-9-]*$")
@@ -313,16 +327,14 @@ class EnrollmentTokenInput(StrictModel):
     hostname_pattern: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9*?.-]+$")
     bootstrap_os: BootstrapOS | None = None
     apply_hostname: bool | None = None
-    expires_minutes: int = Field(default=15, ge=1, le=525600)
+    expires_minutes: int | None = Field(default=None, ge=1, le=525600)
     mode: EnrollmentTokenMode = EnrollmentTokenMode.one_time
+    apmid_id: str = Field(min_length=1, max_length=64, pattern=ID_PATTERN)
+    environment_id: str = Field(min_length=1, max_length=64, pattern=ID_PATTERN)
     hostname_pattern_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
     bound_address: str = Field(default="", max_length=64)
     agent_port: int | None = Field(default=None, ge=1, le=65535)
     report_interval_seconds: int | None = Field(default=None, ge=30, le=86400)
-    port: int = Field(default=22, ge=1, le=65535)
-    ssh_user: str = Field(default="algen-ansible", max_length=64, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
-    credential_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
-    environment: str = Field(default="", max_length=64)
     location: str = Field(default="", max_length=128)
     tags: list[str] = Field(default_factory=list, max_length=50)
     group_ids: list[str] = Field(default_factory=list, max_length=500)
@@ -330,6 +342,14 @@ class EnrollmentTokenInput(StrictModel):
     onboard_ansible: bool = False
 
     _tags = field_validator("tags")(HostInput.safe_tags)
+
+    @model_validator(mode="after")
+    def valid_expiration(self) -> "EnrollmentTokenInput":
+        if self.mode == EnrollmentTokenMode.one_time and self.expires_minutes is None:
+            raise ValueError("one-time enrollment tokens require expires_minutes")
+        if self.mode == EnrollmentTokenMode.permanent:
+            self.expires_minutes = None
+        return self
 
     @field_validator("bound_address")
     @classmethod
@@ -406,7 +426,8 @@ class SshOnboardingProbeInput(StrictModel):
 
 
 class SshOnboardingInstallInput(SshOnboardingProbeInput):
-    environment: str = Field(default="", max_length=64)
+    apmid_id: str = Field(min_length=1, max_length=64, pattern=ID_PATTERN)
+    environment_id: str = Field(min_length=1, max_length=64, pattern=ID_PATTERN)
     hostname_pattern_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
     agent_port: int = Field(default=8443, ge=1, le=65535)
     report_interval_seconds: int = Field(default=300, ge=30, le=86400)

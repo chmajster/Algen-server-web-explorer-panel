@@ -114,7 +114,6 @@ on_error() {
   else
     printf 'Systemd service was not installed yet, so journalctl may have no entries.\n' >&2
   fi
-  cleanup_failed_install
 }
 trap 'on_error "$LINENO" "$?"' ERR
 
@@ -1314,6 +1313,28 @@ Installer URL:
 EOF
 }
 
+status_operation_name() {
+  case "$ACTION" in
+    update) printf '%s' "Aktualizacja" ;;
+    reinstall) printf '%s' "Ponowna instalacja" ;;
+    backup-config) printf '%s' "Kopia konfiguracji" ;;
+    remove|remove-app|remove-all) printf '%s' "Operacja usuwania" ;;
+    *) printf '%s' "Instalacja" ;;
+  esac
+}
+
+print_final_status() {
+  local code="$1"
+  local operation
+  operation="$(status_operation_name)"
+  if [[ "$code" -eq 0 && "$INSTALL_COMPLETED" == "yes" ]]; then
+    printf '\n%b[STATUS: OK]%b %s zakończona pomyślnie.\n' "$GREEN" "$RESET" "$operation"
+  elif [[ "$code" -ne 0 ]]; then
+    printf '\n%b[STATUS: BŁĄD]%b Wystąpił błąd podczas operacji: %s.\n' "$RED" "$RESET" "$operation" >&2
+    printf 'Etap: %s | kod wyjścia: %s\n' "$CURRENT_STEP" "$code" >&2
+  fi
+}
+
 cleanup() {
   [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] && rm -rf "$WORK_DIR"
   if [[ -n "$APT_TEMP_DIR" && -d "$APT_TEMP_DIR" ]]; then
@@ -1380,7 +1401,20 @@ cleanup_failed_install() {
   fi
   return 0
 }
-trap cleanup EXIT
+
+on_exit() {
+  local code="$?"
+  trap - EXIT
+  set +e
+  if [[ "$code" -eq 0 ]]; then
+    cleanup
+  else
+    cleanup_failed_install
+  fi
+  print_final_status "$code"
+  exit "$code"
+}
+trap on_exit EXIT
 
 main() {
   parse_args "$@"

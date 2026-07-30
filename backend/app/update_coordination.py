@@ -90,6 +90,8 @@ def default_update_request() -> dict[str, Any]:
         "previous_version": None,
         "target_version": None,
         "current_version": None,
+        "commit_revision": None,
+        "commit_date": None,
         "message": "",
         "acknowledged_users": [],
     }

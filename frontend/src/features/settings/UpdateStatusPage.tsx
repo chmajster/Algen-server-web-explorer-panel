@@ -94,6 +94,8 @@ export function UpdateCompletionDialog({ notice, t, onClose }: { notice: UpdateC
         <dl>
           <div><dt>{t("updateStatus.previousVersion")}</dt><dd>{notice.previous_version || "—"}</dd></div>
           <div><dt>{t("updateStatus.currentVersion")}</dt><dd>{notice.current_version || "—"}</dd></div>
+          <div><dt>{t("updateStatus.commitRevision")}</dt><dd><code title={notice.commit_revision || undefined}>{notice.commit_revision?.slice(0, 12) || "—"}</code></dd></div>
+          <div><dt>{t("updateStatus.commitDate")}</dt><dd>{timestamp(notice.commit_date)}</dd></div>
           <div><dt>{t("updateStatus.completedAt")}</dt><dd>{timestamp(notice.finished_at)}</dd></div>
         </dl>
       </div>

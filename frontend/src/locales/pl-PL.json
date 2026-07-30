@@ -1100,6 +1100,8 @@
   "updateStatus.previousVersion": "Poprzednia wersja",
   "updateStatus.targetVersion": "Wersja docelowa",
   "updateStatus.currentVersion": "Aktualna wersja",
+  "updateStatus.commitRevision": "Wersja commita",
+  "updateStatus.commitDate": "Data ostatniego commita",
   "updateStatus.completedAt": "Data aktualizacji",
   "updateStatus.blockersTitle": "Aktywne operacje",
   "updateStatus.blockersCount": "Liczba operacji blokujących: {count}",

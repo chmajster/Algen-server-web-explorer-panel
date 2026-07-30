@@ -579,6 +579,21 @@ def _revision_path() -> Path:
     return _repo_root() / ".webnas-revision"
 
 
+def _installed_revision() -> str | None:
+    try:
+        if (_repo_root() / ".git").exists():
+            value = _git_output(["rev-parse", "HEAD"])
+        else:
+            revision_file = _revision_path()
+            if not revision_file.exists():
+                return None
+            revision_text = revision_file.read_text(encoding="utf-8", errors="replace").strip()
+            value = revision_text.splitlines()[0] if revision_text else ""
+    except (HTTPException, OSError, subprocess.SubprocessError):
+        return None
+    return value if re.fullmatch(r"[0-9a-fA-F]{40,64}", value) else None
+
+
 def _auto_update_path() -> Path:
     directory = Path(get_config().paths.data_dir) / "settings"
     directory.mkdir(parents=True, exist_ok=True)
@@ -697,17 +712,9 @@ def _remote_publication_version(revision: str) -> str | None:
 
 def _update_status() -> dict:
     branch = "main"
-    revision_file = _revision_path()
+    local = _installed_revision() or "unknown"
     if (_repo_root() / ".git").exists():
-        local = _git_output(["rev-parse", "HEAD"])
         branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"]) or branch
-    elif revision_file.exists():
-        revision_text = revision_file.read_text(encoding="utf-8", errors="replace").strip()
-        local = revision_text.splitlines()[0] if revision_text else "unknown"
-        if not re.fullmatch(r"[0-9a-fA-F]{40,64}", local):
-            local = "unknown"
-    else:
-        local = "unknown"
     installed_version = _installed_publication_version()
     try:
         remote = _git_output(["ls-remote", "https://github.com/chmajster/Algen-server-web-explorer-panel.git", f"refs/heads/{branch}"]).split()
@@ -908,6 +915,8 @@ def _request_update(*, actor: str, update_config: bool, status: dict | None = No
             "previous_version": status.get("installed_version"),
             "target_version": status.get("available_version"),
             "current_version": status.get("installed_version"),
+            "commit_revision": status.get("remote"),
+            "commit_date": status.get("released_at"),
             "message": "Oczekiwanie na zakończenie aktywnych operacji.",
             "acknowledged_users": [],
             "log_offset": log_offset,
@@ -1728,12 +1737,18 @@ def admin_updates_completion(user: SessionUser = Depends(_current_user)):
     acknowledged = {str(value) for value in state.get("acknowledged_users", [])}
     if state.get("state") != "completed" or user.username in acknowledged:
         return {"notice": None}
+    commit_revision = state.get("commit_revision") or _installed_revision()
+    commit_date = state.get("commit_date")
+    if commit_date is None and commit_revision:
+        commit_date = _remote_release_timestamp(str(commit_revision))
     return {
         "notice": {
             "id": state.get("id"),
             "previous_version": state.get("previous_version"),
             "current_version": state.get("current_version"),
             "finished_at": state.get("finished_at"),
+            "commit_revision": commit_revision,
+            "commit_date": commit_date,
         }
     }
 

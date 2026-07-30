@@ -18,6 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   api,
+  type HostsManagerApmid,
   type HostsManagerBackup,
   type HostsManagerCapability,
   type HostsManagerCredential,
@@ -80,6 +81,7 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
   const [hosts, setHosts] = useState<HostsManagerHost[]>([]);
   const [groups, setGroups] = useState<HostsManagerGroup[]>([]);
   const [environments, setEnvironments] = useState<HostsManagerEnvironment[]>([]);
+  const [apmids, setApmids] = useState<HostsManagerApmid[]>([]);
   const [hostnamePatterns, setHostnamePatterns] = useState<HostsManagerHostnamePattern[]>([]);
   const [tokens, setTokens] = useState<HostsManagerEnrollmentToken[]>([]);
   const [managerSettings, setManagerSettings] =
@@ -112,6 +114,7 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
         api.hostsManagerSettings(),
         api.hostsManagerEnvironments(),
         api.hostsManagerHostnamePatterns(),
+        api.hostsManagerApmids(),
       ]);
       setDashboard(base[0]);
       setHosts(base[1]);
@@ -119,6 +122,7 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
       setManagerSettings(base[3]);
       setEnvironments(base[4]);
       setHostnamePatterns(base[5]);
+      setApmids(base[6]);
       if (permissions.includes("hosts-manager.hosts.manage"))
         setTokens(await api.hostsManagerEnrollmentTokens());
       if (permissions.includes("hosts-manager.audit.view"))
@@ -167,6 +171,7 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
     content = (
       <EnvironmentManager
         items={environments}
+        apmids={apmids}
         patterns={hostnamePatterns}
         credentials={credentials}
         canManage={can("hosts-manager.hosts.manage")}
@@ -179,6 +184,7 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
     content = (
       <Installer
         items={tokens}
+        apmids={apmids}
         environments={environments}
         credentials={credentials}
         patterns={hostnamePatterns}
@@ -1005,6 +1011,7 @@ function ReportPanel({ title, value, empty }: { title: string; value: Record<str
 
 function EnvironmentManager({
   items,
+  apmids,
   patterns,
   credentials,
   canManage,
@@ -1013,6 +1020,7 @@ function EnvironmentManager({
   refresh,
 }: {
   items: HostsManagerEnvironment[];
+  apmids: HostsManagerApmid[];
   patterns: HostsManagerHostnamePattern[];
   credentials: HostsManagerCredential[];
   canManage: boolean;
@@ -1070,7 +1078,7 @@ function EnvironmentManager({
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
     }
   }
-  return <section className="ansible-panel hosts-environments">
+  return <div className="hosts-environment-workspace"><section className="ansible-panel hosts-environments">
     <header><div><h3>{t("hosts.environment.title")}</h3><p>{t("hosts.environment.hint")}</p></div>{canManage && <button className="button-primary" type="button" onClick={() => edit(null)}><Plus />{t("hosts.environment.create")}</button>}</header>
     <div className="hosts-environment-grid">
       {items.map((item) => <article key={item.id} className="hosts-environment-card" style={{ "--environment-color": item.color } as React.CSSProperties}>
@@ -1090,6 +1098,85 @@ function EnvironmentManager({
         <label>{t("hosts.agent.port")}<input type="number" min={1} max={65535} value={agentPort} onChange={(event) => setAgentPort(Number(event.target.value))} /></label>
         <label>{t("hosts.agent.reportInterval")}<input type="number" min={30} max={86400} value={reportInterval} onChange={(event) => setReportInterval(Number(event.target.value))} /></label>
         <label className="wide">{t("hosts.host.description")}<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+      </form>
+    </Modal>}
+  </section><ApmidManager items={apmids} canManage={canManage} t={t} toast={toast} refresh={refresh} /></div>;
+}
+
+function ApmidManager({
+  items,
+  canManage,
+  t,
+  toast,
+  refresh,
+}: {
+  items: HostsManagerApmid[];
+  canManage: boolean;
+  t: Translate;
+  toast: ToastFn;
+  refresh: () => Promise<void>;
+}) {
+  const [editing, setEditing] = useState<HostsManagerApmid | null | undefined>();
+  const [code, setCode] = useState("");
+  const [description, setDescription] = useState("");
+  const [active, setActive] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  function edit(item: HostsManagerApmid | null) {
+    setEditing(item);
+    setCode(item?.code || "");
+    setDescription(item?.description || "");
+    setActive(item?.active ?? true);
+  }
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await api.saveHostsManagerApmid({ code, description, active }, editing?.id);
+      setEditing(undefined);
+      toast(t("hosts.apmid.saved"), "ok");
+      await refresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("hosts.apmid.groupConflict"), "error");
+    }
+  }
+  async function remove(item: HostsManagerApmid) {
+    if (!window.confirm(t("hosts.apmid.deleteConfirm").replace("{code}", item.code))) return;
+    try {
+      await api.deleteHostsManagerApmid(item.id);
+      await refresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    }
+  }
+  async function sync() {
+    setSyncing(true);
+    try {
+      const result = await api.syncHostsManagerApmidGroups();
+      toast(t("hosts.apmid.syncComplete").replace("{count}", String(result.total)), "ok");
+      await refresh();
+    } catch {
+      toast(t("hosts.apmid.syncError"), "error");
+    } finally {
+      setSyncing(false);
+    }
+  }
+  return <section className="ansible-panel hosts-apmids">
+    <header>
+      <div><h3>{t("hosts.apmid.title")}</h3><p>{t("hosts.apmid.hint")}</p></div>
+      {canManage && <div className="hosts-header-actions"><button type="button" disabled={syncing} onClick={() => void sync()}><RefreshCw />{t("hosts.apmid.sync")}</button><button className="button-primary" type="button" onClick={() => edit(null)}><Plus />{t("hosts.apmid.create")}</button></div>}
+    </header>
+    {items.length ? <div className="hosts-environment-grid">
+      {items.map((item) => <article key={item.id} className="hosts-environment-card hosts-apmid-card">
+        <header><div><strong>{item.code}</strong><small>{t("hosts.apmid.managedGroups").replace("{count}", String(item.environment_groups.length))}</small></div><Status value={item.active ? "active" : "disabled"} t={t} /></header>
+        <p>{item.description || t("common.none")}</p>
+        <ul>{item.environment_groups.map((group) => <li key={group.group_id}><code>{group.group_name}</code><Status value={group.active ? "active" : "disabled"} t={t} /></li>)}</ul>
+        {canManage && <footer><button type="button" onClick={() => edit(item)}>{t("action.edit")}</button><button className="button-danger" type="button" onClick={() => void remove(item)}>{t("action.delete")}</button></footer>}
+      </article>)}
+    </div> : <div className="empty-state">{t("hosts.apmid.empty")}</div>}
+    {editing !== undefined && <Modal title={t(editing ? "hosts.apmid.edit" : "hosts.apmid.create")} closeLabel={t("action.close")} onClose={() => setEditing(undefined)} footer={<><button type="button" onClick={() => setEditing(undefined)}>{t("action.cancel")}</button><button className="button-primary" type="submit" form="hosts-apmid-form">{t("action.save")}</button></>}>
+      <form id="hosts-apmid-form" className="module-form-grid" onSubmit={save}>
+        <label>{t("hosts.apmid.code")}<input autoFocus required maxLength={64} pattern="[A-Za-z0-9_-]+" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} /></label>
+        <label className="check"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} />{t("common.enabled")}</label>
+        <label className="wide">{t("hosts.host.description")}<textarea maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       </form>
     </Modal>}
   </section>;
@@ -1214,6 +1301,7 @@ function Groups({
 
 function Installer({
   items,
+  apmids,
   environments,
   credentials,
   patterns,
@@ -1226,6 +1314,7 @@ function Installer({
   refresh,
 }: {
   items: HostsManagerEnrollmentToken[];
+  apmids: HostsManagerApmid[];
   environments: HostsManagerEnvironment[];
   credentials: HostsManagerCredential[];
   patterns: HostsManagerHostnamePattern[];
@@ -1245,13 +1334,14 @@ function Installer({
       <button type="button" className={tab === "script" ? "active" : ""} onClick={() => setTab("script")}><Download /><span><strong>{t("hosts.installer.script")}</strong><small>{t("hosts.installer.scriptHint")}</small></span></button>
     </div>
     {tab === "discovery" && <Discovery canManage={canDiscover} environments={environments} credentials={credentials} patterns={patterns} t={t} toast={toast} refresh={refresh} />}
-    {tab === "wizard" && <OnboardingWizard canManage={canManage} environments={environments} credentials={credentials} patterns={patterns} settings={settings} t={t} toast={toast} />}
-    {tab === "script" && <Enrollment items={items} environments={environments} credentials={credentials} patterns={patterns} groups={groups} settings={settings} canManage={canManage} t={t} toast={toast} refresh={refresh} />}
+    {tab === "wizard" && <OnboardingWizard canManage={canManage} apmids={apmids} environments={environments} credentials={credentials} patterns={patterns} settings={settings} t={t} toast={toast} />}
+    {tab === "script" && <Enrollment items={items} apmids={apmids} environments={environments} patterns={patterns} groups={groups} settings={settings} canManage={canManage} t={t} toast={toast} refresh={refresh} />}
   </div>;
 }
 
 function OnboardingWizard({
   canManage,
+  apmids,
   environments,
   credentials,
   patterns,
@@ -1260,6 +1350,7 @@ function OnboardingWizard({
   toast,
 }: {
   canManage: boolean;
+  apmids: HostsManagerApmid[];
   environments: HostsManagerEnvironment[];
   credentials: HostsManagerCredential[];
   patterns: HostsManagerHostnamePattern[];
@@ -1273,6 +1364,7 @@ function OnboardingWizard({
   const [sshUser, setSshUser] = useState("root");
   const [credentialId, setCredentialId] = useState("");
   const [useSudo, setUseSudo] = useState(true);
+  const [apmidId, setApmidId] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [patternId, setPatternId] = useState("");
   const [agentPort, setAgentPort] = useState(settings?.agent_default_port || 8443);
@@ -1292,6 +1384,21 @@ function OnboardingWizard({
     log: string;
     status: string;
   } | null>(null);
+  useEffect(() => {
+    const activeApmids = apmids.filter((item) => item.active);
+    if (!activeApmids.some((item) => item.id === apmidId)) setApmidId(activeApmids[0]?.id || "");
+  }, [apmidId, apmids]);
+  useEffect(() => {
+    const activeEnvironments = environments.filter((item) => item.active);
+    if (activeEnvironments.some((item) => item.id === environmentId)) return;
+    const selected = activeEnvironments[0];
+    setEnvironmentId(selected?.id || "");
+    if (selected?.default_hostname_pattern_id) setPatternId(selected.default_hostname_pattern_id);
+    if (selected) {
+      setAgentPort(selected.default_agent_port);
+      setReportInterval(selected.report_interval_seconds);
+    }
+  }, [environmentId, environments]);
   async function testConnection(fingerprint = "") {
     try {
       const result = await api.probeHostsManagerSshOnboarding({
@@ -1319,7 +1426,8 @@ function OnboardingWizard({
         credential_id: credentialId,
         use_sudo: useSudo,
         accepted_fingerprint: acceptedFingerprint,
-        environment: environmentId,
+        apmid_id: apmidId,
+        environment_id: environmentId,
         hostname_pattern_id: patternId || null,
         agent_port: agentPort,
         report_interval_seconds: reportInterval,
@@ -1348,12 +1456,13 @@ function OnboardingWizard({
       {step === 2 && connectionResult?.requires_fingerprint_confirmation && <div className="hosts-fingerprint-confirm"><ShieldCheck /><h4>{t("hosts.onboarding.verifyFingerprint")}</h4><p>{t("hosts.onboarding.verifyFingerprintHint")}</p>{connectionResult.keys?.map((key) => <button type="button" key={key.fingerprint} onClick={() => { setConnectionResult(null); void testConnection(key.fingerprint); }}><span>{key.key_type}</span><code>{key.fingerprint}</code></button>)}</div>}
       {step === 2 && connectionResult && !connectionResult.requires_fingerprint_confirmation && !connectionResult.login_available && <div className="hosts-connection-test"><AlertTriangle /><h4>{t("hosts.onboarding.loginFailed")}</h4><p>{String(connectionResult.error || t("error.generic"))}</p><button type="button" onClick={() => { setConnectionResult(null); void testConnection(acceptedFingerprint); }}>{t("action.retry")}</button></div>}
       {step === 3 && <><div className="module-diagnostic"><CheckCircle2 /><strong>{t("hosts.onboarding.sshReachable")}</strong><span>{JSON.stringify(connectionResult)}</span></div><div className="module-form-grid">
+        <label>{t("hosts.apmid.code")}<select required value={apmidId} onChange={(event) => setApmidId(event.target.value)}>{apmids.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.code}</option>)}</select></label>
         <label>{t("hosts.host.environment")}<select value={environmentId} onChange={(event) => {
           const id = event.target.value; setEnvironmentId(id);
           const environment = environments.find((item) => item.id === id);
           if (environment?.default_hostname_pattern_id) setPatternId(environment.default_hostname_pattern_id);
           if (environment) { setAgentPort(environment.default_agent_port); setReportInterval(environment.report_interval_seconds); }
-        }}><option value="">{t("common.none")}</option>{environments.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        }}>{environments.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label>{t("hosts.environment.pattern")}<select value={patternId} onChange={(event) => setPatternId(event.target.value)}><option value="">{t("hosts.enrollment.legacyPattern")}</option>{patterns.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.next_hostname}</option>)}</select></label>
         <label>{t("hosts.agent.port")}<input type="number" min={1} max={65535} value={agentPort} onChange={(event) => setAgentPort(Number(event.target.value))} /></label>
         <label>{t("hosts.agent.reportInterval")}<input type="number" min={30} value={reportInterval} onChange={(event) => setReportInterval(Number(event.target.value))} /></label>
@@ -1366,8 +1475,8 @@ function OnboardingWizard({
     <footer className="hosts-wizard-footer">
       <button type="button" disabled={step <= 1} onClick={() => setStep((value) => Math.max(1, value - 1))}>{t("action.previous")}</button>
       {step === 1 && <button className="button-primary" type="button" disabled={!canManage || !target || !sshUser || !credentialId} onClick={() => { setConnectionResult(null); setStep(2); void testConnection(); }}>{t("hosts.onboarding.testConnection")}</button>}
-      {step === 3 && <button className="button-primary" type="button" disabled={!canManage} onClick={() => setStep(4)}>{t("action.next")}</button>}
-      {step === 4 && <button className="button-primary" type="button" disabled={!canManage} onClick={() => void prepareInstallation()}>{t("hosts.onboarding.prepareInstall")}</button>}
+      {step === 3 && <button className="button-primary" type="button" disabled={!canManage || !apmidId || !environmentId} onClick={() => setStep(4)}>{t("action.next")}</button>}
+      {step === 4 && <button className="button-primary" type="button" disabled={!canManage || !apmidId || !environmentId} onClick={() => void prepareInstallation()}>{t("hosts.onboarding.prepareInstall")}</button>}
       {step === 5 && <button className="button-primary" type="button" onClick={() => setStep(6)}>{t("action.next")}</button>}
     </footer>
   </section>;
@@ -1375,8 +1484,8 @@ function OnboardingWizard({
 
 function Enrollment({
   items,
+  apmids,
   environments,
-  credentials,
   patterns,
   groups,
   settings,
@@ -1386,8 +1495,8 @@ function Enrollment({
   refresh,
 }: {
   items: HostsManagerEnrollmentToken[];
+  apmids: HostsManagerApmid[];
   environments: HostsManagerEnvironment[];
-  credentials: HostsManagerCredential[];
   patterns: HostsManagerHostnamePattern[];
   groups: HostsManagerGroup[];
   settings: HostsManagerSettings | null;
@@ -1399,16 +1508,14 @@ function Enrollment({
   const [open, setOpen] = useState(false);
   const [minutes, setMinutes] = useState(15);
   const [mode, setMode] = useState<"one_time" | "permanent">("one_time");
+  const [apmidId, setApmidId] = useState("");
   const [patternId, setPatternId] = useState("");
-  const [credentialId, setCredentialId] = useState("");
   const [boundAddress, setBoundAddress] = useState("");
   const [agentPort, setAgentPort] = useState(8443);
   const [reportInterval, setReportInterval] = useState(300);
   const [bootstrapOS, setBootstrapOS] = useState<"linux" | "windows">("linux");
   const [applyHostname, setApplyHostname] = useState(true);
-  const [sshUser, setSshUser] = useState("algen-ansible");
-  const [port, setPort] = useState(22);
-  const [environment, setEnvironment] = useState("");
+  const [environmentId, setEnvironmentId] = useState("");
   const [location, setLocation] = useState("");
   const [tags, setTags] = useState("");
   const [groupIds, setGroupIds] = useState<string[]>([]);
@@ -1422,10 +1529,27 @@ function Enrollment({
       setBootstrapOS(settings.bootstrap_default_os);
       setApplyHostname(settings.bootstrap_apply_hostname);
       setMinutes(settings.token_ttl_minutes || 15);
-      setAgentPort(settings.agent_default_port || 8443);
-      setReportInterval(settings.report_interval_seconds || 300);
+      if (!environmentId) {
+        setAgentPort(settings.agent_default_port || 8443);
+        setReportInterval(settings.report_interval_seconds || 300);
+      }
     }
-  }, [settings]);
+  }, [environmentId, settings]);
+  useEffect(() => {
+    const activeApmids = apmids.filter((item) => item.active);
+    if (!activeApmids.some((item) => item.id === apmidId)) setApmidId(activeApmids[0]?.id || "");
+  }, [apmidId, apmids]);
+  useEffect(() => {
+    const activeEnvironments = environments.filter((item) => item.active);
+    if (activeEnvironments.some((item) => item.id === environmentId)) return;
+    const selected = activeEnvironments[0];
+    setEnvironmentId(selected?.id || "");
+    setPatternId(selected?.default_hostname_pattern_id || settings?.default_hostname_pattern_id || "");
+    if (selected) {
+      setAgentPort(selected.default_agent_port);
+      setReportInterval(selected.report_interval_seconds);
+    }
+  }, [environmentId, environments, settings?.default_hostname_pattern_id]);
   const visible = items.filter(
     (item) =>
       !filter ||
@@ -1439,20 +1563,22 @@ function Enrollment({
   );
   async function create(event: React.FormEvent) {
     event.preventDefault();
+    if (!apmidId || !environmentId) {
+      toast(t(!apmidId ? "hosts.enrollment.noActiveApmid" : "hosts.enrollment.noActiveEnvironment"), "error");
+      return;
+    }
     try {
       const item = await api.createHostsManagerEnrollmentToken({
         bootstrap_os: bootstrapOS,
         apply_hostname: applyHostname,
-        expires_minutes: minutes,
+        expires_minutes: mode === "one_time" ? minutes : null,
         mode,
+        apmid_id: apmidId,
+        environment_id: environmentId,
         hostname_pattern_id: patternId || null,
         bound_address: boundAddress,
         agent_port: agentPort,
         report_interval_seconds: reportInterval,
-        port,
-        ssh_user: sshUser,
-        credential_id: credentialId || null,
-        environment,
         location,
         tags: tags
           .split(",")
@@ -1504,6 +1630,24 @@ function Enrollment({
       label: t("hosts.enrollment.mode"),
       sortValue: (item) => item.mode || "one_time",
       cell: (item) => t(`hosts.enrollment.mode.${item.mode || "one_time"}`),
+    },
+    {
+      id: "apmid",
+      label: t("hosts.apmid.code"),
+      sortValue: (item) => item.apmid_code || "",
+      cell: (item) => item.apmid_code || t("hosts.enrollment.legacyToken"),
+    },
+    {
+      id: "environment",
+      label: t("hosts.host.environment"),
+      sortValue: (item) => item.environment_name || "",
+      cell: (item) => item.environment_name || t("hosts.enrollment.legacyToken"),
+    },
+    {
+      id: "managed-group",
+      label: t("hosts.enrollment.managedGroup"),
+      sortValue: (item) => item.managed_group_name || "",
+      cell: (item) => item.managed_group_name || t("hosts.enrollment.legacyToken"),
     },
     {
       id: "hostname",
@@ -1585,12 +1729,18 @@ function Enrollment({
           <p>{t("hosts.enrollment.hint")}</p>
         </div>
         {canManage && (
-          <button className="button-primary" onClick={() => setOpen(true)}>
+          <button
+            className="button-primary"
+            disabled={!apmids.some((item) => item.active) || !environments.some((item) => item.active)}
+            onClick={() => setOpen(true)}
+          >
             <Plus />
             {t("hosts.enrollment.generate")}
           </button>
         )}
       </header>
+      {!apmids.some((item) => item.active) && <div className="module-diagnostic warning"><AlertTriangle /><strong>{t("hosts.enrollment.noActiveApmid")}</strong></div>}
+      {!environments.some((item) => item.active) && <div className="module-diagnostic warning"><AlertTriangle /><strong>{t("hosts.enrollment.noActiveEnvironment")}</strong></div>}
       <div className="module-section-toolbar">
         <label>
           <Filter />

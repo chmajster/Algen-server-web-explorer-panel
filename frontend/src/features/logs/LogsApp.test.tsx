@@ -69,6 +69,34 @@ describe("LogsApp", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
   });
 
+  it("keeps truncated values discoverable and exposes the responsive toolbar structure", async () => {
+    const longViewName = "Critical production errors from the primary storage service";
+    vi.mocked(api.logSavedViews).mockResolvedValue({
+      items: [{ id: "d".repeat(32), name: longViewName, source: "journal", query: "", filters: {}, columns: [], sort: "newest", view_mode: "compact", builtin: false }],
+    });
+    const { container } = render(<LogsApp permissions={permissions} t={t} toast={vi.fn()} />);
+
+    await screen.findByText("Example failure");
+    expect(screen.getByRole("button", { name: longViewName })).toHaveAttribute("title", longViewName);
+    expect(screen.getByRole("button", { name: /webnas.service/ })).toHaveAttribute("title", "webnas.service — WebNAS");
+    const row = screen.getByRole("listitem");
+    expect(row.querySelector(".log-source")).toHaveAttribute("title", "webnas.service");
+    expect(row.querySelector(".log-message")).toHaveAttribute("title", "Example failure");
+    expect(container.querySelectorAll(".logs-toolbar-group")).toHaveLength(6);
+
+    const filtersButton = screen.getByRole("button", { name: /logs.filters/ });
+    expect(filtersButton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(filtersButton);
+    expect(filtersButton).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelector(".logs-filter-panel")?.parentElement).toHaveClass("logs-content");
+
+    expect(screen.getByLabelText("logs.wrap")).toHaveAttribute("title", "logs.wrap");
+    expect(screen.getByLabelText("logs.autoScroll")).toHaveAttribute("title", "logs.autoScroll");
+    expect(row).toHaveStyle({ height: "42px" });
+    fireEvent.click(screen.getByLabelText("logs.wrap"));
+    expect(screen.getByRole("listitem")).toHaveStyle({ height: "72px" });
+  });
+
   it("debounces full-text search and sends filters to the backend", async () => {
     render(<LogsApp permissions={permissions} t={t} toast={vi.fn()} />);
     await screen.findByText("Example failure");

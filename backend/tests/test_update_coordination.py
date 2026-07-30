@@ -26,6 +26,8 @@ def update_status():
         "update_available": True,
         "installed_version": "1.0.0",
         "available_version": "2.0.0",
+        "remote": "c" * 40,
+        "released_at": 1_784_289_600,
     }
 
 
@@ -54,7 +56,10 @@ def test_update_without_active_operations_starts_immediately(monkeypatch, update
 
     assert result["state"] == "running"
     assert result["active_count"] == 0
-    assert update_coordination.read_update_request()["state"] == "running"
+    request_state = update_coordination.read_update_request()
+    assert request_state["state"] == "running"
+    assert request_state["commit_revision"] == "c" * 40
+    assert request_state["commit_date"] == 1_784_289_600
 
 
 @pytest.mark.parametrize("operation_type", ["copy", "move", "package.install"])
@@ -181,12 +186,40 @@ def test_completion_notice_is_acknowledged_once_per_user(monkeypatch, update_env
         "previous_version": "1.0.0",
         "current_version": "2.0.0",
         "finished_at": 200,
+        "commit_revision": "c" * 40,
+        "commit_date": 1_784_289_600,
     })
     user = SessionUser(username="admin", csrf_token="csrf")
 
-    assert settings.admin_updates_completion(user)["notice"]["id"] == "update-1"
+    assert settings.admin_updates_completion(user)["notice"] == {
+        "id": "update-1",
+        "previous_version": "1.0.0",
+        "current_version": "2.0.0",
+        "finished_at": 200,
+        "commit_revision": "c" * 40,
+        "commit_date": 1_784_289_600,
+    }
     settings.admin_updates_completion_acknowledge(settings.UpdateCompletionAck(update_id="update-1"), user)
     assert settings.admin_updates_completion(user)["notice"] is None
+
+
+def test_legacy_completion_notice_derives_installed_commit_metadata(monkeypatch, update_environment):
+    revision = "d" * 40
+    monkeypatch.setattr(settings, "authorize", lambda *args, **kwargs: None)
+    monkeypatch.setattr(settings, "_installed_revision", lambda: revision)
+    monkeypatch.setattr(settings, "_remote_release_timestamp", lambda value: 1_784_300_000 if value == revision else None)
+    update_coordination.write_update_request({
+        "id": "update-legacy",
+        "state": "completed",
+        "previous_version": "1.0.0",
+        "current_version": "2.0.0",
+        "finished_at": 200,
+    })
+
+    notice = settings.admin_updates_completion(SessionUser(username="admin", csrf_token="csrf"))["notice"]
+
+    assert notice["commit_revision"] == revision
+    assert notice["commit_date"] == 1_784_300_000
 
 
 def test_stale_completion_ack_does_not_acknowledge_a_new_update(monkeypatch, update_environment):

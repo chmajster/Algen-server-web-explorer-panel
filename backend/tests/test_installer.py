@@ -48,6 +48,33 @@ def test_installer_has_valid_bash_syntax():
     assert result.returncode == 0, result.stderr
 
 
+def test_installer_prints_a_final_status_and_preserves_the_exit_code(tmp_path):
+    success = _run_harness(
+        tmp_path,
+        """
+        cleanup() { return 0; }
+        ACTION=update
+        INSTALL_COMPLETED=yes
+        exit 0
+        """,
+    )
+    assert success.returncode == 0, success.stderr
+    assert "[STATUS: OK] Aktualizacja zakończona pomyślnie." in success.stdout
+
+    failure = _run_harness(
+        tmp_path,
+        """
+        cleanup_failed_install() { return 0; }
+        ACTION=reinstall
+        CURRENT_STEP="Frontend build"
+        exit 23
+        """,
+    )
+    assert failure.returncode == 23
+    assert "[STATUS: BŁĄD] Wystąpił błąd podczas operacji: Ponowna instalacja." in failure.stderr
+    assert "Etap: Frontend build | kod wyjścia: 23" in failure.stderr
+
+
 def test_node_version_check_accepts_supported_node_22_without_evaluating_javascript(tmp_path):
     result = _run_harness(
         tmp_path,

@@ -19,12 +19,12 @@ from typing import Any, Callable
 from ...config import get_config
 from ..ansible_controller.security import CredentialCipher, redact
 from .models import (
-    CredentialInput, EnrollmentTokenInput, EnvironmentInput, GroupInput, HostInput, HostnamePatternInput,
+    ApmidInput, CredentialInput, EnrollmentTokenInput, EnvironmentInput, GroupInput, HostInput, HostnamePatternInput,
     HostsManagerSettingsUpdate, PowerProfileInput, RepositoryInput, hostname_template_parts, render_hostname,
 )
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 JSON_COLUMNS = {
     "tags_json": "tags", "variables_json": "variables", "group_ids_json": "group_ids",
     "host_ids_json": "host_ids", "facts_json": "facts", "details_json": "details",
@@ -34,6 +34,18 @@ JSON_COLUMNS = {
 
 def stable_id() -> str:
     return secrets.token_hex(16)
+
+
+class ManagedGroupConflictError(ValueError):
+    pass
+
+
+class ManagedGroupProtectedError(ValueError):
+    pass
+
+
+class ApmidInUseError(ValueError):
+    pass
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -118,6 +130,10 @@ class HostRegistryService:
                     id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '', parent_id TEXT,
                     variables_json TEXT NOT NULL DEFAULT '{}', active INTEGER NOT NULL DEFAULT 1,
                     created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS apmids(
+                    id TEXT PRIMARY KEY, code TEXT NOT NULL COLLATE NOCASE UNIQUE, description TEXT NOT NULL DEFAULT '',
+                    active INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS memberships(
                     host_id TEXT NOT NULL, group_id TEXT NOT NULL, created_at REAL NOT NULL, created_by TEXT NOT NULL,
                     PRIMARY KEY(host_id,group_id), FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE CASCADE,
@@ -141,7 +157,7 @@ class HostRegistryService:
                     apply_hostname INTEGER NOT NULL DEFAULT 1, reported_hostname TEXT NOT NULL DEFAULT '',
                     mode TEXT NOT NULL DEFAULT 'one_time', hostname_pattern_id TEXT, bound_address TEXT NOT NULL DEFAULT '',
                     agent_port INTEGER NOT NULL DEFAULT 8443, report_interval_seconds INTEGER NOT NULL DEFAULT 300,
-                    use_count INTEGER NOT NULL DEFAULT 0,
+                    use_count INTEGER NOT NULL DEFAULT 0, apmid_id TEXT, environment_id TEXT, managed_group_id TEXT,
                     created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS hosts_manager_settings(
                     key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at REAL NOT NULL, updated_by TEXT NOT NULL);
@@ -167,6 +183,14 @@ class HostRegistryService:
                     default_agent_port INTEGER NOT NULL DEFAULT 8443, report_interval_seconds INTEGER NOT NULL DEFAULT 300,
                     active INTEGER NOT NULL DEFAULT 1, created_at REAL NOT NULL, updated_at REAL NOT NULL,
                     created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS apmid_environment_groups(
+                    apmid_id TEXT NOT NULL, environment_id TEXT NOT NULL, group_id TEXT NOT NULL UNIQUE,
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL,
+                    PRIMARY KEY(apmid_id,environment_id),
+                    FOREIGN KEY(apmid_id) REFERENCES apmids(id) ON DELETE RESTRICT,
+                    FOREIGN KEY(environment_id) REFERENCES environments(id) ON DELETE RESTRICT,
+                    FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE RESTRICT);
+                CREATE INDEX IF NOT EXISTS idx_hm_apmid_environment_group ON apmid_environment_groups(group_id);
                 CREATE TABLE IF NOT EXISTS host_agents(
                     id TEXT PRIMARY KEY, host_id TEXT NOT NULL UNIQUE, installation_id TEXT NOT NULL UNIQUE,
                     token_hash TEXT NOT NULL, agent_version TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
@@ -233,9 +257,15 @@ class HostRegistryService:
                 ("agent_port", "INTEGER NOT NULL DEFAULT 8443"),
                 ("report_interval_seconds", "INTEGER NOT NULL DEFAULT 300"),
                 ("use_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("apmid_id", "TEXT"),
+                ("environment_id", "TEXT"),
+                ("managed_group_id", "TEXT"),
             ):
                 if name not in token_columns:
                     connection.execute(f"ALTER TABLE enrollment_tokens ADD COLUMN {name} {definition}")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_hm_enrollment_apmid_environment ON enrollment_tokens(apmid_id,environment_id)"
+            )
             credential_columns = {row[1] for row in connection.execute("PRAGMA table_info(credentials)")}
             for name, definition in (("environment_id", "TEXT"), ("last_used_at", "REAL")):
                 if name not in credential_columns:
@@ -288,6 +318,7 @@ class HostRegistryService:
             "hosts", "groups", "credentials", "host_keys", "facts", "enrollment_tokens", "repositories",
             "repository_syncs", "power_profiles", "operations", "scans", "memberships", "environments",
             "hostname_patterns", "hostname_skips", "host_agents", "host_identity_salts", "host_reports", "agent_versions",
+            "apmids",
         }
         if table not in allowed:
             raise ValueError("unsupported registry table")
@@ -509,13 +540,35 @@ class HostRegistryService:
     def list_groups(self) -> list[dict[str, Any]]:
         groups = self._list("groups", order="name")
         memberships = self._list("memberships", order="created_at")
+        with self.connect() as connection:
+            managed = {
+                str(row["group_id"]): {
+                    "apmid_id": str(row["apmid_id"]),
+                    "environment_id": str(row["environment_id"]),
+                }
+                for row in connection.execute(
+                    "SELECT apmid_id,environment_id,group_id FROM apmid_environment_groups"
+                ).fetchall()
+            }
         for group in groups:
             group["host_ids"] = [item["host_id"] for item in memberships if item["group_id"] == group["id"]]
+            group["managed"] = group["id"] in managed
+            group["managed_by"] = managed.get(group["id"])
         return groups
 
     def save_group(self, payload: GroupInput, actor: str, group_id: str | None = None) -> dict[str, Any]:
         now, item_id = time.time(), group_id or stable_id()
         with self.connect() as connection:
+            if connection.execute(
+                "SELECT 1 FROM apmid_environment_groups WHERE group_id=?", (item_id,)
+            ).fetchone():
+                raise ManagedGroupProtectedError("APMID environment groups can be changed only through APMID or environment settings")
+            conflict = connection.execute(
+                "SELECT id FROM groups WHERE name=? COLLATE NOCASE AND id<>?",
+                (payload.name, item_id),
+            ).fetchone()
+            if conflict:
+                raise ManagedGroupConflictError("group name already exists")
             old = connection.execute("SELECT created_at,created_by FROM groups WHERE id=?", (item_id,)).fetchone()
             created_at, created_by = (old["created_at"], old["created_by"]) if old else (now, actor)
             connection.execute("""INSERT INTO groups(id,name,description,parent_id,variables_json,active,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?)
@@ -527,7 +580,150 @@ class HostRegistryService:
 
     def delete_group(self, group_id: str) -> bool:
         with self.connect() as connection:
+            if connection.execute(
+                "SELECT 1 FROM apmid_environment_groups WHERE group_id=?", (group_id,)
+            ).fetchone():
+                raise ManagedGroupProtectedError("APMID environment groups cannot be deleted manually")
             return bool(connection.execute("DELETE FROM groups WHERE id=?", (group_id,)).rowcount)
+
+    @staticmethod
+    def _managed_group_name(apmid_code: str, environment_slug: str) -> str:
+        return f"{apmid_code}.{environment_slug}".upper()
+
+    def _sync_apmid_environment_groups_locked(self, connection: sqlite3.Connection, actor: str) -> dict[str, int]:
+        now = time.time()
+        apmids = connection.execute("SELECT id,code,active FROM apmids ORDER BY code").fetchall()
+        environments = connection.execute("SELECT id,slug,active FROM environments ORDER BY slug").fetchall()
+        relations = {
+            (str(row["apmid_id"]), str(row["environment_id"])): str(row["group_id"])
+            for row in connection.execute(
+                "SELECT apmid_id,environment_id,group_id FROM apmid_environment_groups"
+            ).fetchall()
+        }
+        planned: list[tuple[sqlite3.Row, sqlite3.Row, str, str | None]] = []
+        for apmid in apmids:
+            for environment in environments:
+                key = (str(apmid["id"]), str(environment["id"]))
+                group_id = relations.get(key)
+                enabled = bool(apmid["active"]) and bool(environment["active"])
+                if not enabled and not group_id:
+                    continue
+                name = self._managed_group_name(str(apmid["code"]), str(environment["slug"]))
+                collision = connection.execute(
+                    "SELECT id FROM groups WHERE name=? COLLATE NOCASE AND id<>?",
+                    (name, group_id or ""),
+                ).fetchone()
+                if collision:
+                    raise ManagedGroupConflictError(f"managed group name conflicts with existing group: {name}")
+                planned.append((apmid, environment, name, group_id))
+
+        created = 0
+        updated = 0
+        for apmid, environment, name, group_id in planned:
+            enabled = int(bool(apmid["active"]) and bool(environment["active"]))
+            description = f"Managed group for APMID {apmid['code']} and environment {environment['slug']}"
+            if group_id:
+                group = connection.execute("SELECT name,description,active FROM groups WHERE id=?", (group_id,)).fetchone()
+                if not group:
+                    raise ManagedGroupProtectedError("managed APMID group relation is damaged")
+                if str(group["name"]) != name or str(group["description"]) != description or int(group["active"]) != enabled:
+                    connection.execute(
+                        "UPDATE groups SET name=?,description=?,active=?,updated_at=?,updated_by=? WHERE id=?",
+                        (name, description, enabled, now, actor, group_id),
+                    )
+                    connection.execute(
+                        "UPDATE apmid_environment_groups SET updated_at=?,updated_by=? WHERE apmid_id=? AND environment_id=?",
+                        (now, actor, apmid["id"], environment["id"]),
+                    )
+                    updated += 1
+                continue
+            group_id = stable_id()
+            connection.execute(
+                """INSERT INTO groups(
+                    id,name,description,parent_id,variables_json,active,created_at,updated_at,created_by,updated_by
+                ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (group_id, name, description, None, "{}", enabled, now, now, actor, actor),
+            )
+            connection.execute(
+                """INSERT INTO apmid_environment_groups(
+                    apmid_id,environment_id,group_id,created_at,updated_at,created_by,updated_by
+                ) VALUES(?,?,?,?,?,?,?)""",
+                (apmid["id"], environment["id"], group_id, now, now, actor, actor),
+            )
+            created += 1
+        return {"created": created, "updated": updated, "total": len(planned)}
+
+    def sync_apmid_environment_groups(self, actor: str) -> dict[str, int]:
+        with self._lock, self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            return self._sync_apmid_environment_groups_locked(connection, actor)
+
+    def apmids(self) -> list[dict[str, Any]]:
+        items = self._list("apmids", order="code")
+        with self.connect() as connection:
+            relations = connection.execute(
+                """SELECT relation.apmid_id,relation.environment_id,relation.group_id,
+                          environments.name AS environment_name,environments.slug AS environment_slug,
+                          groups.name AS group_name,groups.active AS group_active
+                   FROM apmid_environment_groups relation
+                   JOIN environments ON environments.id=relation.environment_id
+                   JOIN groups ON groups.id=relation.group_id
+                   ORDER BY environments.name"""
+            ).fetchall()
+        for item in items:
+            item["environment_groups"] = [
+                {
+                    "environment_id": str(row["environment_id"]),
+                    "environment_name": str(row["environment_name"]),
+                    "environment_slug": str(row["environment_slug"]),
+                    "group_id": str(row["group_id"]),
+                    "group_name": str(row["group_name"]),
+                    "active": bool(row["group_active"]),
+                }
+                for row in relations if str(row["apmid_id"]) == str(item["id"])
+            ]
+        return items
+
+    def save_apmid(self, payload: ApmidInput, actor: str, apmid_id: str | None = None) -> dict[str, Any]:
+        now, item_id, value = time.time(), apmid_id or stable_id(), payload.model_dump(mode="json")
+        with self._lock, self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            conflict = connection.execute(
+                "SELECT id FROM apmids WHERE code=? COLLATE NOCASE AND id<>?",
+                (value["code"], item_id),
+            ).fetchone()
+            if conflict:
+                raise ManagedGroupConflictError("APMID code already exists")
+            old = connection.execute("SELECT created_at,created_by FROM apmids WHERE id=?", (item_id,)).fetchone()
+            created_at, created_by = (old["created_at"], old["created_by"]) if old else (now, actor)
+            connection.execute(
+                """INSERT INTO apmids(id,code,description,active,created_at,updated_at,created_by,updated_by)
+                   VALUES(?,?,?,?,?,?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET code=excluded.code,description=excluded.description,
+                     active=excluded.active,updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
+                (item_id, value["code"], value["description"], int(value["active"]), created_at, now, created_by, actor),
+            )
+            self._sync_apmid_environment_groups_locked(connection, actor)
+        return next(item for item in self.apmids() if item["id"] == item_id)
+
+    def delete_apmid(self, apmid_id: str) -> bool:
+        with self._lock, self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if not connection.execute("SELECT 1 FROM apmids WHERE id=?", (apmid_id,)).fetchone():
+                return False
+            if connection.execute("SELECT 1 FROM enrollment_tokens WHERE apmid_id=? LIMIT 1", (apmid_id,)).fetchone():
+                raise ApmidInUseError("APMID is referenced by enrollment tokens")
+            relations = connection.execute(
+                "SELECT group_id FROM apmid_environment_groups WHERE apmid_id=?", (apmid_id,)
+            ).fetchall()
+            for relation in relations:
+                if connection.execute(
+                    "SELECT 1 FROM memberships WHERE group_id=? LIMIT 1", (relation["group_id"],)
+                ).fetchone():
+                    raise ApmidInUseError("APMID managed group contains hosts")
+            connection.execute("DELETE FROM apmid_environment_groups WHERE apmid_id=?", (apmid_id,))
+            connection.executemany("DELETE FROM groups WHERE id=?", [(row["group_id"],) for row in relations])
+            return bool(connection.execute("DELETE FROM apmids WHERE id=?", (apmid_id,)).rowcount)
 
     def environments(self) -> list[dict[str, Any]]:
         items = self._list("environments", order="name")
@@ -570,6 +766,7 @@ class HostRegistryService:
                     value["report_interval_seconds"], int(value["active"]), created_at, now, created_by, actor,
                 ),
             )
+            self._sync_apmid_environment_groups_locked(connection, actor)
         return next(item for item in self.environments() if item["id"] == item_id)
 
     def delete_environment(self, environment_id: str) -> bool:
@@ -583,6 +780,15 @@ class HostRegistryService:
             ).fetchone()[0]
             if assigned:
                 raise ValueError("environment has assigned hosts")
+            relations = connection.execute(
+                "SELECT group_id FROM apmid_environment_groups WHERE environment_id=?", (environment_id,)
+            ).fetchall()
+            if any(connection.execute(
+                "SELECT 1 FROM memberships WHERE group_id=? LIMIT 1", (row["group_id"],)
+            ).fetchone() for row in relations):
+                raise ValueError("environment managed group contains hosts")
+            connection.execute("DELETE FROM apmid_environment_groups WHERE environment_id=?", (environment_id,))
+            connection.executemany("DELETE FROM groups WHERE id=?", [(row["group_id"],) for row in relations])
             return bool(connection.execute("DELETE FROM environments WHERE id=?", (environment_id,)).rowcount)
 
     @staticmethod
@@ -833,25 +1039,52 @@ class HostRegistryService:
     def create_enrollment_token(self, payload: EnrollmentTokenInput, actor: str) -> dict[str, Any]:
         now, item_id, token = time.time(), stable_id(), secrets.token_urlsafe(32)
         value = payload.model_dump(mode="json")
-        expires = 0 if value["mode"] == "permanent" else now + value["expires_minutes"] * 60
+        expires = 0 if value["mode"] == "permanent" else now + int(value["expires_minutes"]) * 60
         with self._lock, self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             settings = self._settings_locked(connection)
-            environment = None
-            if value["environment"]:
-                environment = connection.execute(
-                    "SELECT * FROM environments WHERE (id=? OR slug=?) AND active=1 LIMIT 1",
-                    (value["environment"], value["environment"]),
-                ).fetchone()
-                if not environment:
-                    raise KeyError("environment not found")
-            if value["credential_id"] and not connection.execute(
-                "SELECT 1 FROM credentials WHERE id=? AND active=1 AND type IN ('ssh_password','ssh_private_key')",
-                (value["credential_id"],),
-            ).fetchone():
-                raise KeyError("SSH credential not found")
+            environment = connection.execute(
+                "SELECT * FROM environments WHERE id=? AND active=1", (value["environment_id"],)
+            ).fetchone()
+            if not environment:
+                raise KeyError("environment not found or inactive")
+            apmid = connection.execute(
+                "SELECT * FROM apmids WHERE id=? AND active=1", (value["apmid_id"],)
+            ).fetchone()
+            if not apmid:
+                raise KeyError("APMID not found or inactive")
+            self._sync_apmid_environment_groups_locked(connection, actor)
+            managed = connection.execute(
+                """SELECT relation.group_id,groups.name
+                   FROM apmid_environment_groups relation
+                   JOIN groups ON groups.id=relation.group_id
+                   WHERE relation.apmid_id=? AND relation.environment_id=? AND groups.active=1""",
+                (value["apmid_id"], value["environment_id"]),
+            ).fetchone()
+            if not managed:
+                raise KeyError("APMID environment group not found")
+            requested_group_ids = list(dict.fromkeys(value["group_ids"]))
+            selected_groups: list[sqlite3.Row] = []
+            if requested_group_ids:
+                placeholders = ",".join("?" for _ in requested_group_ids)
+                selected_groups = connection.execute(
+                    f"SELECT id,active FROM groups WHERE id IN ({placeholders})", requested_group_ids
+                ).fetchall()
+                if len(selected_groups) != len(requested_group_ids) or any(not row["active"] for row in selected_groups):
+                    raise KeyError("additional group not found or inactive")
+                other_managed = {
+                    str(row["group_id"])
+                    for row in connection.execute(
+                        "SELECT group_id FROM apmid_environment_groups WHERE group_id<>?", (managed["group_id"],)
+                    ).fetchall()
+                }
+                if any(group_id in other_managed for group_id in requested_group_ids):
+                    raise ManagedGroupProtectedError("another APMID managed group cannot be selected manually")
+            group_ids = [str(managed["group_id"]), *[
+                group_id for group_id in requested_group_ids if group_id != str(managed["group_id"])
+            ]]
             pattern_id = value["hostname_pattern_id"] or (
-                environment["default_hostname_pattern_id"] if environment else None
+                environment["default_hostname_pattern_id"]
             ) or settings.get("default_hostname_pattern_id")
             pattern_row = connection.execute(
                 "SELECT * FROM hostname_patterns WHERE id=? AND active=1", (pattern_id,)
@@ -887,35 +1120,70 @@ class HostRegistryService:
                 template = self._pattern_template(pattern) if pattern else str(settings["hostname_template"])
             bootstrap_os = str(value["bootstrap_os"] or settings["bootstrap_default_os"])
             apply_hostname = settings["bootstrap_apply_hostname"] if value["apply_hostname"] is None else bool(value["apply_hostname"])
-            agent_port = int(value["agent_port"] or (environment["default_agent_port"] if environment else settings["agent_default_port"]))
-            report_interval = int(value["report_interval_seconds"] or (environment["report_interval_seconds"] if environment else settings["report_interval_seconds"]))
+            agent_port = int(value["agent_port"] or environment["default_agent_port"] or settings["agent_default_port"])
+            report_interval = int(value["report_interval_seconds"] or environment["report_interval_seconds"] or settings["report_interval_seconds"])
             connection.execute("""INSERT INTO enrollment_tokens(
                     id,token_hash,hostname_pattern,ssh_user,port,credential_id,environment,location,tags_json,group_ids_json,
                     require_approval,onboard_ansible,expires_at,assigned_hostname,bootstrap_os,apply_hostname,mode,
-                    hostname_pattern_id,bound_address,agent_port,report_interval_seconds,created_at,updated_at,created_by,updated_by
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    hostname_pattern_id,bound_address,agent_port,report_interval_seconds,apmid_id,environment_id,
+                    managed_group_id,created_at,updated_at,created_by,updated_by
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    item_id, hashlib.sha256(token.encode()).hexdigest(), assigned_hostname or template, value["ssh_user"],
-                    value["port"], value["credential_id"], value["environment"], value["location"], json.dumps(value["tags"]),
-                    json.dumps(value["group_ids"]), int(value["require_approval"]), int(value["onboard_ansible"]), expires,
+                    item_id, hashlib.sha256(token.encode()).hexdigest(), assigned_hostname or template, "hosts-manager-agent",
+                    22, None, value["environment_id"], value["location"], json.dumps(value["tags"]),
+                    json.dumps(group_ids), int(value["require_approval"]), int(value["onboard_ansible"]), expires,
                     assigned_hostname, bootstrap_os, int(apply_hostname), value["mode"], pattern_id, value["bound_address"],
-                    agent_port, report_interval, now, now, actor, actor,
+                    agent_port, report_interval, value["apmid_id"], value["environment_id"], managed["group_id"],
+                    now, now, actor, actor,
                 ))
         return {
             "id": item_id, "token": token, "hostname_pattern": assigned_hostname or template,
             "assigned_hostname": assigned_hostname, "bootstrap_os": bootstrap_os, "apply_hostname": apply_hostname,
             "mode": value["mode"], "hostname_pattern_id": pattern_id, "bound_address": value["bound_address"],
             "agent_port": agent_port, "report_interval_seconds": report_interval, "expires_at": expires,
+            "apmid_id": value["apmid_id"], "apmid_code": str(apmid["code"]),
+            "environment_id": value["environment_id"], "environment_name": str(environment["name"]),
+            "environment_slug": str(environment["slug"]), "managed_group_id": str(managed["group_id"]),
+            "managed_group_name": str(managed["name"]), "group_ids": group_ids,
             "created_at": now, "created_by": actor, "used": False,
         }
 
     def enrollment_tokens(self) -> list[dict[str, Any]]:
-        return [
-            {key: value for key, value in item.items() if key != "token_hash"} | {
+        with self.connect() as connection:
+            apmids = {str(row["id"]): dict(row) for row in connection.execute("SELECT id,code FROM apmids").fetchall()}
+            environments = {
+                str(row["id"]): dict(row)
+                for row in connection.execute("SELECT id,name,slug FROM environments").fetchall()
+            }
+            managed = {
+                (str(row["apmid_id"]), str(row["environment_id"])): {
+                    "id": str(row["group_id"]),
+                    "name": str(row["group_name"]),
+                }
+                for row in connection.execute(
+                    """SELECT relation.apmid_id,relation.environment_id,relation.group_id,groups.name AS group_name
+                       FROM apmid_environment_groups relation JOIN groups ON groups.id=relation.group_id"""
+                ).fetchall()
+            }
+        def enrich(item: dict[str, Any]) -> dict[str, Any]:
+            apmid = apmids.get(str(item.get("apmid_id") or ""))
+            environment = environments.get(str(item.get("environment_id") or ""))
+            automatic_group = managed.get((
+                str(item.get("apmid_id") or ""),
+                str(item.get("environment_id") or ""),
+            ))
+            return {key: value for key, value in item.items() if key != "token_hash"} | {
                 "used": item.get("used_at") is not None,
                 "expired": bool(item["expires_at"] and item["expires_at"] < time.time()),
                 "revoked": item.get("revoked_at") is not None,
+                "apmid_code": apmid.get("code") if apmid else None,
+                "environment_name": environment.get("name") if environment else None,
+                "environment_slug": environment.get("slug") if environment else None,
+                "managed_group_id": automatic_group.get("id") if automatic_group else None,
+                "managed_group_name": automatic_group.get("name") if automatic_group else None,
             }
+        return [
+            enrich(item)
             for item in self._list("enrollment_tokens")
         ]
 
@@ -926,6 +1194,8 @@ class HostRegistryService:
     def claim_enrollment_token(self, token: str, claim: dict[str, Any]) -> dict[str, Any] | None:
         now, token_hash, hostname = time.time(), hashlib.sha256(token.encode()).hexdigest(), str(claim["hostname"])
         existing_host_id: str | None = None
+        automatic_group_id = ""
+        managed_group_ids: set[str] = set()
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT * FROM enrollment_tokens WHERE token_hash=? AND revoked_at IS NULL "
@@ -946,6 +1216,24 @@ class HostRegistryService:
                 return None
             if row["bound_address"] and ipaddress.ip_address(str(row["bound_address"])) != claim_address:
                 return None
+            if row["apmid_id"] or row["environment_id"]:
+                if not row["apmid_id"] or not row["environment_id"]:
+                    return None
+                relation = connection.execute(
+                    """SELECT relation.group_id FROM apmid_environment_groups relation
+                       JOIN apmids ON apmids.id=relation.apmid_id AND apmids.active=1
+                       JOIN environments ON environments.id=relation.environment_id AND environments.active=1
+                       JOIN groups ON groups.id=relation.group_id AND groups.active=1
+                       WHERE relation.apmid_id=? AND relation.environment_id=?""",
+                    (row["apmid_id"], row["environment_id"]),
+                ).fetchone()
+                if not relation:
+                    return None
+                automatic_group_id = str(relation["group_id"])
+                managed_group_ids = {
+                    str(item["group_id"])
+                    for item in connection.execute("SELECT group_id FROM apmid_environment_groups").fetchall()
+                }
             assigned = str(row["assigned_hostname"] or "")
             permanent = str(row["mode"]) == "permanent"
             allowed = permanent or (
@@ -992,11 +1280,18 @@ class HostRegistryService:
             if not changed:
                 return None
             token_data = self._decode(row) or {}
+        token_group_ids = [
+            str(group_id) for group_id in token_data["group_ids"]
+            if str(group_id) not in managed_group_ids or str(group_id) == automatic_group_id
+        ]
+        if automatic_group_id and automatic_group_id not in token_group_ids:
+            token_group_ids.insert(0, automatic_group_id)
         host_payload = HostInput(
             name=hostname, hostname=hostname, fqdn=str(claim.get("fqdn") or ""), address=str(claim["address"]),
-            port=int(token_data["port"]), ssh_user=str(token_data["ssh_user"]), credential_id=token_data.get("credential_id"),
-            environment=str(token_data["environment"]), location=str(token_data["location"]), tags=token_data["tags"],
-            group_ids=token_data["group_ids"], approved=not bool(token_data["require_approval"]),
+            port=22, ssh_user="hosts-manager-agent", credential_id=None,
+            environment=str(token_data.get("environment_id") or token_data["environment"]),
+            location=str(token_data["location"]), tags=token_data["tags"],
+            group_ids=token_group_ids, approved=not bool(token_data["require_approval"]),
             variables={
                 "enrollment_os": claim.get("os", ""), "enrollment_architecture": claim.get("architecture", ""),
                 "enrollment_python": claim.get("python", ""), "original_hostname": claim.get("original_hostname", ""),
