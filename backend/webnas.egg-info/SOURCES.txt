@@ -10,8 +10,10 @@ backend/app/config.py
 backend/app/file_ops.py
 backend/app/host_info.py
 backend/app/local_disks.py
+backend/app/logs.py
 backend/app/main.py
 backend/app/network_diagnostics.py
+backend/app/network_management.py
 backend/app/network_mounts.py
 backend/app/path_policy.py
 backend/app/proxmox_guard.py
@@ -21,6 +23,7 @@ backend/app/run.py
 backend/app/security.py
 backend/app/settings.py
 backend/app/tasks.py
+backend/app/update_coordination.py
 backend/app/uploads.py
 backend/app/worker.py
 backend/app/write_policy.py
@@ -45,6 +48,7 @@ backend/app/modules/ansible-controller/update.py
 backend/app/modules/ansible_controller/__init__.py
 backend/app/modules/ansible_controller/awx.py
 backend/app/modules/ansible_controller/backup.py
+backend/app/modules/ansible_controller/host_capabilities.py
 backend/app/modules/ansible_controller/inventory.py
 backend/app/modules/ansible_controller/models.py
 backend/app/modules/ansible_controller/network.py
@@ -68,6 +72,15 @@ backend/app/modules/example/manifest.yaml
 backend/app/modules/example/uninstall.py
 backend/app/modules/example/update.py
 backend/app/modules/home-assistant/manifest.yaml
+backend/app/modules/hosts-manager/manifest.yaml
+backend/app/modules/hosts_manager/__init__.py
+backend/app/modules/hosts_manager/agent.py
+backend/app/modules/hosts_manager/agent_config.example.yaml
+backend/app/modules/hosts_manager/agent_install.sh
+backend/app/modules/hosts_manager/agent_uninstall.sh
+backend/app/modules/hosts_manager/models.py
+backend/app/modules/hosts_manager/router.py
+backend/app/modules/hosts_manager/service.py
 backend/app/modules/linux-updates/manifest.yaml
 backend/app/modules/mariadb/manifest.yaml
 backend/app/modules/nginx/health.py
@@ -125,6 +138,7 @@ backend/app/services/rsync_tasks.py
 backend/tests/conftest.py
 backend/tests/test_activity.py
 backend/tests/test_admin_user_management.py
+backend/tests/test_ansible_controller.py
 backend/tests/test_apps_store.py
 backend/tests/test_auth_system_users.py
 backend/tests/test_batch_delete.py
@@ -133,12 +147,15 @@ backend/tests/test_docker_manager.py
 backend/tests/test_file_listing.py
 backend/tests/test_file_ops_tmpdir.py
 backend/tests/test_host_info.py
+backend/tests/test_hosts_manager.py
 backend/tests/test_identity.py
 backend/tests/test_infrastructure_modules.py
 backend/tests/test_installer.py
 backend/tests/test_local_disks.py
+backend/tests/test_logs.py
 backend/tests/test_modules_framework.py
 backend/tests/test_network_diagnostics.py
+backend/tests/test_network_management.py
 backend/tests/test_network_mounts.py
 backend/tests/test_package_center.py
 backend/tests/test_path_policy.py
@@ -148,6 +165,7 @@ backend/tests/test_rsync_tasks.py
 backend/tests/test_security_session.py
 backend/tests/test_systemd_services.py
 backend/tests/test_text_editor.py
+backend/tests/test_update_coordination.py
 backend/tests/test_usb_automount.py
 backend/tests/test_user_settings.py
 backend/tests/test_worker_errors.py
