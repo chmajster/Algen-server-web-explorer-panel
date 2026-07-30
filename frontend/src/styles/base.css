@@ -53,15 +53,19 @@
   vertical-align: middle;
 }
 
-.desktop button,
-.desktop input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-.desktop select {
+.desktop :where(
+  button,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select
+) {
   min-height: var(--control-height);
 }
 
-.desktop input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-.desktop select,
-.desktop textarea {
+.desktop :where(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea
+) {
   padding-inline: var(--control-padding-x);
   padding-block: var(--control-padding-y);
 }
