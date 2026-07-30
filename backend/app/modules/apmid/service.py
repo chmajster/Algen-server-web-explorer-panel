@@ -10,6 +10,7 @@ import threading
 import time
 from functools import lru_cache
 from pathlib import Path
+from types import TracebackType
 from typing import Any
 
 from ...activity import ActivityCategory, ActivityStatus, record_activity
@@ -60,6 +61,14 @@ class LastOwnerError(RuntimeError):
     pass
 
 
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool | None:  # type: ignore[override]
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
 class ApmidService:
     """Authoritative APMID registry and resource authorization boundary."""
 
@@ -80,7 +89,7 @@ class ApmidService:
         self.migrate_hosts_manager()
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=15)
+        connection = sqlite3.connect(self.path, timeout=15, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout=15000")
@@ -251,7 +260,10 @@ class ApmidService:
                     FROM apmids a WHERE {where} ORDER BY {order} {direction_sql},a.id LIMIT ? OFFSET ?""",
                 (*values, page_size, (page - 1) * page_size),
             ).fetchall()
-        return {"items": [self._item(row) for row in rows], "page": page, "page_size": page_size, "total": total}
+        items = [self._item(row) for row in rows]
+        for item in items:
+            item["related_count"] = sum(int(usage["count"]) for usage in self.usages(str(item["id"])))
+        return {"items": items, "page": page, "page_size": page_size, "total": total}
 
     def create(self, payload: ApmidInput, actor: str) -> dict[str, Any]:
         now, item_id = time.time(), secrets.token_hex(16)
@@ -538,6 +550,10 @@ class ApmidService:
         shutil.copy2(source, temporary)
         os.chmod(temporary, 0o600)
         with self._lock:
+            for suffix in ("-wal", "-shm"):
+                sidecar = Path(f"{self.path}{suffix}")
+                if sidecar.parent == self.root and sidecar.exists():
+                    sidecar.unlink()
             os.replace(temporary, self.path)
             self._initialize()
         with self.connect() as connection:
