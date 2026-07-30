@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type AppJob, type ModuleSummary, type PackageHistoryItem, type PackageSource } from "../../../api";
+import { useRefreshOnConnectionRestored } from "../../connection/ConnectionStatusMonitor";
 import type { PackageTab } from "../types";
 import { getPackageUiStatus, isPackageUpdateAvailable, mergePackageCatalog } from "../packageState";
 
@@ -36,6 +37,7 @@ export function usePackageCenter() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useRefreshOnConnectionRestored(() => { void refresh(true); });
   const activeIds = jobs.filter((job) => ["queued", "running"].includes(job.status)).map((job) => job.id).join("|");
   useEffect(() => {
     if (!activeIds) return;

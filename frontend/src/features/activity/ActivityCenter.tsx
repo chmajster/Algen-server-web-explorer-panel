@@ -9,6 +9,7 @@ import {
   type ActivityStatus, type ActivitySummary
 } from "../../api";
 import type { Translate } from "../../app/types";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 
 const categories: ActivityCategory[] = ["login", "file", "configuration", "administration", "module"];
 const statuses: ActivityStatus[] = ["success", "failure", "info", "queued", "cancelled"];
@@ -81,6 +82,7 @@ export function ActivityCenter({ locale, t }: { locale: "pl-PL" | "en-US"; t: Tr
   }, [category, debouncedActor, debouncedSearch, page, status, t]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useRefreshOnConnectionRestored(() => { void refresh(true); });
   useEffect(() => {
     const timer = window.setInterval(() => { if (!document.hidden) void refresh(true); }, 15_000);
     return () => window.clearInterval(timer);

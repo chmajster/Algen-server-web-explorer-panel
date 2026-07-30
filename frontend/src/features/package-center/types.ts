@@ -2,3 +2,4 @@ export type { AppJob as PackageJob, PackageHistoryItem, PackageManifest, Package
 
 export type PackageTab = "all" | "installed" | "updates" | "jobs" | "history" | "sources";
 export type PackageAction = "install" | "reinstall" | "update" | "uninstall" | "start" | "stop" | "restart";
+export type PackageView = "grid" | "list";

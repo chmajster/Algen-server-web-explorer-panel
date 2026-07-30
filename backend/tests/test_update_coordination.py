@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -184,8 +185,25 @@ def test_completion_notice_is_acknowledged_once_per_user(monkeypatch, update_env
     user = SessionUser(username="admin", csrf_token="csrf")
 
     assert settings.admin_updates_completion(user)["notice"]["id"] == "update-1"
-    settings.admin_updates_completion_acknowledge(user)
+    settings.admin_updates_completion_acknowledge(settings.UpdateCompletionAck(update_id="update-1"), user)
     assert settings.admin_updates_completion(user)["notice"] is None
+
+
+def test_stale_completion_ack_does_not_acknowledge_a_new_update(monkeypatch, update_environment):
+    monkeypatch.setattr(settings, "authorize", lambda *args, **kwargs: None)
+    update_coordination.write_update_request({
+        "id": "update-2",
+        "state": "completed",
+        "previous_version": "2.0.0",
+        "current_version": "3.0.0",
+        "finished_at": 300,
+    })
+    user = SessionUser(username="admin", csrf_token="csrf")
+
+    result = settings.admin_updates_completion_acknowledge(settings.UpdateCompletionAck(update_id="update-1"), user)
+
+    assert result == {"ok": False, "stale": True}
+    assert settings.admin_updates_completion(user)["notice"]["id"] == "update-2"
 
 
 def test_user_without_update_permission_cannot_read_completion(monkeypatch, update_environment):
@@ -226,6 +244,20 @@ def test_public_update_status_hides_logs_and_operation_details(monkeypatch, upda
     assert result["log"] == ""
     assert result["blockers"][0]["id"] == "operation-1"
     assert result["blockers"][0]["description"] == ""
+
+
+def test_update_status_route_serves_spa_after_a_full_reload(monkeypatch, tmp_path):
+    from app import main
+
+    frontend = tmp_path / "dist"
+    frontend.mkdir()
+    index = frontend / "index.html"
+    index.write_text("<!doctype html><title>WebNAS</title>", encoding="utf-8")
+    monkeypatch.setattr(main, "frontend_dist", frontend)
+
+    response = main.update_status_frontend()
+
+    assert Path(response.path) == index
 
 
 def test_visible_update_log_is_scrubbed(monkeypatch, update_environment):

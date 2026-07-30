@@ -57,6 +57,7 @@ def start_upload(username: str, destination_dir: str, filename: str, size: int) 
 
 
 def active_uploads() -> list[dict]:
+    _cleanup_expired()
     with _lock:
         sessions = list(_sessions.items())
     return [

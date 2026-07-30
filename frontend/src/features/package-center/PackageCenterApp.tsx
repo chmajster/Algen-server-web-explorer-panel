@@ -13,13 +13,15 @@ import { PackageTabs } from "./PackageTabs";
 import { PackageToolbar } from "./PackageToolbar";
 import { usePackageCenter } from "./hooks/usePackageCenter";
 import { isPackageUpdateAvailable } from "./packageState";
-import type { PackageAction } from "./types";
+import type { PackageAction, PackageView } from "./types";
 import "./package-center.css";
 
 type CredentialAction = { job: AppJob; operation: "cancel" | "retry" } | null;
+const packageViewStorageKey = "webnas_package_center_view";
 
 export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSelectedJobClose }: { selectedJobId?: string; t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void; onSelectedJobClose?: () => void }) {
   const state = usePackageCenter();
+  const [view, setView] = useState<PackageView>(() => window.localStorage.getItem(packageViewStorageKey) === "list" ? "list" : "grid");
   const [selected, setSelected] = useState<ModuleSummary | null>(null);
   const [action, setAction] = useState<{ item: ModuleSummary; action: PackageAction } | null>(null);
   const [liveJob, setLiveJob] = useState<{ job: AppJob; name: string } | null>(null);
@@ -67,14 +69,20 @@ export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSele
     await state.refresh(true);
   }
 
+  function selectView(nextView: PackageView) {
+    setView(nextView);
+    window.localStorage.setItem(packageViewStorageKey, nextView);
+  }
+
+  const catalogTab = ["all", "installed", "updates"].includes(state.tab);
   return <section className="package-center">
     <header className="package-center-title"><div><h2>{t("app.store")}</h2><p>{t("store.subtitle")}</p></div></header>
-    <PackageToolbar search={state.search} category={state.category} status={state.status} categories={state.categories} updates={counts.updates} updatesActive={state.tab === "updates"} loading={state.loading} t={t} onSearch={state.setSearch} onCategory={state.setCategory} onStatus={state.setStatus} onUpdates={() => state.setTab("updates")} onRefresh={() => void state.refresh()} />
+    <PackageToolbar search={state.search} category={state.category} status={state.status} categories={state.categories} updates={counts.updates} updatesActive={state.tab === "updates"} loading={state.loading} view={view} showView={catalogTab} t={t} onSearch={state.setSearch} onCategory={state.setCategory} onStatus={state.setStatus} onUpdates={() => state.setTab("updates")} onRefresh={() => void state.refresh()} onView={selectView} />
     <PackageTabs active={state.tab} counts={counts} t={t} onChange={state.setTab} />
     {state.error
       ? <div className="error-state"><strong>{t("status.error")}</strong><span>{state.error}</span><button type="button" onClick={() => void state.refresh()}>{t("action.retry")}</button></div>
       : <main>
-        {["all", "installed", "updates"].includes(state.tab) && <PackageGrid modules={state.visibleModules} loading={state.loading} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: item.manifest.name })} />}
+        {catalogTab && <PackageGrid modules={state.visibleModules} loading={state.loading} view={view} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: item.manifest.name })} />}
         {state.tab === "jobs" && <PackageJobs jobs={state.jobs} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
         {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
         {state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}

@@ -1,0 +1,44 @@
+.connection-status-banner {
+  position: fixed;
+  z-index: 5000;
+  top: 0;
+  right: 0;
+  left: 0;
+  min-height: 3.75rem;
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 1fr) auto;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.625rem max(1rem, env(safe-area-inset-right)) 0.625rem max(1rem, env(safe-area-inset-left));
+  color: #fff;
+  box-shadow: 0 0.25rem 1.125rem rgb(15 23 31 / 28%);
+  pointer-events: none;
+}
+
+.connection-status-banner.offline { background: #b42332; }
+.connection-status-banner.restored { background: #19764f; }
+.connection-status-banner > svg { width: 1.5rem; height: 1.5rem; }
+.connection-status-copy { min-width: 0; display: grid; gap: 0.125rem; }
+.connection-status-copy strong { font-size: var(--font-size-sm); }
+.connection-status-copy span { font-size: var(--font-size-xs); opacity: 0.9; }
+.connection-status-banner dl { display: flex; align-items: center; gap: 1.5rem; margin: 0; }
+.connection-status-banner dl > div { min-width: 8.5rem; display: grid; gap: 0.125rem; }
+.connection-status-banner dt { font-size: var(--font-size-xs); opacity: 0.82; }
+.connection-status-banner dd { margin: 0; font-size: var(--font-size-sm); font-variant-numeric: tabular-nums; font-weight: 700; }
+
+@media (max-width: 700px) {
+  .connection-status-banner {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.5rem 0.75rem;
+  }
+  .connection-status-banner dl {
+    grid-column: 2;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .connection-status-banner dl > div { min-width: 0; }
+}
+
+@media (max-width: 430px) {
+  .connection-status-banner dl { display: grid; grid-template-columns: 1fr; gap: 0.375rem; }
+}

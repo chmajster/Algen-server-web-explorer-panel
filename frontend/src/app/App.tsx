@@ -4,6 +4,7 @@ import { api, ApiError, login, logout, me, type SettingsMe, type SettingsPatch, 
 import { detectLanguage, type Language, translate } from "../i18n";
 import type { Theme, Toast, User } from "./types";
 import { Desktop } from "./Desktop";
+import { ConnectionStatusMonitor } from "../features/connection/ConnectionStatusMonitor";
 import { useUploadManager } from "../features/transfers/useUploadManager";
 import { UpdateCompletionDialog, UpdateStatusPage } from "../features/settings/UpdateStatusPage";
 
@@ -67,6 +68,21 @@ export function App() {
       setUpdateChecked(true);
     }
   }, []);
+  const handleConnectionRestored = useCallback(() => {
+    if (!user) {
+      void me().then(setUser).catch(() => undefined);
+      return;
+    }
+    if (!profile) return;
+    void api.settingsMe().then((data) => {
+      profileRef.current = data;
+      setProfile(data);
+      setLanguage(data.language);
+      setTheme(data.theme);
+    }).catch(() => undefined);
+    void (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);
+    void refreshUpdateProgress(profile.permissions.includes("updates.view"));
+  }, [profile, refreshUpdateProgress, user]);
   useEffect(() => {
     if (!user || !profile) {
       setUpdateChecked(false);
@@ -149,14 +165,15 @@ export function App() {
     }
   }
   function changeTheme(value: Theme) { void updateSettings({ theme: value }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error")); }
-  if (!user) return <Login language={language} onLogin={setUser} />;
-  if (!profile) return <div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div>;
-  if (!updateChecked) return <div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div>;
+  const connectionStatus = <ConnectionStatusMonitor t={t} language={language} onRestored={handleConnectionRestored} />;
+  if (!user) return <>{connectionStatus}<Login language={language} onLogin={setUser} /></>;
+  if (!profile) return <>{connectionStatus}<div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div></>;
+  if (!updateChecked) return <>{connectionStatus}<div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div></>;
   if (updateProgress && (
     ["waiting", "preparing", "running"].includes(updateProgress.state)
     || (updateProgress.state === "failed" && updateProgress.id !== dismissedFailureId)
   )) {
-    return <UpdateStatusPage
+    return <>{connectionStatus}<UpdateStatusPage
       value={updateProgress}
       connectionError={updateConnectionError}
       canRetry={profile.permissions.includes("updates.apply")}
@@ -177,9 +194,10 @@ export function App() {
           window.history.replaceState({}, "", "/");
         });
       }}
-    />;
+    /></>;
   }
   return <>
+    {connectionStatus}
     <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={() => { profileRef.current = null; setUser(null); setProfile(null); setTasks([]); }} />
     {completionNotice && <UpdateCompletionDialog
       notice={completionNotice}
@@ -187,7 +205,7 @@ export function App() {
       onClose={() => {
         const notice = completionNotice;
         setCompletionNotice(null);
-        void api.acknowledgeUpdateCompletion().catch(() => setCompletionNotice(notice));
+        void api.acknowledgeUpdateCompletion(notice.id).catch(() => setCompletionNotice(notice));
       }}
     />}
   </>;

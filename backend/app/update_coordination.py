@@ -169,12 +169,12 @@ def _normalize_operation(provider: str, value: Mapping[str, Any]) -> dict[str, A
     status = str(value.get("status") or "")
     if status not in ACTIVE_OPERATION_STATUSES:
         return None
-    created_at = value.get("started_at") or value.get("created_at") or time.time()
+    started_at = value.get("started_at")
     return {
         "id": str(value.get("id") or f"{provider}-unknown"),
         "type": str(value.get("type") or value.get("operation") or value.get("action") or provider),
         "status": status,
-        "started_at": float(created_at),
+        "started_at": float(started_at) if started_at is not None else None,
         "finished_at": float(value["finished_at"]) if value.get("finished_at") is not None else None,
         "progress": int(value["progress"]) if value.get("progress") is not None else None,
         "description": str(value.get("description") or value.get("current_step") or value.get("stage") or ""),
@@ -206,7 +206,7 @@ def active_operations() -> list[dict[str, Any]]:
                 "user_id": "",
                 "source": name,
             })
-    return sorted(result, key=lambda item: (item["started_at"], item["source"], item["id"]))
+    return sorted(result, key=lambda item: (item["started_at"] or 0, item["source"], item["id"]))
 
 
 def update_blocks_operations() -> bool:

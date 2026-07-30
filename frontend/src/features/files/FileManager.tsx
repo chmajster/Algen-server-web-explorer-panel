@@ -12,6 +12,7 @@ import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu"
 import { ConfirmDialog, InputDialog, Modal } from "../../components/Modal";
 import { UploadProgressDialog } from "../transfers/UploadProgressDialog";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { useNetworkMounts } from "../mounts/useNetworkMounts";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { DirectoryTree } from "./DirectoryTree";
@@ -123,6 +124,7 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
     } finally { if (id === requestId.current) setLoading(false); }
   }, [direction, filter, page, path, preferences.file_page_size, preferences.file_remember_last_path, preferences.file_show_hidden, sort, storagePrefix, t]);
   useEffect(() => { void load(); }, [load]);
+  useRefreshOnConnectionRestored(() => { void load(); });
   useEffect(() => { if (!isAdmin) return; api.moduleConfig("samba").then((data) => { const config = data as unknown as SambaConfig; setSharedPaths(new Map(config.shares.filter((share) => share.enabled).map((share) => [share.path, share]))); }).catch(() => undefined); }, [isAdmin]);
   const loadLocalDisks = useCallback(async () => {
     try {

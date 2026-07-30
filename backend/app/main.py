@@ -9,7 +9,7 @@ from typing import cast
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -583,5 +583,15 @@ async def file_task_events(task_id: str, user=Depends(current_user)):
 
 
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+
+@app.get("/update-status", include_in_schema=False)
+def update_status_frontend():
+    index = frontend_dist / "index.html"
+    if not index.is_file():
+        raise HTTPException(404, "Frontend build is unavailable")
+    return FileResponse(index)
+
+
 if frontend_dist.exists():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

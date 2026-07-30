@@ -9,6 +9,7 @@ import {
   type LogService, type LogSourceGroup, type LogSourcesResponse,
 } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 
 type ViewMode = "compact" | "table";
 type RangeValue = "5m" | "15m" | "1h" | "6h" | "24h" | "7d" | "custom" | "all";
@@ -143,6 +144,7 @@ export function LogsApp({ permissions, t, toast }: { permissions: string[]; t: T
       else setLoading(false);
     }
   }, [cursor, requestQuery, t]);
+  useRefreshOnConnectionRestored(() => { void load(false); });
 
   useEffect(() => {
     const controller = new AbortController();

@@ -2,6 +2,7 @@ import { History, KeyRound, Lock, Plus, RefreshCw, Search, ShieldCheck, Trash2, 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type IdentityGroup, type IdentityHistory, type IdentityRoles, type IdentityUser, type PermissionMetadata, type RbacRole } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { AdminActionDialog, type AdminField } from "./AdminActionDialog";
 
 type Tab = "users" | "groups" | "roles" | "history";
@@ -49,6 +50,7 @@ export function IdentityApp({ permissions, initialTab = "users", embedded = fals
   }, [can, includeSystem, roleFilter, search, statusFilter, t, tab, toast]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useRefreshOnConnectionRestored(() => { void refresh(); });
 
   async function perform(action: () => Promise<unknown>) {
     try { await action(); toast(t("admin.actionCompleted"), "ok", "admin"); await refresh(); }

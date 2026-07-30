@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  api, type AutoUpdateSettings, type DockerContainerDefaultsPolicy, type NetworkPolicy, type ProxmoxSafety, type SettingsMe, type SettingsPatch,
+  api, ApiError, type AutoUpdateSettings, type DockerContainerDefaultsPolicy, type NetworkPolicy, type ProxmoxSafety, type SettingsMe, type SettingsPatch,
   type SystemStatus, type UpdateProgress, type UpdateStatus
 } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
@@ -330,7 +330,17 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
         window.history.replaceState({}, "", "/update-status");
         window.dispatchEvent(new Event("webnas:update-status"));
       }
-    } catch (error) { const message = error instanceof Error ? error.message : t("error.generic"); toast(message, "error", "admin"); setUpdateDialog({ phase: "failed", progress: null, message }); }
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "UPDATE_ALREADY_ACTIVE") {
+        setUpdateDialog(null);
+        window.history.replaceState({}, "", "/update-status");
+        window.dispatchEvent(new Event("webnas:update-status"));
+      } else {
+        const message = error instanceof Error ? error.message : t("error.generic");
+        toast(message, "error", "admin");
+        setUpdateDialog({ phase: "failed", progress: null, message });
+      }
+    }
     finally { setRunningUpdate(false); }
   }
   useEffect(() => {

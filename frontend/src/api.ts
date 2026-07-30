@@ -1021,6 +1021,7 @@ export type NetworkManagementState = {
 export type NetworkConnectivityResult = {
   kind: "ping" | "trace" | "tcp"; target: string; port: number | null; success: boolean; duration_ms: number; output: string;
 };
+export type HealthStatus = { status: "ok"; service: string };
 
 let csrfToken = localStorage.getItem("webnas_csrf") || "";
 let apiBaseUrl = "";
@@ -1095,6 +1096,7 @@ export function logout() {
 }
 
 export const api = {
+  health: (signal?: AbortSignal) => request<HealthStatus>("/api/health", { cache: "no-store", signal }),
   list: (path?: string, params: Record<string, string | number | boolean | null | undefined> = {}) => {
     const query = new URLSearchParams({ path: path || "" });
     Object.entries(params).forEach(([key, value]) => {
@@ -1250,7 +1252,7 @@ export const api = {
   saveAutoUpdate: (payload: { check_enabled: boolean; enabled: boolean; interval_hours: number; update_config: boolean }) => request<AutoUpdateSettings>("/api/admin/system/updates/auto", { method: "PATCH", body: JSON.stringify(payload) }),
   runAutoUpdate: (update_config = false) => request<UpdateStart>("/api/admin/system/updates/auto/run", { method: "POST", body: JSON.stringify({ update_config }) }),
   updateCompletion: () => request<{ notice: UpdateCompletionNotice | null }>("/api/admin/system/updates/completion"),
-  acknowledgeUpdateCompletion: () => request<{ ok: boolean }>("/api/admin/system/updates/completion/acknowledge", { method: "POST", body: "{}" }),
+  acknowledgeUpdateCompletion: (updateId: string) => request<{ ok: boolean; stale: boolean }>("/api/admin/system/updates/completion/acknowledge", { method: "POST", body: JSON.stringify({ update_id: updateId }) }),
   systemdServices: () => request<SystemdService[]>("/api/admin/system/services"),
   systemdServiceAction: (service: string, action: "start" | "stop" | "restart" | "enable" | "disable", confirm_restart = false) => request<SystemdService>(`/api/admin/system/services/${encodeURIComponent(service)}/${action}`, { method: "POST", body: JSON.stringify({ confirm_restart }) }),
   systemdServiceLogs: (service: string, lines = 200) => request<SystemLogs>(`/api/admin/system/services/${encodeURIComponent(service)}/logs?lines=${lines}`),

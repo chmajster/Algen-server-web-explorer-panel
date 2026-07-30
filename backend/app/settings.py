@@ -338,6 +338,10 @@ class UpdateAction(AdminSessionAction):
     update_config: bool = False
 
 
+class UpdateCompletionAck(BaseModel):
+    update_id: str = Field(min_length=1, max_length=128)
+
+
 class AutoUpdatePatch(AdminSessionAction):
     check_enabled: bool = True
     enabled: bool
@@ -1005,7 +1009,8 @@ def _update_progress() -> dict:
                 offset = int(request_state.get("log_offset") or 0) if request_state.get("state") != "idle" else 0
                 handle.seek(0, os.SEEK_END)
                 size = handle.tell()
-                handle.seek(max(offset, size - 64 * 1024))
+                tail_start = max(0, size - 64 * 1024)
+                handle.seek(max(offset, tail_start) if offset <= size else tail_start)
                 lines = handle.read().decode("utf-8", errors="replace").splitlines()[-120:]
     except OSError:
         pass
@@ -1734,16 +1739,18 @@ def admin_updates_completion(user: SessionUser = Depends(_current_user)):
 
 
 @router.post("/api/admin/system/updates/completion/acknowledge")
-def admin_updates_completion_acknowledge(user: SessionUser = Depends(_current_user)):
+def admin_updates_completion_acknowledge(payload: UpdateCompletionAck, user: SessionUser = Depends(_current_user)):
     authorize(user, "updates.view")
     with coordination_lock():
         state = read_update_request()
+        if state.get("state") != "completed" or state.get("id") != payload.update_id:
+            return {"ok": False, "stale": True}
         acknowledged = [str(value) for value in state.get("acknowledged_users", [])]
         if user.username not in acknowledged:
             acknowledged.append(user.username)
             state["acknowledged_users"] = acknowledged[-1000:]
             write_update_request(state)
-    return {"ok": True}
+    return {"ok": True, "stale": False}
 
 
 @router.get("/api/admin/system/updates/auto")

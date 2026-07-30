@@ -47,6 +47,7 @@ const queuedInstall: AppJob = { id: "install-1", module_id: "samba", action: "in
 describe("Package Center", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     vi.mocked(api.apps).mockResolvedValue([module("samba"), module("nginx")]);
     vi.mocked(api.modules).mockResolvedValue([summary("samba"), summary("nginx")]);
     vi.mocked(api.module).mockImplementation((id) => Promise.resolve(summary(id)));
@@ -78,6 +79,26 @@ describe("Package Center", () => {
     expect(screen.queryByRole("button", { name: "package.configure" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "store.install" }).length).toBeGreaterThan(0);
     expect(configure).not.toHaveBeenCalled();
+  });
+
+  it("switches between tile and list views and remembers the selection", async () => {
+    const first = render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    await screen.findByText("Samba");
+    expect(screen.getByRole("button", { name: "package.view.grid" })).toHaveAttribute("aria-pressed", "true");
+    expect(first.container.querySelector(".package-grid.package-view-grid")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "package.view.list" }));
+
+    expect(screen.getByRole("button", { name: "package.view.list" })).toHaveAttribute("aria-pressed", "true");
+    expect(first.container.querySelector(".package-grid.package-view-list")).not.toBeNull();
+    expect(window.localStorage.getItem("webnas_package_center_view")).toBe("list");
+    expect(screen.getAllByRole("button", { name: "package.details" }).length).toBeGreaterThan(0);
+
+    first.unmount();
+    const second = render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    await screen.findByText("Samba");
+    expect(second.container.querySelector(".package-grid.package-view-list")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "package.view.list" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps Samba in the catalog before its runtime status is available", async () => {
