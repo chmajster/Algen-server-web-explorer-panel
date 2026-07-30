@@ -6,6 +6,7 @@ REPO_URL="https://github.com/chmajster/Algen-server-web-explorer-panel"
 ARCHIVE_URL="${REPO_URL}/archive/refs/heads/main.tar.gz"
 RAW_INSTALL_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh"
 
+#TEST
 PORT="5000"
 PORT_EXPLICIT="no"
 INSTALL_DIR="/opt/webnas"
