@@ -2805,6 +2805,7 @@
   "module.section.operations": "Operacje",
   "module.section.settings": "Ustawienia",
   "module.section.environment": "Environment",
+  "module.section.apmid": "APMID",
   "module.section.installer": "Instalator",
   "module.section.audit": "Audyt",
   "hosts.name": "Hosts Manager",

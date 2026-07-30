@@ -82,6 +82,24 @@ describe("HostsManagerApp", () => {
     expect(addressSort.closest("th")).toHaveAttribute("aria-sort", "ascending");
   });
 
+  it("shows APMID as a dedicated top-level section", async () => {
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+
+    const environmentTab = screen.getByRole("button", { name: "module.section.environment" });
+    const apmidTab = screen.getByRole("button", { name: "module.section.apmid" });
+
+    fireEvent.click(environmentTab);
+    expect(await screen.findByText("hosts.environment.title")).toBeInTheDocument();
+    expect(screen.queryByText("hosts.apmid.title")).not.toBeInTheDocument();
+
+    fireEvent.click(apmidTab);
+    expect(apmidTab).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByText("hosts.apmid.title")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "hosts.apmid.sync" })).toBeInTheDocument();
+    expect(screen.queryByText("hosts.environment.title")).not.toBeInTheDocument();
+  });
+
   it("uses the global interface scale without resetting the section or fetching again", async () => {
     const toast = vi.fn();
     const originalFontSize = document.documentElement.style.fontSize;

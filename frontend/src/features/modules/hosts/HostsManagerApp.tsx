@@ -68,6 +68,7 @@ const sections: ModuleSection[] = [
   "overview",
   "hosts",
   "environment",
+  "apmid",
   "credentials",
   "installer",
   "settings",
@@ -187,9 +188,18 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
     content = (
       <EnvironmentManager
         items={environments}
-        apmids={apmids}
         patterns={hostnamePatterns}
         credentials={credentials}
+        canManage={can("hosts-manager.hosts.manage")}
+        t={t}
+        toast={toast}
+        refresh={refresh}
+      />
+    );
+  else if (section === "apmid")
+    content = (
+      <ApmidManager
+        items={apmids}
         canManage={can("hosts-manager.hosts.manage")}
         t={t}
         toast={toast}
@@ -1027,7 +1037,6 @@ function ReportPanel({ title, value, empty }: { title: string; value: Record<str
 
 function EnvironmentManager({
   items,
-  apmids,
   patterns,
   credentials,
   canManage,
@@ -1036,7 +1045,6 @@ function EnvironmentManager({
   refresh,
 }: {
   items: HostsManagerEnvironment[];
-  apmids: HostsManagerApmid[];
   patterns: HostsManagerHostnamePattern[];
   credentials: HostsManagerCredential[];
   canManage: boolean;
@@ -1116,7 +1124,7 @@ function EnvironmentManager({
         <label className="wide">{t("hosts.host.description")}<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       </form>
     </Modal>}
-  </section><ApmidManager items={apmids} canManage={canManage} t={t} toast={toast} refresh={refresh} /></div>;
+  </section></div>;
 }
 
 function ApmidManager({
