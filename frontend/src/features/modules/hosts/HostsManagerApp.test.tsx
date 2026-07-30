@@ -5,7 +5,7 @@ import { HostsManagerApp } from "./HostsManagerApp";
 
 vi.mock("../../../api", async () => {
   const actual = await vi.importActual<typeof import("../../../api")>("../../../api");
-  return { ...actual, api: { ...actual.api, hostsManagerDashboard: vi.fn(), hostsManagerSettings: vi.fn(), saveHostsManagerSettings: vi.fn(), hostsManagerHosts: vi.fn(), hostsManagerGroups: vi.fn(), hostsManagerEnvironments: vi.fn(), hostsManagerHostnamePatterns: vi.fn(), hostsManagerEnrollmentTokens: vi.fn(), hostsManagerOperations: vi.fn(), hostsManagerCredentials: vi.fn(), hostsManagerRepositories: vi.fn(), hostsManagerPowerProfiles: vi.fn(), hostsManagerDiagnostics: vi.fn(), hostsManagerBackups: vi.fn(), hostsManagerCapabilities: vi.fn(), saveHostsManagerHost: vi.fn(), createHostsManagerEnrollmentToken: vi.fn(), downloadHostsManagerEnrollmentScript: vi.fn() } };
+  return { ...actual, api: { ...actual.api, hostsManagerDashboard: vi.fn(), hostsManagerSettings: vi.fn(), saveHostsManagerSettings: vi.fn(), hostsManagerHosts: vi.fn(), hostsManagerGroups: vi.fn(), hostsManagerEnvironments: vi.fn(), hostsManagerApmids: vi.fn(), hostsManagerHostnamePatterns: vi.fn(), hostsManagerEnrollmentTokens: vi.fn(), hostsManagerOperations: vi.fn(), hostsManagerCredentials: vi.fn(), hostsManagerRepositories: vi.fn(), hostsManagerPowerProfiles: vi.fn(), hostsManagerDiagnostics: vi.fn(), hostsManagerBackups: vi.fn(), hostsManagerCapabilities: vi.fn(), saveHostsManagerHost: vi.fn(), createHostsManagerEnrollmentToken: vi.fn(), downloadHostsManagerEnrollmentScript: vi.fn() } };
 });
 
 const t = (key: string) => key;
@@ -49,14 +49,22 @@ describe("HostsManagerApp", () => {
     vi.mocked(api.hostsManagerSettings).mockResolvedValue(baseSettings);
     vi.mocked(api.hostsManagerHosts).mockResolvedValue([{ id: "a".repeat(32), name: "node-01", hostname: "node-01", fqdn: "", address: "192.168.1.10", management_address: "", port: 22, ssh_user: "ops", credential_id: null, python_interpreter: "auto_silent", connection_type: "ssh", environment: "prod", location: "rack-1", description: "", tags: ["linux"], variables: {}, group_ids: [], approved: false, registration_status: "pending_approval", connection_status: "online", power_status: "unknown", enrollment_source: "manual", fingerprint_status: "unverified", last_error: "", managed_user_created: false, active: true, groups: [], facts: {}, created_at: 1, updated_at: 1 }]);
     vi.mocked(api.hostsManagerGroups).mockResolvedValue([]);
-    vi.mocked(api.hostsManagerEnvironments).mockResolvedValue([]);
+    vi.mocked(api.hostsManagerEnvironments).mockResolvedValue([{
+      id: "default", name: "Default", slug: "default", description: "", color: "#187eb1",
+      default_hostname_pattern_id: null, default_credential_id: null, default_agent_port: 9443,
+      report_interval_seconds: 600, active: true, host_count: 0, created_at: 1, updated_at: 1,
+    }]);
+    vi.mocked(api.hostsManagerApmids).mockResolvedValue([{
+      id: "apmid-app", code: "APP", description: "", active: true, created_at: 1, updated_at: 1,
+      created_by: "admin", updated_by: "admin", environment_groups: [],
+    }]);
     vi.mocked(api.hostsManagerHostnamePatterns).mockResolvedValue([]);
     vi.mocked(api.hostsManagerEnrollmentTokens).mockResolvedValue([]);
     vi.mocked(api.hostsManagerOperations).mockResolvedValue([]);
     vi.mocked(api.hostsManagerCredentials).mockResolvedValue([]);
     vi.mocked(api.hostsManagerRepositories).mockResolvedValue([]);
     vi.mocked(api.hostsManagerPowerProfiles).mockResolvedValue([]);
-    vi.mocked(api.hostsManagerDiagnostics).mockResolvedValue({ schema_version: 4, checks: [] });
+    vi.mocked(api.hostsManagerDiagnostics).mockResolvedValue({ schema_version: 5, checks: [] });
     vi.mocked(api.hostsManagerBackups).mockResolvedValue([]);
     vi.mocked(api.hostsManagerCapabilities).mockResolvedValue([]);
   });
@@ -129,13 +137,36 @@ describe("HostsManagerApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
     fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
     expect(screen.getByText("SCL000001")).toBeInTheDocument();
+    expect(screen.getByText("hosts.enrollment.basic")).toBeInTheDocument();
+    expect(screen.getByText("hosts.enrollment.advanced")).toBeInTheDocument();
+    expect(screen.queryByLabelText("hosts.host.user")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("hosts.host.port")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("hosts.enrollment.os"), { target: { value: "windows" } });
     const generateButtons = screen.getAllByRole("button", { name: "hosts.enrollment.generate" });
     fireEvent.click(generateButtons[generateButtons.length - 1]);
-    await waitFor(() => expect(api.createHostsManagerEnrollmentToken).toHaveBeenCalledWith(expect.objectContaining({ bootstrap_os: "windows", apply_hostname: true })));
+    await waitFor(() => expect(api.createHostsManagerEnrollmentToken).toHaveBeenCalledWith(expect.objectContaining({
+      bootstrap_os: "windows", apply_hostname: true, apmid_id: "apmid-app", environment_id: "default",
+      agent_port: 9443, report_interval_seconds: 600,
+    })));
+    const payload = vi.mocked(api.createHostsManagerEnrollmentToken).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("ssh_user");
+    expect(payload).not.toHaveProperty("port");
     expect(await screen.findByText("powershell command")).toBeInTheDocument();
     vi.mocked(api.downloadHostsManagerEnrollmentScript).mockResolvedValue(new Blob(["script"]));
     fireEvent.click(screen.getByRole("button", { name: /hosts.enrollment.download/ }));
     await waitFor(() => expect(api.downloadHostsManagerEnrollmentScript).toHaveBeenCalledWith("/api/modules/hosts-manager/enrollment-script", "raw-once"));
+  });
+
+  it("hides validity for permanent tokens and restores it for one-time tokens", async () => {
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
+    expect(screen.getByLabelText("hosts.enrollment.minutes")).toBeRequired();
+    fireEvent.change(screen.getByLabelText("hosts.enrollment.mode"), { target: { value: "permanent" } });
+    expect(screen.queryByLabelText("hosts.enrollment.minutes")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("hosts.enrollment.mode"), { target: { value: "one_time" } });
+    expect(screen.getByLabelText("hosts.enrollment.minutes")).toBeInTheDocument();
   });
 });

@@ -15,12 +15,12 @@ The installer requires `curl`, `python3`, `ip`, `hostname` and a trusted HTTPS c
 ## Recommended installation
 
 1. In Hosts Manager open **Installer**.
-2. Choose an environment and hostname pattern.
-3. Generate a short-lived one-time token. Use a permanent token only for controlled fleet provisioning and bind it to a private IP where possible.
+2. Choose the required active environment and APMID, then select a hostname pattern. The server derives the managed `<APMID>.<ENVIRONMENT>` group; it cannot be replaced from the browser.
+3. Generate a short-lived one-time token. It requires a lifetime from 1 to 525600 minutes. Use a permanent token only for controlled fleet provisioning and bind it to a private IP where possible; permanent tokens have no expiry field and are stored with `expires_at = 0`.
 4. Copy the generated command and run it as root on the target host.
 5. Approve the new host and independently verify its SSH fingerprint.
 
-The generated script changes the hostname only when that option is enabled. Before registration it keeps the previous hostname in the enrollment metadata. It installs:
+The generated script does not ask for an SSH user, SSH port or SSH credential. Agent registration is outbound HTTPS and assigns the host to the chosen environment, the server-derived APMID group and any additional manual groups. SSH settings remain available for the separate SSH installation workflow. The generated script changes the hostname only when that option is enabled. Before registration it keeps the previous hostname in the enrollment metadata. It installs:
 
 | Path | Purpose | Mode |
 |---|---|---|
@@ -94,7 +94,7 @@ The API rejects reports larger than 2 MiB and recursively rejects keys that look
 
 Every installation has a stable installation ID and a server-issued agent ID. Pairing creates a random per-host salt and token hash. **Generate new identity** invalidates the current salt and returns a new raw token once. **Invalidate identity** removes authentication immediately and changes the host to `authentication_required`; reinstall or pair it again to restore communication.
 
-Permanent enrollment tokens are reusable until revoked and therefore carry more risk. Their use count and reported hostnames are audited. Prefer one-time tokens for individual hosts.
+Permanent enrollment tokens are reusable until revoked and therefore carry more risk. Their use count, reported hostnames, APMID, environment and managed group are audited. Prefer one-time tokens for individual hosts.
 
 ## Removal
 

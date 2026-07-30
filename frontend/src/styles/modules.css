@@ -478,6 +478,10 @@
 .hosts-manager-app .hosts-secret-once { display: block; padding: var(--hosts-spacing-md); overflow-wrap: anywhere; border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border-subtle)); border-radius: var(--radius-medium); background: color-mix(in srgb, var(--warning) 7%, var(--surface-secondary)); }
 .hosts-manager-app .hosts-environment-grid,
 .hosts-manager-app .hosts-pattern-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: var(--hosts-spacing-md); }
+.hosts-manager-app .hosts-environment-workspace { min-width: 0; display: grid; gap: var(--hosts-spacing-md); }
+.hosts-manager-app .hosts-header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--hosts-spacing-xs); }
+.hosts-manager-app .hosts-header-actions button { display: inline-flex; align-items: center; gap: var(--hosts-spacing-xs); }
+.hosts-manager-app .hosts-header-actions svg { width: var(--hosts-icon-size); }
 .hosts-manager-app .hosts-environment-card,
 .hosts-manager-app .hosts-pattern-card { position: relative; min-width: 0; display: grid; align-content: start; gap: var(--hosts-spacing-md); padding: var(--hosts-panel-padding); overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: var(--surface-elevated); box-shadow: var(--shadow-card); }
 .hosts-manager-app .hosts-environment-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: .25rem; background: var(--environment-color, var(--accent)); }
@@ -494,6 +498,18 @@
 .hosts-manager-app .hosts-environment-card dt { color: var(--text-muted); font-size: var(--font-size-xs); }
 .hosts-manager-app .hosts-environment-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .hosts-manager-app .hosts-environment-card footer { display: flex; justify-content: flex-end; gap: var(--hosts-spacing-xs); margin-top: auto; }
+.hosts-manager-app .hosts-apmid-card > header { grid-template-columns: minmax(0, 1fr) auto; }
+.hosts-manager-app .hosts-apmid-card > ul { display: grid; gap: var(--hosts-spacing-xs); margin: 0; padding: 0; list-style: none; }
+.hosts-manager-app .hosts-apmid-card > ul li { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--hosts-spacing-sm); padding: var(--hosts-spacing-xs) var(--hosts-spacing-sm); border-radius: var(--radius-medium); background: var(--surface-secondary); }
+.hosts-manager-app .hosts-apmid-card > ul code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hosts-manager-app .hosts-enrollment-section { min-width: 0; margin: 0; padding: var(--hosts-spacing-md); border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: color-mix(in srgb, var(--surface-secondary) 72%, var(--surface-elevated)); }
+.hosts-manager-app .hosts-enrollment-section > legend { padding: 0 var(--hosts-spacing-xs); color: var(--text-primary); font-weight: 700; }
+.hosts-manager-app .hosts-enrollment-section > .module-form-grid { margin: 0; }
+.hosts-manager-app .hosts-enrollment-hostname { min-width: 0; display: grid; gap: var(--hosts-spacing-xs); padding: var(--hosts-spacing-sm); border-radius: var(--radius-medium); background: var(--surface-elevated); }
+.hosts-manager-app .hosts-enrollment-hostname code { overflow-wrap: anywhere; color: var(--accent); }
+.hosts-manager-app .hosts-enrollment-hostname small,
+.hosts-manager-app .hosts-enrollment-groups > small { color: var(--text-muted); }
+.hosts-manager-app .hosts-enrollment-groups { min-width: 0; display: flex; flex-wrap: wrap; gap: var(--hosts-spacing-sm); }
 .hosts-manager-app .hosts-pattern-card > header { display: grid; gap: var(--hosts-spacing-sm); }
 .hosts-manager-app .hosts-pattern-card > header > div { display: flex; align-items: center; justify-content: space-between; gap: var(--hosts-spacing-sm); }
 .hosts-manager-app .hosts-pattern-card > header > code { overflow-wrap: anywhere; color: var(--accent); }

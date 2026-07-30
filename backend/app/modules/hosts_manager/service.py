@@ -620,16 +620,16 @@ class HostRegistryService:
         created = 0
         updated = 0
         for apmid, environment, name, group_id in planned:
-            enabled = int(bool(apmid["active"]) and bool(environment["active"]))
+            enabled_value = int(bool(apmid["active"]) and bool(environment["active"]))
             description = f"Managed group for APMID {apmid['code']} and environment {environment['slug']}"
             if group_id:
                 group = connection.execute("SELECT name,description,active FROM groups WHERE id=?", (group_id,)).fetchone()
                 if not group:
                     raise ManagedGroupProtectedError("managed APMID group relation is damaged")
-                if str(group["name"]) != name or str(group["description"]) != description or int(group["active"]) != enabled:
+                if str(group["name"]) != name or str(group["description"]) != description or int(group["active"]) != enabled_value:
                     connection.execute(
                         "UPDATE groups SET name=?,description=?,active=?,updated_at=?,updated_by=? WHERE id=?",
-                        (name, description, enabled, now, actor, group_id),
+                        (name, description, enabled_value, now, actor, group_id),
                     )
                     connection.execute(
                         "UPDATE apmid_environment_groups SET updated_at=?,updated_by=? WHERE apmid_id=? AND environment_id=?",
@@ -642,7 +642,7 @@ class HostRegistryService:
                 """INSERT INTO groups(
                     id,name,description,parent_id,variables_json,active,created_at,updated_at,created_by,updated_by
                 ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (group_id, name, description, None, "{}", enabled, now, now, actor, actor),
+                (group_id, name, description, None, "{}", enabled_value, now, now, actor, actor),
             )
             connection.execute(
                 """INSERT INTO apmid_environment_groups(

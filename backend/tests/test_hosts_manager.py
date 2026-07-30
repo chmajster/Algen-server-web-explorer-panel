@@ -16,22 +16,42 @@ from app.modules.ansible_controller.models import HostInput as LegacyHostInput
 from app.modules.ansible_controller.repository import AnsibleRepository
 from app.modules.hosts_manager.models import (
     AgentReportInput,
+    ApmidInput,
     CredentialInput,
     CredentialType,
     EnrollmentTokenInput,
     EnvironmentInput,
+    GroupInput,
     HostInput,
     HostnamePatternInput,
     HostsManagerSettingsUpdate,
     SshOnboardingProbeInput,
 )
-from app.modules.hosts_manager.service import SCHEMA_VERSION, HostCapabilityProvider, HostRegistryService
+from app.modules.hosts_manager.service import (
+    SCHEMA_VERSION,
+    HostCapabilityProvider,
+    HostRegistryService,
+    ManagedGroupConflictError,
+    ManagedGroupProtectedError,
+)
 from app.modules.hosts_manager import router as hosts_router
 from app.security import create_session
 
 
 def service(tmp_path: Path) -> HostRegistryService:
     return HostRegistryService(tmp_path / "hosts-manager" / "hosts.sqlite3", tmp_path / "secrets" / "hosts-manager.key", tmp_path / "missing.sqlite3")
+
+
+def ensure_apmid(store: HostRegistryService, code: str = "APP") -> dict:
+    existing = next((item for item in store.apmids() if item["code"] == code), None)
+    return existing or store.save_apmid(ApmidInput(code=code), "admin")
+
+
+def enrollment_input(store: HostRegistryService, **values) -> EnrollmentTokenInput:
+    apmid = ensure_apmid(store)
+    if values.get("mode", "one_time") == "one_time":
+        values.setdefault("expires_minutes", 15)
+    return EnrollmentTokenInput(apmid_id=apmid["id"], environment_id="default", **values)
 
 
 def test_crud_validation_and_secret_free_connection_metadata(tmp_path: Path):
@@ -54,7 +74,7 @@ def test_crud_validation_and_secret_free_connection_metadata(tmp_path: Path):
 
 def test_enrollment_token_is_hashed_one_time_bounded_and_hostname_scoped(tmp_path: Path):
     store = service(tmp_path)
-    created = store.create_enrollment_token(EnrollmentTokenInput(expires_minutes=1), "admin")
+    created = store.create_enrollment_token(enrollment_input(store, expires_minutes=1), "admin")
     token = created["token"]
     with sqlite3.connect(store.path) as connection:
         row = connection.execute("SELECT token_hash FROM enrollment_tokens WHERE id=?", (created["id"],)).fetchone()
@@ -83,13 +103,14 @@ def test_hostname_settings_default_persistence_and_existing_high_number(tmp_path
 
 def test_hostname_reservations_are_monotonic_concurrent_and_never_reused(tmp_path: Path):
     store = service(tmp_path)
+    ensure_apmid(store)
     with ThreadPoolExecutor(max_workers=3) as pool:
-        created = list(pool.map(lambda _: store.create_enrollment_token(EnrollmentTokenInput(), "admin"), range(3)))
+        created = list(pool.map(lambda _: store.create_enrollment_token(enrollment_input(store), "admin"), range(3)))
     assert sorted(item["assigned_hostname"] for item in created) == ["SCL000001", "SCL000002", "SCL000003"]
     store.revoke_enrollment_token(created[0]["id"], "admin")
     with sqlite3.connect(store.path) as connection:
         connection.execute("UPDATE enrollment_tokens SET expires_at=0 WHERE id=?", (created[1]["id"],))
-    fourth = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    fourth = store.create_enrollment_token(enrollment_input(store), "admin")
     assert fourth["assigned_hostname"] == "SCL000004"
 
 
@@ -138,6 +159,111 @@ def test_environments_store_defaults_and_cannot_be_removed_with_assigned_hosts(t
     assert store.host(host["id"])["environment_details"]["name"] == "Production"
 
 
+def test_apmid_normalization_managed_groups_renames_and_idempotent_sync(tmp_path: Path):
+    store = service(tmp_path)
+    apmid = store.save_apmid(ApmidInput(code="  xyz  ", description="Application"), "admin")
+    assert apmid["code"] == "XYZ"
+    assert [item["group_name"] for item in apmid["environment_groups"]] == ["XYZ.DEFAULT"]
+    with pytest.raises(ValueError):
+        ApmidInput(code="XYZ.PROD")
+    first_sync = store.sync_apmid_environment_groups("admin")
+    second_sync = store.sync_apmid_environment_groups("admin")
+    assert first_sync["created"] == second_sync["created"] == 0
+    environment = store.save_environment(EnvironmentInput(name="Development", slug="dev"), "admin")
+    assert {item["name"] for item in store.list_groups() if item["managed"]} == {"XYZ.DEFAULT", "XYZ.DEV"}
+    store.save_apmid(ApmidInput(code="platform"), "admin", apmid["id"])
+    store.save_environment(EnvironmentInput(name="Staging", slug="stage"), "admin", environment["id"])
+    assert {item["name"] for item in store.list_groups() if item["managed"]} == {"PLATFORM.DEFAULT", "PLATFORM.STAGE"}
+    assert store.sync_apmid_environment_groups("admin")["created"] == 0
+
+
+def test_apmid_group_conflicts_are_transactional_and_managed_groups_are_protected(tmp_path: Path):
+    store = service(tmp_path)
+    apmid = store.save_apmid(ApmidInput(code="APP"), "admin")
+    managed = next(item for item in store.list_groups() if item["managed"])
+    with pytest.raises(ManagedGroupProtectedError):
+        store.save_group(GroupInput(name="RENAMED"), "admin", managed["id"])
+    with pytest.raises(ManagedGroupProtectedError):
+        store.delete_group(managed["id"])
+    with store.connect() as connection:
+        connection.execute(
+            """INSERT INTO groups(
+                id,name,description,parent_id,variables_json,active,created_at,updated_at,created_by,updated_by
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            ("legacy-collision", "COLLISION.DEFAULT", "", None, "{}", 1, 1, 1, "old", "old"),
+        )
+    with pytest.raises(ManagedGroupConflictError):
+        store.save_apmid(ApmidInput(code="collision"), "admin", apmid["id"])
+    assert store.apmids()[0]["code"] == "APP"
+    assert next(item for item in store.list_groups() if item["managed"])["name"] == "APP.DEFAULT"
+
+
+def test_enrollment_requires_apmid_environment_and_assigns_managed_and_manual_groups(tmp_path: Path):
+    store = service(tmp_path)
+    apmid = ensure_apmid(store, "APP")
+    other = ensure_apmid(store, "OTHER")
+    manual = store.save_group(GroupInput(name="MANUAL"), "admin")
+    groups = store.list_groups()
+    managed = next(item for item in groups if (item.get("managed_by") or {}).get("apmid_id") == apmid["id"])
+    other_managed = next(item for item in groups if (item.get("managed_by") or {}).get("apmid_id") == other["id"])
+    created = store.create_enrollment_token(
+        enrollment_input(store, group_ids=[manual["id"]]),
+        "admin",
+    )
+    assert created["apmid_id"] == apmid["id"]
+    assert created["environment_id"] == "default"
+    assert created["managed_group_id"] == managed["id"]
+    assert created["group_ids"] == [managed["id"], manual["id"]]
+    listed = next(item for item in store.enrollment_tokens() if item["id"] == created["id"])
+    assert listed["apmid_code"] == "APP"
+    assert listed["environment_slug"] == "default"
+    assert listed["managed_group_name"] == "APP.DEFAULT"
+    with pytest.raises(ManagedGroupProtectedError):
+        store.create_enrollment_token(enrollment_input(store, group_ids=[other_managed["id"]]), "admin")
+    host = store.claim_enrollment_token(
+        created["token"],
+        {"hostname": created["assigned_hostname"], "address": "192.168.70.10"},
+    )
+    assert host and host["environment"] == "default"
+    assert set(host["group_ids"]) == {managed["id"], manual["id"]}
+
+
+def test_enrollment_rejects_inactive_entities_and_validates_token_expiration(tmp_path: Path):
+    store = service(tmp_path)
+    apmid = ensure_apmid(store)
+    with pytest.raises(ValueError):
+        EnrollmentTokenInput(apmid_id=apmid["id"], environment_id="default")
+    permanent = EnrollmentTokenInput(
+        mode="permanent",
+        expires_minutes=60,
+        apmid_id=apmid["id"],
+        environment_id="default",
+    )
+    assert permanent.expires_minutes is None
+    assert store.create_enrollment_token(permanent, "admin")["expires_at"] == 0
+    store.save_apmid(ApmidInput(code=apmid["code"], active=False), "admin", apmid["id"])
+    with pytest.raises(KeyError, match="APMID"):
+        store.create_enrollment_token(
+            EnrollmentTokenInput(
+                expires_minutes=15,
+                apmid_id=apmid["id"],
+                environment_id="default",
+            ),
+            "admin",
+        )
+    active_apmid = store.save_apmid(ApmidInput(code=apmid["code"], active=True), "admin", apmid["id"])
+    store.save_environment(EnvironmentInput(name="Default", slug="default", active=False), "admin", "default")
+    with pytest.raises(KeyError, match="environment"):
+        store.create_enrollment_token(
+            EnrollmentTokenInput(
+                expires_minutes=15,
+                apmid_id=active_apmid["id"],
+                environment_id="default",
+            ),
+            "admin",
+        )
+
+
 def test_hostname_patterns_preview_skip_and_token_assignment_are_monotonic(tmp_path: Path):
     store = service(tmp_path)
     pattern = store.save_hostname_pattern(
@@ -155,7 +281,7 @@ def test_hostname_patterns_preview_skip_and_token_assignment_are_monotonic(tmp_p
     skipped = store.skip_hostname_pattern(pattern["id"], 2, "reserved rack slots", "admin")
     assert skipped["skipped"] == ["EDGE-007-PL", "EDGE-009-PL"]
     created = store.create_enrollment_token(
-        EnrollmentTokenInput(hostname_pattern_id=pattern["id"]),
+        enrollment_input(store, hostname_pattern_id=pattern["id"]),
         "admin",
     )
     assert created["assigned_hostname"] == "EDGE-011-PL"
@@ -169,12 +295,12 @@ def test_registration_network_policy_and_ssh_onboarding_input_are_private(tmp_pa
         HostsManagerSettingsUpdate(allowed_registration_networks=["10.0.0.0/8"]),
         "admin",
     )
-    blocked = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    blocked = store.create_enrollment_token(enrollment_input(store), "admin")
     assert store.claim_enrollment_token(
         blocked["token"],
         {"hostname": blocked["assigned_hostname"], "address": "192.168.50.10"},
     ) is None
-    allowed = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    allowed = store.create_enrollment_token(enrollment_input(store), "admin")
     assert store.claim_enrollment_token(
         allowed["token"],
         {"hostname": allowed["assigned_hostname"], "address": "10.50.0.10"},
@@ -195,7 +321,8 @@ def test_registration_network_policy_and_ssh_onboarding_input_are_private(tmp_pa
 def test_permanent_enrollment_token_is_reusable_and_honors_address_binding(tmp_path: Path):
     store = service(tmp_path)
     bound = store.create_enrollment_token(
-        EnrollmentTokenInput(
+        enrollment_input(
+            store,
             mode="permanent",
             bound_address="192.168.40.20",
             agent_port=9443,
@@ -209,7 +336,7 @@ def test_permanent_enrollment_token_is_reusable_and_honors_address_binding(tmp_p
         {"hostname": "edge-wrong-address", "address": "192.168.40.21"},
     ) is None
     created = store.create_enrollment_token(
-        EnrollmentTokenInput(mode="permanent", agent_port=9443, report_interval_seconds=900),
+        enrollment_input(store, mode="permanent", agent_port=9443, report_interval_seconds=900),
         "admin",
     )
     first = store.claim_enrollment_token(
@@ -318,10 +445,15 @@ def test_invalid_hostname_templates_are_rejected(template: str):
 def test_sequence_exhaustion_and_legacy_glob_compatibility(tmp_path: Path):
     store = service(tmp_path)
     store.save_settings(HostsManagerSettingsUpdate(hostname_template="NODE-X"), "admin")
+    store.save_environment(
+        EnvironmentInput(name="Default", slug="default", default_hostname_pattern_id=None),
+        "admin",
+        "default",
+    )
     for _ in range(9):
-        store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+        store.create_enrollment_token(enrollment_input(store), "admin")
     with pytest.raises(OverflowError):
-        store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+        store.create_enrollment_token(enrollment_input(store), "admin")
     now = 9_999_999_999
     raw = "legacy-token"
     with store.connect() as connection:
@@ -345,20 +477,45 @@ def test_schema_migration_and_linux_windows_bootstrap(tmp_path: Path):
             require_approval INTEGER NOT NULL DEFAULT 1, onboard_ansible INTEGER NOT NULL DEFAULT 0, expires_at REAL NOT NULL,
             used_at REAL, used_hostname TEXT NOT NULL DEFAULT '', revoked_at REAL, created_at REAL NOT NULL,
             updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL)""")
+        connection.execute(
+            """INSERT INTO enrollment_tokens(
+                id,token_hash,hostname_pattern,ssh_user,port,expires_at,created_at,updated_at,created_by,updated_by
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (
+                "pre-migration",
+                __import__("hashlib").sha256(b"pre-migration-token").hexdigest(),
+                "legacy-*",
+                "root",
+                22,
+                9_999_999_999,
+                1,
+                1,
+                "old",
+                "old",
+            ),
+        )
     store = service(tmp_path)
     with sqlite3.connect(store.path) as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(enrollment_tokens)")}
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-    assert {"assigned_hostname", "bootstrap_os", "apply_hostname", "reported_hostname"} <= columns
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        preserved = connection.execute("SELECT id FROM enrollment_tokens WHERE id='pre-migration'").fetchone()
+    assert {"assigned_hostname", "bootstrap_os", "apply_hostname", "reported_hostname", "apmid_id", "environment_id", "managed_group_id"} <= columns
+    assert {"apmids", "apmid_environment_groups"} <= tables
+    assert preserved
     assert version == SCHEMA_VERSION
-    linux = store.create_enrollment_token(EnrollmentTokenInput(bootstrap_os="linux"), "admin")
+    assert store.claim_enrollment_token(
+        "pre-migration-token",
+        {"hostname": "LEGACY-MIGRATION", "address": "192.168.90.10"},
+    )
+    linux = store.create_enrollment_token(enrollment_input(store, bootstrap_os="linux"), "admin")
     linux_script, _ = store.enrollment_script(linux["token"], "https://webnas.example")
     assert linux_script.startswith("#!/usr/bin/env bash")
     assert "--tlsv1.2" in linux_script and "hostnamectl set-hostname" in linux_script and "eval" not in linux_script
     assert all(manager in linux_script for manager in ("apt-get", "dnf", "yum", "zypper", "pacman", "apk"))
     assert "hosts-manager-agent.service" in linux_script and "rc-update add hosts-manager-agent" in linux_script
     assert '"enrollment_token"' not in linux_script
-    windows = store.create_enrollment_token(EnrollmentTokenInput(bootstrap_os="windows"), "admin")
+    windows = store.create_enrollment_token(enrollment_input(store, bootstrap_os="windows"), "admin")
     windows_script, _ = store.enrollment_script(windows["token"], "https://webnas.example")
     assert "#Requires -Version 5.1" in windows_script
     assert "Invoke-RestMethod" in windows_script and "ConvertTo-Json" in windows_script
@@ -415,7 +572,7 @@ def test_bootstrap_script_endpoint_uses_bearer_without_admin_session_and_rejects
     app.include_router(hosts_router.router)
     client = TestClient(app)
 
-    active = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    active = store.create_enrollment_token(enrollment_input(store), "admin")
     response = client.get(
         "/api/modules/hosts-manager/enrollment-script",
         headers={"Authorization": f"Bearer {active['token']}"},
@@ -425,14 +582,14 @@ def test_bootstrap_script_endpoint_uses_bearer_without_admin_session_and_rejects
     assert response.text.startswith("#!/usr/bin/env bash")
     assert client.get("/api/modules/hosts-manager/enrollment-script").status_code == 401
 
-    revoked = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    revoked = store.create_enrollment_token(enrollment_input(store), "admin")
     store.revoke_enrollment_token(revoked["id"], "admin")
     assert client.get(
         "/api/modules/hosts-manager/enrollment-script",
         headers={"Authorization": f"Bearer {revoked['token']}"},
     ).status_code == 401
 
-    expired = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    expired = store.create_enrollment_token(enrollment_input(store), "admin")
     with sqlite3.connect(store.path) as connection:
         connection.execute("UPDATE enrollment_tokens SET expires_at=0 WHERE id=?", (expired["id"],))
     assert client.get(
@@ -440,7 +597,7 @@ def test_bootstrap_script_endpoint_uses_bearer_without_admin_session_and_rejects
         headers={"Authorization": f"Bearer {expired['token']}"},
     ).status_code == 401
 
-    used = store.create_enrollment_token(EnrollmentTokenInput(), "admin")
+    used = store.create_enrollment_token(enrollment_input(store), "admin")
     assert store.claim_enrollment_token(
         used["token"],
         {"hostname": used["assigned_hostname"], "address": "192.168.1.88"},

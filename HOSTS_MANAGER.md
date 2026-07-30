@@ -4,7 +4,7 @@ Hosts Manager (`hosts-manager`) is the central WebNAS registry for remote server
 
 ## Architecture and migration
 
-The registry owns hosts, environments, groups/memberships, connection credentials, accepted SSH keys, sanitized facts, enrollment tokens, hostname patterns and reservations, agent identities/reports/version history, Git repository assignments, power profiles and host-correlated operations. Schema version 4 adds environment defaults, independent monotonic hostname patterns, reusable enrollment, per-host identity salts, Linux agent reports and agent version history. Startup migrations use additive, idempotent DDL and retain every existing row.
+The registry owns hosts, environments, APMIDs, groups/memberships, connection credentials, accepted SSH keys, sanitized facts, enrollment tokens, hostname patterns and reservations, agent identities/reports/version history, Git repository assignments, power profiles and host-correlated operations. Schema version 5 adds APMID records, durable APMID–environment–group relations and APMID/environment/managed-group references on new enrollment tokens. Startup migrations use additive, idempotent DDL and retain every existing row; historical tokens without those references remain valid.
 
 At first initialization the service detects the Ansible database, creates a mode-`0600` SQLite backup, and transactionally copies central records. Host/group IDs are unchanged, so templates, `host_ids_json`, schedules, history and per-host results remain valid. Credential envelopes are re-encrypted with `/var/lib/webnas/secrets/hosts-manager.key`. A migration marker makes the operation idempotent. Legacy tables remain as a rollback artifact, but the production Ansible adapter no longer writes registry data there.
 
@@ -16,9 +16,13 @@ Remote addresses reject loopback, unspecified and multicast targets. Discovery a
 
 ## Enrollment and inventory
 
+An APMID identifies the team or application that owns an agent. Codes are trimmed, normalized to uppercase and restricted to letters, digits, `_` and `-`. For every active APMID and active environment, Hosts Manager transactionally maintains one uppercase group named `<APMID>.<ENVIRONMENT_SLUG>`. The `apmid_environment_groups` table is the source of the relation; group names are not parsed to recover ownership. Creating or renaming either side synchronizes the related groups, conflicts roll the transaction back, repeated synchronization is idempotent, and managed groups cannot be renamed or deleted through the manual group API.
+
+The script generator requires an active environment and APMID. The backend derives the managed group from those two IDs, stores all three references on the token, and rejects attempts to submit another APMID-managed group as a manual group. Enrollment assigns the host to the selected environment, the derived managed group and any additional active manual groups. SSH user, SSH port and SSH credential are intentionally not part of script enrollment; the historical database columns remain only for migration compatibility. Manual hosts, discovery, Ansible and agent installation over SSH keep their SSH settings.
+
 One-time token creation atomically reserves the next hostname from the selected pattern with `BEGIN IMMEDIATE`. Multiple patterns can define independent prefix, suffix, digit width, start and step values. Reservations are case-insensitive, monotonic and never released after use, expiry, revocation or host deletion. Administrators can explicitly skip values, but cannot rewind a sequence.
 
-Tokens are cryptographically random and stored only as SHA-256 hashes. One-time tokens have a configurable lifetime and reserve an exact hostname. Permanent tokens do not expire, can enroll multiple hosts and can be bound to one private IP address; they remain explicitly revocable. The raw value is returned once. Linux `.sh` and Windows PowerShell `.ps1` scripts are downloaded without an administrator cookie from `/enrollment-script`, using the active token only in the `Authorization: Bearer` header. Responses are `no-store`; inactive tokens fail closed, including after a WebNAS restart.
+Tokens are cryptographically random and stored only as SHA-256 hashes. One-time tokens require a lifetime from 1 to 525600 minutes and reserve an exact hostname. Permanent tokens ignore any submitted lifetime, store `expires_at = 0`, can enroll multiple hosts and can be bound to one private IP address; they remain explicitly revocable. The raw value is returned once. Linux `.sh` and Windows PowerShell `.ps1` scripts are downloaded without an administrator cookie from `/enrollment-script`, using the active token only in the `Authorization: Bearer` header. Responses are `no-store`; inactive tokens fail closed, including after a WebNAS restart.
 
 Both scripts require HTTPS/TLS 1.2, support `WEBNAS_ENROLL_ADDRESS`, collect bounded system metadata and do not configure SSH or modify the firewall. Optional hostname changes use `hostnamectl` with a non-systemd fallback on Linux and `Rename-Computer` without an automatic reboot on Windows. `/enroll` atomically consumes one-time tokens, requires the reserved hostname and retains glob matching only for migrated legacy tokens. Every enrolled host remains unapproved with an unverified SSH fingerprint.
 
@@ -45,7 +49,7 @@ External modules register `HostCapabilityProvider` entries with an ID, permissio
 
 ## API and permissions
 
-The `/api/modules/hosts-manager` API covers dashboard/host CRUD and CSV export, environments, hostname patterns/skips, approval, fingerprints, test/facts, agent heartbeat/report/history/identity rotation, capability plan/execute, groups, inventory, one-time and permanent enrollment, discovery, credentials, repositories, power, operations/SSE, diagnostics and checksummed backups. `GET /settings` requires `hosts-manager.view`; `PUT /settings` requires `hosts-manager.configure`. Agent and installer endpoints use scoped Bearer tokens and do not require a browser session.
+The `/api/modules/hosts-manager` API covers dashboard/host CRUD and CSV export, environments, APMID CRUD and group synchronization, hostname patterns/skips, approval, fingerprints, test/facts, agent heartbeat/report/history/identity rotation, capability plan/execute, groups, inventory, one-time and permanent enrollment, discovery, credentials, repositories, power, operations/SSE, diagnostics and checksummed backups. APMID endpoints are `/apmids` and `/apmids/sync-groups`; reads use the view permission and mutations use host-management permission. `GET /settings` requires `hosts-manager.view`; `PUT /settings` requires `hosts-manager.configure`. Agent and installer endpoints use scoped Bearer tokens and do not require a browser session.
 
 Permissions are:
 
@@ -67,7 +71,7 @@ Backup creates a consistent SQLite snapshot and versioned manifest in a checksum
 
 1. Install/open Hosts Manager and add a private-network host.
 2. Create two hostname patterns, skip one value and confirm each sequence remains monotonic.
-3. Generate a one-time Linux script, enroll the reserved hostname and verify token reuse fails.
+3. Create an APMID, verify its uppercase groups for every active environment, then generate a one-time Linux script and confirm the new host receives the selected environment and managed group.
 4. Generate an IP-bound permanent token, enroll two hosts and then revoke it.
 5. Verify the Linux agent service, heartbeat, inventory report, rotating identity and invalidation flow.
 6. Approve it; scan, independently compare and accept its SSH fingerprint.

@@ -1239,13 +1239,13 @@ function Groups({
     }
   }
   const columns: HostsDataColumn<HostsManagerGroup>[] = [
-    { id: "name", label: t("common.name"), sortValue: (item) => item.name, cell: (item) => <strong>{item.name}</strong> },
+    { id: "name", label: t("common.name"), sortValue: (item) => item.name, cell: (item) => <span><strong>{item.name}</strong>{item.managed && <small>{t("hosts.group.managed")}</small>}</span> },
     { id: "description", label: t("hosts.host.description"), sortValue: (item) => item.description, cell: (item) => item.description || t("common.none") },
     { id: "parent", label: t("hosts.group.parent"), sortValue: (item) => items.find((parent) => parent.id === item.parent_id)?.name || "", cell: (item) => items.find((parent) => parent.id === item.parent_id)?.name || t("common.none") },
     { id: "hosts", label: t("hosts.groups.hosts"), align: "end", sortValue: (item) => item.host_ids.length, cell: (item) => item.host_ids.length },
     { id: "status", label: t("common.status"), sortValue: (item) => item.active ? 1 : 0, cell: (item) => <Status value={item.active ? "active" : "disabled"} t={t} /> },
     { id: "updated", label: t("hosts.operation.updated"), sortValue: (item) => item.updated_at, cell: (item) => new Date(item.updated_at * 1000).toLocaleString() },
-    { id: "actions", label: t("column.actions"), cell: (item) => <div className="module-row-actions"><button onClick={() => setSelected(item)}>{t("hosts.group.showHosts")}</button>{canManage && <><button onClick={() => edit(item)}>{t("action.edit")}</button><button className="button-danger" onClick={() => void remove(item)}>{t("action.delete")}</button></>}</div> },
+    { id: "actions", label: t("column.actions"), cell: (item) => <div className="module-row-actions"><button onClick={() => setSelected(item)}>{t("hosts.group.showHosts")}</button>{canManage && !item.managed && <><button onClick={() => edit(item)}>{t("action.edit")}</button><button className="button-danger" onClick={() => void remove(item)}>{t("action.delete")}</button></>}</div> },
   ];
   return (
     <section className="ansible-panel">
@@ -1774,6 +1774,7 @@ function Enrollment({
               className="button-primary"
               type="submit"
               form="enrollment-form"
+              disabled={!apmidId || !environmentId}
             >
               {t("hosts.enrollment.generate")}
             </button>
@@ -1784,7 +1785,10 @@ function Enrollment({
             className="module-form-grid"
             onSubmit={create}
           >
-            <div className="wide">
+            <fieldset className="hosts-enrollment-section wide">
+              <legend>{t("hosts.enrollment.basic")}</legend>
+              <div className="module-form-grid">
+            <div className="wide hosts-enrollment-hostname">
               <strong>{t("hosts.enrollment.assignedHostname")}</strong>
               <code>{patterns.find((item) => item.id === patternId)?.next_hostname || settings?.next_hostname || "…"}</code>
               <small>{t("hosts.settings.reservationHint")}</small>
@@ -1817,56 +1821,36 @@ function Enrollment({
                 </option>
               </select>
             </label>
-            <label>
+            {mode === "one_time" && <label>
               {t("hosts.enrollment.minutes")}
               <input
+                required
                 type="number"
                 min="1"
                 max="525600"
                 value={minutes}
-                disabled={mode === "permanent"}
                 onChange={(event) => setMinutes(Number(event.target.value))}
               />
-            </label>
-            <label>
-              {t("hosts.host.user")}
-              <input
-                value={sshUser}
-                onChange={(event) => setSshUser(event.target.value)}
-              />
-            </label>
-            <label>
-              {t("hosts.host.port")}
-              <input
-                type="number"
-                min="1"
-                max="65535"
-                value={port}
-                onChange={(event) => setPort(Number(event.target.value))}
-              />
-            </label>
+            </label>}
             <label>
               {t("hosts.host.environment")}
-              <select value={environment} onChange={(event) => {
+              <select required value={environmentId} onChange={(event) => {
                 const id = event.target.value;
-                setEnvironment(id);
+                setEnvironmentId(id);
                 const selected = environments.find((item) => item.id === id);
-                if (selected?.default_hostname_pattern_id) setPatternId(selected.default_hostname_pattern_id);
-                if (selected?.default_credential_id) setCredentialId(selected.default_credential_id);
+                setPatternId(selected?.default_hostname_pattern_id || settings?.default_hostname_pattern_id || "");
                 if (selected) {
                   setAgentPort(selected.default_agent_port);
                   setReportInterval(selected.report_interval_seconds);
                 }
               }}>
-                <option value="">{t("common.none")}</option>
                 {environments.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </label>
             <label>
-              {t("hosts.environment.credential")}
-              <select value={credentialId} onChange={(event) => setCredentialId(event.target.value)}>
-                <option value="">{t("common.none")}</option>
-                {credentials.filter((item) => item.active && ["ssh_password", "ssh_private_key"].includes(item.type)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              {t("hosts.apmid.code")}
+              <select required value={apmidId} onChange={(event) => setApmidId(event.target.value)}>
+                {apmids.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.code}</option>)}
               </select>
             </label>
             <label>
@@ -1883,37 +1867,6 @@ function Enrollment({
                 onChange={(event) => setTags(event.target.value)}
               />
             </label>
-            <label>
-              {t("hosts.agent.port")}
-              <input type="number" min={1} max={65535} value={agentPort} onChange={(event) => setAgentPort(Number(event.target.value))} />
-            </label>
-            <label>
-              {t("hosts.agent.reportInterval")}
-              <input type="number" min={30} max={86400} value={reportInterval} onChange={(event) => setReportInterval(Number(event.target.value))} />
-            </label>
-            <label>
-              {t("hosts.enrollment.boundAddress")}
-              <input value={boundAddress} placeholder="192.168.1.10" onChange={(event) => setBoundAddress(event.target.value)} />
-            </label>
-            <fieldset className="wide">
-              <legend>{t("hosts.groups.title")}</legend>
-              {groups.map((group) => (
-                <label className="check" key={group.id}>
-                  <input
-                    type="checkbox"
-                    checked={groupIds.includes(group.id)}
-                    onChange={(event) =>
-                      setGroupIds((current) =>
-                        event.target.checked
-                          ? [...current, group.id]
-                          : current.filter((id) => id !== group.id),
-                      )
-                    }
-                  />
-                  {group.name}
-                </label>
-              ))}
-            </fieldset>
             <label className="check">
               <input
                 type="checkbox"
@@ -1930,6 +1883,44 @@ function Enrollment({
               />
               {t("hosts.enrollment.requireApproval")}
             </label>
+              </div>
+            </fieldset>
+            <fieldset className="hosts-enrollment-section wide">
+              <legend>{t("hosts.enrollment.advanced")}</legend>
+              <div className="module-form-grid">
+            <label>
+              {t("hosts.agent.port")}
+              <input type="number" min={1} max={65535} value={agentPort} onChange={(event) => setAgentPort(Number(event.target.value))} />
+            </label>
+            <label>
+              {t("hosts.agent.reportInterval")}
+              <input type="number" min={30} max={86400} value={reportInterval} onChange={(event) => setReportInterval(Number(event.target.value))} />
+            </label>
+            <label>
+              {t("hosts.enrollment.boundAddress")}
+              <input value={boundAddress} placeholder="192.168.1.10" onChange={(event) => setBoundAddress(event.target.value)} />
+            </label>
+            <fieldset className="wide hosts-enrollment-groups">
+              <legend>{t("hosts.enrollment.additionalGroups")}</legend>
+              {groups.filter((group) => !group.managed).length ? groups.filter((group) => !group.managed).map((group) => (
+                <label className="check" key={group.id}>
+                  <input
+                    type="checkbox"
+                    checked={groupIds.includes(group.id)}
+                    onChange={(event) =>
+                      setGroupIds((current) =>
+                        event.target.checked
+                          ? [...current, group.id]
+                          : current.filter((id) => id !== group.id),
+                      )
+                    }
+                  />
+                  {group.name}
+                </label>
+              )) : <small>{t("hosts.enrollment.noAdditionalGroups")}</small>}
+            </fieldset>
+              </div>
+            </fieldset>
           </form>
         </Modal>
       )}
@@ -1954,6 +1945,11 @@ function Enrollment({
           <p>
             <strong>{created.assigned_hostname}</strong>
           </p>
+          <dl className="hosts-definition-grid">
+            <dt>{t("hosts.apmid.code")}</dt><dd>{created.apmid_code}</dd>
+            <dt>{t("hosts.host.environment")}</dt><dd>{created.environment_name}</dd>
+            <dt>{t("hosts.enrollment.managedGroup")}</dt><dd><code>{created.managed_group_name}</code></dd>
+          </dl>
           <p>{t(created.mode === "permanent" ? "hosts.enrollment.permanentHint" : "hosts.enrollment.onceHint")}</p>
           {created.bootstrap_os === "windows" && created.apply_hostname && (
             <p>{t("hosts.enrollment.windowsRestart")}</p>
