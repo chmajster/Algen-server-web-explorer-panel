@@ -119,7 +119,10 @@ def addresses() -> list[str]:
     except socket.gaierror:
         records = []
     for record in records:
-        address = record[4][0].split("%", 1)[0]
+        raw_address = record[4][0]
+        if not isinstance(raw_address, str):
+            continue
+        address = raw_address.split("%", 1)[0]
         if address not in {"127.0.0.1", "::1"} and address not in result:
             result.append(address)
     route = command(["ip", "-j", "address"], timeout=5)

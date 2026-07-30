@@ -38,7 +38,7 @@ from ..ansible_controller.runner import (
 from ..ansible_controller.security import atomic_private_write, redact_text
 from .models import (
     AgentHeartbeatInput, AgentReportInput, BackupInput, CapabilityActionInput, ConfirmationInput, CredentialInput,
-    EnrollmentClaimInput, EnrollmentTokenInput, EnvironmentInput, FingerprintAcceptInput, GroupInput, HostInput,
+    BootstrapOS, EnrollmentClaimInput, EnrollmentTokenInput, EnrollmentTokenMode, EnvironmentInput, FingerprintAcceptInput, GroupInput, HostInput,
     HostnamePatternInput, HostnamePatternSkipInput, HostsManagerSettingsUpdate, InventoryInput, PowerActionInput,
     PowerProfileInput, RepositoryInput, RestoreInput, ScanImportInput, ScanInput, SshOnboardingInstallInput,
     SshOnboardingProbeInput,
@@ -671,8 +671,8 @@ def install_agent_over_ssh(
     try:
         token_item = _service().create_enrollment_token(
             EnrollmentTokenInput(
-                mode="one_time",
-                bootstrap_os="linux",
+                mode=EnrollmentTokenMode.one_time,
+                bootstrap_os=BootstrapOS.linux,
                 apply_hostname=payload.apply_hostname,
                 expires_minutes=int(settings["token_ttl_minutes"]),
                 hostname_pattern_id=payload.hostname_pattern_id,
