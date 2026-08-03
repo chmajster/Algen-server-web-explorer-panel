@@ -1,4 +1,4 @@
-import { ArrowRight, LayoutGrid, LogOut, Monitor, PanelBottom, Pin, Search, ShieldCheck, UserRound, X } from "lucide-react";
+import { ArrowRight, LayoutGrid, LogOut, Monitor, PanelBottom, Pin, Power, Search, ShieldCheck, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SettingsMe } from "../api";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
@@ -6,7 +6,7 @@ import type { AppDefinition, AppId, RecentApp, Translate } from "./types";
 
 type LauncherContext = { x: number; y: number; app: AppDefinition; portalTarget: Element | null };
 
-export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned, recentApps = [], profile, t, onOpen, onOpenProfile, onToggleStartPin, onToggleDesktopShortcut, onToggleTaskbarPin, onLogout, onClose }: {
+export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned, recentApps = [], profile, t, onOpen, onOpenProfile, onToggleStartPin, onToggleDesktopShortcut, onToggleTaskbarPin, onShutdown, onLogout, onClose }: {
   apps: AppDefinition[];
   startPinned: Set<AppId>;
   desktopShortcuts: Set<AppId>;
@@ -19,6 +19,7 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   onToggleStartPin: (app: AppId) => void;
   onToggleDesktopShortcut: (app: AppId) => void;
   onToggleTaskbarPin: (app: AppId) => void;
+  onShutdown?: () => void;
   onLogout: () => void;
   onClose: () => void;
 }) {
@@ -75,7 +76,7 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
     <div className="launcher-search"><Search /><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("desktop.searchApps")} aria-label={t("desktop.searchApps")} />{query && <button type="button" aria-label={t("action.clear")} onClick={() => setQuery("")}><X /></button>}</div>
     {!allVisible && <><header className="launcher-section-title"><strong>{t("desktop.pinned")}</strong><button type="button" onClick={() => setShowAll(true)}>{t("desktop.allApps")}<ArrowRight /></button></header><div className="launcher-grid">{pinnedApps.map((app) => appButton(app))}</div><header className="launcher-section-title launcher-recent-title"><strong>{t("desktop.recentlyUsed")}</strong></header>{recent.length > 0 ? <div className="launcher-recent-list">{recent.map(({ item, app }) => <button type="button" key={app.id} onClick={() => open(app.id)}>{app.icon}<span><strong>{t(app.labelKey)}</strong><small>{relativeTime(item.usedAt)}</small></span></button>)}</div> : <p className="launcher-recent-empty">{t("desktop.noRecentApps")}</p>}</>}
     {allVisible && <><header className="launcher-section-title"><strong>{t("desktop.allApps")}</strong>{showAll && !normalized && <button type="button" onClick={() => setShowAll(false)}>{t("action.back")}</button>}</header><div className="launcher-list">{filtered.length > 0 ? filtered.map((app) => appButton(app, true)) : <p className="launcher-empty">{t("desktop.noAppsFound")}</p>}</div></>}
-    <footer className="launcher-footer"><button className="launcher-profile" type="button" title={t("desktop.openUserSettings")} aria-label={`${t("desktop.openUserSettings")}: ${profile.username}`} onClick={() => { onOpenProfile?.(); onClose(); }}><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? <><ShieldCheck />{t("desktop.administrator")}</> : t(`rbac.role.${profile.role}`)}</small></span></button><button className="launcher-logout" type="button" title={t("notify.logout")} aria-label={t("notify.logout")} onClick={onLogout}><LogOut /></button></footer>
+    <footer className="launcher-footer"><button className="launcher-profile" type="button" title={t("desktop.openUserSettings")} aria-label={`${t("desktop.openUserSettings")}: ${profile.username}`} onClick={() => { onOpenProfile?.(); onClose(); }}><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? <><ShieldCheck />{t("desktop.administrator")}</> : t(`rbac.role.${profile.role}`)}</small></span></button><div className="launcher-power-actions">{onShutdown && <button className="launcher-shutdown" type="button" title={t("shutdown.button")} aria-label={t("shutdown.button")} onClick={onShutdown}><Power /></button>}<button className="launcher-logout" type="button" title={t("notify.logout")} aria-label={t("notify.logout")} onClick={onLogout}><LogOut /></button></div></footer>
     {context && <ContextMenu className="launcher-context-menu" portalTarget={context.portalTarget} x={context.x} y={context.y} items={contextItems(context.app)} onClose={() => setContext(null)} />}
   </div>;
 }

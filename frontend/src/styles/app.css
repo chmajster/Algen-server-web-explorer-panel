@@ -242,3 +242,4 @@ code, pre { font-family: var(--font-family-monospace); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+.shutdown-dialog { display: flex; align-items: flex-start; gap: 0.875rem; }.shutdown-dialog > svg { width: 1.75rem; height: 1.75rem; flex: 0 0 auto; color: var(--warning); }.shutdown-dialog p { margin: 0 0 0.5rem; }.shutdown-dialog small { display: block; color: var(--text-secondary); line-height: 1.5; }.shutdown-dialog .error-state { margin-top: 0.75rem; }

@@ -1,4 +1,4 @@
-import { AlignCenter, AlignLeft, AppWindow, Bell, ChevronUp, Clock3, LayoutGrid, ListTodo, LogOut, Maximize2, Minimize2, Moon, Pin, PinOff, Settings2, Sun, UserRound, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AppWindow, Bell, ChevronUp, Clock3, LayoutGrid, ListTodo, LogOut, Maximize2, Minimize2, Moon, Pin, PinOff, Power, Settings2, Sun, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { SettingsMe } from "../api";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
@@ -8,7 +8,7 @@ export type TaskbarWindowAction = "focus" | "minimize" | "toggleMaximize" | "clo
 type TaskbarContext = { x: number; y: number; app: AppDefinition | null; moduleId?: string; portalTarget: Element | null };
 type TaskbarItem = { key: string; app: AppDefinition; moduleId?: string };
 
-export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, activeId, profile, resolvedTheme, clockText, dateText, clockDateTime, activeTransfers, activeActions, launcherOpen, notificationsOpen, actionsOpen, calendarOpen, actionButtonRef, clockButtonRef, t, onToggleLauncher, onToggleNotifications, onToggleActions, onToggleCalendar, onOpenLocalPanel, onToggleTheme, onApp, onModule, onOpenNew, onOpenModuleNew, onTogglePin, onToggleModulePin, onWindow, onCloseApp, onCloseModule, onTaskbarSettings, onAlignment, onLogout }: {
+export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, activeId, profile, resolvedTheme, clockText, dateText, clockDateTime, activeTransfers, activeActions, launcherOpen, notificationsOpen, actionsOpen, calendarOpen, actionButtonRef, clockButtonRef, t, onToggleLauncher, onToggleNotifications, onToggleActions, onToggleCalendar, onOpenLocalPanel, onToggleTheme, onApp, onModule, onOpenNew, onOpenModuleNew, onTogglePin, onToggleModulePin, onWindow, onCloseApp, onCloseModule, onTaskbarSettings, onAlignment, onShutdown, onLogout }: {
   apps: AppDefinition[];
   pinned: Set<AppId>;
   pinnedModules: Set<string>;
@@ -46,6 +46,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
   onCloseModule: (moduleId: string) => void;
   onTaskbarSettings: () => void;
   onAlignment: (alignment: "left" | "center") => void;
+  onShutdown?: () => void;
   onLogout: () => void;
 }) {
   const [sessionOpen, setSessionOpen] = useState(false);
@@ -151,7 +152,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
       <button className="theme-toggle" type="button" title={t("notify.theme")} aria-label={t("notify.theme")} onClick={onToggleTheme}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</button>
       <div ref={sessionRef} className="session-menu-wrap">
         <button className={`taskbar-user ${sessionOpen ? "active" : ""}`} type="button" aria-label={t("desktop.sessionMenu")} aria-expanded={sessionOpen} onClick={() => { setContext(null); if (!sessionOpen) onOpenLocalPanel(); setSessionOpen((value) => !value); }}><UserRound /><span>{profile.username}</span><ChevronUp /></button>
-        {sessionOpen && <div className="session-menu" role="menu"><header><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? t("desktop.administrator") : t("desktop.standardUser")}</small></span></header><button type="button" role="menuitem" onClick={onLogout}><LogOut />{t("notify.logout")}</button></div>}
+        {sessionOpen && <div className="session-menu" role="menu"><header><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? t("desktop.administrator") : t("desktop.standardUser")}</small></span></header>{onShutdown && <button type="button" role="menuitem" onClick={onShutdown}><Power />{t("shutdown.button")}</button>}<button type="button" role="menuitem" onClick={onLogout}><LogOut />{t("notify.logout")}</button></div>}
       </div>
       <button
         ref={clockButtonRef}

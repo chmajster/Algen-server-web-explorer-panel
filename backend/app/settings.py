@@ -37,6 +37,7 @@ from .proxmox_guard import (
 from .resource_dashboard import collect_dashboard
 from .security import SessionUser, get_session_user, require_csrf
 from .rbac import access_profile, authorize
+from .tasks import task_store
 from .update_coordination import (
     active_operations,
     coordination_lock,
@@ -328,6 +329,10 @@ class AdminPassword(BaseModel):
 
 class AdminSessionAction(BaseModel):
     confirm: bool = True
+
+
+class ShutdownAction(AdminSessionAction):
+    delay_seconds: int = Field(default=10, ge=0, le=10)
 
 
 class ServiceAction(BaseModel):
@@ -1681,6 +1686,103 @@ def admin_system_restart(payload: AdminSessionAction, request: Request, user: Se
     _run([_tool("systemctl"), "restart", service])
     _audit(user.username, "restart_system", service)
     return {"ok": True}
+
+
+_shutdown_lock = threading.RLock()
+_shutdown_generation = 0
+_shutdown_state: dict[str, object] = {
+    "state": "idle", "deadline": None, "blocker_count": 0, "requested_by": "", "error": "",
+}
+
+
+def _shutdown_blockers():
+    return [
+        task for task in task_store.list_all()
+        if task.type in {"copy", "move"} and task.status.value in {"queued", "running", "paused"}
+    ]
+
+
+def _shutdown_payload() -> dict[str, object]:
+    with _shutdown_lock:
+        payload = dict(_shutdown_state)
+    payload["remaining_seconds"] = max(0, int(float(payload["deadline"]) - time.time() + 0.999)) if payload.get("deadline") else 0
+    return payload
+
+
+def _shutdown_worker(generation: int) -> None:
+    global _shutdown_state
+    while True:
+        with _shutdown_lock:
+            if generation != _shutdown_generation or _shutdown_state["state"] == "cancelled":
+                return
+            deadline = float(_shutdown_state["deadline"] or 0)
+        if time.time() < deadline:
+            time.sleep(min(0.25, deadline - time.time()))
+            continue
+        blockers = _shutdown_blockers()
+        with _shutdown_lock:
+            if generation != _shutdown_generation:
+                return
+            _shutdown_state["blocker_count"] = len(blockers)
+            _shutdown_state["state"] = "waiting_for_transfers" if blockers else "shutting_down"
+        if blockers:
+            time.sleep(0.5)
+            continue
+        try:
+            # Task admission uses the same lock. No copy/move can be queued between
+            # the final check and handing the shutdown request to systemd.
+            with coordination_lock():
+                blockers = _shutdown_blockers()
+                if blockers:
+                    with _shutdown_lock:
+                        _shutdown_state["blocker_count"] = len(blockers)
+                        _shutdown_state["state"] = "waiting_for_transfers"
+                    continue
+                _run([_tool("systemctl"), "poweroff"])
+        except Exception as exc:
+            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            with _shutdown_lock:
+                if generation == _shutdown_generation:
+                    _shutdown_state.update(state="failed", error=str(detail), blocker_count=0)
+            return
+        return
+
+
+@router.get("/api/admin/system/shutdown")
+def admin_system_shutdown_status(user: SessionUser = Depends(_current_user)):
+    authorize(user, "system.shutdown")
+    return _shutdown_payload()
+
+
+@router.post("/api/admin/system/shutdown")
+def admin_system_shutdown(payload: ShutdownAction, request: Request, user: SessionUser = Depends(_current_user)):
+    global _shutdown_generation, _shutdown_state
+    _require_admin_session(user, request, "shutdown_system", "system.shutdown")
+    with _shutdown_lock:
+        _shutdown_generation += 1
+        generation = _shutdown_generation
+        _shutdown_state = {
+            "state": "scheduled", "deadline": time.time() + payload.delay_seconds,
+            "blocker_count": len(_shutdown_blockers()), "requested_by": user.username, "error": "",
+        }
+    threading.Thread(target=_shutdown_worker, args=(generation,), name="webnas-shutdown", daemon=True).start()
+    _audit(user.username, "shutdown_scheduled", f"delay={payload.delay_seconds}")
+    return _shutdown_payload()
+
+
+@router.delete("/api/admin/system/shutdown")
+def admin_system_shutdown_cancel(request: Request, user: SessionUser = Depends(_current_user)):
+    global _shutdown_generation
+    _require_admin_session(user, request, "cancel_shutdown", "system.shutdown")
+    with _shutdown_lock:
+        if _shutdown_state["state"] in {"idle", "cancelled", "failed"}:
+            return _shutdown_payload()
+        if _shutdown_state["state"] == "shutting_down":
+            raise HTTPException(409, "Shutdown has already started")
+        _shutdown_generation += 1
+        _shutdown_state.update(state="cancelled", deadline=None, blocker_count=0, error="")
+    _audit(user.username, "shutdown_cancelled", "webnas-host")
+    return _shutdown_payload()
 
 
 @router.get("/api/admin/system/updates/check")

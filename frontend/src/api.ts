@@ -1432,6 +1432,9 @@ export const api = {
     ? request<NetworkTransaction>(apiAt(baseUrl, `/api/admin/network/transactions/${encodeURIComponent(transaction_id)}/rollback`), { method: "POST", signal })
     : request<NetworkTransaction>("/api/admin/network/rollback", { method: "POST", body: JSON.stringify({ transaction_id }), signal }),
   restartSystem: () => request("/api/admin/system/restart", { method: "POST", body: "{}" }),
+  shutdownStatus: () => request<{ state: "idle" | "scheduled" | "waiting_for_transfers" | "shutting_down" | "cancelled" | "failed"; deadline: number | null; remaining_seconds: number; blocker_count: number; error: string }>("/api/admin/system/shutdown"),
+  scheduleShutdown: (delay_seconds = 10) => request<{ state: string; deadline: number | null; remaining_seconds: number; blocker_count: number; error: string }>("/api/admin/system/shutdown", { method: "POST", body: JSON.stringify({ delay_seconds }) }),
+  cancelShutdown: () => request<{ state: string }>("/api/admin/system/shutdown", { method: "DELETE" }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
   updateProgress: () => request<UpdateProgress>("/api/admin/system/updates/progress"),
   updatePublicProgress: () => request<UpdateProgress>("/api/system/update-status"),
