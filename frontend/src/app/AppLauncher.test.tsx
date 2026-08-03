@@ -12,6 +12,14 @@ const appList: AppDefinition[] = [
 const t = (key: string) => key;
 
 describe("Start menu", () => {
+  it("sorts All apps alphabetically by the localized label", () => {
+    const { container } = render(<AppLauncher apps={[...appList].reverse()} startPinned={new Set()} desktopShortcuts={new Set()} taskbarPinned={new Set()} profile={settingsFixture({ language: "pl-PL" })} t={t} onOpen={vi.fn()} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+
+    expect([...container.querySelectorAll(".launcher-list .launcher-open span")].map((item) => item.textContent)).toEqual(["File Manager", "Settings"]);
+  });
+
   it("filters apps, launches the selected app and closes", () => {
     const open = vi.fn(); const close = vi.fn();
     render(<AppLauncher apps={appList} startPinned={new Set(["files", "settings"])} desktopShortcuts={new Set(["files"])} taskbarPinned={new Set(["settings"])} profile={settingsFixture()} t={t} onOpen={open} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={close} />);
