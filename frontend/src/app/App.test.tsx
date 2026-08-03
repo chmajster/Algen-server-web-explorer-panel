@@ -37,7 +37,8 @@ vi.mock("../features/transfers/useUploadManager", () => ({
   useUploadManager: () => ({ tasks: [], controls: {} }),
 }));
 
-import { App, Login } from "./App";
+import { Login } from "../features/auth/Login";
+import { App } from "./App";
 
 const user = { username: "alice", home: "/home/alice", csrf_token: "csrf" };
 const profile = {

@@ -32,3 +32,14 @@ def test_shutdown_blockers_include_paused_transfers(monkeypatch):
     monkeypatch.setattr(settings.task_store, "list_all", lambda: tasks)
 
     assert settings._shutdown_blockers() == [tasks[0]]
+
+
+def test_shutdown_information_policy_is_persisted(monkeypatch, tmp_path):
+    path = tmp_path / "settings" / "shutdown_policy.json"
+    monkeypatch.setattr(settings, "_shutdown_policy_path", lambda: path)
+
+    assert settings._read_shutdown_policy().detailed_information is False
+    settings._write_shutdown_policy(settings.ShutdownPolicy(detailed_information=True))
+
+    assert settings._read_shutdown_policy().detailed_information is True
+    assert path.is_file()

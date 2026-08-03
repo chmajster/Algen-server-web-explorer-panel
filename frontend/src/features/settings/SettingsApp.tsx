@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  api, ApiError, type AutoUpdateSettings, type DockerContainerDefaultsPolicy, type NetworkPolicy, type ProxmoxSafety, type SettingsMe, type SettingsPatch,
+  api, ApiError, type AutoUpdateSettings, type DockerContainerDefaultsPolicy, type NetworkPolicy, type ProxmoxSafety, type SettingsMe, type SettingsPatch, type ShutdownPolicy,
   type SystemStatus, type UpdateProgress, type UpdateStatus
 } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
@@ -149,22 +149,48 @@ function NetworkConfirmationPolicy({ policy, policyGroups, t, toast, onChange }:
   </section>;
 }
 
+function ShutdownInformationPolicy({ policy, policyGroups, t, toast, onChange }: {
+  policy: ShutdownPolicy; policyGroups: ReactNode; t: Translate; toast: ToastFn; onChange: (policy: ShutdownPolicy) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(policy.detailed_information);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function save() {
+    setSaving(true); setError("");
+    try { const updated = await api.saveShutdownPolicy({ detailed_information: draft }); onChange(updated); setEditing(false); toast(t("settings.saved"), "ok", "admin"); }
+    catch (reason) { const message = reason instanceof Error ? reason.message : t("error.generic"); setError(message); toast(message, "error", "admin"); }
+    finally { setSaving(false); }
+  }
+  return <section className="policy-browser">
+    {policyGroups}
+    <section className="policy-list"><header><SlidersHorizontal />{t("settings.policies")}<b>1</b></header><button className="active"><span><strong>{t("settings.shutdownDetailedInformation")}</strong><small>system.shutdown.detailed_information</small></span><b>{t("settings.oneActiveRule")}</b></button></section>
+    <article className="policy-detail"><header><h3>{t("settings.shutdownDetailedInformation")}</h3><p>{t("settings.shutdownDetailedInformationHint")}</p><div><span><b>ID</b><code>system.shutdown.detailed_information</code></span><span><b>{t("settings.defaultValue")}</b><code>{t("common.disabled")}</code></span></div></header>
+      <div className="policy-rules-heading"><strong>{t("settings.configuredRules")}</strong><button className="button-primary" onClick={() => { setDraft(policy.detailed_information); setEditing(true); }}>+ {t("settings.editRule")}</button></div>
+      <section className="policy-rule-card"><header><span className={policy.detailed_information ? "enabled" : "disabled"}>{t(policy.detailed_information ? "common.enabled" : "common.disabled")}</span><b>{t("settings.priority")}: 100</b></header><dl><div><dt>{t("settings.scope")}</dt><dd>{t("settings.globalScope")}</dd></div><div><dt>{t("settings.value")}</dt><dd><code>{t(policy.detailed_information ? "common.enabled" : "common.disabled")}</code></dd></div></dl><p>{t("settings.shutdownDetailedInformationHint")}</p>
+        {editing && <div className="policy-rule-editor"><strong>{t("settings.ruleValue")}</strong><Switch label={t("settings.shutdownDetailedInformation")} checked={draft} onChange={setDraft} /><div><button className="button-primary" disabled={saving} onClick={() => void save()}>{t("action.save")}</button><button disabled={saving} onClick={() => { setEditing(false); setDraft(policy.detailed_information); }}>{t("action.cancel")}</button></div></div>}
+      </section>{error && <p className="update-settings-error" role="alert">{error}</p>}
+    </article>
+  </section>;
+}
+
 function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { permissions: string[]; initialSubject?: PolicySubject; t: Translate; toast: ToastFn }) {
   const [policy, setPolicy] = useState<AutoUpdateSettings | null>(null);
   const [dockerPolicy, setDockerPolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
   const [networkPolicy, setNetworkPolicy] = useState<NetworkPolicy | null>(null);
+  const [shutdownPolicy, setShutdownPolicy] = useState<ShutdownPolicy | null>(null);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<"updates" | "containers" | "network" | "access">(permissions.includes("access.view") ? "access" : "updates");
+  const [group, setGroup] = useState<"updates" | "containers" | "network" | "power" | "access">(permissions.includes("access.view") ? "access" : "updates");
   const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
   const [editing, setEditing] = useState(false);
   useEffect(() => {
     if (group === "access") return;
     let live = true;
-    Promise.all([api.autoUpdate(), api.dockerContainerDefaultsPolicy(), api.networkPolicy()])
-      .then(([updatePolicy, containerPolicy, currentNetworkPolicy]) => { if (live) { setPolicy(updatePolicy); setDockerPolicy(containerPolicy); setNetworkPolicy(currentNetworkPolicy); } })
+    Promise.all([api.autoUpdate(), api.dockerContainerDefaultsPolicy(), api.networkPolicy(), permissions.includes("system.shutdown") ? api.shutdownPolicy() : Promise.resolve(null)])
+      .then(([updatePolicy, containerPolicy, currentNetworkPolicy, currentShutdownPolicy]) => { if (live) { setPolicy(updatePolicy); setDockerPolicy(containerPolicy); setNetworkPolicy(currentNetworkPolicy); setShutdownPolicy(currentShutdownPolicy); } })
       .catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
     return () => { live = false; };
-  }, [group, t]);
+  }, [group, permissions, t]);
   async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "update_config">>) {
     if (!policy) return false;
     const before = policy;
@@ -182,7 +208,7 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
     }
   }
   const dateTime = (value: number | null | undefined) => value ? new Date(value * 1000).toLocaleString() : t("common.none");
-  function chooseGroup(next: "updates" | "containers" | "network" | "access") {
+  function chooseGroup(next: "updates" | "containers" | "network" | "power" | "access") {
     setGroup(next); if (next !== "containers") setSelected(next === "updates" ? "check_enabled" : "enabled"); setEditing(false);
   }
   const policyGroups = <aside className="policy-groups">
@@ -190,9 +216,15 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
     <button className={group === "updates" ? "active" : ""} onClick={() => chooseGroup("updates")}><FolderOpen /><span>{t("settings.policyCategoryUpdates")}</span><b>4</b></button>
     <button className={group === "containers" ? "active" : ""} onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>
     <button className={group === "network" ? "active" : ""} onClick={() => chooseGroup("network")}><FolderOpen /><span>{t("settings.policyCategoryNetwork")}</span><b>1</b></button>
+    {permissions.includes("system.shutdown") && <button className={group === "power" ? "active" : ""} onClick={() => chooseGroup("power")}><FolderOpen /><span>{t("settings.policyCategoryPower")}</span><b>1</b></button>}
     {permissions.includes("access.view") && <button className={group === "access" ? "active" : ""} onClick={() => chooseGroup("access")}><FolderOpen /><span>{t("settings.policyCategoryAccess")}</span><b>4</b></button>}
   </aside>;
   if (group === "access") return <section className="policy-browser access-policy-browser">{policyGroups}<article className="policy-detail access-policy-detail"><Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><AccessPolicies permissions={permissions} initialSubject={initialSubject} t={t} toast={toast} /></Suspense></article></section>;
+  if (group === "power") {
+    if (!shutdownPolicy && !error) return <div className="loading-state">{t("status.loading")}</div>;
+    if (!shutdownPolicy) return <div className="error-state" role="alert">{error}</div>;
+    return <ShutdownInformationPolicy policy={shutdownPolicy} policyGroups={policyGroups} t={t} toast={toast} onChange={setShutdownPolicy} />;
+  }
   if (group === "network") {
     if (!networkPolicy && !error) return <div className="loading-state">{t("status.loading")}</div>;
     if (!networkPolicy) return <div className="error-state" role="alert">{error}</div>;

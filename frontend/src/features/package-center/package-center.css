@@ -172,12 +172,14 @@
 .package-skeleton { min-height: 17.5rem; border: 1px solid var(--border-subtle); border-radius: 0.5rem; background: linear-gradient(90deg, var(--surface-secondary), var(--surface-hover), var(--surface-secondary)); background-size: 200% 100%; animation: skeleton 1.2s infinite; }
 .package-empty { min-height: 16rem; }
 
-.package-view-list .package-card { min-height: 7.75rem; height: auto; display: grid; grid-template-columns: minmax(17rem, 1.2fr) minmax(22rem, 1fr) auto; grid-template-areas: "main facts footer" "operation operation operation"; align-items: stretch; }
+.package-view-list .package-card { min-height: 7.75rem; height: auto; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 17rem; grid-template-areas: "main facts footer" "operation operation operation"; align-items: stretch; }
+.package-view-list .package-card > * { min-width: 0; }
 .package-view-list .package-card-main { grid-area: main; align-items: center; }
 .package-view-list .package-card-copy p { -webkit-line-clamp: 2; line-clamp: 2; }
 .package-view-list .package-card-facts { grid-area: facts; align-content: center; padding: 0.75rem; border-left: 1px solid var(--border-subtle); }
 .package-view-list .package-operation-state { grid-area: operation; width: auto; margin: 0; border-width: 1px 0 0; border-radius: 0; }
-.package-view-list .package-card footer { grid-area: footer; min-width: 11rem; align-content: center; margin: 0; border-top: 0; border-left: 1px solid var(--border-subtle); }
+.package-view-list .package-card footer { grid-area: footer; min-width: 0; align-content: center; margin: 0; border-top: 0; border-left: 1px solid var(--border-subtle); }
+.package-view-list .package-card footer button { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .package-view-list .package-skeleton { min-height: 7.5rem; }
 
 .package-toolbar button:focus-visible,
@@ -193,7 +195,7 @@
 @container package-center (max-width: 72rem) {
   .package-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
   .package-search { grid-column: 1 / -1; }
-  .package-view-list .package-card { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main footer" "facts facts" "operation operation"; }
+  .package-view-list .package-card { grid-template-columns: minmax(0, 1fr) 17rem; grid-template-areas: "main footer" "facts facts" "operation operation"; }
   .package-view-list .package-card-facts { border-top: 1px solid var(--border-subtle); border-left: 0; }
 }
 

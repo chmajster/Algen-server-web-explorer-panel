@@ -1035,6 +1035,7 @@ export type NetworkPolicy = {
   maximum_seconds: number;
   default_seconds: number;
 };
+export type ShutdownPolicy = { detailed_information: boolean };
 export type NetworkTransaction = {
   id: string; transaction_id?: string; provider: string;
   state: "pending_confirmation" | "rollback_started" | "confirmed" | "rolled_back" | "failed";
@@ -1435,6 +1436,8 @@ export const api = {
   shutdownStatus: () => request<{ state: "idle" | "scheduled" | "waiting_for_transfers" | "shutting_down" | "cancelled" | "failed"; deadline: number | null; remaining_seconds: number; blocker_count: number; error: string }>("/api/admin/system/shutdown"),
   scheduleShutdown: (delay_seconds = 10) => request<{ state: string; deadline: number | null; remaining_seconds: number; blocker_count: number; error: string }>("/api/admin/system/shutdown", { method: "POST", body: JSON.stringify({ delay_seconds }) }),
   cancelShutdown: () => request<{ state: string }>("/api/admin/system/shutdown", { method: "DELETE" }),
+  shutdownPolicy: () => request<ShutdownPolicy>("/api/admin/system/shutdown-policy"),
+  saveShutdownPolicy: (policy: ShutdownPolicy) => request<ShutdownPolicy>("/api/admin/system/shutdown-policy", { method: "PUT", body: JSON.stringify(policy) }),
   checkUpdates: () => request<UpdateStatus>("/api/admin/system/updates/check"),
   updateProgress: () => request<UpdateProgress>("/api/admin/system/updates/progress"),
   updatePublicProgress: () => request<UpdateProgress>("/api/system/update-status"),

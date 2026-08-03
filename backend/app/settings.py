@@ -335,6 +335,10 @@ class ShutdownAction(AdminSessionAction):
     delay_seconds: int = Field(default=10, ge=0, le=10)
 
 
+class ShutdownPolicy(BaseModel):
+    detailed_information: bool = False
+
+
 class ServiceAction(BaseModel):
     confirm_restart: bool = False
 
@@ -1695,6 +1699,24 @@ _shutdown_state: dict[str, object] = {
 }
 
 
+def _shutdown_policy_path() -> Path:
+    return Path(get_config().paths.data_dir) / "settings" / "shutdown_policy.json"
+
+
+def _read_shutdown_policy() -> ShutdownPolicy:
+    try:
+        return ShutdownPolicy.model_validate_json(_shutdown_policy_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError, ValidationError):
+        return ShutdownPolicy()
+
+
+def _write_shutdown_policy(policy: ShutdownPolicy) -> ShutdownPolicy:
+    path = _shutdown_policy_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json_atomic(path, policy.model_dump())
+    return policy
+
+
 def _shutdown_blockers():
     return [
         task for task in task_store.list_all()
@@ -1752,6 +1774,28 @@ def _shutdown_worker(generation: int) -> None:
 def admin_system_shutdown_status(user: SessionUser = Depends(_current_user)):
     authorize(user, "system.shutdown")
     return _shutdown_payload()
+
+
+@router.get("/api/admin/system/shutdown-policy")
+def admin_system_shutdown_policy(user: SessionUser = Depends(_current_user)):
+    authorize(user, "system.shutdown")
+    return _read_shutdown_policy()
+
+
+@router.put("/api/admin/system/shutdown-policy")
+def admin_system_shutdown_policy_update(payload: ShutdownPolicy, user: SessionUser = Depends(_current_user)):
+    authorize(user, "system.shutdown")
+    previous = _read_shutdown_policy()
+    updated = _write_shutdown_policy(payload)
+    record_activity(
+        ActivityCategory.configuration,
+        "shutdown_policy_update",
+        user.username,
+        target="system.shutdown.detailed_information",
+        details={"old_value": previous.detailed_information, "new_value": updated.detailed_information},
+        source="settings-policy",
+    )
+    return updated
 
 
 @router.post("/api/admin/system/shutdown")

@@ -10,10 +10,12 @@ export function ShutdownDialog({ t, onClose }: { t: Translate; onClose: () => vo
   const [status, setStatus] = useState<ShutdownStatus | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
+  const [detailedInformation, setDetailedInformation] = useState(false);
 
   useEffect(() => {
     let active = true;
     void api.scheduleShutdown(10).then((value) => { if (active) setStatus(value as ShutdownStatus); }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("error.generic")); }).finally(() => { if (active) setBusy(false); });
+    void api.shutdownPolicy().then((value) => { if (active) setDetailedInformation(value.detailed_information); }).catch(() => undefined);
     const timer = window.setInterval(() => void api.shutdownStatus().then((value) => { if (active) setStatus(value); }).catch(() => undefined), 500);
     return () => { active = false; window.clearInterval(timer); };
   }, [t]);
@@ -38,6 +40,6 @@ export function ShutdownDialog({ t, onClose }: { t: Translate; onClose: () => vo
     : t("shutdown.countdown").replace("{seconds}", String(status?.remaining_seconds ?? 10));
 
   return <Modal title={t("shutdown.title")} closeLabel={t("action.cancel")} onClose={() => void cancel()} footer={<><button type="button" disabled={busy || status?.state === "shutting_down"} onClick={() => void cancel()}>{t("action.cancel")}</button><button type="button" className="button-danger" disabled={busy || status?.state === "shutting_down"} onClick={() => void now()}><Power />{t("shutdown.now")}</button></>}>
-    <div className="shutdown-dialog"><TriangleAlert /><div><p>{message}</p><small>{t("shutdown.transferSafety")}</small>{error && <p className="error-state compact-error" role="alert">{error}</p>}</div></div>
+    <div className="shutdown-dialog"><TriangleAlert /><div><p>{message}</p><small>{t("shutdown.transferSafety")}</small>{detailedInformation && <dl className="shutdown-details"><div><dt>{t("shutdown.detail.status")}</dt><dd>{t(`shutdown.state.${status?.state || "loading"}`)}</dd></div><div><dt>{t("shutdown.detail.deadline")}</dt><dd>{status?.deadline ? new Date(status.deadline * 1000).toLocaleTimeString() : "—"}</dd></div><div><dt>{t("shutdown.detail.blockers")}</dt><dd>{status?.blocker_count || 0}</dd></div><div><dt>{t("shutdown.detail.command")}</dt><dd><code>systemctl poweroff</code></dd></div><div><dt>{t("shutdown.detail.immediate")}</dt><dd>{t("shutdown.detail.immediateHint")}</dd></div></dl>}{error && <p className="error-state compact-error" role="alert">{error}</p>}</div></div>
   </Modal>;
 }

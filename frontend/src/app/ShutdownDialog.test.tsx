@@ -9,6 +9,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("ShutdownDialog", () => {
   it("schedules a countdown and allows it to be cancelled", async () => {
+    vi.spyOn(api, "shutdownPolicy").mockResolvedValue({ detailed_information: false });
     vi.spyOn(api, "scheduleShutdown").mockResolvedValue({ state: "scheduled", deadline: Date.now() / 1000 + 10, remaining_seconds: 10, blocker_count: 0, error: "" });
     vi.spyOn(api, "shutdownStatus").mockResolvedValue({ state: "scheduled", deadline: Date.now() / 1000 + 10, remaining_seconds: 10, blocker_count: 0, error: "" });
     const cancel = vi.spyOn(api, "cancelShutdown").mockResolvedValue({ state: "cancelled" });
@@ -23,6 +24,7 @@ describe("ShutdownDialog", () => {
   });
 
   it("keeps the transfer safeguard when shut down now is requested", async () => {
+    vi.spyOn(api, "shutdownPolicy").mockResolvedValue({ detailed_information: true });
     vi.spyOn(api, "scheduleShutdown")
       .mockResolvedValueOnce({ state: "scheduled", deadline: Date.now() / 1000 + 10, remaining_seconds: 10, blocker_count: 1, error: "" })
       .mockResolvedValueOnce({ state: "waiting_for_transfers", deadline: Date.now() / 1000, remaining_seconds: 0, blocker_count: 1, error: "" });
@@ -33,5 +35,6 @@ describe("ShutdownDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "shutdown.now" }));
     await waitFor(() => expect(api.scheduleShutdown).toHaveBeenLastCalledWith(0));
     expect(await screen.findByText("shutdown.waitingForTransfers")).toBeInTheDocument();
+    expect(screen.getByText("systemctl poweroff")).toBeInTheDocument();
   });
 });

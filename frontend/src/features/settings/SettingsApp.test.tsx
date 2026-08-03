@@ -300,6 +300,25 @@ describe("settings application", () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ memory_mb: 2048, memory_swap_mb: 4096, cpus: 1, pids: 128 })));
   });
 
+  it("enables detailed shutdown information in power policies", async () => {
+    vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 100 });
+    vi.spyOn(api, "dockerContainerDefaultsPolicy").mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
+    vi.spyOn(api, "shutdownPolicy").mockResolvedValue({ detailed_information: false });
+    const save = vi.spyOn(api, "saveShutdownPolicy").mockResolvedValue({ detailed_information: true });
+    const base = settingsFixture();
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true, permissions: [...base.permissions, "system.shutdown"] })} t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.category.policies" }));
+    fireEvent.click(await screen.findByRole("button", { name: /settings.policyCategoryPower/ }));
+    expect(screen.getAllByText("system.shutdown.detailed_information")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
+    fireEvent.click(screen.getByLabelText("settings.shutdownDetailedInformation"));
+    fireEvent.click(screen.getByRole("button", { name: "action.save" }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ detailed_information: true }));
+    await waitFor(() => expect(screen.queryByLabelText("settings.shutdownDetailedInformation")).not.toBeInTheDocument());
+  });
+
   it("validates, saves and resets the network confirmation timeout policy", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: 100 });
