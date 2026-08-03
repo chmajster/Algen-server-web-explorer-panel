@@ -1,4 +1,5 @@
 import {
+  Boxes,
   ChevronDown,
   ChevronUp,
   Eye,
@@ -171,7 +172,7 @@ export function ContainersList({
   return (
     <>
       <section>
-        <div className="docker-section-toolbar">
+        <div className="docker-section-toolbar docker-containers-toolbar">
           <label className="docker-search">
             <Search />
             <span className="visually-hidden">{t("action.search")}</span>
@@ -181,6 +182,7 @@ export function ContainersList({
               placeholder={t("action.search")}
             />
           </label>
+          <div className="docker-toolbar-filters" aria-label={t("docker.filters")}>
           <select
             aria-label={t("docker.filterState")}
             value={state}
@@ -202,6 +204,8 @@ export function ContainersList({
             <option value="asc">{t("docker.sortAscending")}</option>
             <option value="desc">{t("docker.sortDescending")}</option>
           </select>
+          </div>
+          <div className="docker-toolbar-actions">
           <button onClick={() => void load()}>
             <RefreshCw />
             {t("action.refresh")}
@@ -219,9 +223,10 @@ export function ContainersList({
                 setImportFile(file);
                 if (file) setDialog({ action: "import", target: "" });
               }} />
-              <button onClick={() => importInput.current?.click()}><Upload />{t("docker.importContainerFilesystem")}</button>
+              <button title={t("docker.importContainerFilesystem")} onClick={() => importInput.current?.click()}><Upload />{t("docker.importContainer")}</button>
             </>
           )}
+          </div>
         </div>
         <LoadState
           loading={loading}
@@ -259,14 +264,16 @@ export function ContainersList({
                 ];
                 return <Fragment key={target}>
                   <tr className="docker-container-row">
-                    <td className="docker-container-name"><strong>{format(row.Names)}</strong>{Boolean(row.Image) && <small>{String(row.Image)}</small>}</td>
+                    <td className="docker-container-name"><div className="docker-container-identity"><span className="docker-container-icon" aria-hidden="true"><Boxes /></span><span><strong>{format(row.Names)}</strong>{Boolean(row.Image) && <small>{String(row.Image)}</small>}</span></div><button type="button" className="docker-details-toggle" aria-expanded={isExpanded} aria-controls={detailsId} onClick={() => setExpanded((current) => {
+                      const next = new Set(current); if (next.has(target)) next.delete(target); else next.add(target); return next;
+                    })}>{isExpanded ? <ChevronUp /> : <ChevronDown />}<span>{t(isExpanded ? "docker.hideTechnicalDetails" : "docker.showTechnicalDetails")}</span></button></td>
                     <td className="docker-container-status"><StatusPill value={displayedState} t={t} />{Boolean(row.Health) && <small>{String(row.Health)}</small>}</td>
                     <td><div className="docker-row-actions docker-container-actions">
-                      <button type="button" title={t("docker.inspect")} onClick={() => setSelected(target)}><Eye /></button>
-                      {running ? <button type="button" title={t("module.stop")} disabled={!permissions.includes("docker.stop_container")} onClick={() => setDialog({ target, action: "stop" })}><Square /></button>
-                        : paused ? <button type="button" title={t("docker.unpause")} disabled={!permissions.includes("docker.start_container")} onClick={() => void action(target, "unpause")}><Play /></button>
-                          : <button type="button" title={t("module.start")} disabled={!permissions.includes("docker.start_container")} onClick={() => void action(target, "start")}><Play /></button>}
-                      <button type="button" title={t("module.restart")} disabled={!permissions.includes("docker.restart_container")} onClick={() => void action(target, "restart")}><RotateCcw /></button>
+                      <button type="button" className="docker-open-container" title={t("docker.inspect")} onClick={() => setSelected(target)}><Eye /><span>{t("docker.openContainer")}</span></button>
+                      {running ? <button type="button" aria-label={t("module.stop")} title={t("module.stop")} disabled={!permissions.includes("docker.stop_container")} onClick={() => setDialog({ target, action: "stop" })}><Square /></button>
+                        : paused ? <button type="button" aria-label={t("docker.unpause")} title={t("docker.unpause")} disabled={!permissions.includes("docker.start_container")} onClick={() => void action(target, "unpause")}><Play /></button>
+                          : <button type="button" aria-label={t("module.start")} title={t("module.start")} disabled={!permissions.includes("docker.start_container")} onClick={() => void action(target, "start")}><Play /></button>}
+                      <button type="button" aria-label={t("module.restart")} title={t("module.restart")} disabled={!permissions.includes("docker.restart_container")} onClick={() => void action(target, "restart")}><RotateCcw /></button>
                       <select aria-label={t("docker.moreActions")} defaultValue="" onChange={(event) => {
                         const next = event.target.value;
                         event.target.value = "";
@@ -287,9 +294,6 @@ export function ContainersList({
                         {permissions.includes("docker.export_backup") && <option value="backup">{t("docker.backup")}</option>}
                         {permissions.includes("docker.remove_container") && <option value="remove">{t("action.delete")}</option>}
                       </select>
-                      <button type="button" className="docker-details-toggle" aria-expanded={isExpanded} aria-controls={detailsId} onClick={() => setExpanded((current) => {
-                        const next = new Set(current); if (next.has(target)) next.delete(target); else next.add(target); return next;
-                      })}>{isExpanded ? <ChevronUp /> : <ChevronDown />}<span>{t(isExpanded ? "docker.showLess" : "docker.showMore")}</span></button>
                     </div></td>
                   </tr>
                   {isExpanded && <tr id={detailsId} className="docker-container-details-row"><td colSpan={3}>
