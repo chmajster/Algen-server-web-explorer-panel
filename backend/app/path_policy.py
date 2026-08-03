@@ -58,5 +58,10 @@ def resolve_user_path(username: str, requested: str | None) -> Path:
 
 def ensure_parent_allowed(username: str, requested: str) -> Path:
     path = resolve_user_path(username, requested)
-    resolve_user_path(username, str(path.parent))
+    # Copy/move destinations may be an existing directory. In that case the
+    # directory itself is the write target and can legitimately be an allowed
+    # root (for example /mnt/webnas/mnt/media). Requiring its parent would
+    # incorrectly escape that root. A new path still needs an allowed parent.
+    if not (path.exists() and path.is_dir()):
+        resolve_user_path(username, str(path.parent))
     return path

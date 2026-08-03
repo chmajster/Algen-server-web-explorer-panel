@@ -10,6 +10,7 @@ BUILTIN_MODULE_IDS = (
     "docker",
     "ansible-controller",
     "apmid",
+    "os-repositories",
     "pihole",
     "adguard-home",
     "postgresql",

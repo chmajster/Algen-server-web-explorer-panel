@@ -10,6 +10,14 @@ requires exact `APMID` confirmation and a Hosts Manager usage check.
 
 `hosts-manager` is a regular manifest-driven Package Center module and opens in its own WebNAS window. Uninstall preserves its central registry by default because Ansible Controller and other modules retain logical host-ID references. Full data removal is a separate high-risk, explicitly confirmed operation.
 
+`os-repositories` is a repository-bundled infrastructure module installed with
+trusted lifecycle scripts for the detected apt/dnf/yum family. It opens the
+dedicated **Repozytoria systemowe** application, declares its unprivileged HTTP
+service, private data/backup paths, and is intentionally not Proxmox-safe.
+Normal uninstall preserves packages, snapshots, keys, settings, and assignments;
+full removal is a separate exact-confirmation operation. See
+[OS_REPOSITORIES.md](OS_REPOSITORIES.md).
+
 Package Center is the administrator-only package and service manager built into WebNAS. It discovers trusted modules from `backend/app/modules`, validates their YAML manifests, creates a dry-run plan, and executes approved operations as durable SQLite jobs. The browser receives live progress through Server-Sent Events and falls back to polling.
 
 Installed modules now open in the shared module-management framework documented in [MODULES.md](MODULES.md). Package Center remains the catalog/install layer and keeps its original `/api/apps` compatibility routes; `/api/modules` adds provider status, configuration, logs, diagnostics, backups, and transactional module operations.

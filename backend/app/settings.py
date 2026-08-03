@@ -55,7 +55,9 @@ MAX_WALLPAPER_LENGTH = 2_000_000
 MAX_WALLPAPER_FILE_SIZE = 10 * 1024 * 1024
 MAX_WALLPAPER_FILES = 24
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
-WALLPAPER_RE = re.compile(r"^(https?://[^\s\"'<>]{1,1800}|/api/settings/wallpapers/[a-f0-9]{32}|/wallpapers/[a-z0-9._-]{1,80}\.svg|data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+)$")
+WALLPAPER_RE = re.compile(
+    r"^(https?://[^\s\"'<>]{1,1800}|/api/settings/wallpapers/[a-f0-9]{32}|/wallpapers/[a-z0-9._-]{1,80}\.svg|data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+)$"
+)
 SERVICE_RE = re.compile(r"^[A-Za-z0-9_.@:-]+(?:\.service)?$")
 CRITICAL_SYSTEMD_SERVICES = {
     "pveproxy",
@@ -140,8 +142,24 @@ DEFAULT_DESKTOP_WIDGETS = [
 ]
 
 PinnedAppId = Literal[
-    "files", "transfers", "activity", "identity", "users", "groups", "mounts", "samba",
-    "services", "store", "logs", "settings", "monitor", "modules", "access", "containers", "ansible", "module",
+    "files",
+    "transfers",
+    "activity",
+    "identity",
+    "users",
+    "groups",
+    "mounts",
+    "samba",
+    "services",
+    "store",
+    "logs",
+    "settings",
+    "monitor",
+    "modules",
+    "access",
+    "containers",
+    "ansible",
+    "module",
 ]
 InterfaceFont = Literal["system", "segoe", "arial", "verdana", "tahoma", "georgia", "monospace"]
 DEFAULT_PINNED_APPS: list[PinnedAppId] = ["files", "transfers", "monitor", "settings"]
@@ -463,13 +481,15 @@ def _wallpaper_items(username: str) -> list[dict]:
         except (OSError, ValueError):
             metadata = {}
         stat = path.stat()
-        items.append({
-            "id": path.stem,
-            "name": str(metadata.get("name") or path.name),
-            "url": f"/api/settings/wallpapers/{path.stem}",
-            "size": stat.st_size,
-            "created_at": int(metadata.get("created_at") or stat.st_mtime),
-        })
+        items.append(
+            {
+                "id": path.stem,
+                "name": str(metadata.get("name") or path.name),
+                "url": f"/api/settings/wallpapers/{path.stem}",
+                "size": stat.st_size,
+                "created_at": int(metadata.get("created_at") or stat.st_mtime),
+            }
+        )
     return sorted(items, key=lambda item: item["created_at"], reverse=True)
 
 
@@ -660,9 +680,14 @@ def _remote_release_timestamp(revision: str) -> int | None:
         return None
     result = subprocess.run(
         [
-            _tool("curl"), "-fsSL", "--max-time", "10",
-            "-H", "Accept: application/vnd.github+json",
-            "-H", "User-Agent: WebNAS-update-checker",
+            _tool("curl"),
+            "-fsSL",
+            "--max-time",
+            "10",
+            "-H",
+            "Accept: application/vnd.github+json",
+            "-H",
+            "User-Agent: WebNAS-update-checker",
             f"https://api.github.com/repos/chmajster/Algen-server-web-explorer-panel/commits/{revision}",
         ],
         capture_output=True,
@@ -704,7 +729,10 @@ def _remote_publication_version(revision: str) -> str | None:
     try:
         result = subprocess.run(
             [
-                _tool("curl"), "-fsSL", "--max-time", "10",
+                _tool("curl"),
+                "-fsSL",
+                "--max-time",
+                "10",
                 f"https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/{revision}/pyproject.toml",
             ],
             capture_output=True,
@@ -732,7 +760,19 @@ def _update_status() -> dict:
         remote_sha = remote[0]
     except (HTTPException, OSError, subprocess.SubprocessError) as error:
         message = str(error.detail) if isinstance(error, HTTPException) else str(error)
-        return {"branch": branch, "local": local, "remote": "", "installed_version": installed_version, "available_version": None, "update_available": False, "available": False, "error": message, "source": UPDATE_SOURCE, "source_url": UPDATE_SOURCE_URL, "released_at": None}
+        return {
+            "branch": branch,
+            "local": local,
+            "remote": "",
+            "installed_version": installed_version,
+            "available_version": None,
+            "update_available": False,
+            "available": False,
+            "error": message,
+            "source": UPDATE_SOURCE,
+            "source_url": UPDATE_SOURCE_URL,
+            "released_at": None,
+        }
     released_at = _remote_release_timestamp(remote_sha)
     available_version = _remote_publication_version(remote_sha)
     return {
@@ -755,7 +795,9 @@ def _start_update_process(update_config: bool, *, actor: str) -> dict:
     installer = settings_dir / "update-install.sh"
     download = subprocess.run(
         [_tool("curl"), "-fsSL", "https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh"],
-        capture_output=True, timeout=60, check=False,
+        capture_output=True,
+        timeout=60,
+        check=False,
     )
     if download.returncode != 0:
         raise HTTPException(503, download.stderr.decode("utf-8", errors="replace").strip() or "Could not download the current WebNAS installer")
@@ -779,34 +821,49 @@ def _start_update_process(update_config: bool, *, actor: str) -> dict:
     unit_name = f"webnas-self-update-{int(started_at)}.service"
     log_path = Path(get_config().paths.log_dir) / "update.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    runner_content = "\n".join([
-        "#!/usr/bin/env bash",
-        "set +e",
-        f"exec >> {shlex.quote(str(log_path))} 2>&1",
-        f"printf '\\n=== WebNAS update started (%s) ===\\n' {shlex.quote(unit_name)}",
-        f"printf '{{\"running\":true,\"exit_code\":null,\"started_at\":{int(started_at)},\"finished_at\":null,\"pid\":%s,\"unit\":\"{unit_name}\"}}\\n' \"$$\" > {shlex.quote(str(progress_path))}.tmp",
-        f"mv -f -- {shlex.quote(str(progress_path))}.tmp {shlex.quote(str(progress_path))}",
-        " ".join(shlex.quote(value) for value in command),
-        "rc=$?",
-        f"finished=$(date +%s); printf '{{\"running\":false,\"exit_code\":%s,\"started_at\":{int(started_at)},\"finished_at\":%s,\"pid\":%s,\"unit\":\"{unit_name}\"}}\\n' \"$rc\" \"$finished\" \"$$\" > {shlex.quote(str(progress_path))}.tmp",
-        f"mv -f -- {shlex.quote(str(progress_path))}.tmp {shlex.quote(str(progress_path))}",
-        "exit \"$rc\"",
-        "",
-    ])
+    runner_content = "\n".join(
+        [
+            "#!/usr/bin/env bash",
+            "set +e",
+            f"exec >> {shlex.quote(str(log_path))} 2>&1",
+            f"printf '\\n=== WebNAS update started (%s) ===\\n' {shlex.quote(unit_name)}",
+            f'printf \'{{"running":true,"exit_code":null,"started_at":{int(started_at)},"finished_at":null,"pid":%s,"unit":"{unit_name}"}}\\n\' "$$" > {shlex.quote(str(progress_path))}.tmp',
+            f"mv -f -- {shlex.quote(str(progress_path))}.tmp {shlex.quote(str(progress_path))}",
+            " ".join(shlex.quote(value) for value in command),
+            "rc=$?",
+            f'finished=$(date +%s); printf \'{{"running":false,"exit_code":%s,"started_at":{int(started_at)},"finished_at":%s,"pid":%s,"unit":"{unit_name}"}}\\n\' "$rc" "$finished" "$$" > {shlex.quote(str(progress_path))}.tmp',
+            f"mv -f -- {shlex.quote(str(progress_path))}.tmp {shlex.quote(str(progress_path))}",
+            'exit "$rc"',
+            "",
+        ]
+    )
     runner.write_text(runner_content, encoding="utf-8")
     os.chmod(runner, 0o700)
     _write_json_atomic(progress_path, {"running": True, "exit_code": None, "started_at": started_at, "finished_at": None, "pid": None, "unit": unit_name})
     launch = subprocess.run(
         [
-            _tool("systemd-run"), "--unit", unit_name, "--collect", "--no-block",
-            "--property=Type=exec", "--property=TimeoutStopSec=infinity", "--",
-            _tool("bash"), str(runner),
+            _tool("systemd-run"),
+            "--unit",
+            unit_name,
+            "--collect",
+            "--no-block",
+            "--property=Type=exec",
+            "--property=TimeoutStopSec=infinity",
+            "--",
+            _tool("bash"),
+            str(runner),
         ],
-        cwd=_repo_root(), capture_output=True, text=True, timeout=20, check=False,
+        cwd=_repo_root(),
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
     )
     if launch.returncode != 0:
         message = launch.stderr.strip() or launch.stdout.strip() or "Could not start the durable update service"
-        _write_json_atomic(progress_path, {"running": False, "exit_code": -1, "started_at": started_at, "finished_at": time.time(), "pid": None, "unit": unit_name})
+        _write_json_atomic(
+            progress_path, {"running": False, "exit_code": -1, "started_at": started_at, "finished_at": time.time(), "pid": None, "unit": unit_name}
+        )
         raise HTTPException(503, message)
     pid: int | None = None
     for _ in range(20):
@@ -917,24 +974,26 @@ def _request_update(*, actor: str, update_config: bool, status: dict | None = No
                     "blockers": blockers,
                 },
             )
-        request_state = write_update_request({
-            "id": secrets.token_hex(16),
-            "state": "waiting",
-            "phase": "waiting",
-            "actor": actor,
-            "requested_at": now,
-            "started_at": None,
-            "finished_at": None,
-            "update_config": update_config,
-            "previous_version": status.get("installed_version"),
-            "target_version": status.get("available_version"),
-            "current_version": status.get("installed_version"),
-            "commit_revision": status.get("remote"),
-            "commit_date": status.get("released_at"),
-            "message": "Oczekiwanie na zakończenie aktywnych operacji.",
-            "acknowledged_users": [],
-            "log_offset": log_offset,
-        })
+        request_state = write_update_request(
+            {
+                "id": secrets.token_hex(16),
+                "state": "waiting",
+                "phase": "waiting",
+                "actor": actor,
+                "requested_at": now,
+                "started_at": None,
+                "finished_at": None,
+                "update_config": update_config,
+                "previous_version": status.get("installed_version"),
+                "target_version": status.get("available_version"),
+                "current_version": status.get("installed_version"),
+                "commit_revision": status.get("remote"),
+                "commit_date": status.get("released_at"),
+                "message": "Oczekiwanie na zakończenie aktywnych operacji.",
+                "acknowledged_users": [],
+                "log_offset": log_offset,
+            }
+        )
         try:
             _update_progress_path().unlink(missing_ok=True)
         except OSError:
@@ -951,18 +1010,22 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
             return _update_progress()
         blockers = active_operations()
         if blockers:
-            request_state.update({
-                "phase": "waiting",
-                "message": f"Oczekiwanie na zakończenie {len(blockers)} aktywnych operacji.",
-            })
+            request_state.update(
+                {
+                    "phase": "waiting",
+                    "message": f"Oczekiwanie na zakończenie {len(blockers)} aktywnych operacji.",
+                }
+            )
             write_update_request(request_state)
             return _update_progress()
-        request_state.update({
-            "state": "preparing",
-            "phase": "preparing",
-            "started_at": time.time(),
-            "message": "Przygotowywanie aktualizacji.",
-        })
+        request_state.update(
+            {
+                "state": "preparing",
+                "phase": "preparing",
+                "started_at": time.time(),
+                "message": "Przygotowywanie aktualizacji.",
+            }
+        )
         write_update_request(request_state)
 
     try:
@@ -972,13 +1035,15 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
         with coordination_lock():
             latest = read_update_request()
             if latest.get("id") == request_state.get("id"):
-                latest.update({
-                    "state": "failed",
-                    "phase": "failed",
-                    "failed_phase": latest.get("phase") or "preparing",
-                    "finished_at": time.time(),
-                    "message": message or "Aktualizacja nie powiodła się.",
-                })
+                latest.update(
+                    {
+                        "state": "failed",
+                        "phase": "failed",
+                        "failed_phase": latest.get("phase") or "preparing",
+                        "finished_at": time.time(),
+                        "message": message or "Aktualizacja nie powiodła się.",
+                    }
+                )
                 write_update_request(latest)
         resume_registered_operations()
         return _update_progress()
@@ -986,13 +1051,15 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
     with coordination_lock():
         latest = read_update_request()
         if latest.get("id") == request_state.get("id"):
-            latest.update({
-                "state": "running",
-                "phase": "installing",
-                "pid": result.get("pid"),
-                "unit": result.get("unit"),
-                "message": "Aktualizacja jest instalowana.",
-            })
+            latest.update(
+                {
+                    "state": "running",
+                    "phase": "installing",
+                    "pid": result.get("pid"),
+                    "unit": result.get("unit"),
+                    "message": "Aktualizacja jest instalowana.",
+                }
+            )
             write_update_request(latest)
     return _update_progress()
 
@@ -1011,10 +1078,15 @@ def _update_progress() -> dict:
         pass
     if progress.get("running") and progress.get("unit"):
         try:
-            active = subprocess.run(
-                [_tool("systemctl"), "is-active", "--quiet", str(progress["unit"])],
-                capture_output=True, timeout=5, check=False,
-            ).returncode == 0
+            active = (
+                subprocess.run(
+                    [_tool("systemctl"), "is-active", "--quiet", str(progress["unit"])],
+                    capture_output=True,
+                    timeout=5,
+                    check=False,
+                ).returncode
+                == 0
+            )
         except (HTTPException, OSError, subprocess.SubprocessError):
             active = True
         started_at = float(progress.get("started_at") or 0)
@@ -1046,13 +1118,15 @@ def _update_progress() -> dict:
         with coordination_lock():
             latest = read_update_request()
             if latest.get("id") == request_state.get("id") and latest.get("state") in {"preparing", "running"}:
-                latest.update({
-                    "state": "failed",
-                    "phase": "failed",
-                    "failed_phase": latest.get("phase") or "preparing",
-                    "finished_at": time.time(),
-                    "message": "Nie udało się odzyskać stanu aktualizacji po ponownym uruchomieniu usługi.",
-                })
+                latest.update(
+                    {
+                        "state": "failed",
+                        "phase": "failed",
+                        "failed_phase": latest.get("phase") or "preparing",
+                        "finished_at": time.time(),
+                        "message": "Nie udało się odzyskać stanu aktualizacji po ponownym uruchomieniu usługi.",
+                    }
+                )
                 request_state = write_update_request(latest)
         resume_registered_operations()
         request_status = "failed"
@@ -1061,14 +1135,18 @@ def _update_progress() -> dict:
         with coordination_lock():
             latest = read_update_request()
             if latest.get("id") == request_state.get("id") and latest.get("state") in {"preparing", "running"}:
-                latest.update({
-                    "state": final_state,
-                    "phase": final_state,
-                    "failed_phase": _update_phase(lines, running=True, state="running", fallback=str(latest.get("phase") or "installing")) if final_state == "failed" else None,
-                    "finished_at": progress.get("finished_at") or time.time(),
-                    "current_version": _installed_publication_version(),
-                    "message": "Aktualizacja została wykonana pomyślnie." if final_state == "completed" else "Aktualizacja nie powiodła się.",
-                })
+                latest.update(
+                    {
+                        "state": final_state,
+                        "phase": final_state,
+                        "failed_phase": _update_phase(lines, running=True, state="running", fallback=str(latest.get("phase") or "installing"))
+                        if final_state == "failed"
+                        else None,
+                        "finished_at": progress.get("finished_at") or time.time(),
+                        "current_version": _installed_publication_version(),
+                        "message": "Aktualizacja została wykonana pomyślnie." if final_state == "completed" else "Aktualizacja nie powiodła się.",
+                    }
+                )
                 request_state = write_update_request(latest)
         resume_registered_operations()
         request_status = final_state
@@ -1082,7 +1160,11 @@ def _update_progress() -> dict:
 
     blockers = _safe_blockers(active_operations()) if request_status == "waiting" else []
     effective_running = request_status in {"preparing", "running"} or running
-    effective_state = request_status if request_status != "idle" else ("running" if running else "completed" if exit_code == 0 else "failed" if exit_code is not None else "idle")
+    effective_state = (
+        request_status
+        if request_status != "idle"
+        else ("running" if running else "completed" if exit_code == 0 else "failed" if exit_code is not None else "idle")
+    )
     phase = _update_phase(lines, running=effective_running, state=effective_state, fallback=str(request_state.get("phase") or ""))
     return {
         **progress,
@@ -1113,14 +1195,17 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
         if active_request.get("state") in {"waiting", "preparing", "running"}:
             if force:
                 blockers = _safe_blockers(active_operations()) if active_request.get("state") == "waiting" else []
-                raise HTTPException(409, {
-                    "code": "UPDATE_ALREADY_ACTIVE",
-                    "message": "Aktualizacja jest już oczekująca lub trwa.",
-                    "update_id": active_request.get("id"),
-                    "state": active_request.get("state"),
-                    "active_count": len(blockers),
-                    "blockers": blockers,
-                })
+                raise HTTPException(
+                    409,
+                    {
+                        "code": "UPDATE_ALREADY_ACTIVE",
+                        "message": "Aktualizacja jest już oczekująca lub trwa.",
+                        "update_id": active_request.get("id"),
+                        "state": active_request.get("state"),
+                        "active_count": len(blockers),
+                        "blockers": blockers,
+                    },
+                )
             return {"ok": True, "skipped": True, "reason": "update_active", "state": active_request.get("state"), "update_id": active_request.get("id")}
         state = _read_auto_update_state()
         now = time.time()
@@ -1153,12 +1238,14 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
                 update_config=bool(state.get("update_config") if update_config is None else update_config),
                 status=status,
             )
-            state.update({
-                "last_run": now,
-                "last_error": result.get("message", "") if result.get("state") == "failed" else "",
-                "last_pid": result.get("pid"),
-                "next_check": now + interval * 3600,
-            })
+            state.update(
+                {
+                    "last_run": now,
+                    "last_error": result.get("message", "") if result.get("state") == "failed" else "",
+                    "last_pid": result.get("pid"),
+                    "next_check": now + interval * 3600,
+                }
+            )
             _write_auto_update_state(state)
             return {"ok": result.get("state") != "failed", "updated": True, "status": status, **result}
         except HTTPException as exc:
@@ -1318,7 +1405,9 @@ def _service_uptime_seconds(values: dict[str, str]) -> int | None:
 def _service_last_error(service: str) -> str:
     if not shutil.which("journalctl"):
         return ""
-    result = subprocess.run([_tool("journalctl"), "-u", service, "-p", "warning..alert", "-n", "1", "--no-pager"], capture_output=True, text=True, timeout=8, check=False)
+    result = subprocess.run(
+        [_tool("journalctl"), "-u", service, "-p", "warning..alert", "-n", "1", "--no-pager"], capture_output=True, text=True, timeout=8, check=False
+    )
     if result.returncode != 0:
         return ""
     return "\n".join(line for line in result.stdout.splitlines() if line.strip())[-1000:]
@@ -1381,8 +1470,16 @@ async def settings_wallpaper_upload(file: UploadFile = File(...), user: SessionU
     metadata = {"name": original_name, "created_at": int(time.time()), "media_type": media_type}
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
     os.chmod(metadata_path, 0o600)
-    item = {"id": wallpaper_id, "name": original_name, "url": f"/api/settings/wallpapers/{wallpaper_id}", "size": len(data), "created_at": metadata["created_at"]}
-    record_activity(ActivityCategory.configuration, "wallpaper_upload", user.username, details={"wallpaper_id": wallpaper_id, "size": len(data)}, source="settings")
+    item = {
+        "id": wallpaper_id,
+        "name": original_name,
+        "url": f"/api/settings/wallpapers/{wallpaper_id}",
+        "size": len(data),
+        "created_at": metadata["created_at"],
+    }
+    record_activity(
+        ActivityCategory.configuration, "wallpaper_upload", user.username, details={"wallpaper_id": wallpaper_id, "size": len(data)}, source="settings"
+    )
     return item
 
 
@@ -1447,7 +1544,11 @@ def settings_change_password(payload: ChangePasswordRequest, user: SessionUser =
 
 def admin_users(user: SessionUser = Depends(_current_user)):
     _authorize_legacy_admin_or(user, "rbac.manage")
-    return [_user_info(entry.pw_name) for entry in pwd.getpwall() if _is_manageable_uid(entry.pw_uid) and entry.pw_name not in PROTECTED_LOCAL_USERS and not entry.pw_name.startswith("pve")]
+    return [
+        _user_info(entry.pw_name)
+        for entry in pwd.getpwall()
+        if _is_manageable_uid(entry.pw_uid) and entry.pw_name not in PROTECTED_LOCAL_USERS and not entry.pw_name.startswith("pve")
+    ]
 
 
 def admin_user_create(payload: UserCreate, request: Request, user: SessionUser = Depends(_current_user)):
@@ -1695,7 +1796,11 @@ def admin_system_restart(payload: AdminSessionAction, request: Request, user: Se
 _shutdown_lock = threading.RLock()
 _shutdown_generation = 0
 _shutdown_state: dict[str, object] = {
-    "state": "idle", "deadline": None, "blocker_count": 0, "requested_by": "", "error": "",
+    "state": "idle",
+    "deadline": None,
+    "blocker_count": 0,
+    "requested_by": "",
+    "error": "",
 }
 
 
@@ -1718,16 +1823,13 @@ def _write_shutdown_policy(policy: ShutdownPolicy) -> ShutdownPolicy:
 
 
 def _shutdown_blockers():
-    return [
-        task for task in task_store.list_all()
-        if task.type in {"copy", "move"} and task.status.value in {"queued", "running", "paused"}
-    ]
+    return [task for task in task_store.list_all() if task.type in {"copy", "move"} and task.status.value in {"queued", "running", "paused"}]
 
 
 def _shutdown_payload() -> dict[str, object]:
     with _shutdown_lock:
         payload = dict(_shutdown_state)
-    payload["remaining_seconds"] = max(0, int(float(payload["deadline"]) - time.time() + 0.999)) if payload.get("deadline") else 0
+    payload["remaining_seconds"] = max(0, int(float(str(payload["deadline"])) - time.time() + 0.999)) if payload.get("deadline") else 0
     return payload
 
 
@@ -1737,7 +1839,7 @@ def _shutdown_worker(generation: int) -> None:
         with _shutdown_lock:
             if generation != _shutdown_generation or _shutdown_state["state"] == "cancelled":
                 return
-            deadline = float(_shutdown_state["deadline"] or 0)
+            deadline = float(str(_shutdown_state["deadline"] or 0))
         if time.time() < deadline:
             time.sleep(min(0.25, deadline - time.time()))
             continue
@@ -1806,8 +1908,11 @@ def admin_system_shutdown(payload: ShutdownAction, request: Request, user: Sessi
         _shutdown_generation += 1
         generation = _shutdown_generation
         _shutdown_state = {
-            "state": "scheduled", "deadline": time.time() + payload.delay_seconds,
-            "blocker_count": len(_shutdown_blockers()), "requested_by": user.username, "error": "",
+            "state": "scheduled",
+            "deadline": time.time() + payload.delay_seconds,
+            "blocker_count": len(_shutdown_blockers()),
+            "requested_by": user.username,
+            "error": "",
         }
     threading.Thread(target=_shutdown_worker, args=(generation,), name="webnas-shutdown", daemon=True).start()
     _audit(user.username, "shutdown_scheduled", f"delay={payload.delay_seconds}")
@@ -1941,14 +2046,16 @@ def admin_auto_update_patch(payload: AutoUpdatePatch, request: Request, user: Se
     _require_admin_session(user, request, "configure_auto_update", "updates.configure_auto_update")
     now = time.time()
     state = _read_auto_update_state()
-    state.update({
-        "check_enabled": payload.check_enabled,
-        "enabled": payload.enabled,
-        "interval_hours": payload.interval_hours,
-        "update_config": payload.update_config,
-        "next_check": now + payload.interval_hours * 3600 if payload.check_enabled else None,
-        "last_error": "",
-    })
+    state.update(
+        {
+            "check_enabled": payload.check_enabled,
+            "enabled": payload.enabled,
+            "interval_hours": payload.interval_hours,
+            "update_config": payload.update_config,
+            "next_check": now + payload.interval_hours * 3600 if payload.check_enabled else None,
+            "last_error": "",
+        }
+    )
     _audit(user.username, "configure_auto_update", f"checking={payload.check_enabled} install={payload.enabled} interval={payload.interval_hours}h")
     return _write_auto_update_state(state)
 

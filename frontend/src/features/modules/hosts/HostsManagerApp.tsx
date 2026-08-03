@@ -1,6 +1,8 @@
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Copy,
   Download,
   Filter,
@@ -15,7 +17,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   api,
@@ -773,27 +775,150 @@ function HostForm({
             onChange={(event) => setTags(event.target.value)}
           />
         </label>
-        <fieldset className="wide">
-          <legend>{t("hosts.groups.title")}</legend>
-          {groups.map((group) => (
-            <label className="check" key={group.id}>
-              <input
-                type="checkbox"
-                checked={groupIds.includes(group.id)}
-                onChange={(event) =>
-                  setGroupIds((current) =>
-                    event.target.checked
-                      ? [...current, group.id]
-                      : current.filter((id) => id !== group.id),
-                  )
-                }
-              />
-              {group.name}
-            </label>
-          ))}
-        </fieldset>
+        <HostGroupMultiSelect
+          groups={groups}
+          value={groupIds}
+          onChange={setGroupIds}
+          t={t}
+        />
       </form>
     </Modal>
+  );
+}
+
+function HostGroupMultiSelect({
+  groups,
+  value,
+  onChange,
+  t,
+}: {
+  groups: HostsManagerGroup[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  t: Translate;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLFieldSetElement>(null);
+  const listId = useId();
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const selectedGroups = groups.filter((group) => value.includes(group.id));
+  const visibleGroups = groups.filter((group) =>
+    group.name.toLocaleLowerCase().includes(normalizedQuery),
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const toggle = (groupId: string) => {
+    onChange(
+      value.includes(groupId)
+        ? value.filter((id) => id !== groupId)
+        : [...value, groupId],
+    );
+  };
+
+  return (
+    <fieldset className="wide hosts-group-picker" ref={rootRef}>
+      <legend>{t("hosts.groups.title")}</legend>
+      <div className="hosts-group-picker-control">
+        {selectedGroups.map((group) => (
+          <span className="hosts-group-picker-chip" key={group.id}>
+            <span>{group.name}</span>
+            <button
+              type="button"
+              onClick={() => toggle(group.id)}
+              aria-label={`${t("hosts.groups.removeSelection")} ${group.name}`}
+            >
+              <X aria-hidden="true" />
+            </button>
+          </span>
+        ))}
+        <label className="hosts-group-picker-search">
+          <Search aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder={t("hosts.groups.searchSelect")}
+            aria-label={t("hosts.groups.searchSelect")}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls={listId}
+            aria-expanded={open}
+          />
+        </label>
+        <button
+          className="hosts-group-picker-toggle"
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          aria-label={t(open ? "hosts.groups.closeList" : "hosts.groups.openList")}
+          aria-expanded={open}
+          aria-controls={listId}
+        >
+          <ChevronDown aria-hidden="true" />
+        </button>
+      </div>
+      {open && (
+        <div
+          className="hosts-group-picker-options"
+          id={listId}
+          role="listbox"
+          aria-label={t("hosts.groups.title")}
+          aria-multiselectable="true"
+        >
+          {visibleGroups.length ? (
+            visibleGroups.map((group) => {
+              const selected = value.includes(group.id);
+              return (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={selected ? "selected" : undefined}
+                  key={group.id}
+                  onClick={() => toggle(group.id)}
+                >
+                  <span className="hosts-group-picker-check">
+                    {selected && <Check aria-hidden="true" />}
+                  </span>
+                  <span>{group.name}</span>
+                </button>
+              );
+            })
+          ) : (
+            <p>{t(groups.length ? "hosts.groups.noMatches" : "hosts.groups.empty")}</p>
+          )}
+        </div>
+      )}
+      <div className="hosts-group-picker-summary">
+        <small>
+          {t("hosts.groups.selectedCount").replace("{count}", String(value.length))}
+        </small>
+        {value.length > 0 && (
+          <button type="button" onClick={() => onChange([])}>
+            {t("hosts.groups.clearSelection")}
+          </button>
+        )}
+      </div>
+    </fieldset>
   );
 }
 

@@ -172,6 +172,22 @@ class Permission(StrEnum):
     HOSTS_MANAGER_BACKUP = "hosts-manager.backup"
     HOSTS_MANAGER_RESTORE = "hosts-manager.restore"
     HOSTS_MANAGER_CONFIGURE = "hosts-manager.configure"
+    OS_REPOSITORIES_VIEW = "os-repositories.view"
+    OS_REPOSITORIES_MANAGE = "os-repositories.manage"
+    OS_REPOSITORIES_SYNC = "os-repositories.sync"
+    OS_REPOSITORIES_PACKAGES_UPLOAD = "os-repositories.packages.upload"
+    OS_REPOSITORIES_PACKAGES_DELETE = "os-repositories.packages.delete"
+    OS_REPOSITORIES_PACKAGES_BUILD = "os-repositories.packages.build"
+    OS_REPOSITORIES_SNAPSHOTS_MANAGE = "os-repositories.snapshots.manage"
+    OS_REPOSITORIES_CHANNELS_PROMOTE = "os-repositories.channels.promote"
+    OS_REPOSITORIES_KEYS_VIEW = "os-repositories.keys.view"
+    OS_REPOSITORIES_KEYS_MANAGE = "os-repositories.keys.manage"
+    OS_REPOSITORIES_HOSTS_ASSIGN = "os-repositories.hosts.assign"
+    OS_REPOSITORIES_JOBS_CANCEL = "os-repositories.jobs.cancel"
+    OS_REPOSITORIES_BACKUP = "os-repositories.backup"
+    OS_REPOSITORIES_RESTORE = "os-repositories.restore"
+    OS_REPOSITORIES_CONFIGURE = "os-repositories.configure"
+    OS_REPOSITORIES_FULL_REMOVE = "os-repositories.full-remove"
     APMID_VIEW = "apmid.view"
     APMID_CREATE = "apmid.create"
     APMID_UPDATE = "apmid.update"
@@ -200,7 +216,7 @@ class Permission(StrEnum):
 
 
 _READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics", "live", "export"}
-_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.SYSTEM_SHUTDOWN, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE, Permission.APMID_DELETE, Permission.APMID_PERMISSIONS_MANAGE, Permission.APMID_RESTORE}
+_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.SYSTEM_SHUTDOWN, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE, Permission.OS_REPOSITORIES_CHANNELS_PROMOTE, Permission.OS_REPOSITORIES_KEYS_MANAGE, Permission.OS_REPOSITORIES_RESTORE, Permission.OS_REPOSITORIES_FULL_REMOVE, Permission.APMID_DELETE, Permission.APMID_PERMISSIONS_MANAGE, Permission.APMID_RESTORE}
 _APPLICATIONS: dict[str, list[str]] = {
     "files": ["files"],
     "transfers": ["transfers"],
@@ -220,6 +236,7 @@ _APPLICATIONS: dict[str, list[str]] = {
     "homeassistant": ["module:home-assistant"],
     "ansible-controller": ["module:ansible-controller"],
     "hosts-manager": ["module:hosts-manager"],
+    "os-repositories": ["module:os-repositories"],
     "apmid": ["module:apmid"],
     "logs": ["logs"],
     "system": ["monitor", "logs", "settings"],
@@ -323,6 +340,10 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_MANAGE.value,
         Permission.HOSTS_MANAGER_POWER_VIEW.value, Permission.HOSTS_MANAGER_POWER_ON.value,
         Permission.HOSTS_MANAGER_ACTIONS_EXECUTE.value, Permission.HOSTS_MANAGER_BACKUP.value, Permission.HOSTS_MANAGER_CONFIGURE.value,
+        Permission.OS_REPOSITORIES_VIEW.value, Permission.OS_REPOSITORIES_MANAGE.value, Permission.OS_REPOSITORIES_SYNC.value,
+        Permission.OS_REPOSITORIES_PACKAGES_UPLOAD.value, Permission.OS_REPOSITORIES_PACKAGES_BUILD.value,
+        Permission.OS_REPOSITORIES_SNAPSHOTS_MANAGE.value, Permission.OS_REPOSITORIES_HOSTS_ASSIGN.value,
+        Permission.OS_REPOSITORIES_JOBS_CANCEL.value, Permission.OS_REPOSITORIES_BACKUP.value, Permission.OS_REPOSITORIES_CONFIGURE.value,
         Permission.APMID_VIEW.value, Permission.APMID_CREATE.value, Permission.APMID_UPDATE.value,
         Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_MEMBERS_MANAGE.value,
         Permission.APMID_PERMISSIONS_VIEW.value, Permission.APMID_AUDIT_VIEW.value, Permission.APMID_BACKUP.value,
@@ -342,6 +363,7 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value, Permission.ANSIBLE_AUDIT_VIEW.value,
         Permission.HOSTS_MANAGER_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_VIEW.value, Permission.HOSTS_MANAGER_POWER_VIEW.value,
         Permission.HOSTS_MANAGER_AUDIT_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value,
+        Permission.OS_REPOSITORIES_VIEW.value, Permission.OS_REPOSITORIES_KEYS_VIEW.value,
         Permission.APMID_VIEW.value, Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_PERMISSIONS_VIEW.value,
         Permission.APMID_AUDIT_VIEW.value,
     },

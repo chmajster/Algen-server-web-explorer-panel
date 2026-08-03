@@ -14,6 +14,7 @@ import { DockerManagerApp } from "../docker/DockerManagerApp";
 import { AnsibleControllerApp } from "./ansible/AnsibleControllerApp";
 import { HostsManagerApp } from "./hosts/HostsManagerApp";
 import { ApmidApp } from "./apmid/ApmidApp";
+import { OsRepositoriesApp } from "./os-repositories/OsRepositoriesApp";
 
 const emptyStatus: ModuleStatus = { installed: false, update_available: false, service_state: "unknown", service_enabled: false, services: {}, health: "unknown", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} };
 
@@ -24,6 +25,7 @@ export function ModuleApp({ moduleId, initialPath, deepLink, draftKey, permissio
   else if (moduleId === "ansible-controller") content = <AnsibleControllerApp permissions={permissions} initialJobId={deepLink?.type === "ansible-job" ? deepLink.id : undefined} initialScanId={deepLink?.type === "ansible-scan" ? deepLink.id : undefined} t={t} toast={toast} onDeepLinkClose={onDeepLinkClose} />;
   else if (moduleId === "hosts-manager") content = <HostsManagerApp permissions={permissions} initialOperationId={deepLink?.type === "hosts-operation" ? deepLink.id : undefined} t={t} toast={toast} onDeepLinkClose={onDeepLinkClose} />;
   else if (moduleId === "apmid") content = <ApmidApp permissions={permissions} t={t} toast={toast} />;
+  else if (moduleId === "os-repositories") content = <OsRepositoriesApp permissions={permissions} t={t} toast={toast} />;
   else if (["linux-updates", "pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"].includes(moduleId)) content = <ManagedModuleApp moduleId={moduleId} permissions={permissions} t={t} toast={toast} />;
   else content = <GenericModuleApp moduleId={moduleId} t={t} toast={toast} />;
   return <>{content}{deepLink?.type === "package-job" && <PackageJobDialog jobId={deepLink.jobId || deepLink.id} moduleName={moduleId} t={t} onClose={() => onDeepLinkClose?.()} />}</>;

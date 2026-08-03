@@ -23,3 +23,23 @@ def test_allows_file_inside_home(monkeypatch, tmp_path: Path):
     resolved = path_policy.resolve_user_path("alice", "docs/file.txt")
 
     assert resolved == (home / "docs/file.txt").resolve(strict=False)
+
+
+def test_transfer_destination_allows_network_share_root(monkeypatch, tmp_path: Path):
+    share_root = tmp_path / "mnt" / "media"
+    share_root.mkdir(parents=True)
+    monkeypatch.setattr(path_policy, "allowed_roots", lambda username: [share_root])
+
+    resolved = path_policy.ensure_parent_allowed("alice", str(share_root))
+
+    assert resolved == share_root.resolve(strict=False)
+
+
+def test_transfer_destination_requires_allowed_parent_for_new_path(monkeypatch, tmp_path: Path):
+    share_root = tmp_path / "mnt" / "media"
+    share_root.mkdir(parents=True)
+    monkeypatch.setattr(path_policy, "allowed_roots", lambda username: [share_root])
+
+    resolved = path_policy.ensure_parent_allowed("alice", str(share_root / "new-name.txt"))
+
+    assert resolved == (share_root / "new-name.txt").resolve(strict=False)

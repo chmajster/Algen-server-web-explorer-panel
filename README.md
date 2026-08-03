@@ -1,6 +1,6 @@
 # WebNAS
 
-WebNAS includes a central [Hosts Manager](HOSTS_MANAGER.md) for secure enrollment, shared inventory, SSH trust, connection credentials, power profiles, repositories and cross-module host actions. Ansible Controller consumes this registry instead of maintaining an independent editable host database. The installable [APMID module](APMID.md) supplies the shared application-ownership registry, memberships and resource permissions.
+WebNAS includes a central [Hosts Manager](HOSTS_MANAGER.md) for secure enrollment, shared inventory, SSH trust, connection credentials, power profiles, repositories and cross-module host actions. Ansible Controller consumes this registry instead of maintaining an independent editable host database. The installable [APMID module](APMID.md) supplies the shared application-ownership registry, memberships and resource permissions. The installable [Repozytoria systemowe module](OS_REPOSITORIES.md) provides central APT/RPM mirrors, validated uploads, immutable snapshots, signed Testing/Production channels, and generated host configuration.
 
 WebNAS is a web NAS administration panel for Linux, similar in spirit to Synology-style file management while using its own interface and assets. It gives a server a clean browser panel for local Linux users, PAM login, systemd startup, and rsync-powered file operations.
 
@@ -26,6 +26,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the project change history.
 - Per-user personalization synchronized by the backend: theme, accent, wallpaper, taskbar alignment, accessibility, notifications, transfer behavior, and File Manager defaults.
 - Role-based authorization for local Linux users with administrator, operator, auditor, and user roles plus closed per-operation grants/denials; existing root/sudo/wheel administrators retain full access.
 - Infrastructure modules for Linux security/system updates, Docker with a controlled Pi-hole/AdGuard Home/Home Assistant application catalog and safe Compose projects, PostgreSQL, MariaDB, Redis, and Home Assistant Container.
+- Installable central APT/RPM repository service with durable mirrors, package builder, GPG metadata signing, immutable snapshots, atomic channel promotion/rollback, hardened read-only HTTP serving, and Hosts Manager assignments.
 - Complete **Containers Manager** for official Docker Engine installation/update, local images, an Applications view backed by the Docker Hub/Registry V2 image catalog with tag-aware pulls, registry connections, Compose projects/history/scaling, volumes, networks, backups, diagnostics, granular RBAC and high-risk PAM confirmations.
 - One permission-aware **Users and groups** application for local Linux account/group management, built-in roles, per-user and Linux-group allow/deny policy, effective-access sources, and an audited SQLite policy store. PAM and Linux accounts remain the source of truth.
 - Per-user CPU, RAM, disk, transfer, service, and alert widgets that can be pinned, hidden, moved, and resized on the desktop.

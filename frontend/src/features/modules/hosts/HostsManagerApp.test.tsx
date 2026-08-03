@@ -155,6 +155,34 @@ describe("HostsManagerApp", () => {
     await waitFor(() => expect(api.saveHostsManagerHost).toHaveBeenCalledWith(expect.objectContaining({ name: "new-node", address: "192.168.1.20" }), undefined));
   });
 
+  it("searches and assigns multiple host groups", async () => {
+    vi.mocked(api.hostsManagerGroups).mockResolvedValue([
+      { id: "group-prod", name: "Production", description: "", parent_id: null, variables: {}, host_ids: [], active: true, created_at: 1, updated_at: 1 },
+      { id: "group-edge", name: "Edge nodes", description: "", parent_id: null, variables: {}, host_ids: [], active: true, created_at: 1, updated_at: 1 },
+      { id: "group-lab", name: "Laboratory", description: "", parent_id: null, variables: {}, host_ids: [], active: true, created_at: 1, updated_at: 1 },
+    ]);
+    vi.mocked(api.saveHostsManagerHost).mockResolvedValue({} as never);
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.hosts/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "hosts.host.add" }));
+
+    const groupSearch = screen.getByRole("combobox", { name: "hosts.groups.searchSelect" });
+    fireEvent.change(groupSearch, { target: { value: "prod" } });
+    expect(screen.getByRole("option", { name: "Production" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Laboratory" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Production" }));
+    fireEvent.change(groupSearch, { target: { value: "edge" } });
+    fireEvent.click(screen.getByRole("option", { name: "Edge nodes" }));
+
+    fireEvent.change(screen.getByLabelText("common.name"), { target: { value: "grouped-node" } });
+    fireEvent.change(screen.getByLabelText("hosts.host.address"), { target: { value: "192.168.1.30" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.save" }));
+    await waitFor(() => expect(api.saveHostsManagerHost).toHaveBeenCalledWith(expect.objectContaining({
+      group_ids: ["group-prod", "group-edge"],
+    }), undefined));
+  });
+
   it("shows the next hostname and saves the central hostname template", async () => {
     vi.mocked(api.saveHostsManagerSettings).mockResolvedValue({ ...baseSettings, hostname_template: "SRV-XXXX", next_hostname: "SRV-0001", sequence_width: 4, preview_hostnames: ["SRV-0001", "SRV-0002", "SRV-0003"], bootstrap_default_os: "windows", updated_at: 2, updated_by: "admin" });
     render(<HostsManagerApp permissions={[...permissions, "hosts-manager.configure"]} t={t} toast={vi.fn()} />);

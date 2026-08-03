@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added the installable **Repozytoria systemowe** module: local and mirrored APT/RPM repositories, validated content-addressed uploads, versioned filters, durable sync jobs/schedules/live logs, immutable snapshots and comparisons, atomic Testing/Production promotion and rollback, DEB/RPM building, encrypted GPG keys and signed metadata, generated Hosts Manager configurations, hardened read-only HTTP delivery, granular RBAC, diagnostics, metadata/full backup and verified restore, lifecycle scripts, responsive dedicated UI, tests, and operational documentation.
+
 - Added installable **APMID** with a dedicated desktop app, private versioned
   SQLite registry, Identity-backed members, per-resource allow/deny RBAC,
   Activity Center/local audit, verified backup/restore and safe uninstall.

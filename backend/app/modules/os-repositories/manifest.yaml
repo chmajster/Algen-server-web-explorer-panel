@@ -1,0 +1,49 @@
+id: os-repositories
+name: Repozytoria systemowe
+description: Central package repositories, mirrors, snapshots and release channels for APT and RPM hosts.
+long_description: Store, validate, synchronize, sign and atomically publish operating-system packages for Debian-family and RPM-family hosts without changing the local WebNAS package sources.
+category: infrastructure
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: package-open
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages: {apt: [], dnf: [], yum: []}
+installations:
+  apt: {type: command, script: install.py, reason: Install distribution-specific repository tooling and the hardened repository server.}
+  dnf: {type: command, script: install.py, reason: Install distribution-specific repository tooling and the hardened repository server.}
+  yum: {type: command, script: install.py, reason: Install distribution-specific repository tooling and the hardened repository server.}
+services:
+  - {name: webnas-repository-server, required: true}
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: true
+  reload: false
+  logs: true
+  diagnostics: true
+  backups: true
+  import_export: true
+  healthcheck: true
+  resources: [repositories, packages, snapshots, channels, builds, keys, host-assignments, jobs, history]
+  actions: [sync, upload, snapshot, promote, rollback, build, sign, assign, backup, restore, purge]
+ports: [8088/tcp]
+dependencies: [hosts-manager]
+conflicts: []
+permissions: [package_management, config_write, network_client, network_listen, systemd]
+config_paths: [/etc/webnas/os-repositories.yaml, /etc/systemd/system/webnas-repository-server.service]
+data_paths: [/var/lib/webnas/os-repositories]
+backup_paths: [/var/lib/webnas/os-repositories/backups, /etc/webnas/os-repositories.yaml]
+proxmox_safe: false
+requires_reboot: false
+requires_root: true
+configurable: true
+removable: true
+healthcheck: health.py
+ui: {hidden: false}
+changelog:
+  - Initial production release with APT/RPM repositories, package validation, snapshots, channels, jobs, GPG metadata and host configuration generation.

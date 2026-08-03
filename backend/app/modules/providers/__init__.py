@@ -8,6 +8,7 @@ from .dns import AdGuardHomeProvider, PiHoleProvider
 from .docker import DockerProvider
 from .home_assistant import HomeAssistantProvider
 from .linux_updates import LinuxUpdatesProvider
+from .os_repositories import OsRepositoriesProvider
 from .samba import SambaProvider
 
 
@@ -24,6 +25,7 @@ def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
         "home-assistant": HomeAssistantProvider,
         "ansible-controller": AnsibleControllerProvider,
         "apmid": ApmidProvider,
+        "os-repositories": OsRepositoriesProvider,
     }
     provider = providers.get(module_id)
     if provider:
@@ -33,4 +35,4 @@ def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
     return ModuleProvider(module_id)
 
 
-__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApmidProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider"]
+__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApmidProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "OsRepositoriesProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider"]
