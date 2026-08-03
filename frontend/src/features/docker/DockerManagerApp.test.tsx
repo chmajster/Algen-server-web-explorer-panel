@@ -74,13 +74,13 @@ describe("DockerManagerApp", () => {
     expect(within(table).getByText("nginx:stable")).toBeInTheDocument();
     expect(within(table).queryByText("sha256:full-digest")).not.toBeInTheDocument();
 
-    const more = within(table).getByRole("button", { name: "docker.showMore" });
+    const more = within(table).getByRole("button", { name: "docker.showTechnicalDetails" });
     expect(more).toHaveAttribute("type", "button");
     expect(more).toHaveAttribute("aria-expanded", "false");
     const detailsId = more.getAttribute("aria-controls")!;
     fireEvent.click(more);
 
-    expect(within(table).getByRole("button", { name: "docker.showLess" })).toHaveAttribute("aria-expanded", "true");
+    expect(within(table).getByRole("button", { name: "docker.hideTechnicalDetails" })).toHaveAttribute("aria-expanded", "true");
     const details = document.getElementById(detailsId)!;
     expect(details).toBeInTheDocument();
     expect(within(details).getByText("sha256:full-digest")).toBeInTheDocument();
@@ -92,9 +92,9 @@ describe("DockerManagerApp", () => {
     expect(within(detailTable).getByRole("rowheader", { name: "docker.field.image" })).toBeInTheDocument();
     expect(within(detailTable).getByText("nginx:stable")).toBeInTheDocument();
 
-    fireEvent.click(within(table).getByRole("button", { name: "docker.showLess" }));
+    fireEvent.click(within(table).getByRole("button", { name: "docker.hideTechnicalDetails" }));
     expect(document.getElementById(detailsId)).not.toBeInTheDocument();
-    expect(within(table).getByRole("button", { name: "docker.showMore" })).toHaveAttribute("aria-expanded", "false");
+    expect(within(table).getByRole("button", { name: "docker.showTechnicalDetails" })).toHaveAttribute("aria-expanded", "false");
   });
 
   it("expands several containers independently and renders missing detail values as None", async () => {
@@ -105,12 +105,12 @@ describe("DockerManagerApp", () => {
     render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.inspect_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
 
-    const toggles = await screen.findAllByRole("button", { name: "docker.showMore" });
+    const toggles = await screen.findAllByRole("button", { name: "docker.showTechnicalDetails" });
     const detailIds = toggles.map((button) => button.getAttribute("aria-controls")!);
     fireEvent.click(toggles[0]);
     fireEvent.click(toggles[1]);
 
-    expect(screen.getAllByRole("button", { name: "docker.showLess" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "docker.hideTechnicalDetails" })).toHaveLength(2);
     expect(document.getElementById(detailIds[0])).toBeInTheDocument();
     const secondDetails = document.getElementById(detailIds[1])!;
     expect(secondDetails).toBeInTheDocument();

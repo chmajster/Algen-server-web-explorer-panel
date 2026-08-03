@@ -232,7 +232,7 @@
   padding: 0.375rem;
 }
 .docker-containers-table {
-  min-width: 46rem;
+  min-width: 52rem;
   table-layout: fixed;
 }
 .docker-containers-table th {
@@ -2022,6 +2022,9 @@
 }
 
 @media (max-width: 900px) {
+  .docker-containers-toolbar .docker-search { flex-basis: 100%; }
+  .docker-containers-toolbar .docker-toolbar-filters { flex: 1 1 auto; padding-left: 0; border-left: 0; }
+  .docker-containers-toolbar .docker-toolbar-actions { margin-left: 0; }
   .docker-manager-layout {
     grid-template-columns: 3.875rem minmax(0, 1fr);
   }
@@ -2046,6 +2049,10 @@
   }
 }
 @media (max-width: 620px) {
+  .docker-containers-toolbar .docker-toolbar-filters,
+  .docker-containers-toolbar .docker-toolbar-actions { width: 100%; flex-wrap: wrap; }
+  .docker-containers-toolbar .docker-toolbar-filters select { min-width: 0; flex: 1 1 7.5rem; }
+  .docker-containers-toolbar .docker-toolbar-actions button { flex: 1 1 auto; }
   .docker-wizard-backdrop {
     padding: 0.5rem;
   }
