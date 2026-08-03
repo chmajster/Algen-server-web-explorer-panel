@@ -18,6 +18,9 @@ packages:
   apt: [openssh-client, git]
   dnf: [openssh-clients, git]
   yum: [openssh-clients, git]
+  zypper: [openssh-clients, git]
+  pacman: [openssh, git]
+  apk: [openssh-client, git]
 services: []
 capabilities:
   install: true

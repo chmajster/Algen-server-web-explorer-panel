@@ -11,6 +11,31 @@ license: GPL-3.0-or-later
 supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, centos, opensuse, sles, arch, manjaro, alpine, proxmox]
 supported_architectures: [x86_64, aarch64, armv7l]
 packages: {apt: [], dnf: [], yum: []}
+installations:
+  apt:
+    type: command
+    script: install.py
+    reason: Activate the repository-bundled APMID module; no operating-system package is required.
+  dnf:
+    type: command
+    script: install.py
+    reason: Activate the repository-bundled APMID module; no operating-system package is required.
+  yum:
+    type: command
+    script: install.py
+    reason: Activate the repository-bundled APMID module; no operating-system package is required.
+  zypper:
+    type: command
+    script: install.py
+    reason: Activate the repository-bundled APMID module; no operating-system package is required.
+  pacman:
+    type: command
+    script: install.py
+    reason: Activate the repository-bundled APMID module; no operating-system package is required.
+  apk:
+    type: command
+    script: install.py
+    reason: Activate the repository-bundled APMID module; no operating-system package is required.
 services: []
 capabilities:
   install: true

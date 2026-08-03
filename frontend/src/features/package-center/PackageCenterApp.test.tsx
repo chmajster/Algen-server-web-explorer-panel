@@ -126,6 +126,24 @@ describe("Package Center", () => {
     expect(screen.getByText("package.backgroundJobHint")).toBeInTheDocument();
   });
 
+  it("enables confirmation for a package-less trusted-script installation", async () => {
+    const apmid = summary("apmid", { manifest: { ...module("samba").manifest, id: "apmid", name: "APMID", apt_packages: [], dnf_packages: [], systemd_services: [], packages: { apt: [], dnf: [], yum: [] }, installations: { "apt-get": { type: "command", packages: [], script: "install.py", reason: "Bundled module" } } }, services: {} });
+    const commandPlan: PackagePlan = { ...packagePlan, module_id: "apmid", packages: [], services: [], installation_type: "command", installation_description: "Bundled module", steps: ["python /opt/webnas/app/modules/apmid/install.py"] };
+    vi.mocked(api.apps).mockResolvedValue([apmid]);
+    vi.mocked(api.modules).mockResolvedValue([apmid]);
+    vi.mocked(api.appPlan).mockResolvedValue(commandPlan);
+
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    await screen.findByText("APMID");
+    fireEvent.click(screen.getByRole("button", { name: "store.install" }));
+
+    expect(await screen.findByText("package.installationType.command")).toBeInTheDocument();
+    expect(screen.getByText("package.packagesNotRequired")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "package.confirmOperation" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "package.confirmOperation" }));
+    await waitFor(() => expect(api.appAction).toHaveBeenCalledWith("apmid", "install", false));
+  });
+
   it("offers opening and service control for an installed module", async () => {
     const installed = summary("samba", { state: { installed: true, installed_version: "1.0.0", available_version: "1.0.0", update_available: false, requires_reboot: false }, services: { smbd: "active" }, status: "running" });
     vi.mocked(api.modules).mockResolvedValue([installed]);

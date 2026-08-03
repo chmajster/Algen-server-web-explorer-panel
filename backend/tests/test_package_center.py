@@ -12,7 +12,8 @@ from app.modules import BUILTIN_MODULE_IDS
 from app.package_center import distro, executor, jobs, manifests, security, service
 from app.package_center.jobs import PackageJobManager
 from app.package_center.detached_updates import update_session_directory, write_update_state
-from app.package_center.models import DistributionInfo, ModuleManifest, PackageAction, PackagePlan, PackageSourceInput
+from app.package_center.models import DistributionInfo, InstallationType, ModuleManifest, PackageAction, PackagePlan, PackageSourceInput
+from app.package_center.package_managers import normalize_package_manager
 from app.package_center.repository import PackageRepository
 
 
@@ -86,6 +87,74 @@ def test_detects_fedora_and_prefers_dnf(monkeypatch, tmp_path):
 
     assert result.id == "fedora"
     assert result.package_manager == "dnf"
+
+
+@pytest.mark.parametrize("alias, expected", [("apt", "apt-get"), ("APT-GET", "apt-get"), ("dnf5", "dnf"), ("DNF", "dnf")])
+def test_package_manager_aliases_are_normalized_in_one_place(alias, expected):
+    assert normalize_package_manager(alias) == expected
+    assert DistributionInfo(id="test", name="Test", architecture="x86_64", package_manager=alias).package_manager == expected
+
+
+@pytest.mark.parametrize("manager", ["apt", "apt-get", "dnf", "dnf5", "yum", "zypper", "pacman", "apk"])
+def test_apmid_has_a_command_installation_for_every_supported_manager(manager, monkeypatch, tmp_path):
+    repository = PackageRepository(tmp_path / f"apmid-{manager}.sqlite3")
+    monkeypatch.setattr(service, "repository", lambda: repository)
+    monkeypatch.setattr(service, "detect_distribution", lambda: DistributionInfo(id="ubuntu", name="Ubuntu", architecture="x86_64", package_manager=manager))
+    monkeypatch.setattr(service, "safe_mode_active", lambda: False)
+
+    result = service.plan_operation("apmid", PackageAction.install)
+
+    assert result.compatible is True
+    assert result.installation_type == InstallationType.command
+    assert result.packages == []
+    assert len(result.steps) == 1
+    assert result.steps[0].endswith("apmid\\install.py") or result.steps[0].endswith("apmid/install.py")
+
+
+def test_unsupported_package_manager_returns_a_technical_reason(monkeypatch, tmp_path):
+    monkeypatch.setattr(service, "repository", lambda: PackageRepository(tmp_path / "unsupported.sqlite3"))
+    monkeypatch.setattr(service, "detect_distribution", lambda: DistributionInfo(id="ubuntu", name="Ubuntu", architecture="x86_64", package_manager="brew"))
+    monkeypatch.setattr(service, "safe_mode_active", lambda: False)
+
+    with pytest.raises(HTTPException) as exc:
+        service.plan_operation("apmid", PackageAction.install)
+
+    assert exc.value.detail["code"] == "INSTALLATION_METHOD_UNSUPPORTED"
+    assert exc.value.detail["package_manager"] == "brew"
+    assert "no installation strategy" in exc.value.detail["message"]
+
+
+def test_apmid_command_strategy_executes_only_trusted_module_hooks(monkeypatch, tmp_path):
+    repository = PackageRepository(tmp_path / "apmid-execute.sqlite3")
+    monkeypatch.setattr(service, "repository", lambda: repository)
+    monkeypatch.setattr(service, "detect_distribution", lambda: DistributionInfo(id="ubuntu", name="Ubuntu", architecture="x86_64", package_manager="dnf5"))
+    monkeypatch.setattr(service, "safe_mode_active", lambda: False)
+    planned = service.plan_operation("apmid", PackageAction.install)
+    commands = []
+    monkeypatch.setattr(executor, "_run", lambda args, timeout, log: commands.append(args))
+
+    executor.execute(planned, manifests.load_manifest("apmid"), lambda stream, line: None, lambda percent, step: None, lambda: False)
+
+    assert any(command[-1].endswith("install.py") for command in commands)
+    assert any(command[-1].endswith("health.py") for command in commands)
+    assert all(command[0] not in {"apt-get", "dnf", "dnf5", "yum", "zypper", "pacman", "apk"} for command in commands)
+
+
+def test_apmid_plan_api_returns_installation_method(monkeypatch, tmp_path):
+    from app.package_center import router as package_router
+    from app.security import SessionUser
+
+    monkeypatch.setattr(service, "repository", lambda: PackageRepository(tmp_path / "apmid-api.sqlite3"))
+    monkeypatch.setattr(service, "detect_distribution", lambda: DistributionInfo(id="ubuntu", name="Ubuntu", architecture="x86_64", package_manager="apt"))
+    monkeypatch.setattr(service, "safe_mode_active", lambda: False)
+    monkeypatch.setattr(package_router, "authorize", lambda user, permission: None)
+    monkeypatch.setattr(package_router, "plan_operation", service.plan_operation)
+
+    response = package_router.package_plan("apmid", PackageAction.install, False, SessionUser(username="admin", csrf_token="csrf"))
+
+    assert response.installation_type == InstallationType.command
+    assert response.distribution.package_manager == "apt-get"
+    assert response.steps
 
 
 def test_dry_run_contains_packages_services_and_safe_commands(monkeypatch, tmp_path):

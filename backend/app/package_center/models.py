@@ -6,6 +6,8 @@ from typing import Any, Literal, NoReturn
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
+from .package_managers import PACKAGE_MANAGER_EXECUTABLES, normalize_package_manager
+
 MODULE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._:-]{0,127}$")
 SERVICE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@_.:-]{0,127}(?:\.service)?$")
@@ -49,13 +51,73 @@ class ModulePackages(BaseModel):
     apt: list[str] = Field(default_factory=list)
     dnf: list[str] = Field(default_factory=list)
     yum: list[str] = Field(default_factory=list)
+    zypper: list[str] = Field(default_factory=list)
+    pacman: list[str] = Field(default_factory=list)
+    apk: list[str] = Field(default_factory=list)
 
-    @field_validator("apt", "dnf", "yum")
+    @field_validator("apt", "dnf", "yum", "zypper", "pacman", "apk")
     @classmethod
     def valid_packages(cls, values: list[str]) -> list[str]:
         if any(not PACKAGE_RE.fullmatch(value) for value in values):
             raise ValueError("invalid package name")
         return list(dict.fromkeys(values))
+
+
+class InstallationType(StrEnum):
+    system_package = "system_package"
+    command = "command"
+    download_package = "download_package"
+    unsupported = "unsupported"
+
+
+class ModuleInstallation(BaseModel):
+    type: InstallationType
+    packages: list[str] = Field(default_factory=list)
+    script: str | None = None
+    url: HttpUrl | None = None
+    sha256: str | None = None
+    package_format: Literal["deb", "rpm"] | None = None
+    reason: str = ""
+
+    @field_validator("packages")
+    @classmethod
+    def valid_packages(cls, values: list[str]) -> list[str]:
+        if any(not PACKAGE_RE.fullmatch(value) for value in values):
+            raise ValueError("invalid package name")
+        return list(dict.fromkeys(values))
+
+    @field_validator("script")
+    @classmethod
+    def safe_script(cls, value: str | None) -> str | None:
+        if value is not None and value not in {"install.py", "install.sh"}:
+            raise ValueError("installation script must be a trusted module-local install.py or install.sh")
+        return value
+
+    @field_validator("sha256")
+    @classmethod
+    def valid_checksum(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"[a-fA-F0-9]{64}", value):
+            raise ValueError("download package sha256 must be a 64-character hex digest")
+        return value.lower() if value else value
+
+    @field_validator("url")
+    @classmethod
+    def secure_download_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is not None and value.scheme != "https":
+            raise ValueError("download package URL must use HTTPS")
+        return value
+
+    @model_validator(mode="after")
+    def valid_strategy(self) -> "ModuleInstallation":
+        if self.type == InstallationType.system_package and not self.packages:
+            raise ValueError("system_package installation requires packages")
+        if self.type == InstallationType.command and not self.script:
+            raise ValueError("command installation requires a trusted module-local script")
+        if self.type == InstallationType.download_package and not (self.url and self.sha256 and self.package_format and len(self.packages) == 1):
+            raise ValueError("download_package installation requires one package name, url, sha256 and package_format")
+        if self.type == InstallationType.unsupported and not self.reason.strip():
+            raise ValueError("unsupported installation requires a reason")
+        return self
 
 
 class ModuleService(BaseModel):
@@ -145,6 +207,7 @@ class ModuleManifest(BaseModel):
     yum_packages: list[str] = Field(default_factory=list)
     systemd_services: list[str] = Field(default_factory=list)
     packages: ModulePackages = Field(default_factory=ModulePackages)
+    installations: dict[str, ModuleInstallation] = Field(default_factory=dict)
     services: list[ModuleService] = Field(default_factory=list)
     config: ModuleConfigDefinition = Field(default_factory=ModuleConfigDefinition)
     capabilities: ModuleCapabilities = Field(default_factory=ModuleCapabilities)
@@ -235,6 +298,22 @@ class ModuleManifest(BaseModel):
             self.packages.dnf = self.dnf_packages
         if not self.packages.yum:
             self.packages.yum = self.yum_packages or self.dnf_packages
+        normalized_installations: dict[str, ModuleInstallation] = {}
+        for manager, installation in self.installations.items():
+            normalized = normalize_package_manager(manager)
+            if normalized not in PACKAGE_MANAGER_EXECUTABLES:
+                raise ValueError(f"unsupported package manager mapping: {manager}")
+            if normalized in normalized_installations:
+                raise ValueError(f"duplicate package manager mapping: {manager}")
+            normalized_installations[normalized] = installation
+        self.installations = normalized_installations
+        if not self.installations:
+            for manager in ("apt", "dnf", "yum", "zypper", "pacman", "apk"):
+                packages = getattr(self.packages, manager)
+                if packages:
+                    normalized = normalize_package_manager(manager)
+                    if normalized:
+                        self.installations[normalized] = ModuleInstallation(type=InstallationType.system_package, packages=packages)
         if self.services and not self.systemd_services:
             self.systemd_services = [item.name for item in self.services]
         if not self.services:
@@ -246,7 +325,7 @@ class ModuleManifest(BaseModel):
             self.capabilities.configure = True
         if self.package_less and (self.apt_packages or self.dnf_packages or self.yum_packages or self.services or self.requires_root):
             raise ValueError("package-less modules cannot declare packages, services, or root requirement")
-        if not self.apt_packages and not self.dnf_packages and not self.ui.hidden and not self.package_less:
+        if not self.installations and not self.ui.hidden and not self.package_less:
             raise ValueError("installable module has no packages")
         return self
 
@@ -317,6 +396,11 @@ class DistributionInfo(BaseModel):
     architecture: str
     package_manager: str | None = None
 
+    @field_validator("package_manager")
+    @classmethod
+    def normalized_package_manager(cls, value: str | None) -> str | None:
+        return normalize_package_manager(value)
+
 
 class PackagePlan(BaseModel):
     module_id: str
@@ -325,6 +409,8 @@ class PackagePlan(BaseModel):
     compatible: bool
     blocked_by_proxmox: bool = False
     packages: list[str] = Field(default_factory=list)
+    installation_type: InstallationType | None = None
+    installation_description: str = ""
     services: list[str] = Field(default_factory=list)
     ports: list[str] = Field(default_factory=list)
     config_paths: list[str] = Field(default_factory=list)

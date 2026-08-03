@@ -8,10 +8,10 @@ from pathlib import Path
 from ..audit import logger
 from ..config import get_config
 from ..proxmox_guard import safe_mode_active
-from .distro import compatible, detect_distribution, packages_for
+from .distro import compatible, compatibility_issue, detect_distribution, installation_for, packages_for
 from .executor import command_preview
-from .manifests import discover_manifests, load_manifest
-from .models import ModuleManifest, PackageAction, PackagePlan, api_error
+from .manifests import discover_manifests, load_manifest, module_script
+from .models import InstallationType, ModuleManifest, PackageAction, PackagePlan, api_error
 from .repository import PackageRepository
 
 _repository: PackageRepository | None = None
@@ -77,6 +77,7 @@ def module_payload(manifest: ModuleManifest, installed: dict[str, dict], jobs: l
     module_jobs = jobs if jobs is not None else repository().list_jobs(module_id=manifest.id, limit=20)
     latest = module_jobs[0] if module_jobs else None
     is_compatible = compatible(manifest, distro)
+    compatibility_error = compatibility_issue(manifest, distro)
     blocked = safe_mode_active() and not manifest.proxmox_safe
     services = {name: service_status(name) for name in manifest.systemd_services}
     installed_version = record["version"] if record else None
@@ -111,6 +112,7 @@ def module_payload(manifest: ModuleManifest, installed: dict[str, dict], jobs: l
         "services": services,
         "status": status,
         "compatible": is_compatible,
+        "compatibility_error": compatibility_error,
         "blocked_by_proxmox": blocked,
         "distribution": distro.model_dump(),
         "jobs": module_jobs,
@@ -157,13 +159,14 @@ def plan_operation(module_id: str, action: PackageAction, *, remove_data: bool =
     installed = repo.installed()
     distro = detect_distribution()
     is_compatible = compatible(manifest, distro)
+    compatibility_error = compatibility_issue(manifest, distro)
     blocked = safe_mode_active() and not manifest.proxmox_safe
     if blocked:
         api_error(403, "MODULE_BLOCKED_BY_PROXMOX", "Module is blocked by Proxmox Safe Mode")
     package_actions = {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}
     if action in package_actions and not is_compatible:
-        code = "PACKAGE_MANAGER_UNAVAILABLE" if distro.package_manager is None else "MODULE_INCOMPATIBLE"
-        api_error(409, code, "Module is not compatible with this system")
+        code = "PACKAGE_MANAGER_UNAVAILABLE" if distro.package_manager is None else "INSTALLATION_METHOD_UNSUPPORTED"
+        api_error(409, code, compatibility_error or "Module is not compatible with this system", package_manager=distro.package_manager, distribution=distro.id, architecture=distro.architecture)
     if action == PackageAction.uninstall and not manifest.removable:
         api_error(409, "MODULE_NOT_REMOVABLE", "Module cannot be removed")
     record = installed.get(module_id)
@@ -171,9 +174,10 @@ def plan_operation(module_id: str, action: PackageAction, *, remove_data: bool =
         api_error(409, "MODULE_NOT_INSTALLED", "Only an installed module can be reinstalled")
     if action == PackageAction.reinstall and not manifest.capabilities.update:
         api_error(409, "MODULE_REINSTALL_UNSUPPORTED", "Module does not support package reinstallation")
+    installation = installation_for(manifest, distro)
     packages = packages_for(manifest, distro)
-    if action in package_actions and not packages:
-        api_error(409, "MODULE_INCOMPATIBLE", "Module has no package mapping for the selected package manager")
+    if installation and installation.type == InstallationType.command and action in {PackageAction.install, PackageAction.reinstall} and module_script(module_id, "install") is None:
+        api_error(422, "INVALID_INSTALLATION_STRATEGY", "Command installation has no trusted module-local script")
     conflicts = [item for item in manifest.conflicts if item in installed]
     warnings: list[str] = []
     if conflicts:
@@ -196,6 +200,8 @@ def plan_operation(module_id: str, action: PackageAction, *, remove_data: bool =
         compatible=is_compatible,
         blocked_by_proxmox=blocked,
         packages=packages,
+        installation_type=installation.type if installation else None,
+        installation_description=(installation.reason if installation and installation.reason else installation.type.value.replace("_", " ") if installation else ""),
         services=manifest.systemd_services,
         ports=manifest.ports,
         config_paths=manifest.config_paths,

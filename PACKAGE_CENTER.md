@@ -1,6 +1,9 @@
 # WebNAS Package Center
 
-APMID is installed as a service-free module. Completed Package Center jobs
+APMID is repository-bundled application code and is installed with a trusted
+module-local command strategy rather than a fictitious operating-system package.
+Its manifest maps apt/apt-get, dnf/dnf5, yum, zypper, pacman, and apk to that
+strategy. Completed Package Center jobs
 trigger an in-page module-list refresh so its launcher entry appears or
 disappears without a full reload. Normal uninstall preserves data; full removal
 requires exact `APMID` confirmation and a Hosts Manager usage check.
@@ -20,7 +23,8 @@ The backend is split into small components under `backend/app/package_center`:
 - `router.py` exposes the API and enforces session, granular RBAC, CSRF, and confirmation rules.
 - `models.py` defines Pydantic manifest, plan, action, source, and status models.
 - `manifests.py` discovers modules and safely resolves module-local files.
-- `distro.py` reads `/etc/os-release` and selects `apt-get`, `dnf`, or the `yum` compatibility fallback.
+- `package_managers.py` is the single normalization boundary for aliases such as `apt`/`apt-get` and `dnf5`/`dnf`.
+- `distro.py` reads `/etc/os-release` and detects apt, dnf, yum, zypper, pacman, or apk.
 - `service.py` builds filtered package views and operation plans.
 - `repository.py` stores jobs, logs, installed state, history, and sources in SQLite.
 - `jobs.py` serializes execution, cancellation, retry, recovery, and audit results.
@@ -70,6 +74,13 @@ packages:
   apt: [example-service]
   dnf: [example-service]
   yum: [example-service]
+installations:
+  apt:
+    type: system_package
+    packages: [example-service]
+  dnf:
+    type: system_package
+    packages: [example-service]
 services:
   - name: example-service
     required: true
@@ -107,6 +118,14 @@ ui:
 changelog:
   - Initial module.
 ```
+
+`installations` is the preferred extensible form. Every package-manager entry
+declares one of `system_package`, `command`, `download_package`, or
+`unsupported`. Command strategies may run only a validated repository-owned
+`install.py`/`install.sh`. Download strategies require HTTPS, a fixed SHA-256
+digest, a package name, and an explicit `deb` or `rpm` format. Legacy
+`apt_packages`/`dnf_packages`/`yum_packages` and `packages` entries are converted
+to `system_package` strategies during manifest validation.
 
 Identifiers, package names, service names, ports, architectures, paths, healthcheck names, and GitHub refs are validated. Manifest paths must be absolute and traversal-free. Hook filenames are fixed and resolved inside the module directory; a manifest cannot point to an arbitrary script. Do not add shell commands, secrets, or user-provided values to a manifest.
 

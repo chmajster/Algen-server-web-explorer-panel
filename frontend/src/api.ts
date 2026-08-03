@@ -404,6 +404,7 @@ export type PackageManifest = {
   removable: boolean;
   changelog: string[];
   packages?: { apt: string[]; dnf: string[]; yum: string[] };
+  installations?: Record<string, { type: "system_package" | "command" | "download_package" | "unsupported"; packages: string[]; script?: string | null; url?: string | null; package_format?: "deb" | "rpm" | null; reason: string }>;
   services?: Array<{ name: string; required: boolean }>;
   config?: { primary_file?: string | null; backup_paths: string[]; validation_command: string[] };
   capabilities?: ModuleCapability;
@@ -668,6 +669,8 @@ export type PackagePlan = {
   compatible: boolean;
   blocked_by_proxmox: boolean;
   packages: string[];
+  installation_type?: "system_package" | "command" | "download_package" | "unsupported" | null;
+  installation_description?: string;
   services: string[];
   ports: string[];
   config_paths: string[];
@@ -689,6 +692,7 @@ export type PackageModule = {
   services: Record<string, string>;
   status: string;
   compatible: boolean;
+  compatibility_error?: string | null;
   blocked_by_proxmox: boolean;
   distribution: { id: string; name: string; architecture: string; package_manager?: string | null };
   jobs: AppJob[];

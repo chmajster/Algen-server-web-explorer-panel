@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import urllib.request
 from contextlib import contextmanager
 from collections.abc import Callable
 from pathlib import Path
 from typing import Iterator
 
 from .manifests import module_script
-from .models import ModuleManifest, PackageAction, PackagePlan
+from .models import InstallationType, ModuleManifest, PackageAction, PackagePlan
+from .distro import installation_for
+from .package_managers import resolve_package_manager_executable
 
 LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, str], None]
@@ -141,26 +145,43 @@ def apt_update_without_proxmox_enterprise(source_root: Path | None = None) -> It
 
 def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[str, list[str], int]]:
     manager = plan.distribution.package_manager
+    executable = resolve_package_manager_executable(manager, shutil.which)
     packages = plan.packages
     steps: list[tuple[str, list[str], int]] = []
     required_services = [service.name for service in manifest.services if service.required]
+    uses_system_packages = plan.installation_type in {None, InstallationType.system_package}
+    removes_named_packages = plan.installation_type in {None, InstallationType.system_package, InstallationType.download_package}
     if plan.action in {PackageAction.install, PackageAction.update}:
-        if manager == "apt-get":
+        if uses_system_packages and manager == "apt-get":
             steps.append(("Refresh package metadata", ["apt-get", "update"], 900))
             steps.append(("Install packages", ["apt-get", "install", "-y", "--no-install-recommends", *packages], 1800))
-        elif manager in {"dnf", "yum"}:
-            steps.append(("Install packages", [manager, "install", "-y", *packages], 1800))
-        steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
+        elif uses_system_packages and manager in {"dnf", "yum"}:
+            steps.append(("Install packages", [executable or manager, "install", "-y", *packages], 1800))
+        elif uses_system_packages and manager == "zypper":
+            steps.append(("Install packages", [executable or manager, "--non-interactive", "install", *packages], 1800))
+        elif uses_system_packages and manager == "pacman":
+            steps.append(("Install packages", [executable or manager, "-S", "--noconfirm", "--needed", *packages], 1800))
+        elif uses_system_packages and manager == "apk":
+            steps.append(("Install packages", [executable or manager, "add", *packages], 1800))
+        if required_services:
+            steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
         for service in required_services:
             steps.append((f"Enable {service}", ["systemctl", "enable", service], 120))
             steps.append((f"Start {service}", ["systemctl", "start", service], 180))
     elif plan.action == PackageAction.reinstall:
-        if manager == "apt-get":
+        if uses_system_packages and manager == "apt-get":
             steps.append(("Refresh package metadata", ["apt-get", "update"], 900))
             steps.append(("Reinstall packages", ["apt-get", "install", "-y", "--reinstall", "--no-install-recommends", *packages], 1800))
-        elif manager in {"dnf", "yum"}:
-            steps.append(("Reinstall packages", [manager, "reinstall", "-y", *packages], 1800))
-        steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
+        elif uses_system_packages and manager in {"dnf", "yum"}:
+            steps.append(("Reinstall packages", [executable or manager, "reinstall", "-y", *packages], 1800))
+        elif uses_system_packages and manager == "zypper":
+            steps.append(("Reinstall packages", [executable or manager, "--non-interactive", "install", "--force", *packages], 1800))
+        elif uses_system_packages and manager == "pacman":
+            steps.append(("Reinstall packages", [executable or manager, "-S", "--noconfirm", *packages], 1800))
+        elif uses_system_packages and manager == "apk":
+            steps.append(("Reinstall packages", [executable or manager, "fix", *packages], 1800))
+        if required_services:
+            steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
         for service in required_services:
             steps.append((f"Enable {service}", ["systemctl", "enable", service], 120))
             steps.append((f"Start {service}", ["systemctl", "start", service], 180))
@@ -168,11 +189,18 @@ def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[st
         for service in reversed(required_services):
             steps.append((f"Stop {service}", ["systemctl", "stop", service], 180))
             steps.append((f"Disable {service}", ["systemctl", "disable", service], 120))
-        if manager == "apt-get":
+        if removes_named_packages and manager == "apt-get":
             steps.append(("Remove packages", ["apt-get", "remove", "-y", *packages], 1800))
-        elif manager in {"dnf", "yum"}:
-            steps.append(("Remove packages", [manager, "remove", "-y", *packages], 1800))
-        steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
+        elif removes_named_packages and manager in {"dnf", "yum"}:
+            steps.append(("Remove packages", [executable or manager, "remove", "-y", *packages], 1800))
+        elif removes_named_packages and manager == "zypper":
+            steps.append(("Remove packages", [executable or manager, "--non-interactive", "remove", *packages], 1800))
+        elif removes_named_packages and manager == "pacman":
+            steps.append(("Remove packages", [executable or manager, "-R", "--noconfirm", *packages], 1800))
+        elif removes_named_packages and manager == "apk":
+            steps.append(("Remove packages", [executable or manager, "del", *packages], 1800))
+        if required_services:
+            steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
     elif plan.action in {PackageAction.start, PackageAction.stop, PackageAction.restart}:
         for service in required_services:
             steps.append((f"{plan.action.value.title()} {service}", ["systemctl", plan.action.value, service], 180))
@@ -180,6 +208,15 @@ def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[st
 
 
 def command_preview(plan: PackagePlan, manifest: ModuleManifest) -> list[list[str]]:
+    if plan.installation_type == InstallationType.command and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
+        hook_action = "install" if plan.action == PackageAction.reinstall else plan.action.value
+        script = module_script(manifest.id, hook_action)
+        if script:
+            return [[sys.executable if script.suffix == ".py" else "/bin/bash", str(script)]]
+    if plan.installation_type == InstallationType.download_package and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update}:
+        installation = installation_for(manifest, plan.distribution)
+        if installation and installation.package_format:
+            return [["dpkg", "--install", "<verified-download.deb>"] if installation.package_format == "deb" else ["rpm", "-Uvh", "<verified-download.rpm>"]]
     return [args for _, args, _ in _command_steps(plan, manifest)]
 
 
@@ -321,6 +358,29 @@ def _run_hook(manifest: ModuleManifest, action: str, log: LogCallback) -> None:
     _run(args, 1800 if action in {"prepare", "rollback", "health"} else 300, log)
 
 
+def _install_downloaded_package(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback) -> None:
+    installation = installation_for(manifest, plan.distribution)
+    if not installation or installation.type != InstallationType.download_package or not installation.url or not installation.sha256 or not installation.package_format:
+        raise RuntimeError("Downloaded package installation strategy is incomplete")
+    request = urllib.request.Request(str(installation.url), headers={"User-Agent": "WebNAS-Package-Center/1"})
+    with tempfile.TemporaryDirectory(prefix="webnas-package-") as temporary:
+        package_path = Path(temporary) / f"package.{installation.package_format}"
+        digest = hashlib.sha256()
+        size = 0
+        with urllib.request.urlopen(request, timeout=60) as response, package_path.open("wb") as output:  # nosec B310 -- manifest validation requires HTTPS
+            while chunk := response.read(1024 * 1024):
+                size += len(chunk)
+                if size > 512 * 1024 * 1024:
+                    raise RuntimeError("Downloaded package exceeds the 512 MiB safety limit")
+                digest.update(chunk)
+                output.write(chunk)
+        if digest.hexdigest() != installation.sha256:
+            raise RuntimeError("Downloaded package checksum does not match the trusted manifest")
+        log("stdout", f"Verified downloaded {installation.package_format.upper()} package ({size} bytes)")
+        command = ["dpkg", "--install", str(package_path)] if installation.package_format == "deb" else ["rpm", "-Uvh", str(package_path)]
+        _run(command, 1800, log)
+
+
 def _rollback_hook(manifest: ModuleManifest, log: LogCallback) -> None:
     if not module_script(manifest.id, "rollback"):
         return
@@ -351,9 +411,17 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
             raise InterruptedError("Package operation cancelled before repository preparation")
         progress(1, "Prepare trusted package repository")
         _run_hook(manifest, "prepare", log)
+    hook_complete = False
+    if plan.installation_type == InstallationType.command and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update}:
+        hook_action = "install" if plan.action == PackageAction.reinstall else plan.action.value
+        progress(2, f"Run trusted {hook_action} hook")
+        _run_hook(manifest, hook_action, log)
+        hook_complete = True
+    if plan.installation_type == InstallationType.download_package and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update}:
+        progress(2, "Download and verify package")
+        _install_downloaded_package(plan, manifest, log)
     steps = _command_steps(plan, manifest)
     total = max(1, len(steps) + 1)
-    hook_complete = False
     for index, (label, args, timeout) in enumerate(steps):
         if cancelled():
             _rollback_hook(manifest, log)
