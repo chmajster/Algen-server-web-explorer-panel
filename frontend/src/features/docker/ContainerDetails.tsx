@@ -20,7 +20,7 @@ import {
   StatusPill,
 } from "./shared";
 
-type DetailTab = "overview" | "stats" | "logs" | "processes" | "settings";
+export type DetailTab = "overview" | "stats" | "logs" | "processes" | "settings";
 
 function ContainerSettingsEditor({ target, value, t, toast, onStarted, onBack }: { target: string; value: DockerContainerSettings; t: Translate; toast: ToastFn; onStarted: (job: ModuleJob) => void; onBack: () => void }) {
   const [name, setName] = useState(value.name);
@@ -93,6 +93,7 @@ function Sparkline({ values }: { values: number[] }) {
 }
 export function ContainerDetails({
   target,
+  initialTab = "overview",
   t,
   onBack,
   permissions,
@@ -100,13 +101,14 @@ export function ContainerDetails({
   onJob,
 }: {
   target: string;
+  initialTab?: DetailTab;
   t: Translate;
   onBack: () => void;
   permissions: string[];
   toast: ToastFn;
   onJob: (job: ModuleJob) => void;
 }) {
-  const [tab, setTab] = useState<DetailTab>("overview");
+  const [tab, setTab] = useState<DetailTab>(initialTab);
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [extra, setExtra] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);

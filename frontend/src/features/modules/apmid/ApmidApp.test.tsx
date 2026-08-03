@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ApmidItem } from "../../../api";
 import { ApmidApp } from "./ApmidApp";
@@ -82,5 +82,21 @@ describe("ApmidApp", () => {
     expect(screen.queryByRole("button", { name: "module.section.audit" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "module.section.apmid" }));
     expect(screen.queryByRole("button", { name: "apmid.create" })).not.toBeInTheDocument();
+  });
+
+  it("shows a helpful empty member state with accessible filters and add action", async () => {
+    render(<ApmidApp permissions={["apmid.view"]} t={t} toast={vi.fn()} />);
+    await screen.findByText("apmid.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: "module.section.apmid" }));
+    fireEvent.click(await screen.findByRole("button", { name: "CRM" }));
+    fireEvent.click(await screen.findByRole("button", { name: "apmid.tab.members" }));
+
+    expect(await screen.findByText("apmid.member.empty")).toBeInTheDocument();
+    expect(screen.getByText("apmid.member.emptyHint")).toBeInTheDocument();
+    expect(screen.getByLabelText("apmid.member.search")).toBeInTheDocument();
+    expect(screen.getByLabelText("apmid.member.filterRole")).toBeInTheDocument();
+    expect(screen.getByLabelText("apmid.member.filterStatus")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "apmid.member.addFirst" })).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).queryByRole("table")).not.toBeInTheDocument();
   });
 });

@@ -55,10 +55,10 @@ describe("DockerManagerApp", () => {
     expect(screen.queryByRole("button", { name: "docker.section.registries" })).not.toBeInTheDocument();
   });
 
-  it("renders the container list as three readable columns with expandable details", async () => {
+  it("renders the container list with metrics and expandable quick details", async () => {
     vi.mocked(api.dockerContainers).mockResolvedValue({ items: [{
       ID: "abc", Names: "web", Image: "nginx:stable", Digest: "sha256:full-digest",
-      State: "running", Status: "Up 2 hours", Health: "healthy", Ports: "80/tcp", Networks: "bridge",
+      State: "running", Status: "Up 2 hours", Health: "healthy", Ports: "80/tcp, 443/tcp, 8080/tcp", Networks: "bridge", CpuPercent: 1.234, MemoryBytes: 88_080_384,
     }], total: 1, page: 1, page_size: 50, pages: 1 });
     render(<DockerManagerApp permissions={[
       "docker.view", "docker.view_containers", "docker.inspect_container", "docker.start_container",
@@ -68,10 +68,13 @@ describe("DockerManagerApp", () => {
 
     const table = await screen.findByRole("table");
     expect(within(table).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "docker.field.name", "docker.field.status", "docker.field.actions",
+      "docker.container", "docker.field.status", "docker.cpu", "docker.memory", "docker.field.ports", "docker.field.actions",
     ]);
     expect(within(table).getByText("web")).toBeInTheDocument();
     expect(within(table).getByText("nginx:stable")).toBeInTheDocument();
+    expect(within(table).getByText(/1[,.]23%/)).toBeInTheDocument();
+    expect(within(table).getByText("84 MiB")).toBeInTheDocument();
+    expect(within(table).getByText("+1")).toBeInTheDocument();
     expect(within(table).queryByText("sha256:full-digest")).not.toBeInTheDocument();
 
     const more = within(table).getByRole("button", { name: "docker.showTechnicalDetails" });
@@ -84,17 +87,38 @@ describe("DockerManagerApp", () => {
     const details = document.getElementById(detailsId)!;
     expect(details).toBeInTheDocument();
     expect(within(details).getByText("sha256:full-digest")).toBeInTheDocument();
-    expect(details.querySelector("td")).toHaveAttribute("colspan", "3");
-    const detailTable = within(details).getByRole("table");
-    expect(within(detailTable).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
-      "docker.details.parameter", "docker.details.status",
-    ]);
-    expect(within(detailTable).getByRole("rowheader", { name: "docker.field.image" })).toBeInTheDocument();
-    expect(within(detailTable).getByText("nginx:stable")).toBeInTheDocument();
+    expect(details.querySelector("td")).toHaveAttribute("colspan", "6");
+    expect(within(details).getByText("docker.field.image")).toBeInTheDocument();
+    expect(within(details).getByText("nginx:stable")).toBeInTheDocument();
+    expect(details.querySelector(".docker-container-detail-grid")).toBeInTheDocument();
 
     fireEvent.click(within(table).getByRole("button", { name: "docker.hideTechnicalDetails" }));
     expect(document.getElementById(detailsId)).not.toBeInTheDocument();
     expect(within(table).getByRole("button", { name: "docker.showTechnicalDetails" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("shows page-scoped summaries and a permission-aware context menu", async () => {
+    vi.mocked(api.dockerContainers).mockResolvedValue({ items: [
+      { ID: "run", Names: "web", Image: "nginx", State: "running", Health: "healthy" },
+      { ID: "bad", Names: "db", Image: "postgres", State: "running", Health: "unhealthy" },
+      { ID: "off", Names: "worker", Image: "app", State: "exited" },
+    ], total: 8, page: 1, page_size: 3, pages: 3 });
+    render(<DockerManagerApp permissions={[
+      "docker.view", "docker.view_containers", "docker.inspect_container", "docker.start_container", "docker.stop_container",
+      "docker.restart_container", "docker.create_container", "docker.pull_image", "docker.export_backup", "docker.remove_container",
+    ]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+
+    expect(await screen.findByText("docker.currentResults")).toBeInTheDocument();
+    const problems = screen.getByRole("button", { name: /docker.summary.problems/ });
+    await waitFor(() => expect(problems).toHaveTextContent("1"));
+    fireEvent.click(screen.getAllByRole("button", { name: "docker.moreActions" })[0]);
+    expect(screen.queryByRole("combobox", { name: "docker.moreActions" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("menuitem", { name: "docker.details" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "docker.detail.logs" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "docker.console" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "docker.kill" })).toHaveClass("danger");
+    expect(screen.getByRole("menuitem", { name: "action.delete" })).toHaveClass("danger");
   });
 
   it("expands several containers independently and renders missing detail values as None", async () => {
@@ -115,7 +139,7 @@ describe("DockerManagerApp", () => {
     const secondDetails = document.getElementById(detailIds[1])!;
     expect(secondDetails).toBeInTheDocument();
     expect(within(secondDetails).getAllByText("common.none").length).toBeGreaterThan(0);
-    expect(within(secondDetails).getByRole("table")).toHaveClass("docker-container-detail-table");
+    expect(secondDetails.querySelector(".docker-container-detail-grid")).toBeInTheDocument();
   });
 
   it("keeps dashboard elements visible while data refreshes in the background", async () => {
@@ -366,7 +390,7 @@ describe("DockerManagerApp", () => {
   it("modifies live container resources, restart policy, name, and web portal", async () => {
     render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.inspect_container", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
-    fireEvent.click(await screen.findByTitle("docker.inspect"));
+    fireEvent.click(await screen.findByRole("button", { name: "web" }));
     fireEvent.click(await screen.findByRole("button", { name: "docker.detail.settings" }));
     expect(await screen.findByLabelText("docker.containerName")).toHaveValue("web");
     fireEvent.change(screen.getByLabelText("docker.containerName"), { target: { value: "jellyfin" } });

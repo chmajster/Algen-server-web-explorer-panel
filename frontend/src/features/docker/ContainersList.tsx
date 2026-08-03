@@ -1,23 +1,33 @@
 import {
+  ArrowDown,
+  ArrowUp,
+  Archive,
   Boxes,
   ChevronDown,
   ChevronUp,
+  Copy,
   Eye,
+  FileText,
+  MoreVertical,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
   RotateCcw,
   Search,
   Square,
+  TerminalSquare,
+  Trash2,
   Upload,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type DockerContainer, type DockerContainerAction, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
-import { ContainerDetails } from "./ContainerDetails";
+import { ContainerDetails, type DetailTab } from "./ContainerDetails";
 import { CreateContainerWizard } from "./CreateContainerWizard";
-import { LoadState, StatusPill, errorMessage, format } from "./shared";
+import { LoadState, errorMessage, format } from "./shared";
 
 function detailValue(value: unknown, t: Translate): string {
   if (value === null || value === undefined || value === "") return t("common.none");
@@ -34,6 +44,23 @@ function bytes(value: unknown): string {
   const precision = unit > 0 && amount / 1024 ** unit < 10 ? 1 : 0;
   return `${(amount / 1024 ** unit).toFixed(precision)} ${units[unit]}`;
 }
+
+function cpu(value: unknown): string {
+  if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return "—";
+  return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+}
+
+function ports(value: unknown): { visible: string; full: string; more: number } {
+  const values = (Array.isArray(value) ? value.map(String) : String(value || "").split(",")).map((item) => item.trim()).filter(Boolean);
+  return { visible: values.slice(0, 2).join(", ") || "—", full: values.join(", "), more: Math.max(0, values.length - 2) };
+}
+
+function stateOf(row: DockerContainer): string { return String(row.State || "unknown").toLowerCase(); }
+function healthOf(row: DockerContainer): string { return String(row.Health || "").toLowerCase(); }
+function isProblem(row: DockerContainer): boolean { return ["dead", "restarting"].includes(stateOf(row)) || healthOf(row) === "unhealthy"; }
+
+type SelectedContainer = { target: string; tab: DetailTab };
+type ContainerMenu = { x: number; y: number; target: string; row: DockerContainer; portalTarget: Element | null };
 
 export function ContainersList({
   draftKey,
@@ -57,7 +84,8 @@ export function ContainersList({
   const [pages, setPages] = useState(1);
   const [sort, setSort] = useState("Names");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState<SelectedContainer | null>(null);
+  const [menu, setMenu] = useState<ContainerMenu | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [wizard, setWizard] = useState(() => Boolean(draftKey && sessionStorage.getItem(draftKey)));
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -72,7 +100,7 @@ export function ContainersList({
     setLoading(true);
     setError("");
     try {
-      const result = await api.dockerContainers({ search, state, page, page_size: 50, sort, direction });
+      const result = await api.dockerContainers({ search, state: state === "problems" ? "all" : state, page, page_size: 50, sort, direction });
       setItems(result.items);
       setPages(result.pages);
     } catch (reason) {
@@ -158,12 +186,58 @@ export function ContainersList({
       toast(errorMessage(reason, t), "error", "admin");
     }
   }
+  function openDetails(target: string, tab: DetailTab = "overview") { setMenu(null); setSelected({ target, tab }); }
+  function menuItems(row: DockerContainer, target: string): ContextMenuItem[] {
+    const running = stateOf(row) === "running";
+    const paused = stateOf(row) === "paused";
+    const regular: ContextMenuItem[] = [];
+    if (permissions.includes("docker.inspect_container")) {
+      regular.push(
+        { label: t("docker.details"), icon: <Eye />, action: () => openDetails(target) },
+        { label: t("docker.detail.logs"), icon: <FileText />, action: () => openDetails(target, "logs") },
+        { label: t("docker.console"), icon: <TerminalSquare />, action: () => openDetails(target, "processes") },
+      );
+    }
+    if (!running && !paused && permissions.includes("docker.start_container")) regular.push({ label: t("module.start"), icon: <Play />, action: () => void action(target, "start") });
+    if (running && permissions.includes("docker.stop_container")) regular.push({ label: t("module.stop"), icon: <Square />, action: () => setDialog({ target, action: "stop" }) });
+    if (permissions.includes("docker.restart_container")) regular.push({ label: t("module.restart"), icon: <RotateCcw />, action: () => void action(target, "restart") });
+    if (running && permissions.includes("docker.stop_container")) regular.push({ label: t("docker.pause"), action: () => void action(target, "pause") });
+    if (paused && permissions.includes("docker.start_container")) regular.push({ label: t("docker.unpause"), icon: <Play />, action: () => void action(target, "unpause") });
+    if (permissions.includes("docker.create_container")) regular.push(
+      { label: t("docker.rename"), icon: <Pencil />, action: () => setDialog({ target, action: "rename" }) },
+      { label: t("docker.duplicate"), icon: <Copy />, action: () => setDialog({ target, action: "duplicate" }) },
+      { label: t("docker.recreate"), icon: <RefreshCw />, action: () => void action(target, "recreate") },
+    );
+    if (permissions.includes("docker.inspect_container")) regular.push({ label: t("docker.generateCompose"), icon: <FileText />, action: () => void exportCompose(target) });
+    if (permissions.includes("docker.pull_image")) regular.push(
+      { label: t("docker.checkUpdate"), icon: <RefreshCw />, action: () => void action(target, "check_update") },
+      { label: t("store.update"), icon: <RefreshCw />, action: () => void action(target, "update") },
+    );
+    if (permissions.includes("docker.export_backup")) regular.push(
+      { label: t("docker.exportContainer"), icon: <Upload />, action: () => setDialog({ target, action: "export" }) },
+      { label: t("docker.backup"), icon: <Archive />, action: () => setDialog({ target, action: "backup" }) },
+    );
+    const danger: ContextMenuItem[] = [];
+    if (permissions.includes("docker.stop_container")) danger.push({ label: t("docker.kill"), danger: true, separator: true, action: () => setDialog({ target, action: "kill" }) });
+    if (permissions.includes("docker.remove_container")) danger.push({ label: t("action.delete"), icon: <Trash2 />, danger: true, separator: danger.length === 0, action: () => setDialog({ target, action: "remove" }) });
+    return [...regular, ...danger];
+  }
+  const visibleItems = useMemo(() => state === "problems" ? items.filter(isProblem) : items, [items, state]);
+  const counts = useMemo(() => ({
+    all: items.length,
+    running: items.filter((row) => stateOf(row) === "running").length,
+    exited: items.filter((row) => ["exited", "stopped"].includes(stateOf(row))).length,
+    paused: items.filter((row) => stateOf(row) === "paused").length,
+    problems: items.filter(isProblem).length,
+  }), [items]);
+
   if (selected)
     return (
       <ContainerDetails
-        target={selected}
+        target={selected.target}
+        initialTab={selected.tab}
         t={t}
-        onBack={() => setSelected("")}
+        onBack={() => setSelected(null)}
         permissions={permissions}
         toast={toast}
         onJob={onJob}
@@ -172,6 +246,24 @@ export function ContainersList({
   return (
     <>
       <section>
+        <header className="docker-containers-header">
+          <div><h2>{t("docker.section.containers")}</h2><p>{t("docker.containersSubtitle")}</p></div>
+          <div className="docker-containers-header-actions">
+            {permissions.includes("docker.restore_backup") && <>
+              <input ref={importInput} className="visually-hidden" type="file" accept=".tar,.tar.gz,.tgz" onChange={(event) => {
+                const file = event.target.files?.[0] || null;
+                setImportFile(file);
+                if (file) setDialog({ action: "import", target: "" });
+              }} />
+              <button title={t("docker.importContainerFilesystem")} onClick={() => importInput.current?.click()}><Upload />{t("docker.importContainer")}</button>
+            </>}
+            {permissions.includes("docker.create_container") && <button className="button-primary" onClick={openWizard}><Plus />{t("docker.createContainer")}</button>}
+          </div>
+        </header>
+        <div className="docker-container-summary" aria-label={t("docker.currentResults")}>
+          {(["all", "running", "exited", "paused", "problems"] as const).map((value) => <button type="button" className={state === value ? "active summary-" + value : "summary-" + value} aria-pressed={state === value} onClick={() => setState(value)} key={value}><span>{t("docker.summary." + value)}</span><strong>{counts[value]}</strong></button>)}
+          <small>{t("docker.currentResults")}</small>
+        </div>
         <div className="docker-section-toolbar docker-containers-toolbar">
           <label className="docker-search">
             <Search />
@@ -179,7 +271,7 @@ export function ContainersList({
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={t("action.search")}
+              placeholder={t("docker.searchContainers")}
             />
           </label>
           <div className="docker-toolbar-filters" aria-label={t("docker.filters")}>
@@ -188,7 +280,7 @@ export function ContainersList({
             value={state}
             onChange={(event) => setState(event.target.value)}
           >
-            {["all", "running", "exited", "paused", "dead"].map((value) => (
+            {["all", "running", "exited", "paused", "dead", "problems"].map((value) => (
               <option value={value} key={value}>
                 {t(`docker.state.${value}`)}
               </option>
@@ -200,32 +292,10 @@ export function ContainersList({
             <option value="State">{t("docker.field.state")}</option>
             <option value="CreatedAt">{t("docker.field.created")}</option>
           </select>
-          <select aria-label={t("docker.sortDirection")} value={direction} onChange={(event) => setDirection(event.target.value as "asc" | "desc")}>
-            <option value="asc">{t("docker.sortAscending")}</option>
-            <option value="desc">{t("docker.sortDescending")}</option>
-          </select>
           </div>
           <div className="docker-toolbar-actions">
-          <button onClick={() => void load()}>
-            <RefreshCw />
-            {t("action.refresh")}
-          </button>
-          {permissions.includes("docker.create_container") && (
-            <button className="button-primary" onClick={openWizard}>
-              <Plus />
-              {t("docker.createContainer")}
-            </button>
-          )}
-          {permissions.includes("docker.restore_backup") && (
-            <>
-              <input ref={importInput} className="visually-hidden" type="file" accept=".tar,.tar.gz,.tgz" onChange={(event) => {
-                const file = event.target.files?.[0] || null;
-                setImportFile(file);
-                if (file) setDialog({ action: "import", target: "" });
-              }} />
-              <button title={t("docker.importContainerFilesystem")} onClick={() => importInput.current?.click()}><Upload />{t("docker.importContainer")}</button>
-            </>
-          )}
+          <button className="docker-sort-direction" aria-label={t("docker.sortDirection")} title={t(direction === "asc" ? "docker.sortAscending" : "docker.sortDescending")} aria-pressed={direction === "desc"} onClick={() => setDirection((value) => value === "asc" ? "desc" : "asc")}>{direction === "asc" ? <ArrowUp /> : <ArrowDown />}</button>
+          <button className="docker-refresh-icon" aria-label={t("action.refresh")} title={t("action.refresh")} onClick={() => void load()}><RefreshCw /></button>
           </div>
         </div>
         <LoadState
@@ -234,29 +304,33 @@ export function ContainersList({
           retry={() => void load()}
           t={t}
         >
-          {items.length ? <div className="docker-table-wrap docker-containers-table-wrap">
+          {visibleItems.length ? <div className="docker-table-wrap docker-containers-table-wrap">
             <table className="docker-table docker-containers-table">
               <thead><tr>
-                <th>{t("docker.field.name")}</th>
+                <th>{t("docker.container")}</th>
                 <th>{t("docker.field.status")}</th>
+                <th>{t("docker.cpu")}</th>
+                <th>{t("docker.memory")}</th>
+                <th>{t("docker.field.ports")}</th>
                 <th>{t("docker.field.actions")}</th>
               </tr></thead>
-              <tbody>{items.map((row) => {
+              <tbody>{visibleItems.map((row) => {
                 const target = String(row.ID || row.Names || "unknown-container");
                 const stateValue = String(row.State || "unknown").toLowerCase();
                 const knownStates = ["created", "running", "paused", "restarting", "removing", "exited", "dead", "stopped"];
                 const displayedState = knownStates.includes(stateValue) ? stateValue : "unknown";
                 const running = stateValue === "running";
                 const paused = stateValue === "paused";
+                const health = healthOf(row);
+                const statusTone = health === "unhealthy" || stateValue === "dead" ? "danger" : stateValue === "restarting" || health === "starting" ? "warning" : stateValue === "running" ? "success" : stateValue === "paused" ? "paused" : "neutral";
+                const portList = ports(row.Ports);
                 const isExpanded = expanded.has(target);
                 const detailsId = `docker-container-details-${target.replace(/[^A-Za-z0-9_-]/g, "-")}`;
                 const detailFields: Array<[string, unknown]> = [
                   ["docker.field.id", row.ID], ["docker.field.image", row.Image], ["docker.field.digest", row.Digest],
-                  ["docker.field.status", row.Status], ["docker.field.health", row.Health], ["docker.field.created", row.CreatedAt],
-                  ["docker.field.restart_policy", row.RestartPolicy], ["docker.field.ports", row.Ports], ["docker.field.networks", row.Networks],
+                  ["docker.field.ports", row.Ports], ["docker.field.networks", row.Networks],
                   ["docker.field.mounts", Array.isArray(row.Mounts) ? row.Mounts.length : row.Mounts],
-                  ["docker.statsCpu", `${Number(row.CpuPercent || 0).toFixed(2)}%`],
-                  ["docker.statsMemory", `${Math.round(Number(row.MemoryBytes || 0) / 1024 / 1024)} MiB`],
+                  ["docker.field.restart_policy", row.RestartPolicy], ["docker.field.created", row.CreatedAt],
                   ["docker.field.networkIo", `${bytes(row.NetworkInputBytes)} / ${bytes(row.NetworkOutputBytes)}`],
                   ["docker.field.blockIo", `${bytes(row.BlockReadBytes)} / ${bytes(row.BlockWriteBytes)}`],
                   ["docker.field.management", row.Management ? t(`docker.management.${String(row.Management)}`) : ""],
@@ -264,46 +338,23 @@ export function ContainersList({
                 ];
                 return <Fragment key={target}>
                   <tr className="docker-container-row">
-                    <td className="docker-container-name"><div className="docker-container-identity"><span className="docker-container-icon" aria-hidden="true"><Boxes /></span><span><strong>{format(row.Names)}</strong>{Boolean(row.Image) && <small>{String(row.Image)}</small>}</span></div><button type="button" className="docker-details-toggle" aria-expanded={isExpanded} aria-controls={detailsId} onClick={() => setExpanded((current) => {
+                    <td className="docker-container-name"><div className="docker-container-identity"><span className="docker-container-icon" aria-hidden="true"><Boxes /></span><span>{permissions.includes("docker.inspect_container") ? <button type="button" className="docker-container-link" onClick={() => openDetails(target)}>{format(row.Names)}</button> : <strong>{format(row.Names)}</strong>}{Boolean(row.Image) && <small>{String(row.Image)}</small>}{Boolean(row.ID) && <code>{String(row.ID).slice(0, 12)}</code>}</span></div><button type="button" className="docker-details-toggle" aria-expanded={isExpanded} aria-controls={detailsId} onClick={() => setExpanded((current) => {
                       const next = new Set(current); if (next.has(target)) next.delete(target); else next.add(target); return next;
                     })}>{isExpanded ? <ChevronUp /> : <ChevronDown />}<span>{t(isExpanded ? "docker.hideTechnicalDetails" : "docker.showTechnicalDetails")}</span></button></td>
-                    <td className="docker-container-status"><StatusPill value={displayedState} t={t} />{Boolean(row.Health) && <small>{String(row.Health)}</small>}</td>
+                    <td className={`docker-container-status status-${statusTone}`}><span><i aria-hidden="true" />{t(`docker.state.${displayedState}`)}</span><small>{health || String(row.Status || "—")}</small></td>
+                    <td className="docker-container-metric">{cpu(row.CpuPercent)}</td>
+                    <td className="docker-container-metric">{row.MemoryBytes === null || row.MemoryBytes === undefined ? "—" : bytes(row.MemoryBytes)}</td>
+                    <td className="docker-container-ports" title={portList.full || undefined}><span>{portList.visible}</span>{portList.more > 0 && <b>+{portList.more}</b>}</td>
                     <td><div className="docker-row-actions docker-container-actions">
-                      <button type="button" className="docker-open-container" title={t("docker.inspect")} onClick={() => setSelected(target)}><Eye /><span>{t("docker.openContainer")}</span></button>
-                      {running ? <button type="button" aria-label={t("module.stop")} title={t("module.stop")} disabled={!permissions.includes("docker.stop_container")} onClick={() => setDialog({ target, action: "stop" })}><Square /></button>
-                        : paused ? <button type="button" aria-label={t("docker.unpause")} title={t("docker.unpause")} disabled={!permissions.includes("docker.start_container")} onClick={() => void action(target, "unpause")}><Play /></button>
-                          : <button type="button" aria-label={t("module.start")} title={t("module.start")} disabled={!permissions.includes("docker.start_container")} onClick={() => void action(target, "start")}><Play /></button>}
-                      <button type="button" aria-label={t("module.restart")} title={t("module.restart")} disabled={!permissions.includes("docker.restart_container")} onClick={() => void action(target, "restart")}><RotateCcw /></button>
-                      <select aria-label={t("docker.moreActions")} defaultValue="" onChange={(event) => {
-                        const next = event.target.value;
-                        event.target.value = "";
-                        if (["rename", "duplicate", "kill", "backup", "export", "remove"].includes(next)) setDialog({ target, action: next as "rename" | "duplicate" | "kill" | "backup" | "export" | "remove" });
-                        else if (next === "compose") void exportCompose(target);
-                        else if (next) void action(target, next as DockerContainerAction["action"]);
-                      }}>
-                        <option value="">{t("docker.moreActions")}</option>
-                        {running && permissions.includes("docker.stop_container") && <option value="pause">{t("docker.pause")}</option>}
-                        {permissions.includes("docker.stop_container") && <option value="kill">{t("docker.kill")}</option>}
-                        {permissions.includes("docker.create_container") && <option value="rename">{t("docker.rename")}</option>}
-                        {permissions.includes("docker.create_container") && <option value="duplicate">{t("docker.duplicate")}</option>}
-                        {permissions.includes("docker.create_container") && <option value="recreate">{t("docker.recreate")}</option>}
-                        {permissions.includes("docker.inspect_container") && <option value="compose">{t("docker.generateCompose")}</option>}
-                        {permissions.includes("docker.pull_image") && <option value="check_update">{t("docker.checkUpdate")}</option>}
-                        {permissions.includes("docker.pull_image") && <option value="update">{t("store.update")}</option>}
-                        {permissions.includes("docker.export_backup") && <option value="export">{t("docker.exportContainer")}</option>}
-                        {permissions.includes("docker.export_backup") && <option value="backup">{t("docker.backup")}</option>}
-                        {permissions.includes("docker.remove_container") && <option value="remove">{t("action.delete")}</option>}
-                      </select>
+                      {running && permissions.includes("docker.stop_container") ? <button type="button" aria-label={t("module.stop")} title={t("module.stop")} onClick={() => setDialog({ target, action: "stop" })}><Square /></button>
+                        : paused && permissions.includes("docker.start_container") ? <button type="button" aria-label={t("docker.unpause")} title={t("docker.unpause")} onClick={() => void action(target, "unpause")}><Play /></button>
+                          : !running && permissions.includes("docker.start_container") && <button type="button" aria-label={t("module.start")} title={t("module.start")} onClick={() => void action(target, "start")}><Play /></button>}
+                      {permissions.includes("docker.restart_container") && <button type="button" aria-label={t("module.restart")} title={t("module.restart")} onClick={() => void action(target, "restart")}><RotateCcw /></button>}
+                      {menuItems(row, target).length > 0 && <button type="button" className="docker-more-actions" aria-label={t("docker.moreActions")} title={t("docker.moreActions")} aria-haspopup="menu" aria-expanded={menu?.target === target} onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.right - 224, y: rect.bottom + 4, target, row, portalTarget: event.currentTarget.closest(".desktop") }); }}><MoreVertical /></button>}
                     </div></td>
                   </tr>
-                  {isExpanded && <tr id={detailsId} className="docker-container-details-row"><td colSpan={3}>
-                    <table className="docker-container-detail-table">
-                      <thead><tr><th>{t("docker.details.parameter")}</th><th>{t("docker.details.status")}</th></tr></thead>
-                      <tbody>{detailFields.map(([label, value]) => <tr key={label}>
-                        <th scope="row">{t(label)}</th>
-                        <td className={label === "docker.field.digest" ? "docker-container-detail-long" : undefined}>{detailValue(value, t)}</td>
-                      </tr>)}</tbody>
-                    </table>
+                  {isExpanded && <tr id={detailsId} className="docker-container-details-row"><td colSpan={6}>
+                    <dl className="docker-container-detail-grid">{detailFields.map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd className={label === "docker.field.digest" ? "docker-container-detail-long" : undefined}>{detailValue(value, t)}</dd></div>)}</dl>
                   </td></tr>}
                 </Fragment>;
               })}</tbody>
@@ -318,6 +369,7 @@ export function ContainersList({
           )}
         </LoadState>
       </section>
+      {menu && <ContextMenu className="docker-container-context-menu" portalTarget={menu.portalTarget} x={menu.x} y={menu.y} items={menuItems(menu.row, menu.target)} onClose={() => setMenu(null)} />}
       {wizard && (
         <CreateContainerWizard
           t={t}
