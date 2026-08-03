@@ -869,10 +869,14 @@ def create_enrollment_token(payload: EnrollmentTokenInput, user: SessionUser = D
     except KeyError as error:
         detail = str(error).casefold()
         if "apmid" in detail:
-            api_error(422, "APMID_INACTIVE", "The selected APMID does not exist or is inactive")
+            api_error(422, "APMID_INACTIVE", "The selected APMID does not exist or is inactive", field="apmid_id")
         if "environment" in detail:
-            api_error(422, "ENVIRONMENT_INACTIVE", "The selected environment does not exist or is inactive")
-        api_error(422, "ENROLLMENT_DEFAULT_NOT_FOUND", "The selected hostname pattern or additional group is unavailable")
+            api_error(422, "ENVIRONMENT_INACTIVE", "The selected environment does not exist or is inactive", field="environment_id")
+        if "hostname pattern" in detail:
+            api_error(422, "HOSTNAME_PATTERN_INACTIVE", "The selected hostname pattern does not exist or is inactive", field="hostname_pattern_id")
+        if "group" in detail:
+            api_error(422, "ENROLLMENT_GROUP_INACTIVE", "A selected additional group does not exist or is inactive", field="group_ids")
+        api_error(422, "ENROLLMENT_DEFAULT_NOT_FOUND", "An enrollment selection is unavailable")
     except ManagedGroupProtectedError as error:
         api_error(409, "MANAGED_GROUP_PROTECTED", str(error))
     except ManagedGroupConflictError as error:

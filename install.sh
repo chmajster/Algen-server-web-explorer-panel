@@ -81,7 +81,7 @@ Options:
   --user USER             System user for the service (default: webnas)
   --yes                   Non-interactive mode; accept defaults
   --no-firewall           Do not configure ufw/firewalld
-  --skip-build            Skip frontend build
+  --skip-build            Deprecated; application installs require a matching frontend build
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
   --grant-journal-access  Add the service user to systemd-journal for system log access
@@ -1054,12 +1054,14 @@ PY
 build_frontend() {
   local audit_report=""
   local vulnerability_count=""
+  local frontend_dir="${INSTALL_DIR}/frontend"
+  local staging_dist="${INSTALL_DIR}/frontend/dist.next"
+  local active_dist="${INSTALL_DIR}/frontend/dist"
   if [[ "$SKIP_BUILD" == "yes" ]]; then
-    warn "Frontend build skipped"
-    return
+    fail "--skip-build cannot be used for install, update, or reinstall because it can leave an incompatible frontend bundle"
   fi
   section "Building frontend"
-  (cd "${INSTALL_DIR}/frontend" && npm install)
+  (cd "$frontend_dir" && npm ci)
   audit_report="$(mktemp -t webnas-npm-audit.XXXXXX)"
   (cd "${INSTALL_DIR}/frontend" && npm audit --json > "$audit_report") || true
   vulnerability_count="$(python3 - "$audit_report" <<'PY'
@@ -1089,9 +1091,20 @@ PY
   else
     warn "npm audit could not determine the frontend vulnerability count; continuing without automatic changes"
   fi
-  (cd "${INSTALL_DIR}/frontend" && npm run build)
-  chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/frontend"
-  ok "Frontend built"
+  rm -rf --one-file-system "$staging_dist"
+  (cd "$frontend_dir" && npm run build -- --outDir "$(basename "$staging_dist")")
+  python3 "${INSTALL_DIR}/scripts/verify_frontend_build.py" "$staging_dist"
+
+  # Publish every hashed asset before atomically replacing index.html. The old
+  # index therefore always references available files throughout an update.
+  install -d -m 0755 "$active_dist"
+  rsync -a --exclude "index.html" "$staging_dist/" "$active_dist/"
+  install -m 0644 "$staging_dist/index.html" "$active_dist/index.html.next"
+  mv -f "$active_dist/index.html.next" "$active_dist/index.html"
+  rm -rf --one-file-system "$staging_dist"
+  python3 "${INSTALL_DIR}/scripts/verify_frontend_build.py" "$active_dist"
+  chown -R "${SERVICE_USER}:${SERVICE_USER}" "$frontend_dir"
+  ok "Frontend built and activated with a matching index"
 }
 
 write_service() {

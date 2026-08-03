@@ -54,6 +54,41 @@ def enrollment_input(store: HostRegistryService, **values) -> EnrollmentTokenInp
     return EnrollmentTokenInput(apmid_id=apmid["id"], environment_id="default", **values)
 
 
+def enrollment_api(monkeypatch, store: HostRegistryService) -> tuple[TestClient, dict[str, str]]:
+    store.save_settings(HostsManagerSettingsUpdate(server_url="https://webnas.example"), "admin")
+    monkeypatch.setattr(hosts_router, "_service", lambda: store)
+    monkeypatch.setattr(hosts_router, "_activity", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.identity.permissions.has_permission", lambda username, permission: True)
+    application = FastAPI()
+    application.include_router(hosts_router.router)
+    response = Response()
+    csrf = create_session(response, "admin")
+    cookie = response.headers["set-cookie"].split(";", 1)[0]
+    return TestClient(application), {"cookie": cookie, "x-csrf-token": csrf}
+
+
+def enrollment_payload(selected_apmid_id: str, **overrides) -> dict:
+    payload = {
+        "agent_port": 8443,
+        "apmid_id": selected_apmid_id,
+        "apply_hostname": True,
+        "bootstrap_os": "linux",
+        "bound_address": "",
+        "environment_id": "default",
+        "expires_minutes": None,
+        "group_ids": [],
+        "hostname_pattern_id": None,
+        "location": "",
+        "mode": "permanent",
+        "onboard_ansible": False,
+        "report_interval_seconds": 300,
+        "require_approval": True,
+        "tags": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_crud_validation_and_secret_free_connection_metadata(tmp_path: Path):
     store = service(tmp_path)
     credential = store.save_credential(CredentialInput(name="SSH", type=CredentialType.ssh_password, username="ops", secret="correct horse"), "admin")
@@ -264,6 +299,71 @@ def test_enrollment_rejects_inactive_entities_and_validates_token_expiration(tmp
             ),
             "admin",
         )
+
+
+def test_enrollment_token_endpoint_accepts_canonical_permanent_and_one_time_payloads(monkeypatch, tmp_path: Path):
+    store = service(tmp_path)
+    apmid = ensure_apmid(store)
+    client, headers = enrollment_api(monkeypatch, store)
+
+    permanent = client.post(
+        "/api/modules/hosts-manager/enrollment-tokens",
+        json=enrollment_payload(apmid["id"]),
+        headers=headers,
+    )
+    assert permanent.status_code == 200
+    assert permanent.json()["apmid_id"] == apmid["id"]
+    assert permanent.json()["expires_at"] == 0
+
+    one_time = client.post(
+        "/api/modules/hosts-manager/enrollment-tokens",
+        json=enrollment_payload(apmid["id"], mode="one_time", expires_minutes=15),
+        headers=headers,
+    )
+    assert one_time.status_code == 200
+    assert one_time.json()["expires_at"] > one_time.json()["created_at"]
+
+
+def test_enrollment_token_endpoint_rejects_legacy_app_id(monkeypatch, tmp_path: Path):
+    store = service(tmp_path)
+    apmid = ensure_apmid(store)
+    client, headers = enrollment_api(monkeypatch, store)
+    payload = enrollment_payload(apmid["id"])
+    payload["app_id"] = payload.pop("apmid_id")
+
+    response = client.post("/api/modules/hosts-manager/enrollment-tokens", json=payload, headers=headers)
+
+    assert response.status_code == 422
+    errors = response.json()["detail"]
+    assert any(error["loc"][-1] == "apmid_id" and error["type"] == "missing" for error in errors)
+    assert any(error["loc"][-1] == "app_id" and error["type"] == "extra_forbidden" for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "code", "field", "message"),
+    [
+        ({"apmid_id": "missing-apmid"}, "APMID_INACTIVE", "apmid_id", "The selected APMID does not exist or is inactive"),
+        ({"environment_id": "missing-environment"}, "ENVIRONMENT_INACTIVE", "environment_id", "The selected environment does not exist or is inactive"),
+        ({"hostname_pattern_id": "missing-pattern"}, "HOSTNAME_PATTERN_INACTIVE", "hostname_pattern_id", "The selected hostname pattern does not exist or is inactive"),
+    ],
+)
+def test_enrollment_token_endpoint_returns_controlled_identifier_errors(monkeypatch, tmp_path: Path, overrides, code, field, message):
+    store = service(tmp_path)
+    apmid = ensure_apmid(store)
+    client, headers = enrollment_api(monkeypatch, store)
+
+    response = client.post(
+        "/api/modules/hosts-manager/enrollment-tokens",
+        json=enrollment_payload(apmid["id"], **overrides),
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": code,
+        "message": message,
+        "field": field,
+    }
 
 
 def test_hostname_patterns_preview_skip_and_token_assignment_are_monotonic(tmp_path: Path):

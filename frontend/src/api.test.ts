@@ -18,6 +18,66 @@ describe("API errors", () => {
     expect(error).toMatchObject({ message: "Already exists", status: 409, code: "already_exists", field: "name" });
   });
 
+  it("formats FastAPI validation errors with their field names", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      text: async () => JSON.stringify({ detail: [
+        { loc: ["body", "apmid_id"], msg: "Field required", type: "missing" },
+        { loc: ["body", "app_id"], msg: "Extra inputs are not permitted", type: "extra_forbidden" },
+      ] }),
+    }));
+
+    const error = await api.createHostsManagerEnrollmentToken({
+      bootstrap_os: "linux", apply_hostname: true, expires_minutes: null, mode: "permanent",
+      apmid_id: "apmid-app", environment_id: "production", hostname_pattern_id: null,
+      location: "", tags: [], group_ids: [], require_approval: true, onboard_ansible: false,
+    }).catch((reason) => reason);
+
+    expect(error).toMatchObject({
+      status: 422,
+      field: "apmid_id",
+      message: "apmid_id: Field required; app_id: Extra inputs are not permitted",
+    });
+  });
+
+  it("serializes the canonical permanent enrollment-token HTTP body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "token" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.createHostsManagerEnrollmentToken({
+      agent_port: 8443,
+      apmid_id: "apmid-app",
+      apply_hostname: true,
+      bootstrap_os: "linux",
+      bound_address: "",
+      environment_id: "production",
+      expires_minutes: null,
+      group_ids: [],
+      hostname_pattern_id: null,
+      location: "",
+      mode: "permanent",
+      onboard_ansible: false,
+      report_interval_seconds: 300,
+      require_approval: true,
+      tags: [],
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body).toEqual({
+      agent_port: 8443, apmid_id: "apmid-app", apply_hostname: true, bootstrap_os: "linux",
+      bound_address: "", environment_id: "production", expires_minutes: null, group_ids: [],
+      hostname_pattern_id: null, location: "", mode: "permanent", onboard_ansible: false,
+      report_interval_seconds: 300, require_approval: true, tags: [],
+    });
+    expect(body).not.toHaveProperty("app_id");
+    expect(typeof body.agent_port).toBe("number");
+    expect(typeof body.apply_hostname).toBe("boolean");
+    expect(Array.isArray(body.group_ids)).toBe(true);
+  });
+
   it("uses the public no-cache health check and treats only server errors as unavailable", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn()

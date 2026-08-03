@@ -1090,8 +1090,21 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     let field: string | undefined;
     let details: Record<string, unknown> | undefined;
     try {
-      const payload = JSON.parse(body) as { detail?: string | ({ code?: string; message?: string; field?: string } & Record<string, unknown>) };
+      const payload = JSON.parse(body) as {
+        detail?: string
+          | ({ code?: string; message?: string; field?: string } & Record<string, unknown>)
+          | Array<{ loc?: Array<string | number>; msg?: string }>;
+      };
       if (typeof payload.detail === "string") message = payload.detail;
+      else if (Array.isArray(payload.detail)) {
+        const validationErrors = payload.detail.map((error) => {
+          const location = (error.loc || []).filter((part) => part !== "body").join(".");
+          return `${location || "request"}: ${error.msg || "Invalid value"}`;
+        });
+        if (validationErrors.length) message = validationErrors.join("; ");
+        field = payload.detail[0]?.loc?.filter((part) => part !== "body").join(".") || undefined;
+        details = { errors: payload.detail };
+      }
       else if (payload.detail) {
         message = payload.detail.message || message;
         code = payload.detail.code;

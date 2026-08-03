@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type HostsManagerSettings } from "../../../api";
+import { api, ApiError, type HostsManagerSettings } from "../../../api";
 import { HostsManagerApp } from "./HostsManagerApp";
 
 vi.mock("../../../api", async () => {
@@ -224,6 +224,71 @@ describe("HostsManagerApp", () => {
     await waitFor(() => expect(api.createHostsManagerEnrollmentToken).toHaveBeenCalledWith(expect.objectContaining({
       mode: "permanent", expires_minutes: null, apmid_id: "apmid-app", environment_id: "default",
     })));
+  });
+
+  it("sends a positive numeric expiration for a one-time token", async () => {
+    vi.mocked(api.createHostsManagerEnrollmentToken).mockResolvedValue({
+      id: "once", hostname_pattern: "SCL000001", assigned_hostname: "SCL000001", bootstrap_os: "linux",
+      apply_hostname: true, expires_at: 100, used: false, mode: "one_time", command: "curl command",
+    });
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
+    fireEvent.change(screen.getByLabelText("hosts.enrollment.minutes"), { target: { value: "30" } });
+    const generateButtons = screen.getAllByRole("button", { name: "hosts.enrollment.generate" });
+    fireEvent.click(generateButtons[generateButtons.length - 1]);
+    await waitFor(() => expect(api.createHostsManagerEnrollmentToken).toHaveBeenCalledWith(expect.objectContaining({
+      mode: "one_time", expires_minutes: 30, apmid_id: "apmid-app", environment_id: "default",
+      hostname_pattern_id: null,
+    })));
+    expect(typeof vi.mocked(api.createHostsManagerEnrollmentToken).mock.calls[0][0].expires_minutes).toBe("number");
+  });
+
+  it("shows the field name from a controlled enrollment API error", async () => {
+    const toast = vi.fn();
+    vi.mocked(api.createHostsManagerEnrollmentToken).mockRejectedValue(
+      new ApiError("The selected APMID does not exist or is inactive", 422, "APMID_INACTIVE", "apmid_id"),
+    );
+    render(<HostsManagerApp permissions={permissions} t={t} toast={toast} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
+    const generateButtons = screen.getAllByRole("button", { name: "hosts.enrollment.generate" });
+    fireEvent.click(generateButtons[generateButtons.length - 1]);
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("apmid_id: hosts.apmid.inactive", "error"));
+  });
+
+  it("blocks generation when no active APMID exists", async () => {
+    vi.mocked(api.hostsManagerApmids).mockResolvedValue([]);
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    expect(await screen.findByText("hosts.enrollment.noActiveApmid")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "hosts.enrollment.generate" })).toBeDisabled();
+  });
+
+  it("clears a hostname pattern that disappeared after refresh", async () => {
+    vi.mocked(api.hostsManagerHostnamePatterns).mockResolvedValue([{
+      id: "pattern-1", name: "Production", description: "", template: "PRD-XXX", prefix: "PRD-", suffix: "", digits: 3,
+      start_value: 1, next_value: 1, step: 1, last_value: null, preview_hostnames: ["PRD-001"],
+      next_hostname: "PRD-001", active: true, created_at: 1, updated_at: 1,
+    }]);
+    const view = render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
+    fireEvent.change(screen.getByLabelText("hosts.environment.pattern"), { target: { value: "pattern-1" } });
+
+    vi.mocked(api.hostsManagerHostnamePatterns).mockResolvedValue([]);
+    const refreshButton = Array.from(view.container.querySelectorAll("button")).find((button) => button.querySelector(".lucide-refresh-cw"));
+    expect(refreshButton).toBeDefined();
+    fireEvent.click(refreshButton!);
+    await waitFor(() => expect(screen.getByLabelText("hosts.environment.pattern")).toHaveValue(""));
   });
 
   it("blocks generation when no active environment exists", async () => {

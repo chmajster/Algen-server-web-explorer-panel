@@ -79,12 +79,14 @@ function hostsManagerError(error: unknown, t: Translate): string {
     const translated: Record<string, string> = {
       APMID_INACTIVE: "hosts.apmid.inactive",
       ENVIRONMENT_INACTIVE: "hosts.environment.inactive",
+      HOSTNAME_PATTERN_INACTIVE: "hosts.enrollment.invalidPattern",
       APMID_GROUP_CONFLICT: "hosts.apmid.groupConflict",
       APMID_GROUP_SYNC_FAILED: "hosts.apmid.syncError",
       MANAGED_GROUP_PROTECTED: "hosts.group.managedProtected",
     };
     const key = error.code ? translated[error.code] : undefined;
-    if (key) return t(key);
+    const message = key ? t(key) : error.message;
+    return error.field && !message.startsWith(`${error.field}:`) ? `${error.field}: ${message}` : message;
   }
   return error instanceof Error ? error.message : t("error.generic");
 }
@@ -1490,6 +1492,17 @@ function Enrollment({
       setReportInterval(selected.report_interval_seconds);
     }
   }, [environmentId, environments, settings?.default_hostname_pattern_id]);
+  useEffect(() => {
+    if (patternId && !patterns.some((item) => item.active && item.id === patternId)) setPatternId("");
+  }, [patternId, patterns]);
+  useEffect(() => {
+    const selectableGroups = new Set(groups.filter((item) => item.active && !item.managed).map((item) => item.id));
+    setGroupIds((current) => current.filter((id) => selectableGroups.has(id)));
+  }, [groups]);
+  const validApmid = apmids.some((item) => item.active && item.id === apmidId);
+  const validEnvironment = environments.some((item) => item.active && item.id === environmentId);
+  const validPattern = !patternId || patterns.some((item) => item.active && item.id === patternId);
+  const validExpiration = mode === "permanent" || (Number.isInteger(minutes) && minutes > 0 && minutes <= 525600);
   const visible = items.filter(
     (item) =>
       !filter ||
@@ -1503,8 +1516,15 @@ function Enrollment({
   );
   async function create(event: React.FormEvent) {
     event.preventDefault();
-    if (!apmidId || !environmentId) {
-      toast(t(!apmidId ? "hosts.enrollment.noActiveApmid" : "hosts.enrollment.noActiveEnvironment"), "error");
+    if (!validApmid || !validEnvironment || !validPattern || !validExpiration) {
+      const key = !validApmid
+        ? "hosts.enrollment.noActiveApmid"
+        : !validEnvironment
+          ? "hosts.enrollment.noActiveEnvironment"
+          : !validPattern
+            ? "hosts.enrollment.invalidPattern"
+            : "hosts.enrollment.invalidExpiration";
+      toast(t(key), "error");
       return;
     }
     try {
@@ -1711,7 +1731,7 @@ function Enrollment({
               className="button-primary"
               type="submit"
               form="enrollment-form"
-              disabled={!apmidId || !environmentId}
+            disabled={!validApmid || !validEnvironment || !validPattern || !validExpiration}
             >
               {t("hosts.enrollment.generate")}
             </button>

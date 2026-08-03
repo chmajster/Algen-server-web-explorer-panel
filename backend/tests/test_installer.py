@@ -121,7 +121,8 @@ def test_frontend_build_offers_audit_fix_and_defaults_to_no(tmp_path):
         INSTALL_DIR="$TEST_ROOT/app"
         SERVICE_USER=webnas
         SERVICE_USER_GROUP=webnas
-        mkdir -p "$INSTALL_DIR/frontend"
+        mkdir -p "$INSTALL_DIR/frontend" "$INSTALL_DIR/scripts"
+        cp scripts/verify_frontend_build.py "$INSTALL_DIR/scripts/verify_frontend_build.py"
         calls="$TEST_ROOT/npm-calls"
         npm() {
           printf '%s\n' "$*" >> "$calls"
@@ -129,17 +130,39 @@ def test_frontend_build_offers_audit_fix_and_defaults_to_no(tmp_path):
             printf '{"metadata":{"vulnerabilities":{"total":2}}}\n'
             return 1
           fi
+          if [[ "$1" == "run" && "$2" == "build" ]]; then
+            mkdir -p "$INSTALL_DIR/frontend/dist.next/assets"
+            printf '<script src="/assets/app-hash.js"></script>\n' > "$INSTALL_DIR/frontend/dist.next/index.html"
+            printf '/api/modules/hosts-manager/enrollment-tokens apmid_id\n' > "$INSTALL_DIR/frontend/dist.next/assets/app-hash.js"
+          fi
         }
         confirm_npm_audit_fix() { return 1; }
         chown() { return 0; }
         build_frontend >/dev/null
-        grep -qx 'install' "$calls"
+        grep -qx 'ci' "$calls"
         grep -qx 'audit --json' "$calls"
-        grep -qx 'run build' "$calls"
+        grep -qx 'run build -- --outDir dist.next' "$calls"
         ! grep -qx 'audit fix' "$calls"
+        grep -q '/assets/app-hash.js' "$INSTALL_DIR/frontend/dist/index.html"
+        test -f "$INSTALL_DIR/frontend/dist/assets/app-hash.js"
         """,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_frontend_build_rejects_skip_build_to_prevent_a_stale_bundle(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        INSTALL_DIR="$TEST_ROOT/app"
+        SKIP_BUILD=yes
+        mkdir -p "$INSTALL_DIR/frontend/dist"
+        printf 'old bundle\n' > "$INSTALL_DIR/frontend/dist/index.html"
+        build_frontend
+        """,
+    )
+    assert result.returncode != 0
+    assert "incompatible frontend bundle" in result.stdout + result.stderr
 
 
 def test_frontend_build_runs_audit_fix_only_after_confirmation(tmp_path):
@@ -149,7 +172,8 @@ def test_frontend_build_runs_audit_fix_only_after_confirmation(tmp_path):
         INSTALL_DIR="$TEST_ROOT/app"
         SERVICE_USER=webnas
         SERVICE_USER_GROUP=webnas
-        mkdir -p "$INSTALL_DIR/frontend"
+        mkdir -p "$INSTALL_DIR/frontend" "$INSTALL_DIR/scripts"
+        cp scripts/verify_frontend_build.py "$INSTALL_DIR/scripts/verify_frontend_build.py"
         calls="$TEST_ROOT/npm-calls"
         npm() {
           printf '%s\n' "$*" >> "$calls"
@@ -157,12 +181,17 @@ def test_frontend_build_runs_audit_fix_only_after_confirmation(tmp_path):
             printf '{"metadata":{"vulnerabilities":{"total":2}}}\n'
             return 1
           fi
+          if [[ "$1" == "run" && "$2" == "build" ]]; then
+            mkdir -p "$INSTALL_DIR/frontend/dist.next/assets"
+            printf '<script src="/assets/app-hash.js"></script>\n' > "$INSTALL_DIR/frontend/dist.next/index.html"
+            printf '/api/modules/hosts-manager/enrollment-tokens apmid_id\n' > "$INSTALL_DIR/frontend/dist.next/assets/app-hash.js"
+          fi
         }
         confirm_npm_audit_fix() { return 0; }
         chown() { return 0; }
         build_frontend >/dev/null
         grep -qx 'audit fix' "$calls"
-        grep -qx 'run build' "$calls"
+        grep -qx 'run build -- --outDir dist.next' "$calls"
         """,
     )
     assert result.returncode == 0, result.stderr

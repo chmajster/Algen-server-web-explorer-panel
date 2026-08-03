@@ -3092,6 +3092,8 @@
   "hosts.enrollment.legacyToken": "Token historyczny",
   "hosts.enrollment.noActiveApmid": "Brak aktywnego APMID. Dodaj lub aktywuj APMID, aby wygenerować skrypt.",
   "hosts.enrollment.noActiveEnvironment": "Brak aktywnego środowiska. Dodaj lub aktywuj środowisko, aby wygenerować skrypt.",
+  "hosts.enrollment.invalidPattern": "Wybrany wzorzec hostname już nie istnieje lub jest nieaktywny.",
+  "hosts.enrollment.invalidExpiration": "Ważność tokenu jednorazowego musi być liczbą całkowitą od 1 do 525600 minut.",
   "hosts.apmid.title": "APMID",
   "hosts.apmid.hint": "Zarządzaj identyfikatorami zespołów i aplikacji oraz automatycznymi grupami APMID–środowisko.",
   "hosts.apmid.code": "APMID",

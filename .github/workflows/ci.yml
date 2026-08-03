@@ -153,6 +153,10 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Verify deployed frontend contract
+        working-directory: .
+        run: python scripts/verify_frontend_build.py frontend/dist
+
       - name: Upload frontend test report
         if: always()
         uses: actions/upload-artifact@v7

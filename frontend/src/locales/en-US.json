@@ -3092,6 +3092,8 @@
   "hosts.enrollment.legacyToken": "Legacy token",
   "hosts.enrollment.noActiveApmid": "No active APMID. Add or activate an APMID before generating a script.",
   "hosts.enrollment.noActiveEnvironment": "No active environment. Add or activate an environment before generating a script.",
+  "hosts.enrollment.invalidPattern": "The selected hostname pattern no longer exists or is inactive.",
+  "hosts.enrollment.invalidExpiration": "One-time token validity must be a whole number between 1 and 525600 minutes.",
   "hosts.apmid.title": "APMID",
   "hosts.apmid.hint": "Manage team and application identifiers and their automatic APMID–environment groups.",
   "hosts.apmid.code": "APMID",
