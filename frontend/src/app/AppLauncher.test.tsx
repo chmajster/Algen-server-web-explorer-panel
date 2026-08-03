@@ -70,4 +70,21 @@ describe("Start menu", () => {
     fireEvent.click(screen.getByText("desktop.justNow").closest("button")!);
     expect(open).toHaveBeenCalledWith("settings");
   });
+
+  it("opens a power menu and runs shutdown or restart separately", () => {
+    const shutdown = vi.fn(); const restart = vi.fn();
+    render(<AppLauncher apps={appList} startPinned={new Set()} desktopShortcuts={new Set()} taskbarPinned={new Set()} profile={settingsFixture()} t={t} onOpen={vi.fn()} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onShutdown={shutdown} onRestart={restart} onLogout={vi.fn()} onClose={vi.fn()} />);
+
+    const trigger = screen.getByRole("button", { name: "shutdown.powerMenu" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("menuitem", { name: "shutdown.restart" }));
+    expect(restart).toHaveBeenCalledOnce();
+    expect(shutdown).not.toHaveBeenCalled();
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "shutdown.close" }));
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
 });

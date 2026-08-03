@@ -1,4 +1,4 @@
-import { ArrowRight, LayoutGrid, LogOut, Monitor, PanelBottom, Pin, Power, Search, ShieldCheck, UserRound, X } from "lucide-react";
+import { ArrowRight, LayoutGrid, LogOut, Monitor, PanelBottom, Pin, Power, RotateCcw, Search, ShieldCheck, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SettingsMe } from "../api";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
@@ -6,7 +6,7 @@ import type { AppDefinition, AppId, RecentApp, Translate } from "./types";
 
 type LauncherContext = { x: number; y: number; app: AppDefinition; portalTarget: Element | null };
 
-export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned, recentApps = [], profile, t, onOpen, onOpenProfile, onToggleStartPin, onToggleDesktopShortcut, onToggleTaskbarPin, onShutdown, onLogout, onClose }: {
+export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned, recentApps = [], profile, t, onOpen, onOpenProfile, onToggleStartPin, onToggleDesktopShortcut, onToggleTaskbarPin, onShutdown, onRestart, onLogout, onClose }: {
   apps: AppDefinition[];
   startPinned: Set<AppId>;
   desktopShortcuts: Set<AppId>;
@@ -20,14 +20,18 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   onToggleDesktopShortcut: (app: AppId) => void;
   onToggleTaskbarPin: (app: AppId) => void;
   onShutdown?: () => void;
+  onRestart?: () => void;
   onLogout: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const powerActionsRef = useRef<HTMLDivElement>(null);
+  const powerMenuRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [context, setContext] = useState<LauncherContext | null>(null);
+  const [powerMenuOpen, setPowerMenuOpen] = useState(false);
   const [renderedAt] = useState(() => Date.now());
   const normalized = query.trim().toLocaleLowerCase(profile.language);
   const filtered = useMemo(() => apps.filter((app) => t(app.labelKey).toLocaleLowerCase(profile.language).includes(normalized)), [apps, normalized, profile.language, t]);
@@ -49,13 +53,17 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   useEffect(() => {
     function click(event: MouseEvent) {
       if (event.target instanceof Element && event.target.closest(".launcher-context-menu")) return;
+      if (powerMenuOpen && !powerActionsRef.current?.contains(event.target as Node)) setPowerMenuOpen(false);
       if (!ref.current?.contains(event.target as Node)) onClose();
     }
-    function key(event: KeyboardEvent) { if (event.key === "Escape") { if (context) setContext(null); else onClose(); } }
+    function key(event: KeyboardEvent) { if (event.key === "Escape") { if (powerMenuOpen) setPowerMenuOpen(false); else if (context) setContext(null); else onClose(); } }
     document.addEventListener("mousedown", click);
     document.addEventListener("keydown", key);
     return () => { document.removeEventListener("mousedown", click); document.removeEventListener("keydown", key); };
-  }, [context, onClose]);
+  }, [context, onClose, powerMenuOpen]);
+  useEffect(() => {
+    if (powerMenuOpen) powerMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+  }, [powerMenuOpen]);
 
   function open(app: AppId) { setContext(null); onOpen(app); onClose(); }
   function contextItems(app: AppDefinition): ContextMenuItem[] {
@@ -76,7 +84,14 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
     <div className="launcher-search"><Search /><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("desktop.searchApps")} aria-label={t("desktop.searchApps")} />{query && <button type="button" aria-label={t("action.clear")} onClick={() => setQuery("")}><X /></button>}</div>
     {!allVisible && <><header className="launcher-section-title"><strong>{t("desktop.pinned")}</strong><button type="button" onClick={() => setShowAll(true)}>{t("desktop.allApps")}<ArrowRight /></button></header><div className="launcher-grid">{pinnedApps.map((app) => appButton(app))}</div><header className="launcher-section-title launcher-recent-title"><strong>{t("desktop.recentlyUsed")}</strong></header>{recent.length > 0 ? <div className="launcher-recent-list">{recent.map(({ item, app }) => <button type="button" key={app.id} onClick={() => open(app.id)}>{app.icon}<span><strong>{t(app.labelKey)}</strong><small>{relativeTime(item.usedAt)}</small></span></button>)}</div> : <p className="launcher-recent-empty">{t("desktop.noRecentApps")}</p>}</>}
     {allVisible && <><header className="launcher-section-title"><strong>{t("desktop.allApps")}</strong>{showAll && !normalized && <button type="button" onClick={() => setShowAll(false)}>{t("action.back")}</button>}</header><div className="launcher-list">{filtered.length > 0 ? filtered.map((app) => appButton(app, true)) : <p className="launcher-empty">{t("desktop.noAppsFound")}</p>}</div></>}
-    <footer className="launcher-footer"><button className="launcher-profile" type="button" title={t("desktop.openUserSettings")} aria-label={`${t("desktop.openUserSettings")}: ${profile.username}`} onClick={() => { onOpenProfile?.(); onClose(); }}><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? <><ShieldCheck />{t("desktop.administrator")}</> : t(`rbac.role.${profile.role}`)}</small></span></button><div className="launcher-power-actions">{onShutdown && <button className="launcher-shutdown" type="button" title={t("shutdown.button")} aria-label={t("shutdown.button")} onClick={onShutdown}><Power /></button>}<button className="launcher-logout" type="button" title={t("notify.logout")} aria-label={t("notify.logout")} onClick={onLogout}><LogOut /></button></div></footer>
+    <footer className="launcher-footer"><button className="launcher-profile" type="button" title={t("desktop.openUserSettings")} aria-label={`${t("desktop.openUserSettings")}: ${profile.username}`} onClick={() => { onOpenProfile?.(); onClose(); }}><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? <><ShieldCheck />{t("desktop.administrator")}</> : t(`rbac.role.${profile.role}`)}</small></span></button><div ref={powerActionsRef} className="launcher-power-actions">{(onShutdown || onRestart) && <><button className="launcher-shutdown" type="button" title={t("shutdown.powerMenu")} aria-label={t("shutdown.powerMenu")} aria-haspopup="menu" aria-expanded={powerMenuOpen} onClick={() => setPowerMenuOpen((value) => !value)}><Power /></button>{powerMenuOpen && <div ref={powerMenuRef} className="launcher-power-menu" role="menu" aria-label={t("shutdown.powerMenu")} onKeyDown={(event) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button")];
+      const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : event.key === "ArrowDown" ? (current + 1) % buttons.length : (current - 1 + buttons.length) % buttons.length;
+      buttons[next]?.focus();
+    }}>{onShutdown && <button type="button" role="menuitem" onClick={() => { setPowerMenuOpen(false); onShutdown(); }}><Power />{t("shutdown.close")}</button>}{onRestart && <button type="button" role="menuitem" onClick={() => { setPowerMenuOpen(false); onRestart(); }}><RotateCcw />{t("shutdown.restart")}</button>}</div>}</>}<button className="launcher-logout" type="button" title={t("notify.logout")} aria-label={t("notify.logout")} onClick={onLogout}><LogOut /></button></div></footer>
     {context && <ContextMenu className="launcher-context-menu" portalTarget={context.portalTarget} x={context.x} y={context.y} items={contextItems(context.app)} onClose={() => setContext(null)} />}
   </div>;
 }
