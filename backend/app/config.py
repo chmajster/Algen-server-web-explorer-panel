@@ -102,6 +102,8 @@ class ProxmoxConfig(BaseModel):
 class SystemdConfig(BaseModel):
     allowed_services: list[str] = Field(default_factory=lambda: [
         "webnas.service",
+        "webnas-backend-blue.service",
+        "webnas-backend-green.service",
         "smbd.service",
         "nmbd.service",
         "nginx.service",

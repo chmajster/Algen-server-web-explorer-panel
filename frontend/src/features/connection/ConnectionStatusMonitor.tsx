@@ -12,7 +12,7 @@ import type { Translate } from "../../app/types";
 
 export const CONNECTION_RESTORED_EVENT = "webnas:connection-restored";
 
-type ConnectionPhase = "checking" | "online" | "offline" | "restored";
+type ConnectionPhase = "checking" | "online" | "switching" | "offline" | "restored";
 
 export type ConnectionState = {
   phase: ConnectionPhase;
@@ -27,6 +27,7 @@ type MonitorOptions = {
   intervalMs?: number;
   timeoutMs?: number;
   failureThreshold?: number;
+  plannedFailureThreshold?: number;
   restoredNoticeMs?: number;
   onRestored?: (durationSeconds: number) => void;
 };
@@ -49,6 +50,7 @@ export function useConnectionMonitor({
   intervalMs = 3000,
   timeoutMs = 2500,
   failureThreshold = 2,
+  plannedFailureThreshold = 4,
   restoredNoticeMs = 5000,
   onRestored,
 }: MonitorOptions = {}) {
@@ -107,8 +109,9 @@ export function useConnectionMonitor({
       }, timeoutMs);
 
       let successful: boolean;
+      let result: unknown;
       try {
-        await check(requestController.signal);
+        result = await check(requestController.signal);
         successful = !timedOut;
       } catch {
         successful = false;
@@ -125,12 +128,24 @@ export function useConnectionMonitor({
       if (successful) {
         failedChecks = 0;
         const previousPhase = phase;
+        const deploymentPhase = typeof result === "object" && result !== null && "deployment_phase" in result
+          ? (result as { deployment_phase?: unknown }).deployment_phase
+          : null;
+        if (deploymentPhase === "switching" || deploymentPhase === "draining") {
+          if (phase !== "switching") outageStartedAt = checkedAt;
+          phase = "switching";
+          lastSuccessfulAt = checkedAt;
+          clearElapsedTimer();
+          clearRestoredTimer();
+          setState({ phase, elapsedSeconds: 0, lastSuccessfulAt });
+          return;
+        }
         const durationSeconds = outageStartedAt === null
           ? 0
           : Math.floor((checkedAt - outageStartedAt) / 1000);
         lastSuccessfulAt = checkedAt;
 
-        if (previousPhase === "offline") {
+        if (previousPhase === "offline" || previousPhase === "switching") {
           phase = "restored";
           outageStartedAt = null;
           clearElapsedTimer();
@@ -153,7 +168,8 @@ export function useConnectionMonitor({
       }
 
       failedChecks += 1;
-      if (failedChecks < failureThreshold || phase === "offline") return;
+      const effectiveThreshold = phase === "switching" ? plannedFailureThreshold : failureThreshold;
+      if (failedChecks < effectiveThreshold || phase === "offline") return;
 
       clearRestoredTimer();
       phase = "offline";
@@ -181,7 +197,7 @@ export function useConnectionMonitor({
       document.removeEventListener("visibilitychange", checkWhenActive);
       window.removeEventListener("focus", checkWhenActive);
     };
-  }, [check, failureThreshold, intervalMs, restoredNoticeMs, timeoutMs]);
+  }, [check, failureThreshold, intervalMs, plannedFailureThreshold, restoredNoticeMs, timeoutMs]);
 
   return state;
 }
@@ -195,6 +211,7 @@ export function ConnectionStatusMonitor({
   if (state.phase === "checking" || state.phase === "online") return null;
 
   const offline = state.phase === "offline";
+  const switching = state.phase === "switching";
   const lastSuccessful = state.lastSuccessfulAt === null
     ? t("connection.never")
     : new Date(state.lastSuccessfulAt).toLocaleString(language);
@@ -206,10 +223,10 @@ export function ConnectionStatusMonitor({
   >
     {offline ? <WifiOff aria-hidden="true" /> : <Wifi aria-hidden="true" />}
     <div className="connection-status-copy">
-      <strong>{t(offline ? "connection.lost" : "connection.restored")}</strong>
-      <span>{t(offline ? "connection.reconnecting" : "connection.restoredHint")}</span>
+      <strong>{t(offline ? "connection.lost" : switching ? "connection.switching" : "connection.restored")}</strong>
+      <span>{t(offline ? "connection.reconnecting" : switching ? "connection.switchingHint" : "connection.restoredHint")}</span>
     </div>
-    <dl>
+    {!switching && <dl>
       <div>
         <dt>{t(offline ? "connection.offlineDuration" : "connection.outageDuration")}</dt>
         <dd>{formatConnectionDuration(state.elapsedSeconds)}</dd>
@@ -218,7 +235,7 @@ export function ConnectionStatusMonitor({
         <dt>{t("connection.lastSuccessful")}</dt>
         <dd>{lastSuccessful}</dd>
       </div>
-    </dl>
+    </dl>}
   </aside>;
 }
 

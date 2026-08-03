@@ -180,7 +180,7 @@ export type UpdateBlocker = { id: string; type: string; status: "queued" | "runn
 export type UpdateProgress = {
   id?: string | null;
   state: "idle" | "waiting" | "preparing" | "running" | "completed" | "failed";
-  phase?: "idle" | "waiting" | "preparing" | "downloading" | "installing" | "dependencies" | "migrating" | "restarting" | "verifying" | "completed" | "failed";
+  phase?: "idle" | "waiting" | "preparing" | "downloading" | "installing" | "dependencies" | "migrating" | "switching" | "draining" | "rollback" | "restarting" | "verifying" | "completed" | "failed";
   failed_phase?: UpdateProgress["phase"] | null;
   running: boolean;
   progress?: number | null;
@@ -1063,7 +1063,12 @@ export type NetworkManagementState = {
 export type NetworkConnectivityResult = {
   kind: "ping" | "trace" | "tcp"; target: string; port: number | null; success: boolean; duration_ms: number; output: string;
 };
-export type HealthStatus = { status: "ok"; service: string };
+export type HealthStatus = {
+  status: "ok";
+  service: string;
+  deployment_phase?: "switching" | "draining" | null;
+  update_id?: string | null;
+};
 
 let csrfToken = localStorage.getItem("webnas_csrf") || "";
 let apiBaseUrl = "";
@@ -1130,7 +1135,8 @@ async function health(signal?: AbortSignal): Promise<HealthStatus> {
   if (response.status >= 500) {
     throw new ApiError(response.statusText || "Backend health check failed", response.status);
   }
-  return { status: "ok", service: "webnas" };
+  if (!response.ok) return { status: "ok", service: "webnas" };
+  return response.json() as Promise<HealthStatus>;
 }
 
 async function enrollmentScript(url: string, token: string): Promise<Blob> {

@@ -209,6 +209,33 @@ sudo ./install.sh --existing-action update --yes
 sudo ./install.sh --existing-action reinstall --yes
 ```
 
+## Aktualizacje bez przestoju
+
+Nowe instalacje używają stałego gatewaya nginx na publicznym porcie oraz dwóch
+backendów `webnas-backend-blue.service` i `webnas-backend-green.service` na
+adresie loopback. Każda wersja znajduje się w osobnym katalogu
+`/opt/webnas/releases/<release-id>`, a `/opt/webnas/current` jest atomowym
+symlinkiem do aktywnej wersji. Konfiguracja, dane, logi, sesje i stan aktualizacji
+pozostają odpowiednio w `/etc/webnas`, `/var/lib/webnas` i `/var/log/webnas`.
+
+Podczas aktualizacji działająca wersja obsługuje ruch, gdy updater pobiera źródła,
+instaluje zależności i buduje kandydata. Kandydat startuje na nieaktywnym porcie,
+przechodzi kontrolę importów, konfiguracji, frontendu i `/api/health`, po czym
+nginx jest przeładowywany bez zamykania publicznego listenera. Poprzedni backend
+jest zatrzymywany dopiero po okresie drain. Nieudany kandydat nie jest aktywowany,
+a błąd po przełączeniu uruchamia automatyczny rollback.
+
+Pierwsza aktualizacja istniejącej instalacji migruje układ katalogów. Stary
+`webnas.service` działa do chwili, gdy kandydat przejdzie wszystkie kontrole;
+od tego momentu kolejne aktualizacje korzystają już w pełni z blue/green.
+Opcja `--skip-build` nie jest obsługiwana przy aktualizacji, ponieważ mogłaby
+połączyć nowy backend ze starym frontendem.
+
+Stan wdrożenia znajduje się w
+`/var/lib/webnas/settings/deployment.json`, natomiast niezmienny identyfikator,
+postęp i log aktualizacji nadal wykorzystują `update_request.json`,
+`update_progress.json` oraz `/var/log/webnas/update.log`.
+
 `--update-config` is intentionally separate. Without it, update and reinstall never regenerate the existing configuration or session secret. The legacy `--existing-action remove` mode remains available for a fresh application reinstall that generates a new config after backing up the previous installation.
 
 ## Uninstall

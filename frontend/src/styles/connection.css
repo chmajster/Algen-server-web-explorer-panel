@@ -16,6 +16,7 @@
 }
 
 .connection-status-banner.offline { background: #b42332; }
+.connection-status-banner.switching { background: #98620b; }
 .connection-status-banner.restored { background: #19764f; }
 .connection-status-banner > svg { width: 1.5rem; height: 1.5rem; }
 .connection-status-copy { min-width: 0; display: grid; gap: 0.125rem; }

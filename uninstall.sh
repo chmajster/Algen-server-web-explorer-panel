@@ -8,6 +8,9 @@ CONFIG_DIR="/etc/webnas"
 DATA_DIR="/var/lib/webnas"
 LOG_DIR="/var/log/webnas"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+BACKEND_BLUE_FILE="/etc/systemd/system/webnas-backend-blue.service"
+BACKEND_GREEN_FILE="/etc/systemd/system/webnas-backend-green.service"
+NGINX_CONFIG_FILE="/etc/nginx/conf.d/webnas.conf"
 USB_SERVICE_FILE="/etc/systemd/system/webnas-usb-mount@.service"
 USB_UDEV_RULE_FILE="/etc/udev/rules.d/99-webnas-usb-automount.rules"
 ASSUME_YES="no"
@@ -84,13 +87,15 @@ assert_safe_path() {
 [[ "${EUID}" -eq 0 ]] || { echo "Run as root, for example: sudo ./uninstall.sh" >&2; exit 1; }
 
 cleanup_managed_mounts() {
-  local python_bin="${INSTALL_DIR}/backend/.venv/bin/python"
-  [[ -x "$python_bin" && -f "${INSTALL_DIR}/backend/app/network_mounts.py" ]] || {
+  local runtime_dir="${INSTALL_DIR}/current"
+  [[ -d "$runtime_dir" ]] || runtime_dir="$INSTALL_DIR"
+  local python_bin="${runtime_dir}/backend/.venv/bin/python"
+  [[ -x "$python_bin" && -f "${runtime_dir}/backend/app/network_mounts.py" ]] || {
     echo "WebNAS mount cleanup helper is unavailable; leaving /mnt/webnas/mnt untouched." >&2
     return 0
   }
   echo "Unmounting network resources managed by WebNAS..."
-  PYTHONPATH="${INSTALL_DIR}/backend" WEBNAS_CONFIG="${CONFIG_DIR}/config.yaml" "$python_bin" - <<'PY'
+  PYTHONPATH="${runtime_dir}/backend" WEBNAS_CONFIG="${CONFIG_DIR}/config.yaml" "$python_bin" - <<'PY'
 from app.network_mounts import actual_mount, connect, execute_mount, remove_systemd_units, row_to_mount
 
 with connect() as connection:
@@ -109,8 +114,10 @@ PY
 cleanup_usb_mounts() {
   echo "Unmounting USB filesystems managed by WebNAS..."
   systemctl stop 'webnas-usb-mount@*.service' 2>/dev/null || true
-  if [[ -x "${INSTALL_DIR}/scripts/usb_automount.py" ]]; then
-    /usr/bin/python3 "${INSTALL_DIR}/scripts/usb_automount.py" cleanup || \
+  local runtime_dir="${INSTALL_DIR}/current"
+  [[ -d "$runtime_dir" ]] || runtime_dir="$INSTALL_DIR"
+  if [[ -x "${runtime_dir}/scripts/usb_automount.py" ]]; then
+    /usr/bin/python3 "${runtime_dir}/scripts/usb_automount.py" cleanup || \
       echo "WARNING: one or more busy USB filesystems remain mounted; no USB data was removed." >&2
   fi
   rm -f "$USB_SERVICE_FILE" "$USB_UDEV_RULE_FILE"
@@ -122,10 +129,12 @@ cleanup_usb_mounts() {
 
 echo "Stopping WebNAS service..."
 systemctl disable --now "${SERVICE_NAME}.service" 2>/dev/null || true
+systemctl disable --now webnas-backend-blue.service webnas-backend-green.service 2>/dev/null || true
 cleanup_managed_mounts
 cleanup_usb_mounts
-rm -f "$SERVICE_FILE"
+rm -f "$SERVICE_FILE" "$BACKEND_BLUE_FILE" "$BACKEND_GREEN_FILE" "$NGINX_CONFIG_FILE"
 systemctl daemon-reload
+systemctl reload nginx 2>/dev/null || true
 
 assert_safe_path "$INSTALL_DIR"
 assert_safe_path "$CONFIG_DIR"

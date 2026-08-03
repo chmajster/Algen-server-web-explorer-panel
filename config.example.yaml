@@ -45,6 +45,8 @@ file_tasks:
 systemd:
   allowed_services:
     - "webnas.service"
+    - "webnas-backend-blue.service"
+    - "webnas-backend-green.service"
     - "smbd.service"
     - "nmbd.service"
     - "nginx.service"

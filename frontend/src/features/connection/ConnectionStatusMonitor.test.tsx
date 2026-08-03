@@ -67,6 +67,35 @@ describe("ConnectionStatusMonitor", () => {
     expect(screen.getByText("connection.reconnecting")).toBeInTheDocument();
   });
 
+  it("shows a planned handover without the global offline alert", async () => {
+    const check = vi.fn()
+      .mockResolvedValueOnce({ status: "ok", deployment_phase: "switching", update_id: "update-1" })
+      .mockResolvedValue({ status: "ok", deployment_phase: null });
+    render(<ConnectionStatusMonitor check={check} t={t} language={language} />);
+    await settle();
+
+    expect(screen.getByRole("status")).toHaveClass("switching");
+    expect(screen.getByText("connection.switching")).toBeInTheDocument();
+    expect(screen.queryByText("connection.lost")).not.toBeInTheDocument();
+
+    await advance(3000);
+    expect(screen.getByRole("status")).toHaveClass("restored");
+    expect(screen.getByText("connection.restored")).toBeInTheDocument();
+  });
+
+  it("still reports a real outage when a planned handover stops responding", async () => {
+    const check = vi.fn()
+      .mockResolvedValueOnce({ status: "ok", deployment_phase: "switching" })
+      .mockRejectedValue(new TypeError("network error"));
+    render(<ConnectionStatusMonitor check={check} intervalMs={1000} t={t} language={language} />);
+    await settle();
+    expect(screen.getByText("connection.switching")).toBeInTheDocument();
+
+    await advance(4000);
+    expect(screen.getByRole("alert")).toHaveClass("offline");
+    expect(screen.getByText("connection.lost")).toBeInTheDocument();
+  });
+
   it("treats two timed-out requests as a confirmed connection loss", async () => {
     const check = vi.fn((signal: AbortSignal) => new Promise<unknown>((_resolve, reject) => {
       signal.addEventListener("abort", () => reject(new DOMException("timed out", "AbortError")));

@@ -109,12 +109,7 @@ export function App() {
       window.history.replaceState({}, "", "/update-status");
     }
     if (updateProgress.state === "completed" && window.location.pathname === "/update-status") {
-      const marker = `webnas.update-reloaded.${updateProgress.id || updateProgress.started_at || "latest"}`;
       window.history.replaceState({}, "", "/");
-      if (!window.sessionStorage.getItem(marker)) {
-        window.sessionStorage.setItem(marker, "1");
-        window.location.reload();
-      }
     }
   }, [dismissedFailureId, updateProgress]);
   useEffect(() => {

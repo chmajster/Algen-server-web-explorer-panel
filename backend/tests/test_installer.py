@@ -48,6 +48,17 @@ def test_installer_has_valid_bash_syntax():
     assert result.returncode == 0, result.stderr
 
 
+def test_update_prepares_an_isolated_release_without_stopping_the_active_service():
+    installer = INSTALLER.read_text(encoding="utf-8")
+    main = installer.split("main() {", 1)[1].split('\nmain "$@"', 1)[0]
+
+    assert "prepare_release" in main
+    assert 'systemctl stop "$SERVICE_NAME"' not in main
+    assert 'release_dir="${application_root}/releases/${release_id}"' in installer
+    assert "webnas_release.py" in installer
+    assert "NEEDRESTART_MODE=l" in installer
+
+
 def test_installer_prints_a_final_status_and_preserves_the_exit_code(tmp_path):
     success = _run_harness(
         tmp_path,

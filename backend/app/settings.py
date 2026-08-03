@@ -837,6 +837,8 @@ def _update_phase(lines: list[str], *, running: bool, state: str, fallback: str)
         return state
     if not running:
         return fallback or "preparing"
+    if fallback in {"switching", "draining", "rollback"}:
+        return fallback
     recent = "\n".join(lines[-30:]).lower()
     if any(token in recent for token in ("verification", "verify", "health check")):
         return "verifying"
@@ -859,6 +861,9 @@ def _phase_progress(phase: str) -> int | None:
         "installing": 55,
         "dependencies": 68,
         "migrating": 78,
+        "switching": 88,
+        "draining": 92,
+        "rollback": 94,
         "restarting": 88,
         "verifying": 94,
         "completed": 100,
@@ -1662,9 +1667,19 @@ def system_host_info(user: SessionUser = Depends(_current_user)):
 @router.post("/api/admin/system/restart")
 def admin_system_restart(payload: AdminSessionAction, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin_session(user, request, "restart_system", "system.restart")
-    assert_service_allowed("webnas.service")
-    _run([_tool("systemctl"), "restart", "webnas.service"])
-    _audit(user.username, "restart_system", "webnas.service")
+    service = "webnas.service"
+    deployment_path = Path(get_config().paths.data_dir) / "settings" / "deployment.json"
+    try:
+        deployment = json.loads(deployment_path.read_text(encoding="utf-8"))
+        slot = str(deployment.get("active_slot") or "") if isinstance(deployment, dict) else ""
+        if slot in {"blue", "green"}:
+            service = f"webnas-backend-{slot}.service"
+    except (OSError, json.JSONDecodeError):
+        pass
+    if service == "webnas.service":
+        assert_service_allowed(service)
+    _run([_tool("systemctl"), "restart", service])
+    _audit(user.username, "restart_system", service)
     return {"ok": True}
 
 

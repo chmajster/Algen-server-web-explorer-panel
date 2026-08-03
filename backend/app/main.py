@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import asyncio
 import json
+import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import cast
@@ -41,7 +42,7 @@ from .rbac import router as rbac_router
 from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
 from .settings import router as settings_router, start_auto_update_scheduler
 from .tasks import task_store
-from .update_coordination import active_transient_operations, register_operation_provider, transient_operation
+from .update_coordination import active_transient_operations, read_update_request, register_operation_provider, transient_operation
 from .uploads import active_uploads, append_upload, cancel_upload, start_upload
 from .write_policy import assert_write_allowed
 
@@ -60,9 +61,29 @@ async def lifespan(app: FastAPI):
     register_operation_provider("mount", active_mount_jobs)
     register_operation_provider("upload", active_uploads)
     register_operation_provider("direct", active_transient_operations)
-    start_auto_update_scheduler()
-    start_ansible_scheduler()
+    promotion_task: asyncio.Task[None] | None = None
+    if os.environ.get("WEBNAS_CANDIDATE") != "1":
+        start_auto_update_scheduler()
+        start_ansible_scheduler()
+    else:
+        slot = os.environ.get("WEBNAS_SLOT", "")
+
+        async def promote_candidate() -> None:
+            active_slot_file = Path(os.environ.get("WEBNAS_ACTIVE_SLOT_FILE", "/run/webnas/active-slot"))
+            while True:
+                try:
+                    if active_slot_file.read_text(encoding="utf-8").strip() == slot:
+                        start_auto_update_scheduler()
+                        start_ansible_scheduler()
+                        return
+                except OSError:
+                    pass
+                await asyncio.sleep(0.25)
+
+        promotion_task = asyncio.create_task(promote_candidate())
     yield
+    if promotion_task and not promotion_task.done():
+        promotion_task.cancel()
 
 app = FastAPI(title="WebNAS", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -100,7 +121,16 @@ app.include_router(activity_router)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "webnas"}
+    deployment_phase = None
+    update_id = None
+    try:
+        request_state = read_update_request()
+        if request_state.get("state") in {"preparing", "running"} and request_state.get("phase") in {"switching", "draining"}:
+            deployment_phase = request_state.get("phase")
+            update_id = request_state.get("id") or None
+    except OSError:
+        pass
+    return {"status": "ok", "service": "webnas", "deployment_phase": deployment_phase, "update_id": update_id}
 
 
 class LoginRequest(BaseModel):

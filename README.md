@@ -164,7 +164,7 @@ Useful installer options:
 
 ```bash
 sudo ./install.sh --port 8080 --install-dir /opt/webnas --user webnas --yes
-sudo ./install.sh --skip-build
+# Aktualizacje zawsze budują zgodny frontend; --skip-build jest odrzucane.
 sudo ./install.sh --no-firewall
 ```
 

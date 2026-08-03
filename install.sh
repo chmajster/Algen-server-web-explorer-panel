@@ -35,6 +35,9 @@ DATA_DIR="/var/lib/webnas"
 LOG_DIR="/var/log/webnas"
 BACKUP_ROOT="/var/backups/webnas"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+BACKEND_BLUE_FILE="/etc/systemd/system/webnas-backend-blue.service"
+BACKEND_GREEN_FILE="/etc/systemd/system/webnas-backend-green.service"
+NGINX_CONFIG_FILE="/etc/nginx/conf.d/webnas.conf"
 PAM_SERVICE_FILE="/etc/pam.d/${SERVICE_NAME}"
 USB_SERVICE_FILE="/etc/systemd/system/webnas-usb-mount@.service"
 USB_UDEV_RULE_FILE="/etc/udev/rules.d/99-webnas-usb-automount.rules"
@@ -50,6 +53,7 @@ APP_COPY_STARTED="no"
 INSTALL_COMPLETED="no"
 LAST_BACKUP_DIR=""
 SERVICE_WAS_ACTIVE="no"
+ACTIVE_RELEASE=""
 
 if [[ -t 1 ]]; then
   RED="$(printf '\033[31m')"
@@ -412,7 +416,7 @@ prepare_apt_sources_without_proxmox_enterprise() {
 }
 
 apt_get() {
-  apt-get "${APT_SOURCE_OPTIONS[@]}" "$@"
+  NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_OPTIONS[@]}" "$@"
 }
 
 refresh_apt_metadata() {
@@ -494,7 +498,7 @@ install_dependencies() {
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpam0g-dev rsync sudo curl wget ca-certificates tar gzip \
-        passwd procps iproute2 ethtool traceroute screen quota util-linux udev
+        passwd procps iproute2 ethtool traceroute screen quota util-linux udev nginx
       DEBIAN_FRONTEND=noninteractive apt_get install -y ntfs-3g || warn "Optional NTFS tools could not be installed"
       DEBIAN_FRONTEND=noninteractive apt_get install -y exfatprogs || warn "Optional exFAT tools could not be installed"
       ;;
@@ -502,14 +506,14 @@ install_dependencies() {
       dnf install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl wget ca-certificates tar gzip \
-        shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev
+        shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx
       dnf install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
     yum)
       yum install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
         pam-devel rsync sudo curl wget ca-certificates tar gzip \
-        shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev
+        shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx
       yum install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
   esac
@@ -576,9 +580,9 @@ print_runtime_diagnostics() {
     printf 'Config file does not exist.\n' >&2
   fi
   printf '\nService status:\n' >&2
-  systemctl status "$SERVICE_NAME" --no-pager -l >&2 || true
+  systemctl status nginx webnas-backend-blue webnas-backend-green "$SERVICE_NAME" --no-pager -l >&2 || true
   printf '\nRecent service logs:\n' >&2
-  journalctl -u "$SERVICE_NAME" -n 120 --no-pager >&2 || true
+  journalctl -u nginx -u webnas-backend-blue -u webnas-backend-green -u "$SERVICE_NAME" -n 120 --no-pager >&2 || true
   if command -v ss >/dev/null 2>&1; then
     printf '\nListening TCP sockets:\n' >&2
     ss -ltnp >&2 || ss -ltn >&2 || true
@@ -896,9 +900,11 @@ remove_app_only() {
   fi
   remove_usb_automount_integration
   systemctl disable --now "${SERVICE_NAME}.service" 2>/dev/null || true
-  rm -f "$SERVICE_FILE"
+  systemctl disable --now webnas-backend-blue.service webnas-backend-green.service 2>/dev/null || true
+  rm -f "$SERVICE_FILE" "$BACKEND_BLUE_FILE" "$BACKEND_GREEN_FILE" "$NGINX_CONFIG_FILE"
   rm -f "$PAM_SERVICE_FILE"
   systemctl daemon-reload 2>/dev/null || true
+  systemctl reload nginx 2>/dev/null || true
   rm -rf --one-file-system "$INSTALL_DIR"
   ok "Removed application files from ${INSTALL_DIR}"
   case "$REMOVE_SCOPE" in
@@ -1107,57 +1113,77 @@ PY
   ok "Frontend built and activated with a matching index"
 }
 
-write_service() {
-  section "Installing systemd service"
-  cat > "$SERVICE_FILE" <<EOF
-[Unit]
-Description=WebNAS web administration panel
-After=network-online.target
-Wants=network-online.target
+prepare_release() {
+  local application_root="$INSTALL_DIR"
+  local release_id=""
+  local release_dir=""
+  local current_runtime=""
+  release_id="$(date +%Y%m%d-%H%M%S)-$$"
+  release_dir="${application_root}/releases/${release_id}"
+  [[ "$release_dir" == "${application_root}/releases/"* ]] || fail "Invalid release staging path"
+  section "Preparing isolated release ${release_id}"
+  install -d -m 0755 "${application_root}/releases" "$release_dir"
 
-[Service]
-Type=simple
-WorkingDirectory=${INSTALL_DIR}/backend
-Environment=PYTHONPATH=${INSTALL_DIR}/backend
-Environment=WEBNAS_CONFIG=${CONFIG_FILE}
-ExecStart=${INSTALL_DIR}/backend/.venv/bin/python -m app.run
-Restart=on-failure
-RestartSec=3
-# WebNAS uses PAM and drops file-operation workers into authenticated Linux
-# user contexts. Package Center also performs validated apt/dnf/systemd actions.
-User=root
-Group=root
-NoNewPrivileges=false
-PrivateTmp=true
-# A read-only system tree would prevent the package manager from writing its
-# database and installing files. Package Center never accepts commands from UI.
-ProtectSystem=false
-# File workers drop privileges to the authenticated account and must retain
-# normal Unix write access to that account's allowed home directory.
-ProtectHome=false
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-# Validated package-manager jobs must be able to install distribution packages
-# containing required SUID/SGID helpers (for example cifs-utils/mount.cifs).
-RestrictSUIDSGID=false
-LockPersonality=true
-MemoryDenyWriteExecute=true
-SystemCallArchitectures=native
-ReadWritePaths=${DATA_DIR} ${LOG_DIR} /home /mnt/webnas ${INSTALL_DIR}
+  # Reuse the normal copy/build helpers against a brand-new directory.  The
+  # running release and its virtualenv/dist are never modified by rsync.
+  INSTALL_DIR="$release_dir"
+  copy_application
+  setup_python
+  write_config
+  write_pam_service
+  build_frontend
+  INSTALL_DIR="$application_root"
 
-[Install]
-WantedBy=multi-user.target
-EOF
-  chmod 0644 "$SERVICE_FILE"
-  systemctl daemon-reload
-  if [[ "$ENABLE_AUTOSTART" == "yes" ]]; then
-    systemctl enable "$SERVICE_NAME"
-    ok "Autostart enabled"
-  else
-    systemctl disable "$SERVICE_NAME" 2>/dev/null || true
-    warn "Autostart disabled"
+  # Existing browser sessions may still request lazily loaded chunks from the
+  # previous index. Keep those immutable hashes available in the candidate;
+  # the new index still references only the freshly built assets.
+  local previous_assets="${application_root}/current/frontend/dist/assets"
+  [[ -d "$previous_assets" ]] || previous_assets="${application_root}/frontend/dist/assets"
+  if [[ -d "$previous_assets" ]]; then
+    rsync -a --ignore-existing \
+      "${previous_assets}/" \
+      "${release_dir}/frontend/dist/assets/"
   fi
+
+  [[ -x "${release_dir}/backend/.venv/bin/python" ]] || fail "Candidate virtualenv is missing"
+  [[ -f "${release_dir}/frontend/dist/index.html" ]] || fail "Candidate frontend is missing"
+  ACTIVE_RELEASE="$release_dir"
+  current_runtime="${release_dir}/scripts/webnas_release.py"
+  [[ -f "$current_runtime" ]] || fail "Release activation helper is missing"
+
+  section "Validating and switching release"
+  python3 "$current_runtime" \
+    --root "$application_root" \
+    --release "$release_dir" \
+    --config "$CONFIG_FILE" \
+    --public-port "$PORT" \
+    --service-user "$SERVICE_USER"
+
+  # Keep stable administrative entry points outside release directories.
+  install -m 0755 "${release_dir}/uninstall.sh" "${application_root}/uninstall.sh"
+  install -m 0755 "${release_dir}/scripts/webnas_release.py" "${application_root}/webnas_release.py"
+  chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$release_dir"
+  ok "Release activated: ${release_dir}"
+}
+
+install_release_integrations() {
+  local application_root="$INSTALL_DIR"
+  [[ -L "${application_root}/current" ]] || fail "Active release link is missing"
+  INSTALL_DIR="${application_root}/current"
+  install_usb_automount
+  INSTALL_DIR="$application_root"
+}
+
+validate_release_installation() {
+  section "Validation"
+  local scheme="http"
+  local curl_options=(--fail --silent --show-error --max-time 3)
+  grep -Eq '^\s*use_https:\s*true\s*$' "$CONFIG_FILE" && scheme="https" && curl_options+=(--insecure)
+  systemctl is-active --quiet nginx || fail "Stable nginx gateway is not active"
+  [[ -L "${INSTALL_DIR}/current" ]] || fail "Active release symlink is unavailable"
+  [[ -f "${INSTALL_DIR}/current/frontend/dist/index.html" ]] || fail "Active frontend is unavailable"
+  curl "${curl_options[@]}" "${scheme}://127.0.0.1:${PORT}/api/health" >/dev/null || fail "Public health endpoint did not survive the release handover"
+  ok "Gateway, active backend, frontend and public health endpoint are ready"
 }
 
 install_usb_automount() {
@@ -1231,82 +1257,6 @@ configure_firewall() {
   fi
 }
 
-install_uninstaller() {
-  if [[ -f "${INSTALL_DIR}/uninstall.sh" ]]; then
-    chmod 0755 "${INSTALL_DIR}/uninstall.sh"
-  fi
-}
-
-start_service() {
-  [[ "$START_SERVICE" == "yes" ]] || return
-  section "Starting service"
-  systemctl restart "$SERVICE_NAME"
-  ok "Service started"
-}
-
-validate_installation() {
-  section "Validation"
-  if command -v rsync >/dev/null 2>&1; then ok "rsync available"; else fail "rsync is missing"; fi
-  if systemctl list-unit-files "${SERVICE_NAME}.service" >/dev/null 2>&1; then ok "systemd sees ${SERVICE_NAME}.service"; else fail "systemd service not visible"; fi
-  if [[ "$START_SERVICE" == "yes" ]]; then
-    if systemctl is-active --quiet "$SERVICE_NAME"; then
-      ok "Backend service is active"
-    else
-      print_runtime_diagnostics
-      fail "Backend service is not active"
-    fi
-    local service_uid
-    service_uid="$(systemctl show "$SERVICE_NAME" -p MainPID --value | xargs -r -I{} ps -o euid= -p {} 2>/dev/null | tr -d ' ')"
-    if [[ "$service_uid" == "0" ]]; then
-      ok "Backend service runs as root for PAM and per-user impersonation"
-    else
-      print_runtime_diagnostics
-      fail "Backend service must run as root for local PAM authentication; current euid=${service_uid:-unknown}"
-    fi
-    if command -v ss >/dev/null 2>&1; then
-      local port_ready="no"
-      for _ in {1..20}; do
-        if ss -ltn | awk '{print $4}' | grep -Eq "(:|\\])${PORT}$"; then
-          port_ready="yes"
-          break
-        fi
-        sleep 1
-      done
-      if [[ "$port_ready" == "yes" ]]; then
-        ok "Port ${PORT} is listening"
-      else
-        print_runtime_diagnostics
-        fail "Port ${PORT} is not listening"
-      fi
-    fi
-    if command -v curl >/dev/null 2>&1; then
-      local scheme="http"
-      grep -Eq '^[[:space:]]*use_https:[[:space:]]*true' "$CONFIG_FILE" 2>/dev/null && scheme="https"
-      local health_ready="no"
-      local health_url="${scheme}://127.0.0.1:${PORT}/api/health"
-      local health_output=""
-      for _ in {1..10}; do
-        health_output="$(curl -kfsS "$health_url" 2>&1 || true)"
-        if printf '%s' "$health_output" | grep -q '"status"'; then
-          health_ready="yes"
-          break
-        fi
-        sleep 1
-      done
-      if [[ "$health_ready" == "yes" ]]; then
-        ok "Healthcheck responds"
-      else
-        printf 'Healthcheck URL: %s\n' "$health_url" >&2
-        printf 'Last healthcheck output:\n%s\n' "${health_output:-<empty>}" >&2
-        print_runtime_diagnostics
-        fail "Healthcheck failed for ${health_url}"
-      fi
-    fi
-  else
-    warn "Runtime validation skipped because service was not started"
-  fi
-}
-
 print_finish() {
   local ip_addr
   ip_addr="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -1316,9 +1266,9 @@ print_finish() {
   cat <<EOF
 
 Helpful commands:
-  systemctl status ${SERVICE_NAME}
-  systemctl restart ${SERVICE_NAME}
-  journalctl -u ${SERVICE_NAME} -f
+  systemctl status nginx webnas-backend-blue webnas-backend-green
+  journalctl -u 'webnas-backend-*' -f
+  cat ${DATA_DIR}/settings/deployment.json
   ${INSTALL_DIR}/uninstall.sh
 
 Installer URL:
@@ -1392,22 +1342,18 @@ cleanup_failed_install() {
   if [[ "$INSTALL_COMPLETED" == "yes" ]]; then
     return 0
   fi
-  if restore_failed_reinstall; then
-    return 0
+  if [[ -n "$ACTIVE_RELEASE" && -d "$ACTIVE_RELEASE" ]]; then
+    local active_target=""
+    active_target="$(readlink -f "${INSTALL_DIR}/current" 2>/dev/null || true)"
+    if [[ "$active_target" != "$ACTIVE_RELEASE" && "$ACTIVE_RELEASE" == "${INSTALL_DIR}/releases/"* ]]; then
+      warn "Removing failed candidate release ${ACTIVE_RELEASE}"
+      rm -rf --one-file-system "$ACTIVE_RELEASE"
+    fi
   fi
   if [[ "$ACTION" == "update" && -n "$LAST_BACKUP_DIR" && -f "${LAST_BACKUP_DIR}/config.yaml" && "$UPDATE_CONFIG" == "yes" ]]; then
     cp -a "${LAST_BACKUP_DIR}/config.yaml" "$CONFIG_FILE" 2>/dev/null || warn "Could not restore the previous configuration after the failed update"
   fi
-  case "$ACTION" in
-    install|remove)
-      if [[ "$APP_COPY_STARTED" == "yes" && -d "$INSTALL_DIR" ]]; then
-        warn "Cleaning up partial application files from ${INSTALL_DIR}"
-        validate_install_dir
-        rm -rf --one-file-system "$INSTALL_DIR"
-      fi
-      ;;
-  esac
-  if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
+  if [[ "$ACTION" == "remove" ]]; then
     remove_usb_automount_integration
     rm -f "$SERVICE_FILE"
     systemctl daemon-reload 2>/dev/null || true
@@ -1452,22 +1398,12 @@ main() {
   setup_node_runtime
   backup_before_application_change
   ensure_service_user
-  if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-    SERVICE_WAS_ACTIVE="yes"
-  fi
-  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-  remove_existing_installation
-  copy_application
-  setup_python
-  write_config
-  write_pam_service
-  build_frontend
-  install_uninstaller
-  write_service
-  install_usb_automount
+  # The active backend remains untouched while the complete candidate release
+  # (Python dependencies and frontend included) is prepared and validated.
+  prepare_release
+  install_release_integrations
   configure_firewall
-  start_service
-  validate_installation
+  validate_release_installation
   INSTALL_COMPLETED="yes"
   print_finish
 }

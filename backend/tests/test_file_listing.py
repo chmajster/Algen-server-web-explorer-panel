@@ -145,11 +145,13 @@ def test_systemd_profile_keeps_allowed_home_directories_writable():
     repository = Path(__file__).resolve().parents[2]
     packaged_service = (repository / "packaging" / "webnas.service").read_text(encoding="utf-8")
     installer = (repository / "install.sh").read_text(encoding="utf-8")
+    release_manager = (repository / "scripts" / "webnas_release.py").read_text(encoding="utf-8")
 
     assert "ProtectHome=false" in packaged_service
-    assert "ProtectHome=false" in installer
+    assert "ProtectHome=false" in release_manager
+    assert "webnas_release.py" in installer
     assert "RestrictSUIDSGID=false" in packaged_service
-    assert "RestrictSUIDSGID=false" in installer
+    assert "RestrictSUIDSGID=false" in release_manager
 
 
 def test_child_directory_has_parent_within_allowed_root(monkeypatch, tmp_path):

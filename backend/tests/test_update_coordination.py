@@ -293,6 +293,40 @@ def test_update_status_route_serves_spa_after_a_full_reload(monkeypatch, tmp_pat
     assert Path(response.path) == index
 
 
+def test_health_exposes_only_a_planned_handover_phase(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main, "read_update_request", lambda: {
+        "id": "update-1", "state": "running", "phase": "switching",
+    })
+    assert main.health() == {
+        "status": "ok", "service": "webnas", "deployment_phase": "switching", "update_id": "update-1",
+    }
+
+    monkeypatch.setattr(main, "read_update_request", lambda: {
+        "id": "update-1", "state": "running", "phase": "installing",
+    })
+    assert main.health()["deployment_phase"] is None
+
+
+def test_update_progress_preserves_switching_phase_from_durable_request(monkeypatch, update_environment):
+    update_coordination.write_update_request({
+        "id": "update-1", "state": "running", "phase": "switching", "requested_at": 10, "started_at": 11,
+    })
+    progress_path = settings._update_progress_path()
+    progress_path.write_text(json.dumps({
+        "running": True, "exit_code": None, "started_at": 11, "finished_at": None,
+        "pid": 123, "unit": "webnas-self-update.service",
+    }), encoding="utf-8")
+    monkeypatch.setattr(settings.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0))
+
+    result = settings._update_progress()
+
+    assert result["id"] == "update-1"
+    assert result["phase"] == "switching"
+    assert result["progress"] == 88
+
+
 def test_visible_update_log_is_scrubbed(monkeypatch, update_environment):
     progress_path = settings._update_progress_path()
     progress_path.parent.mkdir(parents=True, exist_ok=True)

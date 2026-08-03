@@ -94,6 +94,18 @@ describe("API errors", () => {
     }));
   });
 
+  it("returns the planned deployment phase reported by health", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "ok", service: "webnas", deployment_phase: "switching", update_id: "update-1" }),
+    }));
+
+    await expect(api.health()).resolves.toEqual({
+      status: "ok", service: "webnas", deployment_phase: "switching", update_id: "update-1",
+    });
+  });
+
   it("requests a package operation plan with POST", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
