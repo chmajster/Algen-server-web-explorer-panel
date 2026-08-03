@@ -850,11 +850,11 @@ def enrollment_tokens(user: SessionUser = Depends(require_permission(Permission.
 
 def _public_hosts_manager_endpoint() -> str:
     configured = str(_service().settings().get("server_url") or "").rstrip("/")
-    if not configured.startswith("https://"):
+    if not configured.startswith(("http://", "https://")):
         api_error(
             422,
-            "HTTPS_ENDPOINT_REQUIRED",
-            "Configure the public HTTPS Hosts Manager server URL before generating an installer",
+            "PUBLIC_ENDPOINT_REQUIRED",
+            "Configure the public HTTP or HTTPS Hosts Manager server URL before generating an installer",
         )
     return configured
 

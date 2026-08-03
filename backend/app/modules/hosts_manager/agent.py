@@ -27,6 +27,7 @@ import time
 import uuid
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 
@@ -460,8 +461,9 @@ class AgentClient:
         self.max_retries = int(agent.get("max_retries", 10))
 
     def _request(self, path: str, body: dict[str, Any], token: str) -> dict[str, Any]:
-        if not self.server_url.startswith("https://"):
-            raise RuntimeError("Hosts Manager server URL must use HTTPS")
+        parsed_server = urlsplit(self.server_url)
+        if parsed_server.scheme not in {"http", "https"} or not parsed_server.hostname or parsed_server.username or parsed_server.password:
+            raise RuntimeError("Hosts Manager server URL must use HTTP or HTTPS")
         request = Request(
             f"{self.server_url}{path}",
             data=json.dumps(body).encode(),
@@ -545,8 +547,9 @@ class AgentClient:
             logging.exception("could not read the current agent for update comparison")
             return
         source_url = str(policy.get("url") or f"{self.server_url}/api/modules/hosts-manager/agent/source")
-        if not source_url.startswith("https://"):
-            logging.error("agent update URL does not use HTTPS")
+        parsed_source = urlsplit(source_url)
+        if parsed_source.scheme not in {"http", "https"} or not parsed_source.hostname or parsed_source.username or parsed_source.password:
+            logging.error("agent update URL does not use HTTP or HTTPS")
             return
         request = Request(source_url, method="GET", headers={"User-Agent": f"hosts-manager-agent/{VERSION}"})
         context = ssl.create_default_context() if self.verify_tls else ssl._create_unverified_context()

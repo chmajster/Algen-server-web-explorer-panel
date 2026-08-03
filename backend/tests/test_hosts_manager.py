@@ -34,6 +34,7 @@ from app.modules.hosts_manager.service import (
     ManagedGroupConflictError,
     ManagedGroupProtectedError,
 )
+from app.modules.hosts_manager import agent as hosts_agent
 from app.modules.hosts_manager import router as hosts_router
 from app.security import create_session
 
@@ -650,17 +651,67 @@ def test_ssh_onboarding_probe_parser_only_accepts_bounded_markers():
             ssh_user="root",
             credential_id="ssh",
         )
+    assert HostsManagerSettingsUpdate(server_url="http://webnas.example/").server_url == "http://webnas.example"
     with pytest.raises(ValueError):
-        HostsManagerSettingsUpdate(server_url="http://webnas.example")
+        HostsManagerSettingsUpdate(server_url="ftp://webnas.example")
 
 
-def test_installer_generation_requires_configured_public_https_url(monkeypatch, tmp_path: Path):
+def test_installer_generation_requires_configured_public_http_endpoint(monkeypatch, tmp_path: Path):
     store = service(tmp_path)
     monkeypatch.setattr(hosts_router, "_service", lambda: store)
     with pytest.raises(HTTPException) as error:
         hosts_router._public_hosts_manager_endpoint()
     assert error.value.status_code == 422
+    assert error.value.detail["code"] == "PUBLIC_ENDPOINT_REQUIRED"
     assert store.enrollment_tokens() == []
+
+
+@pytest.mark.parametrize("endpoint", ["http://webnas.example", "https://webnas.example"])
+def test_installer_generation_supports_http_and_https(monkeypatch, tmp_path: Path, endpoint: str):
+    store = service(tmp_path)
+    store.save_settings(HostsManagerSettingsUpdate(server_url=endpoint), "admin")
+    monkeypatch.setattr(hosts_router, "_service", lambda: store)
+
+    assert hosts_router._public_hosts_manager_endpoint() == endpoint
+    token = store.create_enrollment_token(enrollment_input(store), "admin")
+    script, _ = store.enrollment_script(token["token"], endpoint)
+
+    assert f"'{endpoint}/api/modules/hosts-manager/enroll'" in script
+    if endpoint.startswith("http://"):
+        assert "--proto '=http'" in script
+        assert 'die "HTTPS is required"' not in script
+    else:
+        assert "--proto '=https' --tlsv1.2" in script
+
+
+def test_http_installer_supports_windows_and_agent_requests(monkeypatch, tmp_path: Path):
+    store = service(tmp_path)
+    token = store.create_enrollment_token(enrollment_input(store, bootstrap_os="windows"), "admin")
+    script, _ = store.enrollment_script(token["token"], "http://webnas.example")
+    assert "StartsWith('http://')" in script
+    assert "throw 'HTTPS is required.'" not in script
+
+    config_path = tmp_path / "agent-config.json"
+    state_path = tmp_path / "agent-state.json"
+    config_path.write_text(json.dumps({"server": {"url": "http://webnas.example"}}), encoding="utf-8")
+    state_path.write_text("{}", encoding="utf-8")
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    requests = []
+    monkeypatch.setattr(hosts_agent, "urlopen", lambda request, **kwargs: requests.append(request) or FakeResponse())
+    result = hosts_agent.AgentClient(config_path, state_path)._request("/heartbeat", {}, "token")
+
+    assert result == {"ok": True}
+    assert requests[0].full_url == "http://webnas.example/heartbeat"
 
 
 def test_bootstrap_script_endpoint_uses_bearer_without_admin_session_and_rejects_inactive_tokens(monkeypatch, tmp_path: Path):

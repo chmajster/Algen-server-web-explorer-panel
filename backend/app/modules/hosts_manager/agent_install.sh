@@ -14,12 +14,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ "$SERVER_URL" == https://* ]] || die "--server-url must use HTTPS"
+case "$SERVER_URL" in
+  http://*) CURL_TRANSPORT=(--proto '=http') ;;
+  https://*) CURL_TRANSPORT=(--proto '=https' --tlsv1.2) ;;
+  *) die "--server-url must use HTTP or HTTPS" ;;
+esac
 [[ -n "$ENROLLMENT_TOKEN" ]] || die "--token is required"
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 
 HEADER="Authorization: Bearer $ENROLLMENT_TOKEN"
-curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+curl --fail --silent --show-error "${CURL_TRANSPORT[@]}" \
   -H "$HEADER" "$SERVER_URL/api/modules/hosts-manager/enrollment-script" | bash
-

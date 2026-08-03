@@ -250,12 +250,12 @@ class HostsManagerSettingsUpdate(StrictModel):
 
     @field_validator("server_url", "agent_repository_url")
     @classmethod
-    def secure_url(cls, value: str) -> str:
+    def http_url(cls, value: str) -> str:
         if not value:
             return value
         parsed = urlsplit(value)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
-            raise ValueError("URL must use HTTPS without embedded credentials")
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("URL must use HTTP or HTTPS without embedded credentials")
         return value.rstrip("/")
 
     @field_validator("allowed_registration_networks")

@@ -1380,11 +1380,12 @@ class HostRegistryService:
         endpoint = endpoint.rstrip("/")
         if token_item["bootstrap_os"] == "windows":
             return self._windows_enrollment_script(token_item, token, endpoint), token_item
+        curl_transport = "--proto '=https' --tlsv1.2" if endpoint.startswith("https://") else "--proto '=http'"
         return f"""#!/usr/bin/env bash
 set -euo pipefail
 die() {{ printf '%s\\n' "Hosts Manager enrollment failed: $1" >&2; exit 1; }}
 [[ "${{EUID}}" -eq 0 ]] || die "run this script as root"
-[[ '{endpoint}' == https://* ]] || die "HTTPS is required"
+case '{endpoint}' in http://*|https://*) ;; *) die "HTTP or HTTPS is required" ;; esac
 MISSING_DEPENDENCY=false
 for required in curl hostname ip awk python3 uname tr install; do
   command -v "$required" >/dev/null 2>&1 || MISSING_DEPENDENCY=true
@@ -1456,9 +1457,9 @@ v = {{key: os.environ[key] for key in keys}}
 print(json.dumps({{"hostname": v["HOSTNAME_VALUE"], "fqdn": v["FQDN_VALUE"], "address": v["ADDRESS_VALUE"], "os": v["OS_VALUE"], "system_id": v["SYSTEM_ID_VALUE"], "system_version": v["OS_VERSION"], "architecture": v["ARCH_VALUE"], "python": v["PYTHON_VALUE"], "original_hostname": v["ORIGINAL_HOSTNAME"], "installation_id": v["INSTALLATION_ID"], "agent_version": "1.0.0"}}))
 PY
 )"
-RESULT="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer {token}' --data "$BODY" '{endpoint}/api/modules/hosts-manager/enroll')" || die "server rejected enrollment"
+RESULT="$(curl --fail --silent --show-error {curl_transport} -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer {token}' --data "$BODY" '{endpoint}/api/modules/hosts-manager/enroll')" || die "server rejected enrollment"
 install -d -m 0755 /opt/hosts-manager-agent /etc/hosts-manager-agent /var/log/hosts-manager-agent
-curl --fail --silent --show-error --proto '=https' --tlsv1.2 '{endpoint}/api/modules/hosts-manager/agent/source' -o /opt/hosts-manager-agent/agent.py
+curl --fail --silent --show-error {curl_transport} '{endpoint}/api/modules/hosts-manager/agent/source' -o /opt/hosts-manager-agent/agent.py
 chmod 0755 /opt/hosts-manager-agent/agent.py
 RESULT_FILE=/var/lib/hosts-manager-agent/enrollment-result.json
 printf '%s' "$RESULT" >"$RESULT_FILE"
@@ -1555,8 +1556,8 @@ $ErrorActionPreference = 'Stop'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {{ throw 'Run this script as Administrator.' }}
-if (-not '{endpoint}'.StartsWith('https://')) {{ throw 'HTTPS is required.' }}
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+if (-not ('{endpoint}'.StartsWith('http://') -or '{endpoint}'.StartsWith('https://'))) {{ throw 'HTTP or HTTPS is required.' }}
+if ('{endpoint}'.StartsWith('https://')) {{ [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }}
 $originalHostname = $env:COMPUTERNAME
 $assignedHostname = '{assigned}'
 $restartRequired = $false
