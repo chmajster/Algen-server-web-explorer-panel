@@ -1070,8 +1070,19 @@ export type HealthStatus = {
   update_id?: string | null;
 };
 
-let csrfToken = localStorage.getItem("webnas_csrf") || "";
+type AuthSession = { username: string; home: string; csrf_token: string };
+type AuthenticationInvalidatedListener = () => void;
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const authenticationInvalidatedListeners = new Set<AuthenticationInvalidatedListener>();
+let csrfToken = "";
+let sessionGeneration = 0;
+let sessionSync: Promise<AuthSession> | null = null;
 let apiBaseUrl = "";
+
+// CSRF tokens belong to one server-side session and must never survive a page
+// load. Remove the legacy value without using it as an authentication source.
+if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
 
 export function setApiBaseUrl(baseUrl: string) {
   apiBaseUrl = baseUrl.replace(/\/+$/, "");
@@ -1081,47 +1092,127 @@ function apiAt(baseUrl: string, path: string) {
   return baseUrl ? `${baseUrl.replace(/\/+$/, "")}${path}` : path;
 }
 
-async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+function clearAuthenticationState(expectedGeneration?: number, notify = true) {
+  if (expectedGeneration !== undefined && expectedGeneration !== sessionGeneration) return;
+  sessionGeneration += 1;
+  csrfToken = "";
+  sessionSync = null;
+  if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
+  if (notify) authenticationInvalidatedListeners.forEach((listener) => listener());
+}
+
+export function onAuthenticationInvalidated(listener: AuthenticationInvalidatedListener) {
+  authenticationInvalidatedListeners.add(listener);
+  return () => { authenticationInvalidatedListeners.delete(listener); };
+}
+
+export function resetAuthenticationState() {
+  clearAuthenticationState(undefined, false);
+  if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
+}
+
+function isReplayableBody(body: BodyInit | null | undefined) {
+  return !body || typeof ReadableStream === "undefined" || !(body instanceof ReadableStream);
+}
+
+function errorFromResponse(body: string, status: number, statusText: string) {
+  let message = body || statusText;
+  let code: string | undefined;
+  let field: string | undefined;
+  let details: Record<string, unknown> | undefined;
+  try {
+    const payload = JSON.parse(body) as {
+      detail?: string
+        | ({ code?: string; message?: string; field?: string } & Record<string, unknown>)
+        | Array<{ loc?: Array<string | number>; msg?: string }>;
+    };
+    if (typeof payload.detail === "string") message = payload.detail;
+    else if (Array.isArray(payload.detail)) {
+      const validationErrors = payload.detail.map((error) => {
+        const location = (error.loc || []).filter((part) => part !== "body").join(".");
+        return `${location || "request"}: ${error.msg || "Invalid value"}`;
+      });
+      if (validationErrors.length) message = validationErrors.join("; ");
+      field = payload.detail[0]?.loc?.filter((part) => part !== "body").join(".") || undefined;
+      details = { errors: payload.detail };
+    }
+    else if (payload.detail) {
+      message = payload.detail.message || message;
+      code = payload.detail.code;
+      field = payload.detail.field;
+      details = payload.detail;
+    }
+  } catch {
+    // Non-JSON responses use the original response text.
+  }
+  return new ApiError(message, status, code, field, details);
+}
+
+async function send<T>(url: string, options: RequestInit, token = ""): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body instanceof Blob) headers.set("Content-Type", "application/octet-stream");
   else if (options.body !== undefined && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  if (csrfToken && options.method && options.method !== "GET") headers.set("x-csrf-token", csrfToken);
+  if (token) headers.set("x-csrf-token", token);
   const target = apiBaseUrl && url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
   const res = await fetch(target, { ...options, headers, credentials: "include" });
   if (!res.ok) {
     const body = await res.text();
-    let message = body || res.statusText;
-    let code: string | undefined;
-    let field: string | undefined;
-    let details: Record<string, unknown> | undefined;
-    try {
-      const payload = JSON.parse(body) as {
-        detail?: string
-          | ({ code?: string; message?: string; field?: string } & Record<string, unknown>)
-          | Array<{ loc?: Array<string | number>; msg?: string }>;
-      };
-      if (typeof payload.detail === "string") message = payload.detail;
-      else if (Array.isArray(payload.detail)) {
-        const validationErrors = payload.detail.map((error) => {
-          const location = (error.loc || []).filter((part) => part !== "body").join(".");
-          return `${location || "request"}: ${error.msg || "Invalid value"}`;
-        });
-        if (validationErrors.length) message = validationErrors.join("; ");
-        field = payload.detail[0]?.loc?.filter((part) => part !== "body").join(".") || undefined;
-        details = { errors: payload.detail };
-      }
-      else if (payload.detail) {
-        message = payload.detail.message || message;
-        code = payload.detail.code;
-        field = payload.detail.field;
-        details = payload.detail;
-      }
-    } catch {
-      // Non-JSON responses use the original response text.
-    }
-    throw new ApiError(message, res.status, code, field, details);
+    throw errorFromResponse(body, res.status, res.statusText);
   }
   return res.json() as Promise<T>;
+}
+
+function synchronizeSession(force = false): Promise<AuthSession> {
+  if (sessionSync) return sessionSync;
+  if (force) {
+    sessionGeneration += 1;
+    csrfToken = "";
+  }
+  const generation = sessionGeneration;
+  const pending = send<AuthSession>("/api/auth/me", { method: "GET", cache: "no-store" })
+    .then((data) => {
+      if (generation !== sessionGeneration) throw new ApiError("Session synchronization was superseded", 409);
+      csrfToken = data.csrf_token;
+      return data;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof ApiError && error.status === 401) clearAuthenticationState(generation);
+      throw error;
+    })
+    .finally(() => {
+      if (sessionSync === pending) sessionSync = null;
+    });
+  sessionSync = pending;
+  return pending;
+}
+
+async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+  const requiresCsrf = MUTATING_METHODS.has(method) && url !== "/api/auth/login";
+  if (requiresCsrf && !csrfToken) await synchronizeSession();
+
+  const generation = sessionGeneration;
+  try {
+    return await send<T>(url, options, requiresCsrf ? csrfToken : "");
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      clearAuthenticationState(generation);
+      throw error;
+    }
+    const invalidCsrf = error instanceof ApiError
+      && error.status === 403
+      && error.message === "Invalid CSRF token";
+    if (!requiresCsrf || !invalidCsrf || !isReplayableBody(options.body)) throw error;
+
+    await synchronizeSession(true);
+    const retryGeneration = sessionGeneration;
+    try {
+      return await send<T>(url, options, csrfToken);
+    } catch (retryError) {
+      if (retryError instanceof ApiError && retryError.status === 401) clearAuthenticationState(retryGeneration);
+      throw retryError;
+    }
+  }
 }
 
 async function health(signal?: AbortSignal): Promise<HealthStatus> {
@@ -1147,26 +1238,24 @@ async function enrollmentScript(url: string, token: string): Promise<Blob> {
 }
 
 export async function login(username: string, password: string, rememberMe = false) {
-  const data = await request<{ username: string; home: string; csrf_token: string }>("/api/auth/login", {
+  clearAuthenticationState(undefined, false);
+  const generation = sessionGeneration;
+  const data = await send<AuthSession>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ username, password, remember_me: rememberMe })
   });
+  if (generation !== sessionGeneration) throw new ApiError("Login was superseded", 409);
   csrfToken = data.csrf_token;
-  localStorage.setItem("webnas_csrf", csrfToken);
   return data;
 }
 
 export async function me() {
-  const data = await request<{ username: string; home: string; csrf_token: string }>("/api/auth/me");
-  csrfToken = data.csrf_token;
-  localStorage.setItem("webnas_csrf", csrfToken);
-  return data;
+  return synchronizeSession();
 }
 
 export function logout() {
   return request("/api/auth/logout", { method: "POST", body: "{}" }).finally(() => {
-    csrfToken = "";
-    localStorage.removeItem("webnas_csrf");
+    clearAuthenticationState();
   });
 }
 

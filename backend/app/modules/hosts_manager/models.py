@@ -126,6 +126,12 @@ def no_secrets(value: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
+def safe_tags(values: list[str]) -> list[str]:
+    if any(not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", item) for item in values):
+        raise ValueError("invalid tag")
+    return list(dict.fromkeys(values))
+
+
 class HostInput(StrictModel):
     name: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_. -]{0,127}$")
     hostname: str = Field(default="", max_length=128)
@@ -168,12 +174,7 @@ class HostInput(StrictModel):
             return value
         raise ValueError("unsupported Python interpreter")
 
-    @field_validator("tags")
-    @classmethod
-    def safe_tags(cls, values: list[str]) -> list[str]:
-        if any(not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", item) for item in values):
-            raise ValueError("invalid tag")
-        return list(dict.fromkeys(values))
+    _tags = field_validator("tags")(safe_tags)
 
     _variables = field_validator("variables")(no_secrets)
 
@@ -341,7 +342,7 @@ class EnrollmentTokenInput(StrictModel):
     require_approval: bool = True
     onboard_ansible: bool = False
 
-    _tags = field_validator("tags")(HostInput.safe_tags)
+    _tags = field_validator("tags")(safe_tags)
 
     @model_validator(mode="after")
     def valid_expiration(self) -> "EnrollmentTokenInput":
@@ -557,7 +558,7 @@ class ScanImportInput(StrictModel):
     tags: list[str] = Field(default_factory=list, max_length=50)
     confirm: bool = False
 
-    _tags = field_validator("tags")(HostInput.safe_tags)
+    _tags = field_validator("tags")(safe_tags)
 
 
 class BackupInput(StrictModel):

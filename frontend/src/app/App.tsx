@@ -1,6 +1,6 @@
 import { HardDrive } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, login, logout, me, type SettingsMe, type SettingsPatch, type Task, type UpdateCompletionNotice, type UpdateProgress, type UserPreferences } from "../api";
+import { api, ApiError, login, logout, me, onAuthenticationInvalidated, type SettingsMe, type SettingsPatch, type Task, type UpdateCompletionNotice, type UpdateProgress, type UserPreferences } from "../api";
 import { detectLanguage, type Language, translate } from "../i18n";
 import type { Theme, Toast, User } from "./types";
 import { Desktop } from "./Desktop";
@@ -16,6 +16,7 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
 }
 
 export function App() {
+  const [authStatus, setAuthStatus] = useState<"checking" | "authenticated" | "anonymous">("checking");
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<SettingsMe | null>(null);
   const [language, setLanguage] = useState<Language>(() => detectLanguage(localStorage.getItem("webnas_language")));
@@ -39,7 +40,27 @@ export function App() {
     if (profileRef.current?.notification_auto_hide !== false) setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 4200);
   }, []);
 
-  useEffect(() => { me().then(setUser).catch(() => undefined); }, []);
+  const clearAuthenticatedUi = useCallback(() => {
+    profileRef.current = null;
+    setUser(null);
+    setProfile(null);
+    setTasks([]);
+    setAuthStatus("anonymous");
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = onAuthenticationInvalidated(() => {
+      if (active) clearAuthenticatedUi();
+    });
+    void me().then((restoredUser) => {
+      if (!active) return;
+      setUser(restoredUser);
+      setAuthStatus("authenticated");
+    }).catch(() => {
+      if (active) clearAuthenticatedUi();
+    });
+    return () => { active = false; unsubscribe(); };
+  }, [clearAuthenticatedUi]);
   useEffect(() => {
     if (!user) { setProfile(null); return; }
     api.settingsMe().then((data) => { profileRef.current = data; setProfile(data); setLanguage(data.language); setTheme(data.theme); }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
@@ -70,7 +91,11 @@ export function App() {
   }, []);
   const handleConnectionRestored = useCallback(() => {
     if (!user) {
-      void me().then(setUser).catch(() => undefined);
+      setAuthStatus("checking");
+      void me().then((restoredUser) => {
+        setUser(restoredUser);
+        setAuthStatus("authenticated");
+      }).catch(clearAuthenticatedUi);
       return;
     }
     if (!profile) return;
@@ -82,7 +107,7 @@ export function App() {
     }).catch(() => undefined);
     void (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);
     void refreshUpdateProgress(profile.permissions.includes("updates.view"));
-  }, [profile, refreshUpdateProgress, user]);
+  }, [clearAuthenticatedUi, profile, refreshUpdateProgress, user]);
   useEffect(() => {
     if (!user || !profile) {
       setUpdateChecked(false);
@@ -161,7 +186,8 @@ export function App() {
   }
   function changeTheme(value: Theme) { void updateSettings({ theme: value }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error")); }
   const connectionStatus = <ConnectionStatusMonitor t={t} language={language} onRestored={handleConnectionRestored} />;
-  if (!user) return <>{connectionStatus}<Login language={language} onLogin={setUser} /></>;
+  if (authStatus === "checking") return <>{connectionStatus}<div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div></>;
+  if (authStatus === "anonymous" || !user) return <>{connectionStatus}<Login language={language} onLogin={(authenticatedUser) => { setUser(authenticatedUser); setAuthStatus("authenticated"); }} /></>;
   if (!profile) return <>{connectionStatus}<div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div></>;
   if (!updateChecked) return <>{connectionStatus}<div className="boot-screen"><HardDrive className="pulse" /><span>{t("status.loading")}</span></div></>;
   if (updateProgress && (
@@ -182,10 +208,7 @@ export function App() {
       }}
       onLogin={() => {
         void logout().catch(() => undefined).finally(() => {
-          profileRef.current = null;
-          setUser(null);
-          setProfile(null);
-          setTasks([]);
+          clearAuthenticatedUi();
           window.history.replaceState({}, "", "/");
         });
       }}
@@ -193,7 +216,7 @@ export function App() {
   }
   return <>
     {connectionStatus}
-    <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={() => { profileRef.current = null; setUser(null); setProfile(null); setTasks([]); }} />
+    <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={clearAuthenticatedUi} />
     {completionNotice && <UpdateCompletionDialog
       notice={completionNotice}
       t={t}

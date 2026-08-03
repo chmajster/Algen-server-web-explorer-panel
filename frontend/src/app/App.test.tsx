@@ -1,21 +1,68 @@
+import { StrictMode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const loginMock = vi.hoisted(() => vi.fn());
-
-vi.mock("../api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../api")>()),
-  login: loginMock,
+const mocks = vi.hoisted(() => ({
+  login: vi.fn(),
+  me: vi.fn(),
+  settingsMe: vi.fn(),
+  tasks: vi.fn(),
+  allTasks: vi.fn(),
+  updateProgress: vi.fn(),
+  updatePublicProgress: vi.fn(),
+  updateCompletion: vi.fn(),
 }));
 
-import { Login } from "./App";
+vi.mock("../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api")>();
+  return {
+    ...actual,
+    login: mocks.login,
+    me: mocks.me,
+    api: {
+      ...actual.api,
+      settingsMe: mocks.settingsMe,
+      tasks: mocks.tasks,
+      allTasks: mocks.allTasks,
+      updateProgress: mocks.updateProgress,
+      updatePublicProgress: mocks.updatePublicProgress,
+      updateCompletion: mocks.updateCompletion,
+    },
+  };
+});
 
-describe("Login", () => {
-  beforeEach(() => loginMock.mockReset());
+vi.mock("./Desktop", () => ({ Desktop: () => <div data-testid="desktop">Desktop</div> }));
+vi.mock("../features/connection/ConnectionStatusMonitor", () => ({ ConnectionStatusMonitor: () => null }));
+vi.mock("../features/transfers/useUploadManager", () => ({
+  useUploadManager: () => ({ tasks: [], controls: {} }),
+}));
+
+import { App, Login } from "./App";
+
+const user = { username: "alice", home: "/home/alice", csrf_token: "csrf" };
+const profile = {
+  ...user,
+  language: "pl-PL",
+  theme: "system",
+  permissions: [],
+  notification_auto_hide: true,
+};
+const idleUpdate = { state: "idle", running: false, pid: null, exit_code: null, started_at: null, finished_at: null, log: "", lines: [] };
+
+describe("authentication initialization", () => {
+  beforeEach(() => {
+    Object.values(mocks).forEach((mock) => mock.mockReset());
+    mocks.settingsMe.mockResolvedValue(profile);
+    mocks.tasks.mockResolvedValue([]);
+    mocks.allTasks.mockResolvedValue([]);
+    mocks.updateProgress.mockResolvedValue(idleUpdate);
+    mocks.updatePublicProgress.mockResolvedValue(idleUpdate);
+    mocks.updateCompletion.mockResolvedValue({ notice: null });
+  });
 
   it("passes the selected remember-me option to authentication", async () => {
     const onLogin = vi.fn();
-    loginMock.mockResolvedValue({ username: "alice", home: "/home/alice", csrf_token: "csrf" });
+    mocks.login.mockResolvedValue(user);
     render(<Login language="pl-PL" onLogin={onLogin} />);
 
     fireEvent.change(screen.getByLabelText("Użytkownik Linux"), { target: { value: " alice " } });
@@ -23,7 +70,42 @@ describe("Login", () => {
     fireEvent.click(screen.getByLabelText("Zapamiętaj mnie"));
     fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));
 
-    await waitFor(() => expect(loginMock).toHaveBeenCalledWith("alice", "secret", true));
+    await waitFor(() => expect(mocks.login).toHaveBeenCalledWith("alice", "secret", true));
     expect(onLogin).toHaveBeenCalledWith(expect.objectContaining({ username: "alice" }));
+  });
+
+  it("does not render Login or Desktop while the initial session check is pending", () => {
+    mocks.me.mockReturnValue(new Promise(() => undefined));
+    const { container } = render(<App />);
+
+    expect(container.querySelector(".boot-screen")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Zaloguj się" })).toBeNull();
+    expect(screen.queryByTestId("desktop")).toBeNull();
+  });
+
+  it("restores a valid remembered session before mounting the protected UI", async () => {
+    mocks.me.mockResolvedValue(user);
+    render(<App />);
+
+    expect(screen.queryByRole("button", { name: "Zaloguj się" })).toBeNull();
+    expect(await screen.findByTestId("desktop")).toBeInTheDocument();
+    expect(mocks.settingsMe).toHaveBeenCalled();
+  });
+
+  it("shows Login only after the initial session check reports an anonymous user", async () => {
+    mocks.me.mockRejectedValue(new Error("Authentication required"));
+    render(<App />);
+
+    await waitFor(() => expect(document.querySelector(".login-panel button[type='submit']")).not.toBeNull());
+    expect(screen.queryByTestId("desktop")).toBeNull();
+  });
+
+  it("keeps the loading gate under React StrictMode", () => {
+    mocks.me.mockReturnValue(new Promise(() => undefined));
+    const { container } = render(<StrictMode><App /></StrictMode>);
+
+    expect(container.querySelector(".boot-screen")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Zaloguj się" })).toBeNull();
+    expect(screen.queryByTestId("desktop")).toBeNull();
   });
 });

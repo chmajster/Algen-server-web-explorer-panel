@@ -104,17 +104,17 @@ def test_expired_server_side_session_is_rejected(session_store):
     assert error.value.status_code == 401
 
 
-def test_require_csrf_rejects_missing_token(session_store):
+@pytest.mark.parametrize("submitted_token", [None, "wrong-token"])
+def test_require_csrf_rejects_missing_and_invalid_tokens(session_store, submitted_token):
     response = Response()
     csrf = security.create_session(response, "alice")
     cookie = response.headers["set-cookie"].split(";", 1)[0]
     user = security.get_session_user(make_request(cookie))
 
-    try:
-        security.require_csrf(make_request(cookie), user)
-    except HTTPException as exc:
-        assert exc.status_code == 403
-    else:
-        raise AssertionError("CSRF check should fail without token")
+    with pytest.raises(HTTPException) as error:
+        security.require_csrf(make_request(cookie, submitted_token), user)
+
+    assert error.value.status_code == 403
+    assert error.value.detail == "Invalid CSRF token"
 
     security.require_csrf(make_request(cookie, csrf), user)
