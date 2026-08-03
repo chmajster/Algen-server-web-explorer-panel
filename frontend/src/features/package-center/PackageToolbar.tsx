@@ -2,10 +2,54 @@ import { Grid2X2, List, RefreshCw, Search } from "lucide-react";
 import type { Translate } from "../../app/types";
 import type { PackageView } from "./types";
 
-export function PackageToolbar({ search, category, status, categories, updates, updatesActive, loading, view, showView, t, onSearch, onCategory, onStatus, onUpdates, onRefresh, onView }: {
-  search: string; category: string; status: string; categories: string[]; updates: number; updatesActive: boolean; loading: boolean; view: PackageView; showView: boolean; t: Translate;
-  onSearch: (value: string) => void; onCategory: (value: string) => void; onStatus: (value: string) => void; onUpdates: () => void; onRefresh: () => void; onView: (value: PackageView) => void;
-}) {
+type PackageToolbarProps = {
+  search: string;
+  category: string;
+  status: string;
+  categories: string[];
+  updates: number;
+  updatesActive: boolean;
+  loading: boolean;
+  view: PackageView;
+  showView: boolean;
+  t: Translate;
+  onSearch: (value: string) => void;
+  onCategory: (value: string) => void;
+  onStatus: (value: string) => void;
+  onUpdates: () => void;
+  onRefresh: () => void;
+  onView: (value: PackageView) => void;
+};
+
+export function PackageToolbar({ search, category, status, categories, updates, updatesActive, loading, view, showView, t, onSearch, onCategory, onStatus, onUpdates, onRefresh, onView }: PackageToolbarProps) {
   const statuses = ["not_installed", "installed", "running", "stopped", "needs_config", "update_available", "error"];
-  return <header className="package-toolbar"><label className="package-search"><Search aria-hidden="true" /><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder={t("package.search")} aria-label={t("package.search")} /></label><select aria-label={t("package.category")} value={category} onChange={(event) => onCategory(event.target.value)}><option value="">{t("package.allCategories")}</option>{categories.map((item) => <option value={item} key={item}>{t(`package.category.${item}`)}</option>)}</select><select aria-label={t("package.status")} value={status} onChange={(event) => onStatus(event.target.value)}><option value="">{t("package.allStatuses")}</option>{statuses.map((item) => <option value={item} key={item}>{t(`package.status.${item}`)}</option>)}</select><button type="button" className={`package-updates ${updatesActive ? "active" : ""}`} aria-pressed={updatesActive} onClick={onUpdates}>{t("package.updatesCount").replace("{count}", String(updates))}</button>{showView && <div className="package-view-switcher" role="group" aria-label={t("package.viewMode")}><button type="button" aria-label={t("package.view.grid")} title={t("package.view.grid")} aria-pressed={view === "grid"} className={view === "grid" ? "active" : ""} onClick={() => onView("grid")}><Grid2X2 aria-hidden="true" /></button><button type="button" aria-label={t("package.view.list")} title={t("package.view.list")} aria-pressed={view === "list"} className={view === "list" ? "active" : ""} onClick={() => onView("list")}><List aria-hidden="true" /></button></div>}<button type="button" onClick={onRefresh}><RefreshCw className={loading ? "spin" : ""} aria-hidden="true" />{t("action.refresh")}</button></header>;
+  return <header className="package-toolbar" aria-label={t("package.filters")}>
+    <label className="package-search">
+      <Search aria-hidden="true" />
+      <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder={t("package.search")} aria-label={t("package.search")} />
+    </label>
+    <div className="package-toolbar-filters">
+      <select aria-label={t("package.category")} value={category} onChange={(event) => onCategory(event.target.value)}>
+        <option value="">{t("package.allCategories")}</option>
+        {categories.map((item) => <option value={item} key={item}>{t(`package.category.${item}`)}</option>)}
+      </select>
+      <select aria-label={t("package.status")} value={status} onChange={(event) => onStatus(event.target.value)}>
+        <option value="">{t("package.allStatuses")}</option>
+        {statuses.map((item) => <option value={item} key={item}>{t(`package.status.${item}`)}</option>)}
+      </select>
+    </div>
+    <div className="package-toolbar-actions">
+      <button type="button" className={`package-updates ${updatesActive ? "active" : ""}`} aria-pressed={updatesActive} onClick={onUpdates}>
+        {t("package.updatesCount").replace("{count}", String(updates))}
+      </button>
+      {showView && <div className="package-view-switcher" role="group" aria-label={t("package.viewMode")}>
+        <button type="button" aria-label={t("package.view.grid")} title={t("package.view.grid")} aria-pressed={view === "grid"} className={view === "grid" ? "active" : ""} onClick={() => onView("grid")}><Grid2X2 aria-hidden="true" /></button>
+        <button type="button" aria-label={t("package.view.list")} title={t("package.view.list")} aria-pressed={view === "list"} className={view === "list" ? "active" : ""} onClick={() => onView("list")}><List aria-hidden="true" /></button>
+      </div>}
+      <button className="package-refresh" type="button" disabled={loading} aria-busy={loading} onClick={onRefresh}>
+        <RefreshCw className={loading ? "spin" : ""} aria-hidden="true" />
+        <span>{t("action.refresh")}</span>
+      </button>
+    </div>
+  </header>;
 }

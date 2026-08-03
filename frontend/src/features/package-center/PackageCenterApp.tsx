@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Boxes } from "lucide-react";
 import { api, type AppJob, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
@@ -76,17 +77,24 @@ export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSele
 
   const catalogTab = ["all", "installed", "updates"].includes(state.tab);
   return <section className="package-center">
-    <header className="package-center-title"><div><h2>{t("app.store")}</h2><p>{t("store.subtitle")}</p></div></header>
+    <header className="package-center-title">
+      <span className="package-center-title-icon" aria-hidden="true"><Boxes /></span>
+      <div><h2>{t("app.store")}</h2><p>{t("store.subtitle")}</p></div>
+    </header>
     <PackageToolbar search={state.search} category={state.category} status={state.status} categories={state.categories} updates={counts.updates} updatesActive={state.tab === "updates"} loading={state.loading} view={view} showView={catalogTab} t={t} onSearch={state.setSearch} onCategory={state.setCategory} onStatus={state.setStatus} onUpdates={() => state.setTab("updates")} onRefresh={() => void state.refresh()} onView={selectView} />
-    <PackageTabs active={state.tab} counts={counts} t={t} onChange={state.setTab} />
-    {state.error
-      ? <div className="error-state"><strong>{t("status.error")}</strong><span>{state.error}</span><button type="button" onClick={() => void state.refresh()}>{t("action.retry")}</button></div>
-      : <main>
-        {catalogTab && <PackageGrid modules={state.visibleModules} loading={state.loading} view={view} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: item.manifest.name })} />}
-        {state.tab === "jobs" && <PackageJobs jobs={state.jobs} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
-        {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
-        {state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
-      </main>}
+    <div className="package-center-layout">
+      <PackageTabs active={state.tab} counts={counts} t={t} onChange={state.setTab} />
+      <main className="package-center-content" aria-busy={state.loading}>
+        {state.error
+          ? <div className="error-state package-center-error" role="alert"><strong>{t("status.error")}</strong><span>{state.error}</span><button type="button" onClick={() => void state.refresh()}>{t("action.retry")}</button></div>
+          : <>
+            {catalogTab && <PackageGrid modules={state.visibleModules} loading={state.loading} view={view} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: item.manifest.name })} />}
+            {state.tab === "jobs" && <PackageJobs jobs={state.jobs} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
+            {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
+            {state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
+          </>}
+      </main>
+    </div>
     {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => openSelectedModule(selected) : undefined} />}
     {action && <PackageActionDialog item={action.item} action={action.action} t={t} toast={toast} onClose={() => setAction(null)} onStarted={(job) => { setLiveJob({ job, name: action.item.manifest.name }); void state.refreshModule(action.item.id); void state.refresh(true); }} />}
     {liveJob && <PackageJobDialog initialJob={liveJob.job} moduleName={liveJob.name} t={t} onClose={() => { setLiveJob(null); if (selectedJobId === liveJob.job.id) onSelectedJobClose?.(); }} />}

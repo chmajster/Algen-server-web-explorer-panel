@@ -235,6 +235,7 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
         value={managerSettings}
         patterns={hostnamePatterns}
         groups={groups}
+        apmids={apmids}
         repositories={repositories}
         powerProfiles={powerProfiles}
         diagnostics={diagnostics}
@@ -1118,12 +1119,14 @@ function EnvironmentManager({
 
 function Groups({
   items,
+  apmids,
   canManage,
   t,
   toast,
   refresh,
 }: {
   items: HostsManagerGroup[];
+  apmids: HostsManagerApmid[];
   canManage: boolean;
   t: Translate;
   toast: ToastFn;
@@ -1136,9 +1139,11 @@ function Groups({
   const [description, setDescription] = useState("");
   const [parentId, setParentId] = useState("");
   const [active, setActive] = useState(true);
-  const visible = items.filter((item) =>
-    `${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  const apmidCodes = new Map(apmids.map((item) => [item.id, item.code]));
+  const visible = items.filter((item) => {
+    const apmidCode = item.managed_by ? apmidCodes.get(item.managed_by.apmid_id) || "" : "";
+    return `${item.name} ${item.description} ${apmidCode}`.toLowerCase().includes(query.trim().toLowerCase());
+  });
   function edit(item: HostsManagerGroup | null) {
     setEditing(item);
     setName(item?.name || "");
@@ -1174,6 +1179,7 @@ function Groups({
   }
   const columns: HostsDataColumn<HostsManagerGroup>[] = [
     { id: "name", label: t("common.name"), sortValue: (item) => item.name, cell: (item) => <span><strong>{item.name}</strong>{item.managed && <small>{t("hosts.group.managed")}</small>}</span> },
+    { id: "apmid", label: t("hosts.groups.apmid"), sortValue: (item) => item.managed_by ? apmidCodes.get(item.managed_by.apmid_id) || "" : "", cell: (item) => item.managed_by ? apmidCodes.get(item.managed_by.apmid_id) || t("common.none") : t("common.none") },
     { id: "description", label: t("hosts.host.description"), sortValue: (item) => item.description, cell: (item) => item.description || t("common.none") },
     { id: "parent", label: t("hosts.group.parent"), sortValue: (item) => items.find((parent) => parent.id === item.parent_id)?.name || "", cell: (item) => items.find((parent) => parent.id === item.parent_id)?.name || t("common.none") },
     { id: "hosts", label: t("hosts.groups.hosts"), align: "end", sortValue: (item) => item.host_ids.length, cell: (item) => item.host_ids.length },
@@ -1198,7 +1204,7 @@ function Groups({
       <div className="module-section-toolbar">
         <label>
           <Search />
-          <input aria-label={t("action.search")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("hosts.search.placeholder")} />
+          <input aria-label={t("hosts.groups.searchApmid")} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("hosts.groups.searchApmid")} />
         </label>
       </div>
       <HostsDataTable items={visible} columns={columns} rowKey={(item) => item.id} empty={t("hosts.records.empty")} onSelect={(item) => setSelected(item)} selectedKey={selected?.id} />
@@ -2744,6 +2750,7 @@ function SettingsWorkspace({
   value,
   patterns,
   groups,
+  apmids,
   repositories,
   powerProfiles,
   diagnostics,
@@ -2761,6 +2768,7 @@ function SettingsWorkspace({
   value: HostsManagerSettings | null;
   patterns: HostsManagerHostnamePattern[];
   groups: HostsManagerGroup[];
+  apmids: HostsManagerApmid[];
   repositories: HostsManagerRepository[];
   powerProfiles: HostsManagerPowerProfile[];
   diagnostics: Array<{ id: string; status: string; message: string }>;
@@ -2800,6 +2808,7 @@ function SettingsWorkspace({
     content = (
       <Groups
         items={groups}
+        apmids={apmids}
         canManage={canManageHosts}
         t={t}
         toast={toast}

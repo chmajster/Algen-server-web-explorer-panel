@@ -92,6 +92,34 @@ describe("HostsManagerApp", () => {
     expect(screen.queryByText("hosts.apmid.title")).not.toBeInTheDocument();
   });
 
+  it("filters host groups by the related APMID code", async () => {
+    vi.mocked(api.hostsManagerGroups).mockResolvedValue([{
+      id: "group-default",
+      name: "managed-default",
+      description: "Generated environment group",
+      parent_id: null,
+      variables: {},
+      host_ids: [],
+      active: true,
+      created_at: 1,
+      updated_at: 1,
+      managed: true,
+      managed_by: { apmid_id: "apmid-app", environment_id: "default" },
+    }]);
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+
+    fireEvent.click(screen.getByRole("button", { name: /module.section.settings/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "hosts.settings.view.groups" }));
+    const search = screen.getByLabelText("hosts.groups.searchApmid");
+    fireEvent.change(search, { target: { value: "APP" } });
+
+    expect(screen.getByText("managed-default")).toBeInTheDocument();
+    expect(screen.getByText("APP")).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "OTHER" } });
+    expect(screen.getByText("hosts.records.empty")).toBeInTheDocument();
+  });
+
   it("uses the global interface scale without resetting the section or fetching again", async () => {
     const toast = vi.fn();
     const originalFontSize = document.documentElement.style.fontSize;

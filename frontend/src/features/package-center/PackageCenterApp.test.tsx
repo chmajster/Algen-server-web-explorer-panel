@@ -101,6 +101,40 @@ describe("Package Center", () => {
     expect(screen.getByRole("button", { name: "package.view.list" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("shows section counters and switches between package-center sections", async () => {
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    await screen.findByText("Samba");
+
+    expect(screen.getByLabelText("package.tab.all: 2")).toHaveTextContent("2");
+    expect(screen.getByLabelText("package.tab.installed: 0")).toHaveTextContent("0");
+    expect(screen.getByLabelText("package.tab.updates: 0")).toHaveTextContent("0");
+
+    fireEvent.click(screen.getByRole("button", { name: /package.tab.jobs/ }));
+    expect(screen.getByText("package.noJobs")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /package.tab.history/ }));
+    expect(screen.getByText("package.noHistory")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /package.tab.sources/ }));
+    expect(screen.getByText("package.sources")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /package.tab.sources/ })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders empty and retryable error states", async () => {
+    vi.mocked(api.apps).mockResolvedValue([]);
+    vi.mocked(api.modules).mockResolvedValue([]);
+    const empty = render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    expect(await screen.findByText("package.empty")).toBeInTheDocument();
+    expect(screen.getByText("package.emptyHint")).toBeInTheDocument();
+    empty.unmount();
+
+    vi.mocked(api.apps).mockClear();
+    vi.mocked(api.apps).mockRejectedValue(new Error("Catalog unavailable"));
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText("Catalog unavailable")).toBeInTheDocument();
+    fireEvent.click(within(alert).getByRole("button", { name: "action.retry" }));
+    await waitFor(() => expect(api.apps).toHaveBeenCalledTimes(2));
+  });
+
   it("keeps Samba in the catalog before its runtime status is available", async () => {
     vi.mocked(api.modules).mockResolvedValue([]);
 
