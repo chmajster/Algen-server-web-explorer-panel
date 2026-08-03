@@ -38,6 +38,7 @@ def test_mount_point_blocks_system_paths(monkeypatch):
 
 def test_systemd_units_are_generated_without_plain_secret(tmp_path, monkeypatch):
     monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+    (tmp_path / "abc123.cred").write_text("username=alice\npassword=mount-secret\n", encoding="utf-8")
     mount = {
         "id": "abc123",
         "name": "media",
@@ -56,6 +57,56 @@ def test_systemd_units_are_generated_without_plain_secret(tmp_path, monkeypatch)
     assert "mount-secret" not in rendered
     assert "[Automount]" in rendered
     assert any(name.endswith(".automount") for name in units)
+
+
+def test_anonymous_smb_uses_guest_without_a_missing_credentials_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+    mount = {
+        "id": "guest-share", "owner": "alice", "type": "smb", "read_only": True,
+        "config": {"username": "", "domain": "", "smb_version": "auto", "file_mode": "0644", "dir_mode": "0755", "noexec": True, "advanced_options": []},
+    }
+
+    options = network_mounts.mount_options(mount)
+
+    assert "guest" in options
+    assert not any(option.startswith("credentials=") for option in options)
+
+
+def test_smb_empty_password_creates_a_valid_credentials_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+
+    network_mounts.write_credentials("empty-password", payload(password=""))
+
+    credential = tmp_path / "empty-password.cred"
+    assert credential.is_file()
+    assert credential.read_text(encoding="utf-8") == "username=alice\npassword=\n"
+
+
+def test_webdav_without_a_password_does_not_create_an_invalid_secret(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+
+    network_mounts.write_credentials(
+        "public-webdav",
+        payload(type="webdav", share=None, remote_path="https://dav.example/public", password=""),
+    )
+
+    assert not (tmp_path / "public-webdav.cred").exists()
+    assert not (tmp_path / "public-webdav.davfs.conf").exists()
+
+
+def test_legacy_named_smb_without_a_file_does_not_reference_a_missing_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: tmp_path)
+    mount = {
+        "id": "legacy-share", "owner": "alice", "type": "smb", "read_only": True,
+        "config": {"username": "alice", "domain": "WORKGROUP", "smb_version": "auto", "file_mode": "0644", "dir_mode": "0755", "noexec": True, "advanced_options": []},
+    }
+
+    options = network_mounts.mount_options(mount)
+
+    assert "username=alice" in options
+    assert "password=" in options
+    assert "domain=WORKGROUP" in options
+    assert not any(option.startswith("credentials=") for option in options)
 
 
 def test_writable_smb_maps_files_to_the_local_mount_owner(tmp_path, monkeypatch):
@@ -142,6 +193,41 @@ def test_credentials_directory_falls_back_when_etc_is_read_only(tmp_path, monkey
 
     assert result == tmp_path / "credentials"
     assert result.is_dir()
+
+
+def test_legacy_credentials_are_migrated_to_the_active_directory(tmp_path, monkeypatch):
+    legacy = tmp_path / "legacy"
+    active = tmp_path / "active"
+    legacy.mkdir()
+    active.mkdir()
+    (legacy / "mount-1.cred").write_text("username=alice\npassword=secret\n", encoding="utf-8")
+    (legacy / "mount-1.davfs.conf").write_text("secrets /old/path\nask_auth 0\n", encoding="utf-8")
+    monkeypatch.setattr(network_mounts, "LEGACY_CREDENTIALS_DIR", legacy)
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: active)
+
+    credential = network_mounts.credentials_path("mount-1")
+    davfs_config = network_mounts.davfs_config_path("mount-1")
+
+    assert credential.read_text(encoding="utf-8") == "username=alice\npassword=secret\n"
+    assert davfs_config.read_text(encoding="utf-8") == f"secrets {credential}\nask_auth 0\n"
+
+
+def test_readable_legacy_credential_remains_usable_when_migration_fails(tmp_path, monkeypatch):
+    legacy = tmp_path / "legacy"
+    active = tmp_path / "active"
+    legacy.mkdir()
+    active.mkdir()
+    existing = legacy / "mount-1.cred"
+    existing.write_text("username=alice\npassword=secret\n", encoding="utf-8")
+    monkeypatch.setattr(network_mounts, "LEGACY_CREDENTIALS_DIR", legacy)
+    monkeypatch.setattr(network_mounts, "credentials_dir", lambda: active)
+
+    def fail_write(path, content):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(network_mounts, "_atomic_secret_write", fail_write)
+
+    assert network_mounts.credentials_path("mount-1") == existing
 
 
 def test_log_redacts_secret_values(tmp_path, monkeypatch):

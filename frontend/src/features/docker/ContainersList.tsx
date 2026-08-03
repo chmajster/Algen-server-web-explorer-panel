@@ -18,6 +18,22 @@ import { ContainerDetails } from "./ContainerDetails";
 import { CreateContainerWizard } from "./CreateContainerWizard";
 import { LoadState, StatusPill, errorMessage, format } from "./shared";
 
+function detailValue(value: unknown, t: Translate): string {
+  if (value === null || value === undefined || value === "") return t("common.none");
+  if (Array.isArray(value)) return value.length ? value.map(String).join(", ") : t("common.none");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function bytes(value: unknown): string {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return "0 B";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const unit = Math.min(units.length - 1, Math.floor(Math.log(amount) / Math.log(1024)));
+  const precision = unit > 0 && amount / 1024 ** unit < 10 ? 1 : 0;
+  return `${(amount / 1024 ** unit).toFixed(precision)} ${units[unit]}`;
+}
+
 export function ContainersList({
   draftKey,
   permissions,
@@ -220,8 +236,8 @@ export function ContainersList({
                 <th>{t("docker.field.status")}</th>
                 <th>{t("docker.field.actions")}</th>
               </tr></thead>
-              <tbody>{items.map((row, index) => {
-                const target = String(row.ID || row.Names || index);
+              <tbody>{items.map((row) => {
+                const target = String(row.ID || row.Names || "unknown-container");
                 const stateValue = String(row.State || "unknown").toLowerCase();
                 const knownStates = ["created", "running", "paused", "restarting", "removing", "exited", "dead", "stopped"];
                 const displayedState = knownStates.includes(stateValue) ? stateValue : "unknown";
@@ -236,8 +252,8 @@ export function ContainersList({
                   ["docker.field.mounts", Array.isArray(row.Mounts) ? row.Mounts.length : row.Mounts],
                   ["docker.statsCpu", `${Number(row.CpuPercent || 0).toFixed(2)}%`],
                   ["docker.statsMemory", `${Math.round(Number(row.MemoryBytes || 0) / 1024 / 1024)} MiB`],
-                  ["docker.field.networkIo", `${Number(row.NetworkInputBytes || 0)} / ${Number(row.NetworkOutputBytes || 0)}`],
-                  ["docker.field.blockIo", `${Number(row.BlockReadBytes || 0)} / ${Number(row.BlockWriteBytes || 0)}`],
+                  ["docker.field.networkIo", `${bytes(row.NetworkInputBytes)} / ${bytes(row.NetworkOutputBytes)}`],
+                  ["docker.field.blockIo", `${bytes(row.BlockReadBytes)} / ${bytes(row.BlockWriteBytes)}`],
                   ["docker.field.management", row.Management ? t(`docker.management.${String(row.Management)}`) : ""],
                   ["docker.field.size", row.Size],
                 ];
@@ -276,9 +292,15 @@ export function ContainersList({
                       })}>{isExpanded ? <ChevronUp /> : <ChevronDown />}<span>{t(isExpanded ? "docker.showLess" : "docker.showMore")}</span></button>
                     </div></td>
                   </tr>
-                  {isExpanded && <tr id={detailsId} className="docker-container-details-row"><td colSpan={3}><dl className="docker-container-detail-grid">
-                    {detailFields.map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd>{format(value)}</dd></div>)}
-                  </dl></td></tr>}
+                  {isExpanded && <tr id={detailsId} className="docker-container-details-row"><td colSpan={3}>
+                    <table className="docker-container-detail-table">
+                      <thead><tr><th>{t("docker.details.parameter")}</th><th>{t("docker.details.status")}</th></tr></thead>
+                      <tbody>{detailFields.map(([label, value]) => <tr key={label}>
+                        <th scope="row">{t(label)}</th>
+                        <td className={label === "docker.field.digest" ? "docker-container-detail-long" : undefined}>{detailValue(value, t)}</td>
+                      </tr>)}</tbody>
+                    </table>
+                  </td></tr>}
                 </Fragment>;
               })}</tbody>
             </table>

@@ -2337,6 +2337,8 @@
   "docker.moreActions": "More actions",
   "docker.showMore": "More",
   "docker.showLess": "Less",
+  "docker.details.parameter": "Parameter",
+  "docker.details.status": "Status",
   "docker.pause": "Pause",
   "docker.unpause": "Resume",
   "docker.kill": "Send kill signal",

@@ -52,6 +52,7 @@ BASE_OPTIONS = ["nosuid", "nodev", "_netdev", "nofail"]
 TRANSIENT_STATUSES = {"mounting", "unmounting", "remounting", "testing", "migrating"}
 MOUNT_STATE_TIMEOUT_SECONDS = 3.0
 MOUNT_STATE_POLL_INTERVAL_SECONDS = 0.1
+LEGACY_CREDENTIALS_DIR = Path("/etc/webnas/mounts/credentials")
 _locks_guard = threading.Lock()
 _mount_locks: dict[str, threading.Lock] = {}
 
@@ -78,7 +79,7 @@ def log_dir() -> Path:
 
 
 def credentials_dir() -> Path:
-    path = Path("/etc/webnas/mounts/credentials")
+    path = LEGACY_CREDENTIALS_DIR
     try:
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(path, 0o700)
@@ -390,11 +391,37 @@ def validate_payload(payload: MountPayload, _actor: str, existing_id: str | None
 
 
 def credentials_path(mount_id: str) -> Path:
-    return credentials_dir() / f"{mount_id}.cred"
+    target = credentials_dir() / f"{mount_id}.cred"
+    legacy = LEGACY_CREDENTIALS_DIR / target.name
+    if target != legacy and not target.exists() and legacy.is_file():
+        try:
+            _atomic_secret_write(target, legacy.read_text(encoding="utf-8"))
+            logger.info("network_mount_credential_migrated mount_id=%s", mount_id)
+        except OSError as exc:
+            logger.warning("network_mount_credential_migration_failed mount_id=%s error=%s", mount_id, type(exc).__name__)
+            return legacy
+    return target
 
 
 def davfs_config_path(mount_id: str) -> Path:
-    return credentials_dir() / f"{mount_id}.davfs.conf"
+    target = credentials_dir() / f"{mount_id}.davfs.conf"
+    legacy = LEGACY_CREDENTIALS_DIR / target.name
+    if target != legacy and not target.exists() and legacy.is_file():
+        try:
+            credential = credentials_path(mount_id)
+            _atomic_secret_write(target, f"secrets {credential}\nask_auth 0\n")
+            logger.info("network_mount_davfs_config_migrated mount_id=%s", mount_id)
+        except OSError as exc:
+            logger.warning("network_mount_davfs_config_migration_failed mount_id=%s error=%s", mount_id, type(exc).__name__)
+            return legacy
+    return target
+
+
+def remove_credentials_files(mount_id: str) -> None:
+    directories = {credentials_dir(), LEGACY_CREDENTIALS_DIR}
+    for directory in directories:
+        (directory / f"{mount_id}.cred").unlink(missing_ok=True)
+        (directory / f"{mount_id}.davfs.conf").unlink(missing_ok=True)
 
 
 def _atomic_secret_write(path: Path, content: str) -> None:
@@ -413,29 +440,35 @@ def _atomic_secret_write(path: Path, content: str) -> None:
 
 def write_credentials(mount_id: str, payload: MountPayload) -> None:
     if payload.remove_secret:
-        credentials_path(mount_id).unlink(missing_ok=True)
-        davfs_config_path(mount_id).unlink(missing_ok=True)
+        remove_credentials_files(mount_id)
         return
-    if not payload.password:
+    existing = credentials_path(mount_id)
+    if not payload.password and existing.is_file():
         return
     if payload.type == "smb":
-        lines = [f"username={payload.username or ''}", f"password={payload.password}"]
+        # A fully anonymous share must use the kernel's guest mode and does not
+        # need a credentials file. A named account with an intentionally empty
+        # password still needs a valid file, otherwise mount.cifs fails with
+        # ENOENT before it even contacts the server.
+        if not payload.username and not payload.domain and not payload.password:
+            return
+        lines = [f"username={payload.username or ''}", f"password={payload.password or ''}"]
         if payload.domain:
             lines.append(f"domain={payload.domain}")
     elif payload.type == "webdav":
+        if not payload.password:
+            return
         lines = [remote_for(payload), payload.username or "", payload.password]
     else:
         return
-    path = credentials_path(mount_id)
+    path = credentials_dir() / f"{mount_id}.cred"
     _atomic_secret_write(path, "\n".join(lines) + "\n")
     if payload.type == "webdav":
-        _atomic_secret_write(davfs_config_path(mount_id), f"secrets {path}\nask_auth 0\n")
+        _atomic_secret_write(credentials_dir() / f"{mount_id}.davfs.conf", f"secrets {path}\nask_auth 0\n")
 
 
-def safe_config(payload: MountPayload, options: list[str], mount_id: str, existing: dict | None = None) -> dict:
+def safe_config(payload: MountPayload, options: list[str], mount_id: str) -> dict:
     has_secret = credentials_path(mount_id).exists()
-    if existing and not payload.password and not payload.remove_secret:
-        has_secret = bool(existing.get("config", {}).get("has_secret")) or has_secret
     return {
         "domain": payload.domain or "", "username": payload.username or "", "smb_version": payload.smb_version,
         "nfs_version": payload.nfs_version, "ssh_port": payload.ssh_port, "ssh_auth": payload.ssh_auth,
@@ -595,7 +628,18 @@ def mount_options(mount: dict) -> list[str]:
         options.append("noexec")
     options.extend(cfg.get("advanced_options") or [])
     if mount["type"] == "smb":
-        options.extend([f"credentials={credentials_path(mount['id'])}", f"file_mode={cfg.get('file_mode', '0644')}", f"dir_mode={cfg.get('dir_mode', '0755')}"])
+        credential = credentials_path(mount["id"])
+        if credential.is_file():
+            options.append(f"credentials={credential}")
+        elif cfg.get("username") or cfg.get("domain"):
+            # Compatibility for definitions created before empty-password
+            # credential files were generated. No secret is exposed here.
+            options.extend([f"username={cfg.get('username', '')}", "password="])
+            if cfg.get("domain"):
+                options.append(f"domain={cfg['domain']}")
+        else:
+            options.append("guest")
+        options.extend([f"file_mode={cfg.get('file_mode', '0644')}", f"dir_mode={cfg.get('dir_mode', '0755')}"])
         if cfg.get("smb_version") not in {None, "auto"}:
             options.append(f"vers={cfg['smb_version']}")
         uid, gid = local_mount_identity(mount)
@@ -614,7 +658,10 @@ def mount_options(mount: dict) -> list[str]:
             options.append(f"gid={gid}")
     elif mount["type"] == "webdav":
         uid, gid = local_mount_identity(mount)
-        options.extend([f"conf={davfs_config_path(mount['id'])}", f"file_mode={cfg.get('file_mode', '0644')}", f"dir_mode={cfg.get('dir_mode', '0755')}"])
+        davfs_config = davfs_config_path(mount["id"])
+        if davfs_config.is_file():
+            options.append(f"conf={davfs_config}")
+        options.extend([f"file_mode={cfg.get('file_mode', '0644')}", f"dir_mode={cfg.get('dir_mode', '0755')}"])
         if uid:
             options.append(f"uid={uid}")
         if gid:
@@ -1041,7 +1088,7 @@ def create_mount(payload: MountPayload, user: SessionUser = Depends(current_user
             )
             conn.commit()
     except sqlite3.IntegrityError as exc:
-        credentials_path(mount_id).unlink(missing_ok=True)
+        remove_credentials_files(mount_id)
         raise HTTPException(409, {"code": "duplicate_mount", "field": "name", "message": "Resource already exists"}) from exc
     audit(user.username, "create_mount", mount_id)
     return get_mount_or_404(mount_id)
@@ -1081,7 +1128,7 @@ def update_mount(mount_id: str, payload: MountPayload, user: SessionUser = Depen
         try:
             remove_systemd_units(old)
             write_credentials(mount_id, payload)
-            config = safe_config(payload, options, mount_id, old)
+            config = safe_config(payload, options, mount_id)
             with connect() as conn:
                 conn.execute(
                     """UPDATE mounts SET name=?, normalized_name=?, type=?, host=?, remote=?, mount_point=?, read_only=?, persistent=?,
@@ -1139,8 +1186,7 @@ def delete_mount(mount_id: str, payload: AdminMountAction, user: SessionUser = D
             if result.returncode or actual_mount(mount["mount_point"]):
                 raise HTTPException(409, {"code": "unmount_failed", "message": safe_error(result.stderr or result.stdout)})
         remove_systemd_units(mount)
-        credentials_path(mount_id).unlink(missing_ok=True)
-        davfs_config_path(mount_id).unlink(missing_ok=True)
+        remove_credentials_files(mount_id)
         point = Path(mount["mount_point"])
         if is_managed_mount_point(point, mount["name"]) and point.exists() and not any(point.iterdir()):
             point.rmdir()

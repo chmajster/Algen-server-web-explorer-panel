@@ -85,6 +85,37 @@ describe("DockerManagerApp", () => {
     expect(details).toBeInTheDocument();
     expect(within(details).getByText("sha256:full-digest")).toBeInTheDocument();
     expect(details.querySelector("td")).toHaveAttribute("colspan", "3");
+    const detailTable = within(details).getByRole("table");
+    expect(within(detailTable).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "docker.details.parameter", "docker.details.status",
+    ]);
+    expect(within(detailTable).getByRole("rowheader", { name: "docker.field.image" })).toBeInTheDocument();
+    expect(within(detailTable).getByText("nginx:stable")).toBeInTheDocument();
+
+    fireEvent.click(within(table).getByRole("button", { name: "docker.showLess" }));
+    expect(document.getElementById(detailsId)).not.toBeInTheDocument();
+    expect(within(table).getByRole("button", { name: "docker.showMore" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("expands several containers independently and renders missing detail values as None", async () => {
+    vi.mocked(api.dockerContainers).mockResolvedValue({ items: [
+      { ID: "abc", Names: "web", Image: "nginx:stable", State: "running", Status: "Up" },
+      { ID: "def", Names: "worker", Image: "", State: "exited", Status: "Exited" },
+    ], total: 2, page: 1, page_size: 50, pages: 1 });
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.inspect_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+
+    const toggles = await screen.findAllByRole("button", { name: "docker.showMore" });
+    const detailIds = toggles.map((button) => button.getAttribute("aria-controls")!);
+    fireEvent.click(toggles[0]);
+    fireEvent.click(toggles[1]);
+
+    expect(screen.getAllByRole("button", { name: "docker.showLess" })).toHaveLength(2);
+    expect(document.getElementById(detailIds[0])).toBeInTheDocument();
+    const secondDetails = document.getElementById(detailIds[1])!;
+    expect(secondDetails).toBeInTheDocument();
+    expect(within(secondDetails).getAllByText("common.none").length).toBeGreaterThan(0);
+    expect(within(secondDetails).getByRole("table")).toHaveClass("docker-container-detail-table");
   });
 
   it("keeps dashboard elements visible while data refreshes in the background", async () => {
