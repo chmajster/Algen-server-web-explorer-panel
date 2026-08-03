@@ -83,7 +83,11 @@ def credentials_dir() -> Path:
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(path, 0o700)
         return path
-    except PermissionError:
+    except OSError as exc:
+        # Read-only deployments (containers and hardened systemd units) can
+        # expose /etc but reject both mkdir and chmod with EROFS rather than
+        # PermissionError. Credentials still need a stable, private location.
+        logger.warning("network_mount_credentials_fallback error=%s", type(exc).__name__)
         fallback = state_dir() / "credentials"
         fallback.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(fallback, 0o700)

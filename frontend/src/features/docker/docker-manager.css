@@ -208,6 +208,83 @@
   min-width: 2.125rem;
   padding: 0.375rem;
 }
+.docker-containers-table {
+  min-width: 38rem;
+  table-layout: fixed;
+}
+.docker-containers-table th {
+  white-space: nowrap;
+}
+.docker-containers-table th:first-child { width: auto; }
+.docker-containers-table th:nth-child(2) { width: 10rem; }
+.docker-containers-table th:nth-child(3) { width: 24rem; text-align: right; }
+.docker-container-name,
+.docker-container-status {
+  min-width: 0;
+}
+.docker-container-name strong,
+.docker-container-name small,
+.docker-container-status small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docker-container-name strong { font-size: var(--font-size-sm); }
+.docker-container-name small,
+.docker-container-status small {
+  margin-top: 0.1875rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.docker-container-actions {
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.docker-container-actions select {
+  width: 8.75rem;
+  min-width: 0;
+}
+.docker-container-actions .docker-details-toggle {
+  width: auto;
+  min-width: 5.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding-inline: 0.5rem;
+  white-space: nowrap;
+}
+.docker-container-actions svg { width: 0.9375rem; height: 0.9375rem; }
+.docker-container-details-row td {
+  max-width: none;
+  padding: 0;
+  overflow: visible;
+  white-space: normal;
+  background: var(--surface-secondary);
+}
+.docker-container-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--border-subtle);
+}
+.docker-container-detail-grid > div {
+  min-width: 0;
+  padding: 0.625rem 0.75rem;
+  background: var(--surface-secondary);
+}
+.docker-container-detail-grid dt {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+.docker-container-detail-grid dd {
+  margin: 0.1875rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
 .docker-clickable-row {
   cursor: pointer;
 }

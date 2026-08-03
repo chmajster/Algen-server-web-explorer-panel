@@ -84,6 +84,18 @@ describe("network mount settings", () => {
     expect(screen.getByRole("button", { name: "mounts.addFirst" })).toBeInTheDocument();
   });
 
+  it("shows a retry state without also claiming that the resource list is empty", async () => {
+    vi.mocked(api.mounts).mockRejectedValueOnce(new Error("Internal Server Error")).mockResolvedValueOnce([]);
+
+    render(<NetworkMountsSettingsSection isAdmin t={t} toast={vi.fn()} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Internal Server Error");
+    expect(screen.queryByText("mounts.emptyHint")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "action.retry" }));
+    await waitFor(() => expect(api.mounts).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("mounts.emptyHint")).toBeInTheDocument();
+  });
+
   it("calculates all four summary counters from current resources", async () => {
     vi.mocked(api.mounts).mockResolvedValue([
       mount(),

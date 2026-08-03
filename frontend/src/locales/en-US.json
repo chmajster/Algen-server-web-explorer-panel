@@ -2335,6 +2335,8 @@
   "docker.currentPassword": "Current account password",
   "docker.forceRemove": "Force removal (requires current password and high-risk permission)",
   "docker.moreActions": "More actions",
+  "docker.showMore": "More",
+  "docker.showLess": "Less",
   "docker.pause": "Pause",
   "docker.unpause": "Resume",
   "docker.kill": "Send kill signal",

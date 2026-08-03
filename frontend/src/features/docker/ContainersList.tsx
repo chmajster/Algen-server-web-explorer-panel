@@ -1,6 +1,6 @@
 import {
-  Archive,
-  Download,
+  ChevronDown,
+  ChevronUp,
   Eye,
   Play,
   Plus,
@@ -8,16 +8,15 @@ import {
   RotateCcw,
   Search,
   Square,
-  Trash2,
   Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, type DockerContainer, type DockerContainerAction, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { ContainerDetails } from "./ContainerDetails";
 import { CreateContainerWizard } from "./CreateContainerWizard";
-import { DockerTable, LoadState, StatusPill, errorMessage } from "./shared";
+import { LoadState, StatusPill, errorMessage, format } from "./shared";
 
 export function ContainersList({
   draftKey,
@@ -42,6 +41,7 @@ export function ContainersList({
   const [sort, setSort] = useState("Names");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [selected, setSelected] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [wizard, setWizard] = useState(() => Boolean(draftKey && sessionStorage.getItem(draftKey)));
   const [importFile, setImportFile] = useState<File | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
@@ -213,144 +213,76 @@ export function ContainersList({
           retry={() => void load()}
           t={t}
         >
-          <DockerTable
-            items={items}
-            empty={t("docker.noContainers")}
-            columns={[
-              { key: "Names", label: t("docker.field.name") },
-              { key: "Image", label: t("docker.field.image") },
-              { key: "Digest", label: t("docker.field.digest") },
-              {
-                key: "State",
-                label: t("docker.field.state"),
-                render: (value) => <StatusPill value={String(value)} t={t} />,
-              },
-              { key: "Status", label: t("docker.field.status") },
-              { key: "Health", label: t("docker.field.health") },
-              { key: "CreatedAt", label: t("docker.field.created") },
-              { key: "RestartPolicy", label: t("docker.field.restart_policy") },
-              { key: "Ports", label: t("docker.field.ports") },
-              { key: "Networks", label: t("docker.field.networks") },
-              { key: "Mounts", label: t("docker.field.mounts"), render: (value) => String(Array.isArray(value) ? value.length : 0) },
-              { key: "CpuPercent", label: t("docker.statsCpu"), render: (value) => `${Number(value || 0).toFixed(2)}%` },
-              { key: "MemoryBytes", label: t("docker.statsMemory"), render: (value) => `${Math.round(Number(value || 0) / 1024 / 1024)} MiB` },
-              { key: "NetworkInputBytes", label: t("docker.field.networkIo"), render: (value, row) => `${Number(value || 0)} / ${Number(row.NetworkOutputBytes || 0)}` },
-              { key: "BlockReadBytes", label: t("docker.field.blockIo"), render: (value, row) => `${Number(value || 0)} / ${Number(row.BlockWriteBytes || 0)}` },
-              { key: "Management", label: t("docker.field.management"), render: (value) => t(`docker.management.${String(value)}`) },
-              { key: "Size", label: t("docker.field.size") },
-            ]}
-            actions={(row) => {
-              const target = String(row.ID || row.Names || "");
-              const running = String(row.State).toLowerCase() === "running";
-              const paused = String(row.State).toLowerCase() === "paused";
-              return (
-                <>
-                  <button
-                    title={t("docker.inspect")}
-                    onClick={() => setSelected(target)}
-                  >
-                    <Eye />
-                  </button>
-                  {running ? (
-                    <button
-                      title={t("module.stop")}
-                      disabled={!permissions.includes("docker.stop_container")}
-                      onClick={() => setDialog({ target, action: "stop" })}
-                    >
-                      <Square />
-                    </button>
-                  ) : paused ? (
-                    <button
-                      title={t("docker.unpause")}
-                      disabled={!permissions.includes("docker.start_container")}
-                      onClick={() => void action(target, "unpause")}
-                    >
-                      <Play />
-                    </button>
-                  ) : (
-                    <button
-                      title={t("module.start")}
-                      disabled={!permissions.includes("docker.start_container")}
-                      onClick={() => void action(target, "start")}
-                    >
-                      <Play />
-                    </button>
-                  )}
-                  <button
-                    title={t("module.restart")}
-                    disabled={!permissions.includes("docker.restart_container")}
-                    onClick={() => void action(target, "restart")}
-                  >
-                    <RotateCcw />
-                  </button>
-                  <select
-                    aria-label={t("docker.moreActions")}
-                    defaultValue=""
-                    onChange={(event) => {
-                      const next = event.target.value;
-                      event.target.value = "";
-                      if (next === "rename" || next === "duplicate" || next === "kill")
-                        setDialog({ target, action: next });
-                      else if (next === "compose") void exportCompose(target);
-                      else if (next)
-                        void action(
-                          target,
-                          next as DockerContainerAction["action"],
-                        );
-                    }}
-                  >
-                    <option value="">{t("docker.moreActions")}</option>
-                    {running && permissions.includes("docker.stop_container") && (
-                      <option value="pause">{t("docker.pause")}</option>
-                    )}
-                    {permissions.includes("docker.stop_container") && (
-                      <option value="kill">{t("docker.kill")}</option>
-                    )}
-                    {permissions.includes("docker.create_container") && (
-                      <option value="rename">{t("docker.rename")}</option>
-                    )}
-                    {permissions.includes("docker.create_container") && (
-                      <option value="duplicate">{t("docker.duplicate")}</option>
-                    )}
-                    {permissions.includes("docker.create_container") && (
-                      <option value="recreate">{t("docker.recreate")}</option>
-                    )}
-                    {permissions.includes("docker.inspect_container") && (
-                      <option value="compose">{t("docker.generateCompose")}</option>
-                    )}
-                    {permissions.includes("docker.pull_image") && (
-                      <option value="check_update">{t("docker.checkUpdate")}</option>
-                    )}
-                    {permissions.includes("docker.pull_image") && (
-                      <option value="update">{t("store.update")}</option>
-                    )}
-                  </select>
-                  <button
-                    title={t("docker.exportContainer")}
-                    disabled={!permissions.includes("docker.export_backup")}
-                    onClick={() => setDialog({ target, action: "export" })}
-                  >
-                    <Download />
-                  </button>
-                  <button
-                    title={t("docker.backup")}
-                    disabled={!permissions.includes("docker.export_backup")}
-                    onClick={() => setDialog({ target, action: "backup" })}
-                  >
-                    <Archive />
-                  </button>
-                  <button
-                    title={t("action.delete")}
-                    className="danger-icon"
-                    disabled={!permissions.includes("docker.remove_container")}
-                    onClick={() => setDialog({ target, action: "remove" })}
-                  >
-                    <Trash2 />
-                  </button>
-                </>
-              );
-            }}
-          />
+          {items.length ? <div className="docker-table-wrap docker-containers-table-wrap">
+            <table className="docker-table docker-containers-table">
+              <thead><tr>
+                <th>{t("docker.field.name")}</th>
+                <th>{t("docker.field.status")}</th>
+                <th>{t("docker.field.actions")}</th>
+              </tr></thead>
+              <tbody>{items.map((row, index) => {
+                const target = String(row.ID || row.Names || index);
+                const stateValue = String(row.State || "unknown").toLowerCase();
+                const knownStates = ["created", "running", "paused", "restarting", "removing", "exited", "dead", "stopped"];
+                const displayedState = knownStates.includes(stateValue) ? stateValue : "unknown";
+                const running = stateValue === "running";
+                const paused = stateValue === "paused";
+                const isExpanded = expanded.has(target);
+                const detailsId = `docker-container-details-${target.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+                const detailFields: Array<[string, unknown]> = [
+                  ["docker.field.id", row.ID], ["docker.field.image", row.Image], ["docker.field.digest", row.Digest],
+                  ["docker.field.status", row.Status], ["docker.field.health", row.Health], ["docker.field.created", row.CreatedAt],
+                  ["docker.field.restart_policy", row.RestartPolicy], ["docker.field.ports", row.Ports], ["docker.field.networks", row.Networks],
+                  ["docker.field.mounts", Array.isArray(row.Mounts) ? row.Mounts.length : row.Mounts],
+                  ["docker.statsCpu", `${Number(row.CpuPercent || 0).toFixed(2)}%`],
+                  ["docker.statsMemory", `${Math.round(Number(row.MemoryBytes || 0) / 1024 / 1024)} MiB`],
+                  ["docker.field.networkIo", `${Number(row.NetworkInputBytes || 0)} / ${Number(row.NetworkOutputBytes || 0)}`],
+                  ["docker.field.blockIo", `${Number(row.BlockReadBytes || 0)} / ${Number(row.BlockWriteBytes || 0)}`],
+                  ["docker.field.management", row.Management ? t(`docker.management.${String(row.Management)}`) : ""],
+                  ["docker.field.size", row.Size],
+                ];
+                return <Fragment key={target}>
+                  <tr className="docker-container-row">
+                    <td className="docker-container-name"><strong>{format(row.Names)}</strong>{Boolean(row.Image) && <small>{String(row.Image)}</small>}</td>
+                    <td className="docker-container-status"><StatusPill value={displayedState} t={t} />{Boolean(row.Health) && <small>{String(row.Health)}</small>}</td>
+                    <td><div className="docker-row-actions docker-container-actions">
+                      <button type="button" title={t("docker.inspect")} onClick={() => setSelected(target)}><Eye /></button>
+                      {running ? <button type="button" title={t("module.stop")} disabled={!permissions.includes("docker.stop_container")} onClick={() => setDialog({ target, action: "stop" })}><Square /></button>
+                        : paused ? <button type="button" title={t("docker.unpause")} disabled={!permissions.includes("docker.start_container")} onClick={() => void action(target, "unpause")}><Play /></button>
+                          : <button type="button" title={t("module.start")} disabled={!permissions.includes("docker.start_container")} onClick={() => void action(target, "start")}><Play /></button>}
+                      <button type="button" title={t("module.restart")} disabled={!permissions.includes("docker.restart_container")} onClick={() => void action(target, "restart")}><RotateCcw /></button>
+                      <select aria-label={t("docker.moreActions")} defaultValue="" onChange={(event) => {
+                        const next = event.target.value;
+                        event.target.value = "";
+                        if (["rename", "duplicate", "kill", "backup", "export", "remove"].includes(next)) setDialog({ target, action: next as "rename" | "duplicate" | "kill" | "backup" | "export" | "remove" });
+                        else if (next === "compose") void exportCompose(target);
+                        else if (next) void action(target, next as DockerContainerAction["action"]);
+                      }}>
+                        <option value="">{t("docker.moreActions")}</option>
+                        {running && permissions.includes("docker.stop_container") && <option value="pause">{t("docker.pause")}</option>}
+                        {permissions.includes("docker.stop_container") && <option value="kill">{t("docker.kill")}</option>}
+                        {permissions.includes("docker.create_container") && <option value="rename">{t("docker.rename")}</option>}
+                        {permissions.includes("docker.create_container") && <option value="duplicate">{t("docker.duplicate")}</option>}
+                        {permissions.includes("docker.create_container") && <option value="recreate">{t("docker.recreate")}</option>}
+                        {permissions.includes("docker.inspect_container") && <option value="compose">{t("docker.generateCompose")}</option>}
+                        {permissions.includes("docker.pull_image") && <option value="check_update">{t("docker.checkUpdate")}</option>}
+                        {permissions.includes("docker.pull_image") && <option value="update">{t("store.update")}</option>}
+                        {permissions.includes("docker.export_backup") && <option value="export">{t("docker.exportContainer")}</option>}
+                        {permissions.includes("docker.export_backup") && <option value="backup">{t("docker.backup")}</option>}
+                        {permissions.includes("docker.remove_container") && <option value="remove">{t("action.delete")}</option>}
+                      </select>
+                      <button type="button" className="docker-details-toggle" aria-expanded={isExpanded} aria-controls={detailsId} onClick={() => setExpanded((current) => {
+                        const next = new Set(current); if (next.has(target)) next.delete(target); else next.add(target); return next;
+                      })}>{isExpanded ? <ChevronUp /> : <ChevronDown />}<span>{t(isExpanded ? "docker.showLess" : "docker.showMore")}</span></button>
+                    </div></td>
+                  </tr>
+                  {isExpanded && <tr id={detailsId} className="docker-container-details-row"><td colSpan={3}><dl className="docker-container-detail-grid">
+                    {detailFields.map(([label, value]) => <div key={label}><dt>{t(label)}</dt><dd>{format(value)}</dd></div>)}
+                  </dl></td></tr>}
+                </Fragment>;
+              })}</tbody>
+            </table>
+          </div> : <div className="empty-state"><strong>{t("docker.noContainers")}</strong></div>}
           {pages > 1 && (
             <div className="docker-pagination">
               <button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>{t("action.previous")}</button>

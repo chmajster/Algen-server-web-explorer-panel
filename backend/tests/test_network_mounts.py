@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -123,6 +124,24 @@ def test_credentials_file_is_0600(tmp_path, monkeypatch):
     assert path.exists()
     assert oct(path.stat().st_mode & 0o777) == "0o600"
     assert "mount-secret" in path.read_text(encoding="utf-8")
+
+
+def test_credentials_directory_falls_back_when_etc_is_read_only(tmp_path, monkeypatch):
+    preferred = Path("/etc/webnas/mounts/credentials")
+    original_mkdir = Path.mkdir
+
+    def mkdir(path, *args, **kwargs):
+        if path == preferred:
+            raise OSError(30, "Read-only file system")
+        return original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", mkdir)
+    monkeypatch.setattr(network_mounts, "state_dir", lambda: tmp_path)
+
+    result = network_mounts.credentials_dir()
+
+    assert result == tmp_path / "credentials"
+    assert result.is_dir()
 
 
 def test_log_redacts_secret_values(tmp_path, monkeypatch):

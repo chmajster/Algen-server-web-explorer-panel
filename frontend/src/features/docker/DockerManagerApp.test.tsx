@@ -55,6 +55,38 @@ describe("DockerManagerApp", () => {
     expect(screen.queryByRole("button", { name: "docker.section.registries" })).not.toBeInTheDocument();
   });
 
+  it("renders the container list as three readable columns with expandable details", async () => {
+    vi.mocked(api.dockerContainers).mockResolvedValue({ items: [{
+      ID: "abc", Names: "web", Image: "nginx:stable", Digest: "sha256:full-digest",
+      State: "running", Status: "Up 2 hours", Health: "healthy", Ports: "80/tcp", Networks: "bridge",
+    }], total: 1, page: 1, page_size: 50, pages: 1 });
+    render(<DockerManagerApp permissions={[
+      "docker.view", "docker.view_containers", "docker.inspect_container", "docker.start_container",
+      "docker.stop_container", "docker.restart_container", "docker.export_backup", "docker.remove_container",
+    ]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "docker.field.name", "docker.field.status", "docker.field.actions",
+    ]);
+    expect(within(table).getByText("web")).toBeInTheDocument();
+    expect(within(table).getByText("nginx:stable")).toBeInTheDocument();
+    expect(within(table).queryByText("sha256:full-digest")).not.toBeInTheDocument();
+
+    const more = within(table).getByRole("button", { name: "docker.showMore" });
+    expect(more).toHaveAttribute("type", "button");
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    const detailsId = more.getAttribute("aria-controls")!;
+    fireEvent.click(more);
+
+    expect(within(table).getByRole("button", { name: "docker.showLess" })).toHaveAttribute("aria-expanded", "true");
+    const details = document.getElementById(detailsId)!;
+    expect(details).toBeInTheDocument();
+    expect(within(details).getByText("sha256:full-digest")).toBeInTheDocument();
+    expect(details.querySelector("td")).toHaveAttribute("colspan", "3");
+  });
+
   it("keeps dashboard elements visible while data refreshes in the background", async () => {
     let finishRefresh: ((value: DockerDashboard) => void) | undefined;
     vi.mocked(api.dockerDashboard)
