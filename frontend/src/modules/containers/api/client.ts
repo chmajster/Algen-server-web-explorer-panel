@@ -619,7 +619,7 @@ export const containersClient = {
     });
   },
 
-  dockerVolumes: async (search = "") => normalizePaged(
+  dockerVolumes: async (search = "") => normalizePaged<Record<string, unknown>>(
     await request<unknown>(
       `/api/modules/docker/volumes?search=${encodeURIComponent(search)}`,
     ),

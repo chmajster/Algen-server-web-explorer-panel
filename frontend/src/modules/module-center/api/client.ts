@@ -194,11 +194,15 @@ function normalizeBackup(value: unknown): ModuleBackup {
   } as ModuleBackup;
 }
 
-function normalizeDiagnostics(value: unknown) {
+function normalizeDiagnostics(
+  value: unknown,
+): { diagnostics: ModuleDiagnostic[]; job?: ModuleJob | null } {
   const source = asRecord(value);
+  const diagnostics = asArray<ModuleDiagnostic>(source.diagnostics);
+  if (!source.job) return { diagnostics };
   return {
-    diagnostics: asArray<ModuleDiagnostic>(source.diagnostics),
-    job: source.job ? normalizeJob(source.job) as ModuleJob : null,
+    diagnostics,
+    job: normalizeJob(source.job) as ModuleJob,
   };
 }
 
