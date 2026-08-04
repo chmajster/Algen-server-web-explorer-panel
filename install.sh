@@ -448,9 +448,7 @@ ensure_download_tools() {
   local tool=""
   local missing=()
   for tool in curl wget tar rsync cifs-utils; do
-    local binary_name="$tool"
-    [[ "$tool" == "cifs-utils" ]] && binary_name="mount.cifs"
-    command -v "$binary_name" >/dev/null 2>&1 || missing+=("$tool")
+    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [[ ${#missing[@]} -eq 0 ]]; then
     ok "Download, archive, and synchronization tools are available: curl, wget, tar, rsync, cifs-utils"
@@ -472,9 +470,7 @@ ensure_download_tools() {
       ;;
   esac
   for tool in curl wget tar rsync cifs-utils; do
-    local binary_name="$tool"
-    [[ "$tool" == "cifs-utils" ]] && binary_name="mount.cifs"
-    command -v "$binary_name" >/dev/null 2>&1 || fail "Required tool was not installed: ${tool}"
+    command -v "$tool" >/dev/null 2>&1 || fail "Required tool was not installed: ${tool}"
   done
   ok "Download, archive, and synchronization tools installed"
 }
