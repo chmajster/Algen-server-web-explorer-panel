@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Circle, Clock3, Copy, HardDriveDownload, LoaderCircle, LogIn, MinusCircle, RefreshCw, RotateCcw, Terminal, XCircle } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { UpdateCompletionNotice, UpdateProgress } from "../../api";
+import { request } from "../../core/api/transport";
 import type { Translate } from "../../app/types";
 
 function timestamp(value: number | null | undefined) {
@@ -44,7 +45,27 @@ export function UpdateStatusPage({
   const phaseLabel = value.steps?.some((step) => step.id === phase) ? t(`updateStatus.step.${phase}`) : t(`updateStatus.phase.${phase}`);
   const percent = value.progress ?? (value.state === "completed" || failed ? 100 : 0);
   const logRef = useRef<HTMLPreElement | null>(null);
+  const [showDetailedSteps, setShowDetailedSteps] = useState(false);
   const logContent = value.lines.length ? value.lines.join("\n") : t(active ? "settings.updateWaitingForLog" : "settings.updateNoLog");
+
+  useEffect(() => {
+    let live = true;
+    let retryTimer: number | undefined;
+    const loadPolicy = async () => {
+      try {
+        const policy = await request<{ detailed_steps: boolean }>("/api/system/update-detail-policy");
+        if (live) setShowDetailedSteps(policy.detailed_steps === true);
+      } catch {
+        if (live) retryTimer = window.setTimeout(() => void loadPolicy(), 5000);
+      }
+    };
+    void loadPolicy();
+    return () => {
+      live = false;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, []);
+
   useLayoutEffect(() => {
     const log = logRef.current;
     if (log) log.scrollTop = log.scrollHeight;
@@ -90,7 +111,7 @@ export function UpdateStatusPage({
         </div>
       </section>}
 
-      {!!value.steps?.length && <ol className="update-stepper" aria-label={t("updateStatus.stepsLabel")}>
+      {showDetailedSteps && !!value.steps?.length && <ol className="update-stepper" aria-label={t("updateStatus.stepsLabel")}>
         {value.steps.map((step) => <li key={step.id} className={step.status} aria-current={step.status === "running" ? "step" : undefined}>
           <span className="update-step-icon"><StepIcon status={step.status} /></span>
           <div className="update-step-copy">
