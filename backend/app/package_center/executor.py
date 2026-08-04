@@ -34,6 +34,8 @@ SYSTEM_MUTATION_COMMANDS = frozenset({
     "apt-get", "apt", "dpkg", "dnf", "yum", "zypper", "pacman", "apk", "rpm", "systemctl",
 })
 SHARED_RUNTIME_ROOT = Path("/run/webnas-package-center")
+# Packages required by WebNAS itself must never be removed with an optional module.
+PROTECTED_RUNTIME_PACKAGES = frozenset({"cifs-utils"})
 SECRET_RE = re.compile(r"(?i)(password|passwd|token|secret|authorization)(\s*[:=]\s*)(\S+)")
 URL_SECRET_RE = re.compile(r"(?i)(https?://[^:/\s]+:)[^@\s]+@")
 BEARER_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
@@ -153,10 +155,30 @@ def apt_update_without_proxmox_enterprise(source_root: Path | None = None) -> It
         yield result
 
 
+
+def _package_base_name(package: str) -> str:
+    """Normalize architecture-qualified package names for protection checks."""
+
+    return package.strip().lower().split(":", 1)[0]
+
+
+def _partition_uninstall_packages(packages: list[str]) -> tuple[list[str], list[str]]:
+    """Split a module package list into removable and WebNAS-protected packages."""
+
+    removable: list[str] = []
+    protected: list[str] = []
+    for package in packages:
+        destination = protected if _package_base_name(package) in PROTECTED_RUNTIME_PACKAGES else removable
+        destination.append(package)
+    return removable, protected
+
+
 def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[str, list[str], int]]:
     manager = plan.distribution.package_manager
     executable = resolve_package_manager_executable(manager, shutil.which)
     packages = plan.packages
+    if plan.action == PackageAction.uninstall:
+        packages, _protected = _partition_uninstall_packages(packages)
     steps: list[tuple[str, list[str], int]] = []
     required_services = [service.name for service in manifest.services if service.required]
     uses_system_packages = plan.installation_type in {None, InstallationType.system_package}
@@ -199,15 +221,15 @@ def _command_steps(plan: PackagePlan, manifest: ModuleManifest) -> list[tuple[st
         for service in reversed(required_services):
             steps.append((f"Stop {service}", ["systemctl", "stop", service], 180))
             steps.append((f"Disable {service}", ["systemctl", "disable", service], 120))
-        if removes_named_packages and manager == "apt-get":
+        if removes_named_packages and packages and manager == "apt-get":
             steps.append(("Remove packages", ["apt-get", "remove", "-y", *packages], 1800))
-        elif removes_named_packages and manager in {"dnf", "yum"}:
+        elif removes_named_packages and packages and manager in {"dnf", "yum"}:
             steps.append(("Remove packages", [executable or manager, "remove", "-y", *packages], 1800))
-        elif removes_named_packages and manager == "zypper":
+        elif removes_named_packages and packages and manager == "zypper":
             steps.append(("Remove packages", [executable or manager, "--non-interactive", "remove", *packages], 1800))
-        elif removes_named_packages and manager == "pacman":
+        elif removes_named_packages and packages and manager == "pacman":
             steps.append(("Remove packages", [executable or manager, "-R", "--noconfirm", *packages], 1800))
-        elif removes_named_packages and manager == "apk":
+        elif removes_named_packages and packages and manager == "apk":
             steps.append(("Remove packages", [executable or manager, "del", *packages], 1800))
         if required_services:
             steps.append(("Reload systemd units", ["systemctl", "daemon-reload"], 120))
@@ -568,6 +590,13 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
     if plan.installation_type == InstallationType.download_package and plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update}:
         progress(2, "Download and verify package")
         _install_downloaded_package(plan, manifest, log)
+    if plan.action == PackageAction.uninstall:
+        _removable_packages, protected_packages = _partition_uninstall_packages(plan.packages)
+        if protected_packages:
+            log(
+                "warning",
+                "Preserving WebNAS runtime packages: " + ", ".join(protected_packages),
+            )
     steps = _command_steps(plan, manifest)
     total = max(1, len(steps) + 1)
     for index, (label, args, timeout) in enumerate(steps):
@@ -606,13 +635,14 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
     if plan.action == PackageAction.uninstall:
         progress(98, "Verify packages were removed")
         manager = plan.distribution.package_manager
+        removable_packages, _protected_packages = _partition_uninstall_packages(plan.packages)
         if manager == "apt-get" and shutil.which("dpkg-query"):
-            for package in plan.packages:
+            for package in removable_packages:
                 result = subprocess.run(["dpkg-query", "-W", "-f=${db:Status-Abbrev}", package], capture_output=True, text=True, timeout=20, check=False, shell=False)
                 if result.returncode == 0 and result.stdout.strip().startswith("ii"):
                     raise RuntimeError(f"Package is still installed after removal: {package}")
         elif manager in {"dnf", "yum"} and shutil.which("rpm"):
-            for package in plan.packages:
+            for package in removable_packages:
                 result = subprocess.run(["rpm", "-q", package], capture_output=True, text=True, timeout=20, check=False, shell=False)
                 if result.returncode == 0:
                     raise RuntimeError(f"Package is still installed after removal: {package}")
