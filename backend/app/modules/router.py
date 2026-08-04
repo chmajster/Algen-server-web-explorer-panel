@@ -22,9 +22,10 @@ from ..rbac import authorize, current_user as current_admin, module_permission, 
 from ..package_center.service import get_module, list_modules, plan_operation, repository
 from ..security import SessionUser
 from .providers import get_provider
-from .providers.docker import DockerProvider
-from .providers.infrastructure import ApiConnectionProvider
-from .providers.samba import SambaProvider, parse_smb_conf
+from .providers import DockerProvider
+from .providers import ApiConnectionProvider
+from .providers import SambaProvider, parse_smb_conf
+from .planning import provider_plan
 
 router = APIRouter(prefix="/api/modules", tags=["modules"])
 _status_cache: dict[str, tuple[float, ModuleStatus]] = {}
@@ -211,32 +212,6 @@ def module_validate(module_id: str, payload: ModuleValidateRequest, user: Sessio
     return get_provider(module_id, user.username).validate_config(payload.config)
 
 
-def _provider_plan(module_id: str, action: PackageAction, payload: dict[str, Any], *, backup: bool = False) -> PackagePlan:
-    module = get_module(module_id)
-    manifest = get_provider(module_id).manifest
-    if module["blocked_by_proxmox"]:
-        api_error(403, "MODULE_BLOCKED_BY_PROXMOX", "Module operation is blocked by Proxmox Safe Mode")
-    capability = "actions" if action == PackageAction.manage else "diagnostics" if action == PackageAction.diagnostics else "configure" if action == PackageAction.apply else "backups" if action == PackageAction.restore else "reload" if action == PackageAction.reload else "service_control"
-    get_provider(module_id).assert_capability(capability)
-    return PackagePlan(
-        module_id=module_id,
-        action=action,
-        distribution=module["distribution"],
-        compatible=module["compatible"],
-        blocked_by_proxmox=module["blocked_by_proxmox"],
-        services=manifest.systemd_services,
-        config_paths=manifest.config_paths,
-        warnings=["A configuration backup will be created before the operation"] if backup else [],
-        steps={
-            PackageAction.apply: ["Validate configuration", "Create configuration backup", "Write candidate atomically", "Reload service", "Verify service and configuration", "Rollback automatically on failure"],
-            PackageAction.restore: ["Verify backup checksum", "Create safety backup", "Restore configuration atomically", "Reload service", "Verify restored state"],
-            PackageAction.diagnostics: ["Collect controlled diagnostic checks", "Store report"],
-        }.get(action, [f"{action.value.title()} declared module services", "Verify module status"]),
-        payload=payload,
-        create_backup=backup,
-    )
-
-
 def _enqueue(plan: PackagePlan, payload: ModuleAdminRequest, user: SessionUser) -> dict:
     if not payload.confirm:
         api_error(400, "PLAN_CONFIRMATION_REQUIRED", "The operation plan must be confirmed")
@@ -256,7 +231,7 @@ def module_apply(module_id: str, payload: ModuleApplyRequest, user: SessionUser 
         api_error(422, "CONFIG_VALIDATION_FAILED", "Module configuration is invalid", validation=validation.model_dump(mode="json"))
     if "smb1" in validation.confirmations_required and not payload.confirm_smb1:
         api_error(400, "SECURITY_CONFIRMATION_REQUIRED", "Enabling SMB1 requires explicit confirmation", confirmation="smb1")
-    return _enqueue(_provider_plan(module_id, PackageAction.apply, {"config": payload.config}, backup=True), payload, user)
+    return _enqueue(provider_plan(module_id, PackageAction.apply, {"config": payload.config}, backup=True), payload, user)
 
 
 @router.get("/{module_id}/logs")
@@ -279,7 +254,7 @@ def module_diagnostics(module_id: str, user: SessionUser = Depends(current_admin
 @router.post("/{module_id}/diagnostics")
 def run_module_diagnostics(module_id: str, payload: ModuleAdminRequest, user: SessionUser = Depends(mutating_admin)):
     _authorize(user, module_id, "diagnostics")
-    return _enqueue(_provider_plan(module_id, PackageAction.diagnostics, {}), payload, user)
+    return _enqueue(provider_plan(module_id, PackageAction.diagnostics, {}), payload, user)
 
 
 @router.get("/{module_id}/backups")
@@ -303,7 +278,7 @@ def restore_module_backup(module_id: str, backup_id: str, payload: ModuleAdminRe
     if module_id == "docker":
         api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker restores require the typed Containers Manager API and PAM confirmation")
     _authorize(user, module_id, "restore")
-    return _enqueue(_provider_plan(module_id, PackageAction.restore, {"backup_id": backup_id}, backup=True), payload, user)
+    return _enqueue(provider_plan(module_id, PackageAction.restore, {"backup_id": backup_id}, backup=True), payload, user)
 
 
 @router.delete("/{module_id}/backups/{backup_id}")
@@ -323,7 +298,7 @@ def module_service_action(module_id: str, action: Literal["start", "stop", "rest
     if module_id == "docker":
         api_error(409, "TYPED_DOCKER_API_REQUIRED", "Docker service changes require the typed Containers Manager API and PAM confirmation")
     _authorize(user, module_id, "operate")
-    return _enqueue(_provider_plan(module_id, PackageAction(action), {}), payload, user)
+    return _enqueue(provider_plan(module_id, PackageAction(action), {}), payload, user)
 
 
 @router.post("/{module_id}/actions/{operation}")
@@ -341,7 +316,7 @@ def module_management_action(module_id: str, operation: str, payload: ModuleActi
     action_payload = {**payload.payload, "operation": operation}
     if module_id == "linux-updates" and operation in {"upgrade_all", "upgrade_security"}:
         action_payload["screen_session"] = secrets.token_hex(12)
-    return _enqueue(_provider_plan(module_id, PackageAction.manage, action_payload), payload, user)
+    return _enqueue(provider_plan(module_id, PackageAction.manage, action_payload), payload, user)
 
 
 def _package_action(module_id: str, action: PackageAction, payload: ModuleAdminRequest, user: SessionUser) -> dict:
@@ -356,7 +331,7 @@ def _package_action(module_id: str, action: PackageAction, payload: ModuleAdminR
     if action == PackageAction.uninstall and payload.remove_data and module_id == "apmid":
         if payload.confirm_name != "APMID":
             api_error(400, "MODULE_NAME_CONFIRMATION_REQUIRED", "Type APMID to confirm removal of all APMID data")
-        from .apmid.service import service as apmid_service
+        from .apmid.public import service as apmid_service
 
         used = [
             {"id": item["id"], "code": item["code"], "usages": usages}
@@ -463,7 +438,7 @@ def samba_share_remove(share_name: str, payload: ModuleAdminRequest, user: Sessi
     validation = provider.validate_config(next_config)
     if not validation.ok:
         api_error(422, "CONFIG_VALIDATION_FAILED", "Samba configuration without the share is invalid", validation=validation.model_dump(mode="json"))
-    result = _enqueue(_provider_plan("samba", PackageAction.apply, {"config": next_config}, backup=True), payload, user)
+    result = _enqueue(provider_plan("samba", PackageAction.apply, {"config": next_config}, backup=True), payload, user)
     logger.info("module_share actor=%s module=samba action=remove share=%s job=%s", user.username, share_name, result["job"]["id"])
     return result
 

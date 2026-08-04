@@ -136,7 +136,7 @@ def parse_keyscan(output: str) -> list[dict[str, str]]:
 
 def write_known_hosts(repository: AnsibleRepository, path: Path) -> None:
     if repository.centralized_hosts:
-        from ..hosts_manager.service import registry
+        from ..hosts_manager.public import registry
         keys: list[dict[str, Any]] = []
         for host in registry().active_hosts():
             keys.extend(item | {"address": host["address"], "port": host["port"], "active": True} for item in registry().host_keys(host["id"]) if item["status"] == "accepted")
@@ -549,7 +549,7 @@ def execute_ad_hoc(
         code, stdout, stderr = _run_process(args, cwd=directory, env=_safe_environment(home, directory), timeout=120, log=log, cancelled=cancelled, uid=uid, gid=gid)
         now = time.time()
         if repository.centralized_hosts:
-            from ..hosts_manager.service import registry
+            from ..hosts_manager.public import registry
             registry()._update_host(host_id, actor, last_test_at=now, last_seen_at=now if code == 0 else None, connection_status="online" if code == 0 else "offline", last_error="" if code == 0 else redact_text(stderr)[:2000])
         else:
             with repository._lock, repository.connect() as connection:

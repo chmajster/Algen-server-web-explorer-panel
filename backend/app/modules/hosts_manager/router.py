@@ -25,8 +25,8 @@ from ...activity import ActivityCategory, ActivityStatus, record_activity
 from ...identity.permissions import Permission, authorize, require_permission
 from ...package_center.models import api_error
 from ...security import SessionUser
-from ..ansible_controller.inventory import generate_inventory, inventory_records, parse_inventory
-from ..ansible_controller.runner import (
+from ..ansible_controller.public import generate_inventory, inventory_records, parse_inventory
+from ..ansible_controller.public import (
     SSH_COMMANDS,
     build_ssh_args,
     controller_identity,
@@ -35,7 +35,7 @@ from ..ansible_controller.runner import (
     keyscan_args,
     parse_keyscan,
 )
-from ..ansible_controller.security import atomic_private_write, redact_text
+from ..ansible_controller.public_security import atomic_private_write, redact_text
 from .models import (
     AgentHeartbeatInput, AgentReportInput, ApmidInput, BackupInput, CapabilityActionInput, ConfirmationInput, CredentialInput,
     BootstrapOS, EnrollmentClaimInput, EnrollmentTokenInput, EnrollmentTokenMode, EnvironmentInput, FingerprintAcceptInput, GroupInput, HostInput,

@@ -3,6 +3,7 @@ name: File Manager
 category: storage
 icon: hard-drive
 permissions: [files.view, files.write, transfers.view_own]
-routers: [app.http_api:router]
+routers: [app.modules.files.api.router:router]
 capabilities: [browse, upload, download, tasks, sse]
+actions: [browse, create, copy, move, rename, delete, upload, download]
 menu: [{id: files, label: app.fileManager, icon: hard-drive, permission: files.view}]

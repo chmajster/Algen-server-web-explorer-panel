@@ -10,7 +10,7 @@ from ...audit import logger
 from ...package_center.jobs import manager
 from ...package_center.models import PackageAction
 from ...package_center.service import repository as package_repository
-from ..router import _provider_plan
+from ..planning import provider_plan
 from .playbooks import analyze_playbook
 from .repository import repository
 
@@ -37,7 +37,7 @@ def _queue_due_key_rotations(store: object, current: float) -> int:
         if current - float(queued_at.get(host["id"]) or 0) < 3600:
             continue
         payload = {"operation": "rotate_host_key", "host_id": host["id"], "managed_username": config.get("managed_username") or "algen-ansible", "sudo_profile": config.get("managed_sudo_profile") or "none", "sudoers_policy": "", "managed_shell": config.get("managed_shell") or "/bin/bash", "managed_comment": config.get("managed_comment") or "Algen Ansible automation", "authorized_keys_mode": "exclusive"}
-        manager(package_repository()).enqueue(_provider_plan("ansible-controller", PackageAction.manage, payload), "scheduler")
+        manager(package_repository()).enqueue(provider_plan("ansible-controller", PackageAction.manage, payload), "scheduler")
         queued_at[host["id"]] = current
         queued += 1
     if queued:
@@ -127,7 +127,7 @@ def scheduler_tick(now: float | None = None) -> int:
                 continue
             execution = store.create_execution(template["id"], "scheduler", list(dict.fromkeys(host_ids)), analysis["warnings"])
             execution_id = str(execution["id"])
-            plan = _provider_plan("ansible-controller", PackageAction.manage, {"operation": "launch", "execution_id": execution["id"]})
+            plan = provider_plan("ansible-controller", PackageAction.manage, {"operation": "launch", "execution_id": execution["id"]})
             package_job = manager(package_repository()).enqueue(plan, "scheduler")
             store.set_execution_job(execution["id"], package_job["id"])
             launched += 1

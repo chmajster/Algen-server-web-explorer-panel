@@ -1,0 +1,11 @@
+id: transfers
+name: Transfer Center
+category: storage
+icon: refresh-cw
+permissions: [transfers.view_own]
+routers: [app.modules.transfers.api.router:router]
+dependencies: [files]
+capabilities: [jobs, progress, cancellation, retry, sse]
+actions: [cancel, pause, resume, retry, change-priority]
+jobs: [file-copy, file-move, file-delete, file-upload]
+menu: [{id: transfers, label: app.transfers, icon: refresh-cw, permission: transfers.view_own}]

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { settingsFixture } from "../test/settings";
-import { apps } from "./catalog";
+import { apps } from "./registry/builtinModules";
 import { Taskbar } from "./Taskbar";
 import type { WindowInstance } from "./types";
 

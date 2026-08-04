@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app import main
+from app.modules.files.api import router as main
 
 
 def test_batch_delete_creates_one_task_per_validated_path(monkeypatch):

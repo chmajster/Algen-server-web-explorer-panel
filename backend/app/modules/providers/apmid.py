@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from ..apmid.service import SCHEMA_VERSION, service
+from ..apmid.public import SCHEMA_VERSION, service
 from .base import ModuleProvider
 from ...package_center.models import ModuleDiagnostic
 

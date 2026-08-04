@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app import file_ops, main, worker, write_policy
+from app import file_ops, worker, write_policy
+from app.modules.files.api import router as main
 
 
 def test_reads_utf8_text_with_version(tmp_path: Path):

@@ -98,7 +98,7 @@ class DockerProvider(PrivateBackupProvider):
 
     @property
     def manager_store(self):
-        from ..docker_manager.storage import store
+        from ..docker_manager.public import store
 
         return store()
 
@@ -754,7 +754,7 @@ class DockerProvider(PrivateBackupProvider):
         }
 
     def update_container_settings(self, target: str, settings: dict[str, Any]) -> dict[str, Any]:
-        from ..docker_manager.models import ContainerSettingsRequest
+        from ..docker_manager.public import ContainerSettingsRequest
 
         normalized = self._checked_identifier(target, "container")
         request = ContainerSettingsRequest.model_validate(settings)
@@ -1324,7 +1324,7 @@ class DockerProvider(PrivateBackupProvider):
         }
 
     def merge_default_bridge_config(self, settings: dict[str, Any]) -> dict[str, Any]:
-        from ..docker_manager.models import DefaultBridgeConfigRequest
+        from ..docker_manager.public import DefaultBridgeConfigRequest
 
         request = DefaultBridgeConfigRequest.model_validate(settings)
         current = self.get_config()
@@ -1531,7 +1531,7 @@ class DockerProvider(PrivateBackupProvider):
         return {"volume": volume, "backup_id": backup_id, "restored": True}
 
     def _container_definition(self, inspect: dict[str, Any], *, name: str, image: str | None = None) -> dict[str, Any]:
-        from ..docker_manager.models import ContainerCreateRequest
+        from ..docker_manager.public import ContainerCreateRequest
 
         config = inspect.get("Config") or {}
         host = inspect.get("HostConfig") or {}
@@ -1601,7 +1601,7 @@ class DockerProvider(PrivateBackupProvider):
         return {"content": content, "secrets_omitted": bool(environment), "environment_keys": sorted(environment)}
 
     def _run_container(self, definition: dict[str, Any], secrets_payload: dict[str, str], log: LogCallback) -> dict[str, Any]:
-        from ..docker_manager.models import ContainerCreateRequest
+        from ..docker_manager.public import ContainerCreateRequest
 
         request = ContainerCreateRequest.model_validate({**definition, "secret_environment": secrets_payload})
         if self._inspect_container(request.name):
@@ -1903,7 +1903,7 @@ class DockerProvider(PrivateBackupProvider):
             else:
                 result = self._run(["docker", "logout", credentials["server"]], timeout=120)
         elif operation == "volume_create":
-            from ..docker_manager.models import VolumeCreateRequest
+            from ..docker_manager.public import VolumeCreateRequest
 
             volume_request = VolumeCreateRequest.model_validate(payload.get("definition") or {})
             command = ["volume", "create"]
@@ -1929,7 +1929,7 @@ class DockerProvider(PrivateBackupProvider):
                     backup = self._volume_archive(volume, actor, display_name=f"temporary-{volume}.tar.gz")
                     response = self._restore_volume(target_name, backup["id"])
         elif operation == "network_create":
-            from ..docker_manager.models import NetworkCreateRequest
+            from ..docker_manager.public import NetworkCreateRequest
 
             network_request = NetworkCreateRequest.model_validate(payload.get("definition") or {})
             network_items = self._json_lines(self._docker(["network", "ls", "--format", "{{json .}}"], timeout=30))

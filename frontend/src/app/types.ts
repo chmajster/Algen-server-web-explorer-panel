@@ -1,26 +1,7 @@
 import type { ReactNode } from "react";
 
-export type AppId =
-  | "files"
-  | "transfers"
-  | "activity"
-  | "identity"
-  | "users"
-  | "groups"
-  | "mounts"
-  | "samba"
-  | "services"
-  | "store"
-  | "logs"
-  | "settings"
-  | "monitor"
-  | "modules"
-  | "access"
-  | "containers"
-  | "ansible"
-  | "hosts"
-  | "apmid"
-  | "module";
+/** Stable manifest identifier. The registry validates the kebab-case format. */
+export type AppId = string;
 
 export type Theme = "light" | "dark" | "system";
 export type Translate = (key: string) => string;

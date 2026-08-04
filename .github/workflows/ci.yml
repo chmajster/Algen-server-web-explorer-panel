@@ -52,6 +52,12 @@ jobs:
       - name: Run mypy
         run: python -m mypy
 
+      - name: Run Bandit
+        run: python -m bandit -c pyproject.toml -r backend/app
+
+      - name: Validate module manifests and architecture boundaries
+        run: python -m pytest -q backend/tests/test_module_registry.py backend/tests/test_architecture_boundaries.py
+
       - name: Build Python package
         run: python -m build
 

@@ -38,7 +38,12 @@ class ModuleManifest(BaseModel):
     dependencies: list[str] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)
     system_capabilities: list[str] = Field(default_factory=list)
+    actions: list[str] = Field(default_factory=list)
+    jobs: list[str] = Field(default_factory=list)
     menu: list[ModuleMenuItem] = Field(default_factory=list)
+    startup: str | None = None
+    shutdown: str | None = None
+    health_check: str | None = None
     enabled: bool = True
 
     @field_validator("id")
@@ -55,12 +60,26 @@ class ModuleManifest(BaseModel):
             raise ValueError("module dependencies must be unique module ids")
         return values
 
+    @field_validator("permissions", "capabilities", "system_capabilities", "actions", "jobs")
+    @classmethod
+    def unique_non_empty_values(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)) or any(not value.strip() for value in values):
+            raise ValueError("manifest lists must contain unique non-empty values")
+        return values
+
     @field_validator("routers")
     @classmethod
     def valid_routers(cls, values: list[str]) -> list[str]:
         if len(values) != len(set(values)) or any(not IMPORT_PATH.fullmatch(value) for value in values):
             raise ValueError("router references must be unique app.module:attribute paths")
         return values
+
+    @field_validator("startup", "shutdown", "health_check")
+    @classmethod
+    def valid_callback(cls, value: str | None) -> str | None:
+        if value is not None and not IMPORT_PATH.fullmatch(value):
+            raise ValueError("lifecycle references must use app.module:attribute paths")
+        return value
 
     @classmethod
     def from_yaml(cls, path: Path) -> ModuleManifest:

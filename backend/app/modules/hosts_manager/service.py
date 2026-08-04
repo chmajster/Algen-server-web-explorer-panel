@@ -17,9 +17,9 @@ from types import TracebackType
 from typing import Any, Callable
 
 from ...config import get_config
-from ..ansible_controller.security import CredentialCipher, redact
-from ..apmid.models import ApmidInput as DomainApmidInput
-from ..apmid.service import (
+from ..ansible_controller.public_security import CredentialCipher, redact
+from ..apmid.public import ApmidInput as DomainApmidInput
+from ..apmid.public import (
     ApmidService,
     ApmidConflictError as DomainApmidConflictError,
     ApmidInUseError as DomainApmidInUseError,

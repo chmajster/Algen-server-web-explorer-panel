@@ -24,7 +24,7 @@ from ...package_center.models import PackageAction, PackagePlan, api_error
 from ...package_center.service import get_module, plan_operation, repository
 from ...rbac import current_user, mutating_user
 from ...security import SessionUser
-from ..providers.docker import DockerProvider
+from ..providers import DockerProvider
 from .models import (
     AppActionRequest,
     AppInstallRequest,

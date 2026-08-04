@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -55,7 +56,16 @@ class ModuleRegistry:
                 self._diagnostics[manifest.id] = ModuleDiagnostic(
                     manifest.id, ModuleState.unavailable, f"Missing dependencies: {', '.join(missing)}"
                 )
-        self.initialization_order()
+        for module_id in self.initialization_order():
+            manifest = self._manifests[module_id]
+            unavailable = [
+                dependency for dependency in manifest.dependencies
+                if self._diagnostics[dependency].state is not ModuleState.active
+            ]
+            if unavailable and self._diagnostics[module_id].state is ModuleState.active:
+                self._diagnostics[module_id] = ModuleDiagnostic(
+                    module_id, ModuleState.unavailable, f"Unavailable dependencies: {', '.join(unavailable)}"
+                )
 
     def initialization_order(self) -> tuple[str, ...]:
         result: list[str] = []
@@ -102,12 +112,54 @@ class ModuleRegistry:
     def public_catalog(self) -> list[dict[str, Any]]:
         return [
             {
-                **manifest.model_dump(exclude={"routers"}),
+                **manifest.model_dump(exclude={"routers", "startup", "shutdown", "health_check"}),
                 "state": self._diagnostics[manifest.id].state,
                 "diagnostic": self._diagnostics[manifest.id].message,
             }
             for manifest in self.manifests
         ]
+
+    async def startup(self) -> None:
+        for manifest in self.manifests:
+            if self._diagnostics[manifest.id].state is not ModuleState.active or not manifest.startup:
+                continue
+            try:
+                result = self._load(manifest.startup)()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as error:  # noqa: BLE001
+                self._diagnostics[manifest.id] = ModuleDiagnostic(manifest.id, ModuleState.broken, f"Startup failed: {error}")
+                raise RuntimeError(f"Could not start module {manifest.id}") from error
+
+    async def shutdown(self) -> None:
+        for manifest in reversed(self.manifests):
+            if not manifest.shutdown:
+                continue
+            try:
+                result = self._load(manifest.shutdown)()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as error:  # noqa: BLE001 - shutdown continues for remaining modules.
+                self._diagnostics[manifest.id] = ModuleDiagnostic(manifest.id, ModuleState.broken, f"Shutdown failed: {error}")
+
+    async def health(self) -> list[dict[str, str]]:
+        result: list[dict[str, str]] = []
+        for manifest in self.manifests:
+            diagnostic = self._diagnostics[manifest.id]
+            if manifest.health_check and diagnostic.state is ModuleState.active:
+                try:
+                    value = self._load(manifest.health_check)()
+                    if inspect.isawaitable(value):
+                        value = await value
+                    message = str(value or "ok")
+                except Exception as error:  # noqa: BLE001
+                    diagnostic = ModuleDiagnostic(manifest.id, ModuleState.broken, str(error))
+                    self._diagnostics[manifest.id] = diagnostic
+                    message = str(error)
+            else:
+                message = diagnostic.message
+            result.append({"module_id": manifest.id, "state": diagnostic.state, "message": message})
+        return result
 
     def diagnostics(self) -> tuple[ModuleDiagnostic, ...]:
         return tuple(self._diagnostics[key] for key in sorted(self._diagnostics))

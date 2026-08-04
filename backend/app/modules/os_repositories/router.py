@@ -11,7 +11,7 @@ from ...identity.permissions import Permission, authorize, require_permission
 from ...package_center.models import api_error
 from ...package_center.service import repository as package_repository
 from ...security import SessionUser
-from ..hosts_manager.service import registry as hosts_registry
+from ..hosts_manager.public import registry as hosts_registry
 from .jobs import manager
 from .models import (
     BackupInput,

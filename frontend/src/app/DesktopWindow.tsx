@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/refs -- pointer gesture refs are only mutated by pointer event handlers */
 import { useEffect, useRef, useState } from "react";
 import { Maximize2, Minimize2, Share2, X } from "lucide-react";
-import { appById } from "./catalog";
+import { appById } from "./registry/builtinModules";
 import { clampRect, DESKTOP_TOP, workspaceRect, type ViewportMetrics } from "./windowState";
 import type { Translate, WindowInstance, WindowRect } from "./types";
 

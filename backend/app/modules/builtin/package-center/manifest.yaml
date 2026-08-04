@@ -5,6 +5,8 @@ icon: package
 permissions: [modules.view, modules.install]
 routers: [app.package_center.router:router, app.apps:router, app.modules.router:router]
 capabilities: [catalog, install, update, uninstall, backups]
+actions: [install, update, uninstall, restore]
+jobs: [package-operation]
 system_capabilities: [package-manager, systemd]
 menu:
   - {id: modules, label: app.modules, icon: boxes, permission: modules.view}

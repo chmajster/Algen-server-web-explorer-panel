@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app import rbac
-from app.modules import router as module_router
+from app.modules import planning, router as module_router
 from app.modules.providers.dns import PiHoleProvider
 from app.modules.providers.docker import DockerProvider
 from app.modules.providers.home_assistant import HomeAssistantProvider
@@ -68,11 +68,11 @@ def test_rbac_assignment_is_atomic_private_and_rejects_unknown_permission(monkey
 
 
 def test_proxmox_safe_mode_blocks_provider_management(monkeypatch):
-    monkeypatch.setattr(module_router, "get_module", lambda module_id: {"id": module_id, "blocked_by_proxmox": True})
-    monkeypatch.setattr(module_router, "get_provider", lambda module_id, actor="root": SimpleNamespace(manifest=SimpleNamespace()))
+    monkeypatch.setattr(planning, "get_module", lambda module_id: {"id": module_id, "blocked_by_proxmox": True})
+    monkeypatch.setattr(planning, "get_provider", lambda module_id, actor="root": SimpleNamespace(manifest=SimpleNamespace()))
 
     with pytest.raises(HTTPException) as error:
-        module_router._provider_plan("docker", PackageAction.manage, {"operation": "container_start"})
+        planning.provider_plan("docker", PackageAction.manage, {"operation": "container_start"})
 
     assert error.value.status_code == 403
     assert error.value.detail["code"] == "MODULE_BLOCKED_BY_PROXMOX"
@@ -83,7 +83,7 @@ def test_linux_update_route_assigns_the_screen_session_server_side(monkeypatch):
     monkeypatch.setattr(module_router, "_authorize", lambda *args: None)
     monkeypatch.setattr(module_router, "get_provider", lambda *args: SimpleNamespace(manifest=SimpleNamespace(capabilities=SimpleNamespace(actions=["upgrade_security"]))))
     monkeypatch.setattr(module_router.secrets, "token_hex", lambda length: "0123456789abcdef01234567")
-    monkeypatch.setattr(module_router, "_provider_plan", lambda module_id, action, payload: captured.update(payload) or payload)
+    monkeypatch.setattr(module_router, "provider_plan", lambda module_id, action, payload: captured.update(payload) or payload)
     monkeypatch.setattr(module_router, "_enqueue", lambda plan, payload, user: plan)
     request = module_router.ModuleActionRequest(payload={"operation": "upgrade_all", "screen_session": "client-value"})
 

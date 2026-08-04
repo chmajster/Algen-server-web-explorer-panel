@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Literal
 
 from ...package_center.models import ModuleDiagnostic
-from ..os_repositories.models import BackupInput
-from ..os_repositories.service import service
+from ..os_repositories.public import BackupInput
+from ..os_repositories.public import service
 from .base import ModuleProvider
 
 

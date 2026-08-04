@@ -1,4 +1,5 @@
 from pathlib import Path
+import asyncio
 
 import pytest
 
@@ -33,6 +34,18 @@ def test_registry_rejects_duplicate_ids_and_dependency_cycles():
         cyclic.initialization_order()
 
 
+def test_unavailable_state_propagates_through_dependencies():
+    registry = ModuleRegistry()
+    registry.register(ModuleManifest(id="base", name="base", category="test", icon="box", enabled=False))
+    registry.register(manifest("consumer", ["base"]))
+
+    registry.validate_dependencies()
+
+    diagnostics = {item.module_id: item for item in registry.diagnostics()}
+    assert diagnostics["base"].state is ModuleState.disabled
+    assert diagnostics["consumer"].state is ModuleState.unavailable
+
+
 def test_discovery_reports_a_broken_manifest_without_executing_it(tmp_path: Path):
     directory = tmp_path / "unsafe"
     directory.mkdir()
@@ -51,4 +64,26 @@ def test_application_factory_builds_independent_apps_from_registry():
 
     assert first is not second
     assert first.state.modules is not second.state.modules
-    assert any(getattr(route, "path", None) == "/api/v1/modules" for route in first.routes)
+    assert "/api/v1/modules" in first.openapi()["paths"]
+
+
+def test_registry_runs_lifecycle_and_health_callbacks(monkeypatch):
+    events: list[str] = []
+    registry = ModuleRegistry()
+    registry.register(ModuleManifest(
+        id="lifecycle", name="Lifecycle", category="test", icon="box",
+        startup="app.lifecycle:start", shutdown="app.lifecycle:stop", health_check="app.lifecycle:health",
+    ))
+    callbacks = {
+        "app.lifecycle:start": lambda: events.append("start"),
+        "app.lifecycle:stop": lambda: events.append("stop"),
+        "app.lifecycle:health": lambda: "healthy",
+    }
+    monkeypatch.setattr(registry, "_load", lambda reference: callbacks[reference])
+
+    asyncio.run(registry.startup())
+    health = asyncio.run(registry.health())
+    asyncio.run(registry.shutdown())
+
+    assert events == ["start", "stop"]
+    assert health == [{"module_id": "lifecycle", "state": ModuleState.active, "message": "healthy"}]

@@ -565,7 +565,7 @@ class AgentClient:
         os.chmod(temporary, 0o755)
         temporary.replace(current_path)
         logging.info("verified agent update installed; restarting process")
-        os.execv(sys.executable, [sys.executable, str(current_path), *sys.argv[1:]])
+        os.execv(sys.executable, [sys.executable, str(current_path), *sys.argv[1:]])  # nosec B606 - verified signed agent replaces itself.
 
     def send_report(self) -> None:
         self._request(

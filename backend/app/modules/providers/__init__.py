@@ -6,10 +6,11 @@ from .apmid import ApmidProvider
 from .databases import MariaDBProvider, PostgreSQLProvider, RedisProvider
 from .dns import AdGuardHomeProvider, PiHoleProvider
 from .docker import DockerProvider
+from .infrastructure import ApiConnectionProvider
 from .home_assistant import HomeAssistantProvider
 from .linux_updates import LinuxUpdatesProvider
 from .os_repositories import OsRepositoriesProvider
-from .samba import SambaProvider
+from .samba import SambaProvider, parse_smb_conf
 
 
 def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
@@ -35,4 +36,4 @@ def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
     return ModuleProvider(module_id)
 
 
-__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApmidProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "OsRepositoriesProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider"]
+__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApiConnectionProvider", "ApmidProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "OsRepositoriesProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider", "parse_smb_conf"]

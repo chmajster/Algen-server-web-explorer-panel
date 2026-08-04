@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -13,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from .audit import configure_logging
 from .config import AppConfig, get_config
 from .core.modules import ModuleRegistry
-from .http_api import frontend_cache_policy
+from .core.errors import DomainError, domain_error_handler, success_payload
+from .platform_api import frontend_cache_policy
 from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
 from .modules.os_repositories.scheduler import start_scheduler as start_os_repositories_scheduler
 from .network_mounts import active_mount_jobs
@@ -30,6 +32,12 @@ BUILTIN_MODULES = Path(__file__).resolve().parent / "modules" / "builtin"
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
+@dataclass(frozen=True, slots=True)
+class ApplicationContainer:
+    settings: AppConfig
+    modules: ModuleRegistry
+
+
 def build_module_registry(root: Path = BUILTIN_MODULES) -> ModuleRegistry:
     registry = ModuleRegistry()
     registry.discover(root)
@@ -44,6 +52,8 @@ def _start_schedulers() -> None:
 
 @asynccontextmanager
 async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    module_registry: ModuleRegistry = app.state.modules
+    await module_registry.startup()
     repository = package_repository()
     manager = package_job_manager(repository)
     register_operation_provider(
@@ -73,9 +83,12 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await asyncio.sleep(0.25)
 
         promotion_task = asyncio.create_task(promote_candidate())
-    yield
-    if promotion_task and not promotion_task.done():
-        promotion_task.cancel()
+    try:
+        yield
+    finally:
+        if promotion_task and not promotion_task.done():
+            promotion_task.cancel()
+        await module_registry.shutdown()
 
 
 def _registry_router(registry: ModuleRegistry) -> APIRouter:
@@ -83,15 +96,15 @@ def _registry_router(registry: ModuleRegistry) -> APIRouter:
 
     @router.get("")
     def module_catalog(_user: SessionUser = Depends(get_session_user)):
-        return {"items": registry.public_catalog(), "total": len(registry.manifests)}
+        return success_payload(registry.public_catalog(), total=len(registry.manifests))
 
     @router.get("/health")
-    def module_health(_user: SessionUser = Depends(get_session_user)):
-        diagnostics = registry.diagnostics()
-        return {
-            "status": "ok" if all(item.state in {"active", "disabled"} for item in diagnostics) else "degraded",
-            "modules": [{"module_id": item.module_id, "state": item.state, "message": item.message} for item in diagnostics],
-        }
+    async def module_health(_user: SessionUser = Depends(get_session_user)):
+        diagnostics = await registry.health()
+        return success_payload({
+            "status": "ok" if all(item["state"] in {"active", "disabled"} for item in diagnostics) else "degraded",
+            "modules": diagnostics,
+        })
 
     return router
 
@@ -101,9 +114,12 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     configure_logging()
     application_settings = settings or get_config()
     module_registry = registry or build_module_registry()
+    container = ApplicationContainer(application_settings, module_registry)
     app = FastAPI(title="WebNAS", version="0.1.0", lifespan=application_lifespan)
     app.state.settings = application_settings
     app.state.modules = module_registry
+    app.state.container = container
+    app.add_exception_handler(DomainError, domain_error_handler)
     app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     app.middleware("http")(frontend_cache_policy)
     module_registry.install_routers(app)

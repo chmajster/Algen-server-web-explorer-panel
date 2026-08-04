@@ -7,7 +7,7 @@ from ...identity.permissions import Permission, has_permission, require_permissi
 from ...package_center.models import api_error
 from ...package_center.service import repository as package_repository
 from ...security import SessionUser, get_session_user, require_csrf
-from ..hosts_manager.service import ManagedGroupConflictError, ManagedGroupProtectedError, registry as hosts_registry
+from ..hosts_manager.public import ManagedGroupConflictError, ManagedGroupProtectedError, registry as hosts_registry
 from .models import (
     ApmidBackupInput, ApmidInput, ApmidMemberCreate, ApmidMemberUpdate, ApmidPermissionUpdate,
     ApmidResourcePermission, ApmidRestoreInput,

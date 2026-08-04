@@ -280,33 +280,33 @@ def test_public_update_status_hides_logs_and_operation_details(monkeypatch, upda
 
 
 def test_update_status_route_serves_spa_after_a_full_reload(monkeypatch, tmp_path):
-    from app import http_api
+    from app import platform_api
 
     frontend = tmp_path / "dist"
     frontend.mkdir()
     index = frontend / "index.html"
     index.write_text("<!doctype html><title>WebNAS</title>", encoding="utf-8")
-    monkeypatch.setattr(http_api, "frontend_dist", frontend)
+    monkeypatch.setattr(platform_api, "frontend_dist", frontend)
 
-    response = http_api.update_status_frontend()
+    response = platform_api.update_status_frontend()
 
     assert Path(response.path) == index
 
 
 def test_health_exposes_only_a_planned_handover_phase(monkeypatch):
-    from app import http_api
+    from app import platform_api
 
-    monkeypatch.setattr(http_api, "read_update_request", lambda: {
+    monkeypatch.setattr(platform_api, "read_update_request", lambda: {
         "id": "update-1", "state": "running", "phase": "switching",
     })
-    assert http_api.health() == {
+    assert platform_api.health() == {
         "status": "ok", "service": "webnas", "deployment_phase": "switching", "update_id": "update-1",
     }
 
-    monkeypatch.setattr(http_api, "read_update_request", lambda: {
+    monkeypatch.setattr(platform_api, "read_update_request", lambda: {
         "id": "update-1", "state": "running", "phase": "installing",
     })
-    assert http_api.health()["deployment_phase"] is None
+    assert platform_api.health()["deployment_phase"] is None
 
 
 def test_update_progress_preserves_switching_phase_from_durable_request(monkeypatch, update_environment):

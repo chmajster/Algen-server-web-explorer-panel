@@ -7,8 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException, Request, Response
 
-from app import activity_api
-from app import main
+from app import activity_api, auth_api
 from app.activity import ActivityCategory, ActivityRepository, ActivityStatus
 
 
@@ -100,13 +99,13 @@ def test_activity_api_grants_global_filtering_only_with_audit_permission(monkeyp
 
 def test_failed_pam_login_records_metadata_without_the_password(monkeypatch):
     captured: list[tuple[tuple, dict]] = []
-    monkeypatch.setattr(main.rate_limiter, "check", lambda key: None)
-    monkeypatch.setattr(main, "authenticate", lambda username, password: (_ for _ in ()).throw(HTTPException(401, "Invalid username or password")))
-    monkeypatch.setattr(main, "record_activity", lambda *args, **kwargs: captured.append((args, kwargs)))
+    monkeypatch.setattr(auth_api.rate_limiter, "check", lambda key: None)
+    monkeypatch.setattr(auth_api, "authenticate", lambda username, password: (_ for _ in ()).throw(HTTPException(401, "Invalid username or password")))
+    monkeypatch.setattr(auth_api, "record_activity", lambda *args, **kwargs: captured.append((args, kwargs)))
     request = Request({"type": "http", "method": "POST", "path": "/api/auth/login", "headers": [], "client": ("192.0.2.15", 12345)})
 
     with pytest.raises(HTTPException):
-        main.login(main.LoginRequest(username="alice", password="do-not-store"), request, Response())
+        auth_api.login(auth_api.LoginRequest(username="alice", password="do-not-store"), request, Response())
 
     assert captured[0][0][:3] == (ActivityCategory.login, "login", "alice")
     assert captured[0][1]["status"] == ActivityStatus.failure

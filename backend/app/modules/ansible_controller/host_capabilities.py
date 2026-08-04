@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from ...identity.permissions import Permission
 from ...package_center.models import api_error
-from ..hosts_manager.service import HostCapabilityProvider, registry
+from ..hosts_manager.public import HostCapabilityProvider, registry
 from .models import MANAGED_SSH_USERNAME
 from .playbooks import analyze_playbook
 

@@ -21,7 +21,7 @@ from typing import Any, BinaryIO
 
 from ...activity import ActivityCategory, record_activity
 from ...config import get_config
-from ..ansible_controller.security import CredentialCipher
+from ..ansible_controller.public_security import CredentialCipher
 from .adapters import AptRepositoryAdapter, RpmRepositoryAdapter
 from .models import (
     BackupInput,

@@ -3,8 +3,6 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
 import { ConnectionRefreshScope } from "../features/connection/ConnectionStatusMonitor";
-import type { SettingsCategory } from "../features/settings/SettingsApp";
-import type { PolicySubject } from "../features/admin/IdentityApp";
 import type { UploadControls } from "../features/transfers/useUploadManager";
 import { ActionsCenter } from "../features/actions/ActionsCenter";
 import { useBackgroundActions } from "../features/actions/useBackgroundActions";
@@ -13,7 +11,7 @@ import { isActiveAction, type BackgroundAction } from "../features/actions/types
 import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
 import { CalendarFlyout } from "./CalendarFlyout";
-import { appById, apps } from "./catalog";
+import { apps, moduleRegistry } from "./registry/builtinModules";
 import { DesktopWindow } from "./DesktopWindow";
 import { interfaceFontStacks } from "./interfaceFonts";
 import { interfaceScaleFactor, migrateLegacyInterfaceScale } from "./interfaceScale";
@@ -23,24 +21,7 @@ import type { AppId, RecentApp, Theme, Toast, ToastFn, Translate, User, WindowIn
 import { initialWindowState, restoreWindowState, windowReducer, type ViewportMetrics } from "./windowState";
 import { measureWorkspaceMetrics, navbarElements, sameViewportMetrics } from "./workspaceMetrics";
 
-const ActivityCenter = lazy(() => import("../features/activity/ActivityCenter").then((module) => ({ default: module.ActivityCenter })));
 const DesktopWidgets = lazy(() => import("../features/widgets/DesktopWidgets").then((module) => ({ default: module.DesktopWidgets })));
-const FileManager = lazy(() => import("../features/files/FileManager").then((module) => ({ default: module.FileManager })));
-const IdentityApp = lazy(() => import("../features/admin/IdentityApp").then((module) => ({ default: module.IdentityApp })));
-const LogsApp = lazy(() => import("../features/logs/LogsApp").then((module) => ({ default: module.LogsApp })));
-const MonitorApp = lazy(() => import("../features/admin/MonitorApp").then((module) => ({ default: module.MonitorApp })));
-const ModuleApp = lazy(() => import("../features/modules/ModuleApp").then((module) => ({ default: module.ModuleApp })));
-const ModuleHub = lazy(() => import("../features/modules/ModuleHub").then((module) => ({ default: module.ModuleHub })));
-const PackageCenterApp = lazy(() => import("../features/package-center/PackageCenterApp").then((module) => ({ default: module.PackageCenterApp })));
-const ServicesApp = lazy(() => import("../features/admin/SystemApps").then((module) => ({ default: module.ServicesApp })));
-const SettingsAppView = lazy(() => import("../features/settings/SettingsApp").then((module) => ({ default: module.SettingsAppView })));
-const TransferCenter = lazy(() => import("../features/transfers/TransferCenter").then((module) => ({ default: module.TransferCenter })));
-const settingsCategories = new Set<SettingsCategory>(["system", "personalization", "files", "transfers", "notifications", "accessibility", "language", "account", "identity", "network", "networkResources", "updates", "policies", "administration", "about"]);
-const isSettingsCategory = (value: string | undefined): value is SettingsCategory => Boolean(value && settingsCategories.has(value as SettingsCategory));
-const policySubject = (value?: string): PolicySubject | undefined => {
-  const match = /^policy:(user|group):(.+)$/.exec(value || "");
-  return match ? { type: match[1] as PolicySubject["type"], id: match[2] } : undefined;
-};
 
 function wallpaperStyle(profile: SettingsMe): CSSProperties {
   if (!profile.wallpaper) return {};
@@ -126,7 +107,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const notificationRef = useRef<HTMLElement>(null);
   const actionButtonRef = useRef<HTMLButtonElement>(null);
   const clockButtonRef = useRef<HTMLButtonElement>(null);
-  const canUseApp = useCallback((appId: AppId) => { const definition = appById[appId]; return Boolean(definition && (!definition.admin || profile.is_admin) && (!definition.permission || profile.permissions.includes(definition.permission)) && (!definition.permissionAny || definition.permissionAny.some((permission) => profile.permissions.includes(permission)))); }, [profile.is_admin, profile.permissions]);
+  const canUseApp = useCallback((appId: AppId) => moduleRegistry.availableFor(appId, profile.permissions, profile.is_admin), [profile.is_admin, profile.permissions]);
   const moduleAppAvailable = useCallback((appId: AppId) => (appId !== "ansible" || moduleNames.has("ansible-controller")) && (appId !== "hosts" || moduleNames.has("hosts-manager")) && (appId !== "apmid" || apmidAvailable), [apmidAvailable, moduleNames]);
   const availableApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const taskbarApps = useMemo(() => apps.filter((app) => canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
@@ -452,28 +433,15 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   function closeModuleWindows(moduleId: string) { state.windows.filter((item) => item.app === "module" && item.moduleId === moduleId).forEach(closeWindow); }
   function changeTaskbarAlignment(alignment: "left" | "center") { void onSettingsChange({ taskbar_alignment: alignment }).catch((error: unknown) => toast(error instanceof Error ? error.message : t("error.generic"), "error")); }
   function renderApp(item: WindowInstance) {
-    switch (item.app) {
-      case "files": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><FileManager homePath={user.home} initialPath={item.initialPath} settings={profile} tasks={tasks} isAdmin={profile.is_admin} t={t} toast={toast} onUpload={uploadControls.add} onUploadCancel={uploadControls.cancel} onUploadRetry={uploadControls.retry} onSettingsChange={onSettingsChange} onOpenFolderWindow={(path) => openApp("files", path)} onShareSamba={(path) => openApp("module", path, "samba")} /></Suspense>;
-      case "transfers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><TransferCenter tasks={tasks} settings={profile} selectedTaskId={item.deepLink?.type === "transfer" ? item.deepLink.id : undefined} t={t} toast={toast} uploadControls={uploadControls} onSelectedTaskClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
-      case "activity": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ActivityCenter locale={profile.language} t={t} /></Suspense>;
-      case "identity": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} t={t} toast={toast} onOpenPolicies={(subject) => openApp("settings", "policies", `policy:${subject.type}:${subject.id}`)} /></Suspense>;
-      case "users": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="users" t={t} toast={toast} onOpenPolicies={(subject) => openApp("settings", "policies", `policy:${subject.type}:${subject.id}`)} /></Suspense>;
-      case "groups": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><IdentityApp permissions={profile.permissions} initialTab="groups" t={t} toast={toast} onOpenPolicies={(subject) => openApp("settings", "policies", `policy:${subject.type}:${subject.id}`)} /></Suspense>;
-      case "mounts": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection="networkResources" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} /></Suspense>;
-      case "samba": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="samba" initialPath={item.initialPath} deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
-      case "modules": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleHub t={t} toast={toast} onOpen={(moduleId) => openApp("module", undefined, moduleId)} /></Suspense>;
-      case "containers": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="docker" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
-      case "ansible": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="ansible-controller" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
-      case "hosts": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="hosts-manager" deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
-      case "apmid": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId="apmid" permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} /></Suspense>;
-      case "access": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection="policies" t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} /></Suspense>;
-      case "services": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ServicesApp t={t} toast={toast} /></Suspense>;
-      case "store": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><PackageCenterApp selectedJobId={item.deepLink?.type === "package-job" ? item.deepLink.jobId || item.deepLink.id : undefined} t={t} toast={toast} onOpenModule={(moduleId) => openApp("module", undefined, moduleId)} onSelectedJobClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
-      case "logs": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><LogsApp permissions={profile.permissions} t={t} toast={toast} /></Suspense>;
-      case "settings": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><SettingsAppView settings={profile} initialSection={isSettingsCategory(item.initialPath) ? item.initialPath : "system"} initialPolicySubject={policySubject(item.moduleId)} deepLink={item.deepLink} t={t} toast={toast} onSettingsChange={onSettingsChange} onOpenApp={openApp} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} onSectionChange={(section) => { dispatch({ type: "setInitialPath", id: item.id, initialPath: section }); if (item.deepLink && section !== item.deepLink.section) dispatch({ type: "clearDeepLink", id: item.id }); }} /></Suspense>;
-      case "monitor": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><MonitorApp t={t} /></Suspense>;
-      case "module": return <Suspense fallback={<div className="loading-state">{t("status.loading")}</div>}><ModuleApp moduleId={item.moduleId || ""} initialPath={item.initialPath} deepLink={item.deepLink} draftKey={`webnas_window_draft_${user.username}_${item.id}`} permissions={profile.permissions} t={t} toast={toast} onOpenFolder={(path) => openApp("files", path)} onDirtyChange={(dirty) => moduleDirty(item, dirty)} onDeepLinkClose={() => dispatch({ type: "clearDeepLink", id: item.id })} /></Suspense>;
-    }
+    return moduleRegistry.render(item.app, {
+      item, user, profile, tasks, uploadControls, t, toast, onSettingsChange, openApp,
+      clearDeepLink: () => dispatch({ type: "clearDeepLink", id: item.id }),
+      setDirty: (dirty) => moduleDirty(item, dirty),
+      setInitialPath: (initialPath) => {
+        dispatch({ type: "setInitialPath", id: item.id, initialPath });
+        if (item.deepLink && initialPath !== item.deepLink.section) dispatch({ type: "clearDeepLink", id: item.id });
+      },
+    });
   }
 
   useLayoutEffect(() => {

@@ -4,7 +4,7 @@ from typing import Any
 
 from ...identity.permissions import Permission
 from ...package_center.models import api_error
-from ..hosts_manager.service import HostCapabilityProvider, registry
+from ..hosts_manager.public import HostCapabilityProvider, registry
 from .service import service
 
 

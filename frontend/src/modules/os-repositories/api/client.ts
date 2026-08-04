@@ -1,0 +1,37 @@
+import { request } from "../../../core/api/transport";
+import type { OsRepository, OsRepositoryAssignment, OsRepositoryChannel, OsRepositoryDashboard, OsRepositoryJob, OsRepositoryKey, OsRepositoryPackage, OsRepositoryPage, OsRepositorySnapshot } from "../../../core/api/contracts";
+
+export const osRepositoriesClient = {
+  osRepositoriesDashboard: () => request<OsRepositoryDashboard>("/api/modules/os-repositories/dashboard"),
+  osRepositories: (search = "") => request<OsRepositoryPage<OsRepository>>(`/api/modules/os-repositories/repositories?search=${encodeURIComponent(search)}`),
+  saveOsRepository: (payload: Record<string, unknown>, id = "") => request<OsRepository>(id ? `/api/modules/os-repositories/repositories/${encodeURIComponent(id)}` : "/api/modules/os-repositories/repositories", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  planOsRepository: (payload: Record<string, unknown>, id = "00000000000000000000000000000000") => request<Record<string, unknown>>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}/plan`, { method: "POST", body: JSON.stringify(payload) }),
+  deleteOsRepository: (id: string) => request<{ ok: boolean }>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  syncOsRepository: (id: string) => request<OsRepositoryJob>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}/sync`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  osRepositoryPackages: (search = "", repositoryId = "") => request<OsRepositoryPage<OsRepositoryPackage>>(`/api/modules/os-repositories/packages?search=${encodeURIComponent(search)}&repository_id=${encodeURIComponent(repositoryId)}`),
+  uploadOsRepositoryPackage: (repositoryId: string, file: File) => { const body = new FormData(); body.append("file", file); return request<OsRepositoryPackage>(`/api/modules/os-repositories/packages/upload?repository_id=${encodeURIComponent(repositoryId)}`, { method: "POST", body }); },
+  osRepositorySnapshots: (repositoryId = "") => request<OsRepositoryPage<OsRepositorySnapshot>>(`/api/modules/os-repositories/snapshots?repository_id=${encodeURIComponent(repositoryId)}`),
+  createOsRepositorySnapshot: (repositoryId: string, name = "", description = "") => request<OsRepositorySnapshot>(`/api/modules/os-repositories/repositories/${encodeURIComponent(repositoryId)}/snapshots`, { method: "POST", body: JSON.stringify({ name, description }) }),
+  osRepositoryChannels: () => request<OsRepositoryChannel[]>("/api/modules/os-repositories/channels"),
+  promoteOsRepositoryChannel: (channelId: string, snapshotId: string, production = false) => request<OsRepositoryChannel>(`/api/modules/os-repositories/channels/${encodeURIComponent(channelId)}/promote`, { method: "POST", body: JSON.stringify({ snapshot_id: snapshotId, confirm: true, confirmation_text: production ? "Production" : "" }) }),
+  osRepositoryChannelPlan: (channelId: string, snapshotId: string) => request<Record<string, unknown>>(`/api/modules/os-repositories/channels/${encodeURIComponent(channelId)}/plan?snapshot_id=${encodeURIComponent(snapshotId)}`),
+  rollbackOsRepositoryChannel: (channelId: string, production = false) => request<OsRepositoryChannel>(`/api/modules/os-repositories/channels/${encodeURIComponent(channelId)}/rollback`, { method: "POST", body: JSON.stringify({ confirm: true, confirmation_text: production ? "Production" : "" }) }),
+  osRepositoryJobs: (status = "") => request<OsRepositoryPage<OsRepositoryJob>>(`/api/modules/os-repositories/jobs?status=${encodeURIComponent(status)}`),
+  osRepositoryJob: (id: string) => request<OsRepositoryJob & { logs: Array<{ id: number; stream: string; line: string; created_at: number }> }>(`/api/modules/os-repositories/jobs/${encodeURIComponent(id)}`),
+  cancelOsRepositoryJob: (id: string) => request<OsRepositoryJob>(`/api/modules/os-repositories/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  retryOsRepositoryJob: (id: string) => request<OsRepositoryJob>(`/api/modules/os-repositories/jobs/${encodeURIComponent(id)}/retry`, { method: "POST", body: "{}" }),
+  osRepositoryBuilds: () => request<Array<{ id: string; repository_id: string; format: string; status: string; error: string; created_at: number }>>("/api/modules/os-repositories/builds"),
+  buildOsRepositoryPackage: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/api/modules/os-repositories/builds", { method: "POST", body: JSON.stringify({ ...payload, confirm: true }) }),
+  osRepositoryKeys: () => request<OsRepositoryKey[]>("/api/modules/os-repositories/keys"),
+  saveOsRepositoryKey: (payload: Record<string, unknown>) => request<OsRepositoryKey>("/api/modules/os-repositories/keys", { method: "POST", body: JSON.stringify(payload) }),
+  generateOsRepositoryKey: (payload: Record<string, unknown>) => request<OsRepositoryKey>("/api/modules/os-repositories/keys/generate", { method: "POST", body: JSON.stringify({ ...payload, confirm: true }) }),
+  deleteOsRepositoryKey: (id: string) => request<{ ok: boolean }>(`/api/modules/os-repositories/keys/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  osRepositoryAssignments: () => request<OsRepositoryAssignment[]>("/api/modules/os-repositories/host-assignments"),
+  saveOsRepositoryAssignment: (payload: Record<string, unknown>) => request<OsRepositoryAssignment>("/api/modules/os-repositories/host-assignments", { method: "POST", body: JSON.stringify({ ...payload, confirm: true }) }),
+  deleteOsRepositoryAssignment: (id: string) => request<{ ok: boolean }>(`/api/modules/os-repositories/host-assignments/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  osRepositoryAssignmentConfiguration: (id: string) => request<{ format: string; filename: string; content: string; public_key_url: string }>(`/api/modules/os-repositories/host-assignments/${encodeURIComponent(id)}/configuration`),
+  osRepositoryHistory: () => request<Array<{ id: number; actor: string; action: string; target: string; details: Record<string, unknown>; created_at: number }>>("/api/modules/os-repositories/history"),
+  osRepositorySettings: () => request<{ listen_address: string; port: number; public_base_url: string; upload_limit_mb: number; max_parallel_syncs: number }>("/api/modules/os-repositories/settings"),
+  saveOsRepositorySettings: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/api/modules/os-repositories/settings", { method: "PUT", body: JSON.stringify(payload) }),
+  osRepositoryDiagnostics: () => request<{ checks: Array<{ id: string; status: string; message: string }> }>("/api/modules/os-repositories/diagnostics")
+} as const;

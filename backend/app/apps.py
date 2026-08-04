@@ -953,7 +953,7 @@ def samba_preview(payload: SambaApplyRequest, user: SessionUser = Depends(_curre
 
 def _enqueue_samba_config(config: SambaConfig, confirm_smb1: bool, user: SessionUser) -> dict:
     from .modules.providers.samba import SambaProvider
-    from .modules.router import _provider_plan
+    from .modules.planning import provider_plan
     from .package_center.jobs import manager
     from .package_center.models import PackageAction
     from .package_center.service import repository
@@ -964,7 +964,7 @@ def _enqueue_samba_config(config: SambaConfig, confirm_smb1: bool, user: Session
         raise HTTPException(422, {"code": "CONFIG_VALIDATION_FAILED", "message": "Samba configuration is invalid", "validation": validation.model_dump(mode="json")})
     if "smb1" in validation.confirmations_required and not confirm_smb1:
         raise HTTPException(400, {"code": "SECURITY_CONFIRMATION_REQUIRED", "message": "Enabling SMB1 requires explicit confirmation", "confirmation": "smb1"})
-    plan = _provider_plan("samba", PackageAction.apply, {"config": config.model_dump()}, backup=True)
+    plan = provider_plan("samba", PackageAction.apply, {"config": config.model_dump()}, backup=True)
     job = manager(repository()).enqueue(plan, user.username)
     logger.info("app_store_config actor=%s app=samba action=apply_config job=%s", user.username, job["id"])
     return {"job": job}
@@ -985,11 +985,12 @@ def samba_rollback(payload: AdminAction, user: SessionUser = Depends(_current_us
 def samba_service(payload: SambaServiceAction, user: SessionUser = Depends(_current_user)):
     if payload.action not in {"start", "stop", "restart", "reload"}:
         raise HTTPException(400, "Unsupported Samba service action")
-    from .modules.router import ModuleAdminRequest, _enqueue, _provider_plan
+    from .modules.planning import provider_plan
+    from .modules.router import ModuleAdminRequest, _enqueue
     from .package_center.models import PackageAction
 
     authorize(user, Permission.MODULES_CONFIGURE)
-    result = _enqueue(_provider_plan("samba", PackageAction(payload.action), {}), ModuleAdminRequest(), user)
+    result = _enqueue(provider_plan("samba", PackageAction(payload.action), {}), ModuleAdminRequest(), user)
     logger.info("app_store_action actor=%s app=samba action=%s job=%s", user.username, payload.action, result["job"]["id"])
     return result
 

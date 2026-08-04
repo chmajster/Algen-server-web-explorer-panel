@@ -14,12 +14,12 @@ from fastapi.responses import StreamingResponse
 from ...activity import ActivityCategory, record_activity
 from ...audit import logger
 from ...identity.permissions import Permission, require_permission
-from ...modules.providers.ansible_controller import AnsibleControllerProvider
+from ...modules.providers import AnsibleControllerProvider
 from ...package_center.jobs import manager
 from ...package_center.models import PackageAction, api_error
 from ...package_center.service import repository as package_repository
 from ...security import SessionUser
-from ..router import _provider_plan
+from ..planning import provider_plan
 from .backup import backup_path, delete_backup, validate_backup
 from .inventory import generate_inventory, inventory_records, parse_inventory
 from .models import (
@@ -90,7 +90,7 @@ def _validate_playbook_with_ansible(content: str) -> dict[str, Any]:
 
 def _enqueue(operation: str, payload: dict[str, Any], actor: str) -> dict[str, Any]:
     safe_payload = {**payload, "operation": operation}
-    plan = _provider_plan("ansible-controller", PackageAction.manage, safe_payload)
+    plan = provider_plan("ansible-controller", PackageAction.manage, safe_payload)
     plan.steps = {
         "network_scan": ["Validate approved address range", "Run fixed TCP nmap scan", "Store selected discovery results"],
         "onboard_host": ["Verify accepted host key", "Test SSH", "Prepare managed account", "Test Ansible ping", "Collect facts"],
@@ -131,7 +131,7 @@ def save_config(payload: ControllerConfigInput, user: SessionUser = Depends(requ
     if "managed_key_rotation_days" not in payload.model_fields_set:
         value["managed_key_rotation_days"] = AnsibleControllerProvider(user.username).get_config().get("managed_key_rotation_days", 90)
     value["managed_authorized_keys_mode"] = "exclusive"
-    job = manager(package_repository()).enqueue(_provider_plan("ansible-controller", PackageAction.apply, {"config": value}), user.username)
+    job = manager(package_repository()).enqueue(provider_plan("ansible-controller", PackageAction.apply, {"config": value}), user.username)
     _audit_api(user.username, "configure", "settings", "controller")
     return {"job": job}
 
@@ -174,7 +174,7 @@ def enroll_host(payload: EnrollmentClaimInput, authorization: str = Header(defau
     if len(token) < 32 or len(token) > 128:
         api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token is invalid, expired, already used, or does not allow this hostname")
     if repository().centralized_hosts:
-        from ..hosts_manager.service import registry as host_registry
+        from ..hosts_manager.public import registry as host_registry
         saved = host_registry().claim_enrollment_token(token, {"hostname": payload.hostname, "address": payload.address})
         if not saved:
             api_error(401, "ENROLLMENT_TOKEN_INVALID", "Enrollment token is invalid, expired, already used, or does not allow this hostname")
@@ -248,7 +248,7 @@ def scan_host_key(host_id: str, user: SessionUser = Depends(require_permission(P
     changed = bool(existing and all(existing["fingerprint"] != key["fingerprint"] for key in keys))
     if changed:
         if repository().centralized_hosts:
-            from ..hosts_manager.service import registry as host_registry
+            from ..hosts_manager.public import registry as host_registry
             host_registry()._update_host(host_id, user.username, fingerprint_status="changed", last_error="SSH host key changed")
         else:
             with repository()._lock, repository().connect() as connection:

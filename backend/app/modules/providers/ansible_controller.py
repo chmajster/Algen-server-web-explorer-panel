@@ -11,13 +11,13 @@ import time
 from typing import Any
 
 from ...package_center.models import ModuleDiagnostic, ModuleHealth, ModuleStatus, ModuleValidationResult, PackageAction, api_error
-from ..ansible_controller.awx import AwxClient
-from ..ansible_controller.backup import create_backup, delete_backup as remove_backup, list_backups, restore_backup
-from ..ansible_controller.models import MANAGED_SSH_USERNAME, PROTECTED_MANAGED_USERNAMES, AwxSettingsInput, CredentialInput, CredentialType, HostInput, NetworkScanInput
-from ..ansible_controller.network import build_nmap_args, parse_nmap_xml, scan_addresses
-from ..ansible_controller.repository import repository
-from ..ansible_controller.runner import controller_identity, demote_preexec, execute_ad_hoc, execute_template, execution_directory, run_remote_user_setup
-from ..ansible_controller.security import atomic_private_write, redact_text
+from ..ansible_controller.public import AwxClient
+from ..ansible_controller.public import create_backup, delete_backup as remove_backup, list_backups, restore_backup
+from ..ansible_controller.public import MANAGED_SSH_USERNAME, PROTECTED_MANAGED_USERNAMES, AwxSettingsInput, CredentialInput, CredentialType, HostInput, NetworkScanInput
+from ..ansible_controller.public import build_nmap_args, parse_nmap_xml, scan_addresses
+from ..ansible_controller.public import repository
+from ..ansible_controller.public import controller_identity, demote_preexec, execute_ad_hoc, execute_template, execution_directory, run_remote_user_setup
+from ..ansible_controller.public_security import atomic_private_write, redact_text
 from .base import CancelCallback, LogCallback, ModuleProvider, ProgressCallback
 
 
@@ -419,7 +419,7 @@ class AnsibleControllerProvider(ModuleProvider):
             })
             self.store.save_host(updated, actor, host_id)
             if self.store.centralized_hosts:
-                from ..hosts_manager.service import registry
+                from ..hosts_manager.public import registry
                 registry()._update_host(host_id, actor, managed_user_created=1)
             else:
                 with self.store._lock, self.store.connect() as connection:
