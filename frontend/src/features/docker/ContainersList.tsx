@@ -59,6 +59,189 @@ function stateOf(row: DockerContainer): string { return String(row.State || "unk
 function healthOf(row: DockerContainer): string { return String(row.Health || "").toLowerCase(); }
 function isProblem(row: DockerContainer): boolean { return ["dead", "restarting"].includes(stateOf(row)) || healthOf(row) === "unhealthy"; }
 
+
+type ContainerWizardMountDraft = {
+  id: number;
+  type: "bind" | "volume" | "tmpfs";
+  source: string;
+  target: string;
+  readOnly: boolean;
+  tmpfsSizeMb: string;
+};
+
+type ContainerWizardDraft = {
+  step: number;
+  name: string;
+  image: string;
+  network: string;
+  ports: string;
+  environment: string;
+  mounts: ContainerWizardMountDraft[];
+  memory: string;
+  memorySwap: string;
+  cpus: string;
+  pids: string;
+  hostname: string;
+  workingDir: string;
+  containerUser: string;
+  limitsEnabled: boolean;
+  networkAliases: string;
+  restartPolicy: "no" | "always" | "unless-stopped" | "on-failure";
+  labels: string;
+  healthType: "none" | "http" | "tcp";
+  healthPort: string;
+  healthPath: string;
+  readOnly: boolean;
+  init: boolean;
+  autoStart: boolean;
+};
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function positiveNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function duplicateContainerName(value: unknown): string {
+  const base = String(value || "container").replace(/^\/+/, "").trim() || "container";
+  return `${base.slice(0, 240)}-copy`;
+}
+
+function duplicatePorts(value: unknown): string {
+  const result: string[] = [];
+  for (const [rawTarget, rawBindings] of Object.entries(recordValue(value))) {
+    const [target, rawProtocol = "tcp"] = rawTarget.split("/", 2);
+    const protocol = rawProtocol === "udp" ? "udp" : "tcp";
+    if (!/^\d+$/.test(target)) continue;
+    for (const rawBinding of arrayValue(rawBindings)) {
+      const binding = recordValue(rawBinding);
+      const published = String(binding.HostPort || "").trim();
+      if (/^\d+$/.test(published)) result.push(`${published}:${target}/${protocol}`);
+    }
+  }
+  return result.join("\n");
+}
+
+function duplicateMounts(value: unknown): ContainerWizardMountDraft[] {
+  return arrayValue(value).flatMap((rawMount, index) => {
+    const mount = recordValue(rawMount);
+    const type = String(mount.Type || "").toLowerCase();
+    if (type !== "bind" && type !== "volume" && type !== "tmpfs") return [];
+    const source = type === "tmpfs" ? "" : String(type === "volume" ? mount.Name || mount.Source || "" : mount.Source || "");
+    const target = String(mount.Destination || "");
+    if (!target || (type !== "tmpfs" && !source)) return [];
+    return [{
+      id: index + 1,
+      type,
+      source,
+      target,
+      readOnly: mount.RW === false,
+      tmpfsSizeMb: "",
+    }];
+  });
+}
+
+function duplicateLabels(value: unknown): string {
+  return Object.entries(recordValue(value))
+    .filter(([key, item]) =>
+      !key.startsWith("com.docker.compose.")
+      && !key.startsWith("io.webnas.")
+      && item !== null
+      && item !== undefined
+      && !String(item).includes("\n"),
+    )
+    .map(([key, item]) => `${key}=${String(item)}`)
+    .join("\n");
+}
+
+function duplicateNetwork(details: Record<string, unknown>): { network: string; aliases: string } {
+  const networks = recordValue(details.networks);
+  const network = Object.keys(networks)[0] || "bridge";
+  const sourceName = String(details.name || "").replace(/^\/+/, "");
+  const sourceId = String(details.id || "");
+  const selected = recordValue(networks[network]);
+  const aliases = [...new Set(
+    arrayValue(selected.Aliases)
+      .map(String)
+      .map((item) => item.trim())
+      .filter((item) => item && item !== sourceName && item !== sourceId && !sourceId.startsWith(item)),
+  )];
+  return { network, aliases: aliases.join(", ") };
+}
+
+function yamlScalar(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "null" || trimmed === "~") return "";
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1).replace(/''/g, "'");
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try { return JSON.parse(trimmed) as string; } catch { return trimmed.slice(1, -1); }
+  }
+  return trimmed;
+}
+
+function duplicateComposeFields(content: string): Pick<ContainerWizardDraft, "hostname" | "workingDir" | "containerUser"> {
+  const result = { hostname: "", workingDir: "", containerUser: "" };
+  for (const line of content.split("\n")) {
+    const match = /^\s{4}(hostname|working_dir|user):\s*(.*)$/.exec(line);
+    if (!match) continue;
+    const value = yamlScalar(match[2]);
+    if (match[1] === "hostname") result.hostname = value;
+    else if (match[1] === "working_dir") result.workingDir = value;
+    else result.containerUser = value;
+  }
+  return result;
+}
+
+function duplicateDraft(details: Record<string, unknown>, row: DockerContainer): ContainerWizardDraft {
+  const limits = recordValue(details.limits);
+  const state = recordValue(details.state);
+  const memoryBytes = positiveNumber(limits.memory);
+  const memorySwapBytes = positiveNumber(limits.memory_swap);
+  const nanoCpus = positiveNumber(limits.nano_cpus);
+  const pids = positiveNumber(limits.pids);
+  const memory = memoryBytes ? String(Math.max(1, Math.round(memoryBytes / 1024 / 1024))) : "";
+  const memorySwap = memorySwapBytes ? String(Math.max(1, Math.round(memorySwapBytes / 1024 / 1024))) : "";
+  const cpus = nanoCpus ? String(nanoCpus / 1_000_000_000) : "";
+  const restart = String(details.restart_policy || "no");
+  const restartPolicy: ContainerWizardDraft["restartPolicy"] = ["no", "always", "unless-stopped", "on-failure"].includes(restart)
+    ? restart as ContainerWizardDraft["restartPolicy"]
+    : "no";
+  const network = duplicateNetwork(details);
+  return {
+    step: 0,
+    name: duplicateContainerName(details.name || row.Names),
+    image: String(details.image || row.Image || ""),
+    network: network.network,
+    ports: duplicatePorts(details.ports),
+    environment: "",
+    mounts: duplicateMounts(details.mounts),
+    memory,
+    memorySwap,
+    cpus,
+    pids: pids ? String(pids) : "",
+    hostname: "",
+    workingDir: "",
+    containerUser: "",
+    limitsEnabled: Boolean(memory || memorySwap || cpus || pids),
+    networkAliases: network.aliases,
+    restartPolicy,
+    labels: duplicateLabels(details.labels),
+    healthType: "none",
+    healthPort: "",
+    healthPath: "/",
+    readOnly: Boolean(details.read_only),
+    init: true,
+    autoStart: state.Running === undefined ? true : Boolean(state.Running),
+  };
+}
+
 type SelectedContainer = { target: string; tab: DetailTab };
 type ContainerMenu = { x: number; y: number; target: string; row: DockerContainer; portalTarget: Element | null };
 
@@ -87,15 +270,32 @@ export function ContainersList({
   const [selected, setSelected] = useState<SelectedContainer | null>(null);
   const [menu, setMenu] = useState<ContainerMenu | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const [wizard, setWizard] = useState(() => Boolean(draftKey && sessionStorage.getItem(draftKey)));
+  const fallbackDraftKey = useRef(`docker:create-container:${Math.random().toString(36).slice(2)}`);
+  const wizardDraftKey = draftKey || fallbackDraftKey.current;
+  const [wizard, setWizard] = useState(() => Boolean(sessionStorage.getItem(wizardDraftKey)));
   const [importFile, setImportFile] = useState<File | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const [dialog, setDialog] = useState<{
     target: string;
-    action: "remove" | "backup" | "export" | "rename" | "duplicate" | "import" | "stop" | "kill";
+    action: "remove" | "backup" | "export" | "rename" | "import" | "stop" | "kill";
   } | null>(null);
-  function openWizard() { if (draftKey && !sessionStorage.getItem(draftKey)) sessionStorage.setItem(draftKey, "{}"); setWizard(true); }
-  function closeWizard() { if (draftKey) sessionStorage.removeItem(draftKey); setWizard(false); }
+  function openWizard() { if (!sessionStorage.getItem(wizardDraftKey)) sessionStorage.setItem(wizardDraftKey, "{}"); setWizard(true); }
+  function closeWizard() { sessionStorage.removeItem(wizardDraftKey); setWizard(false); }
+  async function openDuplicateWizard(row: DockerContainer, target: string) {
+    setMenu(null);
+    try {
+      const [details, compose] = await Promise.all([
+        api.dockerContainer(target),
+        api.dockerContainerCompose(target).catch(() => null),
+      ]);
+      const draft = duplicateDraft(details, row);
+      if (compose) Object.assign(draft, duplicateComposeFields(compose.content));
+      sessionStorage.setItem(wizardDraftKey, JSON.stringify(draft));
+      setWizard(true);
+    } catch (reason) {
+      toast(errorMessage(reason, t), "error", "admin");
+    }
+  }
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -174,7 +374,6 @@ export function ContainersList({
               : {
                   action: dialog.action,
                   new_name: values.new_name,
-                  image: values.image || null,
                   confirmation: "",
                 },
           );
@@ -205,7 +404,7 @@ export function ContainersList({
     if (paused && permissions.includes("docker.start_container")) regular.push({ label: t("docker.unpause"), icon: <Play />, action: () => void action(target, "unpause") });
     if (permissions.includes("docker.create_container")) regular.push(
       { label: t("docker.rename"), icon: <Pencil />, action: () => setDialog({ target, action: "rename" }) },
-      { label: t("docker.duplicate"), icon: <Copy />, action: () => setDialog({ target, action: "duplicate" }) },
+      { label: t("docker.duplicate"), icon: <Copy />, action: () => void openDuplicateWizard(row, target) },
       { label: t("docker.recreate"), icon: <RefreshCw />, action: () => void action(target, "recreate") },
     );
     if (permissions.includes("docker.inspect_container")) regular.push({ label: t("docker.generateCompose"), icon: <FileText />, action: () => void exportCompose(target) });
@@ -389,7 +588,7 @@ export function ContainersList({
         <CreateContainerWizard
           t={t}
           toast={toast}
-          draftKey={draftKey}
+          draftKey={wizardDraftKey}
           onClose={closeWizard}
           onStarted={onJob}
           canImportCompose={permissions.includes("docker.manage_compose")}
@@ -451,21 +650,13 @@ export function ContainersList({
                     type: "password",
                   },
                 ]
-              : dialog.action === "rename" || dialog.action === "duplicate"
+              : dialog.action === "rename"
                 ? [
                     {
                       name: "new_name",
                       label: t("docker.newContainerName"),
                       required: true,
                     },
-                    ...(dialog.action === "duplicate"
-                      ? [
-                          {
-                            name: "image",
-                            label: t("docker.optionalImage"),
-                          },
-                        ]
-                      : []),
                   ]
                 : []
           }
