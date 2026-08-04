@@ -94,7 +94,33 @@ class Deployment:
             return
         if not isinstance(value, dict) or value.get("state") not in ACTIVE_STATES:
             return
-        value.update({"state": "running", "phase": phase, "message": message})
+        value.update({"state": "running", "message": message})
+        if not isinstance(value.get("steps"), list):
+            value["phase"] = phase
+        atomic_json(self.update_request, value)
+
+    def update_step(self, step_id: str, status: str, message: str, error: str | None = None) -> None:
+        try:
+            value = json.loads(self.update_request.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(value, dict) or value.get("state") not in ACTIVE_STATES:
+            return
+        now = time.time()
+        steps = value.get("steps") if isinstance(value.get("steps"), list) else []
+        step = next((item for item in steps if isinstance(item, dict) and item.get("id") == step_id), None)
+        if step is None:
+            return
+        step["status"] = status
+        step["message"] = message
+        step["started_at"] = step.get("started_at") or now
+        step["finished_at"] = now if status in {"success", "failed", "skipped"} else None
+        safe_error = re.sub(r"(?i)(authorization|cookie|token|password|secret|api[_-]?key)(\s*[:=]\s*|\s+)\S+", r"\1\2***", error or "")
+        step["error"] = safe_error[-4000:] if status == "failed" else None
+        value.update({"phase": step_id, "message": message, "updated_at": now})
+        if status == "failed":
+            value.update({"state": "failed", "failed_phase": step_id, "finished_at": now})
+        value["progress"] = round(sum(item.get("status") in {"success", "skipped"} for item in steps if isinstance(item, dict)) * 100 / len(steps)) if steps else 0
         atomic_json(self.update_request, value)
 
     def validate_files(self) -> None:
@@ -290,6 +316,7 @@ class Deployment:
                 shutil.rmtree(path)
 
     def deploy(self) -> None:
+        self.update_step("switch_version", "running", "Walidacja i przełączanie na nową wersję.")
         self.update_phase("verifying", "Sprawdzanie wersji kandydującej.")
         self.validate_files()
         self.write_units()
@@ -326,9 +353,12 @@ class Deployment:
             self.public_health()
         except Exception:
             self.rollback()
+            self.update_step("switch_version", "failed", "Przywrócono poprzednią wersję po błędzie przełączenia.", "Public health check failed; rollback completed")
             raise
 
+        self.update_step("switch_version", "success", "Nowa wersja została atomowo aktywowana.")
         self.update_phase("draining", "Nowa wersja działa; kończenie aktywnych żądań starej wersji.")
+        self.update_step("restart_services", "running", "Restartowanie i porządkowanie usług.")
         command("systemctl", "enable", "nginx")
         command("systemctl", "enable", self.unit_name(self.new_slot))
         if self.old_slot:
@@ -337,7 +367,10 @@ class Deployment:
             command("systemctl", "disable", self.unit_name(self.old_slot), check=False)
         command("systemctl", "disable", "webnas.service", check=False)
         self.cleanup_releases()
-        self.update_phase("verifying", "Weryfikacja wdrożonej wersji zakończona.")
+        self.update_step("restart_services", "success", "Usługi nowej wersji działają.")
+        self.update_step("health_check", "running", "Sprawdzanie backendu i frontendu.")
+        self.public_health()
+        self.update_step("health_check", "success", "Backend i frontend odpowiadają poprawnie.")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -360,6 +393,12 @@ def main() -> int:
     try:
         deployment.deploy()
     except Exception as error:  # noqa: BLE001 - updater must emit one durable failure reason.
+        try:
+            value = json.loads(deployment.update_request.read_text(encoding="utf-8"))
+            phase = str(value.get("phase") or "switch_version") if isinstance(value, dict) else "switch_version"
+            deployment.update_step(phase, "failed", "Aktualizacja wdrożenia nie powiodła się.", str(error)[-4000:])
+        except (OSError, json.JSONDecodeError):
+            pass
         print(f"WebNAS release activation failed: {error}", file=sys.stderr)
         return 1
     print(f"Activated WebNAS {deployment.new_slot} release {deployment.release}")

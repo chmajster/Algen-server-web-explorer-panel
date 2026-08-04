@@ -127,9 +127,6 @@ export function App() {
     if (updateProgress.state === "failed" && updateProgress.id !== dismissedFailureId && window.location.pathname !== "/update-status") {
       window.history.replaceState({}, "", "/update-status");
     }
-    if (updateProgress.state === "completed" && window.location.pathname === "/update-status") {
-      window.history.replaceState({}, "", "/");
-    }
   }, [dismissedFailureId, updateProgress]);
   useEffect(() => {
     if (!user || !profile?.permissions.includes("updates.view") || !updateChecked) return;
@@ -187,6 +184,7 @@ export function App() {
   if (updateProgress && (
     ["waiting", "preparing", "running"].includes(updateProgress.state)
     || (updateProgress.state === "failed" && updateProgress.id !== dismissedFailureId)
+    || (updateProgress.state === "completed" && window.location.pathname === "/update-status")
   )) {
     return <>{connectionStatus}<UpdateStatusPage
       value={updateProgress}

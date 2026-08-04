@@ -177,11 +177,13 @@ export type HostInfo = {
 };
 export type UpdateStatus = { branch: string; local: string; remote: string; installed_version?: string | null; available_version?: string | null; update_available: boolean; available?: boolean; error?: string; source?: string; source_url?: string; released_at?: number | null; checked_at?: number };
 export type UpdateBlocker = { id: string; type: string; status: "queued" | "running"; started_at: number | null; progress: number | null; description: string };
+export type UpdateStepStatus = "pending" | "running" | "success" | "failed" | "skipped";
+export type UpdateStep = { id: string; status: UpdateStepStatus; message: string; started_at: number | null; finished_at: number | null; error?: string | null };
 export type UpdateProgress = {
   id?: string | null;
   state: "idle" | "waiting" | "preparing" | "running" | "completed" | "failed";
-  phase?: "idle" | "waiting" | "preparing" | "downloading" | "installing" | "dependencies" | "migrating" | "switching" | "draining" | "rollback" | "restarting" | "verifying" | "completed" | "failed";
-  failed_phase?: UpdateProgress["phase"] | null;
+  phase?: string;
+  failed_phase?: string | null;
   running: boolean;
   progress?: number | null;
   pid: number | null;
@@ -193,7 +195,11 @@ export type UpdateProgress = {
   previous_version?: string | null;
   target_version?: string | null;
   current_version?: string | null;
+  commit_revision?: string | null;
   message?: string;
+  steps?: UpdateStep[];
+  trigger?: "manual" | "automatic";
+  updated_at?: number | null;
   active_count?: number;
   blockers?: UpdateBlocker[];
   log: string;

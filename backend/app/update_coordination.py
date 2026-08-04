@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -21,7 +22,7 @@ except ImportError:  # pragma: no cover - Linux production uses fcntl.
 
 
 ACTIVE_OPERATION_STATUSES = {"queued", "running"}
-BLOCKING_UPDATE_STATES = {"preparing", "running"}
+BLOCKING_UPDATE_STATES = {"waiting", "preparing", "running"}
 UPDATE_BLOCKED_MESSAGE = "Trwa aktualizacja systemu. Nowe operacje są tymczasowo zablokowane."
 
 OperationProvider = Callable[[], Iterable[Mapping[str, Any]]]
@@ -33,6 +34,58 @@ _registry_lock = threading.RLock()
 _providers: dict[str, tuple[OperationProvider, ResumeCallback | None]] = {}
 _transient_lock = threading.RLock()
 _transient_operations: dict[str, dict[str, Any]] = {}
+
+# This is the single canonical order used by the API, installer coordination,
+# recovery code and frontend.  Labels live in the frontend locale files.
+UPDATE_STEPS = (
+    "prepare",
+    "check_operations",
+    "check_update",
+    "download_repository",
+    "download_version",
+    "verify_files",
+    "install_backend_dependencies",
+    "install_frontend_dependencies",
+    "build_frontend",
+    "update_configuration",
+    "switch_version",
+    "restart_services",
+    "health_check",
+    "complete",
+)
+UPDATE_STEP_STATUSES = {"pending", "running", "success", "failed", "skipped"}
+
+
+def _redact_update_text(value: str) -> str:
+    text = re.sub(r"(?i)(authorization|cookie|set-cookie|token|password|secret|api[_-]?key)(\s*[:=]\s*|\s+)\S+", r"\1\2***", value)
+    return re.sub(r"(?i)(https?://[^/\s:@]+:)[^@\s/]+@", r"\1***@", text)
+
+
+def default_update_steps() -> list[dict[str, Any]]:
+    return [
+        {"id": step_id, "status": "pending", "message": "", "started_at": None, "finished_at": None, "error": None}
+        for step_id in UPDATE_STEPS
+    ]
+
+
+def _normalize_steps(value: Any) -> list[dict[str, Any]]:
+    supplied = {str(item.get("id")): item for item in value if isinstance(item, dict) and item.get("id")} if isinstance(value, list) else {}
+    result = default_update_steps()
+    for item in result:
+        legacy = supplied.get(item["id"])
+        if not legacy:
+            continue
+        status = str(legacy.get("status") or "pending")
+        item.update(
+            {
+                "status": status if status in UPDATE_STEP_STATUSES else "pending",
+                "message": _redact_update_text(str(legacy.get("message") or ""))[:1000],
+                "started_at": legacy.get("started_at"),
+                "finished_at": legacy.get("finished_at"),
+                "error": _redact_update_text(str(legacy.get("error") or ""))[:4000] or None,
+            }
+        )
+    return result
 
 
 def _settings_directory() -> Path:
@@ -93,6 +146,10 @@ def default_update_request() -> dict[str, Any]:
         "commit_revision": None,
         "commit_date": None,
         "message": "",
+        "progress": 0,
+        "steps": default_update_steps(),
+        "trigger": "manual",
+        "updated_at": None,
         "acknowledged_users": [],
     }
 
@@ -105,17 +162,87 @@ def read_update_request() -> dict[str, Any]:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return default_update_request()
-    return {**default_update_request(), **value} if isinstance(value, dict) else default_update_request()
+    if not isinstance(value, dict):
+        return default_update_request()
+    state = {**default_update_request(), **value}
+    state["steps"] = _normalize_steps(value.get("steps"))
+    return state
 
 
 def write_update_request(value: Mapping[str, Any]) -> dict[str, Any]:
     state = {**default_update_request(), **dict(value)}
+    state["steps"] = _normalize_steps(state.get("steps"))
+    state["updated_at"] = time.time()
     path = update_request_path()
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temporary, path)
     os.chmod(path, 0o600)
     return state
+
+
+def _transition_update_step(step_id: str, status: str, *, message: str | None = None, error: str | None = None) -> dict[str, Any]:
+    if step_id not in UPDATE_STEPS:
+        raise ValueError(f"Unknown update step: {step_id}")
+    if status not in UPDATE_STEP_STATUSES:
+        raise ValueError(f"Unknown update step status: {status}")
+    with coordination_lock():
+        state = read_update_request()
+        now = time.time()
+        steps = _normalize_steps(state.get("steps"))
+        step = next(item for item in steps if item["id"] == step_id)
+        if status == "running":
+            step["started_at"] = step.get("started_at") or now
+            step["finished_at"] = None
+            step["error"] = None
+            next_state = state.get("state") if state.get("state") == "waiting" and step_id in {"prepare", "check_operations"} else "running"
+            state.update({"state": next_state, "phase": step_id, "failed_phase": None})
+        elif status in {"success", "failed", "skipped"}:
+            step["started_at"] = step.get("started_at") or now
+            step["finished_at"] = now
+            if status == "failed":
+                step["error"] = _redact_update_text(error or message or "Update step failed")[:4000]
+                state.update({"state": "failed", "phase": "failed", "failed_phase": step_id, "finished_at": now})
+        step["status"] = status
+        if message is not None:
+            safe_message = _redact_update_text(message)[:1000]
+            step["message"] = safe_message
+            state["message"] = safe_message
+        completed = sum(item["status"] in {"success", "skipped"} for item in steps)
+        state["progress"] = round(completed * 100 / len(steps))
+        state["steps"] = steps
+        return write_update_request(state)
+
+
+def start_update_step(step_id: str, message: str | None = None) -> dict[str, Any]:
+    return _transition_update_step(step_id, "running", message=message)
+
+
+def complete_update_step(step_id: str, message: str | None = None) -> dict[str, Any]:
+    return _transition_update_step(step_id, "success", message=message)
+
+
+def fail_update_step(step_id: str, error: str) -> dict[str, Any]:
+    return _transition_update_step(step_id, "failed", message=error, error=error)
+
+
+def skip_update_step(step_id: str, reason: str | None = None) -> dict[str, Any]:
+    return _transition_update_step(step_id, "skipped", message=reason)
+
+
+def skip_remaining_update_steps(*, reason: str, after: str | None = None) -> dict[str, Any]:
+    with coordination_lock():
+        state = read_update_request()
+        started = after is None
+        for step in state["steps"]:
+            if step["id"] == after:
+                started = True
+                continue
+            if started and step["status"] == "pending":
+                now = time.time()
+                step.update({"status": "skipped", "message": reason, "started_at": now, "finished_at": now})
+        state["progress"] = round(sum(item["status"] in {"success", "skipped"} for item in state["steps"]) * 100 / len(UPDATE_STEPS))
+        return write_update_request(state)
 
 
 def register_operation_provider(name: str, provider: OperationProvider, resume: ResumeCallback | None = None) -> None:

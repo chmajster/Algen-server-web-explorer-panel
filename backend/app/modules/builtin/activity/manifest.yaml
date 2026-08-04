@@ -1,0 +1,8 @@
+id: activity
+name: Activity Center
+category: observability
+icon: history
+permissions: [audit.view_own]
+routers: [app.activity_api:router]
+capabilities: [audit, history]
+menu: [{id: activity, label: app.activity, icon: history, permission: audit.view_own}]

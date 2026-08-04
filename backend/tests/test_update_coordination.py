@@ -280,33 +280,33 @@ def test_public_update_status_hides_logs_and_operation_details(monkeypatch, upda
 
 
 def test_update_status_route_serves_spa_after_a_full_reload(monkeypatch, tmp_path):
-    from app import main
+    from app import http_api
 
     frontend = tmp_path / "dist"
     frontend.mkdir()
     index = frontend / "index.html"
     index.write_text("<!doctype html><title>WebNAS</title>", encoding="utf-8")
-    monkeypatch.setattr(main, "frontend_dist", frontend)
+    monkeypatch.setattr(http_api, "frontend_dist", frontend)
 
-    response = main.update_status_frontend()
+    response = http_api.update_status_frontend()
 
     assert Path(response.path) == index
 
 
 def test_health_exposes_only_a_planned_handover_phase(monkeypatch):
-    from app import main
+    from app import http_api
 
-    monkeypatch.setattr(main, "read_update_request", lambda: {
+    monkeypatch.setattr(http_api, "read_update_request", lambda: {
         "id": "update-1", "state": "running", "phase": "switching",
     })
-    assert main.health() == {
+    assert http_api.health() == {
         "status": "ok", "service": "webnas", "deployment_phase": "switching", "update_id": "update-1",
     }
 
-    monkeypatch.setattr(main, "read_update_request", lambda: {
+    monkeypatch.setattr(http_api, "read_update_request", lambda: {
         "id": "update-1", "state": "running", "phase": "installing",
     })
-    assert main.health()["deployment_phase"] is None
+    assert http_api.health()["deployment_phase"] is None
 
 
 def test_update_progress_preserves_switching_phase_from_durable_request(monkeypatch, update_environment):
@@ -341,3 +341,69 @@ def test_visible_update_log_is_scrubbed(monkeypatch, update_environment):
     assert "secret-token" not in visible
     assert "hunter2" not in visible
     assert "/home/alice" not in visible
+
+
+def test_canonical_update_steps_have_the_required_order(update_environment):
+    assert update_coordination.UPDATE_STEPS == (
+        "prepare", "check_operations", "check_update", "download_repository", "download_version", "verify_files",
+        "install_backend_dependencies", "install_frontend_dependencies", "build_frontend", "update_configuration",
+        "switch_version", "restart_services", "health_check", "complete",
+    )
+
+
+def test_step_transition_is_atomic_and_persists_timestamps(update_environment):
+    update_coordination.write_update_request({"id": "update-steps", "state": "running"})
+    started = update_coordination.start_update_step("download_version", "Downloading")
+    completed = update_coordination.complete_update_step("download_version", "Downloaded")
+    step = next(item for item in completed["steps"] if item["id"] == "download_version")
+
+    assert next(item for item in started["steps"] if item["id"] == "download_version")["status"] == "running"
+    assert step["status"] == "success"
+    assert step["started_at"] is not None
+    assert step["finished_at"] >= step["started_at"]
+    assert update_coordination.read_update_request()["steps"] == completed["steps"]
+
+
+def test_failed_step_records_failed_phase_and_redacts_secrets(update_environment):
+    update_coordination.write_update_request({"id": "update-failed", "state": "running"})
+    failed = update_coordination.fail_update_step("build_frontend", "token=abc123 build failed")
+    step = next(item for item in failed["steps"] if item["id"] == "build_frontend")
+
+    assert failed["state"] == "failed"
+    assert failed["failed_phase"] == "build_frontend"
+    assert step["status"] == "failed"
+    assert "abc123" not in step["error"]
+
+
+def test_legacy_request_without_steps_is_normalized(update_environment):
+    path = update_coordination.update_request_path()
+    path.write_text(json.dumps({"id": "legacy", "state": "running", "phase": "installing"}), encoding="utf-8")
+    recovered = update_coordination.read_update_request()
+
+    assert [step["id"] for step in recovered["steps"]] == list(update_coordination.UPDATE_STEPS)
+    assert all(step["status"] == "pending" for step in recovered["steps"])
+    assert recovered["phase"] == "installing"
+
+
+def test_no_available_update_completes_and_skips_installation_steps(update_environment):
+    state = settings._record_up_to_date(actor="admin", status={"installed_version": "2.0.0", "available_version": "2.0.0", "remote": "c" * 40})
+
+    assert state["state"] == "completed"
+    assert state["message"] == "System jest aktualny."
+    assert state["progress"] == 100
+    assert next(step for step in state["steps"] if step["id"] == "check_update")["status"] == "success"
+    assert next(step for step in state["steps"] if step["id"] == "download_version")["status"] == "skipped"
+
+
+def test_restart_service_phase_is_finalized_after_backend_returns(update_environment):
+    steps = update_coordination.default_update_steps()
+    next(step for step in steps if step["id"] == "restart_services").update({"status": "running", "started_at": 1})
+    update_coordination.write_update_request({
+        "id": "update-restart", "state": "running", "phase": "restart_services", "requested_at": 1, "started_at": 1, "steps": steps,
+    })
+
+    recovered = settings._update_progress()
+
+    assert recovered["state"] == "completed"
+    assert recovered["progress"] == 100
+    assert next(step for step in recovered["steps"] if step["id"] == "health_check")["status"] == "success"

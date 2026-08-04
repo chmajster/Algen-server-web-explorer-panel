@@ -106,6 +106,11 @@ section() {
   printf '\n%b==> %s%b\n' "$BOLD" "$1" "$RESET"
 }
 
+update_step() {
+  [[ "$ACTION" == "update" ]] || return 0
+  printf 'Update step: %s %s\n' "$1" "$2"
+}
+
 on_error() {
   local line="$1"
   local code="$2"
@@ -594,6 +599,8 @@ print_runtime_diagnostics() {
 }
 
 prepare_source() {
+  update_step download_repository completed
+  update_step download_version started
   section "Preparing source"
   local script_dir=""
   local resolved_script_dir=""
@@ -607,6 +614,7 @@ prepare_source() {
     else
       SOURCE_DIR="$script_dir"
       ok "Using local repository: ${SOURCE_DIR}"
+      update_step download_version completed
       return
     fi
   fi
@@ -624,6 +632,7 @@ prepare_source() {
   SOURCE_DIR="$(find "$WORK_DIR" -maxdepth 1 -type d -name 'Algen-server-web-explorer-panel-*' | head -n 1)"
   [[ -n "$SOURCE_DIR" && -f "${SOURCE_DIR}/backend/app/main.py" ]] || fail "Downloaded archive does not contain WebNAS source"
   ok "Source downloaded"
+  update_step download_version completed
 }
 
 prompt_install_dir() {
@@ -979,10 +988,12 @@ copy_application() {
 }
 
 write_config() {
+  update_step update_configuration started
   # This also runs during updates that preserve config.
   install -d -o root -g root -m 0711 /mnt/webnas /mnt/webnas/mnt
   if [[ ("$ACTION" == "update" || "$ACTION" == "reinstall") && -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
     ok "Keeping existing config: ${CONFIG_FILE}"
+    update_step update_configuration skipped
     return
   fi
   section "Writing configuration"
@@ -993,6 +1004,7 @@ write_config() {
   chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$DATA_DIR" "$LOG_DIR"
   if [[ -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
     ok "Keeping existing config: ${CONFIG_FILE}"
+    update_step update_configuration skipped
     return
   fi
   if [[ -f "$CONFIG_FILE" ]]; then
@@ -1012,6 +1024,7 @@ PY
   chmod 0640 "$CONFIG_FILE"
   chown "root:${SERVICE_GROUP}" "$CONFIG_FILE" || chown root:root "$CONFIG_FILE"
   ok "Config written: ${CONFIG_FILE}"
+  update_step update_configuration completed
 }
 
 write_pam_service() {
@@ -1042,6 +1055,7 @@ EOF
 }
 
 setup_python() {
+  update_step install_backend_dependencies started
   section "Installing Python packages"
   python3 - <<'PY'
 import sys
@@ -1055,6 +1069,7 @@ PY
   "${INSTALL_DIR}/backend/.venv/bin/pip" install --upgrade pip wheel
   "${INSTALL_DIR}/backend/.venv/bin/pip" install -r "${INSTALL_DIR}/backend/requirements.txt"
   ok "Python virtualenv ready"
+  update_step install_backend_dependencies completed
 }
 
 build_frontend() {
@@ -1066,7 +1081,8 @@ build_frontend() {
   if [[ "$SKIP_BUILD" == "yes" ]]; then
     fail "--skip-build cannot be used for install, update, or reinstall because it can leave an incompatible frontend bundle"
   fi
-  section "Building frontend"
+  update_step install_frontend_dependencies started
+  section "Installing frontend dependencies"
   (cd "$frontend_dir" && npm ci)
   audit_report="$(mktemp -t webnas-npm-audit.XXXXXX)"
   (cd "${INSTALL_DIR}/frontend" && npm audit --json > "$audit_report") || true
@@ -1097,6 +1113,9 @@ PY
   else
     warn "npm audit could not determine the frontend vulnerability count; continuing without automatic changes"
   fi
+  update_step install_frontend_dependencies completed
+  update_step build_frontend started
+  section "Building frontend"
   rm -rf --one-file-system "$staging_dist"
   (cd "$frontend_dir" && npm run build -- --outDir "$(basename "$staging_dist")")
   python3 "${INSTALL_DIR}/scripts/verify_frontend_build.py" "$staging_dist"
@@ -1111,6 +1130,7 @@ PY
   python3 "${INSTALL_DIR}/scripts/verify_frontend_build.py" "$active_dist"
   chown -R "${SERVICE_USER}:${SERVICE_USER}" "$frontend_dir"
   ok "Frontend built and activated with a matching index"
+  update_step build_frontend completed
 }
 
 prepare_release() {
@@ -1129,9 +1149,9 @@ prepare_release() {
   INSTALL_DIR="$release_dir"
   copy_application
   setup_python
-  write_config
   write_pam_service
   build_frontend
+  write_config
   INSTALL_DIR="$application_root"
 
   # Existing browser sessions may still request lazily loaded chunks from the
@@ -1393,6 +1413,9 @@ main() {
   detect_proxmox_host
   ensure_download_tools
   prepare_source
+  update_step verify_files started
+  [[ -f "${SOURCE_DIR}/backend/app/main.py" && -f "${SOURCE_DIR}/frontend/package.json" && -f "${SOURCE_DIR}/backend/requirements.txt" ]] || fail "Downloaded source is incomplete"
+  update_step verify_files completed
   prompt_configuration
   install_dependencies
   setup_node_runtime

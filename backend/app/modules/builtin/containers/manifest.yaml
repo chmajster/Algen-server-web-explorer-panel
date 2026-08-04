@@ -1,0 +1,10 @@
+id: containers
+name: Containers Manager
+category: applications
+icon: boxes
+permissions: [docker.view]
+routers: [app.modules.docker_manager.router:router]
+dependencies: [package-center]
+capabilities: [containers, images, networks, volumes, compose, registry]
+system_capabilities: [docker]
+menu: [{id: containers, label: app.containers, icon: boxes, permission: docker.view}]

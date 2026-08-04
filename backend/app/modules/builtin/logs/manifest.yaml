@@ -1,0 +1,9 @@
+id: logs
+name: Logs
+category: observability
+icon: terminal
+permissions: [logs.view_own]
+routers: [app.logs:router]
+capabilities: [query, filters, export, saved-views]
+system_capabilities: [journalctl]
+menu: [{id: logs, label: app.logs, icon: terminal}]

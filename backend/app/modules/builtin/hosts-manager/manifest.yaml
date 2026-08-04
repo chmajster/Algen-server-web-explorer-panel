@@ -1,0 +1,9 @@
+id: hosts-manager
+name: Hosts Manager
+category: infrastructure
+icon: server
+permissions: [modules.view]
+routers: [app.modules.hosts_manager.router:router]
+dependencies: [ansible-controller]
+capabilities: [hosts, groups, credentials, operations, agents]
+menu: [{id: hosts, label: hosts.name, icon: server, permission: modules.view}]

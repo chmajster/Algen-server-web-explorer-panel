@@ -29,6 +29,42 @@ function progress(overrides: Partial<UpdateProgress> = {}): UpdateProgress {
 }
 
 describe("UpdateStatusPage", () => {
+  it("renders pending, running, success, failed and skipped steps", () => {
+    const steps: NonNullable<UpdateProgress["steps"]> = [
+      { id: "prepare", status: "success", message: "Ready", started_at: 10, finished_at: 11 },
+      { id: "check_operations", status: "running", message: "Checking", started_at: 11, finished_at: null },
+      { id: "check_update", status: "pending", message: "", started_at: null, finished_at: null },
+      { id: "download_repository", status: "failed", message: "Failed", error: "network error", started_at: 12, finished_at: 13 },
+      { id: "download_version", status: "skipped", message: "Not needed", started_at: 13, finished_at: 13 },
+    ];
+    const { container } = render(<UpdateStatusPage value={progress({ state: "running", phase: "check_operations", steps })} connectionError={false} t={t} onRetry={vi.fn()} onReturn={vi.fn()} onLogin={vi.fn()} />);
+
+    expect(container.querySelectorAll(".update-stepper li")).toHaveLength(5);
+    expect(container.querySelector(".update-stepper li.running")).toHaveAttribute("aria-current", "step");
+    expect(container.querySelector(".update-stepper li.success")).toBeInTheDocument();
+    expect(container.querySelector(".update-stepper li.failed")).toHaveTextContent("network error");
+    expect(container.querySelector(".update-stepper li.skipped")).toBeInTheDocument();
+    expect(container.querySelector(".update-stepper li.pending")).toBeInTheDocument();
+  });
+
+  it("keeps the last step state visible during a temporary connection loss", () => {
+    const steps: NonNullable<UpdateProgress["steps"]> = [
+      { id: "build_frontend", status: "running", message: "Building", started_at: 10, finished_at: null },
+    ];
+    const props = { t, onRetry: vi.fn(), onReturn: vi.fn(), onLogin: vi.fn() };
+    const { rerender } = render(<UpdateStatusPage value={progress({ state: "running", phase: "build_frontend", progress: 64, steps })} connectionError={false} {...props} />);
+
+    rerender(<UpdateStatusPage value={progress({ state: "running", phase: "build_frontend", progress: 64, steps })} connectionError {...props} />);
+
+    expect(screen.getByText("Building")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "64");
+    expect(screen.getByText("updateStatus.reconnecting")).toBeInTheDocument();
+
+    rerender(<UpdateStatusPage value={progress({ state: "completed", phase: "complete", running: false, progress: 100, steps: steps.map((step) => ({ ...step, status: "success", finished_at: 20 })) })} connectionError={false} {...props} />);
+    expect(screen.getByText("updateStatus.state.completed")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");
+  });
+
   it("shows queued and running operations while an update waits", () => {
     render(<UpdateStatusPage
       value={progress({

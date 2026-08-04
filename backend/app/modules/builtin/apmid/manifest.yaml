@@ -1,0 +1,9 @@
+id: apmid
+name: APMID
+category: automation
+icon: workflow
+permissions: [modules.view]
+routers: [app.modules.apmid.router:router]
+dependencies: [hosts-manager]
+capabilities: [inventory, automation]
+menu: [{id: apmid, label: apmid.name, icon: workflow, permission: modules.view}]

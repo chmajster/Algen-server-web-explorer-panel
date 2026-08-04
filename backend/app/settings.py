@@ -39,10 +39,15 @@ from .security import SessionUser, get_session_user, require_csrf
 from .rbac import access_profile, authorize
 from .tasks import task_store
 from .update_coordination import (
+    UPDATE_STEPS,
     active_operations,
+    complete_update_step,
     coordination_lock,
+    fail_update_step,
     read_update_request,
     resume_registered_operations,
+    skip_update_step,
+    start_update_step,
     write_update_request,
 )
 
@@ -752,12 +757,16 @@ def _update_status() -> dict:
     local = _installed_revision() or "unknown"
     if (_repo_root() / ".git").exists():
         branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"]) or branch
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}", branch) or ".." in branch or "@{" in branch:
+        return {"branch": branch, "local": local, "remote": "", "installed_version": _installed_publication_version(), "available_version": None, "update_available": False, "available": False, "error": "Invalid update branch", "source": UPDATE_SOURCE, "source_url": UPDATE_SOURCE_URL, "released_at": None}
     installed_version = _installed_publication_version()
     try:
         remote = _git_output(["ls-remote", "https://github.com/chmajster/Algen-server-web-explorer-panel.git", f"refs/heads/{branch}"]).split()
         if not remote:
             raise HTTPException(400, f"Could not find remote branch: {branch}")
         remote_sha = remote[0]
+        if not re.fullmatch(r"[0-9a-fA-F]{40,64}", remote_sha):
+            raise HTTPException(400, "Remote repository returned an invalid revision")
     except (HTTPException, OSError, subprocess.SubprocessError) as error:
         message = str(error.detail) if isinstance(error, HTTPException) else str(error)
         return {
@@ -889,7 +898,7 @@ def _write_json_atomic(path: Path, value: dict) -> None:
 def _safe_update_lines(lines: list[str]) -> list[str]:
     safe: list[str] = []
     for line in lines[-120:]:
-        value = re.sub(r"(?i)(authorization:\s*bearer|token|password|secret)(\s*[:=]\s*|\s+)\S+", r"\1\2***", line)
+        value = re.sub(r"(?i)(authorization(?:\s*:\s*bearer)?|cookie|set-cookie|token|password|secret|api[_-]?key)(\s*[:=]\s*|\s+)\S+", r"\1\2***", line)
         value = re.sub(r"(?i)(https?://[^/\s:@]+:)[^@\s/]+@", r"\1***@", value)
         value = re.sub(r"/(?:home/[^/\s]+|root)(?:/[^\s]*)?", "/***/…", value)
         safe.append(value[-4000:])
@@ -990,6 +999,7 @@ def _request_update(*, actor: str, update_config: bool, status: dict | None = No
                 "commit_revision": status.get("remote"),
                 "commit_date": status.get("released_at"),
                 "message": "Oczekiwanie na zakończenie aktywnych operacji.",
+                "trigger": "automatic" if actor == "system" else "manual",
                 "acknowledged_users": [],
                 "log_offset": log_offset,
             }
@@ -998,7 +1008,44 @@ def _request_update(*, actor: str, update_config: bool, status: dict | None = No
             _update_progress_path().unlink(missing_ok=True)
         except OSError:
             pass
+        start_update_step("prepare", "Przygotowywanie aktualizacji.")
+        complete_update_step("prepare", "Stan aktualizacji został przygotowany.")
+        start_update_step("check_operations", "Sprawdzanie aktywnych operacji.")
     return _process_waiting_update(request_state["id"])
+
+
+def _record_up_to_date(*, actor: str, status: dict) -> dict:
+    now = time.time()
+    with coordination_lock():
+        write_update_request(
+            {
+                "id": secrets.token_hex(16),
+                "state": "running",
+                "phase": "prepare",
+                "actor": actor,
+                "trigger": "automatic" if actor == "system" else "manual",
+                "requested_at": now,
+                "started_at": now,
+                "previous_version": status.get("installed_version"),
+                "target_version": status.get("available_version") or status.get("installed_version"),
+                "current_version": status.get("installed_version"),
+                "commit_revision": status.get("remote"),
+                "message": "System jest aktualny.",
+            }
+        )
+        for step_id, message in (
+            ("prepare", "Stan sprawdzania został przygotowany."),
+            ("check_operations", "Sprawdzono aktywne operacje."),
+            ("check_update", "System jest aktualny."),
+        ):
+            start_update_step(step_id, message)
+            complete_update_step(step_id, message)
+        for step_id in UPDATE_STEPS[3:-1]:
+            skip_update_step(step_id, "Brak nowszej wersji — krok nie był potrzebny.")
+        complete_update_step("complete", "System jest aktualny.")
+        latest = read_update_request()
+        latest.update({"state": "completed", "phase": "complete", "progress": 100, "finished_at": time.time(), "message": "System jest aktualny."})
+        return write_update_request(latest)
 
 
 def _process_waiting_update(request_id: str | None = None) -> dict:
@@ -1018,10 +1065,12 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
             )
             write_update_request(request_state)
             return _update_progress()
+        complete_update_step("check_operations", "Brak aktywnych operacji blokujących.")
+        request_state = read_update_request()
         request_state.update(
             {
                 "state": "preparing",
-                "phase": "preparing",
+                "phase": "prepare",
                 "started_at": time.time(),
                 "message": "Przygotowywanie aktualizacji.",
             }
@@ -1035,15 +1084,10 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
         with coordination_lock():
             latest = read_update_request()
             if latest.get("id") == request_state.get("id"):
-                latest.update(
-                    {
-                        "state": "failed",
-                        "phase": "failed",
-                        "failed_phase": latest.get("phase") or "preparing",
-                        "finished_at": time.time(),
-                        "message": message or "Aktualizacja nie powiodła się.",
-                    }
-                )
+                failed_step = str(latest.get("phase") or "prepare")
+                fail_update_step(failed_step if failed_step in UPDATE_STEPS else "prepare", message or "Aktualizacja nie powiodła się.")
+                latest = read_update_request()
+                latest["failed_phase"] = "preparing"
                 write_update_request(latest)
         resume_registered_operations()
         return _update_progress()
@@ -1051,10 +1095,12 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
     with coordination_lock():
         latest = read_update_request()
         if latest.get("id") == request_state.get("id"):
+            complete_update_step("check_update", "Dostępność aktualizacji została potwierdzona.")
+            start_update_step("download_repository", "Pobieranie danych repozytorium.")
+            latest = read_update_request()
             latest.update(
                 {
                     "state": "running",
-                    "phase": "installing",
                     "pid": result.get("pid"),
                     "unit": result.get("unit"),
                     "message": "Aktualizacja jest instalowana.",
@@ -1062,6 +1108,35 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
             )
             write_update_request(latest)
     return _update_progress()
+
+
+_LOG_STEP_MARKER = re.compile(r"Update step:\s*([a-z_]+)(?:\s+(started|completed|skipped))?", re.IGNORECASE)
+
+
+def _synchronize_update_steps(lines: list[str]) -> dict:
+    """Persist explicit installer markers so progress represents real work."""
+    state = read_update_request()
+    processed = {str(value) for value in state.get("processed_step_markers", [])}
+    for line in lines:
+        match = _LOG_STEP_MARKER.search(line)
+        if not match or match.group(1) not in UPDATE_STEPS:
+            continue
+        step_id = match.group(1)
+        event = (match.group(2) or "started").lower()
+        marker = f"{step_id}:{event}"
+        if marker in processed:
+            continue
+        if event == "completed":
+            complete_update_step(step_id, line.strip()[-1000:])
+        elif event == "skipped":
+            skip_update_step(step_id, line.strip()[-1000:])
+        else:
+            start_update_step(step_id, line.strip()[-1000:])
+        processed.add(marker)
+    with coordination_lock():
+        latest = read_update_request()
+        latest["processed_step_markers"] = sorted(processed)
+        return write_update_request(latest)
 
 
 def _update_progress() -> dict:
@@ -1110,6 +1185,8 @@ def _update_progress() -> dict:
     except OSError:
         pass
     lines = _safe_update_lines(lines)
+    if request_state.get("state") in {"preparing", "running"} and lines:
+        request_state = _synchronize_update_steps(lines)
     running = bool(progress.get("running"))
     exit_code = progress.get("exit_code")
     request_status = str(request_state.get("state") or "idle")
@@ -1118,30 +1195,50 @@ def _update_progress() -> dict:
         with coordination_lock():
             latest = read_update_request()
             if latest.get("id") == request_state.get("id") and latest.get("state") in {"preparing", "running"}:
-                latest.update(
-                    {
-                        "state": "failed",
-                        "phase": "failed",
-                        "failed_phase": latest.get("phase") or "preparing",
-                        "finished_at": time.time(),
-                        "message": "Nie udało się odzyskać stanu aktualizacji po ponownym uruchomieniu usługi.",
-                    }
-                )
-                request_state = write_update_request(latest)
+                failed_step = str(latest.get("phase") or "prepare")
+                if failed_step == "restart_services":
+                    complete_update_step("restart_services", "Usługi zostały ponownie uruchomione.")
+                    start_update_step("health_check", "Sprawdzanie działania aplikacji po restarcie.")
+                    complete_update_step("health_check", "Backend odpowiada poprawnie po restarcie.")
+                    for step in read_update_request()["steps"]:
+                        if step["status"] == "pending" and step["id"] != "complete":
+                            skip_update_step(step["id"], "Stan kroku nie był dostępny po restarcie.")
+                    complete_update_step("complete", "Aktualizacja zakończona.")
+                    latest = read_update_request()
+                    latest.update({"state": "completed", "phase": "complete", "finished_at": time.time(), "progress": 100})
+                    request_state = write_update_request(latest)
+                else:
+                    request_state = fail_update_step(
+                        failed_step if failed_step in UPDATE_STEPS else "prepare",
+                        "Nie udało się odzyskać stanu aktualizacji po ponownym uruchomieniu usługi.",
+                    )
+                    if failed_step not in UPDATE_STEPS:
+                        request_state["failed_phase"] = failed_step
+                        request_state = write_update_request(request_state)
         resume_registered_operations()
-        request_status = "failed"
+        request_status = str(request_state.get("state") or "failed")
     if request_status in {"preparing", "running"} and not running and exit_code is not None:
         final_state = "completed" if exit_code == 0 else "failed"
         with coordination_lock():
             latest = read_update_request()
             if latest.get("id") == request_state.get("id") and latest.get("state") in {"preparing", "running"}:
+                current_step = str(latest.get("phase") or "prepare")
+                if final_state == "completed":
+                    if current_step in UPDATE_STEPS and current_step != "complete":
+                        complete_update_step(current_step)
+                    for step in read_update_request()["steps"]:
+                        if step["status"] == "pending" and step["id"] != "complete":
+                            skip_update_step(step["id"], "Krok nie był wymagany przez instalator.")
+                    complete_update_step("complete", "Aktualizacja została wykonana pomyślnie.")
+                    latest = read_update_request()
+                else:
+                    fail_update_step(current_step if current_step in UPDATE_STEPS else "prepare", "Aktualizacja nie powiodła się.")
+                    latest = read_update_request()
                 latest.update(
                     {
                         "state": final_state,
-                        "phase": final_state,
-                        "failed_phase": _update_phase(lines, running=True, state="running", fallback=str(latest.get("phase") or "installing"))
-                        if final_state == "failed"
-                        else None,
+                        "phase": "complete" if final_state == "completed" else latest.get("phase"),
+                        "failed_phase": latest.get("failed_phase") if final_state == "failed" else None,
                         "finished_at": progress.get("finished_at") or time.time(),
                         "current_version": _installed_publication_version(),
                         "message": "Aktualizacja została wykonana pomyślnie." if final_state == "completed" else "Aktualizacja nie powiodła się.",
@@ -1165,7 +1262,7 @@ def _update_progress() -> dict:
         if request_status != "idle"
         else ("running" if running else "completed" if exit_code == 0 else "failed" if exit_code is not None else "idle")
     )
-    phase = _update_phase(lines, running=effective_running, state=effective_state, fallback=str(request_state.get("phase") or ""))
+    phase = str(request_state.get("phase") or _update_phase(lines, running=effective_running, state=effective_state, fallback=""))
     return {
         **progress,
         "id": request_state.get("id") or None,
@@ -1173,7 +1270,7 @@ def _update_progress() -> dict:
         "state": effective_state,
         "phase": phase,
         "failed_phase": request_state.get("failed_phase"),
-        "progress": _phase_progress(phase),
+        "progress": request_state.get("progress") if any(step.get("status") != "pending" for step in request_state.get("steps", [])) else _phase_progress(phase),
         "pid": progress.get("pid") or state.get("last_pid"),
         "log": log_path.name,
         "lines": lines,
@@ -1183,7 +1280,11 @@ def _update_progress() -> dict:
         "previous_version": request_state.get("previous_version"),
         "target_version": request_state.get("target_version"),
         "current_version": request_state.get("current_version"),
+        "commit_revision": request_state.get("commit_revision"),
         "message": _safe_update_lines([str(request_state.get("message") or "")])[0] if request_state.get("message") else "",
+        "steps": request_state.get("steps", []),
+        "trigger": request_state.get("trigger", "manual"),
+        "updated_at": request_state.get("updated_at"),
         "active_count": len(blockers),
         "blockers": blockers,
     }
@@ -1228,7 +1329,7 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
             if not status["update_available"]:
                 state.update({"last_error": "", "next_check": now + interval * 3600})
                 _write_auto_update_state(state)
-                return {"ok": True, "updated": False, "status": status}
+                return {"ok": True, "updated": False, "status": status, **(_record_up_to_date(actor=actor, status=status) if force else {})}
             if not force and not state.get("enabled"):
                 state.update({"last_error": "", "next_check": now + interval * 3600})
                 _write_auto_update_state(state)
@@ -1947,7 +2048,7 @@ def admin_updates_download(payload: UpdateAction, request: Request, user: Sessio
     if not status.get("available", True):
         raise HTTPException(503, status.get("error") or "Update status unavailable")
     if not status.get("update_available"):
-        return {"ok": True, "updated": False, "status": status, **_update_progress()}
+        return {"ok": True, "updated": False, "status": status, **_record_up_to_date(actor=user.username, status=status)}
     return {"ok": True, "updated": True, "status": status, **_request_update(actor=user.username, update_config=payload.update_config, status=status)}
 
 
@@ -1988,7 +2089,11 @@ def system_update_status(_user: SessionUser = Depends(_current_user)):
         "previous_version": value.get("previous_version"),
         "target_version": value.get("target_version"),
         "current_version": value.get("current_version"),
+        "commit_revision": value.get("commit_revision"),
         "message": value.get("message"),
+        "steps": [{**step, "error": None} for step in value.get("steps", [])],
+        "trigger": value.get("trigger", "manual"),
+        "updated_at": value.get("updated_at"),
         "active_count": value.get("active_count"),
         "blockers": blockers,
         "log": "",

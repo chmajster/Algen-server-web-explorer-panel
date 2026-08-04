@@ -1,0 +1,9 @@
+id: os-repositories
+name: OS Repositories
+category: system
+icon: package
+permissions: [modules.view]
+routers: [app.modules.os_repositories.router:router]
+dependencies: [hosts-manager]
+capabilities: [repositories, mirrors, synchronization, jobs]
+system_capabilities: [apt, rpm]

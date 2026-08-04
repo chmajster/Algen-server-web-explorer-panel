@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import asyncio
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import AsyncIterator
+
+from fastapi import APIRouter, Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from .audit import configure_logging
+from .config import AppConfig, get_config
+from .core.modules import ModuleRegistry
+from .http_api import frontend_cache_policy
+from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
+from .modules.os_repositories.scheduler import start_scheduler as start_os_repositories_scheduler
+from .network_mounts import active_mount_jobs
+from .package_center.jobs import manager as package_job_manager
+from .package_center.service import repository as package_repository
+from .security import SessionUser, get_session_user
+from .settings import start_auto_update_scheduler
+from .tasks import task_store
+from .update_coordination import active_transient_operations, register_operation_provider
+from .uploads import active_uploads
+
+
+BUILTIN_MODULES = Path(__file__).resolve().parent / "modules" / "builtin"
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+
+def build_module_registry(root: Path = BUILTIN_MODULES) -> ModuleRegistry:
+    registry = ModuleRegistry()
+    registry.discover(root)
+    return registry
+
+
+def _start_schedulers() -> None:
+    start_auto_update_scheduler()
+    start_ansible_scheduler()
+    start_os_repositories_scheduler()
+
+
+@asynccontextmanager
+async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
+    repository = package_repository()
+    manager = package_job_manager(repository)
+    register_operation_provider(
+        "file",
+        lambda: [task.to_dict() for task in task_store.list_all() if task.status.value in {"queued", "running"}],
+        task_store.schedule_pending,
+    )
+    register_operation_provider("package", repository.active_jobs, manager.schedule_pending)
+    register_operation_provider("mount", active_mount_jobs)
+    register_operation_provider("upload", active_uploads)
+    register_operation_provider("direct", active_transient_operations)
+    promotion_task: asyncio.Task[None] | None = None
+    if os.environ.get("WEBNAS_CANDIDATE") != "1":
+        _start_schedulers()
+    else:
+        slot = os.environ.get("WEBNAS_SLOT", "")
+
+        async def promote_candidate() -> None:
+            active_slot_file = Path(os.environ.get("WEBNAS_ACTIVE_SLOT_FILE", "/run/webnas/active-slot"))
+            while True:
+                try:
+                    if active_slot_file.read_text(encoding="utf-8").strip() == slot:
+                        _start_schedulers()
+                        return
+                except OSError:
+                    pass
+                await asyncio.sleep(0.25)
+
+        promotion_task = asyncio.create_task(promote_candidate())
+    yield
+    if promotion_task and not promotion_task.done():
+        promotion_task.cancel()
+
+
+def _registry_router(registry: ModuleRegistry) -> APIRouter:
+    router = APIRouter(prefix="/api/v1/modules", tags=["module-registry"])
+
+    @router.get("")
+    def module_catalog(_user: SessionUser = Depends(get_session_user)):
+        return {"items": registry.public_catalog(), "total": len(registry.manifests)}
+
+    @router.get("/health")
+    def module_health(_user: SessionUser = Depends(get_session_user)):
+        diagnostics = registry.diagnostics()
+        return {
+            "status": "ok" if all(item.state in {"active", "disabled"} for item in diagnostics) else "degraded",
+            "modules": [{"module_id": item.module_id, "state": item.state, "message": item.message} for item in diagnostics],
+        }
+
+    return router
+
+
+def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | None = None, mount_frontend: bool = True) -> FastAPI:
+    """Composition root. Dependencies may be replaced without importing business internals."""
+    configure_logging()
+    application_settings = settings or get_config()
+    module_registry = registry or build_module_registry()
+    app = FastAPI(title="WebNAS", version="0.1.0", lifespan=application_lifespan)
+    app.state.settings = application_settings
+    app.state.modules = module_registry
+    app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    app.middleware("http")(frontend_cache_policy)
+    module_registry.install_routers(app)
+    app.include_router(_registry_router(module_registry))
+    if mount_frontend and FRONTEND_DIST.exists():
+        app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+    return app

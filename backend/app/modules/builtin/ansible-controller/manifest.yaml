@@ -1,0 +1,9 @@
+id: ansible-controller
+name: Ansible Controller
+category: automation
+icon: workflow
+permissions: [modules.view]
+routers: [app.modules.ansible_controller.router:router]
+dependencies: [package-center]
+capabilities: [inventory, playbooks, jobs, scheduler]
+menu: [{id: ansible, label: ansible.name, icon: workflow, permission: modules.view}]

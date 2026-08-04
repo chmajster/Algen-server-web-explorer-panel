@@ -1,0 +1,8 @@
+id: files
+name: File Manager
+category: storage
+icon: hard-drive
+permissions: [files.view, files.write, transfers.view_own]
+routers: [app.http_api:router]
+capabilities: [browse, upload, download, tasks, sse]
+menu: [{id: files, label: app.fileManager, icon: hard-drive, permission: files.view}]

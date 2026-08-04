@@ -1,0 +1,8 @@
+id: network
+name: Network
+category: system
+icon: network
+permissions: [network.view]
+routers: [app.network_management:router, app.network_diagnostics:router, app.network_mounts:router, app.local_disks:router]
+capabilities: [interfaces, dns, routes, diagnostics, mounts, disks]
+system_capabilities: [ip, mount, systemd]

@@ -1,0 +1,11 @@
+id: package-center
+name: Package Center
+category: system
+icon: package
+permissions: [modules.view, modules.install]
+routers: [app.package_center.router:router, app.apps:router, app.modules.router:router]
+capabilities: [catalog, install, update, uninstall, backups]
+system_capabilities: [package-manager, systemd]
+menu:
+  - {id: modules, label: app.modules, icon: boxes, permission: modules.view}
+  - {id: store, label: app.store, icon: package, permission: modules.install}
