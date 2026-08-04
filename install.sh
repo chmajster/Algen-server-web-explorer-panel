@@ -502,7 +502,8 @@ install_dependencies() {
       refresh_apt_metadata
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
-        libpam0g-dev rsync sudo curl wget ca-certificates tar gzip \
+        libpam0g-dev rsync sudo curl wget ca-certificates tar gzip cifs-utils \
+        shadow-utils procps-ng
         passwd procps iproute2 ethtool traceroute screen quota util-linux udev nginx
       DEBIAN_FRONTEND=noninteractive apt_get install -y ntfs-3g || warn "Optional NTFS tools could not be installed"
       DEBIAN_FRONTEND=noninteractive apt_get install -y exfatprogs || warn "Optional exFAT tools could not be installed"
@@ -510,14 +511,14 @@ install_dependencies() {
     dnf)
       dnf install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
-        pam-devel rsync sudo curl wget ca-certificates tar gzip \
+        pam-devel rsync sudo curl wget ca-certificates tar gzip cifs-utils \
         shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx
       dnf install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
     yum)
       yum install -y \
         python3 python3-pip python3-devel gcc gcc-c++ make \
-        pam-devel rsync sudo curl wget ca-certificates tar gzip \
+        pam-devel rsync sudo curl wget ca-certificates tar gzip cifs-utils \
         shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx
       yum install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
