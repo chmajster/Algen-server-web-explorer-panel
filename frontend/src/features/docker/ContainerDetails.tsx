@@ -120,14 +120,16 @@ function ContainerSettingsEditor({ target, value, t, toast, onStarted, onBack }:
 
   const [name, setName] = useState(value.name || target);
   const [limitsEnabled, setLimitsEnabled] = useState(Boolean(value.resource_limits_enabled));
-  const [cpuPriority, setCpuPriority] = useState(
+  const [cpuPriority, setCpuPriority] = useState<"low" | "medium" | "high">(
     value.cpu_priority === "low" || value.cpu_priority === "high" ? value.cpu_priority : "medium",
   );
   const [memory, setMemory] = useState(String(value.memory_mb || 4096));
   const [autoRestart, setAutoRestart] = useState(Boolean(value.auto_restart));
   const [portalEnabled, setPortalEnabled] = useState(Boolean(value.portal_enabled && firstTcpPort));
   const [portalPort, setPortalPort] = useState(String(value.portal_port || firstTcpPort?.target || ""));
-  const [portalProtocol, setPortalProtocol] = useState(value.portal_protocol === "https" ? "https" : "http");
+  const [portalProtocol, setPortalProtocol] = useState<"http" | "https">(
+    value.portal_protocol === "https" ? "https" : "http",
+  );
   const [saving, setSaving] = useState(false);
   const portalPorts = availablePorts.filter((item) => item?.protocol === "tcp");
   const selectedBinding = portalPorts.find((item) => item.target === Number(portalPort));
