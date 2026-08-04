@@ -21,6 +21,7 @@ from .modules.os_repositories.scheduler import start_scheduler as start_os_repos
 from .network_mounts import active_mount_jobs
 from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
+from .power_control import router as power_control_router
 from .security import SessionUser, get_session_user
 from .settings import start_auto_update_scheduler
 from .tasks import task_store
@@ -126,6 +127,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     module_registry.install_routers(app)
     app.include_router(_registry_router(module_registry))
     app.include_router(update_detail_policy_router)
+    app.include_router(power_control_router)
     if mount_frontend and FRONTEND_DIST.exists():
         app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
     return app

@@ -1,0 +1,20 @@
+.launcher-power-menu .launcher-restart-application svg.is-spinning {
+  animation: launcher-power-spin 0.8s linear infinite;
+}
+
+.launcher-power-menu .launcher-power-error {
+  max-width: 18rem;
+  margin: 0.25rem 0.5rem 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border-subtle));
+  border-radius: var(--radius-small);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-elevated));
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  white-space: normal;
+}
+
+@keyframes launcher-power-spin {
+  to { transform: rotate(360deg); }
+}
