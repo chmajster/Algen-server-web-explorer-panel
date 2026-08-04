@@ -7,15 +7,60 @@ from fastapi.responses import FileResponse
 
 from .update_coordination import read_update_request
 
+
 router = APIRouter(tags=["platform"])
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+ASSET_PREFIX = "/assets/"
+_RANGE_REQUEST_HEADERS = {b"range", b"if-range"}
+
+
+def _strip_asset_range_headers(request: Request) -> None:
+    """Force complete frontend assets instead of cacheable partial responses."""
+
+    headers = request.scope.get("headers")
+    if not isinstance(headers, list):
+        return
+    request.scope["headers"] = [
+        (name, value)
+        for name, value in headers
+        if name.lower() not in _RANGE_REQUEST_HEADERS
+    ]
+
+
+def _asset_response_is_complete(response) -> bool:
+    if response.status_code != 200:
+        return False
+    content_length = response.headers.get("Content-Length")
+    return bool(content_length and content_length.isdigit() and int(content_length) > 0)
 
 
 async def frontend_cache_policy(request: Request, call_next):
-    response = await call_next(request)
     path = request.url.path
-    if not path.startswith("/api/"):
-        response.headers["Cache-Control"] = "public, max-age=31536000, immutable" if path.startswith("/assets/") else "no-cache, must-revalidate"
+    is_asset = path.startswith(ASSET_PREFIX)
+
+    if is_asset:
+        # Starlette StaticFiles supports Range requests. JavaScript and CSS are
+        # executable resources and must never be delivered as an isolated range
+        # that an intermediary could later reuse as the complete immutable file.
+        _strip_asset_range_headers(request)
+
+    response = await call_next(request)
+
+    if path.startswith("/api/"):
+        return response
+
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    if is_asset:
+        response.headers["Accept-Ranges"] = "none"
+        if _asset_response_is_complete(response):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            # Never retain 206, truncated, zero-length or failed asset responses.
+            response.headers["Cache-Control"] = "no-store"
+    else:
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+
     return response
 
 
