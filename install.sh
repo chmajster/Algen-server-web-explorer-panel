@@ -498,13 +498,13 @@ setup_nodesource_repository() {
 install_dependencies() {
   local apt_deps=(
     python3 python3-pip python3-venv python3-dev build-essential
-    libpam0g-dev rsync sudo curl wget ca-certificates tar gzip cifs-utils
+    libpam0g-dev rsync sudo curl wget ca-certificates tar gzip 
     shadow-utils procps-ng
     passwd procps iproute2 ethtool traceroute screen quota util-linux udev nginx
   )
   local rpm_deps=(
     python3 python3-pip python3-devel gcc gcc-c++ make
-    pam-devel rsync sudo curl wget ca-certificates tar gzip cifs-utils
+    pam-devel rsync sudo curl wget ca-certificates tar gzip 
     shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx
   )
 
