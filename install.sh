@@ -444,35 +444,66 @@ refresh_apt_metadata() {
   return "$exit_code"
 }
 
+cifs_utils_installed() {
+  # cifs-utils is a package name; the executable it provides is mount.cifs.
+  # Check common absolute paths as /usr/sbin may be absent from a restricted PATH.
+  if command -v mount.cifs >/dev/null 2>&1 ||
+     [[ -x /usr/sbin/mount.cifs || -x /sbin/mount.cifs ]]; then
+    return 0
+  fi
+
+  # Fall back to the package database. This prevents reinstall attempts when
+  # the package is registered as installed but mount.cifs is outside PATH.
+  case "$PKG_MANAGER" in
+    apt)
+      command -v dpkg-query >/dev/null 2>&1 || return 1
+      dpkg-query -W -f='${Status}\n' cifs-utils 2>/dev/null |
+        grep -qx 'install ok installed'
+      ;;
+    dnf|yum)
+      command -v rpm >/dev/null 2>&1 || return 1
+      rpm -q cifs-utils >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 ensure_download_tools() {
   local tool=""
-  local missing=()
-  for tool in curl wget tar rsync ; do
-    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+  local missing_packages=()
+
+  for tool in curl wget tar rsync; do
+    command -v "$tool" >/dev/null 2>&1 || missing_packages+=("$tool")
   done
-  if [[ ${#missing[@]} -eq 0 ]]; then
-    ok "Download, archive, and synchronization tools are available: curl, wget, tar, rsync, cifs-utils"
+  cifs_utils_installed || missing_packages+=("cifs-utils")
+
+  if [[ ${#missing_packages[@]} -eq 0 ]]; then
+    ok "Download, archive, synchronization, and CIFS tools are available: curl, wget, tar, rsync, mount.cifs"
     return
   fi
 
-  section "Installing required download tools"
-  info "Missing tools: ${missing[*]}"
+  section "Installing required download and CIFS tools"
+  info "Missing packages: ${missing_packages[*]}"
   case "$PKG_MANAGER" in
     apt)
       refresh_apt_metadata
-      DEBIAN_FRONTEND=noninteractive apt_get install -y "${missing[@]}"
+      DEBIAN_FRONTEND=noninteractive apt_get install -y "${missing_packages[@]}"
       ;;
     dnf)
-      dnf install -y "${missing[@]}"
+      dnf install -y "${missing_packages[@]}"
       ;;
     yum)
-      yum install -y "${missing[@]}"
+      yum install -y "${missing_packages[@]}"
       ;;
   esac
-  for tool in curl wget tar rsync ; do
+
+  for tool in curl wget tar rsync; do
     command -v "$tool" >/dev/null 2>&1 || fail "Required tool was not installed: ${tool}"
   done
-  ok "Download, archive, and synchronization tools installed"
+  cifs_utils_installed || fail "Required CIFS support was not installed: cifs-utils (mount.cifs)"
+  ok "Download, archive, synchronization, and CIFS tools installed"
 }
 
 setup_nodesource_repository() {
