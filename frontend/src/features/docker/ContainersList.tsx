@@ -337,7 +337,22 @@ export function ContainersList({
                   ["docker.field.size", row.Size],
                 ];
                 return <Fragment key={target}>
-                  <tr className="docker-container-row">
+                  <tr
+                    className="docker-container-row"
+                    onContextMenu={(event) => {
+                      const items = menuItems(row, target);
+                      if (!items.length) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        target,
+                        row,
+                        portalTarget: event.currentTarget.closest(".desktop"),
+                      });
+                    }}
+                  >
                     <td className="docker-container-name"><div className="docker-container-identity"><span className="docker-container-icon" aria-hidden="true"><Boxes /></span><span>{permissions.includes("docker.inspect_container") ? <button type="button" className="docker-container-link" onClick={() => openDetails(target)}>{format(row.Names)}</button> : <strong>{format(row.Names)}</strong>}{Boolean(row.Image) && <small>{String(row.Image)}</small>}{Boolean(row.ID) && <code>{String(row.ID).slice(0, 12)}</code>}</span></div><button type="button" className="docker-details-toggle" aria-expanded={isExpanded} aria-controls={detailsId} onClick={() => setExpanded((current) => {
                       const next = new Set(current); if (next.has(target)) next.delete(target); else next.add(target); return next;
                     })}>{isExpanded ? <ChevronUp /> : <ChevronDown />}<span>{t(isExpanded ? "docker.hideTechnicalDetails" : "docker.showTechnicalDetails")}</span></button></td>
