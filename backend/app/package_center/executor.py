@@ -30,6 +30,10 @@ SAFE_ENV = {
     "DEBIAN_FRONTEND": "noninteractive",
     "HOME": "/root",
 }
+SYSTEM_MUTATION_COMMANDS = frozenset({
+    "apt-get", "apt", "dpkg", "dnf", "yum", "zypper", "pacman", "apk", "rpm", "systemctl",
+})
+SHARED_RUNTIME_ROOT = Path("/run/webnas-package-center")
 SECRET_RE = re.compile(r"(?i)(password|passwd|token|secret|authorization)(\s*[:=]\s*)(\S+)")
 URL_SECRET_RE = re.compile(r"(?i)(https?://[^:/\s]+:)[^@\s]+@")
 BEARER_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
@@ -49,6 +53,12 @@ SAFE_CIFS_USRMERGE_PATHS = frozenset({
 DPKG_CIFS_SUID_PERMISSION_RE = re.compile(
     r"error setting permissions of\s+['\"]\.?/(?:usr/)?sbin/mount\.cifs['\"]:\s*Operation not permitted",
     re.IGNORECASE,
+)
+DPKG_BAD_STATE_REMOVAL_RE = re.compile(
+    r"dpkg:\s+error processing package\s+(?P<package>[A-Za-z0-9][A-Za-z0-9+.:~-]*)\s+"
+    r"\(--(?:remove|purge)\):\s*package is in a very bad inconsistent state;\s*"
+    r"you should\s*reinstall it before attempting a removal",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -105,7 +115,7 @@ def apt_command_without_proxmox_enterprise(command: list[str], source_root: Path
         raise ValueError("Only apt-get commands can use the Proxmox repository fallback")
 
     root = source_root or APT_SOURCES_ROOT
-    with tempfile.TemporaryDirectory(prefix="webnas-apt-") as temporary:
+    with _shared_temporary_directory("webnas-apt-") as temporary:
         temporary_root = Path(temporary)
         source_list = temporary_root / "sources.list"
         source_parts = temporary_root / "sources.list.d"
@@ -220,12 +230,59 @@ def command_preview(plan: PackagePlan, manifest: ModuleManifest) -> list[list[st
     return [args for _, args, _ in _command_steps(plan, manifest)]
 
 
+def _shared_temporary_directory(prefix: str) -> tempfile.TemporaryDirectory[str]:
+    """Create files visible both inside WebNAS' PrivateTmp and transient admin units."""
+
+    try:
+        SHARED_RUNTIME_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(SHARED_RUNTIME_ROOT, 0o700)
+        return tempfile.TemporaryDirectory(prefix=prefix, dir=SHARED_RUNTIME_ROOT)
+    except OSError:
+        # Non-root tests and non-systemd environments use the normal temporary directory.
+        return tempfile.TemporaryDirectory(prefix=prefix)
+
+
+def _transient_admin_command(args: list[str], timeout: int) -> list[str]:
+    """Escape the backend unit's read-only mount namespace for trusted system mutations."""
+
+    if not args or Path(args[0]).name not in SYSTEM_MUTATION_COMMANDS:
+        return args
+    systemd_run = shutil.which("systemd-run")
+    executable = shutil.which(args[0])
+    if not systemd_run or not executable or not Path("/run/systemd/system").exists():
+        return args
+    return [
+        systemd_run,
+        "--quiet",
+        "--wait",
+        "--pipe",
+        "--collect",
+        "--service-type=exec",
+        f"--property=RuntimeMaxSec={max(1, timeout)}s",
+        "--property=ProtectSystem=false",
+        "--property=ProtectHome=false",
+        "--property=PrivateTmp=false",
+        "--property=NoNewPrivileges=false",
+        "--property=RestrictSUIDSGID=false",
+        f"--setenv=PATH={SAFE_ENV['PATH']}",
+        f"--setenv=LANG={SAFE_ENV['LANG']}",
+        f"--setenv=LC_ALL={SAFE_ENV['LC_ALL']}",
+        f"--setenv=DEBIAN_FRONTEND={SAFE_ENV['DEBIAN_FRONTEND']}",
+        "--",
+        executable,
+        *args[1:],
+    ]
+
+
 def _run(args: list[str], timeout: int, log: LogCallback) -> None:
     if not args or shutil.which(args[0]) is None:
         raise RuntimeError(f"Required executable is unavailable: {args[0] if args else 'unknown'}")
     log("command", " ".join(args))
+    execution_args = _transient_admin_command(args, timeout)
+    if execution_args is not args:
+        log("stdout", "Executing trusted system mutation in a transient administrative systemd unit")
     process = subprocess.Popen(
-        args,
+        execution_args,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -301,11 +358,66 @@ def _temporary_apt_source_options(args: list[str]) -> list[str]:
     return options
 
 
+def _apt_subcommand_index(args: list[str]) -> int | None:
+    """Return the APT operation index after internally generated -o options."""
+
+    index = 1
+    while index + 1 < len(args) and args[index] == "-o":
+        index += 2
+    return index if index < len(args) else None
+
+
+def _bad_state_removal_packages(args: list[str], output: str) -> list[str]:
+    """Return explicitly requested packages that dpkg requires to be reinstalled first."""
+
+    command_index = _apt_subcommand_index(args)
+    if command_index is None or args[command_index] not in {"remove", "purge"}:
+        return []
+
+    requested = {
+        item.split("=", 1)[0]
+        for item in args[command_index + 1 :]
+        if item and not item.startswith("-")
+    }
+    result: list[str] = []
+    for match in DPKG_BAD_STATE_REMOVAL_RE.finditer(output):
+        package = match.group("package")
+        base_package = package.split(":", 1)[0]
+        if package not in requested and base_package not in requested:
+            continue
+        selected = package if package in requested else base_package
+        if selected not in result:
+            result.append(selected)
+    return result
+
+
 def _run_apt_with_cifs_recovery(args: list[str], timeout: int, log: LogCallback) -> None:
     try:
         _run(args, timeout, log)
         return
     except CommandExecutionError as error:
+        bad_state_packages = _bad_state_removal_packages(args, error.output)
+        if bad_state_packages:
+            source_options = _temporary_apt_source_options(args)
+            package_list = ", ".join(bad_state_packages)
+            log(
+                "warning",
+                (
+                    f"dpkg reports an inconsistent package state for {package_list}; "
+                    "reinstalling the affected package before retrying removal"
+                ),
+            )
+            repair = [
+                "apt-get",
+                *source_options,
+                "install", "-y", "--reinstall", "--no-install-recommends",
+                *bad_state_packages,
+            ]
+            _run_apt_command(repair, timeout, log)
+            log("stdout", f"Package repair completed for {package_list}; retrying the original removal")
+            _run(args, timeout, log)
+            return
+
         if _is_cifs_suid_sandbox_failure(args, error.output):
             message = (
                 "The installed WebNAS systemd sandbox blocks the SUID mode required by cifs-utils/mount.cifs. "
@@ -399,7 +511,7 @@ def _install_downloaded_package(plan: PackagePlan, manifest: ModuleManifest, log
     if not installation or installation.type != InstallationType.download_package or not installation.url or not installation.sha256 or not installation.package_format:
         raise RuntimeError("Downloaded package installation strategy is incomplete")
     request = urllib.request.Request(str(installation.url), headers={"User-Agent": "WebNAS-Package-Center/1"})
-    with tempfile.TemporaryDirectory(prefix="webnas-package-") as temporary:
+    with _shared_temporary_directory("webnas-package-") as temporary:
         package_path = Path(temporary) / f"package.{installation.package_format}"
         digest = hashlib.sha256()
         size = 0
