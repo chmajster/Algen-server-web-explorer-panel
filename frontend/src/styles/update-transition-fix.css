@@ -1,0 +1,10 @@
+/*
+ * Ukrywa wyłącznie przejściowy modal "Sprawdzanie aktualizacji".
+ * Przycisk Aktualizuj nadal pokazuje animację oczekiwania, a po uruchomieniu
+ * instalatora aplikacja przechodzi bezpośrednio do /update-status.
+ *
+ * Modal błędu i komunikat "brak aktualizacji" pozostają widoczne.
+ */
+.update-progress-backdrop:has(.update-progress-state.checking) {
+  display: none !important;
+}
