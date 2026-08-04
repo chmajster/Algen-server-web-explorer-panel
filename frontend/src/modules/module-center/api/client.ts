@@ -1,5 +1,41 @@
 import { request } from "../../../core/api/transport";
-import type { ModuleBackup, ModuleConfig, ModuleConnection, ModuleDiagnostic, ModuleJob, ModuleLogSource, ModuleResource, ModuleStatus, ModuleSummary, ModuleValidationResult } from "../../../core/api/contracts";
+import type {
+  ModuleBackup,
+  ModuleConfig,
+  ModuleConnection,
+  ModuleDiagnostic,
+  ModuleJob,
+  ModuleLogSource,
+  ModuleResource,
+  ModuleStatus,
+  ModuleSummary,
+  ModuleValidationResult,
+} from "../../../core/api/contracts";
+
+type ModuleLogsResponse = {
+  sources: ModuleLogSource[];
+  source: string;
+  lines: string[];
+  truncated: boolean;
+};
+
+function normalizeModuleLogs(value: Partial<ModuleLogsResponse> | null | undefined): ModuleLogsResponse {
+  const sources = Array.isArray(value?.sources) ? value.sources : [];
+  const lines = Array.isArray(value?.lines)
+    ? value.lines
+        .filter((line): line is string | number | boolean => (
+          typeof line === "string" || typeof line === "number" || typeof line === "boolean"
+        ))
+        .map(String)
+    : [];
+
+  return {
+    sources,
+    source: typeof value?.source === "string" ? value.source : sources[0]?.id || "",
+    lines,
+    truncated: value?.truncated === true,
+  };
+}
 
 export const moduleCenterClient = {
   modules: () => request<ModuleSummary[]>("/api/modules"),
@@ -14,12 +50,16 @@ export const moduleCenterClient = {
   moduleConfig: (id: string) => request<ModuleConfig>(`/api/modules/${encodeURIComponent(id)}/config`),
   validateModuleConfig: (id: string, config: ModuleConfig) => request<ModuleValidationResult>(`/api/modules/${encodeURIComponent(id)}/validate`, { method: "POST", body: JSON.stringify({ config }) }),
   applyModuleConfig: (id: string, config: ModuleConfig, confirmations: string[] = []) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/apply`, { method: "POST", body: JSON.stringify({ config, confirm: true, create_backup: true, confirm_smb1: confirmations.includes("smb1") }) }),
-  moduleLogs: (id: string, source = "", lines = 200, search = "", level = "") => { const query = new URLSearchParams({ source, lines: String(lines), search, level }); return request<{ sources: ModuleLogSource[]; source: string; lines: string[]; truncated: boolean }>(`/api/modules/${encodeURIComponent(id)}/logs?${query}`); },
+  moduleLogs: async (id: string, source = "", lines = 200, search = "", level = "") => {
+    const query = new URLSearchParams({ source, lines: String(lines), search, level });
+    const value = await request<Partial<ModuleLogsResponse>>(`/api/modules/${encodeURIComponent(id)}/logs?${query}`);
+    return normalizeModuleLogs(value);
+  },
   moduleDiagnostics: (id: string) => request<{ diagnostics: ModuleDiagnostic[]; job?: ModuleJob | null }>(`/api/modules/${encodeURIComponent(id)}/diagnostics`),
   runModuleDiagnostics: (id: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/diagnostics`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   moduleBackups: (id: string) => request<ModuleBackup[]>(`/api/modules/${encodeURIComponent(id)}/backups`),
   createModuleBackup: (id: string, description = "") => request<ModuleBackup>(`/api/modules/${encodeURIComponent(id)}/backups`, { method: "POST", body: JSON.stringify({ confirm: true, description }) }),
   restoreModuleBackup: (id: string, backupId: string) => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}/restore`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   deleteModuleBackup: (id: string, backupId: string) => request(`/api/modules/${encodeURIComponent(id)}/backups/${encodeURIComponent(backupId)}`, { method: "DELETE", body: JSON.stringify({ confirm: true }) }),
-  moduleService: (id: string, action: "start" | "stop" | "restart" | "reload" | "enable" | "disable") => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/service/${action}`, { method: "POST", body: JSON.stringify({ confirm: true }) })
+  moduleService: (id: string, action: "start" | "stop" | "restart" | "reload" | "enable" | "disable") => request<{ job: ModuleJob }>(`/api/modules/${encodeURIComponent(id)}/service/${action}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
 } as const;
