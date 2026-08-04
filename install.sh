@@ -447,7 +447,7 @@ refresh_apt_metadata() {
 ensure_download_tools() {
   local tool=""
   local missing=()
-  for tool in curl wget tar rsync cifs-utils; do
+  for tool in curl wget tar rsync ; do
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [[ ${#missing[@]} -eq 0 ]]; then
@@ -469,7 +469,7 @@ ensure_download_tools() {
       yum install -y "${missing[@]}"
       ;;
   esac
-  for tool in curl wget tar rsync cifs-utils; do
+  for tool in curl wget tar rsync ; do
     command -v "$tool" >/dev/null 2>&1 || fail "Required tool was not installed: ${tool}"
   done
   ok "Download, archive, and synchronization tools installed"
