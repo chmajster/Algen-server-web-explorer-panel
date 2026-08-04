@@ -1,10 +1,11 @@
 """Typed, safety-oriented Docker management API."""
 
-# ContainerCreateRequest originally forbids Docker's host network mode.
-# Install the compatible model before router.py or public.py imports it.
 from . import models as _models
+from .container_action_models import ContainerActionRequest as _ContainerActionRequest
 from .host_network_models import ContainerCreateRequest as _HostNetworkContainerCreateRequest
 
 _models.ContainerCreateRequest = _HostNetworkContainerCreateRequest
+_models.ContainerActionRequest = _ContainerActionRequest
 
+del _ContainerActionRequest
 del _HostNetworkContainerCreateRequest

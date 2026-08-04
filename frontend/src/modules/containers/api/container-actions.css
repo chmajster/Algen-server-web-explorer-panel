@@ -1,0 +1,8 @@
+/* Graceful stop has no user-defined timeout; force stop always uses SIGKILL. */
+.admin-action-form .field-label:has(> input[name="timeout"]) > input[name="timeout"] {
+  display: none;
+}
+
+.admin-action-form .field-label:has(> select[name="signal"]) {
+  display: none;
+}

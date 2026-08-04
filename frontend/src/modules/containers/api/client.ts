@@ -1,4 +1,5 @@
 import { request } from "../../../core/api/transport";
+import "./container-actions.css";
 import type { DockerApp, DockerAppAction, DockerAppInstall, DockerArtifact, DockerBackupRestore, DockerComposeAction, DockerComposeSave, DockerContainer, DockerContainerAction, DockerContainerCreate, DockerContainerDefaultsPolicy, DockerContainerSettings, DockerContainerSettingsUpdate, DockerDashboard, DockerDefaultBridgeConfig, DockerDefaultBridgeSave, DockerEngineAction, DockerImage, DockerImageAction, DockerNetwork, DockerNetworkAction, DockerNetworkContainer, DockerNetworkCreate, DockerPaged, DockerPrune, DockerPrunePlan, DockerRegistry, DockerRegistryCatalogResult, DockerRegistrySave, DockerRegistrySource, DockerRegistryTagsResult, DockerVolumeAction, DockerVolumeCreate, ModuleBackup, ModuleDiagnostic, ModuleJob, ModuleResource, ModuleStatus, ModuleValidationResult } from "../../../core/api/contracts";
 
 function normalizeContainerCreate(payload: DockerContainerCreate): DockerContainerCreate {
@@ -9,6 +10,18 @@ function normalizeContainerCreate(payload: DockerContainerCreate): DockerContain
     ports: [],
     network_aliases: [],
   };
+}
+
+function normalizeContainerAction(payload: DockerContainerAction): DockerContainerAction {
+  if (payload.action === "stop") {
+    const { timeout: _ignoredTimeout, signal: _ignoredSignal, ...graceful } = payload;
+    return graceful;
+  }
+  if (payload.action === "kill") {
+    const { timeout: _ignoredTimeout, ...forced } = payload;
+    return { ...forced, signal: "KILL" };
+  }
+  return payload;
 }
 
 function exposeHostNetwork(result: DockerPaged<DockerNetwork>): DockerPaged<DockerNetwork> {
@@ -27,7 +40,7 @@ export const containersClient = {
   dockerDaemonConfig: () => request<{ config: Record<string, unknown>; path: string; valid: boolean; error: string }>("/api/modules/docker/daemon-config"),
   validateDockerDaemonConfig: (config: Record<string, unknown>) => request<ModuleValidationResult>("/api/modules/docker/daemon-config/validate", { method: "POST", body: JSON.stringify({ config, confirmation: "" }) }),
   saveDockerDaemonConfig: (config: Record<string, unknown>, pamPassword: string) => request<{ job: ModuleJob; validation: ModuleValidationResult }>("/api/modules/docker/daemon-config", { method: "PUT", body: JSON.stringify({ config, confirmation: "daemon.json", pam_password: pamPassword }) }),
-  dockerContainers: (params: Record<string, string | number> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => query.set(key, String(value))); return request<DockerPaged<DockerContainer>>(`/api/modules/docker/containers?${query}`); },
+  dockerContainers: (params: Record<string, string | number> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => query.set(key, String(value))); query.set("_refresh", String(Date.now())); return request<DockerPaged<DockerContainer>>(`/api/modules/docker/containers?${query}`, { cache: "no-store" }); },
   dockerContainer: (target: string) => request<Record<string, unknown>>(`/api/modules/docker/containers/${encodeURIComponent(target)}`),
   dockerContainerStats: (target: string, historyHours = 1) => request<{ current: Record<string, unknown> | null; history: Array<Record<string, unknown>> }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/stats?history_hours=${historyHours}`),
   dockerContainerLogs: (target: string, params: Record<string, string | number> = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => query.set(key, String(value))); return request<{ lines: string[]; total: number; truncated: boolean }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/logs?${query}`); },
@@ -38,7 +51,7 @@ export const containersClient = {
   dockerContainerDefaultsPolicy: () => request<DockerContainerDefaultsPolicy>("/api/modules/docker/policy/container-defaults"),
   saveDockerContainerDefaultsPolicy: (payload: DockerContainerDefaultsPolicy) => request<DockerContainerDefaultsPolicy>("/api/modules/docker/policy/container-defaults", { method: "PUT", body: JSON.stringify(payload) }),
   createDockerContainer: (payload: DockerContainerCreate) => request<{ job: ModuleJob }>("/api/modules/docker/containers", { method: "POST", body: JSON.stringify(normalizeContainerCreate(payload)) }),
-  dockerContainerAction: (target: string, payload: DockerContainerAction) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
+  dockerContainerAction: (target: string, payload: DockerContainerAction) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(normalizeContainerAction(payload)) }),
   dockerContainerBackup: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/backup?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),
   dockerContainerExport: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/export?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),
   importDockerContainerFilesystem: (file: File, repository: string) => { const body = new FormData(); body.set("file", file); body.set("repository", repository); body.set("confirmation", repository); return request<{ job: ModuleJob }>("/api/modules/docker/containers/import", { method: "POST", body }); },

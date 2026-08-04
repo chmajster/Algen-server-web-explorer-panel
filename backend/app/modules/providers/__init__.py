@@ -6,11 +6,15 @@ from .apmid import ApmidProvider
 from .databases import MariaDBProvider, PostgreSQLProvider, RedisProvider
 from .dns import AdGuardHomeProvider, PiHoleProvider
 from .docker import DockerProvider
+from .docker_stop_behavior import install_docker_stop_behavior
 from .infrastructure import ApiConnectionProvider
 from .home_assistant import HomeAssistantProvider
 from .linux_updates import LinuxUpdatesProvider
 from .os_repositories import OsRepositoriesProvider
 from .samba import SambaProvider, parse_smb_conf
+
+install_docker_stop_behavior(DockerProvider)
+del install_docker_stop_behavior
 
 
 def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
