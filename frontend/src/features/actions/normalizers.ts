@@ -33,14 +33,62 @@ const RUNNING_EQUIVALENTS = new Set([
   "rollback_started",
   "migrating",
 ]);
-const PAUSED_EQUIVALENTS = new Set(["paused", "cancellation_requested", "cancelling"]);
-const COMPLETED_EQUIVALENTS = new Set(["completed", "success", "succeeded", "confirmed", "rolled_back"]);
-const FAILED_EQUIVALENTS = new Set(["failed", "error", "unreachable"]);
-const CANCELLED_EQUIVALENTS = new Set(["cancelled", "canceled"]);
+const PAUSED_EQUIVALENTS = new Set([
+  "paused",
+  "cancellation_requested",
+  "cancelling",
+]);
+const COMPLETED_EQUIVALENTS = new Set([
+  "completed",
+  "success",
+  "succeeded",
+  "confirmed",
+  "rolled_back",
+]);
+const FAILED_EQUIVALENTS = new Set([
+  "failed",
+  "error",
+  "unreachable",
+]);
+const CANCELLED_EQUIVALENTS = new Set([
+  "cancelled",
+  "canceled",
+]);
 
-export function normalizeStatus(value: string, cancellationRequested = false): BackgroundActionStatus {
-  const status = value.toLowerCase();
-  if (cancellationRequested || PAUSED_EQUIVALENTS.has(status)) return "paused";
+function safeArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
+function safeStringArray(value: unknown): string[] {
+  return safeArray(value)
+    .filter((item) => ["string", "number", "boolean"].includes(typeof item))
+    .map(String);
+}
+
+function safeRecord(value: unknown): Record<string, unknown> {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function safeString(value: unknown, fallback = ""): string {
+  return typeof value === "string"
+    ? value
+    : value === null || value === undefined
+      ? fallback
+      : String(value);
+}
+
+export function normalizeStatus(
+  value: string,
+  cancellationRequested = false,
+): BackgroundActionStatus {
+  const status = safeString(value).toLowerCase();
+  if (cancellationRequested || PAUSED_EQUIVALENTS.has(status)) {
+    return "paused";
+  }
   if (RUNNING_EQUIVALENTS.has(status)) return "running";
   if (ACTIVE_EQUIVALENTS.has(status)) return "queued";
   if (COMPLETED_EQUIVALENTS.has(status)) return "completed";
@@ -67,169 +115,269 @@ function moduleSource(moduleId: string): BackgroundActionSource {
 }
 
 function translatedOperation(t: Translate, action: string) {
-  const key = `actions.operation.${action}`;
+  const safeAction = safeString(action, "unknown");
+  const key = `actions.operation.${safeAction}`;
   const translated = t(key);
-  return translated === key ? action.replace(/_/g, " ") : translated;
+  return translated === key
+    ? safeAction.replace(/_/g, " ")
+    : translated;
 }
 
-export function normalizeTransfer(task: Task, t: Translate): BackgroundAction {
+export function normalizeTransfer(
+  task: Task,
+  t: Translate,
+): BackgroundAction {
   const source = task.type === "upload" ? "upload" : "transfer";
-  const sourcePath = task.source_paths[task.source_paths.length - 1] || "";
+  const sourcePaths = safeStringArray(task.source_paths);
+  const sourcePath = sourcePaths[sourcePaths.length - 1] || "";
   const sourceParts = sourcePath.split("/");
-  const name = task.current_file || sourceParts[sourceParts.length - 1] || task.destination_path;
+  const errors = safeStringArray(task.errors);
+  const name =
+    safeString(task.current_file) ||
+    sourceParts[sourceParts.length - 1] ||
+    safeString(task.destination_path);
+
   return {
-    key: actionKey(source, task.id),
-    id: task.id,
+    key: actionKey(source, safeString(task.id)),
+    id: safeString(task.id),
     source,
-    title: t(source === "upload" ? "actions.source.upload" : "actions.source.transfer"),
+    title: t(
+      source === "upload"
+        ? "actions.source.upload"
+        : "actions.source.transfer",
+    ),
     subtitle: name,
     status: normalizeStatus(task.status),
     progress: safeProgress(task.progress_percent ?? task.progress),
-    currentStep: task.current_file || undefined,
-    error: task.error_message || task.errors?.[0] || undefined,
-    createdAt: task.created_at * 1000,
-    updatedAt: Math.max(task.started_at || 0, task.paused_at || 0, task.finished_at || 0) * 1000 || undefined,
-    finishedAt: task.finished_at ? task.finished_at * 1000 : undefined,
+    currentStep: safeString(task.current_file) || undefined,
+    error:
+      safeString(task.error_message) ||
+      errors[0] ||
+      undefined,
+    createdAt: Number(task.created_at || 0) * 1000,
+    updatedAt:
+      Math.max(
+        Number(task.started_at || 0),
+        Number(task.paused_at || 0),
+        Number(task.finished_at || 0),
+      ) *
+        1000 ||
+      undefined,
+    finishedAt: task.finished_at
+      ? Number(task.finished_at) * 1000
+      : undefined,
     cancellable: ["queued", "running", "paused"].includes(task.status),
     retryable: ["failed", "cancelled"].includes(task.status),
     target: {
       app: "transfers",
-      jobId: task.id,
-      entityId: task.id,
+      jobId: safeString(task.id),
+      entityId: safeString(task.id),
       section: "active",
       detailType: "transfer",
     },
   };
 }
 
-export function normalizeAppJob(job: AppJob, moduleNames: Map<string, string>, t: Translate): BackgroundAction {
-  const source = moduleSource(job.module_id);
-  const name = moduleNames.get(job.module_id) || job.module_id;
+export function normalizeAppJob(
+  job: AppJob,
+  moduleNames: Map<string, string>,
+  t: Translate,
+): BackgroundAction {
+  const moduleId = safeString(job.module_id);
+  const source = moduleSource(moduleId);
+  const name = moduleNames.get(moduleId) || moduleId;
+  const id = safeString(job.id);
+
   return {
-    key: actionKey(source, job.id),
-    id: job.id,
+    key: actionKey(source, id),
+    id,
     source,
-    title: translatedOperation(t, job.operation || job.action),
+    title: translatedOperation(
+      t,
+      safeString(job.operation || job.action),
+    ),
     subtitle: name,
-    status: normalizeStatus(job.status, job.cancellation_requested),
+    status: normalizeStatus(
+      job.status,
+      Boolean(job.cancellation_requested),
+    ),
     progress: safeProgress(job.progress),
-    currentStep: job.current_step || job.stage,
-    error: job.error || undefined,
-    createdAt: job.created_at * 1000,
-    updatedAt: job.finished_at ? job.finished_at * 1000 : undefined,
-    finishedAt: job.finished_at ? job.finished_at * 1000 : undefined,
-    cancellable: job.cancellable !== false && ["queued", "running"].includes(job.status),
+    currentStep:
+      safeString(job.current_step) ||
+      safeString(job.stage) ||
+      undefined,
+    error: safeString(job.error) || undefined,
+    createdAt: Number(job.created_at || 0) * 1000,
+    updatedAt: job.finished_at
+      ? Number(job.finished_at) * 1000
+      : undefined,
+    finishedAt: job.finished_at
+      ? Number(job.finished_at) * 1000
+      : undefined,
+    cancellable:
+      job.cancellable !== false &&
+      ["queued", "running"].includes(job.status),
     retryable: ["failed", "cancelled"].includes(job.status),
     target: {
       app: "module",
-      moduleId: job.module_id,
-      jobId: job.id,
-      entityId: job.module_id,
+      moduleId,
+      jobId: id,
+      entityId: moduleId,
       section: "overview",
       detailType: "package-job",
     },
   };
 }
 
-export function normalizeMountJob(mount: NetworkMount, job: NetworkMount["jobs"][number], t: Translate): BackgroundAction {
-  const createdAt = (job.created_at || mount.last_operation_at || Date.now() / 1000) * 1000;
-  const finishedAt = job.finished_at ? job.finished_at * 1000 : undefined;
+export function normalizeMountJob(
+  mount: NetworkMount,
+  job: NetworkMount["jobs"][number],
+  t: Translate,
+): BackgroundAction {
+  const createdAt =
+    Number(job.created_at || mount.last_operation_at || Date.now() / 1000) *
+    1000;
+  const finishedAt = job.finished_at
+    ? Number(job.finished_at) * 1000
+    : undefined;
+  const id = safeString(job.id);
+
   return {
-    key: actionKey("mount", job.id),
-    id: job.id,
+    key: actionKey("mount", id),
+    id,
     source: "mount",
-    title: translatedOperation(t, job.action),
-    subtitle: mount.name,
+    title: translatedOperation(t, safeString(job.action)),
+    subtitle: safeString(mount.name),
     status: normalizeStatus(job.status),
     currentStep: t("actions.source.mount"),
-    error: job.error || undefined,
+    error: safeString(job.error) || undefined,
     createdAt,
     updatedAt: finishedAt || createdAt,
-    finishedAt: ["completed", "failed", "cancelled"].includes(job.status) ? finishedAt || createdAt : undefined,
+    finishedAt: ["completed", "failed", "cancelled"].includes(job.status)
+      ? finishedAt || createdAt
+      : undefined,
     target: {
       app: "settings",
       initialPath: "networkResources",
-      entityId: mount.id,
-      jobId: job.id,
+      entityId: safeString(mount.id),
+      jobId: id,
       section: "networkResources",
       detailType: "mount-job",
     },
   };
 }
 
-export function normalizeAnsibleExecution(item: AnsibleExecution, t: Translate): BackgroundAction {
+export function normalizeAnsibleExecution(
+  item: AnsibleExecution,
+  t: Translate,
+): BackgroundAction {
+  const hostIds = safeStringArray(item.host_ids);
+  const id = safeString(item.id);
+
   return {
-    key: actionKey("ansible", item.id),
-    id: item.id,
-    relatedJobId: item.package_job_id || undefined,
+    key: actionKey("ansible", id),
+    id,
+    relatedJobId: safeString(item.package_job_id) || undefined,
     source: "ansible",
     title: t("actions.ansibleExecution"),
-    subtitle: item.template_id || item.host_ids.join(", ") || t("ansible.name"),
+    subtitle:
+      safeString(item.template_id) ||
+      hostIds.join(", ") ||
+      t("ansible.name"),
     status: normalizeStatus(item.status),
-    currentStep: item.stage,
-    error: item.stderr || undefined,
-    createdAt: item.created_at * 1000,
-    updatedAt: (item.finished_at || item.started_at || item.created_at) * 1000,
-    finishedAt: item.finished_at ? item.finished_at * 1000 : undefined,
+    currentStep: safeString(item.stage),
+    error: safeString(item.stderr) || undefined,
+    createdAt: Number(item.created_at || 0) * 1000,
+    updatedAt:
+      Number(
+        item.finished_at ||
+          item.started_at ||
+          item.created_at ||
+          0,
+      ) * 1000,
+    finishedAt: item.finished_at
+      ? Number(item.finished_at) * 1000
+      : undefined,
     cancellable: ["queued", "running"].includes(item.status),
     retryable: ["failed", "cancelled"].includes(item.status),
     target: {
       app: "ansible",
       moduleId: "ansible-controller",
-      entityId: item.id,
-      jobId: item.package_job_id || item.id,
+      entityId: id,
+      jobId: safeString(item.package_job_id) || id,
       section: "jobs",
       detailType: "ansible-job",
     },
   };
 }
 
-export function normalizeAnsibleScan(item: AnsibleScan, t: Translate): BackgroundAction {
+export function normalizeAnsibleScan(
+  item: AnsibleScan,
+  t: Translate,
+): BackgroundAction {
+  const request = safeRecord(item.request);
+  const id = safeString(item.id);
+
   return {
-    key: actionKey("ansible", `scan-${item.id}`),
-    id: item.id,
-    relatedJobId: item.package_job_id || undefined,
+    key: actionKey("ansible", `scan-${id}`),
+    id,
+    relatedJobId: safeString(item.package_job_id) || undefined,
     source: "ansible",
     title: t("actions.ansibleScan"),
-    subtitle: String(item.request.cidr || item.request.target || t("ansible.discovery.title")),
+    subtitle: safeString(
+      request.cidr || request.target,
+      t("ansible.discovery.title"),
+    ),
     status: normalizeStatus(item.status),
     progress: safeProgress(item.progress),
     currentStep: t("ansible.discovery.title"),
-    error: item.error || undefined,
-    createdAt: item.created_at * 1000,
-    updatedAt: item.created_at * 1000,
+    error: safeString(item.error) || undefined,
+    createdAt: Number(item.created_at || 0) * 1000,
+    updatedAt: Number(item.created_at || 0) * 1000,
     target: {
       app: "ansible",
       moduleId: "ansible-controller",
-      entityId: item.id,
-      jobId: item.package_job_id || undefined,
+      entityId: id,
+      jobId: safeString(item.package_job_id) || undefined,
       section: "discovery",
       detailType: "ansible-scan",
     },
   };
 }
 
-export function normalizeHostsOperation(item: HostsManagerOperation, t: Translate): BackgroundAction {
-  const packageJobId = item.package_job_id || (typeof item.details.package_job_id === "string" ? item.details.package_job_id : undefined);
+export function normalizeHostsOperation(
+  item: HostsManagerOperation,
+  t: Translate,
+): BackgroundAction {
+  const details = safeRecord(item.details);
+  const packageJobId =
+    safeString(item.package_job_id) ||
+    safeString(details.package_job_id) ||
+    undefined;
+  const id = safeString(item.id);
+
   return {
-    key: actionKey("hosts", item.id),
-    id: item.id,
+    key: actionKey("hosts", id),
+    id,
     relatedJobId: packageJobId,
     source: "hosts",
-    title: translatedOperation(t, item.capability_id),
-    subtitle: item.host_id || t("hosts.name"),
+    title: translatedOperation(t, safeString(item.capability_id)),
+    subtitle: safeString(item.host_id) || t("hosts.name"),
     status: normalizeStatus(item.status),
     progress: safeProgress(item.progress),
-    currentStep: item.stage,
-    error: item.error || undefined,
-    createdAt: item.created_at * 1000,
-    updatedAt: item.updated_at * 1000,
-    finishedAt: ["completed", "failed", "cancelled"].includes(item.status) ? item.updated_at * 1000 : undefined,
+    currentStep: safeString(item.stage),
+    error: safeString(item.error) || undefined,
+    createdAt: Number(item.created_at || 0) * 1000,
+    updatedAt: Number(item.updated_at || item.created_at || 0) * 1000,
+    finishedAt: ["completed", "failed", "cancelled"].includes(item.status)
+      ? Number(item.updated_at || item.created_at || Date.now() / 1000) *
+        1000
+      : undefined,
     cancellable: ["queued", "running"].includes(item.status),
     target: {
       app: "hosts",
       moduleId: "hosts-manager",
-      entityId: item.id,
+      entityId: id,
       jobId: packageJobId,
       section: "audit",
       detailType: "hosts-operation",
@@ -237,43 +385,80 @@ export function normalizeHostsOperation(item: HostsManagerOperation, t: Translat
   };
 }
 
-export function normalizeNetworkTransaction(item: NetworkTransaction, t: Translate): BackgroundAction {
+export function normalizeNetworkTransaction(
+  item: NetworkTransaction,
+  t: Translate,
+): BackgroundAction {
+  const status = safeString(item.status || item.state, "queued");
+  const id = safeString(item.id);
+
   return {
-    key: actionKey("network", item.id),
-    id: item.id,
+    key: actionKey("network", id),
+    id,
     source: "network",
     title: t("actions.networkChange"),
-    subtitle: item.target,
-    status: normalizeStatus(item.status || item.state),
-    currentStep: t(`actions.network.${item.status || item.state}`),
-    createdAt: (item.created_at || item.started_at) * 1000,
-    updatedAt: (item.current_server_time || item.server_time || item.started_at) * 1000,
-    finishedAt: ["confirmed", "rolled_back", "failed"].includes(item.status || item.state) ? (item.current_server_time || item.server_time || Date.now() / 1000) * 1000 : undefined,
+    subtitle: safeString(item.target),
+    status: normalizeStatus(status),
+    currentStep: t(`actions.network.${status}`),
+    createdAt:
+      Number(item.created_at || item.started_at || 0) * 1000,
+    updatedAt:
+      Number(
+        item.current_server_time ||
+          item.server_time ||
+          item.started_at ||
+          0,
+      ) * 1000,
+    finishedAt: ["confirmed", "rolled_back", "failed"].includes(status)
+      ? Number(
+          item.current_server_time ||
+            item.server_time ||
+            Date.now() / 1000,
+        ) * 1000
+      : undefined,
     target: {
       app: "settings",
       initialPath: "network",
-      entityId: item.id,
+      entityId: id,
       section: "network",
       detailType: "network-transaction",
     },
   };
 }
 
-export function normalizeSystemUpdate(item: UpdateProgress, t: Translate): BackgroundAction | null {
+export function normalizeSystemUpdate(
+  item: UpdateProgress,
+  t: Translate,
+): BackgroundAction | null {
   if (!item.started_at) return null;
+  const lines = safeStringArray(item.lines);
+  const lastLine = lines[lines.length - 1];
   const id = String(item.pid || item.started_at);
+
   return {
     key: actionKey("system", `webnas-update-${id}`),
     id,
     source: "system",
     title: t("actions.systemUpdate"),
     subtitle: "WebNAS",
-    status: item.running ? "running" : item.exit_code === 0 ? "completed" : item.exit_code === null ? "queued" : "failed",
-    currentStep: item.lines[item.lines.length - 1] || undefined,
-    error: !item.running && item.exit_code !== 0 ? item.lines[item.lines.length - 1] || item.log || undefined : undefined,
-    createdAt: item.started_at * 1000,
-    updatedAt: (item.finished_at || item.started_at) * 1000,
-    finishedAt: item.finished_at ? item.finished_at * 1000 : undefined,
+    status: item.running
+      ? "running"
+      : item.exit_code === 0
+        ? "completed"
+        : item.exit_code === null
+          ? "queued"
+          : "failed",
+    currentStep: lastLine || undefined,
+    error:
+      !item.running && item.exit_code !== 0
+        ? lastLine || safeString(item.log) || undefined
+        : undefined,
+    createdAt: Number(item.started_at) * 1000,
+    updatedAt:
+      Number(item.finished_at || item.started_at) * 1000,
+    finishedAt: item.finished_at
+      ? Number(item.finished_at) * 1000
+      : undefined,
     target: {
       app: "settings",
       initialPath: "updates",
@@ -293,24 +478,42 @@ const STATUS_PRIORITY: Record<BackgroundActionStatus, number> = {
   cancelled: 5,
 };
 
-export function dedupeAndSortActions(actions: BackgroundAction[]) {
+export function dedupeAndSortActions(
+  actions: BackgroundAction[],
+) {
+  const safeActions = safeArray<BackgroundAction>(actions);
   const specializedJobIds = new Set(
-    actions
-      .filter((action) => ["ansible", "hosts"].includes(action.source))
+    safeActions
+      .filter((action) =>
+        ["ansible", "hosts"].includes(action.source),
+      )
       .map((action) => action.relatedJobId)
       .filter((id): id is string => Boolean(id)),
   );
+
   const unique = new Map<string, BackgroundAction>();
-  for (const action of actions) {
-    if (action.target.detailType === "package-job" && specializedJobIds.has(action.id)) continue;
+  for (const action of safeActions) {
+    if (
+      action.target.detailType === "package-job" &&
+      specializedJobIds.has(action.id)
+    ) {
+      continue;
+    }
     const previous = unique.get(action.key);
-    if (!previous || (action.updatedAt || action.createdAt) >= (previous.updatedAt || previous.createdAt)) {
+    if (
+      !previous ||
+      (action.updatedAt || action.createdAt) >=
+        (previous.updatedAt || previous.createdAt)
+    ) {
       unique.set(action.key, action);
     }
   }
+
   return [...unique.values()].sort(
     (left, right) =>
-      STATUS_PRIORITY[left.status] - STATUS_PRIORITY[right.status] ||
-      (right.updatedAt || right.createdAt) - (left.updatedAt || left.createdAt),
+      STATUS_PRIORITY[left.status] -
+        STATUS_PRIORITY[right.status] ||
+      (right.updatedAt || right.createdAt) -
+        (left.updatedAt || left.createdAt),
   );
 }

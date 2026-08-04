@@ -181,18 +181,23 @@ export function ModuleBackups({ backups, t, onCreate, onRestore, onDelete }: {
       </header>
       {safeBackups.length ? (
         <div>
-          {safeBackups.map((backup) => (
-            <article key={backup.id}>
-              <div>
-                <strong>{backup.description || t("module.configurationBackup")}</strong>
-                <small>{new Date(backup.created_at * 1000).toLocaleString()} · {backup.created_by} · {Math.ceil(backup.size / 1024)} KiB</small>
-                <code>{backup.checksum.slice(0, 16)}…</code>
-              </div>
-              <span>{backup.automatic ? t("module.automatic") : t("module.manual")}</span>
-              <button type="button" onClick={() => onRestore(backup)}><ArchiveRestore />{t("module.restore")}</button>
-              <button className="danger" type="button" onClick={() => onDelete(backup)}><Trash2 />{t("action.delete")}</button>
-            </article>
-          ))}
+          {safeBackups.map((backup, index) => {
+            const createdAt = Number(backup?.created_at || 0);
+            const size = Number(backup?.size || 0);
+            const checksum = typeof backup?.checksum === "string" ? backup.checksum : "";
+            return (
+              <article key={backup?.id || index}>
+                <div>
+                  <strong>{backup?.description || t("module.configurationBackup")}</strong>
+                  <small>{createdAt > 0 ? new Date(createdAt * 1000).toLocaleString() : "—"} · {backup?.created_by || "—"} · {Math.ceil(Math.max(0, size) / 1024)} KiB</small>
+                  <code>{checksum ? `${checksum.slice(0, 16)}…` : "—"}</code>
+                </div>
+                <span>{backup?.automatic ? t("module.automatic") : t("module.manual")}</span>
+                <button type="button" onClick={() => onRestore(backup)}><ArchiveRestore />{t("module.restore")}</button>
+                <button className="danger" type="button" onClick={() => onDelete(backup)}><Trash2 />{t("action.delete")}</button>
+              </article>
+            );
+          })}
         </div>
       ) : <div className="empty-state">{t("module.noBackups")}</div>}
     </section>
