@@ -350,6 +350,29 @@ def _run_apt_update(timeout: int, log: LogCallback) -> None:
     _run_apt_command(["apt-get", "update"], timeout, log)
 
 
+def _run_systemctl_command(args: list[str], timeout: int, log: LogCallback) -> None:
+    if not args or args[0] != "systemctl":
+        raise ValueError("systemctl fallback received a non-systemctl command")
+    try:
+        _run(args, timeout, log)
+    except CommandExecutionError as error:
+        if "Read-only file system" not in error.output:
+            raise
+        log("warning", "systemctl encountered a read-only filesystem; temporarily remounting root as read-write")
+        try:
+            _run(["mount", "-o", "remount,rw", "/"], 30, log)
+        except Exception as mount_error:
+            raise RuntimeError(f"Failed to remount root filesystem as read-write: {mount_error}") from error
+        try:
+            _run(args, timeout, log)
+        finally:
+            log("stdout", "Restoring root filesystem to read-only")
+            try:
+                _run(["mount", "-o", "remount,ro", "/"], 30, log)
+            except Exception as unmount_error:
+                log("warning", f"Failed to restore root filesystem to read-only: {unmount_error}")
+
+
 def _run_hook(manifest: ModuleManifest, action: str, log: LogCallback) -> None:
     script = module_script(manifest.id, action)
     if not script:
@@ -430,6 +453,8 @@ def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progr
         try:
             if args and args[0] == "apt-get":
                 _run_apt_command(args, timeout, log)
+            elif args and args[0] == "systemctl":
+                _run_systemctl_command(args, timeout, log)
             else:
                 _run(args, timeout, log)
         except Exception as error:
