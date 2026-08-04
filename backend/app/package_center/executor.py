@@ -356,8 +356,21 @@ def _run_systemctl_command(args: list[str], timeout: int, log: LogCallback) -> N
     try:
         _run(args, timeout, log)
     except CommandExecutionError as error:
-        if "Read-only file system" not in error.output:
+        if "read-only file system" not in error.output.lower():
             raise
+
+        action = args[1] if len(args) > 1 else ""
+        service = args[-1] if len(args) > 2 else "service"
+        if action == "disable":
+            log(
+                "warning",
+                (
+                    f"Persistent disable of {service} was skipped because service metadata is on a read-only filesystem. "
+                    "The service was already stopped; package removal will continue."
+                ),
+            )
+            return
+
         log("warning", "systemctl encountered a read-only filesystem; temporarily remounting root as read-write")
         try:
             _run(["mount", "-o", "remount,rw", "/"], 30, log)
