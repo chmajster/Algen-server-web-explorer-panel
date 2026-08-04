@@ -1,6 +1,25 @@
 import { request } from "../../../core/api/transport";
 import type { DockerApp, DockerAppAction, DockerAppInstall, DockerArtifact, DockerBackupRestore, DockerComposeAction, DockerComposeSave, DockerContainer, DockerContainerAction, DockerContainerCreate, DockerContainerDefaultsPolicy, DockerContainerSettings, DockerContainerSettingsUpdate, DockerDashboard, DockerDefaultBridgeConfig, DockerDefaultBridgeSave, DockerEngineAction, DockerImage, DockerImageAction, DockerNetwork, DockerNetworkAction, DockerNetworkContainer, DockerNetworkCreate, DockerPaged, DockerPrune, DockerPrunePlan, DockerRegistry, DockerRegistryCatalogResult, DockerRegistrySave, DockerRegistrySource, DockerRegistryTagsResult, DockerVolumeAction, DockerVolumeCreate, ModuleBackup, ModuleDiagnostic, ModuleJob, ModuleResource, ModuleStatus, ModuleValidationResult } from "../../../core/api/contracts";
 
+function normalizeContainerCreate(payload: DockerContainerCreate): DockerContainerCreate {
+  if (payload.network.trim() !== "host") return payload;
+  return {
+    ...payload,
+    network: "host",
+    ports: [],
+    network_aliases: [],
+  };
+}
+
+function exposeHostNetwork(result: DockerPaged<DockerNetwork>): DockerPaged<DockerNetwork> {
+  return {
+    ...result,
+    items: result.items.map((item) => String(item.Name || "") === "host"
+      ? { ...item, Name: "host " }
+      : item),
+  };
+}
+
 export const containersClient = {
   dockerDashboard: () => request<DockerDashboard>("/api/modules/docker/dashboard"),
   dockerEngine: () => request<{ status: ModuleStatus; config: Record<string, unknown>; diagnostics: ModuleDiagnostic[] }>("/api/modules/docker/engine"),
@@ -18,7 +37,7 @@ export const containersClient = {
   updateDockerContainerSettings: (target: string, payload: DockerContainerSettingsUpdate) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/settings`, { method: "PUT", body: JSON.stringify(payload) }),
   dockerContainerDefaultsPolicy: () => request<DockerContainerDefaultsPolicy>("/api/modules/docker/policy/container-defaults"),
   saveDockerContainerDefaultsPolicy: (payload: DockerContainerDefaultsPolicy) => request<DockerContainerDefaultsPolicy>("/api/modules/docker/policy/container-defaults", { method: "PUT", body: JSON.stringify(payload) }),
-  createDockerContainer: (payload: DockerContainerCreate) => request<{ job: ModuleJob }>("/api/modules/docker/containers", { method: "POST", body: JSON.stringify(payload) }),
+  createDockerContainer: (payload: DockerContainerCreate) => request<{ job: ModuleJob }>("/api/modules/docker/containers", { method: "POST", body: JSON.stringify(normalizeContainerCreate(payload)) }),
   dockerContainerAction: (target: string, payload: DockerContainerAction) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
   dockerContainerBackup: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/backup?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),
   dockerContainerExport: (target: string) => request<{ job: ModuleJob }>(`/api/modules/docker/containers/${encodeURIComponent(target)}/export?confirmation=${encodeURIComponent(target)}`, { method: "POST", body: "{}" }),
@@ -29,7 +48,7 @@ export const containersClient = {
   dockerVolumes: (search = "") => request<DockerPaged>(`/api/modules/docker/volumes?search=${encodeURIComponent(search)}`),
   createDockerVolume: (payload: DockerVolumeCreate) => request<{ job: ModuleJob }>("/api/modules/docker/volumes", { method: "POST", body: JSON.stringify(payload) }),
   dockerVolumeAction: (target: string, payload: DockerVolumeAction) => request<{ job: ModuleJob }>(`/api/modules/docker/volumes/${encodeURIComponent(target)}/actions`, { method: "POST", body: JSON.stringify(payload) }),
-  dockerNetworks: (search = "") => request<DockerPaged<DockerNetwork>>(`/api/modules/docker/networks?page_size=200&search=${encodeURIComponent(search)}`),
+  dockerNetworks: async (search = "") => exposeHostNetwork(await request<DockerPaged<DockerNetwork>>(`/api/modules/docker/networks?page_size=200&search=${encodeURIComponent(search)}`)),
   dockerNetworkContainers: (target: string) => request<{ items: DockerNetworkContainer[]; total: number; network: string }>(`/api/modules/docker/networks/${encodeURIComponent(target)}/containers`),
   dockerDefaultBridge: () => request<DockerDefaultBridgeConfig>("/api/modules/docker/networks/default-bridge"),
   saveDockerDefaultBridge: (payload: DockerDefaultBridgeSave) => request<{ job: ModuleJob; validation: ModuleValidationResult }>("/api/modules/docker/networks/default-bridge", { method: "PUT", body: JSON.stringify(payload) }),
@@ -49,8 +68,7 @@ export const containersClient = {
   dockerRegistries: () => request<{ items: DockerRegistry[] }>("/api/modules/docker/registries"),
   dockerRegistrySources: () => request<DockerRegistrySource[]>("/api/modules/docker/registries/sources"),
   dockerRegistryCatalog: (params: { registry_id: string; query: string; page?: number; page_size?: number; official?: "all" | "official" | "unofficial"; sort?: "relevance" | "name" | "stars"; direction?: "asc" | "desc" }) => {
-    const query = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => value !== undefined && query.set(key, String(value)));
+    const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => value !== undefined && query.set(key, String(value)));
     return request<DockerRegistryCatalogResult>(`/api/modules/docker/registries/catalog?${query}`);
   },
   dockerRegistryTags: (registryId: string, repositoryName: string, page = 1, pageSize = 100) => {
