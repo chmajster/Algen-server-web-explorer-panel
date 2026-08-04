@@ -327,31 +327,6 @@ validate_install_dir() {
   [[ "$INSTALL_DIR" != "/etc" && "$INSTALL_DIR" != "/usr" && "$INSTALL_DIR" != "/bin" && "$INSTALL_DIR" != "/lib" ]] || fail "Choose a dedicated installation directory, for example /opt/webnas"
 }
 
-cifs_utils_installed() {
-  # cifs-utils is a package name; the executable it provides is mount.cifs.
-  # Check common absolute paths as /usr/sbin may be absent from a restricted PATH.
-  if command -v mount.cifs >/dev/null 2>&1 ||
-     [[ -x /usr/sbin/mount.cifs || -x /sbin/mount.cifs ]]; then
-    return 0
-  fi
-
-  # Fall back to the package database. This prevents reinstall attempts when
-  # the package is registered as installed but mount.cifs is outside PATH.
-  case "$PKG_MANAGER" in
-    apt)
-      command -v dpkg-query >/dev/null 2>&1 || return 1
-      dpkg-query -W -f='${Status}\n' cifs-utils 2>/dev/null |
-        grep -qx 'install ok installed'
-      ;;
-    dnf|yum)
-      command -v rpm >/dev/null 2>&1 || return 1
-      rpm -q cifs-utils >/dev/null 2>&1
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
 
 
 assert_removable_path() {
@@ -474,7 +449,7 @@ refresh_apt_metadata() {
 ensure_download_tools() {
   local tool=""
   local missing=()
-  for tool in curl wget tar rsync cifs-utils; do
+  for tool in curl wget tar rsync ; do
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [[ ${#missing[@]} -eq 0 ]]; then
@@ -496,7 +471,7 @@ ensure_download_tools() {
       yum install -y "${missing[@]}"
       ;;
   esac
-  for tool in curl wget tar rsync cifs-utils; do
+  for tool in curl wget tar rsync; do
     command -v "$tool" >/dev/null 2>&1 || fail "Required tool was not installed: ${tool}"
   done
   ok "Download, archive, and synchronization tools installed"
