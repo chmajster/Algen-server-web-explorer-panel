@@ -453,7 +453,7 @@ ensure_download_tools() {
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [[ ${#missing[@]} -eq 0 ]]; then
-    ok "Download, archive, and synchronization tools are available: curl, wget, tar, rsync, cifs-utils"
+    ok "Download, archive, and synchronization tools are available: curl, wget, tar, rsync"
     return
   fi
 
