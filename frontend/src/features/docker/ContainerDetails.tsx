@@ -112,16 +112,24 @@ function ChipList({ values, empty = "—", code = false }: { values: string[]; e
 }
 
 function ContainerSettingsEditor({ target, value, t, toast, onStarted, onBack }: { target: string; value: DockerContainerSettings; t: Translate; toast: ToastFn; onStarted: (job: ModuleJob) => void; onBack: () => void }) {
-  const [name, setName] = useState(value.name);
-  const [limitsEnabled, setLimitsEnabled] = useState(value.resource_limits_enabled);
-  const [cpuPriority, setCpuPriority] = useState(value.cpu_priority);
+  // Older backend versions and partially migrated installations may omit
+  // available_ports. Treat an absent or invalid value as an empty list so
+  // the settings tab remains usable instead of crashing the entire module.
+  const availablePorts = Array.isArray(value.available_ports) ? value.available_ports : [];
+  const firstTcpPort = availablePorts.find((item) => item?.protocol === "tcp");
+
+  const [name, setName] = useState(value.name || target);
+  const [limitsEnabled, setLimitsEnabled] = useState(Boolean(value.resource_limits_enabled));
+  const [cpuPriority, setCpuPriority] = useState(
+    value.cpu_priority === "low" || value.cpu_priority === "high" ? value.cpu_priority : "medium",
+  );
   const [memory, setMemory] = useState(String(value.memory_mb || 4096));
-  const [autoRestart, setAutoRestart] = useState(value.auto_restart);
-  const [portalEnabled, setPortalEnabled] = useState(value.portal_enabled);
-  const [portalPort, setPortalPort] = useState(String(value.portal_port || value.available_ports.find((item) => item.protocol === "tcp")?.target || ""));
-  const [portalProtocol, setPortalProtocol] = useState(value.portal_protocol);
+  const [autoRestart, setAutoRestart] = useState(Boolean(value.auto_restart));
+  const [portalEnabled, setPortalEnabled] = useState(Boolean(value.portal_enabled && firstTcpPort));
+  const [portalPort, setPortalPort] = useState(String(value.portal_port || firstTcpPort?.target || ""));
+  const [portalProtocol, setPortalProtocol] = useState(value.portal_protocol === "https" ? "https" : "http");
   const [saving, setSaving] = useState(false);
-  const portalPorts = value.available_ports.filter((item) => item.protocol === "tcp");
+  const portalPorts = availablePorts.filter((item) => item?.protocol === "tcp");
   const selectedBinding = portalPorts.find((item) => item.target === Number(portalPort));
 
   async function submit(event: React.FormEvent) {
