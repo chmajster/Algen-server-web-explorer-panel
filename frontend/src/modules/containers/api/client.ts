@@ -2,7 +2,7 @@ import { request } from "../../../core/api/transport";
 import type { DockerApp, DockerAppAction, DockerAppInstall, DockerArtifact, DockerBackupRestore, DockerComposeAction, DockerComposeSave, DockerContainer, DockerContainerAction, DockerContainerCreate, DockerContainerDefaultsPolicy, DockerContainerSettings, DockerContainerSettingsUpdate, DockerDashboard, DockerDefaultBridgeConfig, DockerDefaultBridgeSave, DockerEngineAction, DockerImage, DockerImageAction, DockerNetwork, DockerNetworkAction, DockerNetworkContainer, DockerNetworkCreate, DockerPaged, DockerPrune, DockerPrunePlan, DockerRegistry, DockerRegistryCatalogResult, DockerRegistrySave, DockerRegistrySource, DockerRegistryTagsResult, DockerVolumeAction, DockerVolumeCreate, ModuleBackup, ModuleDiagnostic, ModuleJob, ModuleResource, ModuleStatus, ModuleValidationResult } from "../../../core/api/contracts";
 
 function normalizeContainerCreate(payload: DockerContainerCreate): DockerContainerCreate {
-  if (payload.network.trim() !== "host") return payload;
+  if ((payload.network ?? "").trim() !== "host") return payload;
   return {
     ...payload,
     network: "host",
