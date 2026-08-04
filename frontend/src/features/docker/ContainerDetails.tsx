@@ -102,11 +102,12 @@ function DetailSection({ icon, title, description, children }: { icon: ReactNode
   );
 }
 
-function ChipList({ values, empty = "—", code = false }: { values: string[]; empty?: string; code?: boolean }) {
-  if (!values.length) return <span className="docker-detail-empty">{empty}</span>;
+function ChipList({ values, empty = "—", code = false }: { values?: string[] | null; empty?: string; code?: boolean }) {
+  const safeValues = Array.isArray(values) ? values : [];
+  if (!safeValues.length) return <span className="docker-detail-empty">{empty}</span>;
   return (
     <span className="docker-detail-chip-list">
-      {values.map((value, index) => <span className={code ? "docker-detail-chip code" : "docker-detail-chip"} key={`${value}-${index}`}>{value}</span>)}
+      {safeValues.map((value, index) => <span className={code ? "docker-detail-chip code" : "docker-detail-chip"} key={`${value}-${index}`}>{value}</span>)}
     </span>
   );
 }
@@ -186,8 +187,8 @@ function ContainerSettingsEditor({ target, value, t, toast, onStarted, onBack }:
   );
 }
 
-function Sparkline({ values }: { values: number[] }) {
-  const samples = values.slice(-60);
+function Sparkline({ values }: { values?: number[] | null }) {
+  const samples = (Array.isArray(values) ? values : []).slice(-60);
   const maximum = Math.max(...samples, 1);
   const points = samples
     .map((value, index) => {
@@ -388,7 +389,7 @@ export function ContainerDetails({
   }, [error, liveLogs, loading, tab, target]);
 
   function exportLogs() {
-    const content = ((extra as { lines?: string[] } | null)?.lines || []).join("\n");
+    const content = list(record(extra).lines).map(String).join("\n");
     const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -465,7 +466,7 @@ export function ContainerDetails({
                   ["network_input_bytes", "docker.statsNetworkInput"],
                   ["network_output_bytes", "docker.statsNetworkOutput"],
                 ].map(([key, label]) => {
-                  const history = (extra as { history?: Array<UnknownRecord> }).history || [];
+                  const history = list(record(extra).history).map(record);
                   const values = history.map((item) => Number(item[key]) || 0);
                   return (
                     <article key={key}>
@@ -477,7 +478,7 @@ export function ContainerDetails({
                 })}
               </div>
               <DetailSection icon={<Gauge />} title={t("docker.detail.stats")}>
-                {Object.entries((extra as { current?: UnknownRecord }).current || {}).map(([key, value]) => (
+                {Object.entries(record(record(extra).current)).map(([key, value]) => (
                   <FieldRow label={t(`docker.field.${key}`)} key={key}>{metricValue(key, value)}</FieldRow>
                 ))}
               </DetailSection>
@@ -493,13 +494,13 @@ export function ContainerDetails({
                 <label className="check-row"><input type="checkbox" checked={liveLogs} onChange={(event) => setLiveLogs(event.target.checked)} />{t("docker.liveLogs")}</label>
                 <button onClick={exportLogs}><Download />{t("action.download")}</button>
               </div>
-              <pre className="docker-log-view">{(extra as { lines: string[] }).lines.join("\n")}</pre>
+              <pre className="docker-log-view">{list(record(extra).lines).map(String).join("\n")}</pre>
             </div>
           )}
 
           {tab === "processes" && extra !== null && (
             <DockerTable
-              items={(extra as { items: Array<UnknownRecord> }).items}
+              items={list(record(extra).items).map(record)}
               columns={["PID", "PPID", "USER", "STAT", "ELAPSED", "COMMAND"].map((key) => ({ key, label: key }))}
               empty={t("docker.noProcesses")}
             />

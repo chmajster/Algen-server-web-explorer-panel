@@ -36,6 +36,12 @@ export function LoadState({
   return <>{children}</>;
 }
 
+type DockerColumn = {
+  key: string;
+  label: string;
+  render?: (value: unknown, row: Record<string, unknown>) => ReactNode;
+};
+
 export function DockerTable({
   items,
   columns,
@@ -44,18 +50,17 @@ export function DockerTable({
   actionsLabel = "",
   onRowClick,
 }: {
-  items: Array<Record<string, unknown>>;
-  columns: Array<{
-    key: string;
-    label: string;
-    render?: (value: unknown, row: Record<string, unknown>) => ReactNode;
-  }>;
+  items?: Array<Record<string, unknown>> | null;
+  columns?: DockerColumn[] | null;
   empty: string;
   actions?: (row: Record<string, unknown>) => ReactNode;
   actionsLabel?: string;
   onRowClick?: (row: Record<string, unknown>) => void;
 }) {
-  if (!items.length)
+  const safeItems: Array<Record<string, unknown>> = Array.isArray(items) ? items : [];
+  const safeColumns: DockerColumn[] = Array.isArray(columns) ? columns : [];
+
+  if (!safeItems.length)
     return (
       <div className="empty-state">
         <strong>{empty}</strong>
@@ -66,7 +71,7 @@ export function DockerTable({
       <table className="docker-table">
         <thead>
           <tr>
-            {columns.map((column) => (
+            {safeColumns.map((column) => (
               <th key={column.key}>{column.label}</th>
             ))}
             {actions && (
@@ -77,7 +82,7 @@ export function DockerTable({
           </tr>
         </thead>
         <tbody>
-          {items.map((item, index) => (
+          {safeItems.map((item, index) => (
             <tr
               key={String(
                 item.ID ||
@@ -97,7 +102,7 @@ export function DockerTable({
                 }
               } : undefined}
             >
-              {columns.map((column) => (
+              {safeColumns.map((column) => (
                 <td key={column.key}>
                   {column.render
                     ? column.render(item[column.key], item)
@@ -128,8 +133,10 @@ export function errorMessage(error: unknown, t: Translate): string {
   return error instanceof Error ? error.message : t("error.generic");
 }
 
-export function StatusPill({ value, t }: { value: string; t: Translate }) {
-  const normalized = value.toLowerCase();
+export function StatusPill({ value, t }: { value?: string | null; t: Translate }) {
+  const normalized = typeof value === "string" && value.trim()
+    ? value.toLowerCase()
+    : "unknown";
   return (
     <span className={`docker-status docker-status-${normalized}`}>
       {t(`docker.state.${normalized}`)}
