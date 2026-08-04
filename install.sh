@@ -530,7 +530,6 @@ install_dependencies() {
   local apt_deps=(
     python3 python3-pip python3-venv python3-dev build-essential
     libpam0g-dev rsync sudo curl wget ca-certificates tar gzip 
-    shadow-utils procps-ng
     passwd procps iproute2 ethtool traceroute screen quota util-linux udev nginx
   )
   local rpm_deps=(
