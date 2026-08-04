@@ -327,6 +327,33 @@ validate_install_dir() {
   [[ "$INSTALL_DIR" != "/etc" && "$INSTALL_DIR" != "/usr" && "$INSTALL_DIR" != "/bin" && "$INSTALL_DIR" != "/lib" ]] || fail "Choose a dedicated installation directory, for example /opt/webnas"
 }
 
+cifs_utils_installed() {
+  # cifs-utils is a package name; the executable it provides is mount.cifs.
+  # Check common absolute paths as /usr/sbin may be absent from a restricted PATH.
+  if command -v mount.cifs >/dev/null 2>&1 ||
+     [[ -x /usr/sbin/mount.cifs || -x /sbin/mount.cifs ]]; then
+    return 0
+  fi
+
+  # Fall back to the package database. This prevents reinstall attempts when
+  # the package is registered as installed but mount.cifs is outside PATH.
+  case "$PKG_MANAGER" in
+    apt)
+      command -v dpkg-query >/dev/null 2>&1 || return 1
+      dpkg-query -W -f='${Status}\n' cifs-utils 2>/dev/null |
+        grep -qx 'install ok installed'
+      ;;
+    dnf|yum)
+      command -v rpm >/dev/null 2>&1 || return 1
+      rpm -q cifs-utils >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+
 assert_removable_path() {
   local path="$1"
   case "$path" in
@@ -444,66 +471,35 @@ refresh_apt_metadata() {
   return "$exit_code"
 }
 
-cifs_utils_installed() {
-  # cifs-utils is a package name; the executable it provides is mount.cifs.
-  # Check common absolute paths as /usr/sbin may be absent from a restricted PATH.
-  if command -v mount.cifs >/dev/null 2>&1 ||
-     [[ -x /usr/sbin/mount.cifs || -x /sbin/mount.cifs ]]; then
-    return 0
-  fi
-
-  # Fall back to the package database. This prevents reinstall attempts when
-  # the package is registered as installed but mount.cifs is outside PATH.
-  case "$PKG_MANAGER" in
-    apt)
-      command -v dpkg-query >/dev/null 2>&1 || return 1
-      dpkg-query -W -f='${Status}\n' cifs-utils 2>/dev/null |
-        grep -qx 'install ok installed'
-      ;;
-    dnf|yum)
-      command -v rpm >/dev/null 2>&1 || return 1
-      rpm -q cifs-utils >/dev/null 2>&1
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
 ensure_download_tools() {
   local tool=""
-  local missing_packages=()
-
-  for tool in curl wget tar rsync; do
-    command -v "$tool" >/dev/null 2>&1 || missing_packages+=("$tool")
+  local missing=()
+  for tool in curl wget tar rsync cifs-utils; do
+    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
-  cifs_utils_installed || missing_packages+=("cifs-utils")
-
-  if [[ ${#missing_packages[@]} -eq 0 ]]; then
-    ok "Download, archive, synchronization, and CIFS tools are available: curl, wget, tar, rsync, mount.cifs"
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    ok "Download, archive, and synchronization tools are available: curl, wget, tar, rsync, cifs-utils"
     return
   fi
 
-  section "Installing required download and CIFS tools"
-  info "Missing packages: ${missing_packages[*]}"
+  section "Installing required download tools"
+  info "Missing tools: ${missing[*]}"
   case "$PKG_MANAGER" in
     apt)
       refresh_apt_metadata
-      DEBIAN_FRONTEND=noninteractive apt_get install -y "${missing_packages[@]}"
+      DEBIAN_FRONTEND=noninteractive apt_get install -y "${missing[@]}"
       ;;
     dnf)
-      dnf install -y "${missing_packages[@]}"
+      dnf install -y "${missing[@]}"
       ;;
     yum)
-      yum install -y "${missing_packages[@]}"
+      yum install -y "${missing[@]}"
       ;;
   esac
-
-  for tool in curl wget tar rsync; do
+  for tool in curl wget tar rsync cifs-utils; do
     command -v "$tool" >/dev/null 2>&1 || fail "Required tool was not installed: ${tool}"
   done
-  cifs_utils_installed || fail "Required CIFS support was not installed: cifs-utils (mount.cifs)"
-  ok "Download, archive, synchronization, and CIFS tools installed"
+  ok "Download, archive, and synchronization tools installed"
 }
 
 setup_nodesource_repository() {
@@ -527,46 +523,29 @@ setup_nodesource_repository() {
 }
 
 install_dependencies() {
-  local apt_deps=(
-    python3 python3-pip python3-venv python3-dev build-essential
-    libpam0g-dev rsync sudo curl wget ca-certificates tar gzip 
-    passwd procps iproute2 ethtool traceroute screen quota util-linux udev nginx
-  )
-  local rpm_deps=(
-    python3 python3-pip python3-devel gcc gcc-c++ make
-    pam-devel rsync sudo curl wget ca-certificates tar gzip 
-    shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx
-  )
-
-  case "$PKG_MANAGER" in
-    apt)
-      if dpkg -s "${apt_deps[@]}" >/dev/null 2>&1; then
-        ok "Dependencies are already installed"
-        return
-      fi
-      ;;
-    dnf|yum)
-      if rpm -q "${rpm_deps[@]}" >/dev/null 2>&1; then
-        ok "Dependencies are already installed"
-        return
-      fi
-      ;;
-  esac
-
   section "Installing dependencies"
   case "$PKG_MANAGER" in
     apt)
       refresh_apt_metadata
-      DEBIAN_FRONTEND=noninteractive apt_get install -y "${apt_deps[@]}"
+      DEBIAN_FRONTEND=noninteractive apt_get install -y \
+        python3 python3-pip python3-venv python3-dev build-essential \
+        libpam0g-dev rsync sudo curl wget ca-certificates tar gzip \
+        passwd procps iproute2 ethtool traceroute screen quota util-linux udev nginx
       DEBIAN_FRONTEND=noninteractive apt_get install -y ntfs-3g || warn "Optional NTFS tools could not be installed"
       DEBIAN_FRONTEND=noninteractive apt_get install -y exfatprogs || warn "Optional exFAT tools could not be installed"
       ;;
     dnf)
-      dnf install -y "${rpm_deps[@]}"
+      dnf install -y \
+        python3 python3-pip python3-devel gcc gcc-c++ make \
+        pam-devel rsync sudo curl wget ca-certificates tar gzip \
+        shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx
       dnf install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
     yum)
-      yum install -y "${rpm_deps[@]}"
+      yum install -y \
+        python3 python3-pip python3-devel gcc gcc-c++ make \
+        pam-devel rsync sudo curl wget ca-certificates tar gzip \
+        shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx
       yum install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
   esac
