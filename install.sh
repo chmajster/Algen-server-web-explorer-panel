@@ -503,7 +503,7 @@ install_dependencies() {
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpam0g-dev rsync sudo curl wget ca-certificates tar gzip cifs-utils \
-        shadow-utils procps-ng
+        shadow-utils procps-ng \
         passwd procps iproute2 ethtool traceroute screen quota util-linux udev nginx
       DEBIAN_FRONTEND=noninteractive apt_get install -y ntfs-3g || warn "Optional NTFS tools could not be installed"
       DEBIAN_FRONTEND=noninteractive apt_get install -y exfatprogs || warn "Optional exFAT tools could not be installed"
