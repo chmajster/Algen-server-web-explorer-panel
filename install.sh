@@ -1318,9 +1318,6 @@ for package in packages:
         seen.add(identity)
         unique_packages.append(package)
 
-reported_count = report.get("length")
-count = reported_count if isinstance(reported_count, int) and reported_count > 0 else len(unique_packages)
-print(f"Packages looking for funding ({count}):")
 for package_name, version, urls in sorted(unique_packages, key=lambda item: item[0].lower()):
     print(f"  - {package_name}@{version}")
     for url in urls:

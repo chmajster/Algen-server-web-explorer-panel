@@ -347,7 +347,7 @@ JSON
         ''',
     )
     assert result.returncode == 0, result.stderr
-    assert "Packages looking for funding (3):" in result.stdout
+    assert "Packages looking for funding" not in result.stdout
     assert "vite@8.1.3" in result.stdout
     assert "https://github.com/sponsors/vitejs" in result.stdout
     assert "eslint@10.6.0" in result.stdout
