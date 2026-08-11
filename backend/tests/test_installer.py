@@ -335,6 +335,26 @@ JSON
     assert "Fix: no automatic fix currently available" in result.stdout
 
 
+def test_installer_prints_packages_detected_by_npm_fund(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r'''
+        PYTHON_BIN="$(command -v python3.14)"
+        cat > "$TEST_ROOT/npm-fund.json" <<'JSON'
+{"length":3,"name":"webnas-frontend","dependencies":{"vite":{"version":"8.1.3","funding":{"type":"github","url":"https://github.com/sponsors/vitejs"}},"eslint":{"version":"10.6.0","funding":[{"type":"opencollective","url":"https://opencollective.com/eslint"}],"dependencies":{"nested-package":{"version":"1.2.3","funding":"https://example.test/nested"}}}}}
+JSON
+        print_npm_funding_packages "$TEST_ROOT/npm-fund.json"
+        ''',
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Packages looking for funding (3):" in result.stdout
+    assert "vite@8.1.3" in result.stdout
+    assert "https://github.com/sponsors/vitejs" in result.stdout
+    assert "eslint@10.6.0" in result.stdout
+    assert "https://opencollective.com/eslint" in result.stdout
+    assert "nested-package@1.2.3" in result.stdout
+
+
 def test_frontend_build_rejects_skip_build_to_prevent_a_stale_bundle(tmp_path):
     result = _run_harness(
         tmp_path,

@@ -1259,6 +1259,75 @@ PY
   update_step install_backend_dependencies completed
 }
 
+print_npm_funding_packages() {
+  local funding_report="$1"
+  "$PYTHON_BIN" - "$funding_report" <<'PY'
+import json
+import re
+import sys
+
+
+def clean(value, fallback="unknown"):
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or "")).strip()
+    return text[:300] or fallback
+
+
+def funding_urls(value):
+    if isinstance(value, str):
+        return [clean(value, "")]
+    if isinstance(value, dict):
+        return [clean(value.get("url"), "")]
+    if isinstance(value, list):
+        urls = []
+        for entry in value:
+            urls.extend(funding_urls(entry))
+        return urls
+    return []
+
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        report = json.load(stream)
+except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(0)
+
+packages = []
+
+
+def collect(dependencies):
+    if not isinstance(dependencies, dict):
+        return
+    for package_name, details in dependencies.items():
+        if not isinstance(details, dict):
+            continue
+        urls = list(dict.fromkeys(url for url in funding_urls(details.get("funding")) if url))
+        if urls:
+            packages.append((clean(package_name), clean(details.get("version"), "version unknown"), urls))
+        collect(details.get("dependencies"))
+
+
+collect(report.get("dependencies", {}))
+if not packages:
+    raise SystemExit(0)
+
+unique_packages = []
+seen = set()
+for package in packages:
+    identity = (package[0], package[1])
+    if identity not in seen:
+        seen.add(identity)
+        unique_packages.append(package)
+
+reported_count = report.get("length")
+count = reported_count if isinstance(reported_count, int) and reported_count > 0 else len(unique_packages)
+print(f"Packages looking for funding ({count}):")
+for package_name, version, urls in sorted(unique_packages, key=lambda item: item[0].lower()):
+    print(f"  - {package_name}@{version}")
+    for url in urls:
+        print(f"    Funding: {url}")
+PY
+}
+
 print_npm_audit_vulnerabilities() {
   local audit_report="$1"
   "$PYTHON_BIN" - "$audit_report" <<'PY'
@@ -1330,6 +1399,7 @@ PY
 
 build_frontend() {
   local audit_report=""
+  local funding_report=""
   local vulnerability_count=""
   local frontend_dir="${INSTALL_DIR}/frontend"
   local staging_dist="${INSTALL_DIR}/frontend/dist.next"
@@ -1340,6 +1410,13 @@ build_frontend() {
   update_step install_frontend_dependencies started
   section "Installing frontend dependencies"
   (cd "$frontend_dir" && npm ci)
+  funding_report="$(mktemp -t webnas-npm-fund.XXXXXX)"
+  if (cd "$frontend_dir" && npm fund --json > "$funding_report"); then
+    print_npm_funding_packages "$funding_report"
+  else
+    warn "npm could not list packages looking for funding; continuing installation"
+  fi
+  rm -f -- "$funding_report"
   audit_report="$(mktemp -t webnas-npm-audit.XXXXXX)"
   (cd "${INSTALL_DIR}/frontend" && npm audit --json > "$audit_report") || true
   vulnerability_count="$("$PYTHON_BIN" - "$audit_report" <<'PY'
