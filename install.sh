@@ -216,8 +216,18 @@ parse_args() {
 read_from_tty() {
   local prompt="$1"
   local answer=""
-  if [[ -e /dev/tty ]]; then
-    read -r -p "$prompt" answer </dev/tty || return 1
+  local tty_fd=""
+  if [[ -t 0 ]]; then
+    read -r -p "$prompt" answer || return 1
+    printf '%s' "$answer"
+    return 0
+  fi
+  if exec {tty_fd}<>/dev/tty 2>/dev/null; then
+    read -r -p "$prompt" answer <&"$tty_fd" || {
+      exec {tty_fd}>&-
+      return 1
+    }
+    exec {tty_fd}>&-
     printf '%s' "$answer"
     return 0
   fi
@@ -231,16 +241,22 @@ read_from_tty_timeout() {
   local key=""
   local deadline=0
   local remaining=0
-  [[ -e /dev/tty ]] || return 1
+  local tty_fd=""
   [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || return 1
+  if [[ -t 0 ]]; then
+    tty_fd=0
+  elif ! exec {tty_fd}<>/dev/tty 2>/dev/null; then
+    return 1
+  fi
   deadline=$((SECONDS + timeout))
   while (( (remaining = deadline - SECONDS) > 0 )); do
-    printf '\r\033[2K%s (auto update in %ss): %s' "$prompt" "$remaining" "$answer" >/dev/tty
+    printf '\r\033[2K%s (auto update in %ss): %s' "$prompt" "$remaining" "$answer" >&"$tty_fd"
     key=""
-    if IFS= read -r -s -n 1 -t 1 key </dev/tty; then
+    if IFS= read -r -s -n 1 -t 1 key <&"$tty_fd"; then
       case "$key" in
         "")
-          printf '\r\033[2K%s: %s\n' "$prompt" "$answer" >/dev/tty
+          printf '\r\033[2K%s: %s\n' "$prompt" "$answer" >&"$tty_fd"
+          [[ "$tty_fd" == "0" ]] || exec {tty_fd}>&-
           printf '%s' "$answer"
           return 0
           ;;
@@ -251,7 +267,8 @@ read_from_tty_timeout() {
       esac
     fi
   done
-  printf '\r\033[2K' >/dev/tty
+  printf '\r\033[2K' >&"$tty_fd"
+  [[ "$tty_fd" == "0" ]] || exec {tty_fd}>&-
   return 1
 }
 
