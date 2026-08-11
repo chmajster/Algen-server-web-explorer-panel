@@ -13,6 +13,7 @@ export type AppRenderContext = {
   toast: ToastFn;
   onSettingsChange: (patch: SettingsPatch) => Promise<void>;
   openApp: (app: AppId, initialPath?: string, moduleId?: string) => void;
+  closeWindow: () => void;
   clearDeepLink: () => void;
   setDirty: (dirty: boolean) => void;
   setInitialPath: (path: string) => void;

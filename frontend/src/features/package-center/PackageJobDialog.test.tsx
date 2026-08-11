@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type AppJob } from "../../api";
-import { PackageJobDialog } from "./PackageJobDialog";
+import { PackageJobDialog, PackageJobWindow } from "./PackageJobDialog";
+import { OPEN_OPERATION_WINDOW_EVENT } from "./operationWindow";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -63,6 +64,26 @@ describe("PackageJobDialog", () => {
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog).toHaveClass("operation-progress-dialog");
     expect(dialog.closest(".modal-backdrop")).not.toBeNull();
+  });
+
+  it("renders frameless content inside a native desktop window", () => {
+    render(<PackageJobWindow initialJob={queued} moduleName="Samba" t={(key) => key} onClose={vi.fn()} native />);
+
+    expect(screen.getByLabelText("package.liveJobTitle")).toHaveClass("operation-progress-native");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("task.queued")).toBeInTheDocument();
+  });
+
+  it("delegates modal requests to the desktop window manager when available", () => {
+    const close = vi.fn();
+    const listener = (event: Event) => event.preventDefault();
+    window.addEventListener(OPEN_OPERATION_WINDOW_EVENT, listener);
+
+    render(<PackageJobDialog initialJob={queued} moduleName="Samba" t={(key) => key} onClose={close} />);
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    window.removeEventListener(OPEN_OPERATION_WINDOW_EVENT, listener);
   });
 
   it("loads a durable job by id before subscribing to its stream", async () => {

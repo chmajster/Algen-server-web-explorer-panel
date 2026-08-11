@@ -32,4 +32,16 @@ describe("desktop window interactions", () => {
     expect(screen.getByRole("dialog", { name: "Samba" })).toBeInTheDocument();
     expect(container.querySelector(".window-app-icon .lucide-share2")).toBeInTheDocument();
   });
+
+  it("uses the operation name in a native progress window title", () => {
+    const operationWindow: WindowInstance = {
+      ...item,
+      id: "operation-progress-1",
+      app: "operation-progress",
+      deepLink: { type: "package-job", id: "job-1", jobId: "job-1", actionKey: "operation:job-1", section: "Samba", issuedAt: 1 },
+    };
+    render(<DesktopWindow window={operationWindow} active t={(key) => key === "package.liveJobTitle" ? "Operation: {name}" : key} onFocus={vi.fn()} onClose={vi.fn()} onMinimize={vi.fn()} onCommit={vi.fn()} onToggleMaximize={vi.fn()}><div /></DesktopWindow>);
+
+    expect(screen.getByRole("dialog", { name: "Operation: Samba" })).toHaveAttribute("aria-modal", "false");
+  });
 });

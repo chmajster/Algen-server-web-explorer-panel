@@ -112,7 +112,7 @@ describe("background action normalizers", () => {
       key: "docker:package-1",
       source: "docker",
       subtitle: "Docker",
-      target: { app: "module", moduleId: "docker", detailType: "package-job", jobId: "package-1" },
+      target: { app: "operation-progress", moduleId: "docker", section: "Docker", detailType: "package-job", jobId: "package-1" },
     });
   });
 

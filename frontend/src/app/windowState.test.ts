@@ -49,6 +49,20 @@ describe("window manager reducer", () => {
     expect(state.windows[1].deepLink).toEqual(secondLink);
   });
 
+  it("keeps independent operation progress windows and focuses an existing job", () => {
+    const firstLink = { type: "package-job" as const, id: "job-a", actionKey: "operation:job-a", jobId: "job-a", issuedAt: 1 };
+    const secondLink = { type: "package-job" as const, id: "job-b", actionKey: "operation:job-b", jobId: "job-b", issuedAt: 2 };
+    let state = windowReducer(initialWindowState, { type: "openOrFocus", app: "operation-progress", deepLink: firstLink, viewport });
+    state = windowReducer(state, { type: "openOrFocus", app: "operation-progress", deepLink: secondLink, viewport });
+    state = windowReducer(state, { type: "minimize", id: "operation-progress-1" });
+    state = windowReducer(state, { type: "openOrFocus", app: "operation-progress", deepLink: firstLink, viewport });
+
+    expect(state.windows).toHaveLength(2);
+    expect(state.activeId).toBe("operation-progress-1");
+    expect(state.windows[0].minimized).toBe(false);
+    expect(state.windows.map((item) => item.deepLink?.jobId)).toEqual(["job-a", "job-b"]);
+  });
+
   it("persists the active path independently for each application window", () => {
     let state = windowReducer(initialWindowState, { type: "open", app: "settings", viewport });
     state = windowReducer(state, { type: "setInitialPath", id: "settings-1", initialPath: "administration" });

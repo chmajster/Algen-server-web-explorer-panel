@@ -7,6 +7,7 @@ import type { UploadControls } from "../features/transfers/useUploadManager";
 import { ActionsCenter } from "../features/actions/ActionsCenter";
 import { useBackgroundActions } from "../features/actions/useBackgroundActions";
 import { backgroundOnly, deepLinkForAction } from "../features/actions/windowTargets";
+import { OPEN_OPERATION_WINDOW_EVENT, type OpenOperationWindowDetail } from "../features/package-center/operationWindow";
 import { isActiveAction, type BackgroundAction } from "../features/actions/types";
 import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
@@ -252,6 +253,29 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     setActionsOpen(false);
     setCalendarOpen(false);
   }, [canUseApp, moduleAppAvailable, recentAppsKey, t, toast, viewport]);
+  useEffect(() => {
+    function openOperation(event: Event) {
+      const detail = (event as CustomEvent<OpenOperationWindowDetail>).detail;
+      if (!detail?.jobId || !canUseApp("operation-progress")) return;
+      event.preventDefault();
+      dispatch({
+        type: "openOrFocus",
+        app: "operation-progress",
+        moduleId: detail.moduleId,
+        deepLink: {
+          type: "package-job",
+          id: detail.jobId,
+          jobId: detail.jobId,
+          section: detail.moduleName,
+          actionKey: `operation-progress:${detail.jobId}`,
+          issuedAt: Date.now(),
+        },
+        viewport,
+      });
+    }
+    window.addEventListener(OPEN_OPERATION_WINDOW_EVENT, openOperation);
+    return () => window.removeEventListener(OPEN_OPERATION_WINDOW_EVENT, openOperation);
+  }, [canUseApp, viewport]);
   const openActionTarget = useCallback((action: BackgroundAction) => {
     if (!canUseApp(action.target.app)) {
       toast(t("error.permissionRequired"), "error");
@@ -472,6 +496,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   function renderApp(item: WindowInstance) {
     return moduleRegistry.render(item.app, {
       item, user, profile, tasks, uploadControls, t, toast, onSettingsChange, openApp,
+      closeWindow: () => closeWindow(item),
       clearDeepLink: () => dispatch({ type: "clearDeepLink", id: item.id }),
       setDirty: (dirty) => moduleDirty(item, dirty),
       setInitialPath: (initialPath) => {

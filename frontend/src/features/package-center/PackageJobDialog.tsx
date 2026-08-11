@@ -1,8 +1,9 @@
 import { CheckCircle2, CircleX, LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, type AppJob } from "../../api";
 import type { Translate } from "../../app/types";
 import { Modal } from "../../components/Modal";
+import { requestOperationWindow } from "./operationWindow";
 import "./package-center.css";
 import "./operation-progress-window.css";
 
@@ -22,13 +23,16 @@ function OperationWindowFrame({
   footer,
   onClose,
   children,
+  native = false,
 }: {
   title: string;
   closeLabel: string;
   footer?: ReactNode;
   onClose: () => void;
   children: ReactNode;
+  native?: boolean;
 }) {
+  if (native) return <section className="operation-progress-native" aria-label={title}><div className="operation-progress-window-body">{children}</div>{footer && <footer>{footer}</footer>}</section>;
   return <Modal title={title} closeLabel={closeLabel} className="operation-progress-dialog" wide onClose={onClose} footer={footer}><div className="operation-progress-window-body">{children}</div></Modal>;
 }
 
@@ -44,6 +48,37 @@ export function PackageJobDialog({
   moduleName?: string;
   t: Translate;
   onClose: () => void;
+}) {
+  const [delegated, setDelegated] = useState(false);
+  const trackedId = jobId || initialJob?.id || "";
+  const moduleId = initialJob?.module_id || "";
+
+  useLayoutEffect(() => {
+    if (!trackedId) return;
+    if (requestOperationWindow({ id: trackedId, module_id: moduleId }, moduleName)) {
+      setDelegated(true);
+      onClose();
+    }
+  }, [moduleId, moduleName, onClose, trackedId]);
+
+  if (delegated) return null;
+  return <PackageJobWindow initialJob={initialJob} jobId={jobId} moduleName={moduleName} t={t} onClose={onClose} />;
+}
+
+export function PackageJobWindow({
+  initialJob,
+  jobId,
+  moduleName,
+  t,
+  onClose,
+  native = false,
+}: {
+  initialJob?: AppJob;
+  jobId?: string;
+  moduleName?: string;
+  t: Translate;
+  onClose: () => void;
+  native?: boolean;
 }) {
   const [job, setJob] = useState<AppJob | null>(initialJob || null);
   const [connected, setConnected] = useState(false);
@@ -205,6 +240,7 @@ export function PackageJobDialog({
         title={fallbackTitle}
         closeLabel={t("action.close")}
         onClose={onClose}
+        native={native}
       >
         {error
           ? <div className="error-state" role="alert">{error}</div>
@@ -237,6 +273,7 @@ export function PackageJobDialog({
       title={title}
       closeLabel={t("action.close")}
       onClose={onClose}
+      native={native}
       footer={(
         <>
           <span className="package-live-footer-note">

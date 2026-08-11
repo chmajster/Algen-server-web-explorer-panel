@@ -725,6 +725,7 @@
   "package.license": "Licencja",
   "package.logs": "Logi",
   "package.liveJobTitle": "Przebieg operacji: {name}",
+  "package.operationProgress": "Przebieg operacji",
   "package.showLiveJob": "Pokaż status i dziennik operacji",
   "package.liveLog": "Dziennik na żywo",
   "package.logConnected": "Połączono — log na żywo",

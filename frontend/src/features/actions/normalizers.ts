@@ -219,11 +219,11 @@ export function normalizeAppJob(
       ["queued", "running"].includes(job.status),
     retryable: ["failed", "cancelled"].includes(job.status),
     target: {
-      app: "module",
+      app: "operation-progress",
       moduleId,
       jobId: id,
-      entityId: moduleId,
-      section: "overview",
+      entityId: id,
+      section: name,
       detailType: "package-job",
     },
   };

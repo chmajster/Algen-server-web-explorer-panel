@@ -25,7 +25,10 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
 }) {
   const definition = appById[item.app];
   const moduleTitle = item.moduleId === "linux-updates" ? t("managed.linuxUpdatesName") : item.moduleId ? moduleTitles[item.moduleId] : undefined;
-  const title = item.app === "module" && moduleTitle ? moduleTitle : t(definition.labelKey);
+  const operationTitle = item.app === "operation-progress" && item.deepLink?.section
+    ? t("package.liveJobTitle").replace("{name}", item.deepLink.section)
+    : "";
+  const title = operationTitle || (item.app === "module" && moduleTitle ? moduleTitle : t(definition.labelKey));
   const icon = item.app === "module" && item.moduleId === "samba" ? <Share2 /> : definition.icon;
   const [displayRect, setDisplayRect] = useState(item.rect);
   const [minimizing, setMinimizing] = useState(false);

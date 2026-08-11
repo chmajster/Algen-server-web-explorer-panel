@@ -104,7 +104,9 @@ export function windowReducer(state: WindowState, action: WindowAction): WindowS
   if (action.type === "open" || action.type === "openOrFocus") {
     if (action.type === "openOrFocus") {
       const existing = state.windows
-        .filter((item) => item.app === action.app && (action.app !== "module" || item.moduleId === action.moduleId))
+        .filter((item) => item.app === action.app
+          && (action.app !== "module" || item.moduleId === action.moduleId)
+          && (action.app !== "operation-progress" || item.deepLink?.id === action.deepLink.id))
         .sort((left, right) => right.zIndex - left.zIndex)[0];
       if (existing) {
         const topZ = state.topZ + 1;
