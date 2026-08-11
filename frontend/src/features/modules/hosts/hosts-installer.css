@@ -1,0 +1,113 @@
+.hosts-manager-app .hosts-installer .hosts-installer-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.375rem;
+  padding: 0.375rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-large);
+  background: color-mix(in srgb, var(--surface-secondary) 82%, var(--surface-primary));
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions > button {
+  min-width: 0;
+  min-height: 4.75rem;
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-large) - 0.1875rem);
+  color: var(--text-secondary);
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+  transform: none;
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions > button > svg {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0.6875rem;
+  border-radius: 0.75rem;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-elevated));
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions > button > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions > button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border-subtle));
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-elevated));
+  box-shadow: none;
+  transform: none;
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions > button:hover > svg {
+  background: color-mix(in srgb, var(--accent) 15%, var(--surface-elevated));
+  transform: translateY(-1px);
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions > button.active {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border-subtle));
+  color: var(--accent);
+  background: var(--surface-elevated);
+  box-shadow: 0 0.25rem 0.75rem color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions > button.active > svg {
+  color: white;
+  background: var(--accent);
+  box-shadow: 0 0.375rem 0.875rem color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.hosts-manager-app .hosts-installer .hosts-installer-actions > button:focus-visible {
+  outline: 0.1875rem solid color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: 0.125rem;
+}
+
+.hosts-manager-app .hosts-installer-panel {
+  min-width: 0;
+}
+
+@container (max-width: 48rem) {
+  .hosts-manager-app .hosts-installer .hosts-installer-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .hosts-manager-app .hosts-installer .hosts-installer-actions > button {
+    min-height: 4.25rem;
+  }
+
+  .hosts-manager-app .hosts-installer .hosts-installer-actions small {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hosts-manager-app .hosts-installer .hosts-installer-actions > button > svg {
+    transition: none;
+  }
+}

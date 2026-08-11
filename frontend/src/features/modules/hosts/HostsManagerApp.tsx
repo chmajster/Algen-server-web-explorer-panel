@@ -50,6 +50,7 @@ import {
   HostsDataTable,
   type HostsDataColumn,
 } from "./components/HostsDataTable";
+import "./hosts-installer.css";
 
 type Props = { permissions: string[]; initialOperationId?: string; t: Translate; toast: ToastFn; onDeepLinkClose?: () => void };
 const status: ModuleStatus = {
@@ -1394,15 +1395,41 @@ function Installer({
   refresh: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<"discovery" | "wizard" | "script">("discovery");
+  const tabs = ["discovery", "wizard", "script"] as const;
+
+  function selectTab(next: (typeof tabs)[number], button?: HTMLButtonElement) {
+    setTab(next);
+    button?.focus();
+  }
+
+  function navigateTabs(event: React.KeyboardEvent<HTMLButtonElement>) {
+    const current = tabs.indexOf(tab);
+    const next = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : event.key === "ArrowRight"
+          ? (current + 1) % tabs.length
+          : event.key === "ArrowLeft"
+            ? (current - 1 + tabs.length) % tabs.length
+            : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    const button = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button")[next];
+    selectTab(tabs[next], button);
+  }
+
   return <div className="hosts-installer">
-    <div className="hosts-installer-actions">
-      <button type="button" className={tab === "discovery" ? "active" : ""} onClick={() => setTab("discovery")}><Network /><span><strong>{t("hosts.installer.discovery")}</strong><small>{t("hosts.installer.discoveryHint")}</small></span></button>
-      <button type="button" className={tab === "wizard" ? "active" : ""} onClick={() => setTab("wizard")}><Terminal /><span><strong>{t("hosts.installer.wizard")}</strong><small>{t("hosts.installer.wizardHint")}</small></span></button>
-      <button type="button" className={tab === "script" ? "active" : ""} onClick={() => setTab("script")}><Download /><span><strong>{t("hosts.installer.script")}</strong><small>{t("hosts.installer.scriptHint")}</small></span></button>
+    <div className="hosts-installer-actions" role="group" aria-label={t("module.section.installer")}>
+      <button id="hosts-installer-tab-discovery" type="button" aria-pressed={tab === "discovery"} aria-controls="hosts-installer-panel-discovery" className={tab === "discovery" ? "active" : ""} onKeyDown={navigateTabs} onClick={() => setTab("discovery")}><Network /><span><strong>{t("hosts.installer.discovery")}</strong><small>{t("hosts.installer.discoveryHint")}</small></span></button>
+      <button id="hosts-installer-tab-wizard" type="button" aria-pressed={tab === "wizard"} aria-controls="hosts-installer-panel-wizard" className={tab === "wizard" ? "active" : ""} onKeyDown={navigateTabs} onClick={() => setTab("wizard")}><Terminal /><span><strong>{t("hosts.installer.wizard")}</strong><small>{t("hosts.installer.wizardHint")}</small></span></button>
+      <button id="hosts-installer-tab-script" type="button" aria-pressed={tab === "script"} aria-controls="hosts-installer-panel-script" className={tab === "script" ? "active" : ""} onKeyDown={navigateTabs} onClick={() => setTab("script")}><Download /><span><strong>{t("hosts.installer.script")}</strong><small>{t("hosts.installer.scriptHint")}</small></span></button>
     </div>
-    {tab === "discovery" && <Discovery canManage={canDiscover} environments={environments} credentials={credentials} patterns={patterns} t={t} toast={toast} refresh={refresh} />}
-    {tab === "wizard" && <OnboardingWizard canManage={canManage} apmids={apmids} environments={environments} credentials={credentials} patterns={patterns} settings={settings} t={t} toast={toast} />}
-    {tab === "script" && <Enrollment items={items} apmids={apmids} environments={environments} patterns={patterns} groups={groups} settings={settings} canManage={canManage} t={t} toast={toast} refresh={refresh} />}
+    <div className="hosts-installer-panel" id={`hosts-installer-panel-${tab}`} role="region" aria-labelledby={`hosts-installer-tab-${tab}`}>
+      {tab === "discovery" && <Discovery canManage={canDiscover} environments={environments} credentials={credentials} patterns={patterns} t={t} toast={toast} refresh={refresh} />}
+      {tab === "wizard" && <OnboardingWizard canManage={canManage} apmids={apmids} environments={environments} credentials={credentials} patterns={patterns} settings={settings} t={t} toast={toast} />}
+      {tab === "script" && <Enrollment items={items} apmids={apmids} environments={environments} patterns={patterns} groups={groups} settings={settings} canManage={canManage} t={t} toast={toast} refresh={refresh} />}
+    </div>
   </div>;
 }
 

@@ -92,6 +92,21 @@ describe("HostsManagerApp", () => {
     expect(screen.queryByText("hosts.apmid.title")).not.toBeInTheDocument();
   });
 
+  it("exposes installer choices as a keyboard-accessible button group", async () => {
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+
+    const discovery = screen.getByRole("button", { name: /hosts.installer.discovery/ });
+    expect(discovery).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(discovery, { key: "ArrowRight" });
+
+    const wizard = screen.getByRole("button", { name: /hosts.installer.wizard/ });
+    expect(wizard).toHaveAttribute("aria-pressed", "true");
+    expect(wizard).toHaveFocus();
+    expect(screen.getByRole("region", { name: /hosts.installer.wizard/ })).toHaveAttribute("aria-labelledby", "hosts-installer-tab-wizard");
+  });
+
   it("filters host groups by the related APMID code", async () => {
     vi.mocked(api.hostsManagerGroups).mockResolvedValue([{
       id: "group-default",
