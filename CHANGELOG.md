@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Redesigned the complete frontend with a compact Synology DSM-inspired visual system shared by the desktop, settings, tables, forms, dialogs, and every module, including dark-mode parity.
+
+- Made the full interface phone-ready with viewport-filling windows and dialogs, touch-sized controls, safe-area support, local table scrolling, module-specific responsive layouts, and stronger modal focus handling.
+
+- Hid Cron Manager from Start until it is installed, and separated NPM dependency updates from WebNAS application updates in Settings.
+
 - Added the native **Cron Manager** module with transactional ownership of `/etc/cron.d/webnas`, read-only external cron discovery, granular RBAC and PAM/CSRF protection, durable audited mutations, server-timezone schedule validation, diagnostics and bounded redacted logs, plus a responsive Polish/English interface, tests, and operations documentation.
 
 - Added administrator-controlled scheduled NPM dependency remediation so automatic update checks can run `npm audit fix`, rebuild, validate, and deploy the frontend even when the WebNAS application version is already current.
