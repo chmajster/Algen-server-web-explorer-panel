@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 import os
 import sqlite3
@@ -167,7 +168,7 @@ class CronRepository:
                 raise KeyError(job_id)
             self._history(connection, job_id, "cron.job.deleted", actor, {"name": name})
 
-    def history(self, job_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    def history(self, job_id: str, limit: int = 200) -> builtins.list[dict[str, Any]]:
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT id,job_id,action,actor,details_json,created_at FROM cron_history WHERE job_id=? ORDER BY created_at DESC,id DESC LIMIT ?",

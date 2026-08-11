@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import shutil
-from typing import Any
+from typing import Any, Literal
 
 from ...package_center.models import ModuleDiagnostic, ModuleHealth, ModuleStatus, api_error
 from ...package_center.service import get_module
@@ -49,7 +49,7 @@ class CronProvider(ModuleProvider):
         blocked = bool(get_module(self.module_id)["blocked_by_proxmox"])
         result: list[ModuleDiagnostic] = []
         for item in service().diagnostics(blocked_by_proxmox=blocked):
-            severity = "ok" if item.status == "ok" else "warning"
+            severity: Literal["ok", "warning"] = "ok" if item.status == "ok" else "warning"
             result.append(ModuleDiagnostic(
                 status=severity,
                 title=item.title,
