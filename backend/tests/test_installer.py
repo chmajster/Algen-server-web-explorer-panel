@@ -67,6 +67,32 @@ def test_source_archive_download_displays_progress():
     assert "wget --progress=bar:force:noscroll --output-document=" in prepare_source
 
 
+def test_installation_summary_includes_detected_environment(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        WEBNAS_OS_RELEASE_FILE="$TEST_ROOT/os-release"
+        printf 'ID=ubuntu\nVERSION_ID="24.04"\nPRETTY_NAME="Ubuntu 24.04.3 LTS"\n' > "$WEBNAS_OS_RELEASE_FILE"
+        PKG_MANAGER=apt
+        IS_PROXMOX=yes
+        PYTHON_BIN=""
+        node() { printf 'v22.14.0\n'; }
+        uname() {
+          [[ "$1" == "-sr" ]] && printf 'Linux 6.8.0\n' || printf 'x86_64\n'
+        }
+        print_environment_summary
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Operating system:  Ubuntu 24.04.3 LTS" in result.stdout
+    assert "Kernel:            Linux 6.8.0" in result.stdout
+    assert "Architecture:      x86_64" in result.stdout
+    assert "Package manager:   apt" in result.stdout
+    assert "Environment:       Proxmox VE host (Safe Mode)" in result.stdout
+    assert "Python runtime:    not installed (Python 3.14 will be installed)" in result.stdout
+    assert "Node.js runtime:   Node.js v22.14.0" in result.stdout
+
+
 def test_update_prepares_an_isolated_release_without_stopping_the_active_service():
     installer = INSTALLER.read_text(encoding="utf-8")
     main = installer.split("main() {", 1)[1].split('\nmain "$@"', 1)[0]

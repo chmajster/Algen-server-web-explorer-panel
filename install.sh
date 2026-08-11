@@ -708,10 +708,57 @@ prompt_install_dir() {
   validate_install_dir
 }
 
+os_release_value() {
+  local key="$1"
+  local line=""
+  local value=""
+  [[ -r "$WEBNAS_OS_RELEASE_FILE" ]] || return 1
+  while IFS= read -r line; do
+    [[ "$line" == "${key}="* ]] || continue
+    value="${line#*=}"
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    printf '%s' "$value"
+    return 0
+  done < "$WEBNAS_OS_RELEASE_FILE"
+  return 1
+}
+
+print_environment_summary() {
+  local os_name=""
+  local os_id=""
+  local os_version=""
+  local python_version="not installed (Python 3.14 will be installed)"
+  local node_version="not installed (Node.js ${NODE_MAJOR} will be installed)"
+  os_name="$(os_release_value PRETTY_NAME || true)"
+  os_id="$(os_release_value ID || true)"
+  os_version="$(os_release_value VERSION_ID || true)"
+  if [[ -z "$os_name" ]]; then
+    os_name="${os_id:-unknown}${os_version:+ ${os_version}}"
+  fi
+  if [[ -n "$PYTHON_BIN" && -x "$PYTHON_BIN" ]]; then
+    python_version="$($PYTHON_BIN --version 2>&1 || true)"
+  fi
+  if command -v node >/dev/null 2>&1; then
+    node_version="Node.js $(node --version 2>/dev/null || printf 'unknown')"
+  fi
+  printf 'Operating system:  %s\n' "$os_name"
+  printf 'Kernel:            %s\n' "$(uname -sr 2>/dev/null || printf 'unknown')"
+  printf 'Architecture:      %s\n' "$(uname -m 2>/dev/null || printf 'unknown')"
+  printf 'Package manager:   %s\n' "${PKG_MANAGER:-unknown}"
+  printf 'Environment:       %s\n' "$([[ "$IS_PROXMOX" == "yes" ]] && printf 'Proxmox VE host (Safe Mode)' || printf 'standard Linux host')"
+  printf 'Python runtime:    %s\n' "$python_version"
+  printf 'Node.js runtime:   %s\n' "$node_version"
+}
+
 prompt_configuration() {
   if [[ "$ACTION" == "update" || "$ACTION" == "reinstall" ]]; then
     validate_port
     section "Operation summary"
+    print_environment_summary
     printf 'Action:           %s\n' "$ACTION"
     printf 'Port:             %s\n' "$PORT"
     printf 'Install dir:      %s\n' "$INSTALL_DIR"
@@ -737,6 +784,7 @@ prompt_configuration() {
   validate_port
 
   section "Summary"
+  print_environment_summary
   printf 'Port:             %s\n' "$PORT"
   printf 'Install dir:      %s\n' "$INSTALL_DIR"
   printf 'Service user:     %s\n' "$SERVICE_USER"
