@@ -6,7 +6,7 @@ import en from "../../locales/en-US.json";
 import pl from "../../locales/pl-PL.json";
 import { PackageCenterApp } from "./PackageCenterApp";
 
-vi.mock("../../api", () => ({ api: { apps: vi.fn(), modules: vi.fn(), module: vi.fn(), appCategories: vi.fn(), appJobs: vi.fn(), appHistory: vi.fn(), packageSources: vi.fn(), appPlan: vi.fn(), appAction: vi.fn(), cancelAppJob: vi.fn(), retryAppJob: vi.fn() } }));
+vi.mock("../../api", () => ({ api: { apps: vi.fn(), modules: vi.fn(), module: vi.fn(), appCategories: vi.fn(), appJobs: vi.fn(), appHistory: vi.fn(), packageSources: vi.fn(), appPlan: vi.fn(), appAction: vi.fn(), dockerEngineAction: vi.fn(), cancelAppJob: vi.fn(), retryAppJob: vi.fn() } }));
 
 function module(id: string, overrides: Partial<PackageModule> = {}): PackageModule {
   return {
@@ -57,6 +57,7 @@ describe("Package Center", () => {
     vi.mocked(api.packageSources).mockResolvedValue([]);
     vi.mocked(api.appPlan).mockResolvedValue(packagePlan);
     vi.mocked(api.appAction).mockResolvedValue({ job: queuedInstall });
+    vi.mocked(api.dockerEngineAction).mockResolvedValue({ diagnostics: [] });
   });
 
   it("renders, searches, filters and opens package details", async () => {
@@ -97,7 +98,7 @@ describe("Package Center", () => {
     expect(screen.getByRole("dialog", { name: "Menedżer kontenerów" })).toBeInTheDocument();
   });
 
-  it("installs Docker before allowing the container manager to open", async () => {
+  it("installs Docker through the typed API with PAM before allowing the container manager to open", async () => {
     const docker = summary("docker");
     docker.manifest = { ...docker.manifest, name: "Docker" };
     vi.mocked(api.apps).mockResolvedValue([docker]);
@@ -107,8 +108,15 @@ describe("Package Center", () => {
     const first = render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onOpenModule={open} />);
     await screen.findByText("app.containers");
     fireEvent.click(screen.getByRole("button", { name: "store.install" }));
+    fireEvent.change(screen.getByLabelText("docker.currentPassword"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.apply" }));
 
-    await waitFor(() => expect(api.appPlan).toHaveBeenCalledWith("docker", "install", false));
+    await waitFor(() => expect(api.dockerEngineAction).toHaveBeenCalledWith({
+      action: "install",
+      confirmation: "docker:install",
+      pam_password: "secret",
+    }));
+    expect(api.appPlan).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
     first.unmount();
 

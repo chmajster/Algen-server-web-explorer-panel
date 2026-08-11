@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Boxes } from "lucide-react";
-import { api, type AppJob, type ModuleSummary } from "../../api";
+import { api, type AppJob, type DockerEngineAction, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { PackageActionDialog } from "./PackageActionDialog";
@@ -70,6 +70,19 @@ export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSele
     await state.refresh(true);
   }
 
+  async function submitDockerEngine(values: Record<string, string>) {
+    if (!action || action.item.id !== "docker") return;
+    const dockerAction = action.action as DockerEngineAction["action"];
+    const result = await api.dockerEngineAction({
+      action: dockerAction,
+      confirmation: `docker:${dockerAction}`,
+      pam_password: values.pam_password,
+    });
+    if (result.job) setLiveJob({ job: result.job, name: getPackageDisplayName(action.item, t) });
+    void state.refreshModule(action.item.id);
+    void state.refresh(true);
+  }
+
   function selectView(nextView: PackageView) {
     setView(nextView);
     window.localStorage.setItem(packageViewStorageKey, nextView);
@@ -96,7 +109,16 @@ export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSele
       </main>
     </div>
     {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => openSelectedModule(selected) : undefined} />}
-    {action && <PackageActionDialog item={action.item} action={action.action} t={t} toast={toast} onClose={() => setAction(null)} onStarted={(job) => { setLiveJob({ job, name: getPackageDisplayName(action.item, t) }); void state.refreshModule(action.item.id); void state.refresh(true); }} />}
+    {action && action.item.id === "docker"
+      ? <AdminActionDialog
+          title={t(`docker.engineAction.${action.action}`)}
+          fields={[{ name: "pam_password", label: t("docker.currentPassword"), type: "password", required: true }]}
+          danger
+          t={t}
+          onClose={() => setAction(null)}
+          onSubmit={submitDockerEngine}
+        />
+      : action && <PackageActionDialog item={action.item} action={action.action} t={t} toast={toast} onClose={() => setAction(null)} onStarted={(job) => { setLiveJob({ job, name: getPackageDisplayName(action.item, t) }); void state.refreshModule(action.item.id); void state.refresh(true); }} />}
     {liveJob && <PackageJobDialog initialJob={liveJob.job} moduleName={liveJob.name} t={t} onClose={() => { setLiveJob(null); if (selectedJobId === liveJob.job.id) onSelectedJobClose?.(); }} />}
     {credential && <AdminActionDialog title={t(credential.operation === "cancel" ? "package.cancelJob" : "action.retry")} fields={[]} danger={credential.operation === "cancel"} t={t} onClose={() => setCredential(null)} onSubmit={jobOperation} />}
   </section>;
