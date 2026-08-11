@@ -315,6 +315,26 @@ def test_frontend_build_offers_audit_fix_and_defaults_to_no(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def test_installer_prints_vulnerable_package_details_from_npm_audit(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r'''
+        PYTHON_BIN="$(command -v python3.14)"
+        cat > "$TEST_ROOT/npm-audit.json" <<'JSON'
+{"vulnerabilities":{"vite":{"name":"vite","severity":"high","isDirect":true,"via":[{"title":"Example development server issue","url":"https://example.test/advisories/1"}],"range":"<=8.1.0","fixAvailable":{"name":"vite","version":"8.1.4","isSemVerMajor":false}},"undici":{"name":"undici","severity":"moderate","isDirect":false,"via":["dependency-chain"],"range":"<7.20.0","fixAvailable":false}}}
+JSON
+        print_npm_audit_vulnerabilities "$TEST_ROOT/npm-audit.json"
+        ''',
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Vulnerable frontend packages:" in result.stdout
+    assert "vite: high (direct dependency); affected: <=8.1.0" in result.stdout
+    assert "Example development server issue" in result.stdout
+    assert "Fix: update to vite@8.1.4" in result.stdout
+    assert "undici: moderate (transitive dependency); affected: <7.20.0" in result.stdout
+    assert "Fix: no automatic fix currently available" in result.stdout
+
+
 def test_frontend_build_rejects_skip_build_to_prevent_a_stale_bundle(tmp_path):
     result = _run_harness(
         tmp_path,

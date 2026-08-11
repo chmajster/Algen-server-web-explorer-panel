@@ -1259,6 +1259,75 @@ PY
   update_step install_backend_dependencies completed
 }
 
+print_npm_audit_vulnerabilities() {
+  local audit_report="$1"
+  "$PYTHON_BIN" - "$audit_report" <<'PY'
+import json
+import re
+import sys
+
+
+def clean(value, fallback="unknown"):
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or "")).strip()
+    return text[:300] or fallback
+
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        report = json.load(stream)
+except (OSError, TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(0)
+
+vulnerabilities = report.get("vulnerabilities", {})
+if not isinstance(vulnerabilities, dict) or not vulnerabilities:
+    raise SystemExit(0)
+
+severity_order = {"critical": 0, "high": 1, "moderate": 2, "low": 3, "info": 4}
+
+
+def sort_key(item):
+    details = item[1] if isinstance(item[1], dict) else {}
+    severity = str(details.get("severity", "")).lower()
+    return severity_order.get(severity, 5), item[0].lower()
+
+
+items = sorted(
+    vulnerabilities.items(),
+    key=sort_key,
+)
+print("Vulnerable frontend packages:")
+for package_name, details in items:
+    if not isinstance(details, dict):
+        continue
+    severity = clean(details.get("severity"))
+    dependency_type = "direct dependency" if details.get("isDirect") else "transitive dependency"
+    affected_range = clean(details.get("range"), "unspecified")
+    print(f"  - {clean(package_name)}: {severity} ({dependency_type}); affected: {affected_range}")
+
+    advisories = []
+    for advisory in details.get("via", []):
+        if not isinstance(advisory, dict):
+            continue
+        title = clean(advisory.get("title"), "")
+        url = clean(advisory.get("url"), "")
+        label = " — ".join(value for value in (title, url) if value)
+        if label and label not in advisories:
+            advisories.append(label)
+    for advisory in advisories:
+        print(f"    Issue: {advisory}")
+
+    fix = details.get("fixAvailable")
+    if isinstance(fix, dict):
+        target = f"{clean(fix.get('name'), clean(package_name))}@{clean(fix.get('version'))}"
+        suffix = " (major-version update)" if fix.get("isSemVerMajor") else ""
+        print(f"    Fix: update to {target}{suffix}")
+    elif fix is True:
+        print("    Fix: available through npm audit fix")
+    else:
+        print("    Fix: no automatic fix currently available")
+PY
+}
+
 build_frontend() {
   local audit_report=""
   local vulnerability_count=""
@@ -1284,10 +1353,10 @@ except (OSError, TypeError, ValueError, json.JSONDecodeError):
     print("")
 PY
 )"
-  rm -f -- "$audit_report"
-  warn "npm found ${vulnerability_count} frontend package vulnerabilities"
 
   if [[ "$vulnerability_count" =~ ^[1-9][0-9]*$ ]]; then
+    warn "npm found ${vulnerability_count} frontend package vulnerabilities"
+    print_npm_audit_vulnerabilities "$audit_report"
     if [[ "$NPM_AUDIT_FIX" == "yes" ]] || confirm_npm_audit_fix 5; then
       info "Running npm audit fix"
       (cd "${INSTALL_DIR}/frontend" && npm audit fix)
@@ -1300,6 +1369,7 @@ PY
   else
     warn "npm audit could not determine the frontend vulnerability count; continuing without automatic changes"
   fi
+  rm -f -- "$audit_report"
   update_step install_frontend_dependencies completed
   update_step build_frontend started
   section "Building frontend"
