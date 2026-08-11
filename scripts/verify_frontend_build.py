@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.14
 """Reject incomplete, corrupted or contract-incompatible frontend builds."""
 
 from __future__ import annotations

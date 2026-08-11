@@ -144,7 +144,7 @@ def test_frontend_build_offers_audit_fix_and_defaults_to_no(tmp_path):
           if [[ "$1" == "run" && "$2" == "build" ]]; then
             mkdir -p "$INSTALL_DIR/frontend/dist.next/assets"
             printf '<script src="/assets/app-hash.js"></script>\n' > "$INSTALL_DIR/frontend/dist.next/index.html"
-            printf '/api/modules/hosts-manager/enrollment-tokens apmid_id\n' > "$INSTALL_DIR/frontend/dist.next/assets/app-hash.js"
+            printf '// /api/modules/hosts-manager/enrollment-tokens apmid_id\n' > "$INSTALL_DIR/frontend/dist.next/assets/app-hash.js"
           fi
         }
         confirm_npm_audit_fix() { return 1; }
@@ -195,7 +195,7 @@ def test_frontend_build_runs_audit_fix_only_after_confirmation(tmp_path):
           if [[ "$1" == "run" && "$2" == "build" ]]; then
             mkdir -p "$INSTALL_DIR/frontend/dist.next/assets"
             printf '<script src="/assets/app-hash.js"></script>\n' > "$INSTALL_DIR/frontend/dist.next/index.html"
-            printf '/api/modules/hosts-manager/enrollment-tokens apmid_id\n' > "$INSTALL_DIR/frontend/dist.next/assets/app-hash.js"
+            printf '// /api/modules/hosts-manager/enrollment-tokens apmid_id\n' > "$INSTALL_DIR/frontend/dist.next/assets/app-hash.js"
           fi
         }
         confirm_npm_audit_fix() { return 0; }

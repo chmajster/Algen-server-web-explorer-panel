@@ -4,14 +4,11 @@ import os
 import shutil
 import subprocess
 import time
-from typing import Any, TypeVar
+from typing import Any
 
 from ...package_center.executor import redact
 from ...package_center.models import api_error
 from .base import CancelCallback, LogCallback, ProgressCallback
-
-
-ProviderType = TypeVar("ProviderType")
 
 
 def graceful_stop_command(executable: str, target: str) -> list[str]:
@@ -98,7 +95,7 @@ def _graceful_stop(
     }
 
 
-def install_docker_stop_behavior(provider_class: type[ProviderType]) -> None:
+def install_docker_stop_behavior(provider_class: type[Any]) -> None:
     """Patch the bundled Docker provider once."""
 
     if getattr(provider_class, "_webnas_stop_behavior_installed", False):
@@ -121,5 +118,5 @@ def install_docker_stop_behavior(provider_class: type[ProviderType]) -> None:
             payload = {**payload, "signal": "KILL", "timeout": None}
         return original_manage(self, operation, payload, actor, log, progress, cancelled)
 
-    provider_class.manage = manage
-    provider_class._webnas_stop_behavior_installed = True
+    setattr(provider_class, "manage", manage)
+    setattr(provider_class, "_webnas_stop_behavior_installed", True)

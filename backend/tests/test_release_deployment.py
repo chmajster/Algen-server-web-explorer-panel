@@ -128,7 +128,7 @@ def test_failed_public_health_rolls_back_gateway_symlink_and_slot(monkeypatch, t
 def test_stale_release_cleanup_failure_does_not_fail_activation(monkeypatch, tmp_path: Path, capsys):
     target = deployment(tmp_path)
     stale = target.releases / "stale"
-    package = stale / "backend" / ".venv" / "lib" / "python3.11" / "site-packages" / "starlette"
+    package = stale / "backend" / ".venv" / "lib" / "python3.14" / "site-packages" / "starlette"
     package.mkdir(parents=True)
     package.joinpath("__init__.py").write_text("", encoding="utf-8")
     real_rmtree = release_module.shutil.rmtree

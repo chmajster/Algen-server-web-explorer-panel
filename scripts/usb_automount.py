@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.14
 """Mount removable USB filesystems managed by WebNAS.
 
 The script is invoked only by the webnas-usb-mount@.service systemd template.

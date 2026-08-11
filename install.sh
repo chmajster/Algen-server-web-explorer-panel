@@ -54,6 +54,7 @@ INSTALL_COMPLETED="no"
 LAST_BACKUP_DIR=""
 SERVICE_WAS_ACTIVE="no"
 ACTIVE_RELEASE=""
+PYTHON_BIN="$(command -v python3.14 || true)"
 
 if [[ -t 1 ]]; then
   RED="$(printf '\033[31m')"
@@ -503,26 +504,36 @@ install_dependencies() {
     apt)
       refresh_apt_metadata
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
-        python3 python3-pip python3-venv python3-dev build-essential \
+        python3.14 python3.14-venv python3.14-dev || \
+        fail "Python 3.14 packages are unavailable. Configure a repository providing python3.14, python3.14-venv, and python3.14-dev, then retry."
+      DEBIAN_FRONTEND=noninteractive apt_get install -y \
+        build-essential \
         libpam0g-dev rsync sudo curl wget ca-certificates tar gzip \
         passwd procps iproute2 ethtool traceroute screen quota util-linux udev nginx cifs-utils
       DEBIAN_FRONTEND=noninteractive apt_get install -y exfatprogs || warn "Optional exFAT tools could not be installed"
       ;;
     dnf)
+      dnf install -y python3.14 python3.14-devel || \
+        fail "Python 3.14 packages are unavailable. Enable a repository providing python3.14 and python3.14-devel, then retry."
       dnf install -y \
-        python3 python3-pip python3-devel gcc gcc-c++ make \
+        gcc gcc-c++ make \
         pam-devel rsync sudo curl wget ca-certificates tar gzip \
         shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx cifs-utils
       dnf install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
     yum)
+      yum install -y python3.14 python3.14-devel || \
+        fail "Python 3.14 packages are unavailable. Enable a repository providing python3.14 and python3.14-devel, then retry."
       yum install -y \
-        python3 python3-pip python3-devel gcc gcc-c++ make \
+        gcc gcc-c++ make \
         pam-devel rsync sudo curl wget ca-certificates tar gzip \
         shadow-utils procps-ng iproute ethtool traceroute screen quota util-linux systemd-udev nginx cifs-utils
       yum install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
   esac
+  PYTHON_BIN="$(command -v python3.14 || true)"
+  [[ -n "$PYTHON_BIN" ]] || fail "Python 3.14 is required, but python3.14 was not found after dependency installation"
+  "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 14) else 1)' || fail "python3.14 does not provide the required Python 3.14 runtime"
   ok "Dependencies installed"
 }
 
@@ -861,7 +872,7 @@ remove_existing_installation() {
 stop_usb_automount_instances() {
   systemctl stop 'webnas-usb-mount@*.service' 2>/dev/null || true
   if [[ -x "${INSTALL_DIR}/scripts/usb_automount.py" ]]; then
-    /usr/bin/python3 "${INSTALL_DIR}/scripts/usb_automount.py" cleanup 2>/dev/null || \
+    "$PYTHON_BIN" "${INSTALL_DIR}/scripts/usb_automount.py" cleanup 2>/dev/null || \
       warn "One or more busy USB filesystems could not be unmounted"
   fi
 }
@@ -1058,15 +1069,15 @@ EOF
 setup_python() {
   update_step install_backend_dependencies started
   section "Installing Python packages"
-  python3 - <<'PY'
+  "$PYTHON_BIN" - <<'PY'
 import sys
 
-required = (3, 11)
-if sys.version_info < required:
+required = (3, 14)
+if sys.version_info[:2] != required:
     version = ".".join(str(part) for part in sys.version_info[:3])
-    raise SystemExit(f"WebNAS requires Python {required[0]}.{required[1]} or newer; found Python {version}")
+    raise SystemExit(f"WebNAS requires Python {required[0]}.{required[1]}; found Python {version}")
 PY
-  python3 -m venv "${INSTALL_DIR}/backend/.venv"
+  "$PYTHON_BIN" -m venv "${INSTALL_DIR}/backend/.venv" || fail "Could not create a Python 3.14 virtualenv. Install python3.14-venv or the distribution equivalent."
   "${INSTALL_DIR}/backend/.venv/bin/pip" install --upgrade pip wheel
   "${INSTALL_DIR}/backend/.venv/bin/pip" install -r "${INSTALL_DIR}/backend/requirements.txt"
   ok "Python virtualenv ready"
@@ -1087,7 +1098,7 @@ build_frontend() {
   (cd "$frontend_dir" && npm ci)
   audit_report="$(mktemp -t webnas-npm-audit.XXXXXX)"
   (cd "${INSTALL_DIR}/frontend" && npm audit --json > "$audit_report") || true
-  vulnerability_count="$(python3 - "$audit_report" <<'PY'
+  vulnerability_count="$("$PYTHON_BIN" - "$audit_report" <<'PY'
 import json
 import sys
 
@@ -1119,7 +1130,7 @@ PY
   section "Building frontend"
   rm -rf --one-file-system "$staging_dist"
   (cd "$frontend_dir" && npm run build -- --outDir "$(basename "$staging_dist")")
-  python3 "${INSTALL_DIR}/scripts/verify_frontend_build.py" "$staging_dist"
+  "$PYTHON_BIN" "${INSTALL_DIR}/scripts/verify_frontend_build.py" "$staging_dist"
 
   # Publish every hashed asset before atomically replacing index.html. The old
   # index therefore always references available files throughout an update.
@@ -1128,7 +1139,7 @@ PY
   install -m 0644 "$staging_dist/index.html" "$active_dist/index.html.next"
   mv -f "$active_dist/index.html.next" "$active_dist/index.html"
   rm -rf --one-file-system "$staging_dist"
-  python3 "${INSTALL_DIR}/scripts/verify_frontend_build.py" "$active_dist"
+  "$PYTHON_BIN" "${INSTALL_DIR}/scripts/verify_frontend_build.py" "$active_dist"
   chown -R "${SERVICE_USER}:${SERVICE_USER}" "$frontend_dir"
   ok "Frontend built and activated with a matching index"
   update_step build_frontend completed
@@ -1173,7 +1184,7 @@ prepare_release() {
   [[ -f "$current_runtime" ]] || fail "Release activation helper is missing"
 
   section "Validating and switching release"
-  python3 "$current_runtime" \
+  "$PYTHON_BIN" "$current_runtime" \
     --root "$application_root" \
     --release "$release_dir" \
     --config "$CONFIG_FILE" \
@@ -1232,8 +1243,8 @@ Conflicts=umount.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/python3 ${INSTALL_DIR}/scripts/usb_automount.py mount /dev/%I
-ExecStop=/usr/bin/python3 ${INSTALL_DIR}/scripts/usb_automount.py unmount /dev/%I
+ExecStart=${PYTHON_BIN} ${INSTALL_DIR}/scripts/usb_automount.py mount /dev/%I
+ExecStop=${PYTHON_BIN} ${INSTALL_DIR}/scripts/usb_automount.py unmount /dev/%I
 TimeoutStartSec=45
 TimeoutStopSec=45
 User=root

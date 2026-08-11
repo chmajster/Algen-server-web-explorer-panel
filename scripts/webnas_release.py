@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.14
 """Blue/green release activation for WebNAS.
 
 The updater runs outside both application processes.  It starts and validates a

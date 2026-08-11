@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.14
 from __future__ import annotations
 
 import os
@@ -32,7 +32,7 @@ def main() -> None:
         shutil.copy2(unit, unit_backup)
     install = Path(__file__).with_name("install.py")
     result = subprocess.run(
-        [shutil.which("python3") or "/usr/bin/python3", str(install)],
+        [shutil.which("python3.14") or "/usr/bin/python3.14", str(install)],
         check=False,
         shell=False,
         timeout=900,

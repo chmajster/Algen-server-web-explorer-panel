@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "webnas"
 version = "0.1.0"
 description = "WebNAS Linux web file explorer panel"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
   "fastapi==0.139.0",
   "starlette==1.3.1",
@@ -29,7 +29,7 @@ where = ["backend"]
 "app.modules" = ["*/manifest.yaml", "builtin/*/manifest.yaml", "*/*.py", "*/*.sh", "*/*.yaml"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py314"
 line-length = 160
 exclude = ["frontend", "node_modules", "dist"]
 
@@ -38,7 +38,7 @@ select = ["E", "F"]
 ignore = ["B008", "E501"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.14"
 platform = "linux"
 mypy_path = "backend"
 packages = ["app"]

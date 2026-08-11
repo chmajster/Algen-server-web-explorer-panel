@@ -116,8 +116,9 @@ cleanup_usb_mounts() {
   systemctl stop 'webnas-usb-mount@*.service' 2>/dev/null || true
   local runtime_dir="${INSTALL_DIR}/current"
   [[ -d "$runtime_dir" ]] || runtime_dir="$INSTALL_DIR"
+  local python_bin="${runtime_dir}/backend/.venv/bin/python"
   if [[ -x "${runtime_dir}/scripts/usb_automount.py" ]]; then
-    /usr/bin/python3 "${runtime_dir}/scripts/usb_automount.py" cleanup || \
+    [[ -x "$python_bin" ]] && "$python_bin" "${runtime_dir}/scripts/usb_automount.py" cleanup || \
       echo "WARNING: one or more busy USB filesystems remain mounted; no USB data was removed." >&2
   fi
   rm -f "$USB_SERVICE_FILE" "$USB_UDEV_RULE_FILE"

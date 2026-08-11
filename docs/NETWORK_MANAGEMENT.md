@@ -71,7 +71,7 @@ Administrators receive all registered permissions. Operators and auditors receiv
 
 If remote access is lost, sign in locally as root:
 
-1. Inspect `systemctl status 'webnas-network-rollback-*'` and wait for the rollback timer, or run `python3 -m app.network_management --rollback <transaction-id>`.
+1. Inspect `systemctl status 'webnas-network-rollback-*'` and wait for the rollback timer, or run the WebNAS Python 3.14 environment: `/opt/webnas/backend/.venv/bin/python -m app.network_management --rollback <transaction-id>`.
 2. Inspect `<data_dir>/network-management/transactions/<id>/snapshot.json`.
 3. Reload the active provider: `nmcli connection reload`, `networkctl reload`, or `netplan apply`.
 4. Inspect only WebNAS-owned files before removing anything. Do not replace administrator-owned configuration with the JSON diagnostic snapshot.

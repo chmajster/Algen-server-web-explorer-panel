@@ -14,12 +14,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 1; }
+command -v python3.14 >/dev/null 2>&1 || { echo "Python 3.14 is required (python3.14 was not found)" >&2; exit 1; }
 command -v npm >/dev/null 2>&1 || { echo "npm is required" >&2; exit 1; }
 
 if [[ ! -d "${ROOT_DIR}/backend/.venv" ]]; then
-  python3 -m venv "${ROOT_DIR}/backend/.venv"
+  python3.14 -m venv "${ROOT_DIR}/backend/.venv" || { echo "Python 3.14 venv support is required (install python3.14-venv or the distribution equivalent)" >&2; exit 1; }
 fi
+
+"${ROOT_DIR}/backend/.venv/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 14) else 1)' || { echo "backend/.venv must use Python 3.14; recreate it with python3.14" >&2; exit 1; }
 
 "${ROOT_DIR}/backend/.venv/bin/pip" install -r "${ROOT_DIR}/backend/requirements.txt"
 

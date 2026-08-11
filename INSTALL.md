@@ -65,7 +65,7 @@ If APT reports `401`, `403`, or another explicit subscription error for `enterpr
 
 The installer installs the packages actually used by WebNAS:
 
-- Python 3, pip, venv, Python development headers.
+- Python 3.14, venv support, and Python 3.14 development headers. The installer fails clearly when distribution repositories do not provide them; it never falls back to an older interpreter.
 - Build tools for Python packages.
 - Node.js and npm for the React frontend build.
 - `rsync` for copy and move transfers.
@@ -94,10 +94,10 @@ Proxmox Safe Mode remains active for log browsing and does not grant access to p
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-venv python3-dev build-essential libpam0g-dev rsync sudo nodejs npm
+sudo apt-get install -y python3.14 python3.14-venv python3.14-dev build-essential libpam0g-dev rsync sudo nodejs npm
 sudo mkdir -p /opt/webnas /etc/webnas /var/lib/webnas/tmp /var/log/webnas
 sudo rsync -a --delete ./ /opt/webnas/
-sudo python3 -m venv /opt/webnas/backend/.venv
+sudo python3.14 -m venv /opt/webnas/backend/.venv
 sudo /opt/webnas/backend/.venv/bin/pip install -r /opt/webnas/backend/requirements.txt
 cd /opt/webnas/frontend
 sudo npm install

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.14
 from __future__ import annotations
 
 import os
@@ -49,7 +49,7 @@ def main() -> None:
         CONFIG.write_text("listen_address: 0.0.0.0\nport: 8088\n", encoding="utf-8")
     os.chmod(CONFIG, 0o644)
     module = Path(__file__).resolve().parents[1] / "os_repositories" / "http_server.py"
-    executable = shutil.which("python3") or "/usr/bin/python3"
+    executable = shutil.which("python3.14") or "/usr/bin/python3.14"
     unit = f"""[Unit]\nDescription=WebNAS repository server\nAfter=network.target\n\n[Service]\nType=simple\nUser=webnas-repository\nGroup=webnas-repository\nEnvironment=WEBNAS_OS_REPOSITORIES_PUBLISHED={PUBLIC_MOUNT}\nExecStart={executable} {module}\nRestart=on-failure\nRestartSec=2\nNoNewPrivileges=true\nPrivateTmp=true\nPrivateDevices=true\nProtectSystem=strict\nProtectHome=true\nProtectKernelTunables=true\nProtectKernelModules=true\nProtectControlGroups=true\nRestrictSUIDSGID=true\nRestrictRealtime=true\nSystemCallArchitectures=native\nBindReadOnlyPaths={ROOT / "published"}:{PUBLIC_MOUNT}\nRestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX\nLockPersonality=true\nMemoryDenyWriteExecute=true\nLimitNOFILE=4096\n\n[Install]\nWantedBy=multi-user.target\n"""
     UNIT.write_text(unit, encoding="utf-8")
     os.chmod(UNIT, 0o644)
