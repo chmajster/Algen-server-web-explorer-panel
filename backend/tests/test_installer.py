@@ -139,6 +139,36 @@ def test_installer_prints_a_final_status_and_preserves_the_exit_code(tmp_path):
     assert "Etap: Frontend build | kod wyjścia: 23" in failure.stderr
 
 
+def test_usb_automount_failure_prints_actionable_diagnostics(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        INSTALL_DIR="$TEST_ROOT/app/current"
+        ACTIVE_RELEASE="$TEST_ROOT/app/releases/candidate"
+        USB_UDEV_RULE_FILE="$TEST_ROOT/99-webnas-usb.rules"
+        USB_SERVICE_FILE="$TEST_ROOT/webnas-usb@.service"
+        SERVICE_FILE="$TEST_ROOT/webnas.service"
+        CURRENT_STEP="Installing USB automount"
+        USB_AUTOMOUNT_STAGE="reloading udev rules"
+        ACTION=install
+        mkdir -p "$INSTALL_DIR/scripts" "$INSTALL_DIR/packaging"
+        printf 'helper\n' > "$INSTALL_DIR/scripts/usb_automount.py"
+        printf 'rule\n' > "$INSTALL_DIR/packaging/99-webnas-usb-automount.rules"
+        on_error 1542 1
+        """,
+    )
+    assert result.returncode == 0
+    assert "Diagnostic context:" in result.stderr
+    assert "Action:            install" in result.stderr
+    assert "Candidate release:" in result.stderr
+    assert "USB automount diagnostics:" in result.stderr
+    assert "Last operation:    reloading udev rules" in result.stderr
+    assert "Helper source:" in result.stderr and "(present)" in result.stderr
+    assert "Recommended checks:" in result.stderr
+    assert "systemctl status systemd-udevd" in result.stderr
+    assert "systemd-analyze verify" in result.stderr
+
+
 def test_node_version_check_accepts_supported_node_22_without_evaluating_javascript(tmp_path):
     result = _run_harness(
         tmp_path,

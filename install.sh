@@ -54,6 +54,7 @@ INSTALL_COMPLETED="no"
 LAST_BACKUP_DIR=""
 SERVICE_WAS_ACTIVE="no"
 ACTIVE_RELEASE=""
+USB_AUTOMOUNT_STAGE="not started"
 PYTHON_BIN="$(command -v python3.14 || true)"
 WEBNAS_OS_RELEASE_FILE="${WEBNAS_OS_RELEASE_FILE:-/etc/os-release}"
 
@@ -113,6 +114,36 @@ update_step() {
   printf 'Update step: %s %s\n' "$1" "$2"
 }
 
+print_error_context() {
+  local os_name=""
+  local required_command=""
+  os_name="$(os_release_value PRETTY_NAME 2>/dev/null || true)"
+  printf '\nDiagnostic context:\n' >&2
+  printf '  Action:            %s\n' "$ACTION" >&2
+  printf '  Operating system:  %s\n' "${os_name:-unknown}" >&2
+  printf '  Kernel:            %s\n' "$(uname -sr 2>/dev/null || printf 'unknown')" >&2
+  printf '  Architecture:      %s\n' "$(uname -m 2>/dev/null || printf 'unknown')" >&2
+  printf '  Install directory: %s\n' "$INSTALL_DIR" >&2
+  [[ -z "$ACTIVE_RELEASE" ]] || printf '  Candidate release: %s\n' "$ACTIVE_RELEASE" >&2
+
+  if [[ "$CURRENT_STEP" == "Installing USB automount" ]]; then
+    printf '\nUSB automount diagnostics:\n' >&2
+    printf '  Last operation:    %s\n' "$USB_AUTOMOUNT_STAGE" >&2
+    printf '  Helper source:     %s (%s)\n' "${INSTALL_DIR}/scripts/usb_automount.py" "$([[ -f "${INSTALL_DIR}/scripts/usb_automount.py" ]] && printf 'present' || printf 'missing')" >&2
+    printf '  Udev rule source:  %s (%s)\n' "${INSTALL_DIR}/packaging/99-webnas-usb-automount.rules" "$([[ -f "${INSTALL_DIR}/packaging/99-webnas-usb-automount.rules" ]] && printf 'present' || printf 'missing')" >&2
+    printf '  Udev rule target:  %s (%s)\n' "$USB_UDEV_RULE_FILE" "$([[ -f "$USB_UDEV_RULE_FILE" ]] && printf 'present' || printf 'missing')" >&2
+    printf '  Systemd unit:      %s (%s)\n' "$USB_SERVICE_FILE" "$([[ -f "$USB_SERVICE_FILE" ]] && printf 'present' || printf 'missing')" >&2
+    for required_command in udevadm findmnt systemctl; do
+      printf '  Command %-10s %s\n' "${required_command}:" "$(command -v "$required_command" 2>/dev/null || printf 'missing')" >&2
+    done
+    printf '\nRecommended checks:\n' >&2
+    printf '  systemctl status systemd-udevd --no-pager -l\n' >&2
+    printf '  journalctl -u systemd-udevd -n 80 --no-pager\n' >&2
+    printf '  systemd-analyze verify %s\n' "$USB_SERVICE_FILE" >&2
+    printf '  udevadm control --reload-rules\n' >&2
+  fi
+}
+
 on_error() {
   local line="$1"
   local code="$2"
@@ -120,6 +151,7 @@ on_error() {
   printf '\n%b[ERROR]%b Installation failed at line %s with exit code %s.\n' "$RED" "$RESET" "$line" "$code" >&2
   printf 'Failed step: %s\n' "$CURRENT_STEP" >&2
   printf 'Check the command output directly above this error.\n' >&2
+  print_error_context || true
   if [[ -f "$SERVICE_FILE" ]]; then
     printf 'Systemd service exists; inspect: journalctl -u %s -n 80 --no-pager\n' "$SERVICE_NAME" >&2
   else
@@ -1323,18 +1355,23 @@ validate_release_installation() {
 
 install_usb_automount() {
   section "Installing USB automount"
+  USB_AUTOMOUNT_STAGE="checking required files and commands"
   [[ -f "${INSTALL_DIR}/scripts/usb_automount.py" ]] || fail "USB automount helper is missing"
   [[ -f "${INSTALL_DIR}/packaging/99-webnas-usb-automount.rules" ]] || fail "USB automount udev rule is missing"
   command -v udevadm >/dev/null 2>&1 || fail "udevadm is required for USB automount"
   command -v findmnt >/dev/null 2>&1 || fail "findmnt is required for USB automount"
 
+  USB_AUTOMOUNT_STAGE="setting helper ownership and permissions"
   chown root:root "${INSTALL_DIR}/scripts/usb_automount.py"
   chmod 0755 "${INSTALL_DIR}/scripts/usb_automount.py"
+  USB_AUTOMOUNT_STAGE="creating mount and runtime directories"
   install -d -o root -g root -m 0755 "$USB_MOUNT_ROOT"
   install -d -o root -g root -m 0700 "$USB_STATE_DIR"
+  USB_AUTOMOUNT_STAGE="installing the udev rule"
   install -D -o root -g root -m 0644 \
     "${INSTALL_DIR}/packaging/99-webnas-usb-automount.rules" "$USB_UDEV_RULE_FILE"
 
+  USB_AUTOMOUNT_STAGE="writing the systemd template unit"
   cat > "$USB_SERVICE_FILE" <<EOF
 [Unit]
 Description=WebNAS automount for USB filesystem /dev/%I
@@ -1367,13 +1404,18 @@ LockPersonality=yes
 SystemCallArchitectures=native
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER
 EOF
+  USB_AUTOMOUNT_STAGE="setting systemd unit permissions"
   chmod 0644 "$USB_SERVICE_FILE"
+  USB_AUTOMOUNT_STAGE="reloading systemd units"
   systemctl daemon-reload
+  USB_AUTOMOUNT_STAGE="reloading udev rules"
   udevadm control --reload-rules
 
   # SYSTEMD_WANTS is evaluated when a device first becomes active. Start a
   # matching instance explicitly for USB filesystems already present now.
+  USB_AUTOMOUNT_STAGE="starting services for connected USB filesystems"
   start_existing_usb_filesystems
+  USB_AUTOMOUNT_STAGE="completed"
   ok "USB filesystems will be mounted below ${USB_MOUNT_ROOT}"
 }
 
