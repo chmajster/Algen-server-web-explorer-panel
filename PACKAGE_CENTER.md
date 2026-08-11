@@ -8,6 +8,8 @@ trigger an in-page module-list refresh so its launcher entry appears or
 disappears without a full reload. Normal uninstall preserves data; full removal
 requires exact `APMID` confirmation and a Hosts Manager usage check.
 
+Cron Manager follows the same repository-bundled activation pattern and uses the host's existing cron/crond daemon rather than installing a second scheduler. Its typed domain mutations reuse `package_jobs`; the module owns only `/etc/cron.d/webnas` and treats other cron sources as read only. See [CRON_MANAGER.md](CRON_MANAGER.md).
+
 `hosts-manager` is a regular manifest-driven Package Center module and opens in its own WebNAS window. Uninstall preserves its central registry by default because Ansible Controller and other modules retain logical host-ID references. Full data removal is a separate high-risk, explicitly confirmed operation.
 
 `os-repositories` is a repository-bundled infrastructure module installed with

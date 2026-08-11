@@ -1,6 +1,8 @@
 # WebNAS infrastructure modules
 
-This document covers the Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, and Home Assistant modules, role-based access control, and desktop widgets. The shared provider and job architecture is described in [MODULES.md](MODULES.md).
+This document covers the Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, Home Assistant, and Cron Manager modules, role-based access control, and desktop widgets. The shared provider and job architecture is described in [MODULES.md](MODULES.md).
+
+Cron Manager stores stable WebNAS job metadata privately, renders only `/etc/cron.d/webnas`, applies backup-first atomic replacement with rollback, and exposes existing host entries as read-only records. It detects both `cron` and `crond`, never executes browser-supplied command text in the API, and blocks mutations under Proxmox Safe Mode. See [CRON_MANAGER.md](CRON_MANAGER.md).
 
 ## Roles and permissions
 
