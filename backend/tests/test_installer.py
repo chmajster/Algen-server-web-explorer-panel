@@ -93,6 +93,14 @@ def test_installation_summary_includes_detected_environment(tmp_path):
     assert "Node.js runtime:   Node.js v22.14.0" in result.stdout
 
 
+def test_interactive_configuration_explains_default_values():
+    installer = INSTALLER.read_text(encoding="utf-8")
+    prompt_configuration = installer.split("prompt_configuration() {", 1)[1].split("\n}", 1)[0]
+
+    assert "Values in brackets are defaults; press Enter to accept them." in prompt_configuration
+    assert "[Y/n] defaults to Yes." in prompt_configuration
+
+
 def test_update_prepares_an_isolated_release_without_stopping_the_active_service():
     installer = INSTALLER.read_text(encoding="utf-8")
     main = installer.split("main() {", 1)[1].split('\nmain "$@"', 1)[0]

@@ -770,6 +770,7 @@ prompt_configuration() {
   fi
   if [[ "$NON_INTERACTIVE" != "yes" ]]; then
     section "Configuration"
+    info "Values in brackets are defaults; press Enter to accept them. [Y/n] defaults to Yes."
     PORT="$(ask "Application port" "$PORT")"
     SERVICE_USER="$(ask "Service user" "$SERVICE_USER")"
     confirm "Start service after installation?" "yes" && START_SERVICE="yes" || START_SERVICE="no"
