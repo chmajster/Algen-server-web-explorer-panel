@@ -380,6 +380,7 @@ class AutoUpdatePatch(AdminSessionAction):
     enabled: bool
     interval_hours: int = Field(default=12, ge=1, le=168)
     update_config: bool = False
+    npm_audit_fix: bool = False
 
 
 class UserCreate(AdminPassword):
@@ -645,6 +646,7 @@ def _default_auto_update_state() -> dict:
         "enabled": False,
         "interval_hours": 12,
         "update_config": False,
+        "npm_audit_fix": False,
         "last_checked": None,
         "last_run": None,
         "last_error": "",
@@ -1318,6 +1320,8 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
             return {"ok": True, "skipped": True, "reason": "update_active", "state": active_request.get("state"), "update_id": active_request.get("id")}
         state = _read_auto_update_state()
         now = time.time()
+        scheduled_npm_audit_fix = bool(state.get("npm_audit_fix")) if not force else False
+        effective_npm_audit_fix = bool(npm_audit_fix or scheduled_npm_audit_fix)
         if not force:
             if not state.get("check_enabled"):
                 return {"ok": True, "skipped": True, "reason": "disabled"}
@@ -1334,11 +1338,11 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
                 if force:
                     raise HTTPException(503, state["last_error"])
                 return {"ok": False, "updated": False, "status": status, "error": state["last_error"]}
-            if not status["update_available"] and not (force and npm_audit_fix):
+            if not status["update_available"] and not effective_npm_audit_fix:
                 state.update({"last_error": "", "next_check": now + interval * 3600})
                 _write_auto_update_state(state)
                 return {"ok": True, "updated": False, "status": status, **(_record_up_to_date(actor=actor, status=status) if force else {})}
-            if not force and not state.get("enabled"):
+            if not force and status["update_available"] and not state.get("enabled"):
                 state.update({"last_error": "", "next_check": now + interval * 3600})
                 _write_auto_update_state(state)
                 return {"ok": True, "updated": False, "update_available": True, "status": status}
@@ -1346,7 +1350,7 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
                 actor=actor,
                 update_config=bool(state.get("update_config") if update_config is None else update_config),
                 status=status,
-                npm_audit_fix=npm_audit_fix,
+                npm_audit_fix=effective_npm_audit_fix,
             )
             state.update(
                 {
@@ -2173,11 +2177,12 @@ def admin_auto_update_patch(payload: AutoUpdatePatch, request: Request, user: Se
             "enabled": payload.enabled,
             "interval_hours": payload.interval_hours,
             "update_config": payload.update_config,
+            "npm_audit_fix": payload.npm_audit_fix,
             "next_check": now + payload.interval_hours * 3600 if payload.check_enabled else None,
             "last_error": "",
         }
     )
-    _audit(user.username, "configure_auto_update", f"checking={payload.check_enabled} install={payload.enabled} interval={payload.interval_hours}h")
+    _audit(user.username, "configure_auto_update", f"checking={payload.check_enabled} install={payload.enabled} npm_audit_fix={payload.npm_audit_fix} interval={payload.interval_hours}h")
     return _write_auto_update_state(state)
 
 

@@ -235,14 +235,13 @@ describe("settings application", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="updates" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
-    const updateButton = await screen.findByRole("button", { name: "settings.updateNow" });
-    expect(updateButton).toBeDisabled();
-    fireEvent.click(screen.getByLabelText("settings.npmAuditFix"));
-    expect(updateButton).toBeEnabled();
-    fireEvent.click(updateButton);
+    expect(await screen.findByRole("button", { name: "settings.updateNow" })).toBeDisabled();
+    const npmUpdateButton = screen.getByRole("button", { name: "settings.updateNpmNow" });
+    expect(npmUpdateButton).toBeEnabled();
+    fireEvent.click(npmUpdateButton);
 
     await waitFor(() => expect(run).toHaveBeenCalledWith(false, true));
-    expect(window.confirm).toHaveBeenCalledWith("settings.confirmUpdateNowWithNpmAuditFix");
+    expect(window.confirm).toHaveBeenCalledWith("settings.confirmNpmUpdateNow");
   });
 
   it("shows how many minutes ago updates were checked and refreshes the value", async () => {
@@ -295,11 +294,15 @@ describe("settings application", () => {
     fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
     expect(screen.getByLabelText("settings.updateInterval")).toHaveValue("12");
     fireEvent.change(screen.getByLabelText("settings.updateInterval"), { target: { value: "24" } });
-    await waitFor(() => expect(saveAuto).toHaveBeenCalledWith({ check_enabled: true, enabled: false, interval_hours: 24, update_config: false }));
+    await waitFor(() => expect(saveAuto).toHaveBeenCalledWith({ check_enabled: true, enabled: false, interval_hours: 24, update_config: false, npm_audit_fix: false }));
     fireEvent.click(screen.getByText("updates.auto_install").closest("button")!);
     fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
     fireEvent.click(screen.getByLabelText("settings.automaticUpdates"));
-    await waitFor(() => expect(saveAuto).toHaveBeenLastCalledWith({ check_enabled: true, enabled: true, interval_hours: 24, update_config: false }));
+    await waitFor(() => expect(saveAuto).toHaveBeenLastCalledWith({ check_enabled: true, enabled: true, interval_hours: 24, update_config: false, npm_audit_fix: false }));
+    fireEvent.click(screen.getByText("updates.npm_audit_fix").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: /settings.editRule/ }));
+    fireEvent.click(screen.getByLabelText("settings.automaticNpmUpdates"));
+    await waitFor(() => expect(saveAuto).toHaveBeenLastCalledWith({ check_enabled: true, enabled: true, interval_hours: 24, update_config: false, npm_audit_fix: true }));
   });
 
   it("edits the default container resource policy", async () => {

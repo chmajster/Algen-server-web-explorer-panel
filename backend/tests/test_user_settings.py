@@ -35,6 +35,7 @@ def test_update_policy_checks_every_twelve_hours_by_default():
     assert state["check_enabled"] is True
     assert state["enabled"] is False
     assert state["interval_hours"] == 12
+    assert state["npm_audit_fix"] is False
 
 
 def test_scheduled_update_check_does_not_install_when_policy_requires_approval(monkeypatch):
@@ -50,6 +51,33 @@ def test_scheduled_update_check_does_not_install_when_policy_requires_approval(m
     assert result["update_available"] is True
     assert result["updated"] is False
     assert written[-1]["next_check"] - written[-1]["last_checked"] == 12 * 3600
+
+
+def test_scheduled_npm_policy_repairs_current_frontend(monkeypatch):
+    state = {**settings._default_auto_update_state(), "npm_audit_fix": True}
+    started: list[dict] = []
+    monkeypatch.setattr(settings, "_read_auto_update_state", lambda: dict(state))
+    monkeypatch.setattr(settings, "_write_auto_update_state", lambda value: value)
+    monkeypatch.setattr(settings, "_update_status", lambda: {"available": True, "update_available": False})
+    monkeypatch.setattr(settings, "_request_update", lambda **kwargs: started.append(kwargs) or {"state": "running", "pid": 123})
+
+    result = settings._run_auto_update_once()
+
+    assert result["updated"] is True
+    assert started[0]["npm_audit_fix"] is True
+
+
+def test_scheduled_npm_policy_does_not_bypass_manual_webnas_approval(monkeypatch):
+    state = {**settings._default_auto_update_state(), "npm_audit_fix": True, "enabled": False}
+    monkeypatch.setattr(settings, "_read_auto_update_state", lambda: dict(state))
+    monkeypatch.setattr(settings, "_write_auto_update_state", lambda value: value)
+    monkeypatch.setattr(settings, "_update_status", lambda: {"available": True, "update_available": True})
+    monkeypatch.setattr(settings, "_request_update", lambda **kwargs: pytest.fail("manual WebNAS approval must not be bypassed"))
+
+    result = settings._run_auto_update_once()
+
+    assert result["updated"] is False
+    assert result["update_available"] is True
 
 
 def test_old_settings_file_keeps_valid_fields_and_repairs_invalid_fields(monkeypatch):

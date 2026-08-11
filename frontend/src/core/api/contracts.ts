@@ -212,6 +212,7 @@ export type AutoUpdateSettings = {
   enabled: boolean;
   interval_hours: number;
   update_config: boolean;
+  npm_audit_fix?: boolean;
   last_checked: number | null;
   last_run: number | null;
   last_error: string;

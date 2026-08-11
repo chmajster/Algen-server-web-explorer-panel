@@ -154,6 +154,7 @@ function normalizeAutoUpdate(value: unknown): AutoUpdateSettings {
     enabled: asBoolean(source.enabled),
     interval_hours: Math.max(1, Math.trunc(asFiniteNumber(source.interval_hours, 12))),
     update_config: asBoolean(source.update_config),
+    npm_audit_fix: asBoolean(source.npm_audit_fix),
     last_checked: nullableNumber(source.last_checked),
     last_run: nullableNumber(source.last_run),
     last_error: asString(source.last_error),
@@ -212,6 +213,7 @@ export const updatesClient = {
     enabled: boolean;
     interval_hours: number;
     update_config: boolean;
+    npm_audit_fix: boolean;
   }) => normalizeAutoUpdate(
     await request<unknown>("/api/admin/system/updates/auto", {
       method: "PATCH",

@@ -58,7 +58,7 @@ const categorySettings: Record<SettingsCategory, string[]> = {
   notifications: ["notificationsEnabled", "transferNotifications", "errorNotifications", "adminNotifications", "notificationLimit", "notificationAutoHide"],
   accessibility: ["interfaceScale", "reduceMotion", "highContrast", "strongActiveBorders", "alwaysShowFocus"],
   language: ["language", "dateFormat", "timeFormat", "firstDayOfWeek"], account: ["username", "groups", "changePassword"],
-  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], updates: ["updates", "updateStatus"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "updateConfiguration", "containerDefaultsPolicy", "networkConfirmationTimeout"], administration: ["serviceInformation", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
+  identity: ["usersAndGroups"], network: ["networkMonitor", "dnsDiagnostics", "routingTable"], networkResources: ["networkResources"], updates: ["updates", "updateStatus", "updateNpmNow"], policies: ["updatePolicies", "automaticUpdateChecks", "updateInterval", "automaticUpdates", "automaticNpmUpdates", "updateConfiguration", "containerDefaultsPolicy", "networkConfirmationTimeout"], administration: ["serviceInformation", "proxmoxSafeMode"], about: ["applicationName", "version", "technologies", "license", "repository"],
 };
 
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
@@ -181,7 +181,7 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
   const [shutdownPolicy, setShutdownPolicy] = useState<ShutdownPolicy | null>(null);
   const [error, setError] = useState("");
   const [group, setGroup] = useState<"updates" | "containers" | "network" | "power" | "access">(permissions.includes("access.view") ? "access" : "updates");
-  const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "update_config">("check_enabled");
+  const [selected, setSelected] = useState<"check_enabled" | "interval_hours" | "enabled" | "npm_audit_fix" | "update_config">("check_enabled");
   const [editing, setEditing] = useState(false);
   useEffect(() => {
     if (group === "access") return;
@@ -191,13 +191,13 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
       .catch((reason) => { if (live) setError(reason instanceof Error ? reason.message : t("error.generic")); });
     return () => { live = false; };
   }, [group, permissions, t]);
-  async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "update_config">>) {
+  async function savePolicy(patch: Partial<Pick<AutoUpdateSettings, "check_enabled" | "enabled" | "interval_hours" | "npm_audit_fix" | "update_config">>) {
     if (!policy) return false;
     const before = policy;
     const next = { ...policy, ...patch };
     setPolicy(next); setError("");
     try {
-      setPolicy(await api.saveAutoUpdate({ check_enabled: next.check_enabled, enabled: next.enabled, interval_hours: next.interval_hours, update_config: next.update_config }));
+      setPolicy(await api.saveAutoUpdate({ check_enabled: next.check_enabled, enabled: next.enabled, interval_hours: next.interval_hours, update_config: next.update_config, npm_audit_fix: Boolean(next.npm_audit_fix) }));
       toast(t("settings.saved"), "ok", "admin");
       return true;
     } catch (reason) {
@@ -213,7 +213,7 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
   }
   const policyGroups = <aside className="policy-groups">
     <header><FolderOpen />{t("settings.policyCategories")}</header>
-    <button className={group === "updates" ? "active" : ""} onClick={() => chooseGroup("updates")}><FolderOpen /><span>{t("settings.policyCategoryUpdates")}</span><b>4</b></button>
+    <button className={group === "updates" ? "active" : ""} onClick={() => chooseGroup("updates")}><FolderOpen /><span>{t("settings.policyCategoryUpdates")}</span><b>5</b></button>
     <button className={group === "containers" ? "active" : ""} onClick={() => chooseGroup("containers")}><FolderOpen /><span>{t("settings.policyCategoryContainers")}</span><b>1</b></button>
     <button className={group === "network" ? "active" : ""} onClick={() => chooseGroup("network")}><FolderOpen /><span>{t("settings.policyCategoryNetwork")}</span><b>1</b></button>
     {permissions.includes("system.shutdown") && <button className={group === "power" ? "active" : ""} onClick={() => chooseGroup("power")}><FolderOpen /><span>{t("settings.policyCategoryPower")}</span><b>1</b></button>}
@@ -272,6 +272,7 @@ function UpdatePoliciesSection({ permissions, initialSubject, t, toast }: { perm
     check_enabled: { group: "updates" as const, label: t("settings.automaticUpdateChecks"), id: "updates.check_enabled", description: t("settings.automaticUpdateChecksHint"), defaultValue: t("common.enabled") },
     interval_hours: { group: "updates" as const, label: t("settings.updateInterval"), id: "updates.check_interval_hours", description: t("settings.updateIntervalHint"), defaultValue: "12 h" },
     enabled: { group: "updates" as const, label: t("settings.automaticUpdates"), id: "updates.auto_install", description: t("settings.automaticInstallUpdatesHint"), defaultValue: t("common.disabled") },
+    npm_audit_fix: { group: "updates" as const, label: t("settings.automaticNpmUpdates"), id: "updates.npm_audit_fix", description: t("settings.automaticNpmUpdatesHint"), defaultValue: t("common.disabled") },
     update_config: { group: "updates" as const, label: t("settings.updateConfiguration"), id: "updates.update_config", description: t("settings.updateConfigurationHint"), defaultValue: t("common.disabled") },
   };
   const keys = (Object.keys(definitions) as Array<keyof typeof definitions>).filter((key) => definitions[key].group === group);
@@ -302,7 +303,6 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [runningUpdate, setRunningUpdate] = useState(false);
-  const [fixNpmAudit, setFixNpmAudit] = useState(false);
   const [updateDialog, setUpdateDialog] = useState<UpdateDialogState | null>(null);
   const [updateError, setUpdateError] = useState("");
   const [renderedAt, setRenderedAt] = useState(() => Date.now());
@@ -350,13 +350,13 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     catch (error) { setUpdateError(error instanceof Error ? error.message : t("settings.updateUnavailable")); }
     finally { setChecking(false); }
   }, [t]);
-  async function runUpdateNow() {
-    if (!window.confirm(t(fixNpmAudit ? "settings.confirmUpdateNowWithNpmAuditFix" : "settings.confirmUpdateNow"))) return;
+  async function runUpdateNow(npmAuditFix = false) {
+    if (!window.confirm(t(npmAuditFix ? "settings.confirmNpmUpdateNow" : "settings.confirmUpdateNow"))) return;
     setRunningUpdate(true);
-    setUpdateDialog({ phase: "checking", progress: null, message: t("settings.updateCheckingDetails") });
+    setUpdateDialog({ phase: "checking", progress: null, message: t(npmAuditFix ? "settings.npmUpdateCheckingDetails" : "settings.updateCheckingDetails") });
     try {
-      const result = await api.runAutoUpdate(false, fixNpmAudit);
-      toast(result.updated ? t("settings.updateStarted") : t("settings.noUpdateAvailable"), "ok", "admin");
+      const result = await api.runAutoUpdate(false, npmAuditFix);
+      toast(result.updated ? t(npmAuditFix ? "settings.npmUpdateStarted" : "settings.updateStarted") : t("settings.noUpdateAvailable"), "ok", "admin");
       if (!result.updated) { await refreshUpdates(); setUpdateDialog({ phase: "no-update", progress: null, message: t("settings.noUpdateAvailable") }); }
       else {
         setUpdateDialog(null);
@@ -438,7 +438,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
           aria-label={t("settings.updateAvailableAction")}
           title={t("settings.updateAvailableAction")}
           disabled={runningUpdate}
-          onClick={() => void runUpdateNow()}
+          onClick={() => void runUpdateNow(false)}
         >
           <span aria-hidden="true" />
           <div>
@@ -449,7 +449,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
         </button>
         : <div className={`admin-overall-state ${updateState}`}><span />{updateLabel}</div>}
     </section>
-    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updateAvailable ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.lastChecked")}</dt><dd>{checkedMinutesAgo === null ? "—" : `${checkedMinutesAgo} ${t("settings.minutesAgo")}`}</dd><dt>{t("settings.updateInterval")}</dt><dd>{updateCheckInterval}</dd><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<SettingRow title={t("settings.npmAuditFix")} description={t("settings.npmAuditFixHint")}><Switch label={t("settings.npmAuditFix")} checked={fixNpmAudit} onChange={setFixNpmAudit} /></SettingRow><div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={(!updateAvailable && !fixNpmAudit) || runningUpdate} onClick={() => void runUpdateNow()}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{fixNpmAudit ? t("settings.npmAuditFixRunHint") : t("settings.manualUpdatePreservesConfig")}</small></div></Card>
+    <Card title={t("settings.updates")}><div className="update-settings-status"><SettingRow title={t("settings.updateStatus")} description={updateLabel}><span className={`settings-status-pill ${updateState}`}>{updateError ? "!" : updateAvailable ? t("common.yes") : t("common.no")}</span></SettingRow><button type="button" disabled={checking} onClick={() => void refreshUpdates()}><RefreshCw className={checking ? "spin" : ""} />{t("settings.checkNow")}</button></div>{updates && <dl className="settings-details update-version-details"><dt>{t("settings.lastChecked")}</dt><dd>{checkedMinutesAgo === null ? "—" : `${checkedMinutesAgo} ${t("settings.minutesAgo")}`}</dd><dt>{t("settings.updateInterval")}</dt><dd>{updateCheckInterval}</dd><dt>{t("settings.updateSource")}</dt><dd>{updates.source_url ? <a href={updates.source_url} target="_blank" rel="noreferrer">{updates.source || updates.source_url}</a> : updates.source || "—"}</dd><dt>{t("settings.releaseDate")}</dt><dd>{releaseDate(updates.released_at)}</dd><dt>{t("settings.updateBranch")}</dt><dd>{updates.branch}</dd><dt>{t("settings.installedRevision")}</dt><dd><span className="update-revision-value"><code>{updates.local === "unknown" ? t("settings.unknownRevision") : updates.local.slice(0, 12)}</code><small>{t("settings.publicationVersion")}: <strong>{updates.installed_version ? `v${updates.installed_version}` : "—"}</strong></small></span></dd><dt>{t("settings.availableRevision")}</dt><dd><span className="update-revision-value"><code>{updates.remote ? updates.remote.slice(0, 12) : "—"}</code><small>{t("settings.publicationVersion")}: <strong>{updates.available_version ? `v${updates.available_version}` : "—"}</strong></small></span></dd></dl>}<div className="update-now-actions"><div className="update-now-action"><button className="button-primary update-now-button" type="button" disabled={!updateAvailable || runningUpdate} onClick={() => void runUpdateNow(false)}><RefreshCw className={runningUpdate ? "spin" : ""} />{t("settings.updateNow")}</button><small>{t("settings.manualUpdatePreservesConfig")}</small></div><div className="update-now-action npm-update-action"><button className="update-now-button npm-update-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow(true)}><ShieldCheck className={runningUpdate ? "spin" : ""} />{t("settings.updateNpmNow")}</button><small>{t("settings.updateNpmNowHint")}</small></div></div></Card>
     {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
   </div>;
   return <div className="administration-dashboard">
