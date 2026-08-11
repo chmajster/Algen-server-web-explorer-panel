@@ -338,6 +338,25 @@ def test_reinstall_is_a_supported_non_interactive_action(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def test_installer_accepts_short_command_line_options(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        parse_args -p 8080 -d /srv/webnas -u webnas-test -a reinstall -c -y
+        [[ "$PORT" == "8080" ]]
+        [[ "$PORT_EXPLICIT" == "yes" ]]
+        [[ "$INSTALL_DIR" == "/srv/webnas" ]]
+        [[ "$SERVICE_USER" == "webnas-test" ]]
+        [[ "$SERVICE_USER_EXPLICIT" == "yes" ]]
+        [[ "$EXISTING_ACTION" == "reinstall" ]]
+        [[ "$UPDATE_CONFIG" == "yes" ]]
+        [[ "$ASSUME_YES" == "yes" ]]
+        [[ "$NON_INTERACTIVE" == "yes" ]]
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_proxmox_enterprise_source_fallback_is_temporary(tmp_path):
     result = _run_harness(
         tmp_path,

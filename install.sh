@@ -82,19 +82,19 @@ Usage:
   curl -fsSL ${RAW_INSTALL_URL} | sudo bash -s -- [options]
 
 Options:
-  --port PORT             Application port (default: 5000)
-  --install-dir PATH      Installation directory (default: /opt/webnas)
-  --user USER             System user for the service (default: webnas)
-  --yes                   Non-interactive mode; accept defaults
+  -p, --port PORT         Application port (default: 5000)
+  -d, --install-dir PATH  Installation directory (default: /opt/webnas)
+  -u, --user USER         System user for the service (default: webnas)
+  -y, --yes               Non-interactive mode; accept defaults
   --no-firewall           Do not configure ufw/firewalld
   --skip-build            Deprecated; application installs require a matching frontend build
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
   --grant-journal-access  Add the service user to systemd-journal for system log access
-  --existing-action ACTION
+  -a, --existing-action ACTION
                           Existing install action: update, reinstall, backup-config, remove, remove-app, remove-all, or abort
-  --update-config         Also regenerate config.yaml during update actions
-  --help                  Show this help
+  -c, --update-config     Also regenerate config.yaml during update actions
+  -h, --help              Show this help
 EOF
 }
 
@@ -143,27 +143,27 @@ EOF
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --port)
+      --port|-p)
         [[ $# -ge 2 ]] || fail "--port requires a value"
         PORT="$2"
         PORT_EXPLICIT="yes"
         NON_INTERACTIVE="yes"
         shift 2
         ;;
-      --install-dir)
+      --install-dir|-d)
         [[ $# -ge 2 ]] || fail "--install-dir requires a value"
         INSTALL_DIR="$2"
         NON_INTERACTIVE="yes"
         shift 2
         ;;
-      --user)
+      --user|-u)
         [[ $# -ge 2 ]] || fail "--user requires a value"
         SERVICE_USER="$2"
         SERVICE_USER_EXPLICIT="yes"
         NON_INTERACTIVE="yes"
         shift 2
         ;;
-      --yes)
+      --yes|-y)
         ASSUME_YES="yes"
         NON_INTERACTIVE="yes"
         shift
@@ -188,7 +188,7 @@ parse_args() {
         NON_INTERACTIVE="yes"
         shift
         ;;
-      --existing-action)
+      --existing-action|-a)
         [[ $# -ge 2 ]] || fail "--existing-action requires a value"
         case "$2" in
           update|reinstall|backup-config|remove|remove-app|remove-all|abort) EXISTING_ACTION="$2" ;;
@@ -197,7 +197,7 @@ parse_args() {
         NON_INTERACTIVE="yes"
         shift 2
         ;;
-      --update-config)
+      --update-config|-c)
         UPDATE_CONFIG="yes"
         NON_INTERACTIVE="yes"
         shift
