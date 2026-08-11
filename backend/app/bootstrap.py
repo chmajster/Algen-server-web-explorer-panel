@@ -117,7 +117,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     application_settings = settings or get_config()
     module_registry = registry or build_module_registry()
     container = ApplicationContainer(application_settings, module_registry)
-    app = FastAPI(title="WebNAS", version="0.1.3", lifespan=application_lifespan)
+    app = FastAPI(title="WebNAS", version="0.1.4", lifespan=application_lifespan)
     app.state.settings = application_settings
     app.state.modules = module_registry
     app.state.container = container
