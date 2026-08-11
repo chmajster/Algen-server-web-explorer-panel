@@ -240,6 +240,26 @@ describe("HostsManagerApp", () => {
     await waitFor(() => expect(api.downloadHostsManagerEnrollmentScript).toHaveBeenCalledWith("/api/modules/hosts-manager/enrollment-script", "raw-once"));
   });
 
+  it("uses the compact enrollment dialog grid without dropping any controls", async () => {
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
+
+    const dialog = screen.getByRole("dialog", { name: "hosts.enrollment.generate" });
+    expect(dialog).toHaveClass("hosts-enrollment-dialog", "hosts-manager-app");
+    expect(dialog.querySelectorAll(".hosts-enrollment-section")).toHaveLength(2);
+    expect(dialog.querySelectorAll(".hosts-enrollment-grid")).toHaveLength(2);
+    expect(screen.getByLabelText("hosts.enrollment.mode")).toBeInTheDocument();
+    expect(screen.getByLabelText("hosts.host.environment")).toBeInTheDocument();
+    expect(screen.getByLabelText("hosts.apmid.code")).toBeInTheDocument();
+    expect(screen.getByLabelText("hosts.agent.port")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "hosts.enrollment.additionalGroups" })).toBeInTheDocument();
+    expect(screen.getByLabelText("hosts.enrollment.applyHostname")).toBeInTheDocument();
+    expect(screen.getByLabelText("hosts.enrollment.requireApproval")).toBeInTheDocument();
+  });
+
   it("hides validity for permanent tokens and restores it for one-time tokens", async () => {
     render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
     await screen.findByText("hosts.dashboard.total");

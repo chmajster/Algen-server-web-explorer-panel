@@ -669,6 +669,37 @@
 .hosts-manager-app .hosts-enrollment-hostname small,
 .hosts-manager-app .hosts-enrollment-groups > small { color: var(--text-muted); }
 .hosts-manager-app .hosts-enrollment-groups { min-width: 0; display: flex; flex-wrap: wrap; gap: var(--hosts-spacing-sm); }
+.modal-panel.modal-wide.hosts-enrollment-dialog { width: min(94vw, 87.5rem); height: auto; max-height: calc(100dvh - 2rem); }
+.hosts-enrollment-dialog .modal-body { padding: .75rem 1rem; }
+.hosts-enrollment-dialog .modal-footer { min-height: auto; padding: .5rem 1rem; }
+.hosts-enrollment-dialog .hosts-enrollment-form { display: grid; gap: .75rem; }
+.hosts-enrollment-dialog .hosts-enrollment-section { min-width: 0; margin: 0; padding: .75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-large); background: color-mix(in srgb, var(--surface-secondary) 72%, var(--surface-elevated)); }
+.hosts-enrollment-dialog .hosts-enrollment-section > h3 { margin: 0 0 .625rem; color: var(--text-primary); font-size: var(--font-size-sm); }
+.hosts-enrollment-dialog .hosts-enrollment-grid { min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: .625rem .75rem; }
+.hosts-enrollment-dialog .hosts-enrollment-grid > label,
+.hosts-enrollment-dialog .hosts-search-select { min-width: 0; display: grid; gap: .3125rem; color: var(--text-secondary); font-size: var(--font-size-xs); font-weight: 650; }
+.hosts-enrollment-dialog .hosts-enrollment-grid :where(input:not([type="checkbox"]), select),
+.hosts-enrollment-dialog .hosts-search-select-control { min-width: 0; width: 100%; height: 2.375rem; }
+.hosts-enrollment-dialog .hosts-enrollment-span-2 { grid-column: span 2; }
+.hosts-enrollment-dialog .hosts-enrollment-hostname { min-height: 4.625rem; align-content: center; gap: .125rem; padding: .4375rem .625rem; overflow: hidden; border: 1px solid var(--border-subtle); }
+.hosts-enrollment-dialog .hosts-enrollment-hostname strong,
+.hosts-enrollment-dialog .hosts-enrollment-hostname code,
+.hosts-enrollment-dialog .hosts-enrollment-hostname small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hosts-enrollment-dialog .hosts-enrollment-hostname small { color: var(--warning); }
+.hosts-enrollment-dialog .hosts-enrollment-groups { min-height: 4.625rem; align-content: flex-start; gap: .375rem .75rem; margin: 0; padding: .4375rem .625rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); }
+.hosts-enrollment-dialog .hosts-enrollment-groups > legend { padding: 0 .25rem; color: var(--text-secondary); font-size: var(--font-size-xs); font-weight: 650; }
+.hosts-enrollment-dialog .hosts-enrollment-checkbox { min-height: 2.375rem; align-self: end; display: flex; align-items: center; gap: .5rem; padding: .4375rem .625rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); }
+.hosts-enrollment-dialog .hosts-enrollment-checkbox input { flex: 0 0 auto; }
+@media (max-width: 1199px) {
+  .modal-panel.modal-wide.hosts-enrollment-dialog { width: min(92vw, 62rem); }
+  .hosts-enrollment-dialog .hosts-enrollment-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 767px) {
+  .modal-panel.modal-wide.hosts-enrollment-dialog { width: calc(100vw - 1rem); height: auto; max-height: calc(100dvh - 1rem); }
+  .hosts-enrollment-dialog .modal-body { padding: .625rem; }
+  .hosts-enrollment-dialog .hosts-enrollment-grid { grid-template-columns: minmax(0, 1fr); }
+  .hosts-enrollment-dialog .hosts-enrollment-span-2 { grid-column: auto; }
+}
 .hosts-manager-app .hosts-group-picker { min-width: 0; margin: 0; padding: 0; border: 0; }
 .hosts-manager-app .hosts-group-picker > legend { margin-bottom: var(--hosts-spacing-xs); padding: 0; color: var(--text-secondary); font-size: var(--font-size-xs); font-weight: 600; }
 .hosts-manager-app .hosts-group-picker-control { min-width: 0; min-height: 2.875rem; display: flex; align-items: center; flex-wrap: wrap; gap: var(--hosts-spacing-xs); padding: .375rem .4375rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); transition: border-color .14s ease, box-shadow .14s ease; }

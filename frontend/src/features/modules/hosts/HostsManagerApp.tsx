@@ -1960,6 +1960,7 @@ function Enrollment({
       {open && (
         <Modal
           wide
+          className="hosts-enrollment-dialog hosts-manager-app"
           title={t("hosts.enrollment.generate")}
           closeLabel={t("action.close")}
           onClose={() => setOpen(false)}
@@ -1968,7 +1969,7 @@ function Enrollment({
               className="button-primary"
               type="submit"
               form="enrollment-form"
-            disabled={!validApmid || !validEnvironment || !validPattern || !validExpiration}
+              disabled={!validApmid || !validEnvironment || !validPattern || !validExpiration}
             >
               {t("hosts.enrollment.generate")}
             </button>
@@ -1976,141 +1977,141 @@ function Enrollment({
         >
           <form
             id="enrollment-form"
-            className="module-form-grid"
+            className="hosts-enrollment-form"
             onSubmit={create}
           >
-            <fieldset className="hosts-enrollment-section wide">
-              <legend>{t("hosts.enrollment.basic")}</legend>
-              <div className="module-form-grid">
-            <div className="wide hosts-enrollment-hostname">
-              <strong>{t("hosts.enrollment.assignedHostname")}</strong>
-              <code>{patterns.find((item) => item.id === patternId)?.next_hostname || settings?.next_hostname || "…"}</code>
-              <small>{t("hosts.settings.reservationHint")}</small>
-            </div>
-            <label>
-              {t("hosts.enrollment.mode")}
-              <select value={mode} onChange={(event) => setMode(event.target.value as "one_time" | "permanent")}>
-                <option value="one_time">{t("hosts.enrollment.mode.one_time")}</option>
-                <option value="permanent">{t("hosts.enrollment.mode.permanent")}</option>
-              </select>
-            </label>
-            <label>
-              {t("hosts.environment.pattern")}
-              <select value={patternId} onChange={(event) => setPatternId(event.target.value)}>
-                <option value="">{t("hosts.enrollment.legacyPattern")}</option>
-                {patterns.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.next_hostname}</option>)}
-              </select>
-            </label>
-            <label>
-              {t("hosts.enrollment.os")}
-              <select
-                value={bootstrapOS}
-                onChange={(event) =>
-                  setBootstrapOS(event.target.value as "linux" | "windows")
-                }
-              >
-                <option value="linux">{t("hosts.enrollment.os.linux")}</option>
-                <option value="windows">
-                  {t("hosts.enrollment.os.windows")}
-                </option>
-              </select>
-            </label>
-            {mode === "one_time" && <label>
-              {t("hosts.enrollment.minutes")}
-              <input
-                required
-                type="number"
-                min="1"
-                max="525600"
-                value={minutes}
-                onChange={(event) => setMinutes(Number(event.target.value))}
-              />
-            </label>}
-            <HostsSearchSelect
-              label={t("hosts.host.environment")}
-              value={environmentId}
-              options={environmentOptions}
-              searchPlaceholder={t("action.search")}
-              emptyText={t("common.none")}
-              onChange={(id) => {
-                setEnvironmentId(id);
-                const selected = environments.find((item) => item.id === id);
-                setPatternId(selected?.default_hostname_pattern_id || settings?.default_hostname_pattern_id || "");
-                if (selected) {
-                  setAgentPort(selected.default_agent_port);
-                  setReportInterval(selected.report_interval_seconds);
-                }
-              }}
-            />
-            <HostsSearchSelect label={t("hosts.apmid.code")} value={apmidId} options={apmidOptions} searchPlaceholder={t("action.search")} emptyText={t("common.none")} onChange={setApmidId} />
-            <label>
-              {t("hosts.host.location")}
-              <input
-                value={location}
-                onChange={(event) => setLocation(event.target.value)}
-              />
-            </label>
-            <label className="wide">
-              {t("hosts.host.tags")}
-              <input
-                value={tags}
-                onChange={(event) => setTags(event.target.value)}
-              />
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={applyHostname}
-                onChange={(event) => setApplyHostname(event.target.checked)}
-              />
-              {t("hosts.enrollment.applyHostname")}
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={requireApproval}
-                onChange={(event) => setRequireApproval(event.target.checked)}
-              />
-              {t("hosts.enrollment.requireApproval")}
-            </label>
+            <section className="hosts-enrollment-section">
+              <h3>{t("hosts.enrollment.basic")}</h3>
+              <div className="hosts-enrollment-grid">
+                <div className="hosts-enrollment-hostname">
+                  <strong>{t("hosts.enrollment.assignedHostname")}</strong>
+                  <code>{patterns.find((item) => item.id === patternId)?.next_hostname || settings?.next_hostname || "…"}</code>
+                  <small>{t("hosts.settings.reservationHint")}</small>
+                </div>
+                <label>
+                  {t("hosts.enrollment.mode")}
+                  <select value={mode} onChange={(event) => setMode(event.target.value as "one_time" | "permanent")}>
+                    <option value="one_time">{t("hosts.enrollment.mode.one_time")}</option>
+                    <option value="permanent">{t("hosts.enrollment.mode.permanent")}</option>
+                  </select>
+                </label>
+                <label>
+                  {t("hosts.environment.pattern")}
+                  <select value={patternId} onChange={(event) => setPatternId(event.target.value)}>
+                    <option value="">{t("hosts.enrollment.legacyPattern")}</option>
+                    {patterns.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.next_hostname}</option>)}
+                  </select>
+                </label>
+                <label>
+                  {t("hosts.enrollment.os")}
+                  <select
+                    value={bootstrapOS}
+                    onChange={(event) =>
+                      setBootstrapOS(event.target.value as "linux" | "windows")
+                    }
+                  >
+                    <option value="linux">{t("hosts.enrollment.os.linux")}</option>
+                    <option value="windows">
+                      {t("hosts.enrollment.os.windows")}
+                    </option>
+                  </select>
+                </label>
+                {mode === "one_time" && <label>
+                  {t("hosts.enrollment.minutes")}
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    max="525600"
+                    value={minutes}
+                    onChange={(event) => setMinutes(Number(event.target.value))}
+                  />
+                </label>}
+                <HostsSearchSelect
+                  label={t("hosts.host.environment")}
+                  value={environmentId}
+                  options={environmentOptions}
+                  searchPlaceholder={t("action.search")}
+                  emptyText={t("common.none")}
+                  onChange={(id) => {
+                    setEnvironmentId(id);
+                    const selected = environments.find((item) => item.id === id);
+                    setPatternId(selected?.default_hostname_pattern_id || settings?.default_hostname_pattern_id || "");
+                    if (selected) {
+                      setAgentPort(selected.default_agent_port);
+                      setReportInterval(selected.report_interval_seconds);
+                    }
+                  }}
+                />
+                <HostsSearchSelect label={t("hosts.apmid.code")} value={apmidId} options={apmidOptions} searchPlaceholder={t("action.search")} emptyText={t("common.none")} onChange={setApmidId} />
+                <label>
+                  {t("hosts.host.location")}
+                  <input
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                  />
+                </label>
+                <label className="hosts-enrollment-span-2">
+                  {t("hosts.host.tags")}
+                  <input
+                    value={tags}
+                    onChange={(event) => setTags(event.target.value)}
+                  />
+                </label>
               </div>
-            </fieldset>
-            <fieldset className="hosts-enrollment-section wide">
-              <legend>{t("hosts.enrollment.advanced")}</legend>
-              <div className="module-form-grid">
-            <label>
-              {t("hosts.agent.port")}
-              <input type="number" min={1} max={65535} value={agentPort} onChange={(event) => setAgentPort(Number(event.target.value))} />
-            </label>
-            <label>
-              {t("hosts.agent.reportInterval")}
-              <input type="number" min={30} max={86400} value={reportInterval} onChange={(event) => setReportInterval(Number(event.target.value))} />
-            </label>
-            <label>
-              {t("hosts.enrollment.boundAddress")}
-              <input value={boundAddress} placeholder="192.168.1.10" onChange={(event) => setBoundAddress(event.target.value)} />
-            </label>
-            <fieldset className="wide hosts-enrollment-groups">
-              <legend>{t("hosts.enrollment.additionalGroups")}</legend>
-              {groups.filter((group) => !group.managed).length ? groups.filter((group) => !group.managed).map((group) => (
-                <label className="check" key={group.id}>
+            </section>
+            <section className="hosts-enrollment-section">
+              <h3>{t("hosts.enrollment.advanced")}</h3>
+              <div className="hosts-enrollment-grid">
+                <label>
+                  {t("hosts.agent.port")}
+                  <input type="number" min={1} max={65535} value={agentPort} onChange={(event) => setAgentPort(Number(event.target.value))} />
+                </label>
+                <label>
+                  {t("hosts.agent.reportInterval")}
+                  <input type="number" min={30} max={86400} value={reportInterval} onChange={(event) => setReportInterval(Number(event.target.value))} />
+                </label>
+                <label className="hosts-enrollment-span-2">
+                  {t("hosts.enrollment.boundAddress")}
+                  <input value={boundAddress} placeholder="192.168.1.10" onChange={(event) => setBoundAddress(event.target.value)} />
+                </label>
+                <fieldset className="hosts-enrollment-groups hosts-enrollment-span-2">
+                  <legend>{t("hosts.enrollment.additionalGroups")}</legend>
+                  {groups.filter((group) => !group.managed).length ? groups.filter((group) => !group.managed).map((group) => (
+                    <label className="check" key={group.id}>
+                      <input
+                        type="checkbox"
+                        checked={groupIds.includes(group.id)}
+                        onChange={(event) =>
+                          setGroupIds((current) =>
+                            event.target.checked
+                              ? [...current, group.id]
+                              : current.filter((id) => id !== group.id),
+                          )
+                        }
+                      />
+                      {group.name}
+                    </label>
+                  )) : <small>{t("hosts.enrollment.noAdditionalGroups")}</small>}
+                </fieldset>
+                <label className="check hosts-enrollment-checkbox">
                   <input
                     type="checkbox"
-                    checked={groupIds.includes(group.id)}
-                    onChange={(event) =>
-                      setGroupIds((current) =>
-                        event.target.checked
-                          ? [...current, group.id]
-                          : current.filter((id) => id !== group.id),
-                      )
-                    }
+                    checked={applyHostname}
+                    onChange={(event) => setApplyHostname(event.target.checked)}
                   />
-                  {group.name}
+                  {t("hosts.enrollment.applyHostname")}
                 </label>
-              )) : <small>{t("hosts.enrollment.noAdditionalGroups")}</small>}
-            </fieldset>
+                <label className="check hosts-enrollment-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={requireApproval}
+                    onChange={(event) => setRequireApproval(event.target.checked)}
+                  />
+                  {t("hosts.enrollment.requireApproval")}
+                </label>
               </div>
-            </fieldset>
+            </section>
           </form>
         </Modal>
       )}
