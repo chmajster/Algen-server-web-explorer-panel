@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added the native **Cron Manager** module with transactional ownership of `/etc/cron.d/webnas`, read-only external cron discovery, granular RBAC and PAM/CSRF protection, durable audited mutations, server-timezone schedule validation, diagnostics and bounded redacted logs, plus a responsive Polish/English interface, tests, and operations documentation.
+
+- Added administrator-controlled scheduled NPM dependency remediation so automatic update checks can run `npm audit fix`, rebuild, validate, and deploy the frontend even when the WebNAS application version is already current.
+
 - Closed SQLite connections deterministically to prevent file-descriptor exhaustion, bound installer source archives to their recorded immutable revision, and moved every package operation progress view into an independent desktop window that can be moved, stacked, minimized, maximized, and restored.
 
 - Routed Docker Engine installation through the typed Containers Manager API with PAM confirmation, updated vulnerable frontend transitive dependencies, and allowed blue/green backend services to perform authorized host package-manager writes.
