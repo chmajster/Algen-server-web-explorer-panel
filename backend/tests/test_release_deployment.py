@@ -125,6 +125,32 @@ def test_failed_public_health_rolls_back_gateway_symlink_and_slot(monkeypatch, t
     assert links == ["new", "old"]
 
 
+def test_stale_release_cleanup_failure_does_not_fail_activation(monkeypatch, tmp_path: Path, capsys):
+    target = deployment(tmp_path)
+    stale = target.releases / "stale"
+    package = stale / "backend" / ".venv" / "lib" / "python3.11" / "site-packages" / "starlette"
+    package.mkdir(parents=True)
+    package.joinpath("__init__.py").write_text("", encoding="utf-8")
+    real_rmtree = release_module.shutil.rmtree
+    attempts = 0
+
+    def busy_rmtree(path, *args, **kwargs):
+        nonlocal attempts
+        if Path(path) == stale:
+            attempts += 1
+            raise OSError(39, "Directory not empty", str(package))
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(release_module.shutil, "rmtree", busy_rmtree)
+    monkeypatch.setattr(release_module.time, "sleep", lambda _: None)
+
+    target.cleanup_releases()
+
+    assert attempts == 2
+    assert stale.exists()
+    assert "release cleanup warning" in capsys.readouterr().err
+
+
 def test_public_health_remains_available_during_simulated_build_and_handover():
     class Health(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802

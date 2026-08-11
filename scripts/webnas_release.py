@@ -313,7 +313,24 @@ class Deployment:
         candidates = sorted((path for path in self.releases.iterdir() if path.is_dir()), key=lambda path: path.stat().st_mtime, reverse=True)
         for path in candidates:
             if path.resolve() not in keep and len(keep) >= 2:
-                shutil.rmtree(path)
+                # Cleanup happens only after the candidate is healthy and the
+                # public handover has completed. A package installer, virus
+                # scanner or another short-lived filesystem user can still
+                # race with rmtree and recreate a directory between scans.
+                # Retry once, then leave the stale release for a later update;
+                # cleanup must never turn a successful activation into a
+                # reported deployment failure.
+                for attempt in range(2):
+                    try:
+                        shutil.rmtree(path)
+                        break
+                    except FileNotFoundError:
+                        break
+                    except OSError as error:
+                        if attempt == 0:
+                            time.sleep(0.1)
+                            continue
+                        print(f"WebNAS release cleanup warning: could not remove {path.name}: {error}", file=sys.stderr)
 
     def deploy(self) -> None:
         self.update_step("switch_version", "running", "Walidacja i przełączanie na nową wersję.")
