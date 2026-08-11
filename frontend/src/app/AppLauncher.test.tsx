@@ -1,6 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { HardDrive, Settings } from "lucide-react";
 import { describe, expect, it, vi } from "vitest";
+import { ApiError } from "../api";
+import { powerClient } from "../modules/power/api/client";
 import { settingsFixture } from "../test/settings";
 import { AppLauncher } from "./AppLauncher";
 import type { AppDefinition } from "./types";
@@ -87,12 +89,24 @@ describe("Start menu", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(screen.getByRole("menuitem", { name: "shutdown.restart" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "shutdown.restart system" }));
     expect(restart).toHaveBeenCalledOnce();
     expect(shutdown).not.toHaveBeenCalled();
 
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("menuitem", { name: "shutdown.close" }));
     expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("treats a temporary nginx 502 as an expected application restart", async () => {
+    const close = vi.fn();
+    vi.spyOn(powerClient, "restartApplication").mockRejectedValueOnce(new ApiError("<html>502 Bad Gateway</html>", 502));
+    render(<AppLauncher apps={appList} startPinned={new Set()} desktopShortcuts={new Set()} taskbarPinned={new Set()} profile={settingsFixture({ permissions: ["system.restart"] })} t={t} onOpen={vi.fn()} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={close} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "shutdown.powerMenu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "shutdown.restart WebNAS" }));
+
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(screen.queryByText(/502 Bad Gateway/)).not.toBeInTheDocument();
   });
 });

@@ -1,12 +1,16 @@
 import { ArrowRight, LayoutGrid, LoaderCircle, LogOut, Monitor, PanelBottom, Pin, Power, RefreshCw, RotateCcw, Search, ShieldCheck, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { SettingsMe } from "../api";
+import { ApiError, type SettingsMe } from "../api";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { powerClient } from "../modules/power/api/client";
 import type { AppDefinition, AppId, RecentApp, Translate } from "./types";
 import "./app-launcher-power.css";
 
 type LauncherContext = { x: number; y: number; app: AppDefinition; portalTarget: Element | null };
+
+function isExpectedRestartDisconnect(error: unknown) {
+  return error instanceof TypeError || (error instanceof ApiError && [502, 504].includes(error.status));
+}
 
 export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned, recentApps = [], profile, t, onOpen, onOpenProfile, onToggleStartPin, onToggleDesktopShortcut, onToggleTaskbarPin, onShutdown, onRestart, onLogout, onClose }: {
   apps: AppDefinition[];
@@ -98,7 +102,14 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
       setPowerMenuOpen(false);
       onClose();
     } catch (error) {
-      setPowerError(error instanceof Error ? error.message : t("error.generic"));
+      if (isExpectedRestartDisconnect(error)) {
+        // nginx can lose the upstream before the restart endpoint sends its
+        // response. The global connection monitor handles reconnection.
+        setPowerMenuOpen(false);
+        onClose();
+      } else {
+        setPowerError(error instanceof Error ? error.message : t("error.generic"));
+      }
     } finally {
       setPowerBusy(null);
     }
