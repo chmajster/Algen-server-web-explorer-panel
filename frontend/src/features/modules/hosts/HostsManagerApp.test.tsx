@@ -187,6 +187,8 @@ describe("HostsManagerApp", () => {
     expect(screen.getByRole("option", { name: "Production" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Laboratory" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("option", { name: "Production" }));
+    expect(screen.getByRole("option", { name: "Production" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("option", { name: "Production" })).toHaveClass("selected");
     fireEvent.change(groupSearch, { target: { value: "edge" } });
     fireEvent.click(screen.getByRole("option", { name: "Edge nodes" }));
 

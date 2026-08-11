@@ -50,6 +50,7 @@ import {
   HostsDataTable,
   type HostsDataColumn,
 } from "./components/HostsDataTable";
+import "./hosts-group-picker.css";
 import "./hosts-installer.css";
 
 type Props = { permissions: string[]; initialOperationId?: string; t: Translate; toast: ToastFn; onDeepLinkClose?: () => void };
