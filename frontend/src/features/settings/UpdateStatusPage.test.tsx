@@ -1,7 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdateProgress } from "../../api";
+import { request } from "../../core/api/transport";
 import { UpdateCompletionDialog, UpdateStatusPage } from "./UpdateStatusPage";
+
+vi.mock("../../core/api/transport", () => ({ request: vi.fn() }));
 
 const t = (key: string) => key;
 
@@ -29,6 +32,11 @@ function progress(overrides: Partial<UpdateProgress> = {}): UpdateProgress {
 }
 
 describe("UpdateStatusPage", () => {
+  beforeEach(() => {
+    vi.mocked(request).mockReset();
+    vi.mocked(request).mockImplementation(() => new Promise(() => undefined));
+  });
+
   it("shows elapsed minutes and refreshes the timer every second", () => {
     const interval = vi.spyOn(window, "setInterval");
     const startedAt = Math.floor(Date.now() / 1000) - 60;
@@ -39,7 +47,8 @@ describe("UpdateStatusPage", () => {
     interval.mockRestore();
   });
 
-  it("renders pending, running, success, failed and skipped steps", () => {
+  it("renders pending, running, success, failed and skipped steps", async () => {
+    vi.mocked(request).mockResolvedValueOnce({ detailed_steps: true });
     const steps: NonNullable<UpdateProgress["steps"]> = [
       { id: "prepare", status: "success", message: "Ready", started_at: 10, finished_at: 11 },
       { id: "check_operations", status: "running", message: "Checking", started_at: 11, finished_at: null },
@@ -49,7 +58,7 @@ describe("UpdateStatusPage", () => {
     ];
     const { container } = render(<UpdateStatusPage value={progress({ state: "running", phase: "check_operations", steps })} connectionError={false} t={t} onRetry={vi.fn()} onReturn={vi.fn()} onLogin={vi.fn()} />);
 
-    expect(container.querySelectorAll(".update-stepper li")).toHaveLength(5);
+    await waitFor(() => expect(container.querySelectorAll(".update-stepper li")).toHaveLength(5));
     expect(container.querySelector(".update-stepper li.running")).toHaveAttribute("aria-current", "step");
     expect(container.querySelector(".update-stepper li.success")).toBeInTheDocument();
     expect(container.querySelector(".update-stepper li.failed")).toHaveTextContent("network error");
@@ -57,7 +66,8 @@ describe("UpdateStatusPage", () => {
     expect(container.querySelector(".update-stepper li.pending")).toBeInTheDocument();
   });
 
-  it("keeps the last step state visible during a temporary connection loss", () => {
+  it("keeps the last step state visible during a temporary connection loss", async () => {
+    vi.mocked(request).mockResolvedValueOnce({ detailed_steps: true });
     const steps: NonNullable<UpdateProgress["steps"]> = [
       { id: "build_frontend", status: "running", message: "Building", started_at: 10, finished_at: null },
     ];
@@ -66,13 +76,24 @@ describe("UpdateStatusPage", () => {
 
     rerender(<UpdateStatusPage value={progress({ state: "running", phase: "build_frontend", progress: 64, steps })} connectionError {...props} />);
 
-    expect(screen.getByText("Building")).toBeInTheDocument();
+    expect(await screen.findByText("Building")).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "64");
     expect(screen.getByText("updateStatus.reconnecting")).toBeInTheDocument();
 
     rerender(<UpdateStatusPage value={progress({ state: "completed", phase: "complete", running: false, progress: 100, steps: steps.map((step) => ({ ...step, status: "success", finished_at: 20 })) })} connectionError={false} {...props} />);
     expect(screen.getByText("updateStatus.state.completed")).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");
+  });
+
+  it("honors the policy that hides detailed update steps", async () => {
+    vi.mocked(request).mockResolvedValueOnce({ detailed_steps: false });
+    const steps: NonNullable<UpdateProgress["steps"]> = [
+      { id: "build_frontend", status: "running", message: "Building", started_at: 10, finished_at: null },
+    ];
+    const { container } = render(<UpdateStatusPage value={progress({ state: "running", phase: "build_frontend", steps })} connectionError={false} t={t} onRetry={vi.fn()} onReturn={vi.fn()} onLogin={vi.fn()} />);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith("/api/system/update-detail-policy"));
+    expect(container.querySelector(".update-stepper")).not.toBeInTheDocument();
   });
 
   it("shows queued and running operations while an update waits", () => {
