@@ -1,4 +1,5 @@
 import type { ModuleCapability, ModuleHealth, ModuleStatus, ModuleSummary, PackageModule } from "../../api";
+import type { Translate } from "../../app/types";
 import type { PackageAction } from "./types";
 
 export type PackageUiStatus = "not_installed" | "installed" | "running" | "stopped" | "needs_config" | "update_available" | "error";
@@ -6,6 +7,10 @@ export type PackageDisplayAction = PackageAction | "open" | "configure";
 
 const RUNNING_STATES = new Set(["active", "running", "started", "online"]);
 const ERROR_STATES = new Set(["error", "failed", "incompatible", "blocked"]);
+
+export function getPackageDisplayName(item: Pick<PackageModule, "id" | "manifest">, t: Translate): string {
+  return item.id === "docker" ? t("app.containers") : item.manifest.name;
+}
 
 function manifestCapabilities(item: PackageModule): ModuleCapability {
   return item.manifest.capabilities || {

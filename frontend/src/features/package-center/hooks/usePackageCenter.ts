@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type AppJob, type ModuleSummary, type PackageHistoryItem, type PackageSource } from "../../../api";
+import type { Translate } from "../../../app/types";
 import { useRefreshOnConnectionRestored } from "../../connection/ConnectionStatusMonitor";
 import type { PackageTab } from "../types";
-import { getPackageUiStatus, isPackageUpdateAvailable, mergePackageCatalog } from "../packageState";
+import { getPackageDisplayName, getPackageUiStatus, isPackageUpdateAvailable, mergePackageCatalog } from "../packageState";
 
-export function usePackageCenter() {
+export function usePackageCenter(t: Translate) {
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [jobs, setJobs] = useState<AppJob[]>([]);
@@ -60,13 +61,13 @@ export function usePackageCenter() {
 
   const visibleModules = useMemo(() => modules.filter((item) => {
     const needle = search.trim().toLowerCase();
-    if (needle && !`${item.manifest.name} ${item.manifest.description} ${item.manifest.long_description}`.toLowerCase().includes(needle)) return false;
+    if (needle && !`${getPackageDisplayName(item, t)} ${item.manifest.name} ${item.manifest.description} ${item.manifest.long_description}`.toLowerCase().includes(needle)) return false;
     if (category && item.manifest.category !== category) return false;
     if (status && getPackageUiStatus(item) !== status) return false;
     if (tab === "installed" && !item.state.installed) return false;
     if (tab === "updates" && !isPackageUpdateAvailable(item)) return false;
     return true;
-  }), [category, modules, search, status, tab]);
+  }), [category, modules, search, status, t, tab]);
 
   return { modules, visibleModules, categories, jobs, history, sources, loading, error, tab, search, category, status, setTab, setSearch, setCategory, setStatus, refresh, refreshModule };
 }

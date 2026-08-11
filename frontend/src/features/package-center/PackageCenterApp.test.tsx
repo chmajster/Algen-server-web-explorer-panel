@@ -81,6 +81,22 @@ describe("Package Center", () => {
     expect(configure).not.toHaveBeenCalled();
   });
 
+  it("shows Docker as the localized container manager throughout the Package Center", async () => {
+    const docker = summary("docker");
+    docker.manifest = { ...docker.manifest, name: "Docker" };
+    vi.mocked(api.apps).mockResolvedValue([docker]);
+    vi.mocked(api.modules).mockResolvedValue([docker]);
+    const translate = (key: string) => pl[key as keyof typeof pl] || key;
+
+    render(<PackageCenterApp t={translate} toast={vi.fn()} />);
+
+    expect(await screen.findByText("Menedżer kontenerów")).toBeInTheDocument();
+    expect(screen.queryByText("Docker")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(pl["package.search"]), { target: { value: "menedżer kontenerów" } });
+    fireEvent.click(screen.getByRole("button", { name: `${pl["package.details"]}: Menedżer kontenerów` }));
+    expect(screen.getByRole("dialog", { name: "Menedżer kontenerów" })).toBeInTheDocument();
+  });
+
   it("switches between tile and list views and remembers the selection", async () => {
     const first = render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
     await screen.findByText("Samba");

@@ -3,7 +3,7 @@ import type { Translate } from "../../app/types";
 import { Modal } from "../../components/Modal";
 import type { ModuleSummary } from "../../api";
 import type { PackageAction } from "./types";
-import { getPackageActions, getPackageInstalledVersion, getPackageUiStatus, normalizeServiceState, packageActionLabelKey } from "./packageState";
+import { getPackageActions, getPackageDisplayName, getPackageInstalledVersion, getPackageUiStatus, normalizeServiceState, packageActionLabelKey } from "./packageState";
 
 function List({ values }: { values: string[] }) {
   return values.length ? <ul>{values.map((value) => <li key={value}>{value}</li>)}</ul> : <span>—</span>;
@@ -20,13 +20,14 @@ export function PackageDetails({ item, t, onClose, onAction, onConfigure }: {
   const busy = Boolean(item.active_job && ["queued", "running", "waiting_for_confirmation"].includes(item.active_job.status));
   const actions = getPackageActions(item, { advanced: true }).filter((action) => !["open", "configure"].includes(action) || onConfigure);
   const logs = item.jobs.flatMap((job) => job.log_tail).slice(-50);
+  const displayName = getPackageDisplayName(item, t);
 
   function run(action: (typeof actions)[number]) {
     if (action === "open" || action === "configure") onConfigure?.();
     else onAction(action);
   }
 
-  return <Modal wide title={item.manifest.name} closeLabel={t("action.close")} onClose={onClose} footer={<>
+  return <Modal wide title={displayName} closeLabel={t("action.close")} onClose={onClose} footer={<>
     <button type="button" onClick={onClose}>{t("action.close")}</button>
     {actions.map((action, index) => <button type="button" disabled={busy} className={action === "uninstall" ? "button-danger" : index === 0 && action !== "stop" ? "button-primary" : ""} onClick={() => run(action)} key={action}>{t(!item.state.installed && action === "open" ? "store.install" : packageActionLabelKey(action))}</button>)}
   </>}>

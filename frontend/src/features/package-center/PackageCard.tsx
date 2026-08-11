@@ -1,7 +1,7 @@
 import { Box, Network, PackageCheck, RefreshCw, Server, Share2, ShieldAlert } from "lucide-react";
 import type { AppJob, ModuleSummary } from "../../api";
 import type { Translate } from "../../app/types";
-import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, isPackageUpdateAvailable, packageActionLabelKey, type PackageDisplayAction } from "./packageState";
+import { getPackageActions, getPackageDisplayName, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, isPackageUpdateAvailable, packageActionLabelKey, type PackageDisplayAction } from "./packageState";
 import type { PackageAction } from "./types";
 
 const KNOWN_OPERATIONS = new Set(["install", "reinstall", "update", "uninstall", "start", "stop", "restart"]);
@@ -37,6 +37,7 @@ export function PackageCard({ item, t, onDetails, onOpen, onAction, onShowJob }:
   const busy = Boolean(activeJob);
   const actions = getPackageActions(item).filter((action) => !["open", "configure"].includes(action) || onOpen);
   const titleId = `package-card-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const displayName = getPackageDisplayName(item, t);
 
   function run(action: PackageDisplayAction) {
     if (action === "open" || action === "configure") onOpen?.();
@@ -44,13 +45,13 @@ export function PackageCard({ item, t, onDetails, onOpen, onAction, onShowJob }:
   }
 
   return <article className={`package-card ui-status-${status}`} aria-labelledby={titleId} aria-busy={busy}>
-    <button className="package-card-main" type="button" onClick={onDetails} aria-label={`${t("package.details")}: ${item.manifest.name}`}>
+    <button className="package-card-main" type="button" onClick={onDetails} aria-label={`${t("package.details")}: ${displayName}`}>
       <span className="package-icon" aria-hidden="true">
         {item.blocked_by_proxmox ? <ShieldAlert /> : item.state.installed ? <PackageCheck /> : catalogIcon(item.manifest.icon)}
       </span>
       <span className="package-card-copy">
         <span className="package-card-heading">
-          <strong id={titleId}>{item.manifest.name}</strong>
+          <strong id={titleId}>{displayName}</strong>
           <span className={`package-status ui-status-${status}`} role="status">{t(`package.status.${status}`)}</span>
         </span>
         <small>{t(`package.category.${item.manifest.category}`)}</small>
