@@ -97,6 +97,32 @@ describe("Package Center", () => {
     expect(screen.getByRole("dialog", { name: "Menedżer kontenerów" })).toBeInTheDocument();
   });
 
+  it("installs Docker before allowing the container manager to open", async () => {
+    const docker = summary("docker");
+    docker.manifest = { ...docker.manifest, name: "Docker" };
+    vi.mocked(api.apps).mockResolvedValue([docker]);
+    vi.mocked(api.modules).mockResolvedValue([docker]);
+    const open = vi.fn();
+
+    const first = render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onOpenModule={open} />);
+    await screen.findByText("app.containers");
+    fireEvent.click(screen.getByRole("button", { name: "store.install" }));
+
+    await waitFor(() => expect(api.appPlan).toHaveBeenCalledWith("docker", "install", false));
+    expect(open).not.toHaveBeenCalled();
+    first.unmount();
+
+    const installed = summary("docker", { state: { installed: true, installed_version: "1.0.0", available_version: "1.0.0", update_available: false, requires_reboot: false }, services: { docker: "active" }, status: "running" });
+    installed.manifest = { ...installed.manifest, name: "Docker" };
+    vi.mocked(api.apps).mockResolvedValue([installed]);
+    vi.mocked(api.modules).mockResolvedValue([installed]);
+    render(<PackageCenterApp t={(key) => key} toast={vi.fn()} onOpenModule={open} />);
+
+    const card = (await screen.findByText("app.containers")).closest("article");
+    fireEvent.click(within(card!).getByRole("button", { name: "action.open" }));
+    expect(open).toHaveBeenCalledWith("docker");
+  });
+
   it("switches between tile and list views and remembers the selection", async () => {
     const first = render(<PackageCenterApp t={(key) => key} toast={vi.fn()} />);
     await screen.findByText("Samba");

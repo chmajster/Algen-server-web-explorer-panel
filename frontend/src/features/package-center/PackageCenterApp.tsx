@@ -47,7 +47,7 @@ export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSele
   }), [state.history.length, state.jobs, state.modules, state.sources.length]);
 
   function begin(item: ModuleSummary, nextAction: PackageAction) {
-    if (item.id === "docker" && onOpenModule) {
+    if (item.id === "docker" && item.state.installed && onOpenModule) {
       setSelected(null);
       window.setTimeout(() => onOpenModule("docker"), 0);
       return;
