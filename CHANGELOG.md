@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improved frontend dependency reporting in the installer with package-level funding and vulnerability details, while ordinary WebNAS updates now skip system repository metadata refreshes.
+
 - Stabilized frontend CI tests, renamed Docker to the localized **Containers Manager** throughout Package Center, and required Docker to be installed before the manager can be opened.
 
 - Added native Linux/WSL installer environment handling and administrator-controlled frontend dependency remediation: `--npm-audit-fix` and the Updates settings can run `npm audit fix`, rebuild, validate, and deploy the frontend even when WebNAS itself is current.
