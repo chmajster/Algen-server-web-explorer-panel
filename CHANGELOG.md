@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improved installer usability with short command-line aliases, visible source-download progress, and richer installation summaries covering the detected OS, kernel, architecture, package manager, environment, and runtimes.
+
 - Fixed installer prompts across interactive shells, piped execution, and consoles with unreliable `/dev/tty`; terminal fallback no longer hides prompts, and fresh installations no longer pause for a redundant initial confirmation.
 
 - Added the installable **Repozytoria systemowe** module: local and mirrored APT/RPM repositories, validated content-addressed uploads, versioned filters, durable sync jobs/schedules/live logs, immutable snapshots and comparisons, atomic Testing/Production promotion and rollback, DEB/RPM building, encrypted GPG keys and signed metadata, generated Hosts Manager configurations, hardened read-only HTTP delivery, granular RBAC, diagnostics, metadata/full backup and verified restore, lifecycle scripts, responsive dedicated UI, tests, and operational documentation.

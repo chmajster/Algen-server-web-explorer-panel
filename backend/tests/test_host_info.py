@@ -61,7 +61,7 @@ def test_collect_host_info_combines_safe_system_metrics(monkeypatch):
     assert result["memory"]["total"] == 16
     assert result["gpus"] == ["Example GPU"]
     assert result["storage"]["free"] == 60
-    assert result["application_version"] == "0.1.1"
+    assert result["application_version"] == "0.1.2"
 
 
 def test_host_info_endpoint_requires_system_status_permission(monkeypatch):
