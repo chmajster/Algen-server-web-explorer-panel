@@ -38,13 +38,19 @@ describe("UpdateStatusPage", () => {
   });
 
   it("shows elapsed minutes and refreshes the timer every second", () => {
-    const interval = vi.spyOn(window, "setInterval");
-    const startedAt = Math.floor(Date.now() / 1000) - 60;
-    render(<UpdateStatusPage value={progress({ state: "running", started_at: startedAt })} connectionError={false} t={t} onRetry={vi.fn()} onReturn={vi.fn()} onLogin={vi.fn()} />);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-11T12:00:00Z"));
+      const interval = vi.spyOn(window, "setInterval");
+      const startedAt = Date.now() / 1000 - 60;
+      render(<UpdateStatusPage value={progress({ state: "running", started_at: startedAt })} connectionError={false} t={t} onRetry={vi.fn()} onReturn={vi.fn()} onLogin={vi.fn()} />);
 
-    expect(screen.getByText("1 min 00 s")).toBeInTheDocument();
-    expect(interval).toHaveBeenCalledWith(expect.any(Function), 1000);
-    interval.mockRestore();
+      expect(screen.getByText("1 min 00 s")).toBeInTheDocument();
+      expect(interval).toHaveBeenCalledWith(expect.any(Function), 1000);
+      interval.mockRestore();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders pending, running, success, failed and skipped steps", async () => {

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type LogEntry, type LogSourcesResponse } from "../../api";
 import { LogsApp } from "./LogsApp";
 
@@ -50,6 +50,7 @@ describe("LogsApp", () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.stubGlobal("prompt", vi.fn().mockReturnValue("My errors"));
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
     vi.mocked(api.logSources).mockResolvedValue(sources);
     vi.mocked(api.logEntries).mockResolvedValue({ items: [entry], next_cursor: "next", has_more: true, direction: "older", limit: 300, truncated: false });
@@ -58,6 +59,8 @@ describe("LogsApp", () => {
     vi.mocked(api.logContainers).mockResolvedValue({ items: [{ id: "b".repeat(64), name: "proxy", image: "nginx", state: "running", status: "Up" }], status: "available" });
     vi.mocked(api.logSavedViews).mockResolvedValue({ items: [] });
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   it("renders detected sources, dynamic services, containers and virtualized entries", async () => {
     render(<LogsApp permissions={permissions} t={t} toast={vi.fn()} />);

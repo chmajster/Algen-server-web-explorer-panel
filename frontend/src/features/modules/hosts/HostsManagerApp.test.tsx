@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError, type HostsManagerSettings } from "../../../api";
 import { HostsManagerApp } from "./HostsManagerApp";
 
@@ -45,6 +45,7 @@ const baseSettings: HostsManagerSettings = {
 
 describe("HostsManagerApp", () => {
   beforeEach(() => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     vi.mocked(api.hostsManagerDashboard).mockResolvedValue({ total: 1, online: 1, offline: 0, unverified: 1, fingerprint_errors: 0, pending_approval: 1, ansible_available: 0, power_managed: 0, recent_operations: [], recent_errors: [] });
     vi.mocked(api.hostsManagerSettings).mockResolvedValue(baseSettings);
     vi.mocked(api.hostsManagerHosts).mockResolvedValue([{ id: "a".repeat(32), name: "node-01", hostname: "node-01", fqdn: "", address: "192.168.1.10", management_address: "", port: 22, ssh_user: "ops", credential_id: null, python_interpreter: "auto_silent", connection_type: "ssh", environment: "prod", location: "rack-1", description: "", tags: ["linux"], variables: {}, group_ids: [], approved: false, registration_status: "pending_approval", connection_status: "online", power_status: "unknown", enrollment_source: "manual", fingerprint_status: "unverified", last_error: "", managed_user_created: false, active: true, groups: [], facts: {}, created_at: 1, updated_at: 1 }]);
@@ -68,6 +69,8 @@ describe("HostsManagerApp", () => {
     vi.mocked(api.hostsManagerBackups).mockResolvedValue([]);
     vi.mocked(api.hostsManagerCapabilities).mockResolvedValue([]);
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   it("renders dashboard, filters hosts, and gates management controls", async () => {
     render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
