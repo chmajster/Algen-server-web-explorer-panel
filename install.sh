@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 SERVICE_NAME="webnas"
 REPO_URL="https://github.com/chmajster/Algen-server-web-explorer-panel"
-ARCHIVE_URL="${REPO_URL}/archive/refs/heads/main.tar.gz"
+ARCHIVE_URL=""
 RAW_INSTALL_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh"
 
 #TEST
@@ -48,6 +48,7 @@ USB_MOUNT_ROOT="/media/webnas-usb"
 USB_STATE_DIR="/run/webnas/usb-mounts"
 WORK_DIR=""
 SOURCE_DIR=""
+SOURCE_REVISION=""
 APT_TEMP_DIR=""
 APT_SOURCE_OPTIONS=()
 APT_METADATA_REFRESHED="no"
@@ -547,11 +548,11 @@ refresh_apt_metadata_for_installation() {
 ensure_download_tools() {
   local tool=""
   local missing=()
-  for tool in curl wget tar rsync ; do
+  for tool in curl wget tar rsync git ; do
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [[ ${#missing[@]} -eq 0 ]]; then
-    ok "Download, archive, and synchronization tools are available: curl, wget, tar, rsync"
+    ok "Download, archive, synchronization, and revision tools are available: curl, wget, tar, rsync, git"
     return
   fi
 
@@ -569,10 +570,18 @@ ensure_download_tools() {
       yum install -y "${missing[@]}"
       ;;
   esac
-  for tool in curl wget tar rsync; do
+  for tool in curl wget tar rsync git; do
     command -v "$tool" >/dev/null 2>&1 || fail "Required tool was not installed: ${tool}"
   done
   ok "Download, archive, and synchronization tools installed"
+}
+
+resolve_remote_source_revision() {
+  local revision=""
+  revision="$(git ls-remote "${REPO_URL}.git" refs/heads/main 2>/dev/null | awk 'NR == 1 {print $1}')"
+  [[ "$revision" =~ ^[0-9a-fA-F]{40,64}$ ]] || fail "Could not resolve the WebNAS main branch revision"
+  SOURCE_REVISION="$revision"
+  ARCHIVE_URL="${REPO_URL}/archive/${SOURCE_REVISION}.tar.gz"
 }
 
 setup_nodesource_repository() {
@@ -759,6 +768,11 @@ prepare_source() {
       warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
     else
       SOURCE_DIR="$script_dir"
+      if [[ -d "${SOURCE_DIR}/.git" ]]; then
+        SOURCE_REVISION="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
+      elif [[ -f "${SOURCE_DIR}/.webnas-revision" ]]; then
+        SOURCE_REVISION="$(head -n 1 "${SOURCE_DIR}/.webnas-revision" 2>/dev/null || true)"
+      fi
       ok "Using local repository: ${SOURCE_DIR}"
       update_step download_version completed
       return
@@ -766,6 +780,7 @@ prepare_source() {
   fi
 
   WORK_DIR="$(mktemp -d)"
+  resolve_remote_source_revision
   info "Downloading WebNAS source archive"
   if command -v curl >/dev/null 2>&1; then
     curl --fail --location --progress-bar --output "${WORK_DIR}/webnas.tar.gz" "$ARCHIVE_URL"
@@ -1168,15 +1183,8 @@ copy_application() {
     --exclude "frontend/node_modules" \
     --exclude "frontend/dist" \
     "$SOURCE_DIR/" "$INSTALL_DIR/"
-  local source_revision=""
-  if [[ -d "${SOURCE_DIR}/.git" ]] && command -v git >/dev/null 2>&1; then
-    source_revision="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
-  fi
-  if [[ -z "$source_revision" ]] && command -v git >/dev/null 2>&1; then
-    source_revision="$(git ls-remote "${REPO_URL}.git" refs/heads/main 2>/dev/null | awk 'NR == 1 {print $1}')"
-  fi
-  if [[ "$source_revision" =~ ^[0-9a-fA-F]{40,64}$ ]]; then
-    printf '%s\n' "$source_revision" > "${INSTALL_DIR}/.webnas-revision"
+  if [[ "$SOURCE_REVISION" =~ ^[0-9a-fA-F]{40,64}$ ]]; then
+    printf '%s\n' "$SOURCE_REVISION" > "${INSTALL_DIR}/.webnas-revision"
   else
     warn "Could not record the installed source revision; update status will request an initial refresh"
   fi

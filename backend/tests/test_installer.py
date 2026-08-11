@@ -67,6 +67,25 @@ def test_source_archive_download_displays_progress():
     assert "wget --progress=bar:force:noscroll --output-document=" in prepare_source
 
 
+def test_source_archive_and_recorded_revision_are_bound_to_the_same_commit(tmp_path):
+    revision = "a" * 40
+    result = _run_harness(
+        tmp_path,
+        f"""
+        git() {{ printf '{revision}\\trefs/heads/main\\n'; }}
+        resolve_remote_source_revision
+        [[ "$SOURCE_REVISION" == "{revision}" ]]
+        [[ "$ARCHIVE_URL" == "$REPO_URL/archive/{revision}.tar.gz" ]]
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+    installer = INSTALLER.read_text(encoding="utf-8")
+    copy_application = installer.split("copy_application() {", 1)[1].split("\n}", 1)[0]
+    assert 'printf \'%s\\n\' "$SOURCE_REVISION"' in copy_application
+    assert "git ls-remote" not in copy_application
+
+
 def test_installation_summary_includes_detected_environment(tmp_path):
     result = _run_harness(
         tmp_path,
@@ -591,7 +610,7 @@ def test_installer_bootstraps_only_missing_download_tools_before_source_download
               return 0
             fi
             case "$2" in
-              curl|tar|rsync) return 1 ;;
+              curl|tar|rsync|git) return 1 ;;
               wget) return 0 ;;
             esac
           fi
@@ -599,7 +618,7 @@ def test_installer_bootstraps_only_missing_download_tools_before_source_download
         }
         ensure_download_tools >/dev/null
         grep -qx 'refresh' "$calls"
-        grep -qx 'install -y curl tar rsync' "$calls"
+        grep -qx 'install -y curl tar rsync git' "$calls"
         ! grep -q 'wget' "$calls"
         """,
     )
