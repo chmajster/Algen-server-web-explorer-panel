@@ -788,9 +788,6 @@ handle_existing_installation() {
     UPDATE_CONFIG="yes"
     section "Installation check"
     ok "No existing installation found in ${INSTALL_DIR}"
-    if [[ "$ASSUME_YES" != "yes" ]]; then
-      confirm "Start new installation?" "yes" || fail "Installation cancelled"
-    fi
     return
   fi
 

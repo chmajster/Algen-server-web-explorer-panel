@@ -258,6 +258,21 @@ def test_existing_install_defaults_to_update_after_timeout_and_keeps_config(tmp_
     assert result.returncode == 0, result.stderr
 
 
+def test_new_install_does_not_pause_for_redundant_confirmation(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        INSTALL_DIR="$TEST_ROOT/app"
+        ASSUME_YES=no
+        confirm() { printf 'unexpected confirmation\n' >&2; return 1; }
+        handle_existing_installation >/dev/null
+        [[ "$ACTION" == "install" ]]
+        [[ "$UPDATE_CONFIG" == "yes" ]]
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_reinstall_creates_backup_and_removes_only_application_files(tmp_path):
     result = _run_harness(
         tmp_path,
