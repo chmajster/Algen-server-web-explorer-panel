@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Routed Docker Engine installation through the typed Containers Manager API with PAM confirmation, updated vulnerable frontend transitive dependencies, and allowed blue/green backend services to perform authorized host package-manager writes.
+
 - Renamed Package Center to Module Center and hid legacy MariaDB, Redis, and Nginx entries; hardened update runtime paths and scheduler database recovery; and limited backend service failures to three automatic retries spaced 30 seconds apart.
 
 - Improved frontend dependency reporting in the installer with package-level funding and vulnerability details, while ordinary WebNAS updates now skip system repository metadata refreshes.
