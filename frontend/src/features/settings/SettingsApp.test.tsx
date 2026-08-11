@@ -236,7 +236,14 @@ describe("settings application", () => {
     render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="updates" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
 
     expect(await screen.findByRole("button", { name: "settings.updateNow" })).toBeDisabled();
-    const npmUpdateButton = screen.getByRole("button", { name: "settings.updateNpmNow" });
+    const webnasSection = screen.getByRole("heading", { name: "settings.webnasUpdates" }).closest(".settings-card");
+    const npmSection = screen.getByRole("heading", { name: "settings.npmPackages" }).closest(".settings-card");
+    expect(webnasSection).not.toBeNull();
+    expect(npmSection).not.toBeNull();
+    expect(within(webnasSection as HTMLElement).queryByRole("button", { name: "settings.updateNpmNow" })).not.toBeInTheDocument();
+    expect(within(npmSection as HTMLElement).getByText("settings.npmPackagesFrontend")).toBeInTheDocument();
+    expect(within(npmSection as HTMLElement).getByText("settings.automaticNpmUpdates")).toBeInTheDocument();
+    const npmUpdateButton = within(npmSection as HTMLElement).getByRole("button", { name: "settings.updateNpmNow" });
     expect(npmUpdateButton).toBeEnabled();
     fireEvent.click(npmUpdateButton);
 
