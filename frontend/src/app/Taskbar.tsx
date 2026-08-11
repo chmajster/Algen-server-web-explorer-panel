@@ -67,7 +67,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
         if (moduleNames.has(moduleId) && !seen.has(key)) { result.push({ key, app: moduleApp, moduleId }); seen.add(key); }
       }
     }
-    for (const item of [...windows].sort((left, right) => left.zIndex - right.zIndex)) {
+    for (const item of windows) {
       const app = byId.get(item.app);
       const key = item.app === "module" && item.moduleId ? `module:${item.moduleId}` : item.app;
       if (app && !seen.has(key)) { result.push({ key, app, moduleId: item.app === "module" ? item.moduleId : undefined }); seen.add(key); }

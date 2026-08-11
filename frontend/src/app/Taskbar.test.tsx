@@ -26,6 +26,15 @@ describe("Windows-like taskbar", () => {
     expect(buttons[1]).toHaveClass("running", "active");
   });
 
+  it("keeps running apps in creation order when window focus changes", () => {
+    const settingsWindow: WindowInstance = { ...runningFile, id: "settings-2", app: "settings", zIndex: 11 };
+    const focusedFile = { ...runningFile, zIndex: 50 };
+    renderTaskbar({ pinned: new Set<"files" | "monitor">(), windows: [focusedFile, settingsWindow], activeId: focusedFile.id });
+
+    const buttons = within(screen.getByLabelText("desktop.runningApps")).getAllByRole("button");
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(["app.fileManager", "app.settings"]);
+  });
+
   it("opens a right-click menu with window operations and pinning", () => {
     const events = renderTaskbar();
     fireEvent.contextMenu(screen.getByRole("button", { name: "app.fileManager" }));
