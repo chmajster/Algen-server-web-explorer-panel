@@ -60,7 +60,6 @@
 .login-password-toggle:focus-visible { outline: .125rem solid var(--accent); outline-offset: .0625rem; }
 .login-password-toggle svg { width: 1.125rem; height: 1.125rem; }
 
-.login-error-slot { height: 3.5rem; display: flex; align-items: flex-start; }
 .login-error { width: 100%; display: flex; align-items: flex-start; gap: .5rem; padding: .625rem .75rem; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border-subtle)); border-radius: .625rem; color: color-mix(in srgb, var(--danger) 88%, #4d1118); background: color-mix(in srgb, var(--danger) 10%, var(--surface-elevated)); font-size: var(--font-size-xs); font-weight: 600; line-height: 1.4; }
 .login-error svg { width: 1rem; height: 1rem; flex: 0 0 auto; margin-top: .0625rem; }
 

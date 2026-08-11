@@ -75,6 +75,18 @@ describe("authentication initialization", () => {
     expect(onLogin).toHaveBeenCalledWith(expect.objectContaining({ username: "alice" }));
   });
 
+  it("adds error space only after authentication fails", async () => {
+    mocks.login.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    const { container } = render(<Login language="pl-PL" onLogin={vi.fn()} />);
+
+    expect(container.querySelector(".login-error")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Użytkownik Linux"), { target: { value: "alice" } });
+    fireEvent.change(screen.getByLabelText("Hasło"), { target: { value: "wrong" } });
+    fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Nieprawidłowa nazwa użytkownika lub hasło");
+  });
+
   it("does not render Login or Desktop while the initial session check is pending", () => {
     mocks.me.mockReturnValue(new Promise(() => undefined));
     const { container } = render(<App />);
