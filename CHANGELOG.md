@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Renamed Package Center to Module Center and hid legacy MariaDB, Redis, and Nginx entries; hardened update runtime paths and scheduler database recovery; and limited backend service failures to three automatic retries spaced 30 seconds apart.
+
 - Improved frontend dependency reporting in the installer with package-level funding and vulnerability details, while ordinary WebNAS updates now skip system repository metadata refreshes.
 
 - Stabilized frontend CI tests, renamed Docker to the localized **Containers Manager** throughout Package Center, and required Docker to be installed before the manager can be opened.
