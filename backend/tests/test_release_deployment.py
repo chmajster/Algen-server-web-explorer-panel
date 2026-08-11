@@ -73,6 +73,18 @@ def test_generated_and_legacy_services_retry_three_times_every_thirty_seconds(mo
         assert "StartLimitBurst=4" in unit
 
 
+def test_generated_services_allow_package_manager_writes(monkeypatch, tmp_path: Path):
+    target = deployment(tmp_path)
+    monkeypatch.setattr(release_module, "command", lambda *args, **kwargs: completed())
+
+    target.write_units()
+
+    for slot in release_module.SLOTS:
+        unit = (target.systemd_dir / target.unit_name(slot)).read_text(encoding="utf-8")
+        assert "ProtectSystem=false" in unit
+        assert "ProtectSystem=full" not in unit
+
+
 def test_blue_green_handover_validates_before_switch_and_drains_after_public_health(monkeypatch, tmp_path: Path):
     target = deployment(tmp_path)
     events: list[str] = []

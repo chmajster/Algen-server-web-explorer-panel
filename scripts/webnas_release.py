@@ -205,7 +205,9 @@ class Deployment:
                 "Group=root",
                 "NoNewPrivileges=false",
                 "PrivateTmp=true",
-                "ProtectSystem=full",
+                # Module installation and updates legitimately write below /etc,
+                # /usr and /var through the host package manager.
+                "ProtectSystem=false",
                 "ProtectHome=false",
                 "ProtectKernelTunables=true",
                 "ProtectKernelModules=true",
