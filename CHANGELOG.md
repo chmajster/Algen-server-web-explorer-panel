@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Stabilized frontend CI tests, renamed Docker to the localized **Containers Manager** throughout Package Center, and required Docker to be installed before the manager can be opened.
+
 - Added native Linux/WSL installer environment handling and administrator-controlled frontend dependency remediation: `--npm-audit-fix` and the Updates settings can run `npm audit fix`, rebuild, validate, and deploy the frontend even when WebNAS itself is current.
 
 - Clarified interactive prompt defaults, expanded USB automount failure reports with actionable system/udev diagnostics, and made `cifs-utils` a verified installer dependency so SMB/CIFS support cannot silently remain unavailable.

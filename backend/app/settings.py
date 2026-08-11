@@ -1864,7 +1864,7 @@ def admin_system_status(user: SessionUser = Depends(_current_user)):
     cfg = get_config()
     return {
         "service": "webnas",
-        "version": "0.1.4",
+        "version": "0.1.5",
         "port": cfg.server.port,
         "data_dir": cfg.paths.data_dir,
         "log_dir": cfg.paths.log_dir,
