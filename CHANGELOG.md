@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Closed SQLite connections deterministically to prevent file-descriptor exhaustion, bound installer source archives to their recorded immutable revision, and moved every package operation progress view into an independent desktop window that can be moved, stacked, minimized, maximized, and restored.
+
 - Routed Docker Engine installation through the typed Containers Manager API with PAM confirmation, updated vulnerable frontend transitive dependencies, and allowed blue/green backend services to perform authorized host package-manager writes.
 
 - Renamed Package Center to Module Center and hid legacy MariaDB, Redis, and Nginx entries; hardened update runtime paths and scheduler database recovery; and limited backend service failures to three automatic retries spaced 30 seconds apart.
