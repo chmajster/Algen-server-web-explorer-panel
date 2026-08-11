@@ -368,6 +368,7 @@ class ServiceAction(BaseModel):
 
 class UpdateAction(AdminSessionAction):
     update_config: bool = False
+    npm_audit_fix: bool = False
 
 
 class UpdateCompletionAck(BaseModel):
@@ -799,7 +800,7 @@ def _update_status() -> dict:
     }
 
 
-def _start_update_process(update_config: bool, *, actor: str) -> dict:
+def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: bool = False) -> dict:
     settings_dir = _auto_update_path().parent
     installer = settings_dir / "update-install.sh"
     download = subprocess.run(
@@ -824,6 +825,8 @@ def _start_update_process(update_config: bool, *, actor: str) -> dict:
     command = [_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
     if update_config:
         command.append("--update-config")
+    if npm_audit_fix:
+        command.append("--npm-audit-fix")
     progress_path = _update_progress_path()
     runner = settings_dir / "update-runner.sh"
     started_at = time.time()
@@ -960,7 +963,7 @@ def _safe_blockers(blockers: list[dict]) -> list[dict]:
     ]
 
 
-def _request_update(*, actor: str, update_config: bool, status: dict | None = None) -> dict:
+def _request_update(*, actor: str, update_config: bool, status: dict | None = None, npm_audit_fix: bool = False) -> dict:
     status = status or _update_status()
     now = time.time()
     log_path = Path(get_config().paths.log_dir) / "update.log"
@@ -993,6 +996,7 @@ def _request_update(*, actor: str, update_config: bool, status: dict | None = No
                 "started_at": None,
                 "finished_at": None,
                 "update_config": update_config,
+                "npm_audit_fix": npm_audit_fix,
                 "previous_version": status.get("installed_version"),
                 "target_version": status.get("available_version"),
                 "current_version": status.get("installed_version"),
@@ -1078,7 +1082,11 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
         write_update_request(request_state)
 
     try:
-        result = _start_update_process(bool(request_state.get("update_config")), actor=str(request_state.get("actor") or "system"))
+        result = _start_update_process(
+            bool(request_state.get("update_config")),
+            actor=str(request_state.get("actor") or "system"),
+            npm_audit_fix=bool(request_state.get("npm_audit_fix")),
+        )
     except Exception as error:  # noqa: BLE001 - failure is persisted for restart-safe status.
         message = str(error.detail) if isinstance(error, HTTPException) else str(error)
         with coordination_lock():
@@ -1290,7 +1298,7 @@ def _update_progress() -> dict:
     }
 
 
-def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_config: bool | None = None) -> dict:
+def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_config: bool | None = None, npm_audit_fix: bool = False) -> dict:
     with auto_update_lock:
         active_request = read_update_request()
         if active_request.get("state") in {"waiting", "preparing", "running"}:
@@ -1326,7 +1334,7 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
                 if force:
                     raise HTTPException(503, state["last_error"])
                 return {"ok": False, "updated": False, "status": status, "error": state["last_error"]}
-            if not status["update_available"]:
+            if not status["update_available"] and not (force and npm_audit_fix):
                 state.update({"last_error": "", "next_check": now + interval * 3600})
                 _write_auto_update_state(state)
                 return {"ok": True, "updated": False, "status": status, **(_record_up_to_date(actor=actor, status=status) if force else {})}
@@ -1338,6 +1346,7 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
                 actor=actor,
                 update_config=bool(state.get("update_config") if update_config is None else update_config),
                 status=status,
+                npm_audit_fix=npm_audit_fix,
             )
             state.update(
                 {
@@ -2047,9 +2056,9 @@ def admin_updates_download(payload: UpdateAction, request: Request, user: Sessio
     status = _update_status()
     if not status.get("available", True):
         raise HTTPException(503, status.get("error") or "Update status unavailable")
-    if not status.get("update_available"):
+    if not status.get("update_available") and not payload.npm_audit_fix:
         return {"ok": True, "updated": False, "status": status, **_record_up_to_date(actor=user.username, status=status)}
-    return {"ok": True, "updated": True, "status": status, **_request_update(actor=user.username, update_config=payload.update_config, status=status)}
+    return {"ok": True, "updated": True, "status": status, **_request_update(actor=user.username, update_config=payload.update_config, status=status, npm_audit_fix=payload.npm_audit_fix)}
 
 
 @router.get("/api/admin/system/updates/progress")
@@ -2168,7 +2177,7 @@ def admin_auto_update_patch(payload: AutoUpdatePatch, request: Request, user: Se
 @router.post("/api/admin/system/updates/auto/run")
 def admin_auto_update_run(payload: UpdateAction, request: Request, user: SessionUser = Depends(_current_user)):
     _require_admin_session(user, request, "run_auto_update", "updates.apply")
-    result = _run_auto_update_once(actor=user.username, force=True, update_config=payload.update_config)
+    result = _run_auto_update_once(actor=user.username, force=True, update_config=payload.update_config, npm_audit_fix=payload.npm_audit_fix)
     return result
 
 

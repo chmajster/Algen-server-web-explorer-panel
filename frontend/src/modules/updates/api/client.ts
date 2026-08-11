@@ -196,10 +196,10 @@ export const updatesClient = {
     await request<unknown>("/api/system/update-status"),
   ),
 
-  downloadUpdates: async (update_config = false) => normalizeStart(
+  downloadUpdates: async (update_config = false, npm_audit_fix = false) => normalizeStart(
     await request<unknown>("/api/admin/system/updates/download", {
       method: "POST",
-      body: JSON.stringify({ update_config }),
+      body: JSON.stringify({ update_config, npm_audit_fix }),
     }),
   ),
 
@@ -219,10 +219,10 @@ export const updatesClient = {
     }),
   ),
 
-  runAutoUpdate: async (update_config = false) => normalizeStart(
+  runAutoUpdate: async (update_config = false, npm_audit_fix = false) => normalizeStart(
     await request<unknown>("/api/admin/system/updates/auto/run", {
       method: "POST",
-      body: JSON.stringify({ update_config }),
+      body: JSON.stringify({ update_config, npm_audit_fix }),
     }),
   ),
 

@@ -221,10 +221,28 @@ describe("settings application", () => {
     expect(availableUpdate).toHaveClass("update-available-cta");
     expect(screen.getByText("settings.clickToUpdate")).toBeInTheDocument();
     fireEvent.click(availableUpdate);
-    await waitFor(() => expect(run).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(run).toHaveBeenCalledWith(false, false));
     await waitFor(() => expect(progress).toHaveBeenCalled());
     expect(window.location.pathname).toBe("/update-status");
     expect(screen.queryByRole("dialog", { name: "settings.updateProgressTitle" })).not.toBeInTheDocument();
+  });
+
+  it("can rebuild the current frontend with npm audit fixes", async () => {
+    vi.spyOn(api, "checkUpdates").mockResolvedValue({ branch: "main", local: "a".repeat(40), remote: "a".repeat(40), update_available: false, available: true });
+    vi.spyOn(api, "autoUpdate").mockResolvedValue({ check_enabled: true, enabled: false, interval_hours: 12, update_config: false, last_checked: null, last_run: null, last_error: "", last_pid: null, next_check: null });
+    vi.spyOn(api, "updateProgress").mockResolvedValue({ state: "idle", running: false, pid: null, exit_code: null, started_at: null, finished_at: null, log: "", lines: [] });
+    const run = vi.spyOn(api, "runAutoUpdate").mockResolvedValue({ ok: true, id: "audit-1", state: "running", running: true, pid: 123, exit_code: null, started_at: 10, finished_at: null, log: "update.log", lines: [], updated: true });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<SettingsAppView settings={settingsFixture({ is_admin: true })} initialSection="updates" t={t} toast={vi.fn()} onSettingsChange={vi.fn().mockResolvedValue(undefined)} onOpenApp={vi.fn()} />);
+
+    const updateButton = await screen.findByRole("button", { name: "settings.updateNow" });
+    expect(updateButton).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("settings.npmAuditFix"));
+    expect(updateButton).toBeEnabled();
+    fireEvent.click(updateButton);
+
+    await waitFor(() => expect(run).toHaveBeenCalledWith(false, true));
+    expect(window.confirm).toHaveBeenCalledWith("settings.confirmUpdateNowWithNpmAuditFix");
   });
 
   it("shows how many minutes ago updates were checked and refreshes the value", async () => {

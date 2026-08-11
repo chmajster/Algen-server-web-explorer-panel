@@ -327,7 +327,7 @@ def test_update_starts_in_a_separate_durable_systemd_unit(monkeypatch, tmp_path)
 
     monkeypatch.setattr(settings.subprocess, "run", run)
 
-    result = settings._start_update_process(False, actor="admin")
+    result = settings._start_update_process(False, actor="admin", npm_audit_fix=True)
 
     launch = next(args for args in calls if args[0] == "systemd-run")
     assert "--collect" in launch
@@ -336,7 +336,22 @@ def test_update_starts_in_a_separate_durable_systemd_unit(monkeypatch, tmp_path)
     assert result["pid"] == 456
     runner = (tmp_path / "data" / "settings" / "update-runner.sh").read_text(encoding="utf-8")
     assert "exec >>" in runner
+    assert "--npm-audit-fix" in runner
     assert '"running":false' in runner
+
+
+def test_manual_npm_audit_fix_runs_even_when_webnas_is_current(monkeypatch):
+    state = settings._default_auto_update_state()
+    started: list[dict] = []
+    monkeypatch.setattr(settings, "_read_auto_update_state", lambda: dict(state))
+    monkeypatch.setattr(settings, "_write_auto_update_state", lambda value: value)
+    monkeypatch.setattr(settings, "_update_status", lambda: {"available": True, "update_available": False})
+    monkeypatch.setattr(settings, "_request_update", lambda **kwargs: started.append(kwargs) or {"state": "running", "pid": 123})
+
+    result = settings._run_auto_update_once(actor="admin", force=True, npm_audit_fix=True)
+
+    assert result["updated"] is True
+    assert started[0]["npm_audit_fix"] is True
 
 
 def test_update_progress_reconnects_to_active_systemd_unit(monkeypatch, tmp_path):
