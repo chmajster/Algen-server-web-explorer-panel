@@ -52,6 +52,7 @@ import {
 } from "./components/HostsDataTable";
 import "./hosts-group-picker.css";
 import "./hosts-installer.css";
+import "./hosts-search-select.css";
 
 type Props = { permissions: string[]; initialOperationId?: string; t: Translate; toast: ToastFn; onDeepLinkClose?: () => void };
 const status: ModuleStatus = {
@@ -1577,6 +1578,87 @@ function OnboardingWizard({
   </section>;
 }
 
+type SearchSelectOption = { value: string; label: string; search?: string };
+
+function HostsSearchSelect({
+  label,
+  value,
+  options,
+  onChange,
+  searchPlaceholder,
+  emptyText,
+}: {
+  label: string;
+  value: string;
+  options: SearchSelectOption[];
+  onChange: (value: string) => void;
+  searchPlaceholder: string;
+  emptyText: string;
+}) {
+  const listId = useId();
+  const inputId = useId();
+  const selectedLabel = options.find((option) => option.value === value)?.label || "";
+  const [query, setQuery] = useState(selectedLabel);
+  const [open, setOpen] = useState(false);
+  const [filtering, setFiltering] = useState(false);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visibleOptions = options.filter((option) => !filtering || `${option.label} ${option.search || ""}`.toLocaleLowerCase().includes(normalizedQuery));
+
+  useEffect(() => {
+    if (!open) setQuery(selectedLabel);
+  }, [open, selectedLabel]);
+
+  function close() {
+    setOpen(false);
+    setFiltering(false);
+    setQuery(selectedLabel);
+  }
+
+  function select(option: SearchSelectOption) {
+    onChange(option.value);
+    setQuery(option.label);
+    setFiltering(false);
+    setOpen(false);
+  }
+
+  return <div className="hosts-search-select">
+    <label htmlFor={inputId}>{label}</label>
+    <div className="hosts-search-select-control">
+      <Search aria-hidden="true" />
+      <input
+        id={inputId}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-controls={listId}
+        aria-expanded={open}
+        autoComplete="off"
+        required
+        value={query}
+        placeholder={searchPlaceholder}
+        onFocus={(event) => { setOpen(true); setFiltering(false); event.currentTarget.select(); }}
+        onBlur={() => window.setTimeout(close, 0)}
+        onChange={(event) => { setQuery(event.target.value); setFiltering(true); setOpen(true); }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") { event.preventDefault(); close(); }
+          if (event.key === "Enter" && open && visibleOptions.length === 1) { event.preventDefault(); select(visibleOptions[0]); }
+        }}
+      />
+      <ChevronDown aria-hidden="true" />
+    </div>
+    {open && <div className="hosts-search-select-options" id={listId} role="listbox" aria-label={label}>
+      {visibleOptions.length ? visibleOptions.map((option) => <button
+        type="button"
+        role="option"
+        aria-selected={option.value === value}
+        className={option.value === value ? "selected" : undefined}
+        key={option.value}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => select(option)}
+      ><span>{option.label}</span>{option.value === value && <Check aria-hidden="true" />}</button>) : <p>{emptyText}</p>}
+    </div>}
+  </div>;
+}
+
 function Enrollment({
   items,
   apmids,
@@ -1656,6 +1738,8 @@ function Enrollment({
   const validEnvironment = environments.some((item) => item.active && item.id === environmentId);
   const validPattern = !patternId || patterns.some((item) => item.active && item.id === patternId);
   const validExpiration = mode === "permanent" || (Number.isInteger(minutes) && minutes > 0 && minutes <= 525600);
+  const apmidOptions = apmids.filter((item) => item.active).map((item) => ({ value: item.id, label: item.code, search: item.description }));
+  const environmentOptions = environments.filter((item) => item.active).map((item) => ({ value: item.id, label: item.name, search: `${item.slug} ${item.description}` }));
   const visible = items.filter(
     (item) =>
       !filter ||
@@ -1942,10 +2026,13 @@ function Enrollment({
                 onChange={(event) => setMinutes(Number(event.target.value))}
               />
             </label>}
-            <label>
-              {t("hosts.host.environment")}
-              <select required value={environmentId} onChange={(event) => {
-                const id = event.target.value;
+            <HostsSearchSelect
+              label={t("hosts.host.environment")}
+              value={environmentId}
+              options={environmentOptions}
+              searchPlaceholder={t("action.search")}
+              emptyText={t("common.none")}
+              onChange={(id) => {
                 setEnvironmentId(id);
                 const selected = environments.find((item) => item.id === id);
                 setPatternId(selected?.default_hostname_pattern_id || settings?.default_hostname_pattern_id || "");
@@ -1953,16 +2040,9 @@ function Enrollment({
                   setAgentPort(selected.default_agent_port);
                   setReportInterval(selected.report_interval_seconds);
                 }
-              }}>
-                {environments.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-            </label>
-            <label>
-              {t("hosts.apmid.code")}
-              <select required value={apmidId} onChange={(event) => setApmidId(event.target.value)}>
-                {apmids.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.code}</option>)}
-              </select>
-            </label>
+              }}
+            />
+            <HostsSearchSelect label={t("hosts.apmid.code")} value={apmidId} options={apmidOptions} searchPlaceholder={t("action.search")} emptyText={t("common.none")} onChange={setApmidId} />
             <label>
               {t("hosts.host.location")}
               <input

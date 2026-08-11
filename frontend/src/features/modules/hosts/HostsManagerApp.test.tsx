@@ -291,6 +291,41 @@ describe("HostsManagerApp", () => {
     expect(typeof vi.mocked(api.createHostsManagerEnrollmentToken).mock.calls[0][0].expires_minutes).toBe("number");
   });
 
+  it("filters and selects APMID and environment before generating a script", async () => {
+    vi.mocked(api.hostsManagerApmids).mockResolvedValue([
+      { id: "apmid-app", code: "APP", description: "Application", active: true, created_at: 1, updated_at: 1, created_by: "admin", updated_by: "admin", environment_groups: [] },
+      { id: "apmid-ops", code: "OPS", description: "Operations", active: true, created_at: 1, updated_at: 1, created_by: "admin", updated_by: "admin", environment_groups: [] },
+    ]);
+    vi.mocked(api.hostsManagerEnvironments).mockResolvedValue([
+      { id: "default", name: "Default", slug: "default", description: "", color: "#187eb1", default_hostname_pattern_id: null, default_credential_id: null, default_agent_port: 9443, report_interval_seconds: 600, active: true, host_count: 0, created_at: 1, updated_at: 1 },
+      { id: "staging", name: "Staging", slug: "staging", description: "Tests", color: "#187eb1", default_hostname_pattern_id: null, default_credential_id: null, default_agent_port: 9555, report_interval_seconds: 900, active: true, host_count: 0, created_at: 1, updated_at: 1 },
+    ]);
+    vi.mocked(api.createHostsManagerEnrollmentToken).mockResolvedValue({ id: "token", hostname_pattern: "SCL000001", assigned_hostname: "SCL000001", bootstrap_os: "linux", apply_hostname: true, expires_at: 100, used: false, command: "curl command" });
+    render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.installer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /hosts.installer.script/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /hosts.enrollment.generate/ }));
+
+    const apmid = screen.getByRole("combobox", { name: "hosts.apmid.code" });
+    fireEvent.focus(apmid);
+    fireEvent.change(apmid, { target: { value: "op" } });
+    expect(screen.queryByRole("option", { name: "APP" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "OPS" }));
+
+    const environment = screen.getByRole("combobox", { name: "hosts.host.environment" });
+    fireEvent.focus(environment);
+    fireEvent.change(environment, { target: { value: "stag" } });
+    expect(screen.queryByRole("option", { name: "Default" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Staging" }));
+
+    const generateButtons = screen.getAllByRole("button", { name: "hosts.enrollment.generate" });
+    fireEvent.click(generateButtons[generateButtons.length - 1]);
+    await waitFor(() => expect(api.createHostsManagerEnrollmentToken).toHaveBeenCalledWith(expect.objectContaining({
+      apmid_id: "apmid-ops", environment_id: "staging", agent_port: 9555, report_interval_seconds: 900,
+    })));
+  });
+
   it("shows the field name from a controlled enrollment API error", async () => {
     const toast = vi.fn();
     vi.mocked(api.createHostsManagerEnrollmentToken).mockRejectedValue(
