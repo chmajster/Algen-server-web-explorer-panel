@@ -704,3 +704,477 @@ body,
     grid-column: 1;
   }
 }
+
+/* Every application owns its scrolling; content must never widen the desktop. */
+.window-content :where(main, section, article, header, footer, nav, form, fieldset, dl, ol, ul) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.window-content :where(img, video, canvas, svg:not([width])) {
+  max-width: 100%;
+}
+
+.window-content :where(
+  .module-table-wrap,
+  .managed-table-wrap,
+  .cron-table-wrap,
+  .identity-table-wrap,
+  .identity-role-matrix,
+  .monitor-table-wrap,
+  .docker-table-wrap,
+  .network-routing-table,
+  .package-history,
+  .logs-list
+) {
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+}
+
+@container app-window (max-width: 47.5rem) {
+  .desktop :where(.feature-header, .module-header, .docker-manager-header, .cron-header, .activity-header) {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .desktop :where(.feature-header, .module-header, .docker-manager-header, .cron-header, .activity-header) > :last-child {
+    max-width: 100%;
+  }
+
+  .module-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .module-form-grid label:not(.check) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+    text-align: left;
+  }
+
+  .module-form-grid label:not(.check) > :where(input, select, textarea, div, fieldset, small),
+  .module-form-grid label.check {
+    grid-column: 1;
+  }
+
+  .desktop :where(
+    .card-grid,
+    .settings-cards,
+    .module-skeleton,
+    .admin-content-grid,
+    .monitor-storage-grid,
+    .monitor-network-grid,
+    .network-interface-grid,
+    .network-dns-grid,
+    .package-detail-grid,
+    .package-source-form,
+    .docker-dashboard-grid,
+    .hosts-manager-app .hosts-dashboard-columns,
+    .hosts-manager-app .hosts-dashboard-activity-grid
+  ) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop :where(.data-row, .transfer-summary) {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .desktop .data-row strong {
+    min-width: 0;
+  }
+
+  .identity-workspace.has-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .identity-workspace.has-details .identity-list-pane {
+    display: none;
+  }
+
+  .identity-details {
+    border-left: 0;
+  }
+
+  /* Cron used viewport media queries; mirror them against the actual window. */
+  .cron-header p,
+  .cron-header .cron-job-state {
+    display: none;
+  }
+
+  .cron-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0.5rem;
+  }
+
+  .cron-content {
+    padding: 0.625rem;
+  }
+
+  .cron-toolbar {
+    align-items: stretch;
+  }
+
+  .cron-search {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+
+  .cron-toolbar > label:not(.cron-search) {
+    min-width: 0;
+    flex: 1 1 9rem;
+  }
+
+  .cron-toolbar > .button-primary {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .cron-table-wrap {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .cron-table-wrap table,
+  .cron-table-wrap tbody {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .cron-table-wrap thead {
+    display: none;
+  }
+
+  .cron-table-wrap tr {
+    display: grid;
+    gap: 0.3125rem;
+    padding: 0.625rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-panel);
+    background: var(--surface-elevated);
+  }
+
+  .cron-table-wrap td {
+    display: grid;
+    grid-template-columns: minmax(6.5rem, 34%) minmax(0, 1fr);
+    padding: 0;
+    border: 0;
+  }
+
+  .cron-table-wrap td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+  }
+
+  .cron-table-wrap td code {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .cron-form fieldset,
+  .cron-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cron-form .span-2 {
+    grid-column: 1;
+  }
+
+  .cron-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cron-details dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cron-details section {
+    padding: 0.75rem 0 0;
+    border-top: 1px solid var(--border-subtle);
+    border-left: 0;
+  }
+}
+
+@container app-window (max-width: 40rem) {
+  .module-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .module-navigation {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.25rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    scrollbar-width: thin;
+  }
+
+  .module-navigation button {
+    width: auto;
+    min-width: max-content;
+    min-height: 2.375rem;
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    padding: 0 0.625rem;
+  }
+
+  .module-navigation button span {
+    display: inline;
+  }
+
+  .module-navigation button.active {
+    box-shadow: inset 0 -0.125rem var(--accent);
+  }
+
+  .module-content {
+    padding: 0.5rem;
+  }
+
+  .module-health-grid,
+  .summary-grid,
+  .monitor-overview-grid,
+  .network-summary-grid,
+  .docker-metric-grid,
+  .activity-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .module-section-toolbar > :where(input, select, label),
+  .cron-log-toolbar > :where(input, select),
+  .identity-toolbar > .identity-search,
+  .logs-toolbar-search-group,
+  .network-toolbar .network-search {
+    width: 100%;
+    min-width: 0;
+    flex-basis: 100%;
+  }
+
+  .samba-shares > header,
+  .samba-sessions > header,
+  .samba-global-config > header,
+  .module-backups > header,
+  .osr-panel > header,
+  .hosts-manager-app .hosts-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hosts-manager-app .hosts-settings-workspace,
+  .hosts-manager-app .hosts-discovery-form,
+  .hosts-manager-app .hosts-settings-form .module-form-grid,
+  .hosts-manager-app .hosts-detail-hero > dl,
+  .hosts-enrollment-dialog .hosts-enrollment-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hosts-manager-app .hosts-settings-nav {
+    position: static;
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    overflow-x: auto;
+  }
+
+  .hosts-manager-app .hosts-installer-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ansible-panel > header,
+  .package-source-list header,
+  .package-source-list footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@container app-window (max-width: 30rem) {
+  .module-health-grid,
+  .summary-grid,
+  .monitor-overview-grid,
+  .network-summary-grid,
+  .docker-metric-grid,
+  .activity-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop :where(.feature-header, .module-header, .docker-manager-header, .cron-header, .activity-header) {
+    display: grid;
+  }
+
+  .desktop :where(.feature-header, .module-header, .docker-manager-header, .cron-header, .activity-header) > :last-child {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .cron-fields,
+  .monitor-pairs,
+  .monitor-network-history,
+  .osr-repository-card dl,
+  .package-detail-grid dl,
+  .properties-grid,
+  .transfer-details dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cron-table-wrap td {
+    grid-template-columns: minmax(5.75rem, 38%) minmax(0, 1fr);
+  }
+
+  .identity-history article {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .identity-history article > :where(span, time) {
+    grid-column: 2;
+  }
+}
+
+@container package-center (max-width: 48rem) {
+  .package-center-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .package-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.25rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .package-tabs button {
+    width: auto;
+    min-width: max-content;
+    grid-template-columns: 1rem auto auto;
+  }
+
+  .package-toolbar,
+  .package-grid,
+  .package-detail-grid,
+  .package-source-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .package-search {
+    grid-column: auto;
+  }
+
+  .package-toolbar-filters,
+  .package-toolbar-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 920px) {
+  html,
+  body,
+  #root,
+  .desktop {
+    width: 100dvw;
+    min-width: 0;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .desktop .desktop-surface {
+    inset: env(safe-area-inset-top) env(safe-area-inset-right) calc(var(--taskbar-height) + env(safe-area-inset-bottom)) env(safe-area-inset-left);
+  }
+
+  .desktop > .taskbar {
+    min-height: calc(var(--taskbar-height) + env(safe-area-inset-bottom));
+    padding-right: max(0.25rem, env(safe-area-inset-right));
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: max(0.25rem, env(safe-area-inset-left));
+  }
+
+  .desktop :where(.app-launcher, .notification-center, .actions-center, .calendar-flyout, .context-menu) {
+    max-width: calc(100dvw - env(safe-area-inset-left) - env(safe-area-inset-right));
+    max-height: calc(100dvh - var(--taskbar-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 600px) {
+  .desktop :where(
+    button,
+    a.button,
+    [role="button"],
+    summary,
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+    select
+  ) {
+    min-height: 2.75rem;
+  }
+
+  .desktop :where(label:has(input[type="checkbox"]), label:has(input[type="radio"])) {
+    min-height: 2.75rem;
+  }
+
+  .desktop :where(.file-toolbar, .package-toolbar, .docker-toolbar, .docker-containers-toolbar, .identity-toolbar, .logs-toolbar, .cron-toolbar, .cron-log-toolbar, .network-toolbar) {
+    gap: 0.375rem;
+  }
+
+  .desktop :where(.file-toolbar, .package-toolbar, .docker-toolbar, .docker-containers-toolbar, .identity-toolbar, .logs-toolbar, .cron-toolbar, .cron-log-toolbar, .network-toolbar) :where(input, select) {
+    min-width: 0;
+  }
+
+  .modal-footer {
+    flex-wrap: nowrap;
+  }
+
+  .modal-footer > button {
+    min-width: 0;
+    flex: 1 1 0;
+    padding-inline: 0.5rem;
+  }
+
+  .desktop .network-modal-backdrop,
+  .docker-wizard-backdrop,
+  .ansible-details-backdrop {
+    padding: 0;
+  }
+
+  .desktop .network-modal,
+  .docker-wizard,
+  .ansible-details,
+  .modal-panel.update-progress-dialog,
+  .modal-panel.update-completion-dialog,
+  .modal-panel.modal-wide.hosts-enrollment-dialog {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-width: 0;
+    border-radius: 0;
+  }
+
+  .desktop .network-modal,
+  .docker-wizard,
+  .ansible-details {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+
+  .desktop .network-modal :where(form, .docker-wizard-body),
+  .docker-wizard-body,
+  .ansible-details > main {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .desktop .toasts {
+    right: max(0.375rem, env(safe-area-inset-right));
+    bottom: calc(var(--taskbar-height) + env(safe-area-inset-bottom) + 0.375rem);
+    left: max(0.375rem, env(safe-area-inset-left));
+  }
+
+  .desktop .toasts > div {
+    max-width: 100%;
+  }
+}
