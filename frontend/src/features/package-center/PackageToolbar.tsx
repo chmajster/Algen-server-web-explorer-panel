@@ -22,7 +22,7 @@ type PackageToolbarProps = {
 };
 
 export function PackageToolbar({ search, category, status, categories, updates, updatesActive, loading, view, showView, t, onSearch, onCategory, onStatus, onUpdates, onRefresh, onView }: PackageToolbarProps) {
-  const statuses = ["not_installed", "installed", "running", "stopped", "needs_config", "update_available", "error"];
+  const statuses = ["not_installed", "installed", "running", "stopped", "error"];
   return <header className="package-toolbar" aria-label={t("package.filters")}>
     <label className="package-search">
       <Search aria-hidden="true" />

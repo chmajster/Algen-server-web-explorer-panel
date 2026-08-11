@@ -30,7 +30,13 @@ export function packageCatalogSummary(item: PackageModule): ModuleSummary {
   const serviceDefinitions = item.manifest.services?.length ? item.manifest.services : item.manifest.systemd_services.map((name) => ({ name, required: true }));
   const serviceState = Object.values(item.services)[0] || (item.state.installed ? "unknown" : "not_installed");
   const failedJob = item.jobs.find((job) => job.status === "failed");
-  const health: ModuleHealth = failedJob || ERROR_STATES.has(item.status) ? "failed" : item.state.installed ? "unknown" : "not_installed";
+  const health: ModuleHealth = !item.state.installed
+    ? "not_installed"
+    : ERROR_STATES.has(serviceState.toLowerCase())
+      ? "failed"
+      : RUNNING_STATES.has(serviceState.toLowerCase())
+        ? "healthy"
+        : "unknown";
   const moduleStatus: ModuleStatus = {
     installed: item.state.installed,
     package_version: item.state.installed_version,
@@ -83,13 +89,9 @@ export function hasPackageManagement(item: ModuleSummary): boolean {
 }
 
 export function getPackageUiStatus(item: ModuleSummary): PackageUiStatus {
-  if (ERROR_STATES.has(item.status) || item.module_status.health === "failed") return "error";
   if (!item.state.installed) return "not_installed";
-  if (packageNeedsConfiguration(item)) return "needs_config";
-  if (isPackageUpdateAvailable(item)) return "update_available";
-  if (isPackageRunning(item)) return "running";
-  if (item.capabilities.service_control) return "stopped";
-  return "installed";
+  const serviceStatus = getPackageServiceStatus(item);
+  return serviceStatus === "not_applicable" ? "installed" : serviceStatus;
 }
 
 export function getPackageActions(item: ModuleSummary, options: { advanced?: boolean } = {}): PackageDisplayAction[] {
@@ -122,7 +124,13 @@ export function getPackageActions(item: ModuleSummary, options: { advanced?: boo
 
 export function getPackageServiceStatus(item: ModuleSummary): "not_applicable" | "running" | "stopped" | "error" {
   if (!item.state.installed || !item.capabilities.service_control) return "not_applicable";
-  if (item.module_status.health === "failed" || item.module_status.service_state.toLowerCase() === "failed") return "error";
+  const serviceStates = Object.values(item.module_status.services)
+    .filter((service) => service.required)
+    .map((service) => service.state.toLowerCase());
+  const states = serviceStates.length
+    ? serviceStates
+    : [item.module_status.service_state, ...Object.values(item.services)].map((state) => state.toLowerCase());
+  if (states.some((state) => ERROR_STATES.has(state))) return "error";
   return isPackageRunning(item) ? "running" : "stopped";
 }
 

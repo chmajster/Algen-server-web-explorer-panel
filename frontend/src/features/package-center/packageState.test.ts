@@ -77,13 +77,13 @@ describe("Package Center state matrix", () => {
 
   it("offers configuration before service actions when configuration is invalid", () => {
     const item = packageItem({ installed: true, needsConfig: true });
-    expect(getPackageUiStatus(item)).toBe("needs_config");
+    expect(getPackageUiStatus(item)).toBe("stopped");
     expect(getPackageActions(item)).toEqual(["configure"]);
   });
 
   it("adds update while preserving valid running service actions", () => {
     const item = packageItem({ installed: true, running: true, update: true });
-    expect(getPackageUiStatus(item)).toBe("update_available");
+    expect(getPackageUiStatus(item)).toBe("running");
     expect(getPackageActions(item)).toEqual(["update", "open", "stop"]);
   });
 
@@ -99,7 +99,21 @@ describe("Package Center state matrix", () => {
     expect(getPackageActions(item)).toEqual(["open"]);
   });
 
-  it("normalizes technical failures to the user-facing error state", () => {
-    expect(getPackageUiStatus(packageItem({ installed: true, error: true }))).toBe("error");
+  it("does not replace an active service status with an operation error", () => {
+    const item = packageItem({ installed: true, running: true, error: true });
+    item.jobs = [{ id: "job-1", module_id: "demo", action: "duplicate", status: "failed", progress: 100, created_at: 1, error: "409: UNSAFE_CONTAINER_CONFIGURATION", current_step: "Failed", log_tail: [] }];
+
+    expect(item.module_status.health).toBe("failed");
+    expect(item.module_status.last_error).toBe("failed");
+    expect(getPackageServiceStatus(item)).toBe("running");
+    expect(getPackageUiStatus(item)).toBe("running");
+  });
+
+  it("shows error only when a required service has failed", () => {
+    const item = packageItem({ installed: true });
+    item.module_status.services.demo.state = "failed";
+
+    expect(getPackageServiceStatus(item)).toBe("error");
+    expect(getPackageUiStatus(item)).toBe("error");
   });
 });
