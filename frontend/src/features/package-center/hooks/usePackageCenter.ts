@@ -24,7 +24,7 @@ export function usePackageCenter(t: Translate) {
     try {
       const [catalog, nextModules, nextCategories, nextJobs, nextHistory, nextSources] = await Promise.all([api.apps(), api.modules().catch(() => []), api.appCategories(), api.appJobs(), api.appHistory(), api.packageSources()]);
       setModules(mergePackageCatalog(catalog, nextModules)); setCategories(nextCategories); setJobs(nextJobs); setHistory(nextHistory); setSources(nextSources);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Package Center request failed"); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Module Center request failed"); }
     finally { if (!quiet) setLoading(false); }
   }, []);
 

@@ -25,5 +25,7 @@ requires_reboot: false
 requires_root: true
 configurable: false
 removable: true
+ui:
+  hidden: true
 healthcheck: health.py
 changelog: [Initial WebNAS module.]

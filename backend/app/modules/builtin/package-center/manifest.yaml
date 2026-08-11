@@ -1,5 +1,5 @@
 id: package-center
-name: Package Center
+name: Module Center
 category: system
 icon: package
 permissions: [modules.view, modules.install]

@@ -30,13 +30,14 @@ def plan(module_id: str = "nginx", action: PackageAction = PackageAction.install
     )
 
 
-def test_discovers_registered_production_manifests_and_hides_example():
+def test_discovers_registered_production_manifests_and_hides_excluded_modules():
     discovered = manifests.discover_manifests()
     found = {item.id: item for item in discovered}
 
-    container_only_modules = {"pihole", "adguard-home", "home-assistant"}
-    assert set(BUILTIN_MODULE_IDS) - container_only_modules <= set(found)
-    assert container_only_modules.isdisjoint(found)
+    hidden_modules = {"pihole", "adguard-home", "home-assistant", "mariadb", "redis", "nginx"}
+    assert set(BUILTIN_MODULE_IDS) - hidden_modules <= set(found)
+    assert hidden_modules.isdisjoint(found)
+    assert all(manifests.load_manifest(module_id).ui.hidden for module_id in hidden_modules)
     assert "example" not in found
     assert discovered[0].id == "samba"
     assert found["samba"].category == "file_sharing"

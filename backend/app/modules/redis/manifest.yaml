@@ -35,3 +35,5 @@ backup_paths: [/var/lib/redis/dump.rdb]
 proxmox_safe: false
 requires_root: true
 removable: true
+ui:
+  hidden: true

@@ -315,5 +315,7 @@ describe("Package Center", () => {
     expect(keys.length).toBeGreaterThan(50);
     expect(keys.every((key) => key in en)).toBe(true);
     expect(Object.keys(en).filter((key) => key.startsWith("package.")).every((key) => key in pl)).toBe(true);
+    expect(pl["app.store"]).toBe("Centrum modułów");
+    expect(en["app.store"]).toBe("Module Center");
   });
 });
