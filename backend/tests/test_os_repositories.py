@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import io
 import os
-import socket
 import shutil
+import socket
+import threading
 import time
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +17,7 @@ from app.identity.models import Role
 from app.identity.permissions import Permission, ROLE_PERMISSIONS
 from app.modules import BUILTIN_MODULE_IDS
 from app.modules.os_repositories.jobs import RepositoryJobManager
+from app.modules.os_repositories.auth_proxy import authenticated_mirror_proxy
 from app.modules.os_repositories.models import (
     BackupInput,
     ChannelName,
@@ -68,6 +73,149 @@ def test_repository_crud_creates_four_channels(service: RepositoryService):
     assert {channel["name"] for channel in item["channels"]} == {"incoming", "testing", "production", "archive"}
     assert service.dashboard()["repositories"] == 1
     assert service.delete_repository(item["id"], "admin") is True
+
+
+def test_mirror_credentials_are_encrypted_masked_and_preserved(service: RepositoryService, monkeypatch):
+    monkeypatch.setattr("app.modules.os_repositories.service.validate_mirror_url", lambda *args, **kwargs: ["203.0.113.10"])
+    payload = RepositoryInput(
+        name="Private mirror", kind="mirror", format="apt", distribution="ubuntu",
+        distribution_version="24.04", architectures=["amd64"], source_url="https://packages.example/repo",
+        auth_type="bearer", auth_secret="top-secret-token",
+    )
+    item = service.save_repository(payload, "admin")
+    stored = service.store.one("SELECT * FROM repositories WHERE id=?", (item["id"],))
+    assert stored and stored["encrypted_auth_secret"]
+    assert "top-secret-token" not in stored["encrypted_auth_secret"]
+    assert item["auth_secret_configured"] is True
+    assert "encrypted_auth_secret" not in item and "auth_secret" not in item
+
+    updated = service.save_repository(payload.model_copy(update={"description": "updated", "auth_secret": ""}), "admin", item["id"])
+    assert updated["auth_secret_configured"] is True
+    assert service.mirror_authorization(item["id"]) == "Bearer top-secret-token"
+
+    public = service.repositories()["items"][0]
+    assert public["auth_secret_configured"] is True
+    assert "encrypted_auth_secret" not in public
+    cleared_payload = RepositoryInput.model_validate(payload.model_dump() | {"auth_type": "none", "auth_secret": ""})
+    cleared = service.save_repository(cleared_payload, "admin", item["id"])
+    assert cleared["auth_secret_configured"] is False
+    assert cleared["auth_username"] == ""
+    assert service.mirror_authorization(item["id"]) == ""
+
+
+def test_basic_mirror_requires_username_and_returns_authorization(service: RepositoryService, monkeypatch):
+    monkeypatch.setattr("app.modules.os_repositories.service.validate_mirror_url", lambda *args, **kwargs: ["203.0.113.10"])
+    payload = RepositoryInput(
+        name="Basic mirror", kind="mirror", format="rpm", distribution="rocky", distribution_version="9",
+        architectures=["x86_64"], source_url="https://packages.example/rpm", auth_type="basic",
+        auth_username="mirror-user", auth_secret="mirror-pass",
+    )
+    item = service.save_repository(payload, "admin")
+    assert service.mirror_authorization(item["id"]).startswith("Basic ")
+
+
+def test_authenticated_proxy_is_loopback_only_and_forwards_secret_in_header(monkeypatch):
+    received: dict[str, str] = {}
+    monkeypatch.setattr("app.modules.os_repositories.auth_proxy.validate_mirror_url", lambda *args, **kwargs: ["127.0.0.1"])
+
+    class SourceHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            received["path"] = self.path
+            received["authorization"] = self.headers.get("Authorization", "")
+            body = b"repository metadata"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    source = ThreadingHTTPServer(("127.0.0.1", 0), SourceHandler)
+    thread = threading.Thread(target=source.serve_forever, daemon=True)
+    thread.start()
+    try:
+        source_url = f"http://127.0.0.1:{source.server_port}/repo/"
+        with authenticated_mirror_proxy(
+            source_url,
+            "Bearer private-token",
+            allow_private_network=True,
+            allow_private_http=True,
+        ) as proxy_url:
+            assert proxy_url.startswith("http://127.0.0.1:")
+            with urllib.request.urlopen(f"{proxy_url}metadata", timeout=5) as response:  # noqa: S310
+                assert response.read() == b"repository metadata"
+        assert received == {"path": "/repo/metadata", "authorization": "Bearer private-token"}
+    finally:
+        source.shutdown()
+        source.server_close()
+        thread.join(timeout=5)
+
+
+def test_authenticated_mirror_commands_contain_only_ephemeral_proxy_url(service: RepositoryService, monkeypatch, tmp_path: Path):
+    repository = {
+        "id": "a" * 32,
+        "kind": "mirror",
+        "format": "apt",
+        "architectures": ["amd64"],
+        "distribution_version": "24.04",
+        "source_url": "https://packages.example/repo",
+        "auth_secret_configured": True,
+    }
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/aptly")
+    monkeypatch.setattr("app.modules.os_repositories.jobs.subprocess.run", lambda *args, **kwargs: SimpleNamespace(returncode=1))
+    commands = RepositoryJobManager(service)._commands(repository, tmp_path, "http://127.0.0.1:41000/")
+    rendered = " ".join(part for command in commands for part in command)
+    assert "http://127.0.0.1:41000/" in rendered
+    assert "packages.example" not in rendered
+    assert "private-token" not in rendered
+
+
+def test_authenticated_proxy_does_not_forward_secret_across_origins(monkeypatch):
+    received: dict[str, str] = {}
+    monkeypatch.setattr("app.modules.os_repositories.auth_proxy.validate_mirror_url", lambda *args, **kwargs: ["127.0.0.1"])
+
+    class DestinationHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            received["authorization"] = self.headers.get("Authorization", "")
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    destination = ThreadingHTTPServer(("127.0.0.1", 0), DestinationHandler)
+
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{destination.server_port}/metadata")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    source = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+    threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in (source, destination)]
+    for thread in threads:
+        thread.start()
+    try:
+        with authenticated_mirror_proxy(
+            f"http://127.0.0.1:{source.server_port}/repo/",
+            "Bearer private-token",
+            allow_private_network=True,
+            allow_private_http=True,
+        ) as proxy_url:
+            with urllib.request.urlopen(f"{proxy_url}metadata", timeout=5) as response:  # noqa: S310
+                assert response.status == 204
+        assert received["authorization"] == ""
+    finally:
+        for server in (source, destination):
+            server.shutdown()
+            server.server_close()
+        for thread in threads:
+            thread.join(timeout=5)
 
 
 def test_mirror_url_rejects_credentials_loopback_and_unapproved_private_network():

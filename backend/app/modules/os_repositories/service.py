@@ -71,14 +71,32 @@ class RepositoryService:
         return counts
 
     def repositories(self, page: int = 1, page_size: int = 50, search: str = "") -> dict[str, Any]:
-        return self.store.page("repositories", page=page, page_size=page_size, search=search, order="name COLLATE NOCASE")
+        result = self.store.page("repositories", page=page, page_size=page_size, search=search, order="name COLLATE NOCASE")
+        result["items"] = [self._public_repository(item) for item in result["items"]]
+        return result
+
+    @staticmethod
+    def _public_repository(item: dict[str, Any]) -> dict[str, Any]:
+        result = dict(item)
+        result["auth_secret_configured"] = bool(result.pop("encrypted_auth_secret", ""))
+        return result
 
     def repository(self, repository_id: str) -> dict[str, Any] | None:
         item = self.store.one("SELECT * FROM repositories WHERE id=?", (repository_id,))
         if item:
             item["channels"] = self.store.all("SELECT * FROM channels WHERE repository_id=? ORDER BY name", (repository_id,))
             item["filters"] = self.store.all("SELECT * FROM repository_filters WHERE repository_id=? ORDER BY version DESC", (repository_id,))
-        return item
+        return self._public_repository(item) if item else None
+
+    def mirror_authorization(self, repository_id: str) -> str:
+        item = self.store.one("SELECT auth_type,auth_username,encrypted_auth_secret FROM repositories WHERE id=?", (repository_id,))
+        if not item or item["auth_type"] == "none":
+            return ""
+        secret = self.cipher.decrypt(str(item["encrypted_auth_secret"]), associated_data=repository_id)
+        if item["auth_type"] == "bearer":
+            return f"Bearer {secret}"
+        encoded = base64.b64encode(f"{item['auth_username']}:{secret}".encode()).decode()
+        return f"Basic {encoded}"
 
     def save_repository(self, payload: RepositoryInput, actor: str, repository_id: str | None = None) -> dict[str, Any]:
         resolved: list[str] = []
@@ -87,6 +105,15 @@ class RepositoryService:
                 payload.source_url, allow_private_network=payload.allow_private_network, allow_private_http=payload.allow_private_http
             )
         now, item_id = time.time(), repository_id or object_id()
+        current = self.store.one("SELECT encrypted_auth_secret FROM repositories WHERE id=?", (item_id,)) if repository_id else None
+        encrypted_secret = str(current["encrypted_auth_secret"] or "") if current else ""
+        if payload.auth_type.value == "none":
+            encrypted_secret = ""
+        elif payload.auth_secret:
+            encrypted_secret = self.cipher.encrypt(payload.auth_secret, associated_data=item_id)
+        elif not encrypted_secret:
+            raise ValueError("mirror authentication secret is required")
+        auth_username = payload.auth_username if payload.auth_type.value == "basic" else ""
         values = (
             payload.name,
             payload.description,
@@ -102,20 +129,23 @@ class RepositoryService:
             payload.signing_key_id,
             int(payload.allow_private_network),
             int(payload.allow_private_http),
+            payload.auth_type.value,
+            auth_username,
+            encrypted_secret,
             now,
             actor,
         )
         with self.store.connect() as connection:
             if repository_id:
                 changed = connection.execute(
-                    "UPDATE repositories SET name=?,description=?,kind=?,format=?,distribution=?,distribution_version=?,architectures_json=?,source_url=?,active=?,schedule=?,retention_count=?,signing_key_id=?,allow_private_network=?,allow_private_http=?,updated_at=?,updated_by=? WHERE id=?",
+                    "UPDATE repositories SET name=?,description=?,kind=?,format=?,distribution=?,distribution_version=?,architectures_json=?,source_url=?,active=?,schedule=?,retention_count=?,signing_key_id=?,allow_private_network=?,allow_private_http=?,auth_type=?,auth_username=?,encrypted_auth_secret=?,updated_at=?,updated_by=? WHERE id=?",
                     (*values, item_id),
                 ).rowcount
                 if not changed:
                     raise KeyError("repository not found")
             else:
                 connection.execute(
-                    "INSERT INTO repositories(id,name,description,kind,format,distribution,distribution_version,architectures_json,source_url,active,schedule,retention_count,signing_key_id,allow_private_network,allow_private_http,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO repositories(id,name,description,kind,format,distribution,distribution_version,architectures_json,source_url,active,schedule,retention_count,signing_key_id,allow_private_network,allow_private_http,auth_type,auth_username,encrypted_auth_secret,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (item_id, *values[:-2], now, now, actor, actor),
                 )
                 for channel in ChannelName:

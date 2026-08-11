@@ -26,6 +26,12 @@ class RepositoryFormat(StrEnum):
     rpm = "rpm"
 
 
+class RepositoryAuthType(StrEnum):
+    none = "none"
+    bearer = "bearer"
+    basic = "basic"
+
+
 class ChannelName(StrEnum):
     incoming = "incoming"
     testing = "testing"
@@ -56,6 +62,9 @@ class RepositoryInput(StrictModel):
     signing_key_id: str | None = Field(default=None, pattern=ID_PATTERN)
     allow_private_network: bool = False
     allow_private_http: bool = False
+    auth_type: RepositoryAuthType = RepositoryAuthType.none
+    auth_username: str = Field(default="", max_length=256)
+    auth_secret: str = Field(default="", max_length=8192)
 
     @field_validator("schedule")
     @classmethod
@@ -87,6 +96,12 @@ class RepositoryInput(StrictModel):
                 raise ValueError("mirror URL must use HTTP(S) without credentials or fragments")
             if parsed.scheme == "http" and not self.allow_private_http:
                 raise ValueError("HTTP mirrors require explicit private HTTP approval")
+        if self.kind == RepositoryKind.local and self.auth_type != RepositoryAuthType.none:
+            raise ValueError("local repositories cannot define mirror authentication")
+        if self.auth_type == RepositoryAuthType.basic and not self.auth_username:
+            raise ValueError("HTTP Basic authentication requires a username")
+        if self.auth_type == RepositoryAuthType.bearer and self.auth_username:
+            raise ValueError("Bearer authentication does not use a username")
         return self
 
 

@@ -4,10 +4,13 @@ import type { OsRepository, OsRepositoryAssignment, OsRepositoryChannel, OsRepos
 export const osRepositoriesClient = {
   osRepositoriesDashboard: () => request<OsRepositoryDashboard>("/api/modules/os-repositories/dashboard"),
   osRepositories: (search = "") => request<OsRepositoryPage<OsRepository>>(`/api/modules/os-repositories/repositories?search=${encodeURIComponent(search)}`),
+  osRepository: (id: string) => request<OsRepository & { filters: Array<{ active: boolean; name: string; rules: Record<string, unknown>; version: number }> }>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}`),
   saveOsRepository: (payload: Record<string, unknown>, id = "") => request<OsRepository>(id ? `/api/modules/os-repositories/repositories/${encodeURIComponent(id)}` : "/api/modules/os-repositories/repositories", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
   planOsRepository: (payload: Record<string, unknown>, id = "00000000000000000000000000000000") => request<Record<string, unknown>>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}/plan`, { method: "POST", body: JSON.stringify(payload) }),
   deleteOsRepository: (id: string) => request<{ ok: boolean }>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}`, { method: "DELETE" }),
   syncOsRepository: (id: string) => request<OsRepositoryJob>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}/sync`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  previewOsRepositoryFilter: (id: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}/filters/preview`, { method: "POST", body: JSON.stringify(payload) }),
+  saveOsRepositoryFilter: (id: string, payload: Record<string, unknown>) => request<Record<string, unknown>>(`/api/modules/os-repositories/repositories/${encodeURIComponent(id)}/filters`, { method: "POST", body: JSON.stringify(payload) }),
   osRepositoryPackages: (search = "", repositoryId = "") => request<OsRepositoryPage<OsRepositoryPackage>>(`/api/modules/os-repositories/packages?search=${encodeURIComponent(search)}&repository_id=${encodeURIComponent(repositoryId)}`),
   uploadOsRepositoryPackage: (repositoryId: string, file: File) => { const body = new FormData(); body.append("file", file); return request<OsRepositoryPackage>(`/api/modules/os-repositories/packages/upload?repository_id=${encodeURIComponent(repositoryId)}`, { method: "POST", body }); },
   osRepositorySnapshots: (repositoryId = "") => request<OsRepositoryPage<OsRepositorySnapshot>>(`/api/modules/os-repositories/snapshots?repository_id=${encodeURIComponent(repositoryId)}`),

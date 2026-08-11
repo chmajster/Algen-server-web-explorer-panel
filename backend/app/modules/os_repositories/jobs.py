@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ...package_center.executor import redact
+from .auth_proxy import authenticated_mirror_proxy
 from .repository import object_id
 from .security import SAFE_ENV, atomic_write
 from .service import RepositoryService, service
@@ -49,7 +51,7 @@ class RepositoryJobManager:
         if safe:
             self.service.store.execute("INSERT INTO repository_sync_logs(job_id,stream,line,created_at) VALUES(?,?,?,?)", (job_id, stream, safe, time.time()))
 
-    def _commands(self, repository: dict[str, Any], work: Path) -> list[list[str]]:
+    def _commands(self, repository: dict[str, Any], work: Path, source_url: str | None = None) -> list[list[str]]:
         if repository["kind"] == "local":
             return []
         if repository["format"] == "apt":
@@ -64,7 +66,10 @@ class RepositoryJobManager:
             base = [executable, f"-config={config}"]
             shown = subprocess.run([*base, "mirror", "show", mirror], capture_output=True, text=True, timeout=30, check=False, shell=False, env=SAFE_ENV)
             commands: list[list[str]] = []
-            if shown.returncode:
+            authenticated = bool(repository.get("auth_secret_configured"))
+            if authenticated and not shown.returncode:
+                commands.append([*base, "mirror", "drop", "-force", mirror])
+            if shown.returncode or authenticated:
                 commands.append(
                     [
                         *base,
@@ -72,7 +77,7 @@ class RepositoryJobManager:
                         "create",
                         f"-architectures={','.join(repository['architectures'])}",
                         mirror,
-                        repository["source_url"],
+                        source_url or repository["source_url"],
                         repository["distribution_version"],
                         "main",
                     ]
@@ -92,7 +97,7 @@ class RepositoryJobManager:
                     "--repoid",
                     "webnas-source",
                     "--repofrompath",
-                    f"webnas-source,{repository['source_url']}",
+                    f"webnas-source,{source_url or repository['source_url']}",
                     "--download-path",
                     str(work),
                 ]
@@ -139,29 +144,41 @@ class RepositoryJobManager:
                     repository["source_url"], allow_private_network=repository["allow_private_network"], allow_private_http=repository["allow_private_http"]
                 )
                 self._log(job_id, "system", f"Source DNS validated: {', '.join(addresses)}")
-            commands = self._commands(repository, work)
-            if commands:
-                self.service.store.execute("UPDATE repository_sync_jobs SET stage='downloading',progress=15 WHERE id=?", (job_id,))
-                for command in commands:
-                    process = subprocess.Popen(command, cwd=work, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False, env=SAFE_ENV)
-                    with self._lock:
-                        self._processes[job_id] = process
-                    try:
-                        stdout, stderr = process.communicate(timeout=7200)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.communicate()
-                        raise RuntimeError("repository synchronization exceeded the two-hour timeout")
-                    for line in stdout.splitlines()[-2000:]:
-                        self._log(job_id, "stdout", line)
-                    for line in stderr.splitlines()[-2000:]:
-                        self._log(job_id, "stderr", line)
-                    if self.cancel_requested(job_id):
-                        raise InterruptedError("synchronization cancelled")
-                    if process.returncode:
-                        raise RuntimeError(f"repository tool exited with code {process.returncode}")
-                count, downloaded = self._ingest_downloads(job_id, repository, work, str(job["created_by"]))
-                self._log(job_id, "system", f"Indexed {count} packages ({downloaded} bytes)")
+            authorization = self.service.mirror_authorization(str(repository["id"]))
+            proxy_context = (
+                authenticated_mirror_proxy(
+                    repository["source_url"],
+                    authorization,
+                    allow_private_network=repository["allow_private_network"],
+                    allow_private_http=repository["allow_private_http"],
+                )
+                if authorization
+                else contextlib.nullcontext(repository.get("source_url"))
+            )
+            with proxy_context as sync_source:
+                commands = self._commands(repository, work, sync_source)
+                if commands:
+                    self.service.store.execute("UPDATE repository_sync_jobs SET stage='downloading',progress=15 WHERE id=?", (job_id,))
+                    for command in commands:
+                        process = subprocess.Popen(command, cwd=work, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False, env=SAFE_ENV)
+                        with self._lock:
+                            self._processes[job_id] = process
+                        try:
+                            stdout, stderr = process.communicate(timeout=7200)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.communicate()
+                            raise RuntimeError("repository synchronization exceeded the two-hour timeout")
+                        for line in stdout.splitlines()[-2000:]:
+                            self._log(job_id, "stdout", line)
+                        for line in stderr.splitlines()[-2000:]:
+                            self._log(job_id, "stderr", line)
+                        if self.cancel_requested(job_id):
+                            raise InterruptedError("synchronization cancelled")
+                        if process.returncode:
+                            raise RuntimeError(f"repository tool exited with code {process.returncode}")
+                    count, downloaded = self._ingest_downloads(job_id, repository, work, str(job["created_by"]))
+                    self._log(job_id, "system", f"Indexed {count} packages ({downloaded} bytes)")
             self.service.store.execute("UPDATE repository_sync_jobs SET stage='validating',progress=80 WHERE id=?", (job_id,))
             self._log(job_id, "system", "Synchronization completed; the last published snapshot remains unchanged")
             finished = time.time()

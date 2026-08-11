@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def object_id() -> str:
@@ -59,6 +59,7 @@ class RepositoryStore:
           format TEXT NOT NULL, distribution TEXT NOT NULL, distribution_version TEXT NOT NULL, architectures_json TEXT NOT NULL,
           source_url TEXT NOT NULL, active INTEGER NOT NULL, schedule TEXT NOT NULL, retention_count INTEGER NOT NULL,
           signing_key_id TEXT, allow_private_network INTEGER NOT NULL, allow_private_http INTEGER NOT NULL,
+          auth_type TEXT NOT NULL DEFAULT 'none', auth_username TEXT NOT NULL DEFAULT '', encrypted_auth_secret TEXT NOT NULL DEFAULT '',
           last_sync_at REAL, last_sync_status TEXT NOT NULL DEFAULT '', package_count INTEGER NOT NULL DEFAULT 0,
           size_bytes INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL
         );
@@ -86,6 +87,14 @@ class RepositoryStore:
         """
         with self._lock, self.connect() as connection:
             connection.executescript(schema)
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(repositories)")}
+            for name, definition in (
+                ("auth_type", "TEXT NOT NULL DEFAULT 'none'"),
+                ("auth_username", "TEXT NOT NULL DEFAULT ''"),
+                ("encrypted_auth_secret", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if name not in columns:
+                    connection.execute(f"ALTER TABLE repositories ADD COLUMN {name} {definition}")
             connection.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(?,?)", (SCHEMA_VERSION, time.time()))
             connection.execute(
                 "INSERT OR IGNORE INTO settings(id,value_json,updated_at,updated_by) VALUES(1,?,?,?)",
