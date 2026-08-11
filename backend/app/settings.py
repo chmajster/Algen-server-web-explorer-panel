@@ -1382,6 +1382,7 @@ def start_auto_update_scheduler() -> None:
         time.sleep(5)
         next_automatic_check = 0.0
         while True:
+            retry_delay = 1
             try:
                 request_state = read_update_request()
                 if request_state.get("state") == "waiting":
@@ -1392,8 +1393,14 @@ def start_auto_update_scheduler() -> None:
                     _run_auto_update_once()
                     next_automatic_check = time.time() + 60
             except Exception as error:  # noqa: BLE001 - scheduler retries durable state.
-                logger.warning("update_scheduler_iteration_failed error=%s", type(error).__name__)
-            time.sleep(1)
+                retry_delay = 30 if isinstance(error, OSError) else 5
+                logger.exception(
+                    "update_scheduler_iteration_failed error=%s data_dir=%s retry_seconds=%s",
+                    error,
+                    get_config().paths.data_dir,
+                    retry_delay,
+                )
+            time.sleep(retry_delay)
 
     threading.Thread(target=worker, daemon=True, name="webnas-auto-update").start()
 

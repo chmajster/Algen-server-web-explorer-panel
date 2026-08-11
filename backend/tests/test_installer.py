@@ -645,6 +645,25 @@ def test_repository_metadata_is_refreshed_only_for_install_or_reinstall(tmp_path
     assert "Skipping system repository metadata refresh during WebNAS update" in result.stdout
 
 
+def test_preserved_config_update_repairs_runtime_directories(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r'''
+        CONFIG_DIR="$TEST_ROOT/etc"
+        DATA_DIR="$TEST_ROOT/data"
+        LOG_DIR="$TEST_ROOT/log"
+        SERVICE_USER=webnas
+        SERVICE_GROUP=webnas
+        chown() { return 0; }
+        prepare_runtime_directories
+        [[ -d "$CONFIG_DIR" ]]
+        [[ -d "$DATA_DIR/tmp" ]]
+        [[ -d "$LOG_DIR" ]]
+        ''',
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_installer_requires_cifs_utils_for_every_package_manager():
     installer = INSTALLER.read_text(encoding="utf-8")
     dependencies = installer.split("install_dependencies() {", 1)[1].split("\n}", 1)[0]

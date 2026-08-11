@@ -1185,21 +1185,27 @@ copy_application() {
   ok "Application copied to ${INSTALL_DIR}"
 }
 
+prepare_runtime_directories() {
+  install -d -m 0755 "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
+  install -d -m 1777 "${DATA_DIR}/tmp"
+  # Users may traverse verified mounted resources, but only the privileged
+  # backend can create or replace mount-point directories.
+  chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$DATA_DIR" "$LOG_DIR"
+}
+
 write_config() {
   update_step update_configuration started
-  # This also runs during updates that preserve config.
+  # Runtime paths must exist even when an update preserves config.yaml. A
+  # missing data directory otherwise leaves every SQLite-backed scheduler in
+  # a permanent retry loop after the release handover.
   install -d -o root -g root -m 0711 /mnt/webnas /mnt/webnas/mnt
+  prepare_runtime_directories
   if [[ ("$ACTION" == "update" || "$ACTION" == "reinstall") && -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
     ok "Keeping existing config: ${CONFIG_FILE}"
     update_step update_configuration skipped
     return
   fi
   section "Writing configuration"
-  install -d -m 0755 "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
-  install -d -m 1777 "${DATA_DIR}/tmp"
-  # Users may traverse verified mounted resources, but only the privileged
-  # backend can create or replace mount-point directories.
-  chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$DATA_DIR" "$LOG_DIR"
   if [[ -f "$CONFIG_FILE" && "$UPDATE_CONFIG" != "yes" ]]; then
     ok "Keeping existing config: ${CONFIG_FILE}"
     update_step update_configuration skipped

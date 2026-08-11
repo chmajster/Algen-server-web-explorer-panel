@@ -153,6 +153,24 @@ class Deployment:
         )
         if result.returncode:
             raise RuntimeError(f"Candidate import/config validation failed: {result.stderr.strip()[-1000:]}")
+        self.validate_runtime_paths()
+
+    def validate_runtime_paths(self) -> None:
+        paths = {
+            "data": Path(config_value(self.config, "paths", "data_dir", "/var/lib/webnas")),
+            "logs": Path(config_value(self.config, "paths", "log_dir", "/var/log/webnas")),
+        }
+        for label, path in paths.items():
+            if not path.is_absolute() or path == Path("/"):
+                raise RuntimeError(f"Configured {label} path must be a dedicated absolute path: {path}")
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+                probe = path / f".webnas-write-check-{os.getpid()}"
+                with probe.open("x", encoding="utf-8") as stream:
+                    stream.write("ok\n")
+                probe.unlink()
+            except OSError as error:
+                raise RuntimeError(f"Configured {label} path is not writable: {path}: {error}") from error
 
     def unit_name(self, slot: str) -> str:
         return f"webnas-backend-{slot}.service"
@@ -378,10 +396,11 @@ class Deployment:
         self.update_step("restart_services", "running", "Restartowanie i porządkowanie usług.")
         command("systemctl", "enable", "nginx")
         command("systemctl", "enable", self.unit_name(self.new_slot))
+        inactive_slot = "green" if self.new_slot == "blue" else "blue"
         if self.old_slot:
             time.sleep(self.drain_seconds)
-            command("systemctl", "stop", self.unit_name(self.old_slot), check=False)
-            command("systemctl", "disable", self.unit_name(self.old_slot), check=False)
+        command("systemctl", "stop", self.unit_name(inactive_slot), check=False)
+        command("systemctl", "disable", self.unit_name(inactive_slot), check=False)
         command("systemctl", "disable", "webnas.service", check=False)
         self.cleanup_releases()
         self.update_step("restart_services", "success", "Usługi nowej wersji działają.")

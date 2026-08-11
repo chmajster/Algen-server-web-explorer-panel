@@ -102,6 +102,45 @@ def test_failed_candidate_health_never_switches_gateway_and_removes_candidate(mo
     assert not target.release.exists()
 
 
+def test_runtime_paths_are_writable_before_candidate_activation(tmp_path: Path):
+    target = deployment(tmp_path)
+    data = tmp_path / "state"
+    logs = tmp_path / "logs"
+    target.config.write_text(f"paths:\n  data_dir: {data}\n  log_dir: {logs}\n", encoding="utf-8")
+
+    target.validate_runtime_paths()
+
+    assert data.is_dir()
+    assert logs.is_dir()
+    assert not list(data.glob(".webnas-write-check-*"))
+
+
+def test_handover_stops_stale_inactive_slot_without_deployment_state(monkeypatch, tmp_path: Path):
+    target = deployment(tmp_path, active=False)
+    stopped: list[str] = []
+    monkeypatch.setattr(target, "validate_files", lambda: None)
+    monkeypatch.setattr(target, "write_units", lambda: None)
+    monkeypatch.setattr(target, "write_slot_environment", lambda: None)
+    monkeypatch.setattr(target, "health", lambda port: None)
+    monkeypatch.setattr(target, "activate_nginx", lambda port: None)
+    monkeypatch.setattr(target, "switch_current", lambda release: None)
+    monkeypatch.setattr(target, "public_health", lambda: None)
+    monkeypatch.setattr(target, "cleanup_releases", lambda: None)
+    monkeypatch.setattr(target, "update_phase", lambda *args: None)
+    monkeypatch.setattr(release_module, "atomic_write", lambda *args, **kwargs: None)
+    monkeypatch.setattr(release_module, "atomic_json", lambda *args, **kwargs: None)
+
+    def run(*args, **kwargs):
+        if args[:2] == ("systemctl", "stop"):
+            stopped.append(args[2])
+        return completed()
+
+    monkeypatch.setattr(release_module, "command", run)
+    target.deploy()
+
+    assert "webnas-backend-green.service" in stopped
+
+
 def test_failed_public_health_rolls_back_gateway_symlink_and_slot(monkeypatch, tmp_path: Path):
     target = deployment(tmp_path)
     gateways: list[int] = []
