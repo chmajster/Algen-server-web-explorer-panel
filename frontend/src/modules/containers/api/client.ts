@@ -66,11 +66,14 @@ function normalizeContainerCreate(payload: DockerContainerCreate): DockerContain
 
 function normalizeContainerAction(payload: DockerContainerAction): DockerContainerAction {
   if (payload.action === "stop") {
-    const { timeout: _ignoredTimeout, signal: _ignoredSignal, ...graceful } = payload;
+    const graceful = { ...payload };
+    delete graceful.timeout;
+    delete graceful.signal;
     return graceful;
   }
   if (payload.action === "kill") {
-    const { timeout: _ignoredTimeout, ...forced } = payload;
+    const forced = { ...payload };
+    delete forced.timeout;
     return { ...forced, signal: "KILL" };
   }
   return payload;

@@ -44,7 +44,7 @@ function text(value: unknown): string {
 }
 
 function boolText(value: unknown, t: Translate): string {
-  return Boolean(value) ? t("common.yes") : t("common.no");
+  return value ? t("common.yes") : t("common.no");
 }
 
 function bytes(value: unknown): string {

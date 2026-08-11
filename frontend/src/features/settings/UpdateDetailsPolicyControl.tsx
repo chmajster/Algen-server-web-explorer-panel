@@ -45,7 +45,7 @@ export function UpdateDetailsPolicyControl({
   t: Translate;
   toast: ToastFn;
 }) {
-  const text = useMemo(languageText, []);
+  const text = useMemo(() => languageText(), []);
   const [target, setTarget] = useState<Element | null>(null);
   const [open, setOpen] = useState(false);
   const [policy, setPolicy] = useState<UpdateDetailPolicy | null>(null);
