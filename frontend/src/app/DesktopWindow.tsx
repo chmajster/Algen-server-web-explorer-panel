@@ -36,6 +36,7 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
   const maximized = Boolean(item.restoreRect);
   const originX = viewport?.originX ?? 0;
   const originY = viewport?.originY ?? 0;
+  const mobileFullscreen = Boolean(viewport && viewport.width <= 920);
 
   useEffect(() => { if (!gesture.current) setDisplayRect(item.rect); }, [item.rect]);
   useEffect(() => {
@@ -80,7 +81,7 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
   }, [definition.minHeight, definition.minWidth, displayRect, onCommit, originX, originY, viewport]);
 
   function startMove(event: React.PointerEvent) {
-    if ((event.target as HTMLElement).closest("button")) return;
+    if (mobileFullscreen || (event.target as HTMLElement).closest("button")) return;
     event.preventDefault();
     onFocus();
     let rect = displayRect;
@@ -98,6 +99,7 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
   }
 
   function startResize(edge: Edge, event: React.PointerEvent) {
+    if (mobileFullscreen) return;
     event.preventDefault();
     event.stopPropagation();
     onFocus();
@@ -110,8 +112,8 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
     window.setTimeout(onMinimize, 120);
   }
 
-  return <section role="dialog" aria-modal="false" className={`desktop-window ${active ? "active" : "inactive"} ${maximized ? "maximized" : ""} ${minimizing ? "minimizing" : ""}`} style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: item.zIndex }} onPointerDown={onFocus} aria-label={title}>
-    <header className="window-titlebar" onPointerDown={startMove} onDoubleClick={() => { gesture.current = null; onToggleMaximize(); }}>
+  return <section role="dialog" aria-modal="false" className={`desktop-window ${active ? "active" : "inactive"} ${maximized ? "maximized" : ""} ${mobileFullscreen ? "mobile-fullscreen" : ""} ${minimizing ? "minimizing" : ""}`} style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: item.zIndex }} onPointerDown={onFocus} aria-label={title}>
+    <header className="window-titlebar" onPointerDown={startMove} onDoubleClick={() => { if (mobileFullscreen) return; gesture.current = null; onToggleMaximize(); }}>
       <span className="window-app-icon">{icon}</span><strong>{title}</strong>
       <div className="window-controls">
         <button type="button" title={t("window.minimize")} aria-label={t("window.minimize")} onClick={minimize}><Minimize2 /></button>
@@ -120,6 +122,6 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
       </div>
     </header>
     <div className="window-content">{children}</div>
-    {!maximized && (["n", "e", "s", "w", "ne", "nw", "se", "sw"] as Edge[]).map((edge) => <span key={edge} className={`resize-handle resize-${edge}`} onPointerDown={(event) => startResize(edge, event)} />)}
+    {!maximized && !mobileFullscreen && (["n", "e", "s", "w", "ne", "nw", "se", "sw"] as Edge[]).map((edge) => <span key={edge} className={`resize-handle resize-${edge}`} onPointerDown={(event) => startResize(edge, event)} />)}
   </section>;
 }

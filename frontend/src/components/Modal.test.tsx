@@ -45,4 +45,27 @@ describe("modal", () => {
     expect(backdrop?.parentElement).toBe(desktop);
     expect(smallWindow).not.toContainElement(dialog);
   });
+
+  it("keeps keyboard focus inside the dialog and restores it after closing", () => {
+    const opener = document.createElement("button");
+    document.body.appendChild(opener);
+    opener.focus();
+    const close = vi.fn();
+    const { unmount } = render(<Modal title="Keyboard dialog" onClose={close} footer={<button>Last action</button>}><input aria-label="First field" autoFocus /></Modal>);
+    const first = screen.getByLabelText("First field");
+    const last = screen.getByRole("button", { name: "Last action" });
+    const closeButton = screen.getByRole("button", { name: "×" });
+
+    expect(first).toHaveFocus();
+    last.focus();
+    const dialog = screen.getByRole("dialog", { name: "Keyboard dialog" });
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(closeButton).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(last).toHaveFocus();
+
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
 });

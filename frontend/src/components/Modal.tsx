@@ -2,6 +2,8 @@ import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
+const FOCUSABLE = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])";
+
 export function Modal({ title, children, onClose, footer, wide = false, closeLabel = "×", className = "" }: {
   title: string;
   children: React.ReactNode;
@@ -13,35 +15,49 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
-  const previousFocus = useRef<HTMLElement | null>(null);
+  const previousFocus = useRef<HTMLElement | null>(typeof document === "undefined" ? null : document.activeElement as HTMLElement | null);
   const onCloseRef = useRef(onClose);
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
-    previousFocus.current = document.activeElement as HTMLElement | null;
-    const focusable = panel.current?.querySelector<HTMLElement>("[autofocus], input, select, textarea, button, a[href], [tabindex]:not([tabindex='-1'])");
-    focusable?.focus();
-    function keydown(event: KeyboardEvent) {
-      if (event.key === "Escape") onCloseRef.current();
-      if (event.key !== "Tab" || !panel.current) return;
-      const nodes = [...panel.current.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])")];
-      if (!nodes.length) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    const restoreFocus = previousFocus.current;
+    const autofocus = panel.current?.querySelector<HTMLElement>("[autofocus]");
+    const focusable = autofocus || panel.current?.querySelector<HTMLElement>(FOCUSABLE);
+    if (!panel.current?.contains(document.activeElement)) (focusable || panel.current)?.focus();
+    function escape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseRef.current();
+      }
     }
-    document.addEventListener("keydown", keydown);
+    document.addEventListener("keydown", escape);
     return () => {
-      document.removeEventListener("keydown", keydown);
-      previousFocus.current?.focus();
+      document.removeEventListener("keydown", escape);
+      restoreFocus?.focus();
     };
   }, []);
 
+  function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab" || !panel.current) return;
+    const nodes = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)].sort((left, right) => (
+      left === right ? 0 : left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+    ));
+    if (!nodes.length) {
+      event.preventDefault();
+      panel.current.focus();
+      return;
+    }
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (event.shiftKey && (event.target === first || document.activeElement === first || event.target === panel.current)) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (event.target === last || document.activeElement === last)) { event.preventDefault(); first.focus(); }
+  }
+
   const dialog = (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={panel} className={`modal-panel ${wide ? "modal-wide" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} onPointerDown={(event) => event.stopPropagation()}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCloseRef.current()}>
+      <div ref={panel} className={`modal-panel ${wide ? "modal-wide" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={trapFocus} onPointerDown={(event) => event.stopPropagation()}>
         <header className="modal-header"><h2 id={titleId}>{title}</h2><button className="icon-button" type="button" aria-label={closeLabel} onClick={onClose}><X size={18} /></button></header>
         <div className="modal-body">{children}</div>
         {footer && <footer className="modal-footer">{footer}</footer>}

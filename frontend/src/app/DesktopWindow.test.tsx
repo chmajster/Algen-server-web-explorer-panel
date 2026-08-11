@@ -25,6 +25,23 @@ describe("desktop window interactions", () => {
     expect(minimize).toHaveBeenCalledOnce(); expect(maximize).toHaveBeenCalledOnce(); expect(close).toHaveBeenCalledOnce();
   });
 
+  it("uses a fixed fullscreen window and disables gestures on a phone viewport", () => {
+    const commit = vi.fn();
+    const maximize = vi.fn();
+    const { container } = render(<DesktopWindow window={item} active viewport={{ width: 360, height: 740, bottom: 52 }} t={(key) => key} onFocus={vi.fn()} onClose={vi.fn()} onMinimize={vi.fn()} onCommit={commit} onToggleMaximize={maximize}><div>content</div></DesktopWindow>);
+    const dialog = screen.getByRole("dialog");
+
+    expect(dialog).toHaveClass("mobile-fullscreen");
+    expect(container.querySelector(".resize-handle")).not.toBeInTheDocument();
+    fireEvent.pointerDown(container.querySelector(".window-titlebar")!, { clientX: 120, clientY: 20 });
+    fireEvent.pointerMove(window, { clientX: 220, clientY: 120 });
+    fireEvent.pointerUp(window, { clientX: 220, clientY: 120 });
+    fireEvent.doubleClick(container.querySelector(".window-titlebar")!);
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(maximize).not.toHaveBeenCalled();
+  });
+
   it("uses the managed module name and icon in the window title", () => {
     const moduleWindow: WindowInstance = { ...item, id: "module-samba", app: "module", moduleId: "samba" };
     const { container } = render(<DesktopWindow window={moduleWindow} active t={(key) => key} onFocus={vi.fn()} onClose={vi.fn()} onMinimize={vi.fn()} onCommit={vi.fn()} onToggleMaximize={vi.fn()}><div /></DesktopWindow>);
