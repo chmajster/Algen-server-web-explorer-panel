@@ -93,6 +93,77 @@ def test_installation_summary_includes_detected_environment(tmp_path):
     assert "Node.js runtime:   Node.js v22.14.0" in result.stdout
 
 
+def test_installer_detects_wsl2_and_reports_it_in_summary(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        WEBNAS_KERNEL_RELEASE_FILE="$TEST_ROOT/kernel-release"
+        printf '6.6.87.2-microsoft-standard-WSL2\n' > "$WEBNAS_KERNEL_RELEASE_FILE"
+        unset WSL_INTEROP
+        detect_wsl_environment
+        [[ "$IS_WSL" == "yes" ]]
+        [[ "$WSL_VERSION" == "2" ]]
+        print_environment_summary
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Environment:       Windows Subsystem for Linux (WSL2)" in result.stdout
+
+
+def test_installer_keeps_standard_linux_host_behavior(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        WEBNAS_KERNEL_RELEASE_FILE="$TEST_ROOT/kernel-release"
+        printf '6.8.0-generic\n' > "$WEBNAS_KERNEL_RELEASE_FILE"
+        unset WSL_INTEROP
+        detect_wsl_environment
+        [[ "$IS_WSL" == "no" ]]
+        [[ -z "$WSL_VERSION" ]]
+        print_environment_summary
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Environment:       standard Linux host" in result.stdout
+
+
+def test_wsl_without_running_systemd_gets_setup_instructions(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        IS_WSL=yes
+        systemctl() { return 1; }
+        require_systemd
+        """,
+    )
+    assert result.returncode != 0
+    output = result.stdout + result.stderr
+    assert "WSL requires systemd" in output
+    assert "systemd=true" in output
+    assert "wsl.exe --shutdown" in output
+
+
+def test_wsl_skips_udev_usb_and_linux_firewall_integrations(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        INSTALL_DIR="$TEST_ROOT/app"
+        mkdir -p "$INSTALL_DIR/releases/current"
+        ln -s "$INSTALL_DIR/releases/current" "$INSTALL_DIR/current"
+        IS_WSL=yes
+        CONFIGURE_FIREWALL=yes
+        install_usb_automount() { return 91; }
+        ufw() { return 92; }
+        firewall-cmd() { return 93; }
+        install_release_integrations
+        configure_firewall
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Skipping Linux udev USB automount on WSL" in result.stdout
+    assert "Windows Defender Firewall" in result.stdout
+
+
 def test_interactive_configuration_explains_default_values():
     installer = INSTALLER.read_text(encoding="utf-8")
     prompt_configuration = installer.split("prompt_configuration() {", 1)[1].split("\n}", 1)[0]

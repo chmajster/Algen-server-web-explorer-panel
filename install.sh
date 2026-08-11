@@ -28,6 +28,8 @@ EXISTING_ACTION_TIMEOUT="5"
 ALLOW_PROXMOX_HOST_INSTALL="no"
 GRANT_JOURNAL_ACCESS="no"
 IS_PROXMOX="no"
+IS_WSL="no"
+WSL_VERSION=""
 
 CONFIG_DIR="/etc/webnas"
 CONFIG_FILE="${CONFIG_DIR}/config.yaml"
@@ -57,6 +59,7 @@ ACTIVE_RELEASE=""
 USB_AUTOMOUNT_STAGE="not started"
 PYTHON_BIN="$(command -v python3.14 || true)"
 WEBNAS_OS_RELEASE_FILE="${WEBNAS_OS_RELEASE_FILE:-/etc/os-release}"
+WEBNAS_KERNEL_RELEASE_FILE="${WEBNAS_KERNEL_RELEASE_FILE:-/proc/sys/kernel/osrelease}"
 
 if [[ -t 1 ]]; then
   RED="$(printf '\033[31m')"
@@ -364,7 +367,29 @@ confirm_npm_audit_fix() {
 
 require_root() {
   [[ "${EUID}" -eq 0 ]] || fail "Run as root, for example: sudo ./install.sh"
+  require_systemd
+}
+
+require_systemd() {
   command -v systemctl >/dev/null 2>&1 || fail "systemd is required but systemctl was not found"
+  if [[ "$IS_WSL" == "yes" ]] && ! systemctl show-environment >/dev/null 2>&1; then
+    fail "WSL requires systemd. Add [boot] and systemd=true to /etc/wsl.conf, run 'wsl.exe --shutdown' from Windows PowerShell, restart the distribution, and retry."
+  fi
+}
+
+detect_wsl_environment() {
+  local kernel_release=""
+  if [[ -r "$WEBNAS_KERNEL_RELEASE_FILE" ]]; then
+    IFS= read -r kernel_release < "$WEBNAS_KERNEL_RELEASE_FILE" || true
+  fi
+  if [[ -n "${WSL_INTEROP:-}" || "${kernel_release,,}" == *microsoft* ]]; then
+    IS_WSL="yes"
+    if [[ "${kernel_release,,}" == *wsl2* || "${kernel_release,,}" == *microsoft-standard* ]]; then
+      WSL_VERSION="2"
+    else
+      WSL_VERSION="1"
+    fi
+  fi
 }
 
 validate_port() {
@@ -783,7 +808,13 @@ print_environment_summary() {
   printf 'Kernel:            %s\n' "$(uname -sr 2>/dev/null || printf 'unknown')"
   printf 'Architecture:      %s\n' "$(uname -m 2>/dev/null || printf 'unknown')"
   printf 'Package manager:   %s\n' "${PKG_MANAGER:-unknown}"
-  printf 'Environment:       %s\n' "$([[ "$IS_PROXMOX" == "yes" ]] && printf 'Proxmox VE host (Safe Mode)' || printf 'standard Linux host')"
+  if [[ "$IS_WSL" == "yes" ]]; then
+    printf 'Environment:       Windows Subsystem for Linux (WSL%s)\n' "$WSL_VERSION"
+  elif [[ "$IS_PROXMOX" == "yes" ]]; then
+    printf 'Environment:       Proxmox VE host (Safe Mode)\n'
+  else
+    printf 'Environment:       standard Linux host\n'
+  fi
   printf 'Python runtime:    %s\n' "$python_version"
   printf 'Node.js runtime:   %s\n' "$node_version"
 }
@@ -1338,6 +1369,10 @@ prepare_release() {
 install_release_integrations() {
   local application_root="$INSTALL_DIR"
   [[ -L "${application_root}/current" ]] || fail "Active release link is missing"
+  if [[ "$IS_WSL" == "yes" ]]; then
+    warn "Skipping Linux udev USB automount on WSL; use Windows drive mounts below /mnt or attach disks with wsl.exe --mount"
+    return 0
+  fi
   INSTALL_DIR="${application_root}/current"
   install_usb_automount
   INSTALL_DIR="$application_root"
@@ -1423,6 +1458,10 @@ EOF
 
 configure_firewall() {
   [[ "$CONFIGURE_FIREWALL" == "yes" ]] || return
+  if [[ "$IS_WSL" == "yes" ]]; then
+    warn "Skipping ufw/firewalld configuration on WSL; manage inbound access with Windows Defender Firewall"
+    return 0
+  fi
   section "Configuring firewall"
   if command -v ufw >/dev/null 2>&1 && ufw status | grep -qi "Status: active"; then
     ufw allow "${PORT}/tcp"
@@ -1556,6 +1595,7 @@ trap on_exit EXIT
 
 main() {
   parse_args "$@"
+  detect_wsl_environment
   banner
   require_root
   prompt_install_dir
