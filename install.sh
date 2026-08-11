@@ -18,6 +18,7 @@ START_SERVICE="yes"
 ENABLE_AUTOSTART="yes"
 CONFIGURE_FIREWALL="yes"
 SKIP_BUILD="no"
+NPM_AUDIT_FIX="no"
 ASSUME_YES="no"
 NON_INTERACTIVE="no"
 ACTION="install"
@@ -92,6 +93,7 @@ Options:
   -y, --yes               Non-interactive mode; accept defaults
   --no-firewall           Do not configure ufw/firewalld
   --skip-build            Deprecated; application installs require a matching frontend build
+  --npm-audit-fix         Run npm audit fix before building the frontend
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
   --grant-journal-access  Add the service user to systemd-journal for system log access
@@ -210,6 +212,11 @@ parse_args() {
         ;;
       --skip-build)
         SKIP_BUILD="yes"
+        NON_INTERACTIVE="yes"
+        shift
+        ;;
+      --npm-audit-fix)
+        NPM_AUDIT_FIX="yes"
         NON_INTERACTIVE="yes"
         shift
         ;;
@@ -1281,7 +1288,7 @@ PY
   warn "npm found ${vulnerability_count} frontend package vulnerabilities"
 
   if [[ "$vulnerability_count" =~ ^[1-9][0-9]*$ ]]; then
-    if confirm_npm_audit_fix 5; then
+    if [[ "$NPM_AUDIT_FIX" == "yes" ]] || confirm_npm_audit_fix 5; then
       info "Running npm audit fix"
       (cd "${INSTALL_DIR}/frontend" && npm audit fix)
       ok "npm audit fix completed"

@@ -362,6 +362,19 @@ def test_frontend_build_runs_audit_fix_only_after_confirmation(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def test_npm_audit_fix_option_enables_noninteractive_frontend_remediation(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        parse_args --npm-audit-fix --yes
+        [[ "$NPM_AUDIT_FIX" == "yes" ]]
+        [[ "$ASSUME_YES" == "yes" ]]
+        [[ "$NON_INTERACTIVE" == "yes" ]]
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_installer_wires_usb_udev_events_to_a_device_bound_systemd_service():
     installer = INSTALLER.read_text(encoding="utf-8")
     uninstaller = UNINSTALLER.read_text(encoding="utf-8")
