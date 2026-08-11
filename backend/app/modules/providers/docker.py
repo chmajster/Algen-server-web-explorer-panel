@@ -1530,12 +1530,50 @@ class DockerProvider(PrivateBackupProvider):
             archive.extractall(destination, members=data_members, filter="data")
         return {"volume": volume, "backup_id": backup_id, "restored": True}
 
-    def _container_definition(self, inspect: dict[str, Any], *, name: str, image: str | None = None) -> dict[str, Any]:
+    @staticmethod
+    def _preserved_high_risk_runtime(inspect: dict[str, Any]) -> dict[str, Any]:
+        """Copy the small, explicitly supported high-risk subset from Docker inspect.
+
+        This data is accepted only by the internal update path. Public create,
+        duplicate and recreate operations continue to reject these settings.
+        """
+        host = inspect.get("HostConfig") or {}
+        network_mode = str(host.get("NetworkMode") or "")
+        if network_mode not in {"host", "none"}:
+            network_mode = ""
+        pid_mode = str(host.get("PidMode") or "")
+        if pid_mode and not (pid_mode == "host" or re.fullmatch(r"container:[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", pid_mode)):
+            api_error(409, "UNSAFE_CONTAINER_CONFIGURATION", "Container PID mode cannot be safely preserved during update")
+        ipc_mode = "host" if host.get("IpcMode") == "host" else ""
+        devices: list[str] = []
+        for device in host.get("Devices") or []:
+            source = str(device.get("PathOnHost") or "")
+            target = str(device.get("PathInContainer") or "")
+            permissions = str(device.get("CgroupPermissions") or "rwm")
+            if not source.startswith("/") or not target.startswith("/") or ".." in source.split("/") or ".." in target.split("/") or not re.fullmatch(r"[rwm]{1,3}", permissions):
+                api_error(409, "UNSAFE_CONTAINER_CONFIGURATION", "Container device mapping cannot be safely preserved during update")
+            devices.append(f"{source}:{target}:{permissions}")
+        capabilities: list[str] = []
+        for capability in host.get("CapAdd") or []:
+            normalized = str(capability).upper()
+            if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", normalized):
+                api_error(409, "UNSAFE_CONTAINER_CONFIGURATION", "Container capability cannot be safely preserved during update")
+            capabilities.append(normalized)
+        return {
+            "privileged": bool(host.get("Privileged")),
+            "network_mode": network_mode,
+            "pid_mode": pid_mode,
+            "ipc_mode": ipc_mode,
+            "devices": devices,
+            "capabilities": capabilities,
+        }
+
+    def _container_definition(self, inspect: dict[str, Any], *, name: str, image: str | None = None, allow_high_risk_update: bool = False) -> dict[str, Any]:
         from ..docker_manager.public import ContainerCreateRequest
 
         config = inspect.get("Config") or {}
         host = inspect.get("HostConfig") or {}
-        if host.get("Privileged") or host.get("NetworkMode") in {"host", "none"} or host.get("PidMode") or host.get("IpcMode") == "host" or host.get("Devices") or host.get("CapAdd"):
+        if not allow_high_risk_update and (host.get("Privileged") or host.get("NetworkMode") in {"host", "none"} or host.get("PidMode") or host.get("IpcMode") == "host" or host.get("Devices") or host.get("CapAdd")):
             api_error(409, "UNSAFE_CONTAINER_CONFIGURATION", "Container uses high-risk settings that cannot be duplicated or recreated")
         env: dict[str, str] = {}
         for raw in config.get("Env") or []:
@@ -1600,7 +1638,7 @@ class DockerProvider(PrivateBackupProvider):
         self.validate_compose(content)
         return {"content": content, "secrets_omitted": bool(environment), "environment_keys": sorted(environment)}
 
-    def _run_container(self, definition: dict[str, Any], secrets_payload: dict[str, str], log: LogCallback) -> dict[str, Any]:
+    def _run_container(self, definition: dict[str, Any], secrets_payload: dict[str, str], log: LogCallback, *, preserved_runtime: dict[str, Any] | None = None) -> dict[str, Any]:
         from ..docker_manager.public import ContainerCreateRequest
 
         request = ContainerCreateRequest.model_validate({**definition, "secret_environment": secrets_payload})
@@ -1616,7 +1654,19 @@ class DockerProvider(PrivateBackupProvider):
         env_path = self.manager_store.inputs_dir / f"env-{hashlib.sha256((request.name + str(time.time())).encode()).hexdigest()[:20]}.list"
         self._write_private(env_path, "".join(f"{key}={value}\n" for key, value in {**request.environment, **request.secret_environment}.items()))
         args = ["docker", "run", "-d"] if request.auto_start else ["docker", "create"]
-        args += ["--name", request.name, "--restart", request.restart_policy, "--network", request.network, "--label", "io.webnas.managed=true", "--env-file", str(env_path)]
+        runtime = preserved_runtime or {}
+        network = str(runtime.get("network_mode") or request.network)
+        args += ["--name", request.name, "--restart", request.restart_policy, "--network", network, "--label", "io.webnas.managed=true", "--env-file", str(env_path)]
+        if runtime.get("privileged"):
+            args.append("--privileged")
+        if runtime.get("pid_mode"):
+            args += ["--pid", str(runtime["pid_mode"])]
+        if runtime.get("ipc_mode"):
+            args += ["--ipc", str(runtime["ipc_mode"])]
+        for device in runtime.get("devices") or []:
+            args += ["--device", str(device)]
+        for capability in runtime.get("capabilities") or []:
+            args += ["--cap-add", str(capability)]
         for alias in request.network_aliases:
             args += ["--network-alias", alias]
         if request.hostname:
@@ -1681,7 +1731,8 @@ class DockerProvider(PrivateBackupProvider):
         for line in (pull.stdout + pull.stderr).splitlines()[-500:]:
             log("stdout" if pull.returncode == 0 else "stderr", redact(line))
         self._result(pull, "Could not pull updated image")
-        definition = self._container_definition(inspect, name=original_name, image=new_image)
+        preserved_runtime = self._preserved_high_risk_runtime(inspect)
+        definition = self._container_definition(inspect, name=original_name, image=new_image, allow_high_risk_update=True)
         private_environment = dict(definition.pop("secret_environment", {}))
         rollback_name = f"{original_name}-webnas-rollback-{int(time.time())}"
         was_running = bool((inspect.get("State") or {}).get("Running"))
@@ -1689,7 +1740,7 @@ class DockerProvider(PrivateBackupProvider):
             self._result(self._run(["docker", "stop", "--time", "30", normalized], timeout=60), "Could not stop container for update")
         self._result(self._run(["docker", "rename", normalized, rollback_name], timeout=30), "Could not create rollback snapshot")
         try:
-            created = self._run_container(definition, private_environment, log)
+            created = self._run_container(definition, private_environment, log, preserved_runtime=preserved_runtime)
             time.sleep(2)
             state = self._inspect("container", original_name).get("State") or {}
             if (was_running and not state.get("Running")) or (state.get("Health") or {}).get("Status") == "unhealthy":

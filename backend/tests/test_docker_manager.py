@@ -39,6 +39,43 @@ def test_container_contract_rejects_high_risk_fields_and_socket_mounts():
         ContainerCreateRequest.model_validate({"name": "duplicate-ports", "image": "nginx:stable", "ports": [{"published": 8080, "target": 80}, {"published": 8080, "target": 81}]})
 
 
+def test_container_update_preserves_existing_high_risk_runtime(monkeypatch, tmp_path: Path):
+    provider = DockerProvider("alice")
+    storage = DockerManagerStore(tmp_path / "manager")
+    monkeypatch.setattr(DockerProvider, "manager_store", property(lambda self: storage))
+    inspect = {
+        "Name": "/jellyfin",
+        "Config": {"Image": "jellyfin/jellyfin:latest", "Env": [], "Labels": {}},
+        "HostConfig": {
+            "NetworkMode": "host",
+            "Devices": [{"PathOnHost": "/dev/dri", "PathInContainer": "/dev/dri", "CgroupPermissions": "rwm"}],
+            "CapAdd": ["SYS_NICE"],
+            "RestartPolicy": {"Name": "unless-stopped"},
+        },
+        "NetworkSettings": {"Networks": {"host": {}}},
+        "Mounts": [],
+        "State": {"Running": True},
+    }
+
+    with pytest.raises(HTTPException) as error:
+        provider._container_definition(inspect, name="jellyfin-copy")
+    assert error.value.detail["code"] == "UNSAFE_CONTAINER_CONFIGURATION"
+
+    runtime = provider._preserved_high_risk_runtime(inspect)
+    definition = provider._container_definition(inspect, name="jellyfin", allow_high_risk_update=True)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(provider, "_inspect_container", lambda name: None)
+    monkeypatch.setattr(provider, "container_details", lambda name: {"name": name})
+    monkeypatch.setattr(provider, "_run", lambda args, timeout=30: commands.append(list(args)) or subprocess.CompletedProcess(args, 0, "", ""))
+
+    provider._run_container(definition, {}, lambda stream, line: None, preserved_runtime=runtime)
+
+    command = commands[-1]
+    assert command[command.index("--network") + 1] == "host"
+    assert command[command.index("--device") + 1] == "/dev/dri:/dev/dri:rwm"
+    assert command[command.index("--cap-add") + 1] == "SYS_NICE"
+
+
 def test_container_defaults_policy_is_validated_and_persisted(tmp_path: Path):
     storage = DockerManagerStore(tmp_path)
     assert storage.container_defaults_policy() == {
