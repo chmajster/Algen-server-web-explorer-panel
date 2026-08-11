@@ -11,6 +11,7 @@ BUILTIN_MODULE_IDS = (
     "ansible-controller",
     "apmid",
     "os-repositories",
+    "cron",
     "pihole",
     "adguard-home",
     "postgresql",

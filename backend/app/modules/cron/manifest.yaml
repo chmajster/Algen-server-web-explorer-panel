@@ -1,0 +1,59 @@
+id: cron
+name: Cron Manager
+description: Manage scheduled system tasks and automatic command execution.
+long_description: Create and maintain WebNAS-owned cron jobs while discovering existing system and user entries as read-only configuration.
+category: system_tools
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: calendar-clock
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages: {apt: [], dnf: [], yum: []}
+installations:
+  apt:
+    type: command
+    script: install.py
+    reason: Activate the native module and use the host's existing cron/crond daemon.
+  dnf:
+    type: command
+    script: install.py
+    reason: Activate the native module and use the host's existing cron/crond daemon.
+  yum:
+    type: command
+    script: install.py
+    reason: Activate the native module and use the host's existing cron/crond daemon.
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: false
+  reload: false
+  logs: true
+  diagnostics: true
+  backups: false
+  import_export: false
+  healthcheck: true
+  resources: [jobs]
+  actions: [job_create, job_update, job_enable, job_disable, job_duplicate, job_delete]
+ports: []
+dependencies: []
+conflicts: []
+permissions: [cron-management]
+config_paths: [/etc/cron.d/webnas]
+data_paths: [/var/lib/webnas/cron]
+backup_paths: [/etc/cron.d/webnas, /var/lib/webnas/cron/backups]
+proxmox_safe: false
+requires_reboot: false
+requires_root: false
+configurable: false
+removable: true
+package_less: true
+healthcheck: health.py
+ui:
+  hidden: false
+changelog:
+  - Native managed and read-only external cron jobs with transactional writes, RBAC, diagnostics and logs.

@@ -199,6 +199,13 @@ class Permission(StrEnum):
     APMID_AUDIT_VIEW = "apmid.audit.view"
     APMID_BACKUP = "apmid.backup"
     APMID_RESTORE = "apmid.restore"
+    CRON_VIEW = "cron.view"
+    CRON_CREATE = "cron.create"
+    CRON_EDIT = "cron.edit"
+    CRON_ENABLE = "cron.enable"
+    CRON_DELETE = "cron.delete"
+    CRON_LOGS = "cron.logs"
+    CRON_ADMIN = "cron.admin"
     LOGS_VIEW_OWN = "logs.view_own"
     LOGS_VIEW_SYSTEM = "logs.view_system"
     LOGS_VIEW_KERNEL = "logs.view_kernel"
@@ -216,7 +223,7 @@ class Permission(StrEnum):
 
 
 _READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics", "live", "export"}
-_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.SYSTEM_SHUTDOWN, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE, Permission.OS_REPOSITORIES_CHANNELS_PROMOTE, Permission.OS_REPOSITORIES_KEYS_MANAGE, Permission.OS_REPOSITORIES_RESTORE, Permission.OS_REPOSITORIES_FULL_REMOVE, Permission.APMID_DELETE, Permission.APMID_PERMISSIONS_MANAGE, Permission.APMID_RESTORE}
+_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.SYSTEM_SHUTDOWN, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE, Permission.OS_REPOSITORIES_CHANNELS_PROMOTE, Permission.OS_REPOSITORIES_KEYS_MANAGE, Permission.OS_REPOSITORIES_RESTORE, Permission.OS_REPOSITORIES_FULL_REMOVE, Permission.APMID_DELETE, Permission.APMID_PERMISSIONS_MANAGE, Permission.APMID_RESTORE, Permission.CRON_DELETE, Permission.CRON_ADMIN}
 _APPLICATIONS: dict[str, list[str]] = {
     "files": ["files"],
     "transfers": ["transfers"],
@@ -238,6 +245,7 @@ _APPLICATIONS: dict[str, list[str]] = {
     "hosts-manager": ["module:hosts-manager"],
     "os-repositories": ["module:os-repositories"],
     "apmid": ["module:apmid"],
+    "cron": ["module:cron"],
     "logs": ["logs"],
     "system": ["monitor", "logs", "settings"],
 }
@@ -347,6 +355,8 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.APMID_VIEW.value, Permission.APMID_CREATE.value, Permission.APMID_UPDATE.value,
         Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_MEMBERS_MANAGE.value,
         Permission.APMID_PERMISSIONS_VIEW.value, Permission.APMID_AUDIT_VIEW.value, Permission.APMID_BACKUP.value,
+        Permission.CRON_VIEW.value, Permission.CRON_CREATE.value, Permission.CRON_EDIT.value,
+        Permission.CRON_ENABLE.value, Permission.CRON_LOGS.value,
     },
     Role.auditor: {
         Permission.FILES_VIEW.value, Permission.FILES_READ.value, Permission.FILES_DOWNLOAD.value, Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_VIEW_ALL.value,
@@ -366,6 +376,7 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.OS_REPOSITORIES_VIEW.value, Permission.OS_REPOSITORIES_KEYS_VIEW.value,
         Permission.APMID_VIEW.value, Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_PERMISSIONS_VIEW.value,
         Permission.APMID_AUDIT_VIEW.value,
+        Permission.CRON_VIEW.value, Permission.CRON_LOGS.value,
     },
     Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.LOGS_VIEW_OWN.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value, Permission.SYSTEM_STATUS.value},
 }

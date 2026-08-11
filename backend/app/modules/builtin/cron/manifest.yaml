@@ -1,0 +1,12 @@
+id: cron
+name: Cron Manager
+category: system
+icon: calendar-clock
+permissions: [cron.view, cron.create, cron.edit, cron.enable, cron.delete, cron.logs, cron.admin]
+routers: [app.modules.cron.router:router]
+dependencies: [identity, package-center]
+capabilities: [jobs, schedules, external-discovery, logs, diagnostics]
+actions: [create, update, enable, disable, duplicate, delete, validate]
+jobs: [cron-configuration]
+system_capabilities: [cron, crond, crontab]
+menu: [{id: cron, label: cron.name, icon: calendar-clock, permission: cron.view}]
