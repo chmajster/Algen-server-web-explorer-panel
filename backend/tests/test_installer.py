@@ -54,9 +54,9 @@ def test_installer_prompts_use_interactive_stdin_before_dev_tty():
     timeout_reader = installer.split("read_from_tty_timeout() {", 1)[1].split("\n}", 1)[0]
 
     assert "[[ -t 0 ]]" in prompt_reader
-    assert "exec {tty_fd}<>/dev/tty 2>/dev/null" in prompt_reader
+    assert "{ exec {tty_fd}<>/dev/tty; } 2>/dev/null" in prompt_reader
     assert "[[ -t 0 ]]" in timeout_reader
-    assert "exec {tty_fd}<>/dev/tty 2>/dev/null" in timeout_reader
+    assert "{ exec {tty_fd}<>/dev/tty; } 2>/dev/null" in timeout_reader
 
 
 def test_update_prepares_an_isolated_release_without_stopping_the_active_service():

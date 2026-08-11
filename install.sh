@@ -222,7 +222,7 @@ read_from_tty() {
     printf '%s' "$answer"
     return 0
   fi
-  if exec {tty_fd}<>/dev/tty 2>/dev/null; then
+  if { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
     read -r -p "$prompt" answer <&"$tty_fd" || {
       exec {tty_fd}>&-
       return 1
@@ -245,7 +245,7 @@ read_from_tty_timeout() {
   [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || return 1
   if [[ -t 0 ]]; then
     tty_fd=0
-  elif ! exec {tty_fd}<>/dev/tty 2>/dev/null; then
+  elif ! { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
     return 1
   fi
   deadline=$((SECONDS + timeout))
