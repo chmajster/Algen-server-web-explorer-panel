@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import get_config
+from ..sqlite_utils import ClosingConnection
 from .models import GroupPolicy, PermissionChange, UserPolicy
 
 
@@ -28,7 +29,7 @@ class IdentityRepository:
 
     def connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, timeout=10)
+        connection = sqlite3.connect(self.path, timeout=10, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout=10000")

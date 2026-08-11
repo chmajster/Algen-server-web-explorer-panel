@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from .audit import logger
 from .config import get_config
 from .package_center.executor import redact
+from .sqlite_utils import ClosingConnection
 
 
 class ActivityCategory(StrEnum):
@@ -98,7 +99,7 @@ class ActivityRepository:
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, timeout=5)
+        connection = sqlite3.connect(self.path, timeout=5, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=5000")
         return connection

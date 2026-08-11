@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,19 @@ from app.package_center.detached_updates import update_session_directory, write_
 from app.package_center.models import DistributionInfo, InstallationType, ModuleManifest, PackageAction, PackagePlan, PackageSourceInput
 from app.package_center.package_managers import normalize_package_manager
 from app.package_center.repository import PackageRepository
+
+
+def test_repository_queries_close_sqlite_file_descriptors(tmp_path):
+    descriptor_directory = Path("/proc/self/fd")
+    if not descriptor_directory.is_dir():
+        pytest.skip("Linux file descriptor accounting is unavailable")
+    repository = PackageRepository(tmp_path / "descriptor-check.sqlite3")
+    before = len(os.listdir(descriptor_directory))
+
+    for _ in range(250):
+        repository.installed()
+
+    assert len(os.listdir(descriptor_directory)) <= before + 2
 
 
 def plan(module_id: str = "nginx", action: PackageAction = PackageAction.install) -> PackagePlan:

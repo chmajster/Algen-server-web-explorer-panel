@@ -13,6 +13,7 @@ from typing import Any
 
 from ...config import get_config
 from ...package_center.models import api_error
+from ...sqlite_utils import ClosingConnection
 
 
 TOKEN_RE = re.compile(r"^[a-f0-9]{32}$")
@@ -62,7 +63,7 @@ class DockerManagerStore:
         return dict(value)
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=30)
+        connection = sqlite3.connect(self.path, timeout=30, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA journal_mode=WAL")

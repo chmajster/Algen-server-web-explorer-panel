@@ -24,6 +24,7 @@ from .audit import logger
 from .config import get_config
 from .proxmox_guard import safe_mode_active
 from .security import SessionUser, get_session_user, require_csrf
+from .sqlite_utils import ClosingConnection
 from .settings import _is_admin
 from .identity.permissions import authorize
 from .update_coordination import operation_admission
@@ -106,7 +107,7 @@ def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path(), timeout=15)
+    conn = sqlite3.connect(db_path(), timeout=15, factory=ClosingConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute(

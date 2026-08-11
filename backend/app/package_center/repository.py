@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..config import get_config
+from ..sqlite_utils import ClosingConnection
 from .detached_updates import detached_update_session, read_update_state, update_session_directory
 from .models import PackageJobStatus, PackagePlan, PackageSourceInput
 
@@ -22,7 +23,7 @@ class PackageRepository:
         self.recover_interrupted()
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=30)
+        connection = sqlite3.connect(self.path, timeout=30, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         return connection

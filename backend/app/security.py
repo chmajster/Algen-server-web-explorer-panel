@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import HTTPException, Request, Response
 
 from .config import get_config
+from .sqlite_utils import ClosingConnection
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,7 @@ class SessionStore:
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, timeout=10)
+        connection = sqlite3.connect(self.path, timeout=10, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=10000")
         return connection

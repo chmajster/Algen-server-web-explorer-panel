@@ -16,6 +16,7 @@ from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..config import get_config
 from ..file_ops import run_user_op
 from ..proxmox_guard import assert_path_allowed
+from ..sqlite_utils import ClosingConnection
 from ..update_coordination import coordination_lock, operation_admission, update_blocks_operations
 from .rsync_tasks import (
     build_rsync_command,
@@ -155,7 +156,7 @@ class FileTaskManager:
         except OSError:
             self._db_path = Path(tempfile.gettempdir()) / "webnas" / "transfers.sqlite3"
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self._db_path)
+        conn = sqlite3.connect(self._db_path, factory=ClosingConnection)
         conn.row_factory = sqlite3.Row
         return conn
 
