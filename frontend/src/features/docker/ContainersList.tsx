@@ -20,7 +20,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, type DockerContainer, type DockerContainerAction, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
@@ -270,8 +270,8 @@ export function ContainersList({
   const [selected, setSelected] = useState<SelectedContainer | null>(null);
   const [menu, setMenu] = useState<ContainerMenu | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const fallbackDraftKey = useRef(`docker:create-container:${Math.random().toString(36).slice(2)}`);
-  const wizardDraftKey = draftKey || fallbackDraftKey.current;
+  const fallbackDraftId = useId();
+  const wizardDraftKey = draftKey || `docker:create-container:${fallbackDraftId}`;
   const [wizard, setWizard] = useState(() => Boolean(sessionStorage.getItem(wizardDraftKey)));
   const [importFile, setImportFile] = useState<File | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
