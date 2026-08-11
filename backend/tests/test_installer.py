@@ -59,6 +59,14 @@ def test_installer_prompts_use_interactive_stdin_before_dev_tty():
     assert "{ exec {tty_fd}<>/dev/tty; } 2>/dev/null" in timeout_reader
 
 
+def test_source_archive_download_displays_progress():
+    installer = INSTALLER.read_text(encoding="utf-8")
+    prepare_source = installer.split("prepare_source() {", 1)[1].split("\n}", 1)[0]
+
+    assert "curl --fail --location --progress-bar --output" in prepare_source
+    assert "wget --progress=bar:force:noscroll --output-document=" in prepare_source
+
+
 def test_update_prepares_an_isolated_release_without_stopping_the_active_service():
     installer = INSTALLER.read_text(encoding="utf-8")
     main = installer.split("main() {", 1)[1].split('\nmain "$@"', 1)[0]

@@ -691,9 +691,9 @@ prepare_source() {
   WORK_DIR="$(mktemp -d)"
   info "Downloading WebNAS source archive"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$ARCHIVE_URL" -o "${WORK_DIR}/webnas.tar.gz"
+    curl --fail --location --progress-bar --output "${WORK_DIR}/webnas.tar.gz" "$ARCHIVE_URL"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "${WORK_DIR}/webnas.tar.gz" "$ARCHIVE_URL"
+    wget --progress=bar:force:noscroll --output-document="${WORK_DIR}/webnas.tar.gz" "$ARCHIVE_URL"
   else
     fail "curl or wget is required to download WebNAS"
   fi
