@@ -495,6 +495,15 @@ def test_installer_skips_bootstrap_when_curl_wget_tar_and_rsync_exist(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def test_installer_requires_cifs_utils_for_every_package_manager():
+    installer = INSTALLER.read_text(encoding="utf-8")
+    dependencies = installer.split("install_dependencies() {", 1)[1].split("\n}", 1)[0]
+
+    assert dependencies.count("cifs-utils") >= 4
+    assert "command -v mount.cifs" in dependencies
+    assert "SMB/CIFS runtime is ready (cifs-utils)" in dependencies
+
+
 def test_installer_enables_python314_ppa_on_ubuntu_2404(tmp_path):
     result = _run_harness(
         tmp_path,

@@ -620,6 +620,8 @@ install_dependencies() {
       yum install -y ntfs-3g exfatprogs || warn "Optional NTFS/exFAT tools could not be installed"
       ;;
   esac
+  command -v mount.cifs >/dev/null 2>&1 || fail "cifs-utils was installed, but mount.cifs is unavailable; SMB/CIFS mounts cannot work"
+  ok "SMB/CIFS runtime is ready (cifs-utils)"
   PYTHON_BIN="$(command -v python3.14 || true)"
   [[ -n "$PYTHON_BIN" ]] || fail "Python 3.14 is required, but python3.14 was not found after dependency installation"
   "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 14) else 1)' || fail "python3.14 does not provide the required Python 3.14 runtime"
