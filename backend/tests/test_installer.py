@@ -619,6 +619,32 @@ def test_installer_skips_bootstrap_when_curl_wget_tar_and_rsync_exist(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def test_repository_metadata_is_refreshed_only_for_install_or_reinstall(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r'''
+        calls="$TEST_ROOT/refresh-calls"
+        refresh_apt_metadata() { printf 'refresh\n' >> "$calls"; }
+
+        ACTION=update
+        refresh_apt_metadata_for_installation
+        [[ ! -e "$calls" ]]
+
+        ACTION=install
+        refresh_apt_metadata_for_installation
+        refresh_apt_metadata_for_installation
+        [[ "$(wc -l < "$calls")" == "1" ]]
+
+        APT_METADATA_REFRESHED=no
+        ACTION=reinstall
+        refresh_apt_metadata_for_installation
+        [[ "$(wc -l < "$calls")" == "2" ]]
+        ''',
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Skipping system repository metadata refresh during WebNAS update" in result.stdout
+
+
 def test_installer_requires_cifs_utils_for_every_package_manager():
     installer = INSTALLER.read_text(encoding="utf-8")
     dependencies = installer.split("install_dependencies() {", 1)[1].split("\n}", 1)[0]

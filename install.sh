@@ -50,6 +50,7 @@ WORK_DIR=""
 SOURCE_DIR=""
 APT_TEMP_DIR=""
 APT_SOURCE_OPTIONS=()
+APT_METADATA_REFRESHED="no"
 APT_SOURCES_ROOT="/etc/apt"
 CURRENT_STEP="startup"
 APP_COPY_STARTED="no"
@@ -533,6 +534,16 @@ refresh_apt_metadata() {
   return "$exit_code"
 }
 
+refresh_apt_metadata_for_installation() {
+  if [[ "$ACTION" == "update" ]]; then
+    info "Skipping system repository metadata refresh during WebNAS update"
+    return 0
+  fi
+  [[ "$APT_METADATA_REFRESHED" == "yes" ]] && return 0
+  refresh_apt_metadata
+  APT_METADATA_REFRESHED="yes"
+}
+
 ensure_download_tools() {
   local tool=""
   local missing=()
@@ -548,7 +559,7 @@ ensure_download_tools() {
   info "Missing tools: ${missing[*]}"
   case "$PKG_MANAGER" in
     apt)
-      refresh_apt_metadata
+      refresh_apt_metadata_for_installation
       DEBIAN_FRONTEND=noninteractive apt_get install -y "${missing[@]}"
       ;;
     dnf)
@@ -622,7 +633,7 @@ install_dependencies() {
   section "Installing dependencies"
   case "$PKG_MANAGER" in
     apt)
-      refresh_apt_metadata
+      refresh_apt_metadata_for_installation
       ensure_python314_apt_repository
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3.14 python3.14-venv python3.14-dev || \
