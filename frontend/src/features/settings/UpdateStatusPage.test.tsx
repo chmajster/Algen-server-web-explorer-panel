@@ -29,6 +29,16 @@ function progress(overrides: Partial<UpdateProgress> = {}): UpdateProgress {
 }
 
 describe("UpdateStatusPage", () => {
+  it("shows elapsed minutes and refreshes the timer every second", () => {
+    const interval = vi.spyOn(window, "setInterval");
+    const startedAt = Math.floor(Date.now() / 1000) - 60;
+    render(<UpdateStatusPage value={progress({ state: "running", started_at: startedAt })} connectionError={false} t={t} onRetry={vi.fn()} onReturn={vi.fn()} onLogin={vi.fn()} />);
+
+    expect(screen.getByText("1 min 00 s")).toBeInTheDocument();
+    expect(interval).toHaveBeenCalledWith(expect.any(Function), 1000);
+    interval.mockRestore();
+  });
+
   it("renders pending, running, success, failed and skipped steps", () => {
     const steps: NonNullable<UpdateProgress["steps"]> = [
       { id: "prepare", status: "success", message: "Ready", started_at: 10, finished_at: 11 },

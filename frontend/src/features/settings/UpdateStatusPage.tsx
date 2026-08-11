@@ -30,17 +30,15 @@ function timestamp(value: number | null | undefined) {
 function duration(
   started: number | null | undefined,
   finished: number | null | undefined,
-  t: Translate,
+  now: number,
 ) {
   if (!started) return "—";
   const seconds = Math.max(
     0,
-    Math.round((finished || Date.now() / 1000) - started),
+    Math.floor((finished || now) - started),
   );
-  return t("updateStatus.durationSeconds").replace(
-    "{count}",
-    String(seconds),
-  );
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes} min ${String(seconds % 60).padStart(2, "0")} s`;
 }
 
 function StepIcon({
@@ -109,6 +107,7 @@ export function UpdateStatusPage({
   const percent = Math.max(0, Math.min(100, rawPercent));
   const logRef = useRef<HTMLPreElement | null>(null);
   const [showDetailedSteps, setShowDetailedSteps] = useState(false);
+  const [now, setNow] = useState(() => Date.now() / 1000);
   const logContent = lines.length
     ? lines.join("\n")
     : t(active ? "settings.updateWaitingForLog" : "settings.updateNoLog");
@@ -134,6 +133,13 @@ export function UpdateStatusPage({
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now() / 1000);
+    const timer = window.setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
 
   useLayoutEffect(() => {
     const log = logRef.current;
@@ -214,7 +220,7 @@ export function UpdateStatusPage({
               {duration(
                 value.started_at || value.requested_at,
                 value.finished_at,
-                t,
+                now,
               )}
             </dd>
           </div>
@@ -300,7 +306,7 @@ export function UpdateStatusPage({
                       {duration(
                         step.started_at,
                         step.finished_at,
-                        t,
+                        now,
                       )}
                     </dd>
                   </div>
