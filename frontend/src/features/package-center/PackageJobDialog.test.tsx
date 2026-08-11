@@ -56,6 +56,15 @@ describe("PackageJobDialog", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it("renders operation progress as a separate modal window", () => {
+    render(<PackageJobDialog initialJob={queued} moduleName="Menedżer kontenerów" t={(key) => key} onClose={vi.fn()} />);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveClass("operation-progress-dialog");
+    expect(dialog.closest(".modal-backdrop")).not.toBeNull();
+  });
+
   it("loads a durable job by id before subscribing to its stream", async () => {
     vi.spyOn(api, "appJob").mockResolvedValue({ ...queued, status: "running", progress: 18 });
 

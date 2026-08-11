@@ -2,13 +2,14 @@ import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
-export function Modal({ title, children, onClose, footer, wide = false, closeLabel = "×" }: {
+export function Modal({ title, children, onClose, footer, wide = false, closeLabel = "×", className = "" }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
   footer?: React.ReactNode;
   wide?: boolean;
   closeLabel?: string;
+  className?: string;
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -40,7 +41,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
 
   const dialog = (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={panel} className={`modal-panel ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onPointerDown={(event) => event.stopPropagation()}>
+      <div ref={panel} className={`modal-panel ${wide ? "modal-wide" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} onPointerDown={(event) => event.stopPropagation()}>
         <header className="modal-header"><h2 id={titleId}>{title}</h2><button className="icon-button" type="button" aria-label={closeLabel} onClick={onClose}><X size={18} /></button></header>
         <div className="modal-body">{children}</div>
         {footer && <footer className="modal-footer">{footer}</footer>}

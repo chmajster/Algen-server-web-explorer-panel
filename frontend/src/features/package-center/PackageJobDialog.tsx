@@ -1,7 +1,8 @@
-import { CheckCircle2, CircleX, LoaderCircle, X } from "lucide-react";
+import { CheckCircle2, CircleX, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type AppJob } from "../../api";
 import type { Translate } from "../../app/types";
+import { Modal } from "../../components/Modal";
 import "./package-center.css";
 import "./operation-progress-window.css";
 
@@ -28,34 +29,7 @@ function OperationWindowFrame({
   onClose: () => void;
   children: ReactNode;
 }) {
-  return (
-    <section
-      className="operation-progress-window"
-      aria-labelledby="operation-progress-window-title"
-    >
-      <header className="operation-progress-window-header">
-        <strong id="operation-progress-window-title">{title}</strong>
-        <button
-          type="button"
-          title={closeLabel}
-          aria-label={closeLabel}
-          onClick={onClose}
-        >
-          <X />
-        </button>
-      </header>
-
-      <div className="operation-progress-window-body">
-        {children}
-      </div>
-
-      {footer && (
-        <footer className="operation-progress-window-footer">
-          {footer}
-        </footer>
-      )}
-    </section>
-  );
+  return <Modal title={title} closeLabel={closeLabel} className="operation-progress-dialog" wide onClose={onClose} footer={footer}><div className="operation-progress-window-body">{children}</div></Modal>;
 }
 
 export function PackageJobDialog({
