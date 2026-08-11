@@ -20,6 +20,7 @@ import { hostsManagerClient } from "./modules/hosts-manager/api/client";
 import { containersClient } from "./modules/containers/api/client";
 import { sambaClient } from "./modules/samba/api/client";
 import { mountsClient } from "./modules/mounts/api/client";
+import { cronClient } from "./modules/cron/api/client";
 
 export * from "./core/api/contracts";
 export { ApiError, login, logout, me, onAuthenticationInvalidated, resetAuthenticationState, setApiBaseUrl } from "./core/api/transport";
@@ -44,6 +45,7 @@ export { hostsManagerClient } from "./modules/hosts-manager/api/client";
 export { containersClient } from "./modules/containers/api/client";
 export { sambaClient } from "./modules/samba/api/client";
 export { mountsClient } from "./modules/mounts/api/client";
+export { cronClient } from "./modules/cron/api/client";
 
 export const api = {
   ...platformClient,
@@ -67,4 +69,5 @@ export const api = {
   ...containersClient,
   ...sambaClient,
   ...mountsClient,
+  ...cronClient,
 } as const;
