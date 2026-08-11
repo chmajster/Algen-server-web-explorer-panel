@@ -160,6 +160,36 @@ describe("personalized desktop", () => {
     expect(screen.getByRole("button", { name: "app.store" })).toBeInTheDocument();
   });
 
+  it("hides and unpins Cron Manager while its module is not installed", async () => {
+    vi.spyOn(api, "cronAccess").mockResolvedValue({ installed: false, allowed: false, blocked_by_proxmox: false });
+    const base = settingsFixture();
+    const profile = settingsFixture({
+      permissions: [...base.permissions, "cron.view"],
+      pinned_apps: ["cron"],
+      pinned_modules: ["cron"],
+      start_pinned_apps: ["cron"],
+      desktop_shortcut_apps: ["cron"],
+    });
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<Desktop user={{ username: profile.username, home: profile.home }} profile={profile} language={profile.language} theme={profile.theme} tasks={[]} uploadControls={controls} toasts={[]} t={t} toast={vi.fn()} onSettingsChange={save} onTheme={vi.fn()} onLoggedOut={vi.fn()} />);
+
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ pinned_apps: [], pinned_modules: [], start_pinned_apps: [], desktop_shortcut_apps: [] }));
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    expect(screen.queryByRole("button", { name: "cron.name" })).not.toBeInTheDocument();
+  });
+
+  it("shows Cron Manager in Start after its module is installed", async () => {
+    vi.spyOn(api, "cronAccess").mockResolvedValue({ installed: true, allowed: true, blocked_by_proxmox: false });
+    const base = settingsFixture();
+    renderDesktop({ permissions: [...base.permissions, "cron.view"] });
+
+    await waitFor(() => expect(api.cronAccess).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    expect(await screen.findByRole("button", { name: "cron.name" })).toBeInTheDocument();
+  });
+
   it("restores an exact minimized transfer from Actions Center without duplicating its window", async () => {
     renderDesktop({ animations_enabled: false }, [actionTask]);
 

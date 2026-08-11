@@ -95,6 +95,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [moduleNames, setModuleNames] = useState<Map<string, string>>(new Map());
   const [apmidAvailable, setApmidAvailable] = useState(false);
   const [apmidResolved, setApmidResolved] = useState(false);
+  const [cronAvailable, setCronAvailable] = useState(false);
+  const [cronResolved, setCronResolved] = useState(false);
   const migrateLegacyPins = useRef(localStorage.getItem(legacyPinnedKey) !== null);
   const scaleMigrationAttempt = useRef("");
   const [clock, setClock] = useState(new Date());
@@ -107,12 +109,13 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const previousModuleHealth = useRef<Map<string, string>>(new Map());
   const moduleNotificationsInitialized = useRef(false);
   const apmidUnavailableHandled = useRef(false);
+  const cronUnavailableHandled = useRef(false);
   const notifiedModuleEvents = useRef<Set<string>>(new Set());
   const notificationRef = useRef<HTMLElement>(null);
   const actionButtonRef = useRef<HTMLButtonElement>(null);
   const clockButtonRef = useRef<HTMLButtonElement>(null);
   const canUseApp = useCallback((appId: AppId) => moduleRegistry.availableFor(appId, profile.permissions, profile.is_admin), [profile.is_admin, profile.permissions]);
-  const moduleAppAvailable = useCallback((appId: AppId) => (appId !== "ansible" || moduleNames.has("ansible-controller")) && (appId !== "hosts" || moduleNames.has("hosts-manager")) && (appId !== "apmid" || apmidAvailable), [apmidAvailable, moduleNames]);
+  const moduleAppAvailable = useCallback((appId: AppId) => (appId !== "ansible" || moduleNames.has("ansible-controller")) && (appId !== "hosts" || moduleNames.has("hosts-manager")) && (appId !== "apmid" || apmidAvailable) && (appId !== "cron" || cronAvailable), [apmidAvailable, cronAvailable, moduleNames]);
   const availableApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const taskbarApps = useMemo(() => apps.filter((app) => canUseApp(app.id) && moduleAppAvailable(app.id)), [canUseApp, moduleAppAvailable]);
   const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
@@ -388,6 +391,38 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       void onSettingsChange({ pinned_apps: [...nextPinned], pinned_modules: [...nextPinnedModules], start_pinned_apps: [...nextStart], desktop_shortcut_apps: [...nextDesktop] }).catch(() => undefined);
     }
   }, [apmidAvailable, apmidResolved, desktopShortcuts, onSettingsChange, pinned, pinnedModules, startPinned, state.windows]);
+  useEffect(() => {
+    let active = true;
+    let polling = false;
+    async function refreshCronAccess() {
+      if (polling) return;
+      polling = true;
+      try {
+        const value = await api.cronAccess();
+        if (active) { setCronAvailable(value.installed && value.allowed); setCronResolved(true); }
+      } catch {
+        // Keep the last confirmed state during a transient backend outage.
+      } finally { polling = false; }
+    }
+    const changed = () => { void refreshCronAccess(); };
+    void refreshCronAccess();
+    const timer = window.setInterval(() => { if (!document.hidden) void refreshCronAccess(); }, 5000);
+    window.addEventListener("webnas:modules-changed", changed);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("webnas:modules-changed", changed); };
+  }, []);
+  useEffect(() => {
+    if (cronAvailable) { cronUnavailableHandled.current = false; return; }
+    if (!cronResolved || cronUnavailableHandled.current) return;
+    cronUnavailableHandled.current = true;
+    state.windows.filter((item) => item.app === "cron" || (item.app === "module" && item.moduleId === "cron")).forEach((item) => dispatch({ type: "close", id: item.id }));
+    const nextPinned = new Set(pinned); nextPinned.delete("cron"); setPinned(nextPinned);
+    const nextPinnedModules = new Set(pinnedModules); nextPinnedModules.delete("cron"); setPinnedModules(nextPinnedModules);
+    const nextStart = new Set(startPinned); nextStart.delete("cron"); setStartPinned(nextStart);
+    const nextDesktop = new Set(desktopShortcuts); nextDesktop.delete("cron"); setDesktopShortcuts(nextDesktop);
+    if (pinned.has("cron") || pinnedModules.has("cron") || startPinned.has("cron") || desktopShortcuts.has("cron")) {
+      void onSettingsChange({ pinned_apps: [...nextPinned], pinned_modules: [...nextPinnedModules], start_pinned_apps: [...nextStart], desktop_shortcut_apps: [...nextDesktop] }).catch(() => undefined);
+    }
+  }, [cronAvailable, cronResolved, desktopShortcuts, onSettingsChange, pinned, pinnedModules, startPinned, state.windows]);
 
   function selectTask(item: WindowInstance) {
     if (state.activeId === item.id && !item.minimized) dispatch({ type: "minimize", id: item.id });
