@@ -1,0 +1,18 @@
+.application-restart-screen { position: fixed; z-index: 10000; inset: 0; display: grid; place-items: center; padding: 1.25rem; color: #eaf5fa; background: radial-gradient(circle at 50% 35%,#174d68 0,#102d3d 32%,#091820 72%); }
+.application-restart-screen > section { width: min(30rem,100%); display: grid; justify-items: center; gap: .75rem; padding: 2rem; border: 1px solid rgb(151 211 238 / .25); border-radius: 1.25rem; background: rgb(9 25 34 / .72); box-shadow: 0 1.5rem 5rem rgb(0 0 0 / .35); text-align: center; backdrop-filter: blur(.75rem); }
+.application-restart-mark { position: relative; width: 5rem; height: 5rem; display: grid; place-items: center; margin-bottom: .25rem; border-radius: 1.25rem; color: white; background: linear-gradient(145deg,#2998d1,#12669b); box-shadow: 0 .75rem 2rem rgb(0 123 190 / .35); }
+.application-restart-mark > svg { width: 2.75rem; height: 2.75rem; }
+.application-restart-mark > span { position: absolute; right: -.45rem; bottom: -.45rem; width: 2rem; height: 2rem; display: grid; place-items: center; border: .2rem solid #102d3d; border-radius: 50%; background: #20a6d8; }
+.application-restart-mark > span svg { width: 1.05rem; animation: application-restart-spin 1.1s linear infinite; }
+.application-restart-screen small { color: #8fcce6; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.application-restart-screen h1,.application-restart-screen p { margin: 0; }
+.application-restart-screen h1 { font-size: clamp(1.35rem,3vw,2rem); }
+.application-restart-screen p,.application-restart-screen footer { color: #a9c5d2; }
+.application-restart-progress { width: 100%; height: .35rem; overflow: hidden; margin-top: .625rem; border-radius: 1rem; background: rgb(255 255 255 / .1); }
+.application-restart-progress span { width: 38%; height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg,transparent,#52c9f2,transparent); animation: application-restart-slide 1.4s ease-in-out infinite; }
+.application-restart-screen dl { display: flex; gap: .625rem; margin: .375rem 0 0; padding: .55rem .8rem; border-radius: .625rem; background: rgb(255 255 255 / .06); font-size: .8rem; }
+.application-restart-screen dt { color: #91b1bf; }.application-restart-screen dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 700; }
+.application-restart-screen footer { margin-top: .25rem; font-size: .75rem; }
+@keyframes application-restart-spin { to { transform: rotate(360deg); } }
+@keyframes application-restart-slide { from { transform: translateX(-110%); } to { transform: translateX(270%); } }
+@media (prefers-reduced-motion: reduce) { .application-restart-mark > span svg,.application-restart-progress span { animation: none; } }

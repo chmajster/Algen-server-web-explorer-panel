@@ -12,7 +12,7 @@ function isExpectedRestartDisconnect(error: unknown) {
   return error instanceof TypeError || (error instanceof ApiError && [502, 504].includes(error.status));
 }
 
-export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned, recentApps = [], profile, t, onOpen, onOpenProfile, onToggleStartPin, onToggleDesktopShortcut, onToggleTaskbarPin, onShutdown, onRestart, onLogout, onClose }: {
+export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned, recentApps = [], profile, t, onOpen, onOpenProfile, onToggleStartPin, onToggleDesktopShortcut, onToggleTaskbarPin, onShutdown, onRestart, onRestartApplication, onLogout, onClose }: {
   apps: AppDefinition[];
   startPinned: Set<AppId>;
   desktopShortcuts: Set<AppId>;
@@ -27,6 +27,7 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   onToggleTaskbarPin: (app: AppId) => void;
   onShutdown?: () => void;
   onRestart?: () => void;
+  onRestartApplication?: () => Promise<void>;
   onLogout: () => void;
   onClose: () => void;
 }) {
@@ -98,7 +99,7 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
     setPowerBusy("application");
     setPowerError("");
     try {
-      await powerClient.restartApplication();
+      await (onRestartApplication ? onRestartApplication() : powerClient.restartApplication());
       setPowerMenuOpen(false);
       onClose();
     } catch (error) {

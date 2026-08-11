@@ -1,6 +1,6 @@
 import { Bell, ShieldCheck, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
-import { api, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
+import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
 import { ConnectionRefreshScope } from "../features/connection/ConnectionStatusMonitor";
 import type { UploadControls } from "../features/transfers/useUploadManager";
@@ -10,6 +10,7 @@ import { backgroundOnly, deepLinkForAction } from "../features/actions/windowTar
 import { isActiveAction, type BackgroundAction } from "../features/actions/types";
 import type { Language } from "../i18n";
 import { AppLauncher } from "./AppLauncher";
+import { ApplicationRestartScreen } from "./ApplicationRestartScreen";
 import { CalendarFlyout } from "./CalendarFlyout";
 import { apps, moduleRegistry } from "./registry/builtinModules";
 import { DesktopWindow } from "./DesktopWindow";
@@ -69,6 +70,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [actionsOpen, setActionsOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
+  const [applicationRestarting, setApplicationRestarting] = useState(false);
+  const [restartElapsed, setRestartElapsed] = useState(0);
   const [selectedShortcut, setSelectedShortcut] = useState<AppId | null>(null);
   const [dirtyWindows, setDirtyWindows] = useState<Set<string>>(new Set());
   const legacyPinnedKey = `webnas_pinned_apps_${user.username}`;
@@ -421,6 +424,40 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     setLauncherOpen(false);
     void api.restartSystem().catch((error: unknown) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
   }
+  async function restartApplication() {
+    setApplicationRestarting(true);
+    setRestartElapsed(0);
+    try {
+      await api.restartApplication();
+    } catch (error) {
+      const expectedDisconnect = error instanceof TypeError || (error instanceof ApiError && [502, 504].includes(error.status));
+      if (!expectedDisconnect) {
+        setApplicationRestarting(false);
+        throw error;
+      }
+    }
+  }
+  useEffect(() => {
+    if (!applicationRestarting) return;
+    const startedAt = Date.now();
+    let active = true;
+    let probing = false;
+    const elapsedTimer = window.setInterval(() => setRestartElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    const probe = async () => {
+      if (!active || probing || Date.now() - startedAt < 2500) return;
+      probing = true;
+      try {
+        await api.health();
+        if (active) window.location.reload();
+      } catch {
+        // The service is still restarting; the next probe will retry.
+      } finally {
+        probing = false;
+      }
+    };
+    const probeTimer = window.setInterval(() => void probe(), 1000);
+    return () => { active = false; window.clearInterval(elapsedTimer); window.clearInterval(probeTimer); };
+  }, [applicationRestarting]);
   function moduleDirty(item: WindowInstance, dirty: boolean) { setDirtyWindows((current) => { const next = new Set(current); if (dirty) next.add(item.id); else next.delete(item.id); return next; }); }
   function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !window.confirm(t("module.unsavedClose"))) return; const draftPrefix = `webnas_window_draft_${user.username}_${item.id}`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
   function taskbarWindow(item: WindowInstance, action: TaskbarWindowAction) {
@@ -472,12 +509,13 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       <Suspense fallback={null}><DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} /></Suspense>
       {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} viewport={viewport} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport })}><ConnectionRefreshScope active={state.activeId === item.id}>{renderApp(item)}</ConnectionRefreshScope></DesktopWindow>)}
     </main>
-    {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onOpenProfile={() => openApp("settings", "account")} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onShutdown={profile.permissions.includes("system.shutdown") ? () => { setLauncherOpen(false); setShutdownOpen(true); } : undefined} onRestart={profile.permissions.includes("system.restart") ? restartSystem : undefined} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
+    {launcherOpen && <AppLauncher apps={availableApps} startPinned={startPinned} desktopShortcuts={desktopShortcuts} taskbarPinned={pinned} recentApps={recentApps} profile={profile} t={t} onOpen={openApp} onOpenProfile={() => openApp("settings", "account")} onToggleStartPin={toggleStartPin} onToggleDesktopShortcut={toggleDesktopShortcut} onToggleTaskbarPin={togglePin} onShutdown={profile.permissions.includes("system.shutdown") ? () => { setLauncherOpen(false); setShutdownOpen(true); } : undefined} onRestart={profile.permissions.includes("system.restart") ? restartSystem : undefined} onRestartApplication={restartApplication} onLogout={signOut} onClose={() => setLauncherOpen(false)} />}
     <Taskbar apps={taskbarApps} pinned={pinned} pinnedModules={pinnedModules} moduleNames={moduleNames} windows={state.windows} activeId={state.activeId} profile={profile} resolvedTheme={resolvedTheme} clockText={clockText} dateText={dateText(clock, profile)} clockDateTime={clock.toISOString()} activeTransfers={activeTransfers} activeActions={activeBackgroundActions} launcherOpen={launcherOpen} notificationsOpen={notificationsOpen} actionsOpen={actionsOpen} calendarOpen={calendarOpen} actionButtonRef={actionButtonRef} clockButtonRef={clockButtonRef} t={t} onToggleLauncher={() => { setNotificationsOpen(false); setActionsOpen(false); setCalendarOpen(false); setLauncherOpen((value) => !value); }} onToggleNotifications={() => { setLauncherOpen(false); setActionsOpen(false); setCalendarOpen(false); setNotificationsOpen((value) => !value); }} onToggleActions={() => { setLauncherOpen(false); setNotificationsOpen(false); setCalendarOpen(false); setActionsOpen((value) => !value); }} onToggleCalendar={() => { setLauncherOpen(false); setNotificationsOpen(false); setActionsOpen(false); setCalendarOpen((value) => !value); }} onOpenLocalPanel={() => { setLauncherOpen(false); setNotificationsOpen(false); setActionsOpen(false); setCalendarOpen(false); }} onToggleTheme={() => onTheme(resolvedTheme === "dark" ? "light" : "dark")} onApp={selectApp} onModule={selectModule} onOpenNew={(app) => openApp(app)} onOpenModuleNew={(moduleId) => openApp("module", undefined, moduleId)} onTogglePin={togglePin} onToggleModulePin={toggleModulePin} onWindow={taskbarWindow} onCloseApp={closeAppWindows} onCloseModule={closeModuleWindows} onTaskbarSettings={() => openApp("settings", "personalization")} onAlignment={changeTaskbarAlignment} onShutdown={profile.permissions.includes("system.shutdown") ? () => setShutdownOpen(true) : undefined} onLogout={signOut} />
     {shutdownOpen && <ShutdownDialog t={t} onClose={() => setShutdownOpen(false)} />}
     {actionsOpen && <ActionsCenter actions={backgroundActions} locale={profile.language} t={t} triggerRef={actionButtonRef} onOpen={openActionTarget} onDismiss={backgroundManager.dismiss} onClose={() => setActionsOpen(false)} />}
     {calendarOpen && <CalendarFlyout now={clock} locale={profile.language} t={t} triggerRef={clockButtonRef} onClose={() => setCalendarOpen(false)} />}
     {notificationsOpen && <aside ref={notificationRef} className="notification-center" aria-label={t("desktop.notifications")}><header><div><Bell /><strong>{t("desktop.notifications")}</strong></div><button type="button" aria-label={t("action.close")} onClick={() => setNotificationsOpen(false)}><X /></button></header>{visibleToasts.length === 0 && (!profile.notification_transfer || tasks.length === 0) ? <div className="empty-state">{t("desktop.noNotifications")}</div> : <>{visibleToasts.slice().reverse().map((item) => <article className={item.type} key={item.id} role={item.moduleId ? "button" : undefined} tabIndex={item.moduleId ? 0 : undefined} onClick={() => { if (!item.moduleId) return; openApp("module", undefined, item.moduleId); setNotificationsOpen(false); }} onKeyDown={(event) => { if (item.moduleId && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openApp("module", undefined, item.moduleId); setNotificationsOpen(false); } }}><strong>{item.type === "error" ? t("status.error") : "WebNAS"}</strong><span>{item.text}</span></article>)}{profile.notification_transfer && tasks.slice(-profile.notification_limit).reverse().map((task) => <article key={task.id}><strong>{t(`transfers.${task.type}`)}</strong><span>{t(`task.${task.status}`)} · {Math.round(task.progress_percent ?? task.progress ?? 0)}%</span></article>)}</>}</aside>}
     <div className="toasts" role="status" aria-live="polite">{visibleToasts.map((item) => <div className={item.type} key={item.id}>{item.type === "error" && <ShieldCheck />}{item.text}</div>)}</div>
+    {applicationRestarting && <ApplicationRestartScreen elapsedSeconds={restartElapsed} t={t} />}
   </div>;
 }
