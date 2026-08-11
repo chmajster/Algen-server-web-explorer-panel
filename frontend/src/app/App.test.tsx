@@ -53,6 +53,8 @@ const idleUpdate = { state: "idle", running: false, pid: null, exit_code: null, 
 describe("authentication initialization", () => {
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset());
+    window.history.replaceState({}, "", "/");
+    sessionStorage.removeItem("webnas_completed_update_reload");
     mocks.settingsMe.mockResolvedValue(profile);
     mocks.tasks.mockResolvedValue([]);
     mocks.allTasks.mockResolvedValue([]);
@@ -120,5 +122,48 @@ describe("authentication initialization", () => {
     expect(container.querySelector(".boot-screen")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Zaloguj się" })).toBeNull();
     expect(screen.queryByTestId("desktop")).toBeNull();
+  });
+
+  it("reloads once after a successful system update", async () => {
+    const reloadPage = vi.fn();
+    window.history.replaceState({}, "", "/update-status");
+    mocks.me.mockResolvedValue(user);
+    mocks.settingsMe.mockResolvedValue({ ...profile, permissions: ["updates.view"] });
+    mocks.updateProgress.mockResolvedValue({
+      ...idleUpdate,
+      id: "update-success-1",
+      state: "completed",
+      exit_code: 0,
+      finished_at: 200,
+    });
+
+    const { rerender } = render(<App reloadPage={reloadPage} />);
+
+    await waitFor(() => expect(reloadPage).toHaveBeenCalledOnce());
+    expect(window.location.pathname).toBe("/");
+    expect(sessionStorage.getItem("webnas_completed_update_reload")).toBe("update-success-1");
+
+    rerender(<App reloadPage={reloadPage} />);
+    expect(reloadPage).toHaveBeenCalledOnce();
+  });
+
+  it("does not reload after a failed system update", async () => {
+    const reloadPage = vi.fn();
+    window.history.replaceState({}, "", "/update-status");
+    mocks.me.mockResolvedValue(user);
+    mocks.settingsMe.mockResolvedValue({ ...profile, permissions: ["updates.view"] });
+    mocks.updateProgress.mockResolvedValue({
+      ...idleUpdate,
+      id: "update-failed-1",
+      state: "failed",
+      exit_code: 1,
+      finished_at: 200,
+    });
+
+    render(<App reloadPage={reloadPage} />);
+
+    await waitFor(() => expect(document.querySelector(".update-status-page.failed")).toBeInTheDocument());
+    expect(reloadPage).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/update-status");
   });
 });

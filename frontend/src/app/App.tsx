@@ -9,7 +9,10 @@ import { useUploadManager } from "../features/transfers/useUploadManager";
 import { UpdateCompletionDialog, UpdateStatusPage } from "../features/settings/UpdateStatusPage";
 import { Login } from "../features/auth/Login";
 
-export function App() {
+const COMPLETED_UPDATE_RELOAD_KEY = "webnas_completed_update_reload";
+const reloadWindow = () => window.location.reload();
+
+export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } = {}) {
   const [authStatus, setAuthStatus] = useState<"checking" | "authenticated" | "anonymous">("checking");
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<SettingsMe | null>(null);
@@ -128,6 +131,14 @@ export function App() {
       window.history.replaceState({}, "", "/update-status");
     }
   }, [dismissedFailureId, updateProgress]);
+  useEffect(() => {
+    if (updateProgress?.state !== "completed" || window.location.pathname !== "/update-status") return;
+    const updateId = updateProgress.id || updateProgress.commit_revision || String(updateProgress.finished_at || "completed");
+    if (sessionStorage.getItem(COMPLETED_UPDATE_RELOAD_KEY) === updateId) return;
+    sessionStorage.setItem(COMPLETED_UPDATE_RELOAD_KEY, updateId);
+    window.history.replaceState({}, "", "/");
+    reloadPage();
+  }, [reloadPage, updateProgress]);
   useEffect(() => {
     if (!user || !profile?.permissions.includes("updates.view") || !updateChecked) return;
     if (updateProgress && ["waiting", "preparing", "running"].includes(updateProgress.state)) return;
