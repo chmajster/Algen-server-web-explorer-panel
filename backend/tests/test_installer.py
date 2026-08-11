@@ -376,3 +376,59 @@ def test_installer_skips_bootstrap_when_curl_wget_tar_and_rsync_exist(tmp_path):
         """,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_installer_enables_python314_ppa_on_ubuntu_2404(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        WEBNAS_OS_RELEASE_FILE="$TEST_ROOT/os-release"
+        printf 'ID=ubuntu\nVERSION_CODENAME=noble\n' > "$WEBNAS_OS_RELEASE_FILE"
+        calls="$TEST_ROOT/calls"
+        python_packages_available=no
+        apt_cache() { [[ "$python_packages_available" == "yes" ]]; }
+        apt_get() { printf 'apt-get %s\n' "$*" >> "$calls"; }
+        refresh_apt_metadata() { printf 'apt-update\n' >> "$calls"; }
+        add-apt-repository() {
+          printf 'add-repository %s\n' "$*" >> "$calls"
+          python_packages_available=yes
+        }
+        command() {
+          [[ "$1" == "-v" && "$2" == "add-apt-repository" ]] && return 0
+          builtin command "$@"
+        }
+        ensure_python314_apt_repository >/dev/null
+        grep -qx 'apt-get install -y software-properties-common ca-certificates' "$calls"
+        grep -qx 'add-repository -y -n ppa:deadsnakes/ppa' "$calls"
+        grep -qx 'apt-update' "$calls"
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_installer_keeps_configured_python314_repository(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        apt_cache() { return 0; }
+        apt_get() { return 99; }
+        refresh_apt_metadata() { return 99; }
+        add-apt-repository() { return 99; }
+        ensure_python314_apt_repository
+        """,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_installer_does_not_add_ubuntu_ppa_on_debian(tmp_path):
+    result = _run_harness(
+        tmp_path,
+        r"""
+        WEBNAS_OS_RELEASE_FILE="$TEST_ROOT/os-release"
+        printf 'ID=debian\nVERSION_CODENAME=bookworm\n' > "$WEBNAS_OS_RELEASE_FILE"
+        apt_cache() { return 1; }
+        ensure_python314_apt_repository
+        """,
+    )
+    assert result.returncode != 0
+    assert "Python 3.14 packages are unavailable for debian bookworm" in result.stdout

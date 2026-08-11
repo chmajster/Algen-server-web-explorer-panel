@@ -55,6 +55,7 @@ LAST_BACKUP_DIR=""
 SERVICE_WAS_ACTIVE="no"
 ACTIVE_RELEASE=""
 PYTHON_BIN="$(command -v python3.14 || true)"
+WEBNAS_OS_RELEASE_FILE="${WEBNAS_OS_RELEASE_FILE:-/etc/os-release}"
 
 if [[ -t 1 ]]; then
   RED="$(printf '\033[31m')"
@@ -427,6 +428,10 @@ apt_get() {
   NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_OPTIONS[@]}" "$@"
 }
 
+apt_cache() {
+  apt-cache "${APT_SOURCE_OPTIONS[@]}" "$@"
+}
+
 refresh_apt_metadata() {
   local output_file=""
   local exit_code="0"
@@ -498,14 +503,49 @@ setup_nodesource_repository() {
   apt_get update
 }
 
+apt_python314_packages_available() {
+  apt_cache show python3.14 python3.14-venv python3.14-dev >/dev/null 2>&1
+}
+
+os_release_value() {
+  local key="$1"
+  local value=""
+  [[ -f "$WEBNAS_OS_RELEASE_FILE" ]] || return 1
+  value="$(sed -n "s/^${key}=//p" "$WEBNAS_OS_RELEASE_FILE" | head -n 1)"
+  value="${value%\"}"
+  value="${value#\"}"
+  printf '%s' "$value"
+}
+
+ensure_python314_apt_repository() {
+  apt_python314_packages_available && return 0
+
+  local distro_id=""
+  local distro_codename=""
+  distro_id="$(os_release_value ID || true)"
+  distro_codename="$(os_release_value VERSION_CODENAME || true)"
+
+  if [[ "$distro_id" != "ubuntu" || ( "$distro_codename" != "noble" && "$distro_codename" != "jammy" ) ]]; then
+    fail "Python 3.14 packages are unavailable for ${distro_id:-this distribution} ${distro_codename:-unknown}. Configure a repository providing python3.14, python3.14-venv, and python3.14-dev, then retry."
+  fi
+
+  warn "Ubuntu ${distro_codename} does not provide Python 3.14 in its standard repositories; enabling ppa:deadsnakes/ppa"
+  DEBIAN_FRONTEND=noninteractive apt_get install -y software-properties-common ca-certificates
+  command -v add-apt-repository >/dev/null 2>&1 || fail "Could not install add-apt-repository required to enable Python 3.14 on Ubuntu"
+  add-apt-repository -y -n ppa:deadsnakes/ppa || fail "Could not enable ppa:deadsnakes/ppa for Python 3.14"
+  refresh_apt_metadata
+  apt_python314_packages_available || fail "ppa:deadsnakes/ppa does not provide the required Python 3.14 packages for Ubuntu ${distro_codename} on this architecture"
+}
+
 install_dependencies() {
   section "Installing dependencies"
   case "$PKG_MANAGER" in
     apt)
       refresh_apt_metadata
+      ensure_python314_apt_repository
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3.14 python3.14-venv python3.14-dev || \
-        fail "Python 3.14 packages are unavailable. Configure a repository providing python3.14, python3.14-venv, and python3.14-dev, then retry."
+        fail "Python 3.14 packages were found, but python3.14, python3.14-venv, or python3.14-dev could not be installed. Inspect the APT error above and retry."
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         build-essential \
         libpam0g-dev rsync sudo curl wget ca-certificates tar gzip \

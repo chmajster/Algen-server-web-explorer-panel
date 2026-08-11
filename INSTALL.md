@@ -66,6 +66,7 @@ If APT reports `401`, `403`, or another explicit subscription error for `enterpr
 The installer installs the packages actually used by WebNAS:
 
 - Python 3.14, venv support, and Python 3.14 development headers. The installer fails clearly when distribution repositories do not provide them; it never falls back to an older interpreter.
+- On Ubuntu 24.04 (Noble) and 22.04 (Jammy), when these packages are absent from the standard repositories, the installer enables the third-party Launchpad repository `ppa:deadsnakes/ppa` and installs Python 3.14 from there.
 - Build tools for Python packages.
 - Node.js and npm for the React frontend build.
 - `rsync` for copy and move transfers.
@@ -93,6 +94,9 @@ Proxmox Safe Mode remains active for log browsing and does not grant access to p
 ## Manual Installation
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y software-properties-common
+sudo add-apt-repository -y ppa:deadsnakes/ppa
 sudo apt-get update
 sudo apt-get install -y python3.14 python3.14-venv python3.14-dev build-essential libpam0g-dev rsync sudo nodejs npm
 sudo mkdir -p /opt/webnas /etc/webnas /var/lib/webnas/tmp /var/log/webnas
