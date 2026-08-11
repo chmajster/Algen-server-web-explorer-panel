@@ -6,4 +6,3 @@
 * Run relevant tests/checks after changes and release updates.
 * Commit each completed change separately with only related files and a concise message. Never include unrelated user changes.
 * After the 3-change threshold is reached, bump version, update changelog, verify, commit release metadata, then reset the change count.
-w
