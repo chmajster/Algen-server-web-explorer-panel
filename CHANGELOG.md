@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Expanded container creation progress with detailed, secret-safe live logs from validation through final inspection.
+
+- Added typed custom Docker Entrypoint support across container creation, import, duplication, summaries, validation, and tests.
+
+- Expanded container resource controls with presets, host-aware CPU and memory validation, advanced CPU/memory/OOM/I/O settings, allowlisted ulimits, responsive UI, draft and duplication support, and exact safe Docker CLI mapping.
+
 - Redesigned the complete frontend with a compact Synology DSM-inspired visual system shared by the desktop, settings, tables, forms, dialogs, and every module, including dark-mode parity.
 
 - Made the full interface phone-ready with viewport-filling windows and dialogs, touch-sized controls, safe-area support, local table scrolling, module-specific responsive layouts, and stronger modal focus handling.
