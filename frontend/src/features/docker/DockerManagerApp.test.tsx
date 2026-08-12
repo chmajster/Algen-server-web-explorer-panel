@@ -6,7 +6,7 @@ import { DockerManagerApp } from "./DockerManagerApp";
 vi.mock("../../api", () => ({
   api: {
     dockerDashboard: vi.fn(), dockerEvents: vi.fn(), dockerContainers: vi.fn(), dockerContainer: vi.fn(), dockerContainerStats: vi.fn(),
-    dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), dockerContainerDefaultsPolicy: vi.fn(), saveDockerContainerDefaultsPolicy: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(),
+    dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), dockerContainerDefaultsPolicy: vi.fn(), saveDockerContainerDefaultsPolicy: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(), dockerContainerCompose: vi.fn(),
     dockerContainerBackup: vi.fn(), dockerImages: vi.fn(), dockerImageAction: vi.fn(), importDockerImage: vi.fn(), dockerApps: vi.fn(),
     dockerComposeProjects: vi.fn(), validateDockerCompose: vi.fn(), saveDockerComposeProject: vi.fn(), dockerComposeAction: vi.fn(),
     dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerNetworkContainers: vi.fn(), dockerDefaultBridge: vi.fn(), saveDockerDefaultBridge: vi.fn(), createDockerNetwork: vi.fn(), dockerNetworkAction: vi.fn(), dockerPrunePlan: vi.fn(), dockerRegistries: vi.fn(), dockerRegistrySources: vi.fn(), dockerRegistryCatalog: vi.fn(), dockerRegistryTags: vi.fn(), dockerBackups: vi.fn(),
@@ -27,6 +27,7 @@ describe("DockerManagerApp", () => {
     vi.mocked(api.dockerEvents).mockResolvedValue({ items: [], total: 0 });
     vi.mocked(api.dockerContainers).mockResolvedValue({ items: [{ ID: "abc", Names: "web", Image: "nginx:stable", State: "running", Status: "Up" }], total: 1, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.dockerContainer).mockResolvedValue({ name: "web", state: { Status: "running" } });
+    vi.mocked(api.dockerContainerCompose).mockResolvedValue({ content: "services:\n  web:\n    image: nginx:stable\n", secrets_omitted: false, environment_keys: [] });
     vi.mocked(api.dockerContainerSettings).mockResolvedValue({ name: "web", resource_limits_enabled: false, cpu_priority: "medium", memory_mb: null, auto_restart: false, restart_policy: "no", portal_enabled: false, portal_port: null, portal_published_port: null, portal_protocol: "http", compose_managed: false, available_ports: [{ target: 8096, published: 8096, protocol: "tcp" }] });
     vi.mocked(api.updateDockerContainerSettings).mockResolvedValue({ job: { id: "settings-job" } } as never);
     vi.mocked(api.dockerContainerDefaultsPolicy).mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
@@ -184,6 +185,8 @@ describe("DockerManagerApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "safe-web" } });
     fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "nginx:stable" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.process" }));
+    fireEvent.change(screen.getByLabelText("docker.field.entrypoint"), { target: { value: "/usr/local/bin/start" } });
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.secrets" }));
     fireEvent.change(screen.getByLabelText("docker.secretName"), { target: { value: "APP_PASSWORD" } });
     const secretValue = screen.getByLabelText("docker.secretValue");
@@ -191,7 +194,23 @@ describe("DockerManagerApp", () => {
     fireEvent.change(secretValue, { target: { value: "private" } });
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "docker.createContainer" }));
     await waitFor(() => expect(api.createDockerContainer).toHaveBeenCalled());
-    expect(vi.mocked(api.createDockerContainer).mock.calls[0][0]).toMatchObject({ name: "safe-web", image: "nginx:stable", secret_environment: { APP_PASSWORD: "private" } });
+    expect(vi.mocked(api.createDockerContainer).mock.calls[0][0]).toMatchObject({ name: "safe-web", image: "nginx:stable", entrypoint: "/usr/local/bin/start", secret_environment: { APP_PASSWORD: "private" } });
+  });
+
+  it("preserves a custom Entrypoint when duplicating a container", async () => {
+    sessionStorage.removeItem("docker:create-container");
+    vi.mocked(api.dockerContainer).mockResolvedValue({
+      id: "abc", name: "web", image: "nginx:stable", entrypoint: "/docker-entrypoint.sh",
+      state: { Running: true }, networks: { bridge: {} }, ports: {}, mounts: [], labels: {}, limits: {}, read_only: false,
+    });
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.inspect_container", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "docker.moreActions" }))[0]);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "docker.duplicate" }));
+
+    expect(await screen.findByLabelText("docker.field.name")).toHaveValue("web-copy");
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.process" }));
+    expect(screen.getByLabelText("docker.field.entrypoint")).toHaveValue("/docker-entrypoint.sh");
   });
 
   it("opens and closes compact configuration sections with aria-expanded", async () => {
@@ -273,6 +292,8 @@ describe("DockerManagerApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "restored-media" } });
     fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "jellyfin:latest" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.process" }));
+    fireEvent.change(screen.getByLabelText("docker.field.entrypoint"), { target: { value: "/init" } });
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.addPort" }));
     fireEvent.change(screen.getByLabelText("docker.wizard.hostPort"), { target: { value: "8096" } });
     fireEvent.change(screen.getByLabelText("docker.wizard.containerPort"), { target: { value: "8096" } });
@@ -288,6 +309,8 @@ describe("DockerManagerApp", () => {
     expect(screen.getByLabelText("docker.wizard.containerPort")).toHaveValue("8096");
     expect(screen.getByLabelText("docker.field.name")).toHaveValue("restored-media");
     expect(screen.getByLabelText("docker.field.image")).toHaveValue("jellyfin:latest");
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.process" }));
+    expect(screen.getByLabelText("docker.field.entrypoint")).toHaveValue("/init");
     sessionStorage.removeItem(draftKey);
     sessionStorage.removeItem("test-window:section");
   });
@@ -297,7 +320,7 @@ describe("DockerManagerApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     expect(screen.getByRole("dialog").parentElement).toHaveClass("modal-backdrop", "docker-wizard-backdrop");
-    const file = new File([JSON.stringify({ name: "imported-web", image: "nginx:stable", environment: { TZ: "Europe/Warsaw" }, ports: [{ published: 8080, target: 80, protocol: "tcp" }] })], "container.json", { type: "application/json" });
+    const file = new File([JSON.stringify({ name: "imported-web", image: "nginx:stable", entrypoint: "/docker-entrypoint.sh", environment: { TZ: "Europe/Warsaw" }, ports: [{ published: 8080, target: 80, protocol: "tcp" }] })], "container.json", { type: "application/json" });
     const input = document.querySelector('input[accept=".json,application/json"]') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() => expect(screen.getByLabelText("docker.field.name")).toHaveValue("imported-web"));
@@ -306,6 +329,8 @@ describe("DockerManagerApp", () => {
     expect(screen.getByLabelText("docker.wizard.variableValue")).toHaveValue("Europe/Warsaw");
     expect(screen.getByLabelText("docker.wizard.hostPort")).toHaveValue("8080");
     expect(screen.getByLabelText("docker.wizard.containerPort")).toHaveValue("80");
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.process" }));
+    expect(screen.getByLabelText("docker.field.entrypoint")).toHaveValue("/docker-entrypoint.sh");
   });
 
   it("searches and selects an image already downloaded to Docker", async () => {

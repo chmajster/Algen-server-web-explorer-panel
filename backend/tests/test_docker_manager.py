@@ -27,10 +27,15 @@ from app.security import SessionUser
 
 
 def test_container_contract_rejects_high_risk_fields_and_socket_mounts():
+    assert ContainerCreateRequest(name="safe", image="nginx:stable", entrypoint=" /usr/local/bin/start ").entrypoint == "/usr/local/bin/start"
+    assert ContainerCreateRequest(name="safe", image="nginx:stable", entrypoint="tini").entrypoint == "tini"
     with pytest.raises(ValidationError):
         ContainerCreateRequest.model_validate({"name": "unsafe", "image": "nginx:stable", "network": "host", "privileged": True})
     with pytest.raises(ValidationError):
         ContainerCreateRequest.model_validate({"name": "unsafe", "image": "nginx:stable", "command": ["sh", "-c", "id"]})
+    for entrypoint in ("/bin/sh -c", "sh;id", "../start", "relative/start", "/usr//bin/start"):
+        with pytest.raises(ValidationError):
+            ContainerCreateRequest(name="unsafe", image="nginx:stable", entrypoint=entrypoint)
     with pytest.raises(ValidationError):
         MountSpec(type="bind", source="/var/run/docker.sock", target="/var/run/docker.sock")
     with pytest.raises(ValidationError):
@@ -45,7 +50,7 @@ def test_container_update_preserves_existing_high_risk_runtime(monkeypatch, tmp_
     monkeypatch.setattr(DockerProvider, "manager_store", property(lambda self: storage))
     inspect = {
         "Name": "/jellyfin",
-        "Config": {"Image": "jellyfin/jellyfin:latest", "Env": [], "Labels": {}},
+        "Config": {"Image": "jellyfin/jellyfin:latest", "Entrypoint": ["/init"], "Env": [], "Labels": {}},
         "HostConfig": {
             "NetworkMode": "host",
             "Devices": [{"PathOnHost": "/dev/dri", "PathInContainer": "/dev/dri", "CgroupPermissions": "rwm"}],
@@ -74,6 +79,7 @@ def test_container_update_preserves_existing_high_risk_runtime(monkeypatch, tmp_
     assert command[command.index("--network") + 1] == "host"
     assert command[command.index("--device") + 1] == "/dev/dri:/dev/dri:rwm"
     assert command[command.index("--cap-add") + 1] == "SYS_NICE"
+    assert command[command.index("--entrypoint") + 1] == "/init"
 
 
 def test_container_defaults_policy_is_validated_and_persisted(tmp_path: Path):
@@ -519,7 +525,7 @@ def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, 
     monkeypatch.setattr(provider, "_run", run)
     definition = ContainerCreateRequest(
         name="safe-app", image="nginx:stable", pull_policy="never", environment={"MODE": "prod"}, secret_environment={},
-        network="private-net", network_aliases=["web"], hostname="safe-web", working_dir="/app", user="1000:1000",
+        network="private-net", network_aliases=["web"], hostname="safe-web", entrypoint="/usr/local/bin/start", working_dir="/app", user="1000:1000",
         mounts=[{"type": "volume", "source": "safe-data", "target": "/data"}, {"type": "tmpfs", "target": "/tmp", "tmpfs_size_mb": 64}],
         limits={"cpus": 1.5, "memory_mb": 256, "memory_swap_mb": 512, "pids": 128},
         healthcheck={"type": "tcp", "port": 8080}, confirmation="safe-app",
@@ -539,6 +545,7 @@ def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, 
     assert not {"--privileged", "--pid", "--ipc", "--device", "--cap-add"} & set(docker_run)
     assert docker_run[docker_run.index("--network-alias") + 1] == "web"
     assert docker_run[docker_run.index("--hostname") + 1] == "safe-web"
+    assert docker_run[docker_run.index("--entrypoint") + 1] == "/usr/local/bin/start"
     assert docker_run[docker_run.index("--user") + 1] == "1000:1000"
     assert "--health-cmd" in docker_run and "--pids-limit" in docker_run and docker_run.count("--mount") == 2
     assert all(input_text is None for _, input_text in calls)
@@ -700,12 +707,13 @@ def test_legacy_module_mutations_cannot_bypass_typed_docker_api():
 def test_inspect_response_omits_environment_values(monkeypatch):
     provider = DockerProvider("alice")
     monkeypatch.setattr(provider, "_inspect", lambda kind, target: {
-        "Id": "abc", "Name": "/demo", "Config": {"Image": "demo:1", "Env": ["APP_PASSWORD=private-value", "MODE=prod"], "Labels": {}},
+        "Id": "abc", "Name": "/demo", "Config": {"Image": "demo:1", "Entrypoint": ["/usr/local/bin/start"], "Env": ["APP_PASSWORD=private-value", "MODE=prod"], "Labels": {}},
         "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}}, "State": {"Status": "running"}, "NetworkSettings": {}, "Mounts": [],
     })
     result = provider.container_details("demo")
     encoded = json.dumps(result)
     assert result["environment_keys"] == ["APP_PASSWORD", "MODE"]
+    assert result["entrypoint"] == "/usr/local/bin/start"
     assert "private-value" not in encoded
     assert "MODE=prod" not in encoded
 

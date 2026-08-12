@@ -82,6 +82,7 @@ type ContainerWizardDraft = {
   cpus: string;
   pids: string;
   hostname: string;
+  entrypoint: string;
   workingDir: string;
   containerUser: string;
   limitsEnabled: boolean;
@@ -227,6 +228,7 @@ function duplicateDraft(details: Record<string, unknown>, row: DockerContainer):
     cpus,
     pids: pids ? String(pids) : "",
     hostname: "",
+    entrypoint: String(details.entrypoint || ""),
     workingDir: "",
     containerUser: "",
     limitsEnabled: Boolean(memory || memorySwap || cpus || pids),

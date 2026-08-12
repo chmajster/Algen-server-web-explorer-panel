@@ -70,9 +70,18 @@ function pairLines(rows: EditablePair[]): string {
   return rows.filter((row) => row.key || row.value).map((row) => `${row.key}=${row.value}`).join("\n");
 }
 
+function validEntrypoint(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return true;
+  if (!normalized.startsWith("/")) return /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(normalized);
+  const segments = normalized.split("/").slice(1);
+  return /^\/[A-Za-z0-9._+@%/-]{1,511}$/.test(normalized)
+    && segments.every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
 type ContainerWizardDraft = {
   step?: number; name?: string; image?: string; network?: string; ports?: string; environment?: string; mounts?: MountRow[];
-  memory?: string; memorySwap?: string; cpus?: string; pids?: string; hostname?: string; workingDir?: string; containerUser?: string;
+  memory?: string; memorySwap?: string; cpus?: string; pids?: string; hostname?: string; entrypoint?: string; workingDir?: string; containerUser?: string;
   limitsEnabled?: boolean;
   networkAliases?: string; restartPolicy?: "no" | "always" | "unless-stopped" | "on-failure"; labels?: string;
   healthType?: "none" | "http" | "tcp"; healthPort?: string; healthPath?: string; readOnly?: boolean; init?: boolean; autoStart?: boolean;
@@ -186,6 +195,7 @@ export function CreateContainerWizard({
   const [cpus, setCpus] = useState(draft.cpus || "");
   const [pids, setPids] = useState(draft.pids || "");
   const [hostname, setHostname] = useState(draft.hostname || "");
+  const [entrypoint, setEntrypoint] = useState(draft.entrypoint || "");
   const [workingDir, setWorkingDir] = useState(draft.workingDir || "");
   const [containerUser, setContainerUser] = useState(draft.containerUser || "");
   const [networkAliases, setNetworkAliases] = useState(draft.networkAliases || "");
@@ -295,12 +305,12 @@ export function CreateContainerWizard({
   useEffect(() => {
     if (!draftKey) return;
     const value: ContainerWizardDraft = {
-      step: 0, name, image, network, ports, environment, mounts, memory, memorySwap, cpus, pids, limitsEnabled, hostname, workingDir,
+      step: 0, name, image, network, ports, environment, mounts, memory, memorySwap, cpus, pids, limitsEnabled, hostname, entrypoint, workingDir,
       containerUser, networkAliases, restartPolicy, labels, healthType, healthPort, healthPath, readOnly, init, autoStart,
       composeMode, composeProject, composeContent, composeEnvironment, composeAutoStart,
     };
     sessionStorage.setItem(draftKey, JSON.stringify(value));
-  }, [autoStart, composeAutoStart, composeContent, composeEnvironment, composeMode, composeProject, containerUser, cpus, draftKey, environment, healthPath, healthPort, healthType, hostname, image, init, labels, limitsEnabled, memory, memorySwap, mounts, name, network, networkAliases, pids, ports, readOnly, restartPolicy, workingDir]);
+  }, [autoStart, composeAutoStart, composeContent, composeEnvironment, composeMode, composeProject, containerUser, cpus, draftKey, entrypoint, environment, healthPath, healthPort, healthType, hostname, image, init, labels, limitsEnabled, memory, memorySwap, mounts, name, network, networkAliases, pids, ports, readOnly, restartPolicy, workingDir]);
 
   useEffect(() => {
     if (!canViewLocalImages) return;
@@ -403,6 +413,7 @@ export function CreateContainerWizard({
     invalidLabelRows.length ? t("docker.invalidLabels") : "",
     incompleteSecrets ? t("docker.wizard.validation.secrets") : "",
     incompleteMounts.length ? t("docker.wizard.validation.mounts") : "",
+    !validEntrypoint(entrypoint) ? t("docker.wizard.validation.entrypoint") : "",
     healthType !== "none" && (!healthPort || Number(healthPort) < 1 || Number(healthPort) > 65535)
       ? t("docker.wizard.validation.healthPort")
       : "",
@@ -431,6 +442,7 @@ export function CreateContainerWizard({
       setNetwork(parsed.network || "bridge");
       setNetworkAliases((parsed.network_aliases || []).join(", "));
       setHostname(parsed.hostname || "");
+      setEntrypoint(parsed.entrypoint || "");
       setWorkingDir(parsed.working_dir || "");
       setContainerUser(parsed.user || "");
       setRestartPolicy(parsed.restart_policy || "unless-stopped");
@@ -530,6 +542,7 @@ export function CreateContainerWizard({
         network_aliases: networkAliases.split(",").map((item) => item.trim()).filter(Boolean),
         restart_policy: restartPolicy,
         hostname: hostname || null,
+        entrypoint: entrypoint.trim() || null,
         working_dir: workingDir || null,
         user: containerUser || null,
         environment: pairs(environment, t("docker.invalidEnvironment")),
@@ -694,6 +707,7 @@ export function CreateContainerWizard({
             </ConfigSection>
 
             <ConfigSection title={t("docker.wizard.section.process")}>
+              <ConfigRow label={t("docker.field.entrypoint")} description={t("docker.wizard.entrypointHint")}><input aria-label={t("docker.field.entrypoint")} aria-invalid={!validEntrypoint(entrypoint)} value={entrypoint} onChange={(event) => setEntrypoint(event.target.value)} placeholder="/usr/local/bin/start" /></ConfigRow>
               <ConfigRow label={t("docker.field.workingDir")}><input aria-label={t("docker.field.workingDir")} value={workingDir} onChange={(event) => setWorkingDir(event.target.value)} placeholder="/app" /></ConfigRow>
               <ConfigRow label={t("docker.field.userUidGid")}><input aria-label={t("docker.field.userUidGid")} value={containerUser} onChange={(event) => setContainerUser(event.target.value)} placeholder="1000:1000" /></ConfigRow>
             </ConfigSection>
@@ -736,6 +750,7 @@ export function CreateContainerWizard({
                 <div><dt>{t("docker.field.network")}</dt><dd>{network || "—"}</dd></div><div><dt>{t("docker.field.ports")}</dt><dd>{portEntries.length || t("common.none")}</dd></div>
                 <div><dt>{t("docker.field.mounts")}</dt><dd>{mounts.length}</dd></div><div><dt>{t("docker.field.environment")}</dt><dd>{editablePairs(environment).length}</dd></div>
                 <div><dt>{t("docker.field.memoryMb")}</dt><dd>{limitsEnabled && memory ? `${memory} MB` : "—"}</dd></div><div><dt>{t("docker.field.cpus")}</dt><dd>{limitsEnabled && cpus ? cpus : "—"}</dd></div>
+                <div><dt>{t("docker.field.entrypoint")}</dt><dd>{entrypoint.trim() || t("docker.wizard.imageDefault")}</dd></div>
                 <div><dt>{t("docker.field.restartPolicy")}</dt><dd>{restartPolicy}</dd></div><div><dt>{t("docker.field.autoStart")}</dt><dd>{t(autoStart ? "common.yes" : "common.no")}</dd></div>
               </dl>
             </ConfigSection>

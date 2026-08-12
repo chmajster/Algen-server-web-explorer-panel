@@ -709,6 +709,7 @@ class DockerProvider(PrivateBackupProvider):
         safe = {
             "id": inspect.get("Id"), "name": str(inspect.get("Name") or "").removeprefix("/"), "created": inspect.get("Created"),
             "image": config.get("Image"), "image_id": inspect.get("Image"), "platform": inspect.get("Platform"), "state": state,
+            "entrypoint": self._single_entrypoint(config.get("Entrypoint")),
             "restart_policy": (host.get("RestartPolicy") or {}).get("Name"), "ports": (inspect.get("NetworkSettings") or {}).get("Ports") or {},
             "networks": ((inspect.get("NetworkSettings") or {}).get("Networks") or {}),
             "mounts": mounts, "labels": config.get("Labels") or {}, "environment_keys": sorted(environment_keys),
@@ -717,6 +718,14 @@ class DockerProvider(PrivateBackupProvider):
             "health": state.get("Health"),
         }
         return _redact_value(safe)
+
+    @staticmethod
+    def _single_entrypoint(value: Any) -> str | None:
+        if isinstance(value, str):
+            return value or None
+        if isinstance(value, list) and len(value) == 1 and isinstance(value[0], str):
+            return value[0] or None
+        return None
 
     def container_settings(self, target: str) -> dict[str, Any]:
         inspect = self._inspect("container", target)
@@ -1599,7 +1608,8 @@ class DockerProvider(PrivateBackupProvider):
         return ContainerCreateRequest.model_validate({
             "name": name, "image": image or config.get("Image"), "pull_policy": "never", "environment": {}, "secret_environment": env,
             "ports": ports, "mounts": mounts, "network": next((item for item in network_names if item not in SYSTEM_NETWORKS), "bridge"),
-            "hostname": config.get("Hostname") or None, "working_dir": config.get("WorkingDir") or None,
+            "hostname": config.get("Hostname") or None, "entrypoint": self._single_entrypoint(config.get("Entrypoint")),
+            "working_dir": config.get("WorkingDir") or None,
             "user": config.get("User") if re.fullmatch(r"[0-9]{1,10}(?::[0-9]{1,10})?", str(config.get("User") or "")) else None,
             "restart_policy": (host.get("RestartPolicy") or {}).get("Name") or "no", "limits": limits,
             "labels": {key: value for key, value in (config.get("Labels") or {}).items() if not key.startswith("com.docker.compose.")},
@@ -1659,6 +1669,7 @@ class DockerProvider(PrivateBackupProvider):
         log("system", f"Container: {request.name}")
         log("system", f"Image: {request.image} (pull policy: {request.pull_policy})")
         log("system", f"Runtime: {'start immediately' if request.auto_start else 'create without starting'}, restart={request.restart_policy}, network={request.network}")
+        log("system", f"Entrypoint: {request.entrypoint or 'image default'}")
         log("system", f"Configuration: {len(request.ports)} port mapping(s), {len(request.mounts)} mount(s), {len(request.environment)} public and {len(request.secret_environment)} private environment variable(s), {len(request.labels)} label(s)")
         limits = request.limits
         log("system", f"Limits: CPU={limits.cpus or 'unlimited'}, memory={f'{limits.memory_mb} MiB' if limits.memory_mb else 'unlimited'}, swap={f'{limits.memory_swap_mb} MiB' if limits.memory_swap_mb else 'default'}, PIDs={limits.pids or 'unlimited'}")
@@ -1703,6 +1714,8 @@ class DockerProvider(PrivateBackupProvider):
             args += ["--network-alias", alias]
         if request.hostname:
             args += ["--hostname", request.hostname]
+        if request.entrypoint:
+            args += ["--entrypoint", request.entrypoint]
         if request.working_dir:
             args += ["--workdir", request.working_dir]
         if request.user:

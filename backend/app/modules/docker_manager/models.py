@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 CONTAINER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}$")
 ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+ENTRYPOINT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
+ENTRYPOINT_PATH_RE = re.compile(r"^/[A-Za-z0-9._+@%/-]{1,511}$")
 LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 PATH_RE = re.compile(r"^/[A-Za-z0-9._~!$&'()+,;=:@%/-]{0,1023}$")
 PROJECT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
@@ -36,6 +38,19 @@ def _image(value: str) -> str:
     if ":" in last_segment:
         _name, tag = last_segment.rsplit(":", 1)
         validate_tag(tag)
+    return value
+
+
+def _entrypoint(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    value = value.strip()
+    if value.startswith("/"):
+        segments = value.split("/")[1:]
+        if not ENTRYPOINT_PATH_RE.fullmatch(value) or any(segment in {"", ".", ".."} for segment in segments):
+            raise ValueError("entrypoint must be a single absolute executable path without arguments")
+    elif not ENTRYPOINT_NAME_RE.fullmatch(value):
+        raise ValueError("entrypoint must be a single executable name without arguments")
     return value
 
 
@@ -170,6 +185,7 @@ class ContainerCreateRequest(DockerModel):
     network_aliases: list[str] = Field(default_factory=list, max_length=20)
     restart_policy: Literal["no", "always", "unless-stopped", "on-failure"] = "unless-stopped"
     hostname: str | None = None
+    entrypoint: str | None = None
     working_dir: str | None = None
     user: str | None = None
     limits: ResourceLimits = Field(default_factory=ResourceLimits)
@@ -218,6 +234,11 @@ class ContainerCreateRequest(DockerModel):
         if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", normalized):
             raise ValueError("invalid hostname")
         return normalized
+
+    @field_validator("entrypoint")
+    @classmethod
+    def valid_entrypoint(cls, value: str | None) -> str | None:
+        return _entrypoint(value)
 
     @field_validator("working_dir")
     @classmethod

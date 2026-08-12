@@ -13,6 +13,7 @@ from .models import (
     PortMapping,
     ResourceLimits,
     _environment,
+    _entrypoint,
     _identifier,
     _image,
     _labels,
@@ -33,6 +34,7 @@ class ContainerCreateRequest(DockerModel):
     network_aliases: list[str] = Field(default_factory=list, max_length=20)
     restart_policy: Literal["no", "always", "unless-stopped", "on-failure"] = "unless-stopped"
     hostname: str | None = None
+    entrypoint: str | None = None
     working_dir: str | None = None
     user: str | None = None
     limits: ResourceLimits = Field(default_factory=ResourceLimits)
@@ -81,6 +83,11 @@ class ContainerCreateRequest(DockerModel):
         if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", normalized):
             raise ValueError("invalid hostname")
         return normalized
+
+    @field_validator("entrypoint")
+    @classmethod
+    def valid_entrypoint(cls, value: str | None) -> str | None:
+        return _entrypoint(value)
 
     @field_validator("working_dir")
     @classmethod

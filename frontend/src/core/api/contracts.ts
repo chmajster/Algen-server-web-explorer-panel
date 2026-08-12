@@ -671,7 +671,7 @@ export type DockerContainerCreate = {
   name: string; image: string; pull_policy?: "missing" | "always" | "never";
   environment?: Record<string, string>; secret_environment?: Record<string, string>;
   ports?: DockerPortMapping[]; mounts?: DockerMount[]; network?: string;
-  network_aliases?: string[]; hostname?: string | null; working_dir?: string | null; user?: string | null;
+  network_aliases?: string[]; hostname?: string | null; entrypoint?: string | null; working_dir?: string | null; user?: string | null;
   restart_policy?: "no" | "always" | "unless-stopped" | "on-failure";
   limits?: { cpus?: number | null; memory_mb?: number | null; memory_swap_mb?: number | null; pids?: number | null };
   healthcheck?: { type: "none" | "http" | "tcp"; port?: number | null; path?: string; interval_seconds?: number; timeout_seconds?: number; retries?: number; start_period_seconds?: number };
