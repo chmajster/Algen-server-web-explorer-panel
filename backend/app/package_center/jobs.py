@@ -77,6 +77,8 @@ class PackageJobManager:
             return bool(current and current["cancellation_requested"])
 
         try:
+            operation = str(plan.payload.get("operation") or plan.action.value)
+            log("system", f"Starting {operation} operation for module {plan.module_id}")
             if plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:
                 result: dict = {}
                 if plan.create_backup:
@@ -98,6 +100,7 @@ class PackageJobManager:
                 result = get_provider(plan.module_id, job["created_by"]).execute_operation(plan.action, plan.payload, job["created_by"], log, progress, cancelled)
             if cancelled():
                 raise InterruptedError("Package operation cancelled")
+            log("system", f"Operation {operation} completed successfully")
             if plan.action.value in {"install", "reinstall", "update"}:
                 self.repository.mark_installed(plan.module_id, manifest.version, job["created_by"], manifest.requires_reboot)
             elif plan.action.value == "uninstall":

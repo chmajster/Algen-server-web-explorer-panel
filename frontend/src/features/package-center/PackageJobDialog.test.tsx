@@ -42,10 +42,44 @@ describe("PackageJobDialog", () => {
     expect(screen.getByText("Installing packages")).toBeInTheDocument();
     expect(screen.getByRole("log")).toHaveTextContent("Downloading cifs-utils");
     expect(screen.getByText("package.logConnected")).toBeInTheDocument();
+    expect(screen.getByText("package.logEntries")).toBeInTheDocument();
+    expect(screen.getByTitle("job-1")).toBeInTheDocument();
 
     act(() => source.emit({ ...queued, status: "completed", progress: 100, current_step: "Completed", log_tail: [{ id: 2, created_at: 3, stream: "stdout", line: "Done" }] }));
     expect(screen.getByText("task.completed")).toBeInTheDocument();
     expect(source.close).toHaveBeenCalled();
+  });
+
+  it("copies, downloads, and pauses the detailed timestamped log", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const createObjectURL = vi.fn(() => "blob:job-log");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const detailed = {
+      ...queued,
+      operation: "container_create",
+      log_tail: [
+        { id: 1, created_at: 2, stream: "system", line: "Validating container definition" },
+        { id: 2, created_at: 3, stream: "stdout", line: "Container created" },
+      ],
+    };
+
+    render(<PackageJobDialog initialJob={detailed} moduleName="Menedżer kontenerów" t={(key) => key} onClose={vi.fn()} />);
+
+    expect(screen.getByRole("log")).toHaveTextContent("Validating container definition");
+    expect(screen.getAllByText("package.containerCreateOperation")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "action.copy" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("[system] Validating container definition")));
+    expect(await screen.findByRole("button", { name: "package.logCopied" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "action.download" }));
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(click).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "package.pauseLogs" }));
+    expect(screen.getByRole("button", { name: "package.followLogs" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("closes only the log window while leaving the background job untouched", () => {

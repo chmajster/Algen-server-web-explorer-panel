@@ -1,6 +1,6 @@
 .modal-panel.operation-progress-dialog {
-  width: min(62rem, calc(100vw - 2rem));
-  height: min(44rem, calc(100dvh - 2rem));
+  width: min(76rem, calc(100vw - 2rem));
+  height: min(50rem, calc(100dvh - 2rem));
   border-color: color-mix(in srgb, var(--accent) 22%, var(--border-subtle));
 }
 
@@ -34,10 +34,107 @@
   height: 100%;
 }
 
-.operation-progress-window-body .package-live-job > pre {
-  min-height: 8rem;
+.operation-progress-window-body .package-live-log {
+  min-height: 14rem;
   height: auto;
-  flex-basis: 8rem;
+  flex: 1 1 14rem;
+}
+
+.package-live-metadata code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.package-live-log-header > div:first-child {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.package-live-log-header small {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.package-live-log-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.package-live-log-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.55rem;
+}
+
+.package-live-log-actions button svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.package-live-log {
+  overflow: auto;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, #20303a);
+  border-radius: 0.4375rem;
+  outline: none;
+  color: #d5e5eb;
+  background: #0d151b;
+  font: var(--font-size-xs)/1.55 var(--font-family-monospace);
+  overscroll-behavior: contain;
+}
+
+.package-live-log:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.package-live-log-line {
+  display: grid;
+  grid-template-columns: 5.5rem 4.75rem minmax(0, 1fr);
+  gap: 0.625rem;
+  padding: 0.2rem 0.75rem;
+  border-bottom: 1px solid rgb(255 255 255 / 4%);
+}
+
+.package-live-log-line:hover {
+  background: rgb(255 255 255 / 4%);
+}
+
+.package-live-log-line time {
+  color: #7f9cac;
+}
+
+.package-live-log-line > span {
+  color: #65b9f4;
+  text-transform: uppercase;
+}
+
+.package-live-log-line.system > span {
+  color: #d8b565;
+}
+
+.package-live-log-line.stderr > span,
+.package-live-log-line.stderr > code {
+  color: #ff9f9f;
+}
+
+.package-live-log-line code {
+  min-width: 0;
+  color: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.package-live-log-empty {
+  padding: 0.875rem;
+  color: #a9bec9;
 }
 
 .operation-progress-native {
@@ -77,7 +174,7 @@
 @media (max-width: 42rem) {
   .modal-panel.operation-progress-dialog {
     width: 100%;
-    height: min(88dvh, 44rem);
+    height: min(92dvh, 50rem);
   }
 
   .operation-progress-window-body {
@@ -96,6 +193,30 @@
 
   .operation-progress-dialog > .modal-footer > button {
     width: 100%;
+  }
+
+  .package-live-log-header,
+  .package-live-log-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .package-live-log-actions > span {
+    align-self: flex-start;
+  }
+
+  .package-live-log-actions button {
+    justify-content: center;
+    min-height: 2.75rem;
+  }
+
+  .package-live-log-line {
+    grid-template-columns: 4.75rem minmax(0, 1fr);
+    gap: 0.25rem 0.5rem;
+  }
+
+  .package-live-log-line code {
+    grid-column: 1 / -1;
   }
 }
 

@@ -63,6 +63,13 @@ describe("window manager reducer", () => {
     expect(state.windows.map((item) => item.deepLink?.jobId)).toEqual(["job-a", "job-b"]);
   });
 
+  it("opens operation progress with the larger application window size", () => {
+    const deepLink = { type: "package-job" as const, id: "job-a", actionKey: "operation:job-a", jobId: "job-a", issuedAt: 1 };
+    const state = windowReducer(initialWindowState, { type: "openOrFocus", app: "operation-progress", deepLink, viewport });
+
+    expect(state.windows[0].rect).toMatchObject({ width: 1120, height: 700 });
+  });
+
   it("persists the active path independently for each application window", () => {
     let state = windowReducer(initialWindowState, { type: "open", app: "settings", viewport });
     state = windowReducer(state, { type: "setInitialPath", id: "settings-1", initialPath: "administration" });

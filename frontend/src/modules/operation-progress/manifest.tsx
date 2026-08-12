@@ -12,8 +12,8 @@ export default {
   category: "system",
   permission: "modules.view",
   hidden: true,
-  minWidth: 560,
-  minHeight: 420,
+  minWidth: 760,
+  minHeight: 520,
   render: (context) => lazyView(
     <PackageJobWindow
       jobId={context.item.deepLink?.jobId || context.item.deepLink?.id}

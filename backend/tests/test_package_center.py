@@ -31,6 +31,24 @@ def test_repository_queries_close_sqlite_file_descriptors(tmp_path):
     assert len(os.listdir(descriptor_directory)) <= before + 2
 
 
+def test_job_details_include_actual_operation_and_up_to_500_log_lines(tmp_path):
+    repository = PackageRepository(tmp_path / "detailed-job.sqlite3")
+    package_plan = plan("docker", PackageAction.manage)
+    package_plan.payload = {"operation": "container_create"}
+    created = repository.create_job(package_plan, "alice")
+
+    for index in range(520):
+        repository.append_log(created["id"], f"line-{index}", "stdout")
+
+    detailed = repository.get_job(created["id"])
+
+    assert detailed is not None
+    assert detailed["operation"] == "container_create"
+    assert len(detailed["log_tail"]) == 500
+    assert detailed["log_tail"][0]["line"] == "line-20"
+    assert detailed["log_tail"][-1]["line"] == "line-519"
+
+
 def plan(module_id: str = "nginx", action: PackageAction = PackageAction.install) -> PackagePlan:
     return PackagePlan(
         module_id=module_id,
@@ -343,6 +361,10 @@ def test_generic_job_marks_module_installed(monkeypatch, tmp_path):
 
     assert repository.get_job(created["id"])["status"] == "completed"
     assert repository.installed()["nginx"]["version"] == "1.0.0"
+    assert [entry["line"] for entry in repository.get_job(created["id"])["log_tail"]] == [
+        "Starting install operation for module nginx",
+        "Operation install completed successfully",
+    ]
 
 
 def test_install_hook_runs_after_package_install_and_before_service_start(monkeypatch):

@@ -77,7 +77,8 @@ class PackageRepository:
         result["result"] = json.loads(result.pop("result_json", "{}") or "{}")
         result["cancellable"] = not (result["status"] == PackageJobStatus.running.value and detached_update_session(result["plan"]))
         result["log_tail"] = logs or []
-        result["operation"] = result["action"]
+        requested_operation = result["plan"].get("payload", {}).get("operation")
+        result["operation"] = requested_operation if isinstance(requested_operation, str) and requested_operation else result["action"]
         result["stage"] = result["current_step"]
         result["requested_by"] = result["created_by"]
         return result
@@ -123,7 +124,7 @@ class PackageRepository:
     def get_job(self, job_id: str) -> dict | None:
         with self.connect() as connection:
             row = connection.execute("SELECT * FROM package_jobs WHERE id=?", (job_id,)).fetchone()
-        return self._job(row, self.logs(job_id, 100)) if row else None
+        return self._job(row, self.logs(job_id, 500)) if row else None
 
     def list_jobs(self, status: str | None = None, module_id: str | None = None, limit: int = 200) -> list[dict]:
         clauses: list[str] = []

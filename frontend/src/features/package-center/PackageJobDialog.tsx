@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleX, LoaderCircle } from "lucide-react";
+import { CheckCircle2, CircleX, ClipboardCopy, Download, LoaderCircle, Pause, Play } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, type AppJob } from "../../api";
 import type { Translate } from "../../app/types";
@@ -15,6 +15,11 @@ const TERMINAL_STATUSES = new Set<AppJob["status"]>([
 
 function safeLogTail(value: unknown): AppJob["log_tail"] {
   return Array.isArray(value) ? value as AppJob["log_tail"] : [];
+}
+
+function logTimestamp(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "--:--:--";
+  return new Date(value * 1000).toLocaleTimeString([], { hour12: false });
 }
 
 function OperationWindowFrame({
@@ -83,7 +88,10 @@ export function PackageJobWindow({
   const [job, setJob] = useState<AppJob | null>(initialJob || null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
-  const log = useRef<HTMLPreElement>(null);
+  const [followLogs, setFollowLogs] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const log = useRef<HTMLDivElement>(null);
+  const copyResetTimer = useRef<number>();
   const streamRevision = useRef(0);
   const pollSequence = useRef(0);
   const latestAppliedPoll = useRef(0);
@@ -202,10 +210,12 @@ export function PackageJobWindow({
   const lastLogId = logTail[logTail.length - 1]?.id;
 
   useEffect(() => {
-    if (log.current) {
+    if (followLogs && log.current) {
       log.current.scrollTop = log.current.scrollHeight;
     }
-  }, [lastLogId]);
+  }, [followLogs, lastLogId]);
+
+  useEffect(() => () => window.clearTimeout(copyResetTimer.current), []);
 
   useEffect(() => {
     if (
@@ -255,6 +265,10 @@ export function PackageJobWindow({
     : 0;
   const name = moduleName || job.module_id;
   const title = t("package.liveJobTitle").replace("{name}", name);
+  const operation = job.operation || job.action;
+  const operationLabel = operation === "container_create"
+    ? t("package.containerCreateOperation")
+    : operation;
   const statusIcon =
     job.status === "completed"
       ? <CheckCircle2 aria-hidden="true" />
@@ -264,9 +278,39 @@ export function PackageJobWindow({
   const lines = logTail
     .map(
       (entry) =>
-        `[${entry?.stream || "stdout"}] ${entry?.line || ""}`,
+        `[${logTimestamp(entry?.created_at)}] [${entry?.stream || "stdout"}] ${entry?.line || ""}`,
     )
     .join("\n");
+  const currentJobId = job.id;
+
+  async function copyLogs() {
+    if (!lines || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(lines);
+      setCopied(true);
+      window.clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  function downloadLogs() {
+    if (!lines) return;
+    const url = URL.createObjectURL(new Blob([`${lines}\n`], { type: "text/plain;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `webnas-job-${currentJobId}.log`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function resumeFollowing() {
+    setFollowLogs(true);
+    window.requestAnimationFrame(() => {
+      if (log.current) log.current.scrollTop = log.current.scrollHeight;
+    });
+  }
 
   return (
     <OperationWindowFrame
@@ -297,7 +341,7 @@ export function PackageJobWindow({
             {statusIcon}
             <span>
               <strong>{t(`task.${job.status}`)}</strong>
-              <small>{job.operation || job.action}</small>
+              <small>{operationLabel}</small>
             </span>
           </div>
           <strong className="package-live-progress">
@@ -312,11 +356,17 @@ export function PackageJobWindow({
           <span style={{ width: `${progress}%` }} />
         </div>
 
-        <dl>
+        <dl className="package-live-metadata">
           <dt>{t("package.currentStep")}</dt>
           <dd>
             {job.current_step || t("package.waitingForLogs")}
           </dd>
+          <dt>{t("package.operation")}</dt>
+          <dd><code>{operationLabel}</code></dd>
+          <dt>{t("package.jobId")}</dt>
+          <dd><code title={job.id}>{job.id}</code></dd>
+          <dt>{t("package.startedAt")}</dt>
+          <dd>{new Date(job.created_at * 1000).toLocaleString()}</dd>
         </dl>
 
         {job.error && (
@@ -326,30 +376,57 @@ export function PackageJobWindow({
         )}
 
         <div className="package-live-log-header">
-          <h3>{t("package.liveLog")}</h3>
-          {active && (
-            <span
-              className={
-                connected ? "connected" : "reconnecting"
-              }
+          <div>
+            <h3>{t("package.liveLog")}</h3>
+            <small>{t("package.logEntries").replace("{count}", String(logTail.length))}</small>
+          </div>
+          <div className="package-live-log-actions">
+            {active && (
+              <span className={connected ? "connected" : "reconnecting"}>
+                {t(connected ? "package.logConnected" : "package.logConnecting")}
+              </span>
+            )}
+            <button type="button" disabled={!lines} onClick={() => void copyLogs()} title={t("action.copy")}>
+              <ClipboardCopy aria-hidden="true" />
+              {copied ? t("package.logCopied") : t("action.copy")}
+            </button>
+            <button type="button" disabled={!lines} onClick={downloadLogs} title={t("action.download")}>
+              <Download aria-hidden="true" />
+              {t("action.download")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={followLogs}
+              onClick={() => followLogs ? setFollowLogs(false) : resumeFollowing()}
+              title={t(followLogs ? "package.pauseLogs" : "package.followLogs")}
             >
-              {t(
-                connected
-                  ? "package.logConnected"
-                  : "package.logConnecting",
-              )}
-            </span>
-          )}
+              {followLogs ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+              {t(followLogs ? "package.pauseLogs" : "package.followLogs")}
+            </button>
+          </div>
         </div>
 
-        <pre
+        <div
+          className="package-live-log"
           ref={log}
           role="log"
           aria-live="off"
           tabIndex={0}
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            setFollowLogs(element.scrollHeight - element.scrollTop - element.clientHeight < 24);
+          }}
         >
-          {lines || t("package.waitingForLogs")}
-        </pre>
+          {logTail.length
+            ? logTail.map((entry) => (
+                <div className={`package-live-log-line ${entry.stream || "stdout"}`} key={entry.id}>
+                  <time dateTime={new Date(entry.created_at * 1000).toISOString()}>{logTimestamp(entry.created_at)}</time>
+                  <span>{entry.stream || "stdout"}</span>
+                  <code>{entry.line || ""}</code>
+                </div>
+              ))
+            : <div className="package-live-log-empty">{t("package.waitingForLogs")}</div>}
+        </div>
       </section>
     </OperationWindowFrame>
   );

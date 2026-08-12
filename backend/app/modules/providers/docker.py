@@ -1638,21 +1638,53 @@ class DockerProvider(PrivateBackupProvider):
         self.validate_compose(content)
         return {"content": content, "secrets_omitted": bool(environment), "environment_keys": sorted(environment)}
 
-    def _run_container(self, definition: dict[str, Any], secrets_payload: dict[str, str], log: LogCallback, *, preserved_runtime: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _run_container(
+        self,
+        definition: dict[str, Any],
+        secrets_payload: dict[str, str],
+        log: LogCallback,
+        *,
+        preserved_runtime: dict[str, Any] | None = None,
+        progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
         from ..docker_manager.public import ContainerCreateRequest
 
+        def report(percent: int, step: str) -> None:
+            log("system", step)
+            if progress:
+                progress(percent, step)
+
+        report(15, "Validating container definition")
         request = ContainerCreateRequest.model_validate({**definition, "secret_environment": secrets_payload})
+        log("system", f"Container: {request.name}")
+        log("system", f"Image: {request.image} (pull policy: {request.pull_policy})")
+        log("system", f"Runtime: {'start immediately' if request.auto_start else 'create without starting'}, restart={request.restart_policy}, network={request.network}")
+        log("system", f"Configuration: {len(request.ports)} port mapping(s), {len(request.mounts)} mount(s), {len(request.environment)} public and {len(request.secret_environment)} private environment variable(s), {len(request.labels)} label(s)")
+        limits = request.limits
+        log("system", f"Limits: CPU={limits.cpus or 'unlimited'}, memory={f'{limits.memory_mb} MiB' if limits.memory_mb else 'unlimited'}, swap={f'{limits.memory_swap_mb} MiB' if limits.memory_swap_mb else 'default'}, PIDs={limits.pids or 'unlimited'}")
+        log("system", f"Health check: {request.healthcheck.type if request.healthcheck.type != 'none' else 'disabled'}")
+        report(20, "Checking for an existing container with the requested name")
         if self._inspect_container(request.name):
             api_error(409, "CONTAINER_NAME_EXISTS", "A container with this name already exists")
+        log("stdout", "Container name is available")
+        report(25, "Resolving container image")
         if request.pull_policy in {"always", "missing"}:
             inspect = self._run(["docker", "image", "inspect", request.image], timeout=30)
             if request.pull_policy == "always" or inspect.returncode != 0:
+                report(35, f"Pulling image {request.image}")
                 pull = self._run(["docker", "pull", request.image], timeout=1800)
-                for line in (pull.stdout + pull.stderr).splitlines()[-500:]:
+                for line in (pull.stdout + pull.stderr).splitlines()[-400:]:
                     log("stdout" if pull.returncode == 0 else "stderr", redact(line))
                 self._result(pull, "Could not pull container image")
+                log("stdout", "Container image pull completed")
+            else:
+                log("stdout", "Container image is already available locally")
+        else:
+            log("stdout", "Image pull skipped by policy")
+        report(52, "Preparing private environment input")
         env_path = self.manager_store.inputs_dir / f"env-{hashlib.sha256((request.name + str(time.time())).encode()).hexdigest()[:20]}.list"
         self._write_private(env_path, "".join(f"{key}={value}\n" for key, value in {**request.environment, **request.secret_environment}.items()))
+        log("system", f"Prepared an ephemeral environment file with {len(request.environment) + len(request.secret_environment)} variable(s); values are not written to the log")
         args = ["docker", "run", "-d"] if request.auto_start else ["docker", "create"]
         runtime = preserved_runtime or {}
         network = str(runtime.get("network_mode") or request.network)
@@ -1713,12 +1745,24 @@ class DockerProvider(PrivateBackupProvider):
             if request.healthcheck.start_period_seconds:
                 args += ["--health-start-period", f"{request.healthcheck.start_period_seconds}s"]
         args.append(request.image)
+        report(68, "Container runtime configuration prepared")
+        log("system", f"Applying network={network}, aliases={len(request.network_aliases)}, ports={len(request.ports)}, mounts={len(request.mounts)}, labels={len(request.labels)}")
+        report(75, "Starting container" if request.auto_start else "Creating container")
         try:
             result = self._run(args, timeout=1800)
         finally:
             env_path.unlink(missing_ok=True)
+            log("system", "Removed the ephemeral environment file")
+        for line in (result.stdout + result.stderr).splitlines()[-50:]:
+            log("stdout" if result.returncode == 0 else "stderr", redact(line))
         self._result(result, "Could not create container")
-        return self.container_details(request.name)
+        log("stdout", "Docker accepted the container definition")
+        report(80, "Inspecting the created container")
+        details = self.container_details(request.name)
+        state = details.get("state") or {}
+        status = state.get("Status") if isinstance(state, dict) else None
+        log("stdout", f"Container inspection completed; status={status or 'created'}")
+        return details
 
     def _safe_update_container(self, target: str, image: str | None, actor: str, log: LogCallback) -> dict[str, Any]:
         normalized = self._checked_identifier(target, "container")
@@ -1827,7 +1871,7 @@ class DockerProvider(PrivateBackupProvider):
             definition = dict(payload.get("definition") or {})
             input_ref = str(payload.get("input_ref") or "")
             private = self.manager_store.consume_input(input_ref) if input_ref else {}
-            response = {"container": self._run_container(definition, dict(private.get("environment") or {}), log)}
+            response = {"container": self._run_container(definition, dict(private.get("environment") or {}), log, progress=progress)}
         elif operation == "container_settings":
             response = self.update_container_settings(str(payload.get("target") or ""), dict(payload.get("settings") or {}))
         elif operation in {"container_start", "container_stop", "container_restart", "container_pause", "container_unpause", "container_kill", "container_rename", "container_remove"}:

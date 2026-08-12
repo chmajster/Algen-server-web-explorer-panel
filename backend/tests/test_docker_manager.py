@@ -524,7 +524,14 @@ def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, 
         limits={"cpus": 1.5, "memory_mb": 256, "memory_swap_mb": 512, "pids": 128},
         healthcheck={"type": "tcp", "port": 8080}, confirmation="safe-app",
     ).model_dump(mode="json", exclude={"secret_environment", "confirmation"})
-    provider._run_container(definition, {"APP_PASSWORD": "private-value"}, lambda *_: None)
+    logs: list[tuple[str, str]] = []
+    progress_updates: list[tuple[int, str]] = []
+    provider._run_container(
+        definition,
+        {"APP_PASSWORD": "private-value"},
+        lambda stream, line: logs.append((stream, line)),
+        progress=lambda percent, step: progress_updates.append((percent, step)),
+    )
 
     docker_run = next(args for args, _ in calls if args[:2] == ["docker", "run"])
     assert "--env-file" in docker_run
@@ -536,6 +543,15 @@ def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, 
     assert "--health-cmd" in docker_run and "--pids-limit" in docker_run and docker_run.count("--mount") == 2
     assert all(input_text is None for _, input_text in calls)
     assert not list(storage.inputs_dir.glob("env-*.list"))
+    combined_logs = "\n".join(line for _, line in logs)
+    assert len(logs) >= 16
+    assert "Validating container definition" in combined_logs
+    assert "Prepared an ephemeral environment file with 2 variable(s)" in combined_logs
+    assert "Docker accepted the container definition" in combined_logs
+    assert "Container inspection completed; status=running" in combined_logs
+    assert "private-value" not in combined_logs
+    assert progress_updates[0] == (15, "Validating container definition")
+    assert progress_updates[-1] == (80, "Inspecting the created container")
 
 
 def test_running_container_settings_use_typed_docker_update_and_store_portal(monkeypatch, tmp_path: Path):
