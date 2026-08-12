@@ -15,10 +15,19 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, type DockerContainerCreate, type DockerContainerDefaultsPolicy, type ModuleJob } from "../../api";
+import { api, type DockerContainerCreate, type DockerHostResources, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { errorMessage } from "./shared";
 import { ConfigRow, ConfigSection, KeyValueRows } from "./create-container/CompactConfig";
+import {
+  ResourceLimitsSection,
+  resourceLimitIssues,
+  resourceLimitsFromPayload,
+  resourceLimitsPayload,
+  resourceSummary,
+  type ResourceLimitsDraft,
+  type ResourceProfile,
+} from "./create-container/ResourceLimitsSection";
 
 function pairs(value: string, invalidMessage: string): Record<string, string> {
   return Object.fromEntries(
@@ -82,7 +91,7 @@ function validEntrypoint(value: string): boolean {
 type ContainerWizardDraft = {
   step?: number; name?: string; image?: string; network?: string; ports?: string; environment?: string; mounts?: MountRow[];
   memory?: string; memorySwap?: string; cpus?: string; pids?: string; hostname?: string; entrypoint?: string; workingDir?: string; containerUser?: string;
-  limitsEnabled?: boolean;
+  limitsEnabled?: boolean; resourceProfile?: ResourceProfile; resourceLimits?: ResourceLimitsDraft;
   networkAliases?: string; restartPolicy?: "no" | "always" | "unless-stopped" | "on-failure"; labels?: string;
   healthType?: "none" | "http" | "tcp"; healthPort?: string; healthPath?: string; readOnly?: boolean; init?: boolean; autoStart?: boolean;
   composeMode?: boolean; composeProject?: string; composeContent?: string; composeEnvironment?: string; composeAutoStart?: boolean;
@@ -190,10 +199,10 @@ export function CreateContainerWizard({
   const [mounts, setMounts] = useState<MountRow[]>(() => Array.isArray(draft.mounts) ? draft.mounts : []);
   const [pathPickerMountId, setPathPickerMountId] = useState<number | null>(null);
   const nextMountId = useRef(Math.max(0, ...(draft.mounts || []).map((item) => Number(item.id) || 0)) + 1);
-  const [memory, setMemory] = useState(draft.memory || "");
-  const [memorySwap, setMemorySwap] = useState(draft.memorySwap || "");
-  const [cpus, setCpus] = useState(draft.cpus || "");
-  const [pids, setPids] = useState(draft.pids || "");
+  const [resourceLimits, setResourceLimits] = useState<ResourceLimitsDraft>(() => draft.resourceLimits || resourceLimitsFromPayload({
+    memory_mb: draft.memory ? Number(draft.memory) : null, memory_swap_mb: draft.memorySwap ? Number(draft.memorySwap) : null,
+    cpus: draft.cpus ? Number(draft.cpus) : null, pids: draft.pids ? Number(draft.pids) : null,
+  }));
   const [hostname, setHostname] = useState(draft.hostname || "");
   const [entrypoint, setEntrypoint] = useState(draft.entrypoint || "");
   const [workingDir, setWorkingDir] = useState(draft.workingDir || "");
@@ -210,8 +219,9 @@ export function CreateContainerWizard({
   const [readOnly, setReadOnly] = useState(draft.readOnly || false);
   const [init, setInit] = useState(draft.init ?? true);
   const [autoStart, setAutoStart] = useState(draft.autoStart ?? true);
-  const [limitsEnabled, setLimitsEnabled] = useState(draft.limitsEnabled ?? Boolean(draft.memory || draft.memorySwap || draft.cpus || draft.pids));
-  const [resourcePolicy, setResourcePolicy] = useState<DockerContainerDefaultsPolicy | null>(null);
+  const [limitsEnabled, setLimitsEnabled] = useState(draft.limitsEnabled ?? Boolean(draft.resourceLimits || draft.memory || draft.memorySwap || draft.cpus || draft.pids));
+  const [resourceProfile, setResourceProfile] = useState<ResourceProfile>(draft.resourceProfile || (draft.limitsEnabled === false ? "unlimited" : "custom"));
+  const [hostResources, setHostResources] = useState<DockerHostResources | null>(null);
   const resourceLimitsTouched = useRef(false);
   const [composeMode, setComposeMode] = useState(draft.composeMode || false);
   const [composeProject, setComposeProject] = useState(draft.composeProject || "");
@@ -242,26 +252,21 @@ export function CreateContainerWizard({
     api.dockerContainerDefaultsPolicy()
       .then((policy) => {
         if (!active) return;
-        setResourcePolicy(policy);
-        if (resourceLimitsTouched.current || draft.limitsEnabled !== undefined || draft.memory || draft.memorySwap || draft.cpus || draft.pids) return;
+        if (resourceLimitsTouched.current || draft.limitsEnabled !== undefined || draft.resourceLimits || draft.memory || draft.memorySwap || draft.cpus || draft.pids) return;
         setLimitsEnabled(policy.resource_limits_enabled);
-        setMemory(String(policy.memory_mb));
-        setMemorySwap(String(policy.memory_swap_mb));
-        setCpus(String(policy.cpus));
-        setPids(String(policy.pids));
+        setResourceProfile(policy.resource_limits_enabled ? "custom" : "unlimited");
+        setResourceLimits(resourceLimitsFromPayload({ memory_mb: policy.memory_mb, memory_swap_mb: policy.memory_swap_mb, cpus: policy.cpus, pids: policy.pids }));
       })
       .catch(() => {
-        if (!active || resourceLimitsTouched.current || draft.limitsEnabled !== undefined || draft.memory || draft.memorySwap || draft.cpus || draft.pids) return;
+        if (!active || resourceLimitsTouched.current || draft.limitsEnabled !== undefined || draft.resourceLimits || draft.memory || draft.memorySwap || draft.cpus || draft.pids) return;
         const fallback = { resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 };
-        setResourcePolicy(fallback);
         setLimitsEnabled(true);
-        setMemory(String(fallback.memory_mb));
-        setMemorySwap(String(fallback.memory_swap_mb));
-        setCpus(String(fallback.cpus));
-        setPids(String(fallback.pids));
+        setResourceProfile("custom");
+        setResourceLimits(resourceLimitsFromPayload(fallback));
       });
+    api.dockerHostResources().then((value) => { if (active) setHostResources(value); }).catch(() => { if (active) setHostResources(null); });
     return () => { active = false; };
-  }, [draft.cpus, draft.limitsEnabled, draft.memory, draft.memorySwap, draft.pids]);
+  }, [draft.cpus, draft.limitsEnabled, draft.memory, draft.memorySwap, draft.pids, draft.resourceLimits]);
 
   function addMount(values: Partial<Omit<MountRow, "id">> = {}) {
     setMounts((current) => [...current, {
@@ -305,12 +310,12 @@ export function CreateContainerWizard({
   useEffect(() => {
     if (!draftKey) return;
     const value: ContainerWizardDraft = {
-      step: 0, name, image, network, ports, environment, mounts, memory, memorySwap, cpus, pids, limitsEnabled, hostname, entrypoint, workingDir,
+      step: 0, name, image, network, ports, environment, mounts, limitsEnabled, resourceProfile, resourceLimits, hostname, entrypoint, workingDir,
       containerUser, networkAliases, restartPolicy, labels, healthType, healthPort, healthPath, readOnly, init, autoStart,
       composeMode, composeProject, composeContent, composeEnvironment, composeAutoStart,
     };
     sessionStorage.setItem(draftKey, JSON.stringify(value));
-  }, [autoStart, composeAutoStart, composeContent, composeEnvironment, composeMode, composeProject, containerUser, cpus, draftKey, entrypoint, environment, healthPath, healthPort, healthType, hostname, image, init, labels, limitsEnabled, memory, memorySwap, mounts, name, network, networkAliases, pids, ports, readOnly, restartPolicy, workingDir]);
+  }, [autoStart, composeAutoStart, composeContent, composeEnvironment, composeMode, composeProject, containerUser, draftKey, entrypoint, environment, healthPath, healthPort, healthType, hostname, image, init, labels, limitsEnabled, mounts, name, network, networkAliases, ports, readOnly, resourceLimits, resourceProfile, restartPolicy, workingDir]);
 
   useEffect(() => {
     if (!canViewLocalImages) return;
@@ -414,6 +419,7 @@ export function CreateContainerWizard({
     incompleteSecrets ? t("docker.wizard.validation.secrets") : "",
     incompleteMounts.length ? t("docker.wizard.validation.mounts") : "",
     !validEntrypoint(entrypoint) ? t("docker.wizard.validation.entrypoint") : "",
+    ...resourceLimitIssues(resourceLimits, limitsEnabled, hostResources, t),
     healthType !== "none" && (!healthPort || Number(healthPort) < 1 || Number(healthPort) > 65535)
       ? t("docker.wizard.validation.healthPort")
       : "",
@@ -467,11 +473,10 @@ export function CreateContainerWizard({
       setLabels(importedLabels);
       setLabelRows(editablePairs(importedLabels).map((row) => ({ ...row, id: nextLabelId.current++ })));
       resourceLimitsTouched.current = true;
-      setMemory(parsed.limits?.memory_mb == null ? "" : String(parsed.limits.memory_mb));
-      setMemorySwap(parsed.limits?.memory_swap_mb == null ? "" : String(parsed.limits.memory_swap_mb));
-      setCpus(parsed.limits?.cpus == null ? "" : String(parsed.limits.cpus));
-      setPids(parsed.limits?.pids == null ? "" : String(parsed.limits.pids));
-      setLimitsEnabled(Boolean(parsed.limits && Object.values(parsed.limits).some((value) => value != null)));
+      setResourceLimits(resourceLimitsFromPayload(parsed.limits));
+      const importedLimitsEnabled = Boolean(parsed.limits && Object.entries(parsed.limits).some(([key, value]) => key === "ulimits" ? Array.isArray(value) && value.length > 0 : value !== null && value !== undefined && value !== false));
+      setLimitsEnabled(importedLimitsEnabled);
+      setResourceProfile(importedLimitsEnabled ? "custom" : "unlimited");
       setHealthType(parsed.healthcheck?.type || "none");
       setHealthPort(parsed.healthcheck?.port == null ? "" : String(parsed.healthcheck.port));
       setHealthPath(parsed.healthcheck?.path || "/");
@@ -565,12 +570,7 @@ export function CreateContainerWizard({
             read_only: item.readOnly,
           };
         }),
-        limits: {
-          memory_mb: limitsEnabled && memory ? Number(memory) : null,
-          memory_swap_mb: limitsEnabled && memorySwap ? Number(memorySwap) : null,
-          cpus: limitsEnabled && cpus ? Number(cpus) : null,
-          pids: limitsEnabled && pids ? Number(pids) : null,
-        },
+        limits: resourceLimitsPayload(resourceLimits, limitsEnabled),
         healthcheck: {
           type: healthType,
           port: healthType === "none" ? null : Number(healthPort),
@@ -713,23 +713,10 @@ export function CreateContainerWizard({
             </ConfigSection>
 
             <ConfigSection title={t("docker.wizard.section.resources")}>
-              <ConfigRow label={t("docker.wizard.enableLimits")} description={t("docker.wizard.resourcePolicyHint")}><label className="docker-compact-check"><input type="checkbox" checked={limitsEnabled} onChange={(event) => {
-                const enabled = event.target.checked;
-                resourceLimitsTouched.current = true;
-                setLimitsEnabled(enabled);
-                if (enabled && resourcePolicy) {
-                  setMemory((value) => value || String(resourcePolicy.memory_mb));
-                  setMemorySwap((value) => value || String(resourcePolicy.memory_swap_mb));
-                  setCpus((value) => value || String(resourcePolicy.cpus));
-                  setPids((value) => value || String(resourcePolicy.pids));
-                }
-              }} />{t("docker.wizard.enableLimits")}</label></ConfigRow>
-              <div className={!limitsEnabled ? "docker-limits-disabled" : ""}>
-                <ConfigRow label={t("docker.field.memoryMb")}><div className="docker-compact-unit"><input aria-label={t("docker.field.memoryMb")} disabled={!limitsEnabled} type="number" min="16" value={memory} onChange={(event) => { resourceLimitsTouched.current = true; setMemory(event.target.value); }} /><span>MB</span></div></ConfigRow>
-                <ConfigRow label={t("docker.field.memorySwapMb")}><div className="docker-compact-unit"><input aria-label={t("docker.field.memorySwapMb")} disabled={!limitsEnabled} type="number" min="16" value={memorySwap} onChange={(event) => { resourceLimitsTouched.current = true; setMemorySwap(event.target.value); }} /><span>MB</span></div></ConfigRow>
-                <ConfigRow label={t("docker.field.cpus")}><input aria-label={t("docker.field.cpus")} disabled={!limitsEnabled} type="number" min="0.1" step="0.1" value={cpus} onChange={(event) => { resourceLimitsTouched.current = true; setCpus(event.target.value); }} /></ConfigRow>
-                <ConfigRow label={t("docker.field.pids")}><input aria-label={t("docker.field.pids")} disabled={!limitsEnabled} type="number" min="16" value={pids} onChange={(event) => { resourceLimitsTouched.current = true; setPids(event.target.value); }} /></ConfigRow>
-              </div>
+              <ResourceLimitsSection enabled={limitsEnabled} host={hostResources} profile={resourceProfile} t={t} value={resourceLimits}
+                onEnabled={(value) => { resourceLimitsTouched.current = true; setLimitsEnabled(value); }}
+                onProfile={setResourceProfile}
+                onValue={(value) => { resourceLimitsTouched.current = true; setResourceLimits(value); }} />
             </ConfigSection>
 
             <ConfigSection title={t("docker.wizard.section.health")}>
@@ -749,7 +736,7 @@ export function CreateContainerWizard({
                 <div><dt>{t("docker.field.image")}</dt><dd>{image || "—"}</dd></div><div><dt>{t("docker.field.name")}</dt><dd>{name || "—"}</dd></div>
                 <div><dt>{t("docker.field.network")}</dt><dd>{network || "—"}</dd></div><div><dt>{t("docker.field.ports")}</dt><dd>{portEntries.length || t("common.none")}</dd></div>
                 <div><dt>{t("docker.field.mounts")}</dt><dd>{mounts.length}</dd></div><div><dt>{t("docker.field.environment")}</dt><dd>{editablePairs(environment).length}</dd></div>
-                <div><dt>{t("docker.field.memoryMb")}</dt><dd>{limitsEnabled && memory ? `${memory} MB` : "—"}</dd></div><div><dt>{t("docker.field.cpus")}</dt><dd>{limitsEnabled && cpus ? cpus : "—"}</dd></div>
+                {resourceSummary(resourceLimits, limitsEnabled, t).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
                 <div><dt>{t("docker.field.entrypoint")}</dt><dd>{entrypoint.trim() || t("docker.wizard.imageDefault")}</dd></div>
                 <div><dt>{t("docker.field.restartPolicy")}</dt><dd>{restartPolicy}</dd></div><div><dt>{t("docker.field.autoStart")}</dt><dd>{t(autoStart ? "common.yes" : "common.no")}</dd></div>
               </dl>

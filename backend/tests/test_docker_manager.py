@@ -94,6 +94,56 @@ def test_container_defaults_policy_is_validated_and_persisted(tmp_path: Path):
         ContainerDefaultsPolicy(memory_mb=2048, memory_swap_mb=1024)
 
 
+def test_advanced_resource_limit_contract_is_typed_and_backward_compatible():
+    legacy = ContainerCreateRequest(name="legacy", image="nginx:stable", limits={"cpus": 1, "memory_mb": 512, "memory_swap_mb": 1024, "pids": 128})
+    assert legacy.limits.cpu_shares is None and legacy.limits.ulimits == []
+
+    limits = ContainerCreateRequest(name="advanced", image="nginx:stable", limits={
+        "cpu_shares": 2048, "cpuset_cpus": "0,2,4-6", "cpu_period": 100000, "cpu_quota": 200000,
+        "memory_mb": 2048, "memory_swap_mb": 4096, "memory_reservation_mb": 1024, "memory_swappiness": 25,
+        "shm_size_mb": 256, "pids": 512, "blkio_weight": 750, "oom_score_adj": 100,
+        "ulimits": [{"name": "nofile", "soft": 65535, "hard": 65535}, {"name": "nproc", "soft": 4096, "hard": 8192}],
+    }).limits
+    assert limits.cpuset_cpus == "0,2,4-6"
+    assert limits.memory_reservation_mb == 1024
+    assert [item.name for item in limits.ulimits] == ["nofile", "nproc"]
+
+    invalid_limits = (
+        {"memory_mb": 512, "memory_swap_mb": 256},
+        {"memory_mb": 512, "memory_reservation_mb": 1024},
+        {"cpus": 1, "cpu_period": 100000, "cpu_quota": 200000},
+        {"cpu_period": 100000},
+        {"cpuset_cpus": "0,$(id)"},
+        {"oom_kill_disable": True},
+        {"ulimits": [{"name": "nofile", "soft": 100, "hard": 50}]},
+        {"ulimits": [{"name": "nofile", "soft": 100, "hard": 100}, {"name": "nofile", "soft": 200, "hard": 200}]},
+    )
+    for value in invalid_limits:
+        with pytest.raises(ValidationError):
+            ContainerCreateRequest(name="invalid", image="nginx:stable", limits=value)
+
+
+def test_resource_capabilities_validate_host_cpuset_and_optional_features(monkeypatch):
+    provider = DockerProvider("alice")
+    info = {"NCPU": 12, "MemTotal": 16 * 1024**3, "OSType": "linux", "CgroupVersion": "1", "SecurityOptions": []}
+    monkeypatch.setattr(provider, "_run", lambda args, timeout=30, input_text=None, env=None: subprocess.CompletedProcess(args, 0, json.dumps(info), ""))
+    capabilities = provider.resource_capabilities()
+    assert capabilities["logical_cpus"] == 12
+    assert capabilities["memory_bytes"] == 16 * 1024**3
+    assert capabilities["capabilities"]["memory_swappiness"] is True
+
+    limits = ContainerCreateRequest(name="safe", image="nginx:stable", limits={"cpuset_cpus": "0-3"}).limits
+    provider.validate_resource_limits(limits, {"logical_cpus": 4, "capabilities": {"advanced_cpu": True}})
+    with pytest.raises(HTTPException) as error:
+        provider.validate_resource_limits(ContainerCreateRequest(name="unsafe", image="nginx:stable", limits={"cpuset_cpus": "0,4"}).limits, {"logical_cpus": 4, "capabilities": {"advanced_cpu": True}})
+    assert error.value.detail["code"] == "CPUSET_OUT_OF_RANGE"
+
+    unsupported = ContainerCreateRequest(name="unsupported", image="nginx:stable", limits={"memory_swappiness": 20}).limits
+    with pytest.raises(HTTPException) as error:
+        provider.validate_resource_limits(unsupported, {"logical_cpus": 4, "capabilities": {"memory_swappiness": False}})
+    assert error.value.detail["code"] == "DOCKER_RESOURCE_LIMIT_UNSUPPORTED"
+
+
 def test_network_contract_rejects_system_names_and_conflicting_gateway():
     with pytest.raises(ValidationError):
         NetworkCreateRequest(name="bridge")
@@ -527,7 +577,12 @@ def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, 
         name="safe-app", image="nginx:stable", pull_policy="never", environment={"MODE": "prod"}, secret_environment={},
         network="private-net", network_aliases=["web"], hostname="safe-web", entrypoint="/usr/local/bin/start", working_dir="/app", user="1000:1000",
         mounts=[{"type": "volume", "source": "safe-data", "target": "/data"}, {"type": "tmpfs", "target": "/tmp", "tmpfs_size_mb": 64}],
-        limits={"cpus": 1.5, "memory_mb": 256, "memory_swap_mb": 512, "pids": 128},
+        limits={
+            "cpu_shares": 2048, "cpuset_cpus": "0", "cpu_period": 100000, "cpu_quota": 150000,
+            "memory_mb": 256, "memory_swap_mb": 512, "memory_reservation_mb": 128, "memory_swappiness": 20,
+            "shm_size_mb": 64, "pids": 128, "blkio_weight": 500, "oom_score_adj": 50, "oom_kill_disable": True,
+            "ulimits": [{"name": "nofile", "soft": 4096, "hard": 8192}],
+        },
         healthcheck={"type": "tcp", "port": 8080}, confirmation="safe-app",
     ).model_dump(mode="json", exclude={"secret_environment", "confirmation"})
     logs: list[tuple[str, str]] = []
@@ -547,6 +602,22 @@ def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, 
     assert docker_run[docker_run.index("--hostname") + 1] == "safe-web"
     assert docker_run[docker_run.index("--entrypoint") + 1] == "/usr/local/bin/start"
     assert docker_run[docker_run.index("--user") + 1] == "1000:1000"
+    assert docker_run[docker_run.index("--cpu-shares") + 1] == "2048"
+    assert docker_run[docker_run.index("--cpuset-cpus") + 1] == "0"
+    assert docker_run[docker_run.index("--cpu-period") + 1] == "100000"
+    assert docker_run[docker_run.index("--cpu-quota") + 1] == "150000"
+    assert docker_run[docker_run.index("--memory-reservation") + 1] == "128m"
+    assert docker_run[docker_run.index("--memory-swappiness") + 1] == "20"
+    assert docker_run[docker_run.index("--shm-size") + 1] == "64m"
+    assert docker_run[docker_run.index("--blkio-weight") + 1] == "500"
+    assert docker_run[docker_run.index("--oom-score-adj") + 1] == "50" and "--oom-kill-disable" in docker_run
+    assert docker_run[docker_run.index("--ulimit") + 1] == "nofile=4096:8192"
+    assert docker_run[docker_run.index("--cpu-shares"):docker_run.index("--health-cmd")] == [
+        "--cpu-shares", "2048", "--cpuset-cpus", "0", "--cpu-period", "100000", "--cpu-quota", "150000",
+        "--memory", "256m", "--memory-swap", "512m", "--memory-reservation", "128m", "--memory-swappiness", "20",
+        "--shm-size", "64m", "--pids-limit", "128", "--blkio-weight", "500", "--oom-score-adj", "50",
+        "--oom-kill-disable", "--ulimit", "nofile=4096:8192",
+    ]
     assert "--health-cmd" in docker_run and "--pids-limit" in docker_run and docker_run.count("--mount") == 2
     assert all(input_text is None for _, input_text in calls)
     assert not list(storage.inputs_dir.glob("env-*.list"))
@@ -559,6 +630,27 @@ def test_container_creation_uses_env_file_and_fixed_argument_array(monkeypatch, 
     assert "private-value" not in combined_logs
     assert progress_updates[0] == (15, "Validating container definition")
     assert progress_updates[-1] == (80, "Inspecting the created container")
+
+
+def test_container_creation_omits_every_unset_resource_flag(monkeypatch, tmp_path: Path):
+    provider = DockerProvider("alice")
+    storage = DockerManagerStore(tmp_path / "manager")
+    monkeypatch.setattr(DockerProvider, "manager_store", property(lambda self: storage))
+    monkeypatch.setattr(provider, "_inspect_container", lambda name: None)
+    monkeypatch.setattr(provider, "container_details", lambda name: {"name": name})
+    calls: list[list[str]] = []
+    monkeypatch.setattr(provider, "_run", lambda args, timeout=30, input_text=None, env=None: calls.append(list(args)) or subprocess.CompletedProcess(args, 0, "id\n", ""))
+
+    definition = ContainerCreateRequest(name="unlimited", image="nginx:stable", pull_policy="never").model_dump(mode="json", exclude={"secret_environment", "confirmation"})
+    provider._run_container(definition, {}, lambda stream, line: None)
+
+    command = next(args for args in calls if args[:2] == ["docker", "run"])
+    resource_flags = {
+        "--cpus", "--cpu-shares", "--cpuset-cpus", "--cpu-period", "--cpu-quota", "--memory", "--memory-swap",
+        "--memory-reservation", "--memory-swappiness", "--shm-size", "--pids-limit", "--blkio-weight", "--oom-score-adj",
+        "--oom-kill-disable", "--ulimit",
+    }
+    assert not resource_flags & set(command)
 
 
 def test_running_container_settings_use_typed_docker_update_and_store_portal(monkeypatch, tmp_path: Path):
@@ -665,6 +757,7 @@ def test_docker_manager_routes_are_registered():
 
     paths = {route.path for route in router.routes if hasattr(route, "path")}
     assert "/api/modules/docker/dashboard" in paths
+    assert "/api/modules/docker/resources" in paths
     assert "/api/modules/docker/containers" in paths
     assert "/api/modules/docker/containers/import" in paths
     assert "/api/modules/docker/containers/{target}/actions" in paths

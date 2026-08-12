@@ -21,12 +21,13 @@ import {
   Upload,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { api, type DockerContainer, type DockerContainerAction, type ModuleJob } from "../../api";
+import { api, type DockerContainer, type DockerContainerAction, type DockerResourceLimits, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { ContainerDetails, type DetailTab } from "./ContainerDetails";
 import { CreateContainerWizard } from "./CreateContainerWizard";
+import { resourceLimitsFromPayload, type ResourceLimitsDraft, type ResourceProfile } from "./create-container/ResourceLimitsSection";
 import { LoadState, errorMessage, format } from "./shared";
 
 function detailValue(value: unknown, t: Translate): string {
@@ -86,6 +87,8 @@ type ContainerWizardDraft = {
   workingDir: string;
   containerUser: string;
   limitsEnabled: boolean;
+  resourceProfile: ResourceProfile;
+  resourceLimits: ResourceLimitsDraft;
   networkAliases: string;
   restartPolicy: "no" | "always" | "unless-stopped" | "on-failure";
   labels: string;
@@ -215,6 +218,25 @@ function duplicateDraft(details: Record<string, unknown>, row: DockerContainer):
     ? restart as ContainerWizardDraft["restartPolicy"]
     : "no";
   const network = duplicateNetwork(details);
+  const ulimits = arrayValue(limits.ulimits).flatMap((raw) => {
+    const item = recordValue(raw); const name = String(item.Name || item.name || "");
+    const soft = positiveNumber(item.Soft ?? item.soft); const hard = positiveNumber(item.Hard ?? item.hard);
+    return (name === "nofile" || name === "nproc") && soft && hard ? [{ name, soft, hard }] : [];
+  }) as DockerResourceLimits["ulimits"];
+  const advancedLimits: DockerResourceLimits = {
+    cpus: nanoCpus ? nanoCpus / 1_000_000_000 : null,
+    cpu_shares: positiveNumber(limits.cpu_shares) || null, cpuset_cpus: String(limits.cpuset_cpus || "") || null,
+    cpu_period: positiveNumber(limits.cpu_period) || null, cpu_quota: positiveNumber(limits.cpu_quota) || null,
+    memory_mb: memoryBytes ? Math.max(1, Math.round(memoryBytes / 1024 / 1024)) : null,
+    memory_swap_mb: memorySwapBytes ? Math.max(1, Math.round(memorySwapBytes / 1024 / 1024)) : null,
+    memory_reservation_mb: positiveNumber(limits.memory_reservation) ? Math.round(positiveNumber(limits.memory_reservation) / 1024 / 1024) : null,
+    memory_swappiness: limits.memory_swappiness == null ? null : Number(limits.memory_swappiness),
+    shm_size_mb: positiveNumber(limits.shm_size) ? Math.round(positiveNumber(limits.shm_size) / 1024 / 1024) : null,
+    pids: pids || null, blkio_weight: positiveNumber(limits.blkio_weight) || null,
+    oom_score_adj: limits.oom_score_adj == null ? null : Number(limits.oom_score_adj), oom_kill_disable: Boolean(limits.oom_kill_disable), ulimits,
+  };
+  const resourceLimits = resourceLimitsFromPayload(advancedLimits);
+  const limitsEnabled = Object.entries(advancedLimits).some(([key, value]) => key === "ulimits" ? Array.isArray(value) && value.length > 0 : value !== null && value !== false);
   return {
     step: 0,
     name: duplicateContainerName(details.name || row.Names),
@@ -231,7 +253,9 @@ function duplicateDraft(details: Record<string, unknown>, row: DockerContainer):
     entrypoint: String(details.entrypoint || ""),
     workingDir: "",
     containerUser: "",
-    limitsEnabled: Boolean(memory || memorySwap || cpus || pids),
+    limitsEnabled,
+    resourceProfile: limitsEnabled ? "custom" : "unlimited",
+    resourceLimits,
     networkAliases: network.aliases,
     restartPolicy,
     labels: duplicateLabels(details.labels),

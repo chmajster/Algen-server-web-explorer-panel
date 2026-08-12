@@ -635,6 +635,70 @@ class DockerProvider(PrivateBackupProvider):
             "prune_preview": self.prune_plan(["containers", "images", "networks", "volumes", "build_cache"]),
         }
 
+    def resource_capabilities(self) -> dict[str, Any]:
+        result = self._run(["docker", "info", "--format", "{{json .}}"], timeout=30)
+        try:
+            info = json.loads(result.stdout) if result.returncode == 0 else {}
+        except json.JSONDecodeError:
+            info = {}
+        if not isinstance(info, dict):
+            info = {}
+        memory: dict[str, int] = {}
+        try:
+            for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+                if ":" not in line:
+                    continue
+                key, value = line.split(":", 1)
+                memory[key] = int(value.strip().split()[0]) * 1024
+        except (OSError, ValueError, IndexError):
+            pass
+        security_options = info.get("SecurityOptions") if isinstance(info.get("SecurityOptions"), list) else []
+        rootless = any("rootless" in str(item).lower() for item in security_options)
+        os_type = str(info.get("OSType") or "linux").lower()
+        cgroup_version = str(info.get("CgroupVersion") or "")
+        linux = result.returncode == 0 and os_type == "linux"
+        return {
+            "logical_cpus": int(info.get("NCPU") or os.cpu_count() or 0),
+            "memory_bytes": int(info.get("MemTotal") or memory.get("MemTotal") or 0),
+            "memory_available_bytes": int(memory.get("MemAvailable") or 0),
+            "swap_bytes": int(memory.get("SwapTotal") or 0),
+            "cgroup_version": cgroup_version,
+            "rootless": rootless,
+            "capabilities": {
+                "advanced_cpu": linux,
+                "memory_swappiness": linux and cgroup_version == "1" and not rootless,
+                "oom_controls": linux and not rootless,
+                "blkio_weight": linux and not rootless,
+                "ulimits": linux,
+            },
+        }
+
+    @staticmethod
+    def _cpuset_indices(value: str) -> set[int]:
+        result: set[int] = set()
+        for item in value.split(","):
+            first, last = (int(part) for part in item.split("-", 1)) if "-" in item else (int(item), int(item))
+            result.update(range(first, last + 1))
+        return result
+
+    def validate_resource_limits(self, limits: Any, capabilities: dict[str, Any] | None = None) -> None:
+        logical_cpus = int((capabilities or {}).get("logical_cpus") or os.cpu_count() or 0)
+        if limits.cpuset_cpus and logical_cpus and max(self._cpuset_indices(limits.cpuset_cpus)) >= logical_cpus:
+            api_error(422, "CPUSET_OUT_OF_RANGE", f"CPU set references a processor outside the host range 0-{logical_cpus - 1}")
+        if capabilities is None:
+            return
+        supported = capabilities.get("capabilities") if isinstance(capabilities.get("capabilities"), dict) else {}
+        requested = {
+            "advanced_cpu": bool(limits.cpu_shares or limits.cpuset_cpus or limits.cpu_period or limits.cpu_quota),
+            "memory_swappiness": limits.memory_swappiness is not None,
+            "oom_controls": limits.oom_score_adj is not None or limits.oom_kill_disable,
+            "blkio_weight": limits.blkio_weight is not None,
+            "ulimits": bool(limits.ulimits),
+        }
+        unavailable = [name for name, enabled in requested.items() if enabled and not bool(supported.get(name))]
+        if unavailable:
+            api_error(409, "DOCKER_RESOURCE_LIMIT_UNSUPPORTED", "Requested resource controls are unavailable on this Docker host", capabilities=unavailable)
+
     @staticmethod
     def _paginate(items: list[dict[str, Any]], *, page: int, page_size: int, search: str, sort: str, direction: str) -> dict[str, Any]:
         needle = search.lower().strip()
@@ -714,7 +778,13 @@ class DockerProvider(PrivateBackupProvider):
             "networks": ((inspect.get("NetworkSettings") or {}).get("Networks") or {}),
             "mounts": mounts, "labels": config.get("Labels") or {}, "environment_keys": sorted(environment_keys),
             "read_only": bool(host.get("ReadonlyRootfs")),
-            "limits": {"memory": host.get("Memory"), "memory_swap": host.get("MemorySwap"), "nano_cpus": host.get("NanoCpus"), "pids": host.get("PidsLimit")},
+            "limits": {
+                "memory": host.get("Memory"), "memory_swap": host.get("MemorySwap"), "nano_cpus": host.get("NanoCpus"), "pids": host.get("PidsLimit"),
+                "cpu_shares": host.get("CpuShares"), "cpuset_cpus": host.get("CpusetCpus"), "cpu_period": host.get("CpuPeriod"), "cpu_quota": host.get("CpuQuota"),
+                "memory_reservation": host.get("MemoryReservation"), "memory_swappiness": host.get("MemorySwappiness"), "shm_size": host.get("ShmSize"),
+                "blkio_weight": host.get("BlkioWeight"), "oom_score_adj": host.get("OomScoreAdj"), "oom_kill_disable": host.get("OomKillDisable"),
+                "ulimits": host.get("Ulimits") or [],
+            },
             "health": state.get("Health"),
         }
         return _redact_value(safe)
@@ -1604,7 +1674,28 @@ class DockerProvider(PrivateBackupProvider):
                 continue
             mounts.append({"type": kind, "source": "" if kind == "tmpfs" else mount.get("Name") if kind == "volume" else mount.get("Source"), "target": mount.get("Destination"), "read_only": not bool(mount.get("RW", True))})
         network_names = list(((inspect.get("NetworkSettings") or {}).get("Networks") or {}).keys())
-        limits = {"cpus": float(host.get("NanoCpus") or 0) / 1_000_000_000 or None, "memory_mb": int(host.get("Memory") or 0) // (1024 * 1024) or None, "memory_swap_mb": int(host.get("MemorySwap") or 0) // (1024 * 1024) or None, "pids": host.get("PidsLimit") if int(host.get("PidsLimit") or 0) >= 16 else None}
+        memory_swappiness = host.get("MemorySwappiness")
+        limits = {
+            "cpus": float(host.get("NanoCpus") or 0) / 1_000_000_000 or None,
+            "cpu_shares": int(host.get("CpuShares") or 0) or None,
+            "cpuset_cpus": host.get("CpusetCpus") or None,
+            "cpu_period": int(host.get("CpuPeriod") or 0) or None,
+            "cpu_quota": int(host.get("CpuQuota") or 0) if int(host.get("CpuQuota") or 0) > 0 else None,
+            "memory_mb": int(host.get("Memory") or 0) // (1024 * 1024) or None,
+            "memory_swap_mb": int(host.get("MemorySwap") or 0) // (1024 * 1024) or None,
+            "memory_reservation_mb": int(host.get("MemoryReservation") or 0) // (1024 * 1024) or None,
+            "memory_swappiness": int(memory_swappiness) if isinstance(memory_swappiness, int) and 0 <= memory_swappiness <= 100 else None,
+            "shm_size_mb": int(host.get("ShmSize") or 0) // (1024 * 1024) or None,
+            "pids": host.get("PidsLimit") if int(host.get("PidsLimit") or 0) >= 16 else None,
+            "blkio_weight": int(host.get("BlkioWeight") or 0) or None,
+            "oom_score_adj": int(host.get("OomScoreAdj") or 0) or None,
+            "oom_kill_disable": bool(host.get("OomKillDisable")),
+            "ulimits": [
+                {"name": str(item.get("Name") or ""), "soft": int(item.get("Soft") or 0), "hard": int(item.get("Hard") or 0)}
+                for item in host.get("Ulimits") or []
+                if isinstance(item, dict) and item.get("Name") in {"nofile", "nproc"}
+            ],
+        }
         return ContainerCreateRequest.model_validate({
             "name": name, "image": image or config.get("Image"), "pull_policy": "never", "environment": {}, "secret_environment": env,
             "ports": ports, "mounts": mounts, "network": next((item for item in network_names if item not in SYSTEM_NETWORKS), "bridge"),
@@ -1666,6 +1757,7 @@ class DockerProvider(PrivateBackupProvider):
 
         report(15, "Validating container definition")
         request = ContainerCreateRequest.model_validate({**definition, "secret_environment": secrets_payload})
+        self.validate_resource_limits(request.limits)
         log("system", f"Container: {request.name}")
         log("system", f"Image: {request.image} (pull policy: {request.pull_policy})")
         log("system", f"Runtime: {'start immediately' if request.auto_start else 'create without starting'}, restart={request.restart_policy}, network={request.network}")
@@ -1745,12 +1837,32 @@ class DockerProvider(PrivateBackupProvider):
             args += ["--label", f"{key}={value}"]
         if request.limits.cpus:
             args += ["--cpus", str(request.limits.cpus)]
+        if request.limits.cpu_shares:
+            args += ["--cpu-shares", str(request.limits.cpu_shares)]
+        if request.limits.cpuset_cpus:
+            args += ["--cpuset-cpus", request.limits.cpuset_cpus]
+        if request.limits.cpu_period:
+            args += ["--cpu-period", str(request.limits.cpu_period), "--cpu-quota", str(request.limits.cpu_quota)]
         if request.limits.memory_mb:
             args += ["--memory", f"{request.limits.memory_mb}m"]
         if request.limits.memory_swap_mb:
             args += ["--memory-swap", f"{request.limits.memory_swap_mb}m"]
+        if request.limits.memory_reservation_mb:
+            args += ["--memory-reservation", f"{request.limits.memory_reservation_mb}m"]
+        if request.limits.memory_swappiness is not None:
+            args += ["--memory-swappiness", str(request.limits.memory_swappiness)]
+        if request.limits.shm_size_mb:
+            args += ["--shm-size", f"{request.limits.shm_size_mb}m"]
         if request.limits.pids:
             args += ["--pids-limit", str(request.limits.pids)]
+        if request.limits.blkio_weight:
+            args += ["--blkio-weight", str(request.limits.blkio_weight)]
+        if request.limits.oom_score_adj is not None:
+            args += ["--oom-score-adj", str(request.limits.oom_score_adj)]
+        if request.limits.oom_kill_disable:
+            args.append("--oom-kill-disable")
+        for ulimit in request.limits.ulimits:
+            args += ["--ulimit", f"{ulimit.name}={ulimit.soft}:{ulimit.hard}"]
         if request.healthcheck.type != "none" and request.healthcheck.port:
             # The command is generated entirely from typed port/path values; raw executable input is never accepted.
             command = f"wget -q -O /dev/null http://127.0.0.1:{request.healthcheck.port}{request.healthcheck.path}" if request.healthcheck.type == "http" else f"nc -z 127.0.0.1 {request.healthcheck.port}"

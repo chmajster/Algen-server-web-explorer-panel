@@ -128,18 +128,70 @@ class MountSpec(DockerModel):
         return self
 
 
-class ResourceLimits(DockerModel):
-    cpus: float | None = Field(default=None, ge=0.1, le=128)
-    memory_mb: int | None = Field(default=None, ge=16, le=1_048_576)
-    memory_swap_mb: int | None = Field(default=None, ge=16, le=2_097_152)
-    pids: int | None = Field(default=None, ge=16, le=4_194_304)
+class DockerUlimit(DockerModel):
+    name: Literal["nofile", "nproc"]
+    soft: int = Field(ge=1, le=4_194_304)
+    hard: int = Field(ge=1, le=4_194_304)
 
     @model_validator(mode="after")
-    def valid_swap(self) -> "ResourceLimits":
+    def valid_range(self) -> "DockerUlimit":
+        if self.soft > self.hard:
+            raise ValueError("ulimit soft value cannot exceed hard value")
+        return self
+
+
+class ResourceLimits(DockerModel):
+    cpus: float | None = Field(default=None, ge=0.1, le=128)
+    cpu_shares: int | None = Field(default=None, ge=2, le=262_144)
+    cpuset_cpus: str | None = Field(default=None, max_length=512)
+    cpu_period: int | None = Field(default=None, ge=1_000, le=1_000_000)
+    cpu_quota: int | None = Field(default=None, ge=1_000, le=1_000_000_000)
+    memory_mb: int | None = Field(default=None, ge=16, le=1_048_576)
+    memory_swap_mb: int | None = Field(default=None, ge=16, le=2_097_152)
+    memory_reservation_mb: int | None = Field(default=None, ge=16, le=1_048_576)
+    memory_swappiness: int | None = Field(default=None, ge=0, le=100)
+    shm_size_mb: int | None = Field(default=None, ge=1, le=1_048_576)
+    pids: int | None = Field(default=None, ge=16, le=4_194_304)
+    blkio_weight: int | None = Field(default=None, ge=10, le=1_000)
+    oom_score_adj: int | None = Field(default=None, ge=-1_000, le=1_000)
+    oom_kill_disable: bool = False
+    ulimits: list[DockerUlimit] = Field(default_factory=list, max_length=2)
+
+    @field_validator("cpuset_cpus")
+    @classmethod
+    def valid_cpuset(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        value = value.strip()
+        if not re.fullmatch(r"[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*", value):
+            raise ValueError("cpuset must contain CPU numbers and ranges such as 0,2,4-6")
+        selected: set[int] = set()
+        for item in value.split(","):
+            first, last = (int(part) for part in item.split("-", 1)) if "-" in item else (int(item), int(item))
+            if first > last or last > 65_535:
+                raise ValueError("cpuset contains an invalid CPU range")
+            values = set(range(first, last + 1))
+            if selected & values:
+                raise ValueError("cpuset CPU ranges must not overlap")
+            selected.update(values)
+        return value
+
+    @model_validator(mode="after")
+    def valid_combination(self) -> "ResourceLimits":
         if self.memory_swap_mb is not None and self.memory_mb is None:
             raise ValueError("memory limit is required when swap is limited")
         if self.memory_swap_mb is not None and self.memory_mb is not None and self.memory_swap_mb < self.memory_mb:
             raise ValueError("memory plus swap cannot be lower than memory")
+        if self.memory_reservation_mb is not None and self.memory_mb is not None and self.memory_reservation_mb > self.memory_mb:
+            raise ValueError("memory reservation cannot exceed the hard memory limit")
+        if (self.cpu_period is None) != (self.cpu_quota is None):
+            raise ValueError("CPU period and quota must be configured together")
+        if self.cpus is not None and self.cpu_period is not None:
+            raise ValueError("CPU limit cannot be combined with manual CPU period and quota")
+        if self.oom_kill_disable and self.memory_mb is None:
+            raise ValueError("disabling the OOM killer requires a hard memory limit")
+        if len({item.name for item in self.ulimits}) != len(self.ulimits):
+            raise ValueError("ulimit types must be unique")
         return self
 
 

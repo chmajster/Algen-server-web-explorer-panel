@@ -157,6 +157,12 @@ def container_defaults_policy(user: SessionUser = Depends(current_user)):
     return ContainerDefaultsPolicy.model_validate(store().container_defaults_policy())
 
 
+@router.get("/resources")
+def container_resource_capabilities(user: SessionUser = Depends(current_user)):
+    _allow_any(user, "docker.view", "docker.create_container")
+    return _provider(user).resource_capabilities()
+
+
 @router.put("/policy/container-defaults")
 def save_container_defaults_policy(payload: ContainerDefaultsPolicy, user: SessionUser = Depends(mutating_user)):
     _allow(user, "docker.update_engine")
@@ -215,6 +221,8 @@ def containers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=2
 @router.post("/containers")
 def create_container(payload: ContainerCreateRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, "docker.create_container")
+    provider = _provider(user)
+    provider.validate_resource_limits(payload.limits, provider.resource_capabilities())
     if payload.confirmation != payload.name:
         api_error(400, "EXACT_CONFIRMATION_REQUIRED", "Enter the container name to create it", expected=payload.name)
     input_ref = store().stage_input({"environment": payload.secret_environment}) if payload.secret_environment else ""

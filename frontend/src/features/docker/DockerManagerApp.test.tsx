@@ -6,7 +6,7 @@ import { DockerManagerApp } from "./DockerManagerApp";
 vi.mock("../../api", () => ({
   api: {
     dockerDashboard: vi.fn(), dockerEvents: vi.fn(), dockerContainers: vi.fn(), dockerContainer: vi.fn(), dockerContainerStats: vi.fn(),
-    dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), dockerContainerDefaultsPolicy: vi.fn(), saveDockerContainerDefaultsPolicy: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(), dockerContainerCompose: vi.fn(),
+    dockerContainerLogs: vi.fn(), dockerContainerProcesses: vi.fn(), dockerContainerSettings: vi.fn(), updateDockerContainerSettings: vi.fn(), dockerContainerDefaultsPolicy: vi.fn(), dockerHostResources: vi.fn(), saveDockerContainerDefaultsPolicy: vi.fn(), createDockerContainer: vi.fn(), dockerContainerAction: vi.fn(), dockerContainerCompose: vi.fn(),
     dockerContainerBackup: vi.fn(), dockerImages: vi.fn(), dockerImageAction: vi.fn(), importDockerImage: vi.fn(), dockerApps: vi.fn(),
     dockerComposeProjects: vi.fn(), validateDockerCompose: vi.fn(), saveDockerComposeProject: vi.fn(), dockerComposeAction: vi.fn(),
     dockerVolumes: vi.fn(), dockerNetworks: vi.fn(), dockerNetworkContainers: vi.fn(), dockerDefaultBridge: vi.fn(), saveDockerDefaultBridge: vi.fn(), createDockerNetwork: vi.fn(), dockerNetworkAction: vi.fn(), dockerPrunePlan: vi.fn(), dockerRegistries: vi.fn(), dockerRegistrySources: vi.fn(), dockerRegistryCatalog: vi.fn(), dockerRegistryTags: vi.fn(), dockerBackups: vi.fn(),
@@ -31,6 +31,7 @@ describe("DockerManagerApp", () => {
     vi.mocked(api.dockerContainerSettings).mockResolvedValue({ name: "web", resource_limits_enabled: false, cpu_priority: "medium", memory_mb: null, auto_restart: false, restart_policy: "no", portal_enabled: false, portal_port: null, portal_published_port: null, portal_protocol: "http", compose_managed: false, available_ports: [{ target: 8096, published: 8096, protocol: "tcp" }] });
     vi.mocked(api.updateDockerContainerSettings).mockResolvedValue({ job: { id: "settings-job" } } as never);
     vi.mocked(api.dockerContainerDefaultsPolicy).mockResolvedValue({ resource_limits_enabled: true, memory_mb: 512, memory_swap_mb: 1024, cpus: 1, pids: 128 });
+    vi.mocked(api.dockerHostResources).mockResolvedValue({ logical_cpus: 8, memory_bytes: 16 * 1024 ** 3, memory_available_bytes: 8 * 1024 ** 3, swap_bytes: 4 * 1024 ** 3, cgroup_version: "1", rootless: false, capabilities: { advanced_cpu: true, memory_swappiness: true, oom_controls: true, blkio_weight: true, ulimits: true } });
     vi.mocked(api.dockerImages).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.dockerNetworks).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50, pages: 1 });
     vi.mocked(api.dockerRegistries).mockResolvedValue({ items: [{ id: "docker-hub-public", name: "Docker Hub", provider: "docker_hub", server: "docker.io", username: "", tls: true, ca_certificate_configured: false, secret_configured: false, built_in: true, public_access: true, created_at: 0, updated_at: 0 }] });
@@ -197,11 +198,17 @@ describe("DockerManagerApp", () => {
     expect(vi.mocked(api.createDockerContainer).mock.calls[0][0]).toMatchObject({ name: "safe-web", image: "nginx:stable", entrypoint: "/usr/local/bin/start", secret_environment: { APP_PASSWORD: "private" } });
   });
 
-  it("preserves a custom Entrypoint when duplicating a container", async () => {
+  it("preserves a custom Entrypoint and resource limits when duplicating a container", async () => {
     sessionStorage.removeItem("docker:create-container");
     vi.mocked(api.dockerContainer).mockResolvedValue({
       id: "abc", name: "web", image: "nginx:stable", entrypoint: "/docker-entrypoint.sh",
-      state: { Running: true }, networks: { bridge: {} }, ports: {}, mounts: [], labels: {}, limits: {}, read_only: false,
+      state: { Running: true }, networks: { bridge: {} }, ports: {}, mounts: [], labels: {}, read_only: false,
+      limits: {
+        memory: 2 * 1024 ** 3, memory_swap: 4 * 1024 ** 3, memory_reservation: 1024 ** 3, nano_cpus: 1.5 * 10 ** 9,
+        pids: 512, cpu_shares: 2048, cpuset_cpus: "0-3", memory_swappiness: 20, shm_size: 256 * 1024 ** 2,
+        blkio_weight: 500, oom_score_adj: 100, oom_kill_disable: false,
+        ulimits: [{ Name: "nofile", Soft: 4096, Hard: 8192 }],
+      },
     });
     render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.inspect_container", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
@@ -211,6 +218,14 @@ describe("DockerManagerApp", () => {
     expect(await screen.findByLabelText("docker.field.name")).toHaveValue("web-copy");
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.process" }));
     expect(screen.getByLabelText("docker.field.entrypoint")).toHaveValue("/docker-entrypoint.sh");
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.resources" }));
+    expect(screen.getByLabelText("docker.resources.profile")).toHaveValue("custom");
+    expect(screen.getByLabelText("docker.field.memoryMb")).toHaveValue(2);
+    expect(screen.getByLabelText("docker.field.memoryMb docker.resources.unit")).toHaveValue("GB");
+    fireEvent.click(await screen.findByRole("button", { name: "docker.resources.advancedCpu" }));
+    expect(screen.getByLabelText("docker.resources.cpuset")).toHaveValue("0-3");
+    fireEvent.click(screen.getByRole("button", { name: "docker.resources.ulimits" }));
+    expect(screen.getByLabelText("docker.resources.ulimitHard")).toHaveValue(8192);
   });
 
   it("opens and closes compact configuration sections with aria-expanded", async () => {
@@ -269,7 +284,8 @@ describe("DockerManagerApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.resources" }));
     await waitFor(() => expect(screen.getByLabelText("docker.field.memoryMb")).toHaveValue(512));
-    expect(screen.getByLabelText("docker.field.memorySwapMb")).toHaveValue(1024);
+    expect(screen.getByLabelText("docker.field.memorySwapMb")).toHaveValue(1);
+    expect(screen.getByLabelText("docker.field.memorySwapMb docker.resources.unit")).toHaveValue("GB");
     expect(screen.getByLabelText("docker.field.cpus")).toHaveValue(1);
     expect(screen.getByLabelText("docker.field.pids")).toHaveValue(128);
     expect(screen.getByLabelText("docker.wizard.enableLimits")).toBeChecked();
@@ -280,6 +296,70 @@ describe("DockerManagerApp", () => {
     expect(screen.getByLabelText("docker.field.healthPath")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("docker.field.healthcheck"), { target: { value: "tcp" } });
     expect(screen.queryByLabelText("docker.field.healthPath")).not.toBeInTheDocument();
+  });
+
+  it("applies resource presets, edits advanced limits, and submits typed values", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "resource-app" } });
+    fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "nginx:stable" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.resources" }));
+    await waitFor(() => expect(screen.getByLabelText("docker.resources.profile")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText("docker.resources.profile"), { target: { value: "performance" } });
+    expect(screen.getByLabelText("docker.field.cpus")).toHaveValue(2);
+    expect(screen.getByLabelText("docker.field.memoryMb")).toHaveValue(4);
+    expect(screen.getByLabelText("docker.field.memoryMb docker.resources.unit")).toHaveValue("GB");
+    expect(screen.getByLabelText("docker.field.pids")).toHaveValue(512);
+
+    fireEvent.change(screen.getByLabelText("docker.field.cpus"), { target: { value: "1.5" } });
+    expect(screen.getByLabelText("docker.resources.profile")).toHaveValue("custom");
+    fireEvent.click(screen.getByRole("button", { name: /docker\.resources\.advancedCpu/ }));
+    fireEvent.change(screen.getByLabelText("docker.resources.cpuPriority"), { target: { value: "high" } });
+    fireEvent.change(screen.getByLabelText("docker.resources.cpuset"), { target: { value: "0-8" } });
+    expect(screen.getByText("docker.resources.validation.cpusetHost")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("docker.resources.cpuset"), { target: { value: "0-3" } });
+    expect(screen.queryByText("docker.resources.validation.cpusetHost")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "docker.resources.advancedMemory" }));
+    fireEvent.change(screen.getByLabelText("docker.resources.memoryReservation"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("docker.resources.memoryReservation docker.resources.unit"), { target: { value: "GB" } });
+    fireEvent.change(screen.getByLabelText("docker.resources.shmSize"), { target: { value: "256" } });
+    fireEvent.click(screen.getByRole("button", { name: /docker\.resources\.ulimits/ }));
+    fireEvent.click(screen.getByRole("button", { name: "docker.resources.addUlimit" }));
+    fireEvent.change(screen.getByLabelText("docker.resources.ulimitSoft"), { target: { value: "65535" } });
+    fireEvent.change(screen.getByLabelText("docker.resources.ulimitHard"), { target: { value: "65535" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.resources.addUlimit" }));
+    expect(screen.getAllByLabelText("docker.resources.ulimitSoft")).toHaveLength(2);
+    const ulimitRows = document.querySelectorAll<HTMLElement>(".docker-ulimit-row");
+    fireEvent.click(within(ulimitRows[1]).getByRole("button", { name: "action.delete" }));
+    expect(screen.getAllByLabelText("docker.resources.ulimitSoft")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.summary" }));
+    expect(screen.getByText("nofile 65535:65535")).toBeInTheDocument();
+    expect(screen.getByText("0-3")).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "docker.createContainer" }));
+    await waitFor(() => expect(api.createDockerContainer).toHaveBeenCalled());
+    expect(vi.mocked(api.createDockerContainer).mock.calls[0][0].limits).toMatchObject({
+      cpus: 1.5, cpu_shares: 2048, cpuset_cpus: "0-3", memory_mb: 4096, memory_swap_mb: 8192,
+      memory_reservation_mb: 2048, shm_size_mb: 256, pids: 512,
+      ulimits: [{ name: "nofile", soft: 65535, hard: 65535 }],
+    });
+  });
+
+  it("does not submit resource flags while limits are disabled", async () => {
+    render(<DockerManagerApp permissions={["docker.view", "docker.view_containers", "docker.create_container"]} t={t} toast={vi.fn()} onDirtyChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "docker.section.containers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "docker.createContainer" }));
+    fireEvent.change(screen.getByLabelText("docker.field.name"), { target: { value: "unlimited-app" } });
+    fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "nginx:stable" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.resources" }));
+    await waitFor(() => expect(screen.getByLabelText("docker.wizard.enableLimits")).toBeChecked());
+    fireEvent.click(screen.getByLabelText("docker.wizard.enableLimits"));
+    expect(screen.getByLabelText("docker.field.memoryMb")).toBeDisabled();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "docker.createContainer" }));
+    await waitFor(() => expect(api.createDockerContainer).toHaveBeenCalled());
+    expect(vi.mocked(api.createDockerContainer).mock.calls[0][0].limits).toEqual({ ulimits: [], oom_kill_disable: false });
   });
 
   it("restores a create-container draft after reload without persisting secret fields", async () => {
@@ -294,6 +374,15 @@ describe("DockerManagerApp", () => {
     fireEvent.change(screen.getByLabelText("docker.field.image"), { target: { value: "jellyfin:latest" } });
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.process" }));
     fireEvent.change(screen.getByLabelText("docker.field.entrypoint"), { target: { value: "/init" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.resources" }));
+    await waitFor(() => expect(screen.getByLabelText("docker.resources.profile")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("docker.resources.profile"), { target: { value: "standard" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.resources.advancedCpu" }));
+    fireEvent.change(screen.getByLabelText("docker.resources.cpuset"), { target: { value: "0,2" } });
+    fireEvent.click(screen.getByRole("button", { name: "docker.resources.ulimits" }));
+    fireEvent.click(screen.getByRole("button", { name: "docker.resources.addUlimit" }));
+    fireEvent.change(screen.getByLabelText("docker.resources.ulimitSoft"), { target: { value: "4096" } });
+    fireEvent.change(screen.getByLabelText("docker.resources.ulimitHard"), { target: { value: "8192" } });
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.addPort" }));
     fireEvent.change(screen.getByLabelText("docker.wizard.hostPort"), { target: { value: "8096" } });
     fireEvent.change(screen.getByLabelText("docker.wizard.containerPort"), { target: { value: "8096" } });
@@ -311,6 +400,13 @@ describe("DockerManagerApp", () => {
     expect(screen.getByLabelText("docker.field.image")).toHaveValue("jellyfin:latest");
     fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.process" }));
     expect(screen.getByLabelText("docker.field.entrypoint")).toHaveValue("/init");
+    fireEvent.click(screen.getByRole("button", { name: "docker.wizard.section.resources" }));
+    expect(screen.getByLabelText("docker.resources.profile")).toHaveValue("custom");
+    expect(screen.getByLabelText("docker.field.memoryMb")).toHaveValue(1);
+    fireEvent.click(screen.getByRole("button", { name: /docker\.resources\.advancedCpu/ }));
+    expect(screen.getByLabelText("docker.resources.cpuset")).toHaveValue("0,2");
+    fireEvent.click(screen.getByRole("button", { name: /docker\.resources\.ulimits/ }));
+    expect(screen.getByLabelText("docker.resources.ulimitSoft")).toHaveValue(4096);
     sessionStorage.removeItem(draftKey);
     sessionStorage.removeItem("test-window:section");
   });

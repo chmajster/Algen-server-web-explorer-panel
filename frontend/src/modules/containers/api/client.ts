@@ -24,6 +24,7 @@ import type {
   DockerContainerAction,
   DockerContainerCreate,
   DockerContainerDefaultsPolicy,
+  DockerHostResources,
   DockerContainerSettings,
   DockerContainerSettingsUpdate,
   DockerDashboard,
@@ -550,6 +551,9 @@ export const containersClient = {
 
   dockerContainerDefaultsPolicy: () =>
     request<DockerContainerDefaultsPolicy>("/api/modules/docker/policy/container-defaults"),
+
+  dockerHostResources: () =>
+    request<DockerHostResources>("/api/modules/docker/resources"),
 
   saveDockerContainerDefaultsPolicy: (payload: DockerContainerDefaultsPolicy) =>
     request<DockerContainerDefaultsPolicy>("/api/modules/docker/policy/container-defaults", {

@@ -667,13 +667,24 @@ export type DockerRegistryCatalogResult = { items: DockerRegistryCatalogImage[];
 export type DockerRegistryTagsResult = { repository: string; pull_reference: string; tags: string[]; pagination: DockerRegistryPagination; source: DockerRegistrySource };
 export type DockerPortMapping = { host_ip?: string | null; published: number; target: number; protocol?: "tcp" | "udp" };
 export type DockerMount = { type: "volume" | "bind" | "tmpfs"; source?: string; target: string; read_only?: boolean; tmpfs_size_mb?: number | null };
+export type DockerUlimit = { name: "nofile" | "nproc"; soft: number; hard: number };
+export type DockerResourceLimits = {
+  cpus?: number | null; cpu_shares?: number | null; cpuset_cpus?: string | null; cpu_period?: number | null; cpu_quota?: number | null;
+  memory_mb?: number | null; memory_swap_mb?: number | null; memory_reservation_mb?: number | null; memory_swappiness?: number | null;
+  shm_size_mb?: number | null; pids?: number | null; blkio_weight?: number | null; oom_score_adj?: number | null; oom_kill_disable?: boolean;
+  ulimits?: DockerUlimit[];
+};
+export type DockerHostResources = {
+  logical_cpus: number; memory_bytes: number; memory_available_bytes: number; swap_bytes: number; cgroup_version: string; rootless: boolean;
+  capabilities: { advanced_cpu: boolean; memory_swappiness: boolean; oom_controls: boolean; blkio_weight: boolean; ulimits: boolean };
+};
 export type DockerContainerCreate = {
   name: string; image: string; pull_policy?: "missing" | "always" | "never";
   environment?: Record<string, string>; secret_environment?: Record<string, string>;
   ports?: DockerPortMapping[]; mounts?: DockerMount[]; network?: string;
   network_aliases?: string[]; hostname?: string | null; entrypoint?: string | null; working_dir?: string | null; user?: string | null;
   restart_policy?: "no" | "always" | "unless-stopped" | "on-failure";
-  limits?: { cpus?: number | null; memory_mb?: number | null; memory_swap_mb?: number | null; pids?: number | null };
+  limits?: DockerResourceLimits;
   healthcheck?: { type: "none" | "http" | "tcp"; port?: number | null; path?: string; interval_seconds?: number; timeout_seconds?: number; retries?: number; start_period_seconds?: number };
   labels?: Record<string, string>; read_only?: boolean; init?: boolean; auto_start?: boolean; confirmation?: string;
 };
