@@ -111,6 +111,7 @@
   "files.directoryProperties": "Właściwości katalogu",
   "files.directoryTree": "Drzewo katalogów",
   "files.dragItems": "Elementy: {count}",
+  "files.dropUpload": "Upuść pliki tutaj, aby je przesłać",
   "files.deleteQueued": "Dodano usuwanie do kolejki",
   "files.alreadyExists": "Plik lub folder o tej nazwie już istnieje",
   "files.editPath": "Edytuj ścieżkę",

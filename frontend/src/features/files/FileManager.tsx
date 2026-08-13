@@ -42,6 +42,10 @@ const columns: Array<{ id: SortField; key: string; defaultWidth: number }> = [
 ];
 const TEXT_FILE_PATTERN = /\.(?:txt|md|markdown|log|csv|tsv|json|jsonc|ya?ml|toml|ini|conf|cfg|xml|html?|css|scss|less|js|jsx|ts|tsx|py|sh|bash|zsh|fish|sql|env|gitignore|dockerfile)$/i;
 
+export function isExternalFileTransfer(dataTransfer: DataTransfer) {
+  return dataTransfer.files.length > 0 || Array.from(dataTransfer.types).some((type) => type.toLowerCase() === "files");
+}
+
 function isLikelyTextFile(item: FileItem) {
   return !item.is_dir && item.size <= 1024 * 1024 && (
     item.mime?.startsWith("text/") || item.mime?.includes("json") || TEXT_FILE_PATTERN.test(item.name) || !item.name.includes(".")
@@ -101,10 +105,12 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
   const [moreOpen, setMoreOpen] = useState(false);
   const [dropTarget, setDropTarget] = useState("");
   const [dragPaths, setDragPaths] = useState<string[]>([]);
+  const [externalDragActive, setExternalDragActive] = useState(false);
   const [uploadDialogIds, setUploadDialogIds] = useState<string[] | null>(null);
   const lastSelectedIndex = useRef<number | null>(null);
   const requestId = useRef(0);
   const uploadInput = useRef<HTMLInputElement>(null);
+  const externalDragDepth = useRef(0);
 
   useEffect(() => { const timer = setTimeout(() => setFilter(query), 280); return () => clearTimeout(timer); }, [query]);
   const load = useCallback(async () => {
@@ -200,6 +206,22 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
     void loadLocalDisks();
     void refreshMounts();
   }, [load, loadLocalDisks, refreshMounts]);
+  const clearExternalDragState = useCallback(() => {
+    externalDragDepth.current = 0;
+    setExternalDragActive(false);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("blur", clearExternalDragState);
+    window.addEventListener("dragend", clearExternalDragState, true);
+    window.addEventListener("drop", clearExternalDragState, true);
+    return () => {
+      window.removeEventListener("blur", clearExternalDragState);
+      window.removeEventListener("dragend", clearExternalDragState, true);
+      window.removeEventListener("drop", clearExternalDragState, true);
+    };
+  }, [clearExternalDragState]);
+  useEffect(() => { clearExternalDragState(); }, [clearExternalDragState, meta.canWrite, path]);
 
   const openPath = useCallback((next: string, record = true) => {
     const destination = !next.trim() || next.trim() === "/" || next.trim() === "~" ? homePath : next.trim();
@@ -262,12 +284,40 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
     if (ids.length) setUploadDialogIds(ids);
     toast(t("files.uploadQueued"));
   }
-  async function upload(files: FileList | null) {
-    if (!files?.length) return;
-    const list = [...files];
+  function upload(files: FileList | readonly File[] | null) {
+    if (!meta.canWrite || !files?.length) return;
+    const list = Array.from(files);
     if (uploadInput.current) uploadInput.current.value = "";
     if (preferences.file_confirm_overwrite && list.some((file) => items.some((item) => item.name === file.name))) { setDialog({ type: "overwriteUpload", files: list }); return; }
     queueUpload(list);
+  }
+
+  function externalDragEnter(event: React.DragEvent<HTMLElement>) {
+    if (!isExternalFileTransfer(event.dataTransfer)) return;
+    event.stopPropagation();
+    if (!meta.canWrite) return;
+    externalDragDepth.current += 1;
+    setExternalDragActive(true);
+  }
+  function externalDragOver(event: React.DragEvent<HTMLElement>) {
+    if (!isExternalFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = meta.canWrite ? "copy" : "none";
+  }
+  function externalDragLeave(event: React.DragEvent<HTMLElement>) {
+    if (!isExternalFileTransfer(event.dataTransfer)) return;
+    event.stopPropagation();
+    if (!meta.canWrite) { clearExternalDragState(); return; }
+    externalDragDepth.current = Math.max(0, externalDragDepth.current - 1);
+    if (externalDragDepth.current === 0) setExternalDragActive(false);
+  }
+  function externalDrop(event: React.DragEvent<HTMLElement>) {
+    if (!isExternalFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearExternalDragState();
+    upload(event.dataTransfer.files);
   }
 
   function requestDelete(itemsToDelete: FileItem[]) {
@@ -300,7 +350,7 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
       else if (event.key === "Delete" && selectedItems.length) { event.preventDefault(); requestDelete(selectedItems); }
       else if (event.key === "Enter") { event.preventDefault(); openItem(); }
       else if (event.key === "Backspace" && meta.parent) { event.preventDefault(); openPath(meta.parent); }
-      else if (event.key === "Escape") { setDragPaths([]); setDropTarget(""); setContext(null); }
+      else if (event.key === "Escape") { setDragPaths([]); setDropTarget(""); clearExternalDragState(); setContext(null); }
     }
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
@@ -342,7 +392,7 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
       <button title={t("action.refresh")} onClick={refreshExplorer}><RefreshCw className={loading ? "spin" : ""} /></button><span className="toolbar-divider" />
       <button title={t("action.newFolder")} disabled={!meta.canWrite} onClick={() => setDialog({ type: "newFolder" })}><FolderPlus /></button>
       <button title={t("action.newFile")} disabled={!meta.canWrite} onClick={() => setDialog({ type: "newFile" })}><FilePlus2 /></button>
-      <button title={t("action.upload")} disabled={!meta.canWrite} onClick={() => uploadInput.current?.click()}><Upload /></button><input id="file-manager-upload" ref={uploadInput} className="visually-hidden" type="file" multiple onChange={(event) => void upload(event.target.files)} />
+      <button title={t("action.upload")} disabled={!meta.canWrite} onClick={() => uploadInput.current?.click()}><Upload /></button><input id="file-manager-upload" ref={uploadInput} className="visually-hidden" type="file" multiple disabled={!meta.canWrite} onChange={(event) => upload(event.target.files)} />
       <button className="toolbar-wide" title={t("action.download")} disabled={!selectedItems.length || selectedItems.some((item) => item.is_dir)} onClick={() => selectedItems.forEach((item) => window.open(downloadUrl(item.path), "_blank"))}><Download /></button>
       <button className="toolbar-wide" title={t("action.copy")} disabled={!selection.size} onClick={() => setClipboardFromSelection("copy")}><Copy /></button>
       <button className="toolbar-wide" title={t("action.cut")} disabled={!selection.size} onClick={() => setClipboardFromSelection("move")}><Scissors /></button>
@@ -362,7 +412,8 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
       <button className="tree-mobile-toggle" title={t("files.directoryTree")} onClick={() => setTreeVisible((value) => !value)}><Menu /></button>
       {treeVisible && <DirectoryTree currentPath={path} homePath={homePath} localDisks={localDisks} mounts={mounts} t={t} onOpen={openPath} onDropItems={confirmDrop} />}
       {treeVisible && <div className="tree-resizer" onPointerDown={(event) => { const startX = event.clientX; const start = treeWidth; let finalWidth = start; const move = (next: PointerEvent) => { finalWidth = Math.max(180, Math.min(420, start + next.clientX - startX)); setTreeWidth(finalWidth); }; const up = () => { localStorage.setItem(`${storagePrefix}_tree_width`, String(finalWidth)); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} />}
-      <main className={`file-content ${compact ? "compact" : ""}`} tabIndex={0} onContextMenu={(event) => { if ((event.target as HTMLElement).closest(".file-entry")) return; event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, item: null }); }} onDragOver={(event) => event.preventDefault()}>
+      <main className={`file-content ${compact ? "compact" : ""} ${externalDragActive ? "external-drag-active" : ""}`} tabIndex={0} onContextMenu={(event) => { if ((event.target as HTMLElement).closest(".file-entry")) return; event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, item: null }); }} onDragEnterCapture={externalDragEnter} onDragOverCapture={externalDragOver} onDragLeaveCapture={externalDragLeave} onDropCapture={externalDrop}>
+        {externalDragActive && <div className="external-upload-overlay" role="status"><Upload aria-hidden="true" /><strong>{t("files.dropUpload")}</strong></div>}
         {loadError ? <div className="error-state"><strong>{t("status.error")}</strong><span>{loadError}</span><div className="error-actions"><button onClick={() => openPath(homePath)}><House />{t("files.goHome")}</button><button onClick={() => void load()}>{t("action.retry")}</button></div></div>
         : loading ? <div className="file-skeleton">{Array.from({ length: 8 }, (_, index) => <span key={index} />)}</div> : items.length === 0 ? <div className="empty-state"><Folder /><strong>{t("files.empty")}</strong><span>{t("files.emptyHint")}</span></div> : view === "list" ? <div className="file-list" role="grid">
           <div className="file-list-header" role="row"><span><input type="checkbox" aria-label={t("files.selectAll")} checked={items.length > 0 && selection.size === items.length} onChange={(event) => setSelection(event.target.checked ? new Set(items.map((item) => item.path)) : new Set())} /></span><span />{visibleColumns.map((column) => <button className={column.id} role="columnheader" key={column.id} style={{ width: widths[column.id] }} onClick={() => { if (sort === column.id) setDirection((value) => value === "asc" ? "desc" : "asc"); else { setSort(column.id); setDirection("asc"); } }}>{t(column.key)}{sort === column.id && <i>{direction === "asc" ? "↑" : "↓"}</i>}<b onPointerDown={(event) => { event.stopPropagation(); const startX = event.clientX; const start = widths[column.id]; const move = (next: PointerEvent) => setWidths((current) => ({ ...current, [column.id]: Math.max(70, start + next.clientX - startX) })); const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} /></button>)}<span>{t("column.actions")}</span></div>

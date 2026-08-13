@@ -111,6 +111,7 @@
   "files.directoryProperties": "Directory properties",
   "files.directoryTree": "Directory tree",
   "files.dragItems": "{count} item(s)",
+  "files.dropUpload": "Drop files here to upload them",
   "files.deleteQueued": "Deletion queued",
   "files.alreadyExists": "A file or folder with this name already exists",
   "files.editPath": "Edit path",
