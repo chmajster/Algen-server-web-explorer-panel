@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added Windows Explorer Drag & Drop uploads to File Manager with a localized drop zone, read-only protection, overwrite confirmation, and reuse of the existing transfer queue.
+
+- Expanded File Manager deletion confirmations with names, types, sizes, full paths, and a bounded summary for large selections.
+
+- Centered the File Manager path bar with symmetric spacing and explicit vertical alignment for breadcrumbs and actions.
+
 - Expanded container creation progress with detailed, secret-safe live logs from validation through final inspection.
 
 - Added typed custom Docker Entrypoint support across container creation, import, duplication, summaries, validation, and tests.
