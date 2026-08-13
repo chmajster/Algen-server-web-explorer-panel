@@ -41,6 +41,7 @@ const columns: Array<{ id: SortField; key: string; defaultWidth: number }> = [
   { id: "modified", key: "column.modified", defaultWidth: 180 }
 ];
 const TEXT_FILE_PATTERN = /\.(?:txt|md|markdown|log|csv|tsv|json|jsonc|ya?ml|toml|ini|conf|cfg|xml|html?|css|scss|less|js|jsx|ts|tsx|py|sh|bash|zsh|fish|sql|env|gitignore|dockerfile)$/i;
+const DELETE_CONFIRMATION_LIMIT = 8;
 
 export function isExternalFileTransfer(dataTransfer: DataTransfer) {
   return dataTransfer.files.length > 0 || Array.from(dataTransfer.types).some((type) => type.toLowerCase() === "files");
@@ -50,6 +51,22 @@ function isLikelyTextFile(item: FileItem) {
   return !item.is_dir && item.size <= 1024 * 1024 && (
     item.mime?.startsWith("text/") || item.mime?.includes("json") || TEXT_FILE_PATTERN.test(item.name) || !item.name.includes(".")
   );
+}
+
+function DeleteConfirmation({ items, t }: { items: FileItem[]; t: Translate }) {
+  const visible = items.slice(0, DELETE_CONFIRMATION_LIMIT);
+  const remaining = items.length - visible.length;
+  return <>
+    <span className="delete-confirm-message">{t("files.confirmDelete").replace("{count}", String(items.length))}</span>
+    <strong className="delete-confirm-heading">{t("files.deleteSelection")}</strong>
+    <span className="delete-confirm-list" role="list">
+      {visible.map((item) => <span className="delete-confirm-item" role="listitem" key={item.path}>
+        {item.is_dir ? <Folder aria-hidden="true" /> : <File aria-hidden="true" />}
+        <span><strong>{item.name}</strong><small>{item.is_dir ? t("files.folder") : `${t("files.file")} · ${formatSize(item.size)}`}</small><code title={item.path}>{item.path}</code></span>
+      </span>)}
+    </span>
+    {remaining > 0 && <small className="delete-confirm-more">{t("files.deleteMore").replace("{count}", String(remaining))}</small>}
+  </>;
 }
 
 export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t, toast, onOpenFolderWindow, onShareSamba, onUpload, onUploadCancel, onUploadRetry, onSettingsChange }: {
@@ -428,7 +445,7 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
     {dialog?.type === "newFolder" && <InputDialog title={t("action.newFolder")} label={t("files.folderName")} confirmLabel={t("action.create")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={(name) => { setDialog(null); void create("folder", name); }} />}
     {dialog?.type === "newFile" && <InputDialog title={t("action.newFile")} label={t("files.fileName")} confirmLabel={t("action.create")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={(name) => { setDialog(null); void create("file", name); }} />}
     {dialog?.type === "rename" && <InputDialog title={t("action.rename")} label={t("files.newName")} value={dialog.item.name} confirmLabel={t("action.rename")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={(name) => { const item = dialog.item; setDialog(null); void rename(item, name); }} />}
-    {dialog?.type === "delete" && <ConfirmDialog title={t("files.confirmDeleteTitle")} message={t("files.confirmDelete").replace("{count}", String(dialog.items.length))} confirmLabel={t("action.delete")} cancelLabel={t("action.cancel")} danger onClose={() => setDialog(null)} onConfirm={() => { const list = dialog.items; setDialog(null); void remove(list); }} />}
+    {dialog?.type === "delete" && <ConfirmDialog title={t("files.confirmDeleteTitle")} message={<DeleteConfirmation items={dialog.items} t={t} />} confirmLabel={t("action.delete")} cancelLabel={t("action.cancel")} danger onClose={() => setDialog(null)} onConfirm={() => { const list = dialog.items; setDialog(null); void remove(list); }} />}
     {dialog?.type === "overwriteUpload" && <ConfirmDialog title={t("files.confirmOverwriteTitle")} message={t("files.confirmOverwrite")} confirmLabel={t("action.overwrite")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={() => { const files = dialog.files; setDialog(null); queueUpload(files); }} />}
     {dialog?.type === "drop" && <ConfirmDialog title={dialog.copy ? t("files.confirmCopy") : t("files.confirmMove")} message={t("files.confirmDrop").replace("{count}", String(dragPaths.length)).replace("{target}", dialog.target)} confirmLabel={dialog.copy ? t("action.copy") : t("action.move")} cancelLabel={t("action.cancel")} onClose={() => setDialog(null)} onConfirm={() => { const source = { mode: dialog.copy ? "copy" as const : "move" as const, paths: dragPaths }; const target = dialog.target; setDialog(null); setDragPaths([]); void paste(target, source); }} />}
     {preview && <FilePreview item={preview} t={t} onClose={() => setPreview(null)} />}

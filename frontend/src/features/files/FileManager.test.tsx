@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api";
 import { FileManager, isExternalFileTransfer } from "./FileManager";
@@ -19,7 +19,16 @@ const files = [
   { name: "alpha.txt", path: "/home/test/alpha.txt", type: "text", is_dir: false, size: 20, owner: "test", group: "users", mode: "0644", permissions: "-rw-r--r--", modified: 2, mtime: 2, mime: "text/plain", can_read: true, can_write: true, can_delete: true, can_rename: true, is_symlink: false }
 ];
 
-const labels: Record<string, string> = { "status.items": "{count} items", "status.selected": "{count} selected", "status.operations": "{count} operations" };
+const labels: Record<string, string> = {
+  "files.confirmDelete": "Delete {count} items?",
+  "files.deleteMore": "{count} more items are not shown.",
+  "files.deleteSelection": "Selected for deletion",
+  "files.file": "File",
+  "files.folder": "Folder",
+  "status.items": "{count} items",
+  "status.selected": "{count} selected",
+  "status.operations": "{count} operations",
+};
 const t = (key: string) => labels[key] || key;
 
 function dragTransfer(files: File[] = [], types: string[] = files.length ? ["Files"] : []) {
@@ -111,6 +120,40 @@ describe("file manager behavior", () => {
 
     expect(api.mkdir).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith("files.alreadyExists", "error");
+  });
+
+  it("shows names, types, sizes and paths for every selected deletion", async () => {
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await screen.findByText("alpha.txt");
+    fireEvent.click(screen.getByLabelText("action.select Documents"));
+    fireEvent.click(screen.getByLabelText("action.select alpha.txt"));
+
+    fireEvent.click(screen.getByTitle("action.delete"));
+
+    const dialog = screen.getByRole("dialog", { name: "files.confirmDeleteTitle" });
+    expect(within(dialog).getByText("Delete 2 items?")).toBeInTheDocument();
+    expect(within(dialog).getByText("Selected for deletion")).toBeInTheDocument();
+    expect(within(dialog).getByText("Documents")).toBeInTheDocument();
+    expect(within(dialog).getByText("Folder")).toBeInTheDocument();
+    expect(within(dialog).getByText("/home/test/Documents")).toBeInTheDocument();
+    expect(within(dialog).getByText("alpha.txt")).toBeInTheDocument();
+    expect(within(dialog).getByText("File · 20 B")).toBeInTheDocument();
+    expect(within(dialog).getByText("/home/test/alpha.txt")).toBeInTheDocument();
+  });
+
+  it("limits a large deletion preview and reports the remaining item count", async () => {
+    const manyFiles = Array.from({ length: 10 }, (_, index) => ({ ...files[1], name: `file-${index + 1}.txt`, path: `/home/test/file-${index + 1}.txt` }));
+    vi.mocked(api.list).mockResolvedValue({ path: "/home/test", current_path: "/home/test", parent_path: "/home", items: manyFiles, page: 1, page_size: 100, total_items: 10, total_pages: 1, sort: "name", direction: "asc", can_write: true, can_upload: true, can_delete: true });
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await screen.findByText("file-10.txt");
+    fireEvent.click(screen.getByLabelText("files.selectAll"));
+
+    fireEvent.click(screen.getByTitle("action.delete"));
+
+    const dialog = screen.getByRole("dialog", { name: "files.confirmDeleteTitle" });
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(8);
+    expect(within(dialog).getByText("2 more items are not shown.")).toBeInTheDocument();
+    expect(within(dialog).queryByText("file-9.txt")).not.toBeInTheDocument();
   });
 
   it("disables write actions in a read-only destination", async () => {

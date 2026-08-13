@@ -16,3 +16,15 @@
 .external-upload-overlay { position: absolute; z-index: 10; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 1.5rem; pointer-events: none; color: var(--accent); background: color-mix(in srgb, var(--surface-primary) 82%, var(--accent)); backdrop-filter: blur(0.1875rem); text-align: center; }
 .external-upload-overlay svg { width: 3.25rem; height: 3.25rem; padding: 0.75rem; border-radius: 50%; color: white; background: var(--accent); box-shadow: var(--shadow-menu); }
 .external-upload-overlay strong { color: var(--text-primary); font-size: var(--font-size-base); }
+.delete-confirm-message, .delete-confirm-heading, .delete-confirm-list, .delete-confirm-more { display: block; }
+.delete-confirm-message { margin-bottom: 1rem; }
+.delete-confirm-heading { margin-bottom: 0.4375rem; color: var(--text-primary); font-size: var(--font-size-xs); }
+.delete-confirm-list { max-height: 16rem; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-primary); }
+.delete-confirm-item { min-width: 0; display: flex; align-items: center; gap: 0.625rem; padding: 0.5625rem 0.6875rem; }
+.delete-confirm-item + .delete-confirm-item { border-top: 1px solid var(--border-subtle); }
+.delete-confirm-item > svg { width: 1.25rem; height: 1.25rem; flex: 0 0 auto; color: var(--text-muted); }
+.delete-confirm-item > span { min-width: 0; display: grid; flex: 1; gap: 0.125rem; }
+.delete-confirm-item strong, .delete-confirm-item small, .delete-confirm-item code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.delete-confirm-item small, .delete-confirm-item code, .delete-confirm-more { color: var(--text-muted); font-size: var(--font-size-xs); }
+.delete-confirm-item code { font-family: monospace; }
+.delete-confirm-more { margin-top: 0.4375rem; }
