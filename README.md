@@ -28,6 +28,20 @@ Main project goals:
 - responsive desktop and mobile interface,
 - simple installation and updates through a single installer.
 
+## Screenshots
+
+### Dashboard
+
+![WebNAS dashboard](docs/screenshots/webnas-dashboard.webp)
+
+### Package Center
+
+![WebNAS Package Center](docs/screenshots/webnas-package-center.webp)
+
+### Settings
+
+![WebNAS settings](docs/screenshots/webnas-settings.webp)
+
 ## Key Features
 
 | Area | Capabilities |
