@@ -1,0 +1,43 @@
+name: One-off DHCP TypeScript API fix
+
+on:
+  push:
+    branches:
+      - feature/dhcp-manager
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/dhcp-manager
+      - name: Patch TypeScript source
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("frontend/src/features/modules/dhcp/DhcpManagerApp.tsx")
+          text = path.read_text(encoding="utf-8")
+          old = 'globalThis.crypto?.randomUUID?.().replaceAll("-", "")'
+          new = 'globalThis.crypto?.randomUUID?.().replace(/-/g, "")'
+          if old not in text:
+              raise SystemExit("expected replaceAll fragment not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+      - name: Commit source through GitHub API
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE='frontend/src/features/modules/dhcp/DhcpManagerApp.tsx'
+          SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/$FILE?ref=feature%2Fdhcp-manager" --jq .sha)"
+          CONTENT="$(base64 -w0 "$FILE")"
+          gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/$FILE" \
+            -f message='fix: support project TypeScript target in DHCP UI' \
+            -f content="$CONTENT" \
+            -f sha="$SHA" \
+            -f branch='feature/dhcp-manager' >/dev/null
