@@ -17,7 +17,7 @@ const sections: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: "backups", label: "Backups", icon: <DatabaseBackup /> },
 ];
 
-const uid = () => globalThis.crypto?.randomUUID?.().replaceAll("-", "") || `${Date.now()}${Math.random().toString(16).slice(2)}`;
+const uid = () => globalThis.crypto?.randomUUID?.().replace(/-/g, "") || `${Date.now()}${Math.random().toString(16).slice(2)}`;
 const emptySubnet = (): DhcpSubnet => ({ id: uid(), name: "", cidr: "10.0.10.0/24", gateway: "10.0.10.1", subnet_mask: "255.255.255.0", pool_start: "10.0.10.100", pool_end: "10.0.10.200", dns_servers: [], domain_name: "", search_domain: "", lease_time: 3600, max_lease_time: 7200, ntp_servers: [], broadcast_address: "10.0.10.255", tftp_server: "", boot_filename: "", pxe_enabled: false, enabled: true, description: "" });
 const emptyReservation = (subnetId = ""): DhcpReservation => ({ id: uid(), hostname: "", mac_address: "", ipv4_address: "", subnet_id: subnetId, description: "", client_identifier: "", enabled: true, create_dns_record: false, dns_provider: "auto" });
 
