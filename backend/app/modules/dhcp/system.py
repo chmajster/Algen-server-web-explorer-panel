@@ -10,7 +10,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ...package_center.executor import redact
 from .models import DhcpBackend, DhcpConfiguration, DhcpInterface, DhcpLease
@@ -298,14 +298,16 @@ class DhcpSystem:
     @staticmethod
     def parse_kea(text: str) -> DhcpConfiguration:
         payload = json.loads(text)
-        root = payload.get("Dhcp4", {}) if isinstance(payload, dict) else {}
+        raw_root = payload.get("Dhcp4") if isinstance(payload, dict) else None
+        root: dict[str, Any] = raw_root if isinstance(raw_root, dict) else {}
         from .models import DhcpReservation, DhcpSubnet
         subnets = []
         reservations = []
         for index, row in enumerate(root.get("subnet4") or [], start=1):
             if not isinstance(row, dict):
                 continue
-            context = row.get("user-context") if isinstance(row.get("user-context"), dict) else {}
+            raw_context = row.get("user-context")
+            context: dict[str, Any] = raw_context if isinstance(raw_context, dict) else {}
             subnet_id = str(context.get("webnas-id") or f"imported-{index}")
             pools = row.get("pools") or []
             pool = str(pools[0].get("pool") or "") if pools and isinstance(pools[0], dict) else ""
@@ -338,7 +340,9 @@ class DhcpSystem:
                     mac_address=str(item["hw-address"]), ipv4_address=str(item["ip-address"]), subnet_id=subnet_id,
                     client_identifier=str(item.get("client-id") or ""),
                 ))
-        interfaces = root.get("interfaces-config", {}).get("interfaces", []) if isinstance(root.get("interfaces-config"), dict) else []
+        raw_interfaces = root.get("interfaces-config")
+        interfaces_config: dict[str, Any] = raw_interfaces if isinstance(raw_interfaces, dict) else {}
+        interfaces = interfaces_config.get("interfaces") or []
         return DhcpConfiguration(
             interfaces=[str(item) for item in interfaces], authoritative=bool(root.get("authoritative", True)),
             default_lease_time=int(root.get("valid-lifetime") or 3600), max_lease_time=int(root.get("max-valid-lifetime") or 7200),
@@ -438,7 +442,7 @@ class DhcpSystem:
                 expire, valid = 0, 0
             start = expire - valid if expire and valid else None
             state_raw = str(row.get("state") or "0")
-            state = "active" if expire > now and state_raw in {"0", "default", "active"} else "declined" if state_raw in {"1", "declined"} else "expired"
+            state: Literal["active", "expired", "declined", "released", "unknown"] = "active" if expire > now and state_raw in {"0", "default", "active"} else "declined" if state_raw in {"1", "declined"} else "expired"
             leases.append(DhcpLease(
                 id=f"kea:{address}:{row.get('hwaddr') or index}", hostname=str(row.get("hostname") or ""), ipv4_address=address,
                 mac_address=str(row.get("hwaddr") or "").lower(), client_identifier=str(row.get("client_id") or ""),
@@ -465,7 +469,7 @@ class DhcpSystem:
                 except ValueError:
                     pass
             raw_state = binding.group(1).lower() if binding else "unknown"
-            state = "active" if raw_state == "active" and (end_ts is None or end_ts > now) else "expired" if raw_state in {"free", "expired", "backup"} or (end_ts and end_ts <= now) else "released" if raw_state == "released" else "unknown"
+            state: Literal["active", "expired", "declined", "released", "unknown"] = "active" if raw_state == "active" and (end_ts is None or end_ts > now) else "expired" if raw_state in {"free", "expired", "backup"} or (end_ts is not None and end_ts <= now) else "released" if raw_state == "released" else "unknown"
             by_address[address] = DhcpLease(
                 id=f"isc:{address}:{index}", hostname=hostname.group(1) if hostname else "", ipv4_address=address,
                 mac_address=mac.group(1).replace("-", ":").lower() if mac else "", lease_end=end_ts,

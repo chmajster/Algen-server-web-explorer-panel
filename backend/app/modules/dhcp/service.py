@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -152,16 +152,16 @@ class DhcpService:
         reservations_by_ip = {item.ipv4_address: item for item in config.reservations if item.enabled}
         values: list[DhcpLease] = []
         for lease in self.system.leases(self.backend()):
-            subnet = subnet_by_native.get(lease.subnet_id)
-            if subnet is None:
+            matched_subnet = subnet_by_native.get(lease.subnet_id)
+            if matched_subnet is None:
                 try:
                     address = ipaddress.ip_address(lease.ipv4_address)
-                    subnet = next((item for item in config.subnets if address in ipaddress.ip_network(item.cidr)), None)
+                    matched_subnet = next((item for item in config.subnets if address in ipaddress.IPv4Network(item.cidr, strict=True)), None)
                 except ValueError:
-                    subnet = None
+                    matched_subnet = None
             values.append(lease.model_copy(update={
-                "subnet_id": subnet.id if subnet else lease.subnet_id,
-                "subnet": subnet.cidr if subnet else "",
+                "subnet_id": matched_subnet.id if matched_subnet else lease.subnet_id,
+                "subnet": matched_subnet.cidr if matched_subnet else "",
                 "reserved": lease.ipv4_address in reservations_by_ip,
             }))
         return values
@@ -198,7 +198,7 @@ class DhcpService:
             if subnet.id in subnet_ids:
                 issues.append(DhcpValidationIssue(level="error", code="DUPLICATE_SUBNET_ID", message="Duplicate subnet identifier", object_id=subnet.id))
             subnet_ids.add(subnet.id)
-            network = ipaddress.ip_network(subnet.cidr)
+            network = ipaddress.IPv4Network(subnet.cidr, strict=True)
             for previous, previous_network in networks:
                 if network.overlaps(previous_network):
                     issues.append(DhcpValidationIssue(level="error", code="OVERLAPPING_SUBNETS", message=f"Subnet {subnet.cidr} overlaps {previous.cidr}", object_id=subnet.id))
@@ -220,15 +220,15 @@ class DhcpService:
                 issues.append(DhcpValidationIssue(level="error", code="DUPLICATE_IP", message=f"IP {reservation.ipv4_address} is already reserved", object_id=reservation.id))
             else:
                 addresses[reservation.ipv4_address] = reservation.id
-            subnet = subnet_map.get(reservation.subnet_id)
-            if not subnet:
+            reservation_subnet = subnet_map.get(reservation.subnet_id)
+            if not reservation_subnet:
                 issues.append(DhcpValidationIssue(level="error", code="RESERVATION_SUBNET_NOT_FOUND", message="Reservation references an unknown subnet", object_id=reservation.id))
                 continue
             address = ipaddress.ip_address(reservation.ipv4_address)
-            network = ipaddress.ip_network(subnet.cidr)
+            network = ipaddress.IPv4Network(reservation_subnet.cidr, strict=True)
             if address not in network or address in {network.network_address, network.broadcast_address}:
-                issues.append(DhcpValidationIssue(level="error", code="RESERVATION_OUTSIDE_SUBNET", message=f"Reservation {reservation.ipv4_address} is outside {subnet.cidr}", object_id=reservation.id))
-            start, end = self._pool_bounds(subnet)
+                issues.append(DhcpValidationIssue(level="error", code="RESERVATION_OUTSIDE_SUBNET", message=f"Reservation {reservation.ipv4_address} is outside {reservation_subnet.cidr}", object_id=reservation.id))
+            start, end = self._pool_bounds(reservation_subnet)
             if start <= int(address) <= end:
                 issues.append(DhcpValidationIssue(level="error", code="RESERVATION_IN_DYNAMIC_POOL", message=f"Reservation {reservation.ipv4_address} is inside the dynamic pool", object_id=reservation.id))
             lease = active_leases.get(reservation.ipv4_address)
@@ -292,7 +292,7 @@ class DhcpService:
             available = max(0, total - used)
             usage = round((used / total * 100) if total else 0, 1)
             thresholds = config.thresholds
-            level = "emergency" if usage > thresholds.emergency else "critical" if usage > thresholds.critical else "warning" if usage > thresholds.warning else "normal"
+            level: Literal["normal", "warning", "critical", "emergency"] = "emergency" if usage >= thresholds.emergency else "critical" if usage >= thresholds.critical else "warning" if usage >= thresholds.warning else "normal"
             result.append(DhcpUtilization(subnet_id=subnet.id, subnet=subnet.cidr, pool_start=subnet.pool_start, pool_end=subnet.pool_end, used=used, available=available, total=total, usage_percent=usage, level=level))
         return result
 
@@ -305,15 +305,17 @@ class DhcpService:
         state, enabled = self.system.service_state(service) if service else ("not_installed", False)
         validation = self.validate_configuration(config, native=backend != DhcpBackend.none) if installed else None
         active = sum(1 for item in leases if item.state == "active")
-        health = "not_installed" if not installed or backend == DhcpBackend.none else "failed" if state == "failed" else "healthy" if state == "active" and validation and validation.ok else "degraded" if state in {"active", "inactive", "failed"} else "unknown"
+        health: Literal["healthy", "degraded", "failed", "unknown", "not_installed"] = "not_installed" if not installed or backend == DhcpBackend.none else "failed" if state == "failed" else "healthy" if state == "active" and validation and validation.ok else "degraded" if state in {"active", "inactive", "failed"} else "unknown"
         recent_errors = [line for line in self.system.logs(backend, limit=80).get("lines", []) if any(word in line.casefold() for word in ("error", "failed", "fatal"))][-5:] if backend != DhcpBackend.none else []
         state_data = self._read_state()
+        updated_at = state_data.get("updated_at")
+        last_config_change = float(updated_at) if isinstance(updated_at, (int, float)) else None
         return DhcpStatus(
             installed=installed, backend=backend, version=self.system.version(backend), service=service, service_state=state,
             service_enabled=enabled, uptime_seconds=self.system.service_uptime(backend), interfaces=config.interfaces,
             active_leases=active, available_addresses=sum(item.available for item in utilization), used_addresses=sum(item.used for item in utilization),
             subnet_count=len(config.subnets), reservation_count=len(config.reservations), last_errors=recent_errors,
-            last_config_change=float(state_data.get("updated_at")) if state_data.get("updated_at") else None,
+            last_config_change=last_config_change,
             configuration_valid=validation.ok if validation else None, health=health, blocked_by_proxmox=blocked_by_proxmox,
         )
 
@@ -529,10 +531,10 @@ class DhcpService:
             if len(config.subnets) == previous:
                 raise DhcpNotFoundError("subnet not found")
         elif operation in {"subnet_enable", "subnet_disable"}:
-            subnet = next((item for item in config.subnets if item.id == object_id), None)
-            if not subnet:
+            target_subnet = next((item for item in config.subnets if item.id == object_id), None)
+            if not target_subnet:
                 raise DhcpNotFoundError("subnet not found")
-            subnet.enabled = operation == "subnet_enable"
+            target_subnet.enabled = operation == "subnet_enable"
         elif operation == "subnet_clone":
             source = next((item for item in config.subnets if item.id == object_id), None)
             if not source:
@@ -561,10 +563,10 @@ class DhcpService:
             if len(config.reservations) == previous:
                 raise DhcpNotFoundError("reservation not found")
         elif operation in {"reservation_enable", "reservation_disable"}:
-            reservation = next((item for item in config.reservations if item.id == object_id), None)
-            if not reservation:
+            target_reservation = next((item for item in config.reservations if item.id == object_id), None)
+            if not target_reservation:
                 raise DhcpNotFoundError("reservation not found")
-            reservation.enabled = operation == "reservation_enable"
+            target_reservation.enabled = operation == "reservation_enable"
         else:
             raise ValueError("unsupported DHCP configuration operation")
         return config
@@ -584,11 +586,13 @@ class DhcpService:
         if not lease.mac_address or not lease.subnet_id:
             raise DhcpConflictError("lease does not contain a MAC address and managed subnet")
         hostname = str(values.get("hostname") or lease.hostname or f"host-{lease.ipv4_address.replace('.', '-')}")
+        dns_provider_raw = str(values.get("dns_provider") or "auto")
+        dns_provider = cast(Literal["auto", "pihole", "adguard-home"], dns_provider_raw if dns_provider_raw in {"auto", "pihole", "adguard-home"} else "auto")
         reservation = DhcpReservation(
             id=uuid4().hex, hostname=hostname, mac_address=lease.mac_address, ipv4_address=lease.ipv4_address,
             subnet_id=lease.subnet_id, description=str(values.get("description") or "Converted from active DHCP lease"),
             client_identifier=lease.client_identifier, create_dns_record=bool(values.get("create_dns_record")),
-            dns_provider=str(values.get("dns_provider") or "auto"),
+            dns_provider=dns_provider,
         )
         config = self.configuration().model_copy(deep=True)
         subnet = next((item for item in config.subnets if item.id == lease.subnet_id), None)
@@ -642,10 +646,11 @@ class DhcpService:
         subnet = next((item for item in config.subnets if item.id == subnet_id), None)
         if not subnet:
             raise DhcpNotFoundError("subnet not found")
+        dns_provider_value = cast(Literal["auto", "pihole", "adguard-home"], dns_provider if dns_provider in {"auto", "pihole", "adguard-home"} else "auto")
         reservation = DhcpReservation(
             id=uuid4().hex, hostname=hostname or str(host.get("hostname") or host.get("name") or "host"), mac_address=mac_address,
             ipv4_address=str(host["address"]), subnet_id=subnet_id, description=f"Created from Hosts Manager host {host_id}",
-            create_dns_record=create_dns_record, dns_provider=dns_provider,
+            create_dns_record=create_dns_record, dns_provider=dns_provider_value,
         )
         config.reservations.append(reservation)
         result = self.apply_configuration(config, actor)
