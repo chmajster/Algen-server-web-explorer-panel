@@ -6,5 +6,6 @@ import "./styles/update-transition-fix.css";
 import "./styles/dsm.css";
 import "./styles/ui-consistency.css";
 import "./styles/ui-feature-consistency.css";
+import "./styles/ui-specialized-consistency.css";
 
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
