@@ -5,7 +5,6 @@ from .ansible_controller import AnsibleControllerProvider
 from .apmid import ApmidProvider
 from .cron import CronProvider
 from .databases import MariaDBProvider, PostgreSQLProvider, RedisProvider
-from .dhcp import DhcpProvider
 from .dns import AdGuardHomeProvider, PiHoleProvider
 from .docker import DockerProvider
 from .docker_stop_behavior import install_docker_stop_behavior
@@ -34,7 +33,6 @@ def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
         "apmid": ApmidProvider,
         "os-repositories": OsRepositoriesProvider,
         "cron": CronProvider,
-        "dhcp": DhcpProvider,
     }
     provider = providers.get(module_id)
     if provider:
@@ -44,4 +42,4 @@ def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
     return ModuleProvider(module_id)
 
 
-__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApiConnectionProvider", "ApmidProvider", "CronProvider", "DhcpProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "OsRepositoriesProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider", "parse_smb_conf"]
+__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApiConnectionProvider", "ApmidProvider", "CronProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "OsRepositoriesProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider", "parse_smb_conf"]
