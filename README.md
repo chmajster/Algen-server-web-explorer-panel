@@ -58,6 +58,7 @@ Main project goals:
 | **USB** | Automatic detection and mounting of supported USB storage devices |
 | **Hosts Manager** | Central host inventory, SSH connections, repositories and power profiles |
 | **Automation** | Ansible Automation Controller, schedules and Cron Manager |
+| **DHCP** | Kea DHCPv4 / ISC DHCP subnets, pools, reservations, leases, diagnostics and transactional configuration |
 
 ## Modules
 
@@ -77,6 +78,7 @@ Available and supported modules include:
 - Redis
 - central APT/RPM repositories
 - Cron Manager
+- DHCP Manager (Kea DHCPv4 / ISC DHCP)
 
 Containerized applications can also be deployed through **Containers Manager**, including:
 
@@ -193,6 +195,7 @@ Detailed documentation is available in separate files:
 | [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md) | Ansible Automation Controller |
 | [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
 | [CRON_MANAGER.md](CRON_MANAGER.md) | Cron Manager |
+| [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases and safe configuration lifecycle |
 | [PACKAGE_CENTER.md](PACKAGE_CENTER.md) | Package Center |
 | [MODULES.md](MODULES.md) | Module architecture |
 | [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) | Infrastructure modules |

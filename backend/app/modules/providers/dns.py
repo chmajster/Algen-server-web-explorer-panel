@@ -7,6 +7,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from zoneinfo import available_timezones
 
 import yaml
@@ -207,6 +208,11 @@ class PiHoleProvider(DnsContainerProvider):
             except RuntimeError:
                 pass
 
+    def upsert_dns_record(self, hostname: str, address: str) -> dict[str, Any]:
+        entry = f"{address} {hostname}"
+        self._api(f"/api/config/dns/hosts/{quote(entry, safe='')}", method="PUT")
+        return {"updated": True, "provider": "pihole", "hostname": hostname, "address": address}
+
     def get_status(self) -> ModuleStatus:
         inspect = self._container_inspect()
         container_running = bool(inspect and inspect.get("State", {}).get("Running"))
@@ -319,6 +325,19 @@ class AdGuardHomeProvider(DnsContainerProvider):
 
     def _api(self, path: str, *, method: str = "GET", payload: dict[str, Any] | None = None) -> Any:
         return self._request(f"/control{path}", method=method, payload=payload, headers=self._headers())
+
+    def upsert_dns_record(self, hostname: str, address: str) -> dict[str, Any]:
+        existing = self._api("/rewrite/list")
+        if isinstance(existing, list):
+            for item in existing:
+                if not isinstance(item, dict) or str(item.get("domain") or "") != hostname:
+                    continue
+                old_answer = str(item.get("answer") or "")
+                if old_answer == address:
+                    return {"updated": False, "provider": "adguard-home", "hostname": hostname, "address": address}
+                self._api("/rewrite/delete", method="POST", payload={"domain": hostname, "answer": old_answer})
+        self._api("/rewrite/add", method="POST", payload={"domain": hostname, "answer": address})
+        return {"updated": True, "provider": "adguard-home", "hostname": hostname, "address": address}
 
     def get_status(self) -> ModuleStatus:
         inspect = self._container_inspect()

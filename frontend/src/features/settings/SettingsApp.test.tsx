@@ -8,7 +8,7 @@ import { defaultUserPreferences } from "../../app/defaultSettings";
 const t = (key: string) => key;
 const hostInfo: HostInfo = {
   hostname: "nas-one", operating_system: "Example Linux", kernel_version: "6.12", architecture: "x86_64",
-  ip_addresses: ["192.0.2.10"], application_version: "0.1.14", uptime_seconds: 90061,
+  ip_addresses: ["192.0.2.10"], application_version: "0.1.15", uptime_seconds: 90061,
   cpu: { model: "Example CPU", physical_cores: 4, logical_threads: 8 },
   memory: { total: 16 * 1024 ** 3, used: 8 * 1024 ** 3, free: 8 * 1024 ** 3, percent: 50 },
   gpus: ["Example GPU"], storage: { path: "/", total: 100 * 1024 ** 3, used: 40 * 1024 ** 3, free: 60 * 1024 ** 3, percent: 40 },

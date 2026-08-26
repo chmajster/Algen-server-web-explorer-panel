@@ -1,0 +1,59 @@
+id: dhcp
+name: DHCP Manager
+description: Manage Kea DHCPv4 or an existing ISC DHCP Server through typed WebNAS workflows.
+long_description: Configure DHCPv4 subnets, pools, reservations, leases, interfaces, backups, diagnostics and service state with native validation and automatic rollback.
+category: network
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: network
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [kea-dhcp4-server]
+  dnf: [kea]
+  yum: [kea]
+installations:
+  apt:
+    type: system_package
+    packages: [kea-dhcp4-server]
+  dnf:
+    type: system_package
+    packages: [kea]
+  yum:
+    type: system_package
+    packages: [kea]
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: true
+  reload: true
+  logs: true
+  diagnostics: true
+  backups: true
+  import_export: false
+  healthcheck: true
+  resources: [subnets, reservations, leases, interfaces]
+  actions: [config_apply, subnet_create, subnet_update, subnet_delete, subnet_enable, subnet_disable, subnet_clone, reservation_create, reservation_update, reservation_delete, reservation_enable, reservation_disable, lease_to_reservation, lease_to_host, host_to_reservation, backup_create, backup_restore, backup_delete, service_control]
+ports: [67/udp]
+dependencies: []
+conflicts: []
+permissions: [dhcp.view, dhcp.configure, dhcp.subnets.manage, dhcp.reservations.manage, dhcp.leases.view, dhcp.service.control, dhcp.backup, dhcp.restore, dhcp.diagnostics, dhcp.install, dhcp.uninstall]
+config_paths: [/etc/kea/kea-dhcp4.conf, /etc/dhcp/dhcpd.conf, /etc/default/isc-dhcp-server]
+data_paths: [/var/lib/webnas/dhcp, /var/lib/webnas/module-backups/dhcp]
+backup_paths: [/etc/kea/kea-dhcp4.conf, /etc/dhcp/dhcpd.conf, /etc/default/isc-dhcp-server]
+proxmox_safe: false
+requires_reboot: false
+requires_root: true
+configurable: true
+removable: true
+package_less: false
+healthcheck: health.py
+ui:
+  hidden: false
+changelog:
+  - Native Kea DHCP4 and ISC DHCP management with safe configuration transactions, lease visibility and Host Registry integration.
