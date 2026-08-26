@@ -206,6 +206,17 @@ class Permission(StrEnum):
     CRON_DELETE = "cron.delete"
     CRON_LOGS = "cron.logs"
     CRON_ADMIN = "cron.admin"
+    DHCP_VIEW = "dhcp.view"
+    DHCP_CONFIGURE = "dhcp.configure"
+    DHCP_SUBNETS_MANAGE = "dhcp.subnets.manage"
+    DHCP_RESERVATIONS_MANAGE = "dhcp.reservations.manage"
+    DHCP_LEASES_VIEW = "dhcp.leases.view"
+    DHCP_SERVICE_CONTROL = "dhcp.service.control"
+    DHCP_BACKUP = "dhcp.backup"
+    DHCP_RESTORE = "dhcp.restore"
+    DHCP_DIAGNOSTICS = "dhcp.diagnostics"
+    DHCP_INSTALL = "dhcp.install"
+    DHCP_UNINSTALL = "dhcp.uninstall"
     LOGS_VIEW_OWN = "logs.view_own"
     LOGS_VIEW_SYSTEM = "logs.view_system"
     LOGS_VIEW_KERNEL = "logs.view_kernel"
@@ -223,7 +234,7 @@ class Permission(StrEnum):
 
 
 _READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics", "live", "export"}
-_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.SYSTEM_SHUTDOWN, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE, Permission.OS_REPOSITORIES_CHANNELS_PROMOTE, Permission.OS_REPOSITORIES_KEYS_MANAGE, Permission.OS_REPOSITORIES_RESTORE, Permission.OS_REPOSITORIES_FULL_REMOVE, Permission.APMID_DELETE, Permission.APMID_PERMISSIONS_MANAGE, Permission.APMID_RESTORE, Permission.CRON_DELETE, Permission.CRON_ADMIN}
+_CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.SYSTEM_SHUTDOWN, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE, Permission.OS_REPOSITORIES_CHANNELS_PROMOTE, Permission.OS_REPOSITORIES_KEYS_MANAGE, Permission.OS_REPOSITORIES_RESTORE, Permission.OS_REPOSITORIES_FULL_REMOVE, Permission.APMID_DELETE, Permission.APMID_PERMISSIONS_MANAGE, Permission.APMID_RESTORE, Permission.CRON_DELETE, Permission.CRON_ADMIN, Permission.DHCP_SERVICE_CONTROL, Permission.DHCP_RESTORE, Permission.DHCP_UNINSTALL}
 _APPLICATIONS: dict[str, list[str]] = {
     "files": ["files"],
     "transfers": ["transfers"],
@@ -246,6 +257,7 @@ _APPLICATIONS: dict[str, list[str]] = {
     "os-repositories": ["module:os-repositories"],
     "apmid": ["module:apmid"],
     "cron": ["module:cron"],
+    "dhcp": ["module:dhcp"],
     "logs": ["logs"],
     "system": ["monitor", "logs", "settings"],
 }
@@ -357,6 +369,9 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.APMID_PERMISSIONS_VIEW.value, Permission.APMID_AUDIT_VIEW.value, Permission.APMID_BACKUP.value,
         Permission.CRON_VIEW.value, Permission.CRON_CREATE.value, Permission.CRON_EDIT.value,
         Permission.CRON_ENABLE.value, Permission.CRON_LOGS.value,
+        Permission.DHCP_VIEW.value, Permission.DHCP_CONFIGURE.value, Permission.DHCP_SUBNETS_MANAGE.value,
+        Permission.DHCP_RESERVATIONS_MANAGE.value, Permission.DHCP_LEASES_VIEW.value, Permission.DHCP_SERVICE_CONTROL.value,
+        Permission.DHCP_BACKUP.value, Permission.DHCP_DIAGNOSTICS.value,
     },
     Role.auditor: {
         Permission.FILES_VIEW.value, Permission.FILES_READ.value, Permission.FILES_DOWNLOAD.value, Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_VIEW_ALL.value,
@@ -377,6 +392,7 @@ ROLE_PERMISSIONS: dict[Role, set[str]] = {
         Permission.APMID_VIEW.value, Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_PERMISSIONS_VIEW.value,
         Permission.APMID_AUDIT_VIEW.value,
         Permission.CRON_VIEW.value, Permission.CRON_LOGS.value,
+        Permission.DHCP_VIEW.value, Permission.DHCP_LEASES_VIEW.value, Permission.DHCP_DIAGNOSTICS.value,
     },
     Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.LOGS_VIEW_OWN.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value, Permission.SYSTEM_STATUS.value},
 }
