@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
 
+# Temporary hosted mirror of the repository CI for PR #10.
 jobs:
   validate:
     runs-on: ubuntu-latest
