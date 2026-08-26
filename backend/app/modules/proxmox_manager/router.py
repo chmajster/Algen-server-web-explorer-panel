@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import APIRouter, Depends, Query
 
@@ -28,7 +28,7 @@ def _activity(actor: str, action: str, target: str = "", details: dict[str, Any]
     )
 
 
-def _api_failure(error: Exception) -> None:
+def _api_failure(error: Exception) -> NoReturn:
     if isinstance(error, KeyError):
         api_error(404, "PROXMOX_NOT_FOUND", str(error).strip("'"))
     if isinstance(error, PermissionError):
