@@ -45,8 +45,9 @@ class FakeHostRegistry:
         self.saved_sources.append(source)
         if host_id:
             existing = next(item for item in self.hosts if item["id"] == host_id)
+            created_by = existing.get("created_by", actor)
             existing.clear()
-            existing.update(value | {"id": host_id, "created_by": actor})
+            existing.update(value | {"id": host_id, "created_by": created_by})
             return dict(existing)
         next_id = f"host-{len(self.hosts) + 1}"
         item = value | {"id": next_id, "created_by": actor}
@@ -62,11 +63,33 @@ class FakeHostRegistry:
         self.capabilities.append(provider)
 
 
-def resource(status: str = "running") -> dict[str, Any]:
+def patch_registry(monkeypatch, registry: FakeHostRegistry) -> None:
+    monkeypatch.setattr(proxmox_module, "host_registry", lambda: registry)
+
+    def provider_hosts(provider: str, instance_id: str = "") -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for item in registry.hosts:
+            variables = dict(item.get("variables") or {})
+            if variables.get("algen_provider") != provider:
+                continue
+            if instance_id and str(variables.get("algen_provider_instance_id") or "") != instance_id:
+                continue
+            result.append(dict(item) | {"variables": variables})
+        return result
+
+    monkeypatch.setattr(proxmox_module, "shared_provider_hosts", provider_hosts)
+    monkeypatch.setattr(
+        proxmox_module,
+        "shared_host_names",
+        lambda: {str(item.get("name") or "").casefold() for item in registry.hosts if item.get("name")},
+    )
+
+
+def resource(status: str = "running", *, node: str = "pve01") -> dict[str, Any]:
     return {
         "vmid": 101,
         "name": "app-01",
-        "node": "pve01",
+        "node": node,
         "type": "qemu",
         "status": status,
         "template": False,
@@ -92,16 +115,20 @@ def connection_input() -> ProxmoxConnectionInput:
     )
 
 
-def test_sync_uses_one_shared_host_identity_and_disables_missing(monkeypatch, tmp_path):
+def configured_manager(monkeypatch, tmp_path) -> tuple[FakeHostRegistry, ProxmoxManagerService, dict[str, Any], list[dict[str, Any]]]:
     registry = FakeHostRegistry()
-    monkeypatch.setattr(proxmox_module, "host_registry", lambda: registry)
+    patch_registry(monkeypatch, registry)
     manager = ProxmoxManagerService(tmp_path / "proxmox.sqlite3")
     connection = manager.save_connection(connection_input(), "admin")
-
     monkeypatch.setattr(manager, "_client", lambda _: object())
     current = [resource()]
     monkeypatch.setattr(manager, "_resources", lambda _connection, _client=None: [dict(item) for item in current])
     monkeypatch.setattr(manager, "_resolve_address", lambda _client, _resource: "10.0.10.21")
+    return registry, manager, connection, current
+
+
+def test_sync_uses_one_shared_host_identity_and_disables_missing(monkeypatch, tmp_path):
+    registry, manager, connection, current = configured_manager(monkeypatch, tmp_path)
 
     first = manager.sync(connection["id"], "admin")
     assert first["created"] == 1
@@ -131,10 +158,36 @@ def test_sync_uses_one_shared_host_identity_and_disables_missing(monkeypatch, tm
     assert registry.hosts[0]["active"] is False
     assert registry.hosts[0]["variables"]["proxmox_present"] is False
 
+    current[:] = [resource()]
+    fourth = manager.sync(connection["id"], "admin")
+    assert fourth["updated"] == 1
+    assert registry.hosts[0]["id"] == host_id
+    assert registry.hosts[0]["active"] is True
+    assert registry.hosts[0]["variables"]["proxmox_present"] is True
+
+
+def test_sync_preserves_manual_disable_and_empty_user_owned_fields(monkeypatch, tmp_path):
+    registry, manager, connection, _current = configured_manager(monkeypatch, tmp_path)
+    manager.sync(connection["id"], "admin")
+
+    registry.hosts[0]["active"] = False
+    registry.hosts[0]["environment"] = ""
+    registry.hosts[0]["location"] = ""
+    registry.hosts[0]["tags"] = []
+
+    result = manager.sync(connection["id"], "admin")
+
+    assert result["updated"] == 1
+    assert registry.hosts[0]["active"] is False
+    assert registry.hosts[0]["environment"] == ""
+    assert registry.hosts[0]["location"] == ""
+    assert registry.hosts[0]["tags"] == []
+    assert registry.hosts[0]["variables"]["proxmox_present"] is True
+
 
 def test_connection_database_never_stores_token_secret(monkeypatch, tmp_path):
     registry = FakeHostRegistry()
-    monkeypatch.setattr(proxmox_module, "host_registry", lambda: registry)
+    patch_registry(monkeypatch, registry)
     manager = ProxmoxManagerService(tmp_path / "proxmox.sqlite3")
     saved = manager.save_connection(connection_input(), "admin")
 
@@ -148,9 +201,30 @@ def test_connection_database_never_stores_token_secret(monkeypatch, tmp_path):
     assert "token-secret" not in str(raw)
 
 
+def test_power_action_uses_current_node_after_vm_migration(monkeypatch, tmp_path):
+    registry, manager, connection, current = configured_manager(monkeypatch, tmp_path)
+    manager.sync(connection["id"], "admin")
+    assert registry.hosts[0]["variables"]["proxmox_node"] == "pve01"
+
+    current[:] = [resource(node="pve02")]
+    posted: list[str] = []
+
+    class FakeClient:
+        def post(self, path: str, data: dict[str, Any] | None = None) -> str:
+            posted.append(path)
+            return "UPID:pve02:task"
+
+    monkeypatch.setattr(manager, "_client", lambda _: FakeClient())
+    result = manager.execute_vm_action(connection["id"], 101, "reboot", "admin")
+
+    assert posted == ["nodes/pve02/qemu/101/status/reboot"]
+    assert result["host_id"] == registry.hosts[0]["id"]
+    assert registry.operations[-1]["details"]["node"] == "pve02"
+
+
 def test_host_capabilities_are_registered_from_shared_provider(monkeypatch):
     registry = FakeHostRegistry()
-    monkeypatch.setattr(proxmox_module, "host_registry", lambda: registry)
+    patch_registry(monkeypatch, registry)
     proxmox_module.register_host_capabilities()
 
     assert {item.id for item in registry.capabilities} == {
@@ -162,6 +236,7 @@ def test_host_capabilities_are_registered_from_shared_provider(monkeypatch):
     host = {
         "id": "host-1",
         "name": "app-01",
+        "active": True,
         "variables": {
             "algen_provider": "proxmox",
             "algen_provider_instance_id": "connection-1",
@@ -170,3 +245,6 @@ def test_host_capabilities_are_registered_from_shared_provider(monkeypatch):
         },
     }
     assert all(item.supports(host) for item in registry.capabilities)
+
+    host["active"] = False
+    assert not any(item.supports(host) for item in registry.capabilities)
