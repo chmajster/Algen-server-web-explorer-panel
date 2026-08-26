@@ -1,0 +1,63 @@
+name: One-off release metadata patch
+
+on:
+  push:
+    branches:
+      - feature/proxmox-manager-shared-host-registry
+
+permissions:
+  contents: write
+
+jobs:
+  patch-release-metadata:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/proxmox-manager-shared-host-registry
+
+      - name: Patch remaining 0.1.14 metadata
+        shell: python
+        run: |
+          from pathlib import Path
+
+          replacements = {
+              "backend/app/settings.py": [
+                  ('"version": "0.1.13"', '"version": "0.1.14"', 1),
+              ],
+              "frontend/package-lock.json": [
+                  ('"version": "0.1.13"', '"version": "0.1.14"', 2),
+              ],
+              "frontend/src/features/settings/SettingsApp.tsx": [
+                  ('<dd>0.1.13</dd>', '<dd>0.1.14</dd>', 1),
+              ],
+              "frontend/src/features/settings/SettingsApp.test.tsx": [
+                  ('application_version: "0.1.13"', 'application_version: "0.1.14"', 1),
+              ],
+          }
+
+          for filename, changes in replacements.items():
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              for old, new, expected in changes:
+                  actual = text.count(old)
+                  if actual != expected:
+                      raise SystemExit(f"{filename}: expected {expected} occurrence(s) of {old!r}, found {actual}")
+                  text = text.replace(old, new, expected)
+              path.write_text(text, encoding="utf-8")
+
+      - name: Commit release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No release metadata changes required."
+            exit 0
+          fi
+          git add backend/app/settings.py frontend/package-lock.json frontend/src/features/settings/SettingsApp.tsx frontend/src/features/settings/SettingsApp.test.tsx
+          git commit -m "release: finish 0.1.14 metadata"
+          git push origin HEAD:feature/proxmox-manager-shared-host-registry
