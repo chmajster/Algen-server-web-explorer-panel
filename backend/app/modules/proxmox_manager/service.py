@@ -17,6 +17,7 @@ from typing import Any
 
 from ...config import get_config
 from ..hosts_manager.public import (
+    ConnectionType,
     HostCapabilityProvider,
     HostInput,
     host_names as shared_host_names,
@@ -463,7 +464,7 @@ class ProxmoxManagerService:
             address=address,
             management_address=str(existing.get("management_address") or "") if existing else "",
             port=int(existing.get("port") or 22) if existing else 22,
-            connection_type=str(existing.get("connection_type") or "ssh") if existing else "ssh",
+            connection_type=ConnectionType(str(existing.get("connection_type") or "ssh")) if existing else ConnectionType.ssh,
             ssh_user=str(existing.get("ssh_user") or connection["default_ssh_user"]) if existing else str(connection["default_ssh_user"]),
             credential_id=existing.get("credential_id") if existing else None,
             python_interpreter=str(existing.get("python_interpreter") or "auto_silent") if existing else "auto_silent",
@@ -636,7 +637,10 @@ class ProxmoxManagerService:
         connection = self.connection(connection_id)
         if not connection or not connection["active"]:
             raise KeyError("Proxmox connection not found")
-        vmid = int(variables.get("proxmox_vmid") or variables.get("algen_provider_resource_id"))
+        raw_vmid = variables.get("proxmox_vmid") or variables.get("algen_provider_resource_id")
+        if raw_vmid is None:
+            raise KeyError("Proxmox VM identity is missing")
+        vmid = int(raw_vmid)
         return connection, vmid
 
     def _live_resource(self, connection: dict[str, Any], vmid: int) -> dict[str, Any]:

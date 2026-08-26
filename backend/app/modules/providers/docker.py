@@ -652,7 +652,7 @@ class DockerProvider(PrivateBackupProvider):
                 memory[key] = int(value.strip().split()[0]) * 1024
         except (OSError, ValueError, IndexError):
             pass
-        security_options = info.get("SecurityOptions") if isinstance(info.get("SecurityOptions"), list) else []
+        security_options: list[Any] = info.get("SecurityOptions") if isinstance(info.get("SecurityOptions"), list) else []
         rootless = any("rootless" in str(item).lower() for item in security_options)
         os_type = str(info.get("OSType") or "linux").lower()
         cgroup_version = str(info.get("CgroupVersion") or "")
@@ -687,7 +687,7 @@ class DockerProvider(PrivateBackupProvider):
             api_error(422, "CPUSET_OUT_OF_RANGE", f"CPU set references a processor outside the host range 0-{logical_cpus - 1}")
         if capabilities is None:
             return
-        supported = capabilities.get("capabilities") if isinstance(capabilities.get("capabilities"), dict) else {}
+        supported: dict[str, Any] = capabilities.get("capabilities") if isinstance(capabilities.get("capabilities"), dict) else {}
         requested = {
             "advanced_cpu": bool(limits.cpu_shares or limits.cpuset_cpus or limits.cpu_period or limits.cpu_quota),
             "memory_swappiness": limits.memory_swappiness is not None,
