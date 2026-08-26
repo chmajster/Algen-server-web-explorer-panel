@@ -1,0 +1,54 @@
+id: proxmox-manager
+name: Proxmox Manager
+description: Proxmox VE API provider integrated with the central Hosts Manager registry.
+long_description: Manage Proxmox VE virtual machines and containers over the API, synchronize them into one canonical Host Registry record, and expose the same machines to Hosts Manager and Ansible Automation Controller without duplicating inventory or credentials.
+category: infrastructure
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: boxes
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, centos, opensuse, sles, arch, manjaro, alpine, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: []
+  dnf: []
+  yum: []
+  zypper: []
+  pacman: []
+  apk: []
+services: []
+config:
+  primary_file: ""
+  backup_paths: [/var/lib/webnas/proxmox-manager]
+  validation_command: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: false
+  reload: false
+  logs: false
+  diagnostics: false
+  backups: true
+  import_export: false
+  healthcheck: false
+  resources: [connections, virtual-machines, containers, shared-hosts]
+  actions: [test, sync, start, stop, shutdown, reboot]
+ports: []
+dependencies: [hosts-manager]
+conflicts: []
+permissions: [network_client]
+config_paths: []
+data_paths: [/var/lib/webnas/proxmox-manager]
+backup_paths: [/var/lib/webnas/proxmox-manager]
+proxmox_safe: true
+requires_reboot: false
+requires_root: false
+configurable: true
+removable: true
+ui:
+  hidden: false
+changelog:
+  - Added Proxmox VE API connections, VM/CT synchronization into the shared Hosts Manager registry and shared power capabilities.
