@@ -1,0 +1,12 @@
+id: dhcp
+name: DHCP Manager
+category: network
+icon: network
+permissions: [dhcp.view, dhcp.configure, dhcp.subnets.manage, dhcp.reservations.manage, dhcp.leases.view, dhcp.service.control, dhcp.backup, dhcp.restore, dhcp.diagnostics, dhcp.install, dhcp.uninstall]
+routers: [app.modules.dhcp.router:router]
+dependencies: [identity, package-center, hosts-manager]
+capabilities: [dhcp, subnets, reservations, leases, interfaces, backups, diagnostics, logs]
+actions: [configure, validate, plan, service-control, backup, restore]
+jobs: [package_jobs]
+system_capabilities: [kea-dhcp4, dhcpd]
+menu: [{id: dhcp, label: dhcp.name, icon: network, permission: dhcp.view}]
