@@ -20,7 +20,7 @@ packages:
   apk: []
 services: []
 config:
-  primary_file: ""
+  primary_file: null
   backup_paths: [/var/lib/webnas/proxmox-manager]
   validation_command: []
 capabilities:

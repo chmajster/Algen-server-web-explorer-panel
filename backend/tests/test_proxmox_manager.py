@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import importlib
 from typing import Any
 
-import app.modules.proxmox_manager.service as proxmox_module
+proxmox_module = importlib.import_module("app.modules.proxmox_manager.service")
 from app.modules.proxmox_manager.models import ProxmoxConnectionInput
 from app.modules.proxmox_manager.service import ProxmoxManagerService
 
