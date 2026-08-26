@@ -7,5 +7,6 @@ import "./styles/dsm.css";
 import "./styles/ui-consistency.css";
 import "./styles/ui-feature-consistency.css";
 import "./styles/ui-specialized-consistency.css";
+import "./styles/ui-review-fixes.css";
 
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
