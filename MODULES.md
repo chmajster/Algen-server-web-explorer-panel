@@ -222,3 +222,7 @@ Register the provider in `backend/app/modules/providers/__init__.py`, add its va
 ## Distribution notes
 
 Package names differ between apt and RPM families, optional services such as `nmbd`/`winbind` may be absent, systemd unit naming can vary, and Samba versions differ in `smbstatus --json` support. The manifest carries apt/dnf/yum mappings and required/optional services; providers must degrade cleanly when optional tools are unavailable. Firewall automation is limited to UFW and firewalld. WebNAS does not attempt to manage an unknown firewall.
+
+## DHCP Manager
+
+DHCP Manager follows the dedicated infrastructure-module pattern: typed router/service code in `backend/app/modules/dhcp`, a statically registered trusted provider in `backend/app/modules/providers/dhcp.py`, Package Center lifecycle manifests, and the existing durable `package_jobs` queue. Kea DHCP4 is preferred and ISC DHCP is supported when present. Configuration is candidate-validated, planned, backed up, atomically applied, service-verified and automatically rolled back on failure. It reuses Hosts Manager identity and the public DNS provider contract rather than creating parallel registries. See [DHCP_MANAGER.md](DHCP_MANAGER.md).

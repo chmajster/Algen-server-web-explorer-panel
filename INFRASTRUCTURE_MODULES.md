@@ -73,3 +73,7 @@ CPU, RAM, disk, transfer, module-service and recent-alert widgets use existing a
 - Database tools must be installed and local socket authentication must permit the WebNAS root service to use the administrative local account.
 - Docker Engine and the Compose v2 plugin must be available; Docker Desktop is not supported on the Linux server.
 - Every new infrastructure manifest has `proxmox_safe: false`, so host mutations are blocked on Proxmox VE by default.
+
+## DHCP Manager
+
+DHCP Manager manages Kea DHCPv4 and existing ISC DHCP through the same infrastructure provider/job/RBAC architecture. It exposes typed subnets, pools, reservations, leases, utilization, interfaces, service control, diagnostics, logs and checksummed backup/restore. Apply is validate -> plan -> PAM confirmation -> backup -> atomic write -> reload/restart -> native verification, with verified rollback on failure. The module is `proxmox_safe: false`; central Safe Mode blocks mutations on Proxmox VE. DHCP-discovered systems link to the shared Hosts Manager registry, and reservation DNS synchronization can optionally use the existing Pi-hole/AdGuard public provider contract. See [DHCP_MANAGER.md](DHCP_MANAGER.md).

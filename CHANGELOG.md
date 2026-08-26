@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added complete **DHCP Manager** with Kea DHCPv4/ISC detection, Package Center lifecycle, typed subnet/pool/reservation/lease management, configuration preview and native validation, atomic apply with verified backup/rollback, utilization/diagnostics/logs/service controls, granular RBAC/PAM/CSRF/audit, Proxmox Safe Mode, shared Hosts Manager identity and optional Pi-hole/AdGuard DNS synchronization.
+
 - Added native **Proxmox Manager** with Proxmox VE API connections, shared Hosts Manager identity, centralized `proxmox_api` credentials, VM/LXC synchronization, live-node power actions, and direct reuse of the same `host_id` by Hosts Manager and Ansible Automation Controller.
 
 - Added a disposable `--portable` installer mode that runs WebNAS without installing it as a system service and keeps its isolated runtime below the launch directory.

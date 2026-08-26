@@ -235,3 +235,7 @@ cd Algen-server-web-explorer-panel
 **WebNAS — one interface for managing your Linux server.**
 
 </div>
+
+## DHCP Manager
+
+WebNAS includes an installable **DHCP Manager** for Kea DHCPv4 and existing ISC DHCP deployments. It provides transactional subnet/pool/reservation configuration, live leases and utilization, controlled service operations, diagnostics, private backup/restore, Proxmox Safe Mode, optional Pi-hole/AdGuard DNS synchronization and shared Hosts Manager identity. See [DHCP_MANAGER.md](DHCP_MANAGER.md).

@@ -220,3 +220,7 @@ The module-management endpoints are listed in [MODULES.md](MODULES.md). Legacy S
 8. Restart `webnas` during a disposable job and verify it appears as failed/interrupted in history.
 9. Add a GitHub source, edit its branch, refresh metadata, copy its Codex instruction, disable it, and remove it. Confirm no repository code is executed.
 10. On a Proxmox host with Safe Mode enabled, verify unsafe modules show as blocked and cannot be planned or queued.
+
+## DHCP Manager lifecycle
+
+`dhcp` is discovered and installed by Package Center like other trusted infrastructure modules. Kea DHCP4 is the preferred package backend for new installations; existing ISC DHCP is detected without replacing it implicitly. Install/update/uninstall use the central package executor and dedicated `dhcp.install`/`dhcp.uninstall` permissions. Runtime configuration mutations reuse `package_jobs` and Activity Center; the browser never executes a package manager. The manifest is intentionally `proxmox_safe: false`. See [DHCP_MANAGER.md](DHCP_MANAGER.md).
