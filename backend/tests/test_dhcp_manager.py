@@ -102,7 +102,7 @@ def test_subnet_validation_rejects_invalid_pool_and_network_boundaries():
     with pytest.raises(ValidationError, match="pool start"):
         subnet(pool_start="10.0.10.200", pool_end="10.0.10.100")
     with pytest.raises(ValidationError, match="inside its subnet"):
-        subnet(pool_start="10.0.11.10")
+        subnet(pool_start="10.0.11.10", pool_end="10.0.11.20")
     with pytest.raises(ValidationError, match="network or broadcast"):
         subnet(pool_start="10.0.10.0")
     with pytest.raises(ValidationError, match="network or broadcast"):
@@ -171,7 +171,7 @@ def test_native_validation_uses_fixed_argument_arrays(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(system, "_run", run)
     candidate = tmp_path / "candidate.json"
     candidate.write_text("{}", encoding="utf-8")
-    ok, _ = system.validate_candidate(DhcpBackend.kea, candidate)
+    ok, _ = DhcpSystem.validate_candidate(system, DhcpBackend.kea, candidate)
     assert ok is True
     assert calls == [["/usr/sbin/kea-dhcp4", "-t", str(candidate)]]
 
@@ -182,10 +182,10 @@ def test_service_control_allowlist_never_accepts_browser_unit(monkeypatch, tmp_p
     monkeypatch.setattr(system, "_which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(system, "selected_service", lambda _backend: "kea-dhcp4-server")
     monkeypatch.setattr(system, "_run", lambda args, **_kwargs: calls.append(args) or subprocess.CompletedProcess(args, 0, "", ""))
-    system.service_action(DhcpBackend.kea, "restart")
+    DhcpSystem.service_action(system, DhcpBackend.kea, "restart")
     assert calls == [["/usr/bin/systemctl", "restart", "kea-dhcp4-server"]]
     with pytest.raises(ValueError, match="unsupported"):
-        system.service_action(DhcpBackend.kea, "restart;rm -rf /")
+        DhcpSystem.service_action(system, DhcpBackend.kea, "restart;rm -rf /")
 
 
 def test_backup_is_private_and_checksum_is_verified(tmp_path: Path, monkeypatch):
@@ -282,8 +282,27 @@ def test_pam_confirmation_and_proxmox_safe_mode_are_backend_enforced(monkeypatch
 def test_mutating_routes_use_central_csrf_dependency():
     dhcp_router = importlib.import_module("app.modules.dhcp.router")
     mutation_methods = {"POST", "PUT", "DELETE", "PATCH"}
-    mutating = [route for route in dhcp_router.router.routes if getattr(route, "methods", set()) & mutation_methods]
+    read_only_posts = {
+        "/api/modules/dhcp/config/validate",
+        "/api/modules/dhcp/config/plan",
+        "/api/modules/dhcp/diagnostics",
+    }
+    mutating = []
+    read_only = []
+    for route in dhcp_router.router.routes:
+        methods = getattr(route, "methods", set())
+        if not methods & mutation_methods:
+            continue
+        if methods == {"POST"} and getattr(route, "path", "") in read_only_posts:
+            read_only.append(route)
+        else:
+            mutating.append(route)
     assert mutating
+    assert {route.path for route in read_only} == read_only_posts
     for route in mutating:
         dependencies = {dependency.call for dependency in route.dependant.dependencies}
         assert dhcp_router.mutating_user in dependencies
+    for route in read_only:
+        dependencies = {dependency.call for dependency in route.dependant.dependencies}
+        assert dhcp_router.current_user in dependencies
+        assert dhcp_router.mutating_user not in dependencies
