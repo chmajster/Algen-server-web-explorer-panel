@@ -42,7 +42,7 @@ capabilities:
 ports: [67/udp]
 dependencies: []
 conflicts: []
-permissions: [dhcp-management]
+permissions: [dhcp.view, dhcp.configure, dhcp.subnets.manage, dhcp.reservations.manage, dhcp.leases.view, dhcp.service.control, dhcp.backup, dhcp.restore, dhcp.diagnostics, dhcp.install, dhcp.uninstall]
 config_paths: [/etc/kea/kea-dhcp4.conf, /etc/dhcp/dhcpd.conf, /etc/default/isc-dhcp-server]
 data_paths: [/var/lib/webnas/dhcp, /var/lib/webnas/module-backups/dhcp]
 backup_paths: [/etc/kea/kea-dhcp4.conf, /etc/dhcp/dhcpd.conf, /etc/default/isc-dhcp-server]

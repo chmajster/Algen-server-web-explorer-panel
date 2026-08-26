@@ -12,12 +12,12 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import quote
 from uuid import uuid4
 
 from ...config import get_config
 from ...package_center.executor import redact
 from ..hosts_manager.public import ConnectionType, HostInput, find_host, registry as hosts_registry
+from ..providers.public import upsert_dns_record
 from .models import (
     DhcpBackend,
     DhcpConfiguration,
@@ -349,12 +349,7 @@ class DhcpService:
                 self._atomic_write(path, content, default_mode=mode)
                 os.chmod(path, mode)
 
-    def _restart_and_verify(self, backend: DhcpBackend) -> None:
-        result = self.system.service_action(backend, "reload")
-        if result.returncode != 0:
-            result = self.system.service_action(backend, "restart")
-        if result.returncode != 0:
-            raise RuntimeError(redact(result.stderr.strip() or result.stdout.strip() or "DHCP service reload/restart failed"))
+    def _verify_backend(self, backend: DhcpBackend) -> None:
         service = self.system.selected_service(backend)
         state, _ = self.system.service_state(service)
         if state != "active":
@@ -362,7 +357,21 @@ class DhcpService:
         definition = self.system.definitions[backend]
         ok, output = self.system.validate_candidate(backend, definition.config_path)
         if not ok:
-            raise RuntimeError(output or "Applied DHCP configuration did not pass native validation")
+            raise RuntimeError(output or "DHCP configuration did not pass native validation")
+
+    def _restart_and_verify(self, backend: DhcpBackend) -> None:
+        result = self.system.service_action(backend, "reload")
+        if result.returncode != 0:
+            result = self.system.service_action(backend, "restart")
+        if result.returncode != 0:
+            raise RuntimeError(redact(result.stderr.strip() or result.stdout.strip() or "DHCP service reload/restart failed"))
+        self._verify_backend(backend)
+
+    def _restart_previous_and_verify(self, backend: DhcpBackend) -> None:
+        result = self.system.service_action(backend, "restart")
+        if result.returncode != 0:
+            raise RuntimeError(redact(result.stderr.strip() or result.stdout.strip() or "DHCP rollback restart failed"))
+        self._verify_backend(backend)
 
     def apply_configuration(self, config: DhcpConfiguration, actor: str) -> dict[str, Any]:
         with self._lock:
@@ -381,15 +390,15 @@ class DhcpService:
                     self._atomic_write(path, content)
                 self._restart_and_verify(backend)
                 self._write_state(config, backend, actor)
-            except Exception:
+            except Exception as error:
                 self._restore_snapshot(snapshot)
                 self._restore_snapshot(state_snapshot)
                 try:
-                    self.system.service_action(backend, "restart")
-                finally:
-                    definition = self.system.definitions[backend]
-                    if definition.config_path.exists():
-                        self.system.validate_candidate(backend, definition.config_path)
+                    self._restart_previous_and_verify(backend)
+                except Exception as rollback_error:
+                    raise RuntimeError(
+                        f"{redact(str(error))}; rollback failed: {redact(str(rollback_error))}"
+                    ) from rollback_error
                 raise
             return {"configuration": config.model_dump(mode="json"), "validation": validation.model_dump(mode="json"), "backup_created": True}
 
@@ -497,9 +506,14 @@ class DhcpService:
             validation = self.validate_configuration(restored)
             if not validation.ok:
                 raise RuntimeError("restored DHCP configuration failed WebNAS validation")
-        except Exception:
+        except Exception as error:
             self._restore_snapshot(snapshot)
-            self.system.service_action(backend, "restart")
+            try:
+                self._restart_previous_and_verify(backend)
+            except Exception as rollback_error:
+                raise RuntimeError(
+                    f"{redact(str(error))}; restore rollback failed: {redact(str(rollback_error))}"
+                ) from rollback_error
             raise
         return {"restored": backup_id, "backup_created": True}
 
@@ -659,18 +673,11 @@ class DhcpService:
 
     @staticmethod
     def _sync_dns(reservation: DhcpReservation) -> dict[str, Any]:
-        from ..providers import get_provider
         providers = [reservation.dns_provider] if reservation.dns_provider != "auto" else ["pihole", "adguard-home"]
         errors: list[str] = []
         for module_id in providers:
             try:
-                provider = get_provider(module_id)
-                if module_id == "pihole":
-                    entry = f"{reservation.ipv4_address} {reservation.hostname}"
-                    provider._api(f"/api/config/dns/hosts/{quote(entry, safe='')}", method="PUT")  # type: ignore[attr-defined]
-                else:
-                    provider._api("/rewrite/add", method="POST", payload={"domain": reservation.hostname, "answer": reservation.ipv4_address})  # type: ignore[attr-defined]
-                return {"updated": True, "provider": module_id}
+                return upsert_dns_record(module_id, reservation.hostname, reservation.ipv4_address)
             except Exception as error:  # noqa: BLE001 - optional integration must not break DHCP.
                 errors.append(redact(str(error))[:500])
         return {"updated": False, "provider": "", "warning": "; ".join(errors) or "No configured DNS integration is available"}
