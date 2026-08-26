@@ -20,6 +20,9 @@ Launcher mode:
                            service, /etc configuration, service user or firewall
                            rule is created. Runtime files are removed on exit.
 
+Standard installer options:
+  -y, --y, --yes          Non-interactive mode; automatically accept defaults
+
 Portable options:
   -p, --port PORT          Application port (default: 5000)
   --bind-host ADDRESS      Listen address (default: 0.0.0.0)
@@ -36,6 +39,9 @@ for arg in "$@"; do
   case "$arg" in
     --portable|-P)
       MODE="portable"
+      ;;
+    --y)
+      FORWARD_ARGS+=("--yes")
       ;;
     *)
       FORWARD_ARGS+=("$arg")
