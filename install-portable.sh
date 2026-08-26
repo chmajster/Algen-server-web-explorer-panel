@@ -6,7 +6,8 @@ ARCHIVE_URL="${REPO_URL}/archive/refs/heads/main.tar.gz"
 PORT="5000"
 BIND_HOST="0.0.0.0"
 KEEP_WORKDIR="no"
-WORK_DIR=""
+LAUNCH_DIR="$(pwd -P)"
+WORK_DIR="${LAUNCH_DIR}/portable-run"
 SOURCE_DIR=""
 BACKEND_PID=""
 PORTABLE_CONFIG=""
@@ -18,8 +19,9 @@ WebNAS portable mode
 
 Runs WebNAS without installing it as a system service. The application source,
 Python virtual environment, frontend dependencies, configuration and runtime
-data live in a temporary directory and are removed when the process exits.
-System packages are never installed or changed by portable mode.
+data live in ./portable-run/ relative to the directory where the installer was
+started. The directory is removed when the process exits unless --keep-workdir
+is used. System packages are never installed or changed by portable mode.
 
 Usage:
   sudo ./install.sh --portable [options]
@@ -28,7 +30,7 @@ Usage:
 Options:
   -p, --port PORT          Application port (default: 5000)
   --bind-host ADDRESS      Listen address (default: 0.0.0.0)
-  --keep-workdir           Keep the temporary runtime directory after exit
+  --keep-workdir           Keep ./portable-run/ after exit
   -y, --yes                Accepted for installer compatibility; portable mode
                            is already non-interactive
   -h, --help               Show this help
@@ -51,7 +53,7 @@ cleanup() {
     kill "$BACKEND_PID" 2>/dev/null || true
     wait "$BACKEND_PID" 2>/dev/null || true
   fi
-  if [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]]; then
+  if [[ -d "$WORK_DIR" ]]; then
     if [[ "$KEEP_WORKDIR" == "yes" ]]; then
       printf '[INFO] Portable work directory kept at: %s\n' "$WORK_DIR"
     else
@@ -100,6 +102,8 @@ validate_options() {
   [[ "$PORT" =~ ^[0-9]+$ ]] || fail "Port must be numeric"
   (( PORT >= 1 && PORT <= 65535 )) || fail "Port must be between 1 and 65535"
   [[ -n "$BIND_HOST" ]] || fail "Bind host cannot be empty"
+  [[ "$WORK_DIR" == "${LAUNCH_DIR}/portable-run" ]] || fail "Unsafe portable work directory: ${WORK_DIR}"
+  [[ "$WORK_DIR" != "/portable-run" ]] || fail "Refusing to use /portable-run as the portable work directory"
 }
 
 node_version_ok() {
@@ -129,6 +133,7 @@ copy_local_source() {
   mkdir -p "$destination"
   tar -C "$SCRIPT_DIR" \
     --exclude='./.git' \
+    --exclude='./portable-run' \
     --exclude='./backend/.venv' \
     --exclude='./frontend/node_modules' \
     --exclude='./frontend/dist' \
@@ -136,15 +141,20 @@ copy_local_source() {
 }
 
 prepare_source() {
-  WORK_DIR="$(mktemp -d -t webnas-portable.XXXXXX)"
+  if [[ -e "$WORK_DIR" ]]; then
+    info "Removing previous ./portable-run/ runtime"
+    rm -rf --one-file-system "$WORK_DIR" 2>/dev/null || rm -rf "$WORK_DIR"
+  fi
+  mkdir -p "$WORK_DIR"
   SOURCE_DIR="${WORK_DIR}/app"
+  info "Portable runtime directory: ${WORK_DIR}"
 
   if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/backend/app/main.py" && -f "${SCRIPT_DIR}/frontend/package.json" ]]; then
-    info "Copying the local repository into disposable runtime storage"
+    info "Copying the local repository into ./portable-run/app"
     copy_local_source "$SOURCE_DIR"
   else
     mkdir -p "$SOURCE_DIR"
-    info "Downloading WebNAS source"
+    info "Downloading WebNAS source into ./portable-run/"
     if command -v curl >/dev/null 2>&1; then
       curl -fsSL "$ARCHIVE_URL" -o "${WORK_DIR}/webnas.tar.gz"
     elif command -v wget >/dev/null 2>&1; then
@@ -162,11 +172,11 @@ prepare_source() {
 
   [[ -f "${SOURCE_DIR}/backend/requirements.txt" ]] || fail "Backend requirements are missing"
   [[ -f "${SOURCE_DIR}/frontend/package-lock.json" ]] || fail "Frontend package-lock.json is missing"
-  ok "Disposable source ready at ${SOURCE_DIR}"
+  ok "Portable source ready at ${SOURCE_DIR}"
 }
 
 prepare_runtime() {
-  info "Creating disposable Python virtual environment"
+  info "Creating portable Python virtual environment"
   python3.14 -m venv "${SOURCE_DIR}/backend/.venv" || fail "Could not create Python 3.14 virtual environment"
   "${SOURCE_DIR}/backend/.venv/bin/pip" install --disable-pip-version-check --upgrade pip wheel
   "${SOURCE_DIR}/backend/.venv/bin/pip" install --disable-pip-version-check -r "${SOURCE_DIR}/backend/requirements.txt"
@@ -223,7 +233,7 @@ security:
   cookie_secure: false
 EOF_CONFIG
   chmod 0600 "$PORTABLE_CONFIG"
-  ok "Portable configuration created; persistent /etc/webnas configuration is not used"
+  ok "Portable configuration created at ${PORTABLE_CONFIG}; /etc/webnas is not used"
 }
 
 health_check() {
@@ -273,8 +283,9 @@ run_portable() {
 
   health_check
   printf '\n[OK] WebNAS portable is running at http://%s:%s\n' "$display_host" "$PORT"
+  printf '[INFO] Runtime directory: %s\n' "$WORK_DIR"
   printf '[INFO] No systemd service, service user, firewall rule or /etc/webnas config was created.\n'
-  printf '[INFO] Stop with Ctrl+C. Runtime data will be removed on exit%s.\n\n' "$([[ "$KEEP_WORKDIR" == "yes" ]] && printf ' only if --keep-workdir is not used' || true)"
+  printf '[INFO] Stop with Ctrl+C. ./portable-run/ will be removed on exit%s.\n\n' "$([[ "$KEEP_WORKDIR" == "yes" ]] && printf ' only if --keep-workdir is not used' || true)"
 
   wait "$BACKEND_PID"
   BACKEND_PID=""
