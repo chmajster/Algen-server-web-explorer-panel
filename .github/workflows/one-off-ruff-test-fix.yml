@@ -1,0 +1,55 @@
+name: One-off Ruff test import fix
+
+on:
+  push:
+    branches:
+      - feature/proxmox-manager-shared-host-registry
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/proxmox-manager-shared-host-registry
+
+      - name: Fix import ordering
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("backend/tests/test_proxmox_manager.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''import importlib
+from typing import Any
+
+proxmox_module = importlib.import_module("app.modules.proxmox_manager.service")
+from app.modules.proxmox_manager.models import ProxmoxConnectionInput
+from app.modules.proxmox_manager.service import ProxmoxManagerService
+'''
+          new = '''import importlib
+from typing import Any
+
+from app.modules.proxmox_manager.models import ProxmoxConnectionInput
+from app.modules.proxmox_manager.service import ProxmoxManagerService
+
+proxmox_module = importlib.import_module("app.modules.proxmox_manager.service")
+'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"Expected exactly one import block, found {count}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/tests/test_proxmox_manager.py
+          git commit -m "fix: order Proxmox test imports"
+          git push origin HEAD:feature/proxmox-manager-shared-host-registry
