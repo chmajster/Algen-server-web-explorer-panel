@@ -1,0 +1,77 @@
+name: One-off DHCP release docs
+
+on:
+  push:
+    branches:
+      - feature/dhcp-manager
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/dhcp-manager
+      - name: Update documentation indexes and version
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def append_once(path: str, marker: str, section: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              if marker not in text:
+                  target.write_text(text.rstrip() + "\n\n" + section.strip() + "\n", encoding="utf-8")
+
+          append_once("README.md", "## DHCP Manager", """## DHCP Manager
+
+          WebNAS includes an installable **DHCP Manager** for Kea DHCPv4 and existing ISC DHCP deployments. It provides transactional subnet/pool/reservation configuration, live leases and utilization, controlled service operations, diagnostics, private backup/restore, Proxmox Safe Mode, optional Pi-hole/AdGuard DNS synchronization and shared Hosts Manager identity. See [DHCP_MANAGER.md](DHCP_MANAGER.md).""")
+          append_once("MODULES.md", "## DHCP Manager", """## DHCP Manager
+
+          DHCP Manager follows the dedicated infrastructure-module pattern: typed router/service code in `backend/app/modules/dhcp`, a statically registered trusted provider in `backend/app/modules/providers/dhcp.py`, Package Center lifecycle manifests, and the existing durable `package_jobs` queue. Kea DHCP4 is preferred and ISC DHCP is supported when present. Configuration is candidate-validated, planned, backed up, atomically applied, service-verified and automatically rolled back on failure. It reuses Hosts Manager identity and the public DNS provider contract rather than creating parallel registries. See [DHCP_MANAGER.md](DHCP_MANAGER.md).""")
+          append_once("INFRASTRUCTURE_MODULES.md", "## DHCP Manager", """## DHCP Manager
+
+          DHCP Manager manages Kea DHCPv4 and existing ISC DHCP through the same infrastructure provider/job/RBAC architecture. It exposes typed subnets, pools, reservations, leases, utilization, interfaces, service control, diagnostics, logs and checksummed backup/restore. Apply is validate -> plan -> PAM confirmation -> backup -> atomic write -> reload/restart -> native verification, with verified rollback on failure. The module is `proxmox_safe: false`; central Safe Mode blocks mutations on Proxmox VE. DHCP-discovered systems link to the shared Hosts Manager registry, and reservation DNS synchronization can optionally use the existing Pi-hole/AdGuard public provider contract. See [DHCP_MANAGER.md](DHCP_MANAGER.md).""")
+          append_once("PACKAGE_CENTER.md", "## DHCP Manager lifecycle", """## DHCP Manager lifecycle
+
+          `dhcp` is discovered and installed by Package Center like other trusted infrastructure modules. Kea DHCP4 is the preferred package backend for new installations; existing ISC DHCP is detected without replacing it implicitly. Install/update/uninstall use the central package executor and dedicated `dhcp.install`/`dhcp.uninstall` permissions. Runtime configuration mutations reuse `package_jobs` and Activity Center; the browser never executes a package manager. The manifest is intentionally `proxmox_safe: false`. See [DHCP_MANAGER.md](DHCP_MANAGER.md).""")
+
+          changelog = Path("CHANGELOG.md")
+          text = changelog.read_text(encoding="utf-8")
+          line = "- Added complete **DHCP Manager** with Kea DHCPv4/ISC detection, Package Center lifecycle, typed subnet/pool/reservation/lease management, configuration preview and native validation, atomic apply with verified backup/rollback, utilization/diagnostics/logs/service controls, granular RBAC/PAM/CSRF/audit, Proxmox Safe Mode, shared Hosts Manager identity and optional Pi-hole/AdGuard DNS synchronization.\n\n"
+          if "Added complete **DHCP Manager**" not in text:
+              text = text.replace("## Unreleased\n\n", "## Unreleased\n\n" + line, 1)
+              changelog.write_text(text, encoding="utf-8")
+
+          version_paths = [
+              "pyproject.toml",
+              "backend/app/__init__.py",
+              "backend/app/bootstrap.py",
+              "backend/tests/test_host_info.py",
+              "frontend/package.json",
+              "frontend/package-lock.json",
+              "frontend/src/features/settings/SettingsApp.tsx",
+              "frontend/src/features/settings/SettingsApp.test.tsx",
+          ]
+          changed = 0
+          for name in version_paths:
+              path = Path(name)
+              text = path.read_text(encoding="utf-8")
+              if "0.1.14" in text:
+                  path.write_text(text.replace("0.1.14", "0.1.15"), encoding="utf-8")
+                  changed += 1
+          if changed < 4:
+              raise SystemExit(f"version bump touched only {changed} files")
+      - name: Commit release documentation
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/one-off-dhcp-release-docs.yml
+          git add README.md MODULES.md INFRASTRUCTURE_MODULES.md PACKAGE_CENTER.md CHANGELOG.md pyproject.toml backend/app/__init__.py backend/app/bootstrap.py backend/tests/test_host_info.py frontend/package.json frontend/package-lock.json frontend/src/features/settings/SettingsApp.tsx frontend/src/features/settings/SettingsApp.test.tsx
+          git commit -m "docs: finalize DHCP Manager release metadata"
+          git push origin HEAD:feature/dhcp-manager
