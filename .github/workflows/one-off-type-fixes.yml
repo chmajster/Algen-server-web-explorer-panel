@@ -1,0 +1,75 @@
+name: One-off typed fixes patch
+
+on:
+  push:
+    branches:
+      - feature/proxmox-manager-shared-host-registry
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/proxmox-manager-shared-host-registry
+
+      - name: Apply exact mypy fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          patches = {
+              "backend/app/modules/proxmox_manager/service.py": [
+                  (
+                      "from ..hosts_manager.public import (\n    HostCapabilityProvider,\n    HostInput,",
+                      "from ..hosts_manager.public import (\n    ConnectionType,\n    HostCapabilityProvider,\n    HostInput,",
+                      1,
+                  ),
+                  (
+                      '            connection_type=str(existing.get("connection_type") or "ssh") if existing else "ssh",',
+                      '            connection_type=ConnectionType(str(existing.get("connection_type") or "ssh")) if existing else ConnectionType.ssh,',
+                      1,
+                  ),
+                  (
+                      '        vmid = int(variables.get("proxmox_vmid") or variables.get("algen_provider_resource_id"))',
+                      '        raw_vmid = variables.get("proxmox_vmid") or variables.get("algen_provider_resource_id")\n        if raw_vmid is None:\n            raise KeyError("Proxmox VM identity is missing")\n        vmid = int(raw_vmid)',
+                      1,
+                  ),
+              ],
+              "backend/app/modules/providers/docker.py": [
+                  (
+                      '        security_options = info.get("SecurityOptions") if isinstance(info.get("SecurityOptions"), list) else []',
+                      '        security_options: list[Any] = info.get("SecurityOptions") if isinstance(info.get("SecurityOptions"), list) else []',
+                      1,
+                  ),
+                  (
+                      '        supported = capabilities.get("capabilities") if isinstance(capabilities.get("capabilities"), dict) else {}',
+                      '        supported: dict[str, Any] = capabilities.get("capabilities") if isinstance(capabilities.get("capabilities"), dict) else {}',
+                      1,
+                  ),
+              ],
+          }
+
+          for filename, changes in patches.items():
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              for old, new, expected in changes:
+                  actual = text.count(old)
+                  if actual != expected:
+                      raise SystemExit(f"{filename}: expected {expected} occurrence(s), found {actual}: {old!r}")
+                  text = text.replace(old, new, expected)
+              path.write_text(text, encoding="utf-8")
+
+      - name: Commit fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/modules/proxmox_manager/service.py backend/app/modules/providers/docker.py
+          git commit -m "fix: satisfy backend type checks"
+          git push origin HEAD:feature/proxmox-manager-shared-host-registry
