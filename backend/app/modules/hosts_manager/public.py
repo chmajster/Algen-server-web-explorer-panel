@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .models import CredentialInput, EnrollmentTokenInput, GroupInput, HostInput
+from .models import ConnectionType, CredentialInput, EnrollmentTokenInput, GroupInput, HostInput
 from .service import (
     HostCapabilityProvider,
     ManagedGroupConflictError,
@@ -46,7 +46,7 @@ def host_names() -> set[str]:
 
 
 __all__ = [
-    "CredentialInput", "EnrollmentTokenInput", "GroupInput", "HostCapabilityProvider",
+    "ConnectionType", "CredentialInput", "EnrollmentTokenInput", "GroupInput", "HostCapabilityProvider",
     "HostInput", "ManagedGroupConflictError", "ManagedGroupProtectedError", "host_names",
     "provider_hosts", "registry",
 ]
