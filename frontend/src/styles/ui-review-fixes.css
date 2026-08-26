@@ -12,6 +12,27 @@
   grid-row: 4;
 }
 
+/* Activity Center also inserts an optional error between filters and the stale
+ * feed. Reserve a dedicated error row so the feed keeps the flexible row. */
+.desktop .activity-app {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.desktop .activity-feed {
+  grid-row: 5;
+}
+
+.desktop .activity-footer {
+  grid-row: 6;
+}
+
+/* The generic monitor table wrapper is reused by Network diagnostics. The
+ * fixed monitor minimum belongs only to the Resource Monitor, not stacked DNS
+ * cards on narrow Settings windows. */
+.desktop .network-settings .monitor-table-wrap table {
+  min-width: 0;
+}
+
 /* Later generic toolbar hover rules must not erase semantic button colors. */
 #root .desktop :where(.button-primary, button.button-primary):hover:not(:disabled) {
   border-color: #117eaf;
