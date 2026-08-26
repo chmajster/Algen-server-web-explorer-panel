@@ -10,6 +10,7 @@ icon: boxes
 license: GPL-3.0-or-later
 supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, centos, opensuse, sles, arch, manjaro, alpine, proxmox]
 supported_architectures: [x86_64, aarch64, armv7l]
+package_less: true
 packages:
   apt: []
   dnf: []
