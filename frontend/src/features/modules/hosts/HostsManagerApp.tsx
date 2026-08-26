@@ -950,6 +950,15 @@ function HostDetails({
   const [tab, setTab] = useState<"summary" | "hardware" | "system" | "repositories" | "packages" | "agent" | "history">("summary");
   const [history, setHistory] = useState<{ identities: Array<Record<string, unknown>>; reports: Array<Record<string, unknown>>; versions: Array<Record<string, unknown>>; operations: HostsManagerOperation[] } | null>(null);
   const [agentToken, setAgentToken] = useState("");
+  const [dhcpReservationOpen, setDhcpReservationOpen] = useState(false);
+  const [dhcpSubnets, setDhcpSubnets] = useState<Array<{ id: string; name: string; cidr: string }>>([]);
+  const [dhcpSubnetId, setDhcpSubnetId] = useState("");
+  const [dhcpMac, setDhcpMac] = useState("");
+  const [dhcpHostname, setDhcpHostname] = useState("");
+  const [dhcpCreateDns, setDhcpCreateDns] = useState(false);
+  const [dhcpDnsProvider, setDhcpDnsProvider] = useState<"auto" | "pihole" | "adguard-home">("auto");
+  const [dhcpPamPassword, setDhcpPamPassword] = useState("");
+  const [dhcpSaving, setDhcpSaving] = useState(false);
   useEffect(() => {
     void api.hostsManagerCapabilities(value.id).then(setCapabilities);
   }, [value.id]);
@@ -1007,6 +1016,44 @@ function HostDetails({
       await refresh();
     } catch (error) {
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    }
+  }
+  async function openDhcpReservation() {
+    try {
+      const result = await api.dhcpSubnets();
+      setDhcpSubnets(result.items.map((item) => ({ id: item.id, name: item.name, cidr: item.cidr })));
+      setDhcpSubnetId(String(value.variables?.dhcp_subnet_id || result.items[0]?.id || ""));
+      setDhcpMac(String(value.variables?.dhcp_mac || ""));
+      setDhcpHostname(value.hostname || value.name);
+      setDhcpCreateDns(false);
+      setDhcpDnsProvider("auto");
+      setDhcpPamPassword("");
+      setDhcpReservationOpen(true);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    }
+  }
+  async function createDhcpReservation(event: React.FormEvent) {
+    event.preventDefault();
+    if (!dhcpSubnetId || !dhcpMac || !dhcpPamPassword) return;
+    setDhcpSaving(true);
+    try {
+      await api.createDhcpReservationFromHost(value.id, {
+        subnet_id: dhcpSubnetId,
+        mac_address: dhcpMac,
+        hostname: dhcpHostname,
+        create_dns_record: dhcpCreateDns,
+        dns_provider: dhcpDnsProvider,
+        confirmation: value.id,
+        pam_password: dhcpPamPassword,
+      });
+      toast("DHCP reservation queued", "ok");
+      setDhcpReservationOpen(false);
+      await refresh();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    } finally {
+      setDhcpSaving(false);
     }
   }
   const report = value.latest_report || {};
@@ -1068,6 +1115,14 @@ function HostDetails({
             <dt>{t("hosts.host.environment")}</dt><dd>{value.environment_details?.name || value.environment || t("common.none")}</dd>
             <dt>{t("hosts.host.fingerprint")}</dt><dd><Status value={value.fingerprint_status} t={t} /></dd>
             <dt>{t("hosts.host.approval")}</dt><dd>{t(value.approved ? "common.yes" : "common.no")}</dd>
+            {Boolean(value.variables?.dhcp_source) && <>
+              <dt>DHCP IP</dt><dd>{String(value.variables?.dhcp_ip || t("common.none"))}</dd>
+              <dt>DHCP MAC</dt><dd>{String(value.variables?.dhcp_mac || t("common.none"))}</dd>
+              <dt>DHCP subnet</dt><dd>{String(value.variables?.dhcp_subnet || t("common.none"))}</dd>
+              <dt>DHCP lease</dt><dd>{String(value.variables?.dhcp_lease_state || t("common.none"))}</dd>
+              <dt>DHCP reservation</dt><dd>{String(value.variables?.dhcp_reservation_state || t("common.none"))}</dd>
+              <dt>Source</dt><dd>{String(value.variables?.dhcp_source || "DHCP")}</dd>
+            </>}
           </dl></section>
           <section className="hosts-detail-card"><h3>{t("hosts.alert.active")}</h3>{alerts.length ? alerts.map((item) => <div className="module-diagnostic" key={item}><AlertTriangle /><span>{item}</span></div>) : <div className="empty-state">{t("hosts.alert.none")}</div>}</section>
         </div>}
@@ -1107,6 +1162,12 @@ function HostDetails({
                 {item.name}
               </button>
             ))}
+          {permissions.includes("dhcp.reservations.manage") && (
+            <button type="button" onClick={() => void openDhcpReservation()}>
+              <Network />
+              Create DHCP Reservation
+            </button>
+          )}
           {!value.approved &&
             permissions.includes("hosts-manager.hosts.approve") && (
               <button
@@ -1140,6 +1201,22 @@ function HostDetails({
         </Modal>
       )}
       {agentToken && <Modal title={t("hosts.agent.newToken")} closeLabel={t("action.close")} onClose={() => setAgentToken("")}><p>{t("hosts.agent.newTokenHint")}</p><code className="hosts-secret-once">{agentToken}</code><button type="button" onClick={() => void navigator.clipboard.writeText(agentToken)}><Copy />{t("action.copy")}</button></Modal>}
+      {dhcpReservationOpen && <Modal
+        title="Create DHCP Reservation"
+        closeLabel={t("action.close")}
+        onClose={() => setDhcpReservationOpen(false)}
+        footer={<><button type="button" onClick={() => setDhcpReservationOpen(false)}>{t("action.cancel")}</button><button className="button-primary" type="submit" form="hosts-dhcp-reservation" disabled={dhcpSaving}>{dhcpSaving ? t("status.loading") : t("action.save")}</button></>}
+      >
+        <form id="hosts-dhcp-reservation" className="module-form-grid" onSubmit={(event) => void createDhcpReservation(event)}>
+          <label>Subnet<select required value={dhcpSubnetId} onChange={(event) => setDhcpSubnetId(event.target.value)}><option value="">Select subnet</option>{dhcpSubnets.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.cidr}</option>)}</select></label>
+          <label>MAC address<input required value={dhcpMac} onChange={(event) => setDhcpMac(event.target.value)} placeholder="02:00:00:00:00:01" /></label>
+          <label>Hostname<input required value={dhcpHostname} onChange={(event) => setDhcpHostname(event.target.value)} /></label>
+          <label className="checkbox-line"><input type="checkbox" checked={dhcpCreateDns} onChange={(event) => setDhcpCreateDns(event.target.checked)} />Create / update DNS record</label>
+          {dhcpCreateDns && <label>DNS provider<select value={dhcpDnsProvider} onChange={(event) => setDhcpDnsProvider(event.target.value as "auto" | "pihole" | "adguard-home")}><option value="auto">Auto</option><option value="pihole">Pi-hole</option><option value="adguard-home">AdGuard Home</option></select></label>}
+          <label className="wide">PAM password<input required type="password" autoComplete="current-password" value={dhcpPamPassword} onChange={(event) => setDhcpPamPassword(event.target.value)} /></label>
+          <p className="wide">Confirmation is bound to host ID <code>{value.id}</code>. The backend validates RBAC, CSRF, PAM and Proxmox Safe Mode before enqueueing the DHCP job.</p>
+        </form>
+      </Modal>}
     </Modal>
   );
 }
