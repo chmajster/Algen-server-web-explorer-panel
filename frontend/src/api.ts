@@ -22,6 +22,7 @@ import { containersClient } from "./modules/containers/api/client";
 import { sambaClient } from "./modules/samba/api/client";
 import { mountsClient } from "./modules/mounts/api/client";
 import { cronClient } from "./modules/cron/api/client";
+import { dhcpClient } from "./modules/dhcp/api/client";
 
 export * from "./core/api/contracts";
 export { ApiError, login, logout, me, onAuthenticationInvalidated, resetAuthenticationState, setApiBaseUrl } from "./core/api/transport";
@@ -49,6 +50,8 @@ export { containersClient } from "./modules/containers/api/client";
 export { sambaClient } from "./modules/samba/api/client";
 export { mountsClient } from "./modules/mounts/api/client";
 export { cronClient } from "./modules/cron/api/client";
+export { dhcpClient } from "./modules/dhcp/api/client";
+export type { DhcpBackup, DhcpConfiguration, DhcpDiagnostic, DhcpInterface, DhcpLease, DhcpPlan, DhcpReservation, DhcpStatus, DhcpSubnet, DhcpValidation } from "./modules/dhcp/api/client";
 
 export const api = {
   ...platformClient,
@@ -74,4 +77,5 @@ export const api = {
   ...sambaClient,
   ...mountsClient,
   ...cronClient,
+  ...dhcpClient,
 } as const;
