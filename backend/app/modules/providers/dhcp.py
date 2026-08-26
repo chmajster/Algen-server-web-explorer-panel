@@ -16,7 +16,7 @@ class DhcpProvider(ModuleProvider):
 
     @staticmethod
     def _installed() -> bool:
-        from ...package_center.repository import repository
+        from ...package_center.service import repository
 
         return "dhcp" in repository().installed()
 
