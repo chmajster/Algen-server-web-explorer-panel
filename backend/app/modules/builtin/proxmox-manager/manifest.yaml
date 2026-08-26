@@ -1,0 +1,11 @@
+id: proxmox-manager
+name: Proxmox Manager
+category: infrastructure
+icon: boxes
+permissions: [modules.view]
+routers: [app.modules.proxmox_manager.router:router]
+dependencies: [hosts-manager]
+capabilities: [proxmox-vms, host-provider, power]
+actions: [test, sync, start, stop, shutdown, reboot]
+jobs: []
+menu: [{id: proxmox, label: proxmox.name, icon: boxes, permission: modules.view}]

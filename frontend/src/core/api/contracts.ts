@@ -559,7 +559,7 @@ export type HostsManagerGroup = AnsibleGroup & {
   managed?: boolean;
   managed_by?: { apmid_id: string; environment_id: string } | null;
 };
-export type HostsManagerCredential = AnsibleCredential & {
+export type HostsManagerCredential = Omit<AnsibleCredential, "type"> & {
   type: AnsibleCredential["type"] | "redfish" | "ipmi" | "proxmox_api" | "wol";
   environment_id?: string | null; last_used_at?: number | null; host_count?: number;
 };

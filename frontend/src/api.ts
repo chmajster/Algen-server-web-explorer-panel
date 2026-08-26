@@ -17,6 +17,7 @@ import { moduleCenterClient } from "./modules/module-center/api/client";
 import { osRepositoriesClient } from "./modules/os-repositories/api/client";
 import { ansibleControllerClient } from "./modules/ansible-controller/api/client";
 import { hostsManagerClient } from "./modules/hosts-manager/api/client";
+import { proxmoxManagerClient } from "./modules/proxmox-manager/api/client";
 import { containersClient } from "./modules/containers/api/client";
 import { sambaClient } from "./modules/samba/api/client";
 import { mountsClient } from "./modules/mounts/api/client";
@@ -42,6 +43,8 @@ export { moduleCenterClient } from "./modules/module-center/api/client";
 export { osRepositoriesClient } from "./modules/os-repositories/api/client";
 export { ansibleControllerClient } from "./modules/ansible-controller/api/client";
 export { hostsManagerClient } from "./modules/hosts-manager/api/client";
+export { proxmoxManagerClient } from "./modules/proxmox-manager/api/client";
+export type { ProxmoxConnection, ProxmoxConnectionInput, ProxmoxVm, ProxmoxVmList } from "./modules/proxmox-manager/api/client";
 export { containersClient } from "./modules/containers/api/client";
 export { sambaClient } from "./modules/samba/api/client";
 export { mountsClient } from "./modules/mounts/api/client";
@@ -66,6 +69,7 @@ export const api = {
   ...osRepositoriesClient,
   ...ansibleControllerClient,
   ...hostsManagerClient,
+  ...proxmoxManagerClient,
   ...containersClient,
   ...sambaClient,
   ...mountsClient,

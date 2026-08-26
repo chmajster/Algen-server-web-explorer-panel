@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added native **Proxmox Manager** with Proxmox VE API connections, shared Hosts Manager identity, centralized `proxmox_api` credentials, VM/LXC synchronization, live-node power actions, and direct reuse of the same `host_id` by Hosts Manager and Ansible Automation Controller.
+
+- Added a disposable `--portable` installer mode that runs WebNAS without installing it as a system service and keeps its isolated runtime below the launch directory.
+
+- Fixed portable mode to consistently use `./portable-run/` for source, runtime, configuration, and cleanup, preserving compatibility when launched from an existing repository checkout.
+
 - Added Windows Explorer Drag & Drop uploads to File Manager with a localized drop zone, read-only protection, overwrite confirmation, and reuse of the existing transfer queue.
 
 - Expanded File Manager deletion confirmations with names, types, sizes, full paths, and a bounded summary for large selections.
