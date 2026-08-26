@@ -16,6 +16,7 @@ import { HostsManagerApp } from "./hosts/HostsManagerApp";
 import { ApmidApp } from "./apmid/ApmidApp";
 import { OsRepositoriesApp } from "./os-repositories/OsRepositoriesApp";
 import { CronManagerApp } from "./cron/CronManagerApp";
+import { DhcpManagerApp } from "./dhcp/DhcpManagerApp";
 
 const emptyStatus: ModuleStatus = { installed: false, update_available: false, service_state: "unknown", service_enabled: false, services: {}, health: "unknown", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} };
 
@@ -28,6 +29,7 @@ export function ModuleApp({ moduleId, initialPath, deepLink, draftKey, permissio
   else if (moduleId === "apmid") content = <ApmidApp permissions={permissions} t={t} toast={toast} />;
   else if (moduleId === "os-repositories") content = <OsRepositoriesApp permissions={permissions} t={t} toast={toast} />;
   else if (moduleId === "cron") content = <CronManagerApp permissions={permissions} t={t} toast={toast} />;
+  else if (moduleId === "dhcp") content = <DhcpManagerApp permissions={permissions} t={t} toast={toast} />;
   else if (["linux-updates", "pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"].includes(moduleId)) content = <ManagedModuleApp moduleId={moduleId} permissions={permissions} t={t} toast={toast} />;
   else content = <GenericModuleApp moduleId={moduleId} t={t} toast={toast} />;
   return <>{content}{deepLink?.type === "package-job" && <PackageJobDialog jobId={deepLink.jobId || deepLink.id} moduleName={moduleId} t={t} onClose={() => onDeepLinkClose?.()} />}</>;
