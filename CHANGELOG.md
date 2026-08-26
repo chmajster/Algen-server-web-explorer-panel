@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [0.1.14] - 2026-08-26
+
+### Changed
+
+- Updated GitHub Actions runner compatibility for the self-hosted Linux x64 CI environment.
+- Added a portable installer mode for running WebNAS without a standard system installation.
+- Isolated portable runtime state in the dedicated `portable-run` directory.
+- Finished the DSM-style UI consistency pass across Resource Monitor, Settings, Activity Center, Transfer Center, Network Resources, Docker Container Details, and Hosts Manager, including responsive container layouts and fixes from pull-request review.
+
 - Added Windows Explorer Drag & Drop uploads to File Manager with a localized drop zone, read-only protection, overwrite confirmation, and reuse of the existing transfer queue.
 
 - Expanded File Manager deletion confirmations with names, types, sizes, full paths, and a bounded summary for large selections.
