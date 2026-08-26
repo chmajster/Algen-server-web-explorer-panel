@@ -32,7 +32,7 @@ describe("specialized UI consistency", () => {
     expect(css).toContain("box-shadow: none");
     expect(css).toContain("var(--radius-panel)");
     expect(css).toContain("var(--radius-control)");
-    expect(css).toContain("var(--control-height)");
+    expect(css).toContain("var(--surface-elevated)");
     expect(css).not.toContain("!important");
   });
 
