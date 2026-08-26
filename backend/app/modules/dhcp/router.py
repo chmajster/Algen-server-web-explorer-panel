@@ -18,7 +18,6 @@ from .models import (
     DhcpConfiguration,
     DhcpConfigurationMutationRequest,
     DhcpReservationCreateRequest,
-    DhcpRestoreRequest,
     DhcpSubnetCreateRequest,
     HostToReservationRequest,
     LeaseToHostRequest,

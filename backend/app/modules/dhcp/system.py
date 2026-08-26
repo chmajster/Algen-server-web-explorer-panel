@@ -4,7 +4,6 @@ import csv
 import io
 import ipaddress
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -361,8 +360,10 @@ class DhcpSystem:
                 break
             depth, end = 1, match.end()
             while end < len(clean) and depth:
-                if clean[end] == "{": depth += 1
-                elif clean[end] == "}": depth -= 1
+                if clean[end] == "{":
+                    depth += 1
+                elif clean[end] == "}":
+                    depth -= 1
                 end += 1
             body = clean[match.end():end - 1]
             index += 1
