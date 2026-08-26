@@ -7,6 +7,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from zoneinfo import available_timezones
 
 import yaml
