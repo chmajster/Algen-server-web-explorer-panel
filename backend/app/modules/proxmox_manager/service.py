@@ -16,7 +16,13 @@ from pathlib import Path
 from typing import Any
 
 from ...config import get_config
-from ..hosts_manager.public import HostCapabilityProvider, HostInput, registry as host_registry
+from ..hosts_manager.public import (
+    HostCapabilityProvider,
+    HostInput,
+    host_names as shared_host_names,
+    provider_hosts as shared_provider_hosts,
+    registry as host_registry,
+)
 from .models import ProxmoxConnectionInput
 
 
@@ -149,13 +155,25 @@ class ProxmoxManagerService:
         if row is None:
             return None
         value = dict(row)
-        value["verify_tls"] = bool(value["verify_tls"])
-        value["sync_lxc"] = bool(value["sync_lxc"])
-        value["sync_templates"] = bool(value["sync_templates"])
-        value["active"] = bool(value["active"])
-        value["auto_sync"] = bool(value["auto_sync"])
-        value["tags"] = json.loads(value.pop("tags_json") or "[]")
+        for key in ("verify_tls", "sync_lxc", "sync_templates", "active", "auto_sync"):
+            value[key] = bool(value[key])
+        try:
+            value["tags"] = json.loads(value.pop("tags_json") or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            value["tags"] = []
         return value
+
+    @staticmethod
+    def _credential_summary(credential: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not credential:
+            return None
+        return {
+            "id": credential["id"],
+            "name": credential["name"],
+            "type": credential["type"],
+            "username": credential["username"],
+            "secret_configured": credential["secret_configured"],
+        }
 
     def connections(self, *, active_only: bool = False) -> list[dict[str, Any]]:
         query = "SELECT * FROM connections"
@@ -166,18 +184,7 @@ class ProxmoxManagerService:
             items = [self._decode(row) or {} for row in connection.execute(query).fetchall()]
         credentials = {item["id"]: item for item in host_registry().credentials()}
         for item in items:
-            credential = credentials.get(item["credential_id"])
-            item["credential"] = (
-                {
-                    "id": credential["id"],
-                    "name": credential["name"],
-                    "type": credential["type"],
-                    "username": credential["username"],
-                    "secret_configured": credential["secret_configured"],
-                }
-                if credential
-                else None
-            )
+            item["credential"] = self._credential_summary(credentials.get(item["credential_id"]))
         return items
 
     def connection(self, connection_id: str) -> dict[str, Any] | None:
@@ -186,17 +193,7 @@ class ProxmoxManagerService:
         if not item:
             return None
         credential = next((value for value in host_registry().credentials() if value["id"] == item["credential_id"]), None)
-        item["credential"] = (
-            {
-                "id": credential["id"],
-                "name": credential["name"],
-                "type": credential["type"],
-                "username": credential["username"],
-                "secret_configured": credential["secret_configured"],
-            }
-            if credential
-            else None
-        )
+        item["credential"] = self._credential_summary(credential)
         return item
 
     def save_connection(
@@ -404,24 +401,26 @@ class ProxmoxManagerService:
         candidates.sort()
         return candidates[0][1] if candidates else ""
 
+    @staticmethod
+    def _interface_rows(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, dict):
+            value = value.get("result") or value.get("data") or []
+        return [item for item in (value or []) if isinstance(item, dict)] if isinstance(value, list) else []
+
     def _resolve_address(self, client: ProxmoxApiClient, resource: dict[str, Any]) -> str:
         node = urllib.parse.quote(str(resource["node"]), safe="")
         vmid = int(resource["vmid"])
         values: list[str] = []
         try:
             if resource["type"] == "qemu":
-                interfaces = client.get(f"nodes/{node}/qemu/{vmid}/agent/network-get-interfaces")
-                for interface in interfaces or []:
-                    if not isinstance(interface, dict):
-                        continue
+                interfaces = self._interface_rows(client.get(f"nodes/{node}/qemu/{vmid}/agent/network-get-interfaces"))
+                for interface in interfaces:
                     for address in interface.get("ip-addresses") or []:
                         if isinstance(address, dict) and address.get("ip-address"):
                             values.append(str(address["ip-address"]))
             else:
-                interfaces = client.get(f"nodes/{node}/lxc/{vmid}/interfaces")
-                for interface in interfaces or []:
-                    if not isinstance(interface, dict):
-                        continue
+                interfaces = self._interface_rows(client.get(f"nodes/{node}/lxc/{vmid}/interfaces"))
+                for interface in interfaces:
                     for key in ("inet", "inet6"):
                         if interface.get(key):
                             values.append(str(interface[key]))
@@ -440,38 +439,50 @@ class ProxmoxManagerService:
         present: bool,
     ) -> HostInput:
         variables = dict(existing.get("variables") or {}) if existing else {}
+        was_present = variables.get("proxmox_present", True) is not False
         variables.update(ProxmoxManagerService._provider_variables(connection["id"], resource, present=present))
-        description = str(existing.get("description") or "") if existing else ""
-        if not description:
+
+        if existing:
+            active = False if not present else (True if not was_present else bool(existing.get("active", True)))
+            existing_tags = existing.get("tags")
+            tags = list(existing_tags) if isinstance(existing_tags, list) else []
+            description = str(existing.get("description") or "")
+            environment = str(existing.get("environment") if existing.get("environment") is not None else "")
+            location = str(existing.get("location") if existing.get("location") is not None else "")
+        else:
+            active = present
+            tags = list(connection["tags"])
             description = f"Proxmox {resource['type']} VM {resource['vmid']} on {resource['node']}"
+            environment = str(connection["environment"])
+            location = str(connection["location"])
+
         return HostInput(
-            name=str(existing.get("name") or name) if existing else name,
+            name=str(existing["name"]) if existing else name,
             hostname=str(existing.get("hostname") or "") if existing else ProxmoxManagerService._dns_address(resource["name"]),
             fqdn=str(existing.get("fqdn") or "") if existing else "",
             address=address,
             management_address=str(existing.get("management_address") or "") if existing else "",
             port=int(existing.get("port") or 22) if existing else 22,
             connection_type=str(existing.get("connection_type") or "ssh") if existing else "ssh",
-            ssh_user=str(existing.get("ssh_user") or connection["default_ssh_user"]) if existing else connection["default_ssh_user"],
+            ssh_user=str(existing.get("ssh_user") or connection["default_ssh_user"]) if existing else str(connection["default_ssh_user"]),
             credential_id=existing.get("credential_id") if existing else None,
             python_interpreter=str(existing.get("python_interpreter") or "auto_silent") if existing else "auto_silent",
-            environment=str(existing.get("environment") or connection["environment"]) if existing else connection["environment"],
-            location=str(existing.get("location") or connection["location"]) if existing else connection["location"],
+            environment=environment,
+            location=location,
             description=description,
-            tags=list(existing.get("tags") or connection["tags"]) if existing else list(connection["tags"]),
+            tags=tags,
             variables=variables,
             group_ids=list(existing.get("group_ids") or []) if existing else [],
-            active=present,
+            active=active,
             approved=bool(existing.get("approved", False)) if existing else False,
             power_profile_id=existing.get("power_profile_id") if existing else None,
         )
 
     def list_vms(self, connection_id: str = "") -> dict[str, Any]:
         connections = [self.connection(connection_id)] if connection_id else self.connections(active_only=True)
-        hosts = host_registry().list_hosts(limit=5000)
         host_map = {
             identity: host
-            for host in hosts
+            for host in shared_provider_hosts(PROVIDER)
             if (identity := self._host_identity(host)) is not None
         }
         values: list[dict[str, Any]] = []
@@ -502,8 +513,8 @@ class ProxmoxManagerService:
     def _set_sync_status(self, connection_id: str, status: str, error: str = "") -> None:
         with self.connect() as connection:
             connection.execute(
-                "UPDATE connections SET last_sync_at=?,last_sync_status=?,last_error=? WHERE id=?",
-                (time.time(), status, error[:2000], connection_id),
+                "UPDATE connections SET last_sync_at=?,last_sync_status=?,last_error=?,updated_at=? WHERE id=?",
+                (time.time(), status, error[:2000], time.time(), connection_id),
             )
 
     def sync(self, connection_id: str, actor: str, *, resolve_addresses: bool = True, disable_missing: bool = True) -> dict[str, Any]:
@@ -517,13 +528,12 @@ class ProxmoxManagerService:
             self._set_sync_status(connection_id, "failed", str(error))
             raise
 
-        hosts = host_registry().list_hosts(limit=5000)
         provider_hosts = {
             identity: host
-            for host in hosts
-            if (identity := self._host_identity(host)) is not None and identity[0] == connection_id
+            for host in shared_provider_hosts(PROVIDER, connection_id)
+            if (identity := self._host_identity(host)) is not None
         }
-        occupied_names = {str(host.get("name") or "").casefold() for host in hosts}
+        occupied_names = shared_host_names()
         seen: set[tuple[str, str]] = set()
         created = updated = disabled = 0
         skipped: list[dict[str, Any]] = []
@@ -553,7 +563,7 @@ class ProxmoxManagerService:
                 suffix = f"-{connection_id[:6]}-{resource['vmid']}"
                 name = f"{name[: max(1, 128 - len(suffix))]}{suffix}"
             payload = self._host_payload(existing, connection, resource, address, name=name, present=True)
-            host = host_registry().save_host(payload, actor, existing.get("id") if existing else None, source=PROVIDER)
+            host = host_registry().save_host(payload, actor, str(existing["id"]) if existing else None, source=PROVIDER)
             occupied_names.add(str(host["name"]).casefold())
             if existing:
                 updated += 1
@@ -618,7 +628,7 @@ class ProxmoxManagerService:
             "hosts": synchronized,
         }
 
-    def _resource_from_host(self, host: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _resource_from_host(self, host: dict[str, Any]) -> tuple[dict[str, Any], int]:
         variables = dict(host.get("variables") or {})
         if variables.get("algen_provider") != PROVIDER or not variables.get("proxmox_present", True):
             raise KeyError("Host is not backed by an active Proxmox resource")
@@ -626,26 +636,32 @@ class ProxmoxManagerService:
         connection = self.connection(connection_id)
         if not connection or not connection["active"]:
             raise KeyError("Proxmox connection not found")
-        resource = {
-            "vmid": int(variables.get("proxmox_vmid") or variables.get("algen_provider_resource_id")),
-            "node": str(variables.get("proxmox_node") or ""),
-            "type": str(variables.get("proxmox_resource_type") or "qemu"),
-            "name": str(variables.get("proxmox_name") or host["name"]),
-        }
-        if resource["type"] not in {"qemu", "lxc"} or not resource["node"]:
-            raise ValueError("Host Proxmox metadata is incomplete")
-        return connection, resource
+        vmid = int(variables.get("proxmox_vmid") or variables.get("algen_provider_resource_id"))
+        return connection, vmid
 
-    def execute_host_action(self, host: dict[str, Any], action: str, actor: str) -> dict[str, Any]:
-        if action not in {"start", "stop", "shutdown", "reboot"}:
-            raise ValueError("Unsupported Proxmox power action")
-        connection, resource = self._resource_from_host(host)
-        node = urllib.parse.quote(resource["node"], safe="")
+    def _live_resource(self, connection: dict[str, Any], vmid: int) -> dict[str, Any]:
+        resource = next((item for item in self._resources(connection) if int(item["vmid"]) == vmid), None)
+        if not resource:
+            raise KeyError("Proxmox VM not found")
+        if not resource.get("node") or resource.get("type") not in {"qemu", "lxc"}:
+            raise ValueError("Proxmox resource metadata is incomplete")
+        return resource
+
+    def _dispatch_resource_action(
+        self,
+        connection: dict[str, Any],
+        resource: dict[str, Any],
+        action: str,
+        actor: str,
+        host: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        node = urllib.parse.quote(str(resource["node"]), safe="")
         task = self._client(connection).post(
-            f"nodes/{node}/{resource['type']}/{resource['vmid']}/status/{action}"
+            f"nodes/{node}/{resource['type']}/{int(resource['vmid'])}/status/{action}"
         )
+        host_id = str(host["id"]) if host else None
         operation = host_registry().operation(
-            str(host["id"]),
+            host_id,
             f"proxmox.{action}",
             actor,
             module_id=MODULE_ID,
@@ -654,38 +670,37 @@ class ProxmoxManagerService:
             progress=10,
             details={
                 "connection_id": connection["id"],
-                "vmid": resource["vmid"],
+                "vmid": int(resource["vmid"]),
                 "node": resource["node"],
                 "resource_type": resource["type"],
                 "task": task,
             },
         )
-        return {"host_id": host["id"], "action": action, "task": task, "operation": operation}
+        return {"host_id": host_id, "action": action, "task": task, "operation": operation}
+
+    def execute_host_action(self, host: dict[str, Any], action: str, actor: str) -> dict[str, Any]:
+        if action not in {"start", "stop", "shutdown", "reboot"}:
+            raise ValueError("Unsupported Proxmox power action")
+        connection, vmid = self._resource_from_host(host)
+        resource = self._live_resource(connection, vmid)
+        return self._dispatch_resource_action(connection, resource, action, actor, host)
 
     def execute_vm_action(self, connection_id: str, vmid: int, action: str, actor: str) -> dict[str, Any]:
-        hosts = host_registry().list_hosts(limit=5000)
+        if action not in {"start", "stop", "shutdown", "reboot"}:
+            raise ValueError("Unsupported Proxmox power action")
+        connection = self.connection(connection_id)
+        if not connection or not connection["active"]:
+            raise KeyError("Proxmox connection not found")
+        resource = self._live_resource(connection, vmid)
         host = next(
             (
                 item
-                for item in hosts
+                for item in shared_provider_hosts(PROVIDER, connection_id)
                 if self._host_identity(item) == (connection_id, str(vmid))
             ),
             None,
         )
-        if host:
-            return self.execute_host_action(host, action, actor)
-
-        connection = self.connection(connection_id)
-        if not connection or not connection["active"]:
-            raise KeyError("Proxmox connection not found")
-        resource = next((item for item in self._resources(connection) if int(item["vmid"]) == vmid), None)
-        if not resource:
-            raise KeyError("Proxmox VM not found")
-        node = urllib.parse.quote(resource["node"], safe="")
-        task = self._client(connection).post(
-            f"nodes/{node}/{resource['type']}/{vmid}/status/{action}"
-        )
-        return {"host_id": None, "action": action, "task": task}
+        return self._dispatch_resource_action(connection, resource, action, actor, host)
 
 
 @lru_cache
@@ -705,7 +720,8 @@ def register_host_capabilities() -> None:
     def supports(host: dict[str, Any]) -> bool:
         variables = dict(host.get("variables") or {})
         return (
-            variables.get("algen_provider") == PROVIDER
+            bool(host.get("active"))
+            and variables.get("algen_provider") == PROVIDER
             and bool(variables.get("algen_provider_instance_id"))
             and bool(variables.get("proxmox_node"))
             and variables.get("proxmox_present", True) is not False
@@ -746,5 +762,6 @@ def register_host_capabilities() -> None:
                 supports=supports,
                 plan=make_plan(action),
                 execute=make_execute(action),
+                deep_link="/modules/proxmox-manager",
             )
         )
