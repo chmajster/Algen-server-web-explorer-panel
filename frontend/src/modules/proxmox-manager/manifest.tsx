@@ -1,7 +1,8 @@
 import { Boxes } from "lucide-react";
-import { managedModuleManifest } from "../../app/registry/rendering";
+import { ProxmoxManagerApp } from "../../features/modules/proxmox/ProxmoxManagerApp";
+import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 
-export default managedModuleManifest({
+const manifest: FrontendModuleManifest = {
   id: "proxmox",
   moduleId: "proxmox-manager",
   labelKey: "Proxmox Manager",
@@ -11,4 +12,7 @@ export default managedModuleManifest({
   dependencies: ["hosts", "modules"],
   minWidth: 980,
   minHeight: 620,
-});
+  render: (context) => <ProxmoxManagerApp permissions={context.profile.permissions} t={context.t} toast={context.toast} />,
+};
+
+export default manifest;
