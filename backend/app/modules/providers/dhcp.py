@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...package_center.models import ModuleDiagnostic, ModuleHealth, ModuleStatus, ModuleValidationResult, PackageAction, api_error
-from ..dhcp.models import DhcpConfiguration
-from ..dhcp.service import DhcpConflictError, DhcpNotFoundError, service
+from ..dhcp.public import DhcpConfiguration, DhcpConflictError, DhcpNotFoundError, service
 from .base import CancelCallback, LogCallback, ModuleProvider, ProgressCallback
 
 
