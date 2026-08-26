@@ -1,0 +1,114 @@
+name: One-off DHCP hardening patch
+
+on:
+  push:
+    branches:
+      - feature/dhcp-manager
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/dhcp-manager
+      - name: Harden DHCP transaction and integration contracts
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # Package Center: retain central generic permissions and add DHCP-specific lifecycle RBAC.
+          path = Path("backend/app/package_center/router.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''    if module_id == "ansible-controller" and action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:\n        authorize(user, Permission.ANSIBLE_INSTALL)\n    plan = plan_operation(module_id, action, remove_data=remove_data)\n'''
+          new = '''    _authorize_module_package_action(module_id, action, user)\n    plan = plan_operation(module_id, action, remove_data=remove_data)\n'''
+          if old not in text:
+              raise SystemExit("package plan authorization block not found")
+          text = text.replace(old, new, 1)
+          old = '''def _enqueue_action(module_id: str, action: PackageAction, payload: AdminPackageAction, user: SessionUser) -> dict:\n'''
+          helper = '''def _authorize_module_package_action(module_id: str, action: PackageAction, user: SessionUser) -> None:\n    if module_id == "ansible-controller" and action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:\n        authorize(user, Permission.ANSIBLE_INSTALL)\n    if module_id == "dhcp":\n        if action in {PackageAction.install, PackageAction.reinstall, PackageAction.update}:\n            authorize(user, Permission.DHCP_INSTALL)\n        elif action == PackageAction.uninstall:\n            authorize(user, Permission.DHCP_UNINSTALL)\n\n\ndef _enqueue_action(module_id: str, action: PackageAction, payload: AdminPackageAction, user: SessionUser) -> dict:\n'''
+          if old not in text:
+              raise SystemExit("enqueue marker not found")
+          text = text.replace(old, helper, 1)
+          old = '''    if module_id == "ansible-controller" and action in {PackageAction.install, PackageAction.reinstall, PackageAction.update, PackageAction.uninstall}:\n        authorize(user, Permission.ANSIBLE_INSTALL)\n    if module_id == "ansible-controller" and action == PackageAction.uninstall and payload.remove_data:\n'''
+          new = '''    _authorize_module_package_action(module_id, action, user)\n    if module_id == "ansible-controller" and action == PackageAction.uninstall and payload.remove_data:\n'''
+          if old not in text:
+              raise SystemExit("enqueue authorization block not found")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          # Package manifest: declare the same granular permissions used by the runtime/API.
+          path = Path("backend/app/modules/dhcp/manifest.yaml")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "permissions: [dhcp-management]\n",
+              "permissions: [dhcp.view, dhcp.configure, dhcp.subnets.manage, dhcp.reservations.manage, dhcp.leases.view, dhcp.service.control, dhcp.backup, dhcp.restore, dhcp.diagnostics, dhcp.install, dhcp.uninstall]\n",
+              1,
+          )
+          path.write_text(text, encoding="utf-8")
+
+          # DHCP service: verify rollback state instead of best-effort restart.
+          path = Path("backend/app/modules/dhcp/service.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace("from urllib.parse import quote\n", "")
+          marker = "from ..hosts_manager.public import ConnectionType, HostInput, find_host, registry as hosts_registry\n"
+          if marker not in text:
+              raise SystemExit("hosts manager import marker not found")
+          text = text.replace(marker, marker + "from ..providers.public import upsert_dns_record\n", 1)
+          old = '''    def _restart_and_verify(self, backend: DhcpBackend) -> None:\n        result = self.system.service_action(backend, "reload")\n        if result.returncode != 0:\n            result = self.system.service_action(backend, "restart")\n        if result.returncode != 0:\n            raise RuntimeError(redact(result.stderr.strip() or result.stdout.strip() or "DHCP service reload/restart failed"))\n        service = self.system.selected_service(backend)\n        state, _ = self.system.service_state(service)\n        if state != "active":\n            raise RuntimeError(f"DHCP service is {state} after configuration change")\n        definition = self.system.definitions[backend]\n        ok, output = self.system.validate_candidate(backend, definition.config_path)\n        if not ok:\n            raise RuntimeError(output or "Applied DHCP configuration did not pass native validation")\n'''
+          new = '''    def _verify_backend(self, backend: DhcpBackend) -> None:\n        service = self.system.selected_service(backend)\n        state, _ = self.system.service_state(service)\n        if state != "active":\n            raise RuntimeError(f"DHCP service is {state} after configuration change")\n        definition = self.system.definitions[backend]\n        ok, output = self.system.validate_candidate(backend, definition.config_path)\n        if not ok:\n            raise RuntimeError(output or "DHCP configuration did not pass native validation")\n\n    def _restart_and_verify(self, backend: DhcpBackend) -> None:\n        result = self.system.service_action(backend, "reload")\n        if result.returncode != 0:\n            result = self.system.service_action(backend, "restart")\n        if result.returncode != 0:\n            raise RuntimeError(redact(result.stderr.strip() or result.stdout.strip() or "DHCP service reload/restart failed"))\n        self._verify_backend(backend)\n\n    def _restart_previous_and_verify(self, backend: DhcpBackend) -> None:\n        result = self.system.service_action(backend, "restart")\n        if result.returncode != 0:\n            raise RuntimeError(redact(result.stderr.strip() or result.stdout.strip() or "DHCP rollback restart failed"))\n        self._verify_backend(backend)\n'''
+          if old not in text:
+              raise SystemExit("restart verification block not found")
+          text = text.replace(old, new, 1)
+          old = '''            except Exception:\n                self._restore_snapshot(snapshot)\n                self._restore_snapshot(state_snapshot)\n                try:\n                    self.system.service_action(backend, "restart")\n                finally:\n                    definition = self.system.definitions[backend]\n                    if definition.config_path.exists():\n                        self.system.validate_candidate(backend, definition.config_path)\n                raise\n'''
+          new = '''            except Exception as error:\n                self._restore_snapshot(snapshot)\n                self._restore_snapshot(state_snapshot)\n                try:\n                    self._restart_previous_and_verify(backend)\n                except Exception as rollback_error:\n                    raise RuntimeError(\n                        f"{redact(str(error))}; rollback failed: {redact(str(rollback_error))}"\n                    ) from rollback_error\n                raise\n'''
+          if old not in text:
+              raise SystemExit("apply rollback block not found")
+          text = text.replace(old, new, 1)
+          old = '''        except Exception:\n            self._restore_snapshot(snapshot)\n            self.system.service_action(backend, "restart")\n            raise\n'''
+          new = '''        except Exception as error:\n            self._restore_snapshot(snapshot)\n            try:\n                self._restart_previous_and_verify(backend)\n            except Exception as rollback_error:\n                raise RuntimeError(\n                    f"{redact(str(error))}; restore rollback failed: {redact(str(rollback_error))}"\n                ) from rollback_error\n            raise\n'''
+          if old not in text:
+              raise SystemExit("restore rollback block not found")
+          text = text.replace(old, new, 1)
+          old = '''    @staticmethod\n    def _sync_dns(reservation: DhcpReservation) -> dict[str, Any]:\n        from ..providers import get_provider\n        providers = [reservation.dns_provider] if reservation.dns_provider != "auto" else ["pihole", "adguard-home"]\n        errors: list[str] = []\n        for module_id in providers:\n            try:\n                provider = get_provider(module_id)\n                if module_id == "pihole":\n                    entry = f"{reservation.ipv4_address} {reservation.hostname}"\n                    provider._api(f"/api/config/dns/hosts/{quote(entry, safe='')}", method="PUT")  # type: ignore[attr-defined]\n                else:\n                    provider._api("/rewrite/add", method="POST", payload={"domain": reservation.hostname, "answer": reservation.ipv4_address})  # type: ignore[attr-defined]\n                return {"updated": True, "provider": module_id}\n            except Exception as error:  # noqa: BLE001 - optional integration must not break DHCP.\n                errors.append(redact(str(error))[:500])\n        return {"updated": False, "provider": "", "warning": "; ".join(errors) or "No configured DNS integration is available"}\n'''
+          new = '''    @staticmethod\n    def _sync_dns(reservation: DhcpReservation) -> dict[str, Any]:\n        providers = [reservation.dns_provider] if reservation.dns_provider != "auto" else ["pihole", "adguard-home"]\n        errors: list[str] = []\n        for module_id in providers:\n            try:\n                return upsert_dns_record(module_id, reservation.hostname, reservation.ipv4_address)\n            except Exception as error:  # noqa: BLE001 - optional integration must not break DHCP.\n                errors.append(redact(str(error))[:500])\n        return {"updated": False, "provider": "", "warning": "; ".join(errors) or "No configured DNS integration is available"}\n'''
+          if old not in text:
+              raise SystemExit("DNS sync block not found")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          # DNS providers expose a narrow public record-upsert capability.
+          path = Path("backend/app/modules/providers/dns.py")
+          text = path.read_text(encoding="utf-8")
+          if "from urllib.parse import quote\n" not in text:
+              text = text.replace("from typing import Any\n", "from typing import Any\nfrom urllib.parse import quote\n", 1)
+          marker = '''    def get_status(self) -> ModuleStatus:\n        inspect = self._container_inspect()\n'''
+          pihole_method = '''    def upsert_dns_record(self, hostname: str, address: str) -> dict[str, Any]:\n        entry = f"{address} {hostname}"\n        self._api(f"/api/config/dns/hosts/{quote(entry, safe='')}", method="PUT")\n        return {"updated": True, "provider": "pihole", "hostname": hostname, "address": address}\n\n'''
+          # Insert only in Pi-hole, before its first get_status.
+          pihole_class = text.index("class PiHoleProvider")
+          marker_pos = text.index(marker, pihole_class)
+          text = text[:marker_pos] + pihole_method + text[marker_pos:]
+          adguard_marker = '''    def get_status(self) -> ModuleStatus:\n        inspect = self._container_inspect()\n'''
+          adguard_class = text.index("class AdGuardHomeProvider")
+          adguard_pos = text.index(adguard_marker, adguard_class)
+          adguard_method = '''    def upsert_dns_record(self, hostname: str, address: str) -> dict[str, Any]:\n        existing = self._api("/rewrite/list")\n        if isinstance(existing, list):\n            for item in existing:\n                if not isinstance(item, dict) or str(item.get("domain") or "") != hostname:\n                    continue\n                old_answer = str(item.get("answer") or "")\n                if old_answer == address:\n                    return {"updated": False, "provider": "adguard-home", "hostname": hostname, "address": address}\n                self._api("/rewrite/delete", method="POST", payload={"domain": hostname, "answer": old_answer})\n        self._api("/rewrite/add", method="POST", payload={"domain": hostname, "answer": address})\n        return {"updated": True, "provider": "adguard-home", "hostname": hostname, "address": address}\n\n'''
+          text = text[:adguard_pos] + adguard_method + text[adguard_pos:]
+          path.write_text(text, encoding="utf-8")
+
+          public = Path("backend/app/modules/providers/public.py")
+          if public.exists():
+              raise SystemExit("providers/public.py already exists; review before overwriting")
+          public.write_text('''"""Supported cross-module provider integration helpers."""\n\nfrom __future__ import annotations\n\nimport ipaddress\nimport re\nfrom typing import Any\n\n_DNS_PROVIDERS = {"pihole", "adguard-home"}\n_HOSTNAME_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")\n\n\ndef upsert_dns_record(provider_id: str, hostname: str, address: str) -> dict[str, Any]:\n    """Create or update one A-record through a controlled DNS provider capability."""\n    if provider_id not in _DNS_PROVIDERS:\n        raise ValueError("unsupported DNS provider")\n    hostname = hostname.rstrip(".").lower()\n    if not _HOSTNAME_RE.fullmatch(hostname):\n        raise ValueError("invalid DNS hostname")\n    parsed = ipaddress.ip_address(address)\n    if parsed.version != 4 or parsed.is_multicast or parsed.is_unspecified:\n        raise ValueError("a usable IPv4 address is required")\n    from . import get_provider\n\n    provider = get_provider(provider_id)\n    operation = getattr(provider, "upsert_dns_record", None)\n    if not callable(operation):\n        raise RuntimeError("DNS provider does not support managed record updates")\n    result = operation(hostname, str(parsed))\n    if not isinstance(result, dict):\n        raise RuntimeError("DNS provider returned an invalid record update result")\n    return result\n\n\n__all__ = ["upsert_dns_record"]\n''', encoding="utf-8")
+      - name: Commit hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/package_center/router.py backend/app/modules/dhcp/manifest.yaml backend/app/modules/dhcp/service.py backend/app/modules/providers/dns.py backend/app/modules/providers/public.py
+          git commit -m "feat: harden DHCP lifecycle transactions"
+          git push origin HEAD:feature/dhcp-manager
