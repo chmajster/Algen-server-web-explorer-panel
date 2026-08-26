@@ -4,7 +4,6 @@ import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 
 const manifest: FrontendModuleManifest = {
   id: "proxmox",
-  moduleId: "proxmox-manager",
   labelKey: "Proxmox Manager",
   icon: <Boxes />,
   category: "infrastructure",
