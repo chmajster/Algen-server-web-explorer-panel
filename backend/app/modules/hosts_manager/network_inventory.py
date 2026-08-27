@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .public import registry
+from .service import registry
 
 
 def _variables(raw: Any) -> dict[str, Any]:
