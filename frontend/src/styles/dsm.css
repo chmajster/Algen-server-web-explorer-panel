@@ -1187,10 +1187,10 @@ body,
 .dcst-header-identity { min-width: 0; gap: 0.75rem; }
 .dcst-title-icon { width: 2.625rem; height: 2.625rem; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: var(--radius-panel); color: var(--accent); background: var(--surface-elevated); box-shadow: var(--shadow-control); }
 .dcst-title-icon svg { width: 1.35rem; height: 1.35rem; }
-.dcst-app .dcst-header h2 { margin: 0.125rem 0 0.2rem; font-size: clamp(1rem, 1.45vw, 1.25rem); line-height: 1.15; }
-.dcst-app .dcst-header h2 small { margin-left: 0.35rem; color: var(--text-secondary); font-size: 0.72em; font-weight: 600; }
+.dcst-app .dcst-header h2 { margin: 0.125rem 0 0.2rem; font-size: clamp(var(--font-size-base), 1.45vw, var(--font-size-xl)); line-height: 1.15; }
+.dcst-app .dcst-header h2 small { margin-left: 0.35rem; color: var(--text-secondary); font-size: var(--font-size-xs); font-weight: 600; }
 .dcst-app .dcst-header p, .dcst-section-heading p { margin: 0; color: var(--text-secondary); font-size: var(--font-size-sm); }
-.dcst-eyebrow { display: block; color: var(--text-muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.075em; line-height: 1.2; text-transform: uppercase; }
+.dcst-eyebrow { display: block; color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 700; letter-spacing: 0.075em; line-height: 1.2; text-transform: uppercase; }
 .dcst-header-side { min-width: max-content; justify-content: flex-end; gap: 0.75rem; }
 .dcst-runtime-status { gap: 0.5rem; padding-right: 0.75rem; border-right: 1px solid var(--border-subtle); }
 .dcst-runtime-status > div { display: grid; gap: 0.1rem; }
@@ -1203,7 +1203,7 @@ body,
 .dcst-app .dcst-tabs button { min-height: 2.5rem; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 0.45rem; padding: 0 0.75rem; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--text-secondary); background: transparent; box-shadow: none; font-size: var(--font-size-sm); white-space: nowrap; }
 .dcst-app .dcst-tabs button:hover { color: var(--text-primary); background: var(--surface-secondary); }
 .dcst-app .dcst-tabs button.active { border-bottom-color: var(--accent); color: var(--accent); background: transparent; }
-.dcst-tab-count, .dcst-count-pill { min-width: 1.4rem; min-height: 1.25rem; display: inline-grid; place-items: center; padding: 0 0.38rem; border: 1px solid var(--border-subtle); border-radius: 999px; color: var(--text-secondary); background: var(--surface-secondary); font-size: 0.68rem; font-variant-numeric: tabular-nums; }
+.dcst-tab-count, .dcst-count-pill { min-width: 1.4rem; min-height: 1.25rem; display: inline-grid; place-items: center; padding: 0 0.38rem; border: 1px solid var(--border-subtle); border-radius: 999px; color: var(--text-secondary); background: var(--surface-secondary); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; }
 .dcst-app .dcst-tabs button.active .dcst-tab-count { border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle)); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-secondary)); }
 .dcst-overview, .dcst-section { min-width: 0; display: grid; align-content: start; gap: var(--dcst-gap); padding: var(--dcst-gap); }
 .dcst-metric-grid { display: grid; grid-template-columns: repeat(7, minmax(7.5rem, 1fr)); gap: 0.5rem; }
@@ -1218,7 +1218,7 @@ body,
 .dcst-metric-icon svg { width: 1rem; height: 1rem; }
 .dcst-metric-card > div { min-width: 0; display: grid; gap: 0.1rem; }
 .dcst-metric-card small { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
-.dcst-metric-card strong { font-size: 1.15rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.dcst-metric-card strong { font-size: var(--font-size-lg); line-height: 1; font-variant-numeric: tabular-nums; }
 .dcst-overview-layout { min-width: 0; display: grid; grid-template-columns: minmax(15rem, 0.32fr) minmax(0, 1fr); gap: var(--dcst-gap); }
 .dcst-app .dcst-panel, .dcst-app .dcst-editor-card { min-width: 0; overflow: hidden; padding: 0; }
 .dcst-panel > header, .dcst-editor-card > header { gap: 0.55rem; min-height: 2.75rem; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border-subtle); background: var(--surface-secondary); }
@@ -1227,7 +1227,7 @@ body,
 .dcst-panel > header small, .dcst-editor-card > header small { color: var(--text-muted); font-weight: 400; }
 .dcst-posture-card { align-content: start; padding-bottom: 0.7rem !important; }
 .dcst-posture-score { display: flex; align-items: baseline; gap: 0.4rem; padding: 0.9rem 0.8rem 0.35rem; }
-.dcst-posture-score strong { font-size: 1.75rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.dcst-posture-score strong { font-size: var(--font-size-2xl); line-height: 1; font-variant-numeric: tabular-nums; }
 .dcst-posture-score span { color: var(--text-secondary); font-size: var(--font-size-sm); }
 .dcst-progress { height: 0.4rem; margin: 0 0.8rem 0.75rem; overflow: hidden; border-radius: 999px; background: var(--surface-secondary); }
 .dcst-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--success); transition: width 160ms ease; }
@@ -1241,7 +1241,7 @@ body,
 .dcst-inline-empty { padding: 1.25rem; color: var(--text-muted); text-align: center; }
 .dcst-section-heading { min-width: 0; justify-content: space-between; gap: 1rem; padding: 0.1rem 0.15rem; }
 .dcst-section-heading > div { min-width: 0; }
-.dcst-section-heading h3 { margin: 0.1rem 0 0.2rem; font-size: 1rem; }
+.dcst-section-heading h3 { margin: 0.1rem 0 0.2rem; font-size: var(--font-size-base); }
 .dcst-count-pill { min-width: 2rem; min-height: 1.55rem; font-size: var(--font-size-sm); }
 .dcst-app .dcst-filter-bar { min-height: 2.75rem; gap: 0.45rem; padding: 0.4rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--surface-elevated); }
 .dcst-filter-bar .search-box { min-width: min(20rem, 100%); flex: 1 1 18rem; }
