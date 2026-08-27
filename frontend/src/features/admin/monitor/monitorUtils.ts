@@ -83,7 +83,8 @@ export function isAggregateNetworkInterface(network: NetworkMetric): boolean {
 export function summarizeNetwork(networks: NetworkMetric[]): NetworkSummary {
   const active = networks.filter((network) => network.state === "up");
   const preferred = active.filter(isAggregateNetworkInterface);
-  const interfaces = preferred.length > 0 ? preferred : active;
+  const nonLoopback = active.filter((network) => network.name !== "lo");
+  const interfaces = preferred.length > 0 ? preferred : nonLoopback.length > 0 ? nonLoopback : active;
 
   return interfaces.reduce<NetworkSummary>((summary, network) => ({
     interfaces,
