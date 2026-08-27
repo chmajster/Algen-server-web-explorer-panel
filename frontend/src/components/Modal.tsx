@@ -6,6 +6,7 @@ import { minimizedDialogOffset, releaseDialogMinimizedSlot, reserveDialogMinimiz
 
 const FOCUSABLE = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])";
 const visibleDialogOrder: symbol[] = [];
+let dialogZIndexCounter = 3500;
 const DIALOG_MARGIN = 8;
 const DIALOG_MIN_WIDTH = 320;
 const DIALOG_MIN_HEIGHT = 180;
@@ -34,6 +35,11 @@ function deactivateDialog(token: symbol) {
 
 function isActiveDialog(token: symbol) {
   return visibleDialogOrder[visibleDialogOrder.length - 1] === token;
+}
+
+function nextDialogZIndex() {
+  dialogZIndexCounter += 1;
+  return dialogZIndexCounter;
 }
 
 function viewportSize() {
@@ -92,6 +98,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
 }) {
   const titleId = useId();
   const [dialogToken] = useState(() => Symbol("dialog"));
+  const [layerZIndex, setLayerZIndex] = useState(() => nextDialogZIndex());
   const panel = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(typeof document === "undefined" ? null : document.activeElement as HTMLElement | null);
   const onCloseRef = useRef(onClose);
@@ -208,6 +215,12 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
     };
   }, []);
 
+  function focusDialog() {
+    const wasActive = isActiveDialog(dialogToken);
+    activateDialog(dialogToken);
+    if (!wasActive) setLayerZIndex(nextDialogZIndex());
+  }
+
   function minimize() {
     if (minimizedSlotRef.current !== null) return;
     gesture.current = null;
@@ -219,13 +232,14 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   function restore() {
     releaseDialogMinimizedSlot(minimizedSlotRef.current);
     minimizedSlotRef.current = null;
+    focusDialog();
     setMinimizedSlot(null);
   }
 
   function startMove(event: React.PointerEvent<HTMLElement>) {
     if (mobileFullscreen || maximized || (event.target as HTMLElement).closest("button")) return;
     event.preventDefault();
-    activateDialog(dialogToken);
+    focusDialog();
     const current = rect || (panel.current ? measuredDialogRect(panel.current) : null);
     if (!current) return;
     setRect(current);
@@ -236,7 +250,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
     if (mobileFullscreen || maximized) return;
     event.preventDefault();
     event.stopPropagation();
-    activateDialog(dialogToken);
+    focusDialog();
     const current = rect || (panel.current ? measuredDialogRect(panel.current) : null);
     if (!current) return;
     setRect(current);
@@ -274,7 +288,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
       className="dialog-window-layer"
       role="presentation"
       hidden={minimized}
-      style={{ position: "fixed", zIndex: 3500, inset: 0, pointerEvents: "none" }}
+      style={{ position: "fixed", zIndex: layerZIndex, inset: 0, pointerEvents: "none" }}
     >
       <div
         ref={panel}
@@ -283,8 +297,8 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
         aria-modal="false"
         aria-labelledby={titleId}
         tabIndex={-1}
-        onPointerDown={(event) => { activateDialog(dialogToken); event.stopPropagation(); }}
-        onFocusCapture={() => activateDialog(dialogToken)}
+        onPointerDown={(event) => { focusDialog(); event.stopPropagation(); }}
+        onFocusCapture={focusDialog}
         style={positionedStyle}
       >
         <header
