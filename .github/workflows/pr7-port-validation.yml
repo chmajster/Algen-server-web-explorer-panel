@@ -1,0 +1,114 @@
+name: PR7 consistency port validation
+
+on:
+  push:
+    branches:
+      - fix/pr7-ui-consistency-port
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/pr7-ui-consistency-port
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Prepare patch release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          version_files = [
+              "pyproject.toml",
+              "backend/app/__init__.py",
+              "backend/app/bootstrap.py",
+              "backend/app/settings.py",
+              "backend/tests/test_host_info.py",
+              "frontend/package.json",
+              "frontend/src/features/settings/SettingsApp.tsx",
+          ]
+          for name in version_files:
+              path = Path(name)
+              text = path.read_text()
+              if "0.1.17" not in text:
+                  raise SystemExit(f"Expected 0.1.17 in {name}")
+              path.write_text(text.replace("0.1.17", "0.1.18"))
+
+          changelog = Path("CHANGELOG.md")
+          text = changelog.read_text()
+          marker = "## Unreleased\n"
+          entry = "- Finished the application UI consistency layer across resource monitoring, settings, activity and transfer centers, network resources, Docker details, and Hosts Manager controls, with container-responsive regression coverage.\n"
+          if marker not in text:
+              raise SystemExit("CHANGELOG.md is missing the Unreleased section")
+          if entry not in text:
+              text = text.replace(marker, marker + entry, 1)
+          changelog.write_text(text)
+          PY
+          git diff --check
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run consistency regression tests
+        working-directory: frontend
+        run: npm test -- src/styles/ui-consistency.test.js src/styles/ui-feature-consistency.test.js src/styles/ui-specialized-consistency.test.js src/styles/ui-review-fixes.test.js
+
+      - name: Run frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Run frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run full frontend test suite
+        working-directory: frontend
+        run: npm test
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Verify deployed frontend contract
+        run: python scripts/verify_frontend_build.py frontend/dist
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in pyproject.toml backend/app/__init__.py backend/app/bootstrap.py backend/app/settings.py backend/tests/test_host_info.py frontend/package.json frontend/src/features/settings/SettingsApp.tsx; do
+            grep -q '0.1.18' "$file"
+            if grep -q '0.1.17' "$file"; then
+              echo "Old version remains in $file"
+              exit 1
+            fi
+          done
+          grep -q 'Finished the application UI consistency layer' CHANGELOG.md
+
+      - name: Commit validated release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md pyproject.toml backend/app/__init__.py backend/app/bootstrap.py backend/app/settings.py backend/tests/test_host_info.py frontend/package.json frontend/src/features/settings/SettingsApp.tsx
+          git diff --cached --check
+          git commit -m "chore: bump version to 0.1.18"
+          git push origin HEAD:fix/pr7-ui-consistency-port
