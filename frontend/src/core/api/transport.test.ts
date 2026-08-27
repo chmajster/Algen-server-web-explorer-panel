@@ -17,6 +17,7 @@ describe("shared API transport", () => {
       stage: "configuration",
       endpoint: "https://10.0.0.10:8006",
       reason: "PermissionError",
+      request_id: "abc123def456",
       hint: "Check the WebNAS backend logs.",
       upstream_status: 500,
     } }), 500, "Internal Server Error");
@@ -24,6 +25,7 @@ describe("shared API transport", () => {
     expect(error).toMatchObject({ status: 500, code: "PROXMOX_INTERNAL_ERROR" });
     expect(error.message).toContain("HTTP 500");
     expect(error.message).toContain("Kod: PROXMOX_INTERNAL_ERROR");
+    expect(error.message).toContain("ID błędu: abc123def456");
     expect(error.message).toContain("Etap: CONFIGURATION");
     expect(error.message).toContain("Endpoint: https://10.0.0.10:8006");
     expect(error.message).toContain("Przyczyna: PermissionError");
