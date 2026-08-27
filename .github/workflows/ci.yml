@@ -24,10 +24,7 @@ env:
 jobs:
   backend-quality:
     name: Backend quality
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
@@ -74,10 +71,7 @@ jobs:
 
   backend-tests:
     name: Backend tests / Python ${{ matrix.python-version }}
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -126,10 +120,7 @@ jobs:
 
   frontend:
     name: Frontend tests and build
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     defaults:
@@ -195,10 +186,7 @@ jobs:
 
   shell-syntax:
     name: Shell script syntax
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -228,10 +216,7 @@ jobs:
       - backend-tests
       - frontend
       - shell-syntax
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
