@@ -54,4 +54,27 @@ describe("desktop dialog windowing", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
     Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
   });
+
+  it("brings the clicked dialog in front of other modal windows", () => {
+    render(<>
+      <Modal title="Edit Lab" onClose={vi.fn()}><p>Edit form</p></Modal>
+      <Modal title="Lab Settings" onClose={vi.fn()}><p>Settings form</p></Modal>
+    </>);
+
+    const editLab = screen.getByRole("dialog", { name: "Edit Lab" });
+    const labSettings = screen.getByRole("dialog", { name: "Lab Settings" });
+    const editLayer = editLab.closest<HTMLElement>(".dialog-window-layer");
+    const settingsLayer = labSettings.closest<HTMLElement>(".dialog-window-layer");
+
+    expect(editLayer).not.toBeNull();
+    expect(settingsLayer).not.toBeNull();
+    expect(Number(settingsLayer?.style.zIndex)).toBeGreaterThan(Number(editLayer?.style.zIndex));
+
+    fireEvent.pointerDown(editLab, { clientX: 200, clientY: 160 });
+    expect(Number(editLayer?.style.zIndex)).toBeGreaterThan(Number(settingsLayer?.style.zIndex));
+
+    fireEvent.pointerDown(labSettings, { clientX: 240, clientY: 190 });
+    expect(Number(settingsLayer?.style.zIndex)).toBeGreaterThan(Number(editLayer?.style.zIndex));
+  });
+
 });
