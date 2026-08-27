@@ -54,12 +54,14 @@ function enrichErrorMessage(message: string, status: number, code?: string, deta
   const endpoint = diagnosticValue(details, "endpoint");
   const reason = diagnosticValue(details, "reason");
   const hint = diagnosticValue(details, "hint");
+  const requestId = diagnosticValue(details, "request_id");
   const upstreamStatus = diagnosticValue(details, "upstream_status");
-  const hasDiagnostics = Boolean(stage || endpoint || reason || hint || upstreamStatus);
+  const hasDiagnostics = Boolean(stage || endpoint || reason || hint || requestId || upstreamStatus);
   if (!hasDiagnostics && status < 500) return message;
 
   const parts = [`HTTP ${status}`];
   if (code) parts.push(`Kod: ${code}`);
+  if (requestId) parts.push(`ID błędu: ${requestId}`);
   if (stage) parts.push(`Etap: ${stage.toUpperCase()}`);
   if (endpoint) parts.push(`Endpoint: ${endpoint}`);
   if (reason) parts.push(`Przyczyna: ${reason}`);
