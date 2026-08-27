@@ -135,7 +135,7 @@ class ProxmoxFirewallProvider:
         else:
             endpoint_pairs = [(service["source_value"], service["destination_value"])]
         rules = []
-        port_objects = [ports[pid] for pid in service.get("port_ids", []) if pid in ports] or [None]
+        port_objects: list[dict[str, Any] | None] = [ports[pid] for pid in service.get("port_ids", []) if pid in ports] or [None]
         for source_value, destination_value in endpoint_pairs:
             source_type = "tag" if service["source_type"] == "apmid" else service["source_type"]
             destination_type = "tag" if service["destination_type"] == "apmid" else service["destination_type"]
