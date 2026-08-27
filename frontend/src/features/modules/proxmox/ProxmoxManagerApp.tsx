@@ -336,7 +336,7 @@ function ConnectionDialog({ value, credentials, canManageCredentials, t, toast, 
       return;
     }
 
-    let endpoint = "";
+    let endpoint: string;
     try {
       endpoint = buildEndpoint(form.endpoint, endpointPort);
     } catch (error) {
