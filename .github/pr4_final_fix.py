@@ -35,7 +35,7 @@ export function Modal('''
 replace_once(
     modal,
     '  const titleId = useId();\n',
-    '  const titleId = useId();\n  const dialogToken = useRef(Symbol("dialog")).current;\n'
+    '  const titleId = useId();\n  const [dialogToken] = useState(() => Symbol("dialog"));\n'
 )
 replace_once(
     modal,
