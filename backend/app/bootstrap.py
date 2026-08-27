@@ -18,6 +18,7 @@ from .core.errors import DomainError, domain_error_handler, success_payload
 from .platform_api import frontend_cache_policy
 from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
 from .modules.os_repositories.scheduler import start_scheduler as start_os_repositories_scheduler
+from .modules.proxmox_manager.scheduler import start_scheduler as start_proxmox_scheduler
 from .network_mounts import active_mount_jobs
 from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
@@ -50,6 +51,7 @@ def _start_schedulers() -> None:
     start_auto_update_scheduler()
     start_ansible_scheduler()
     start_os_repositories_scheduler()
+    start_proxmox_scheduler()
 
 
 @asynccontextmanager
