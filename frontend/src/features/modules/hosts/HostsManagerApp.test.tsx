@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError, type HostsManagerSettings } from "../../../api";
 import { HostsManagerApp } from "./HostsManagerApp";
@@ -125,7 +125,8 @@ describe("HostsManagerApp", () => {
     fireEvent.click(screen.getByRole("button", { name: /module.section.credentials/ }));
     fireEvent.click(await screen.findByRole("button", { name: "hosts.credentials.add" }));
 
-    const moduleSelect = await screen.findByRole("button", { name: "hosts.credentials.sharedWith" });
+    const credentialDialog = screen.getByRole("dialog");
+    const moduleSelect = await within(credentialDialog).findByRole("button", { name: "hosts.credentials.sharedWith" });
     await waitFor(() => expect(moduleSelect).toHaveTextContent("hosts.credentials.allModules"));
     fireEvent.click(moduleSelect);
 
