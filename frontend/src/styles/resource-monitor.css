@@ -605,29 +605,29 @@
   background: var(--danger);
 }
 
-.monitor-table-wrap {
+.monitor-app .monitor-table-wrap {
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-medium);
 }
 
-.monitor-table-wrap table {
+.monitor-app .monitor-table-wrap table {
   width: 100%;
   min-width: 42.5rem;
   border-collapse: collapse;
   font-size: var(--font-size-xs);
 }
 
-.monitor-table-wrap th,
-.monitor-table-wrap td {
+.monitor-app .monitor-table-wrap th,
+.monitor-app .monitor-table-wrap td {
   padding: var(--spacing-xs) var(--spacing-sm);
   border-bottom: 1px solid var(--border-subtle);
   text-align: left;
   white-space: nowrap;
 }
 
-.monitor-table-wrap th {
+.monitor-app .monitor-table-wrap th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -636,11 +636,11 @@
   font-weight: 600;
 }
 
-.monitor-table-wrap tbody tr:last-child td {
+.monitor-app .monitor-table-wrap tbody tr:last-child td {
   border-bottom: 0;
 }
 
-.monitor-table-wrap tbody tr:hover td {
+.monitor-app .monitor-table-wrap tbody tr:hover td {
   background: var(--surface-elevated);
 }
 
