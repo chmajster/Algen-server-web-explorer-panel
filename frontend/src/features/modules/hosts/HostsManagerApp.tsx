@@ -2558,7 +2558,7 @@ function Credentials({
     redfish: ["hosts-manager"], ipmi: ["hosts-manager"], wol: ["hosts-manager"],
     username_password: ["hosts-manager"], api_token: ["hosts-manager"], generic_secret: ["hosts-manager"],
   };
-  const profiles: Record<CredentialType, CredentialFieldProfile> = {
+  const profiles: Partial<Record<CredentialType, CredentialFieldProfile>> = {
     username_password: {
       username: { label: t("hosts.credentials.field.login"), placeholder: "user@example", required: true },
       secret: { label: t("hosts.credentials.field.password"), required: true },
@@ -2652,7 +2652,7 @@ function Credentials({
   }
 
   async function remove(item: HostsManagerCredential) {
-    if (!window.confirm(t("hosts.credentials.deleteConfirm"))) return;
+    if (!(await confirmDialog(t("hosts.credentials.deleteConfirm"), t))) return;
     try {
       await api.deleteHostsManagerCredential(item.id);
       await refresh();
@@ -2673,7 +2673,7 @@ function Credentials({
     { id: "lastUsed", label: t("hosts.credentials.lastUsed"), sortValue: (item) => item.last_used_at || 0, cell: (item) => item.last_used_at ? new Date(item.last_used_at * 1000).toLocaleString() : t("common.none") },
     { id: "actions", label: t("column.actions"), cell: (item) => canManage ? <div className="hosts-table-actions"><button type="button" onClick={() => showEditor(item)}>{t("action.edit")}</button><button className="button-danger" type="button" onClick={() => void remove(item)}>{t("action.delete")}</button></div> : null },
   ];
-  const profile = profiles[type];
+  const profile = profiles[type] || {};
 
   return <section className="ansible-panel"><header><div><h3>{t("hosts.credentials.title")}</h3><p>{t("hosts.credentials.hint")}</p></div>{canManage && <button onClick={() => showEditor()}><Plus />{t("hosts.credentials.add")}</button>}</header>
     <HostsDataTable items={items} columns={columns} rowKey={(item) => item.id} empty={t("hosts.credentials.empty")} />
