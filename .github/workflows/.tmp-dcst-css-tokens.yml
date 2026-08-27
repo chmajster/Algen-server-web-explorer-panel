@@ -1,0 +1,46 @@
+name: Temporary DCST CSS token fix
+
+on:
+  push:
+    branches:
+      - feat/dcst-ui-refresh
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/dcst-ui-refresh
+          fetch-depth: 0
+      - name: Replace literal DCST font sizes with design tokens
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('frontend/src/styles/dsm.css')
+          text = path.read_text()
+          replacements = {
+              'font-size: clamp(1rem, 1.45vw, 1.25rem)': 'font-size: clamp(var(--font-size-base), 1.45vw, var(--font-size-xl))',
+              'font-size: 0.72em': 'font-size: var(--font-size-xs)',
+              'font-size: 0.68rem': 'font-size: var(--font-size-xs)',
+              'font-size: 1.15rem': 'font-size: var(--font-size-lg)',
+              'font-size: 1.75rem': 'font-size: var(--font-size-2xl)',
+              'font-size: 1rem': 'font-size: var(--font-size-base)',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'missing expected DCST style: {old}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend/src/styles/dsm.css
+          git commit -m "fix: use design tokens for DCST typography"
+          git push origin HEAD:feat/dcst-ui-refresh
