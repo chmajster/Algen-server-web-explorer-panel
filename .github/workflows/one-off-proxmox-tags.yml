@@ -1,0 +1,266 @@
+name: One-off Proxmox VM tag sync
+
+on:
+  push:
+    branches:
+      - feature/proxmox-vm-tags
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: "github.event.head_commit.message == 'ci: apply Proxmox VM tag sync'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Apply Proxmox metadata tag feature
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str, count: int = 1) -> None:
+              target = Path(path)
+              text = target.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected fragment not found in {path}: {old[:120]!r}")
+              updated = text.replace(old, new, count)
+              target.write_text(updated)
+
+          service = "backend/app/modules/proxmox_manager/service.py"
+          replace(
+              service,
+              '''    def post(self, path: str, data: dict[str, Any] | None = None) -> Any:\n        return self.request("POST", path, data)\n''',
+              '''    def post(self, path: str, data: dict[str, Any] | None = None) -> Any:\n        return self.request("POST", path, data)\n\n    def put(self, path: str, data: dict[str, Any] | None = None) -> Any:\n        return self.request("PUT", path, data)\n''',
+          )
+          replace(
+              service,
+              '''                    default_ssh_user TEXT NOT NULL DEFAULT 'algen-ansible',\n                    environment TEXT NOT NULL DEFAULT '',\n                    location TEXT NOT NULL DEFAULT '',\n                    tags_json TEXT NOT NULL DEFAULT '["proxmox"]',\n                    sync_lxc INTEGER NOT NULL DEFAULT 1,\n''',
+              '''                    default_ssh_user TEXT NOT NULL DEFAULT 'algen-ansible',\n                    project TEXT NOT NULL DEFAULT '',\n                    environment TEXT NOT NULL DEFAULT '',\n                    location TEXT NOT NULL DEFAULT '',\n                    tags_json TEXT NOT NULL DEFAULT '["proxmox"]',\n                    sync_proxmox_tags INTEGER NOT NULL DEFAULT 1,\n                    sync_lxc INTEGER NOT NULL DEFAULT 1,\n''',
+          )
+          replace(
+              service,
+              '''                CREATE INDEX IF NOT EXISTS idx_proxmox_connections_active ON connections(active,name);\n                """\n            )\n''',
+              '''                CREATE INDEX IF NOT EXISTS idx_proxmox_connections_active ON connections(active,name);\n                """\n            )\n            columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(connections)").fetchall()}\n            if "project" not in columns:\n                connection.execute("ALTER TABLE connections ADD COLUMN project TEXT NOT NULL DEFAULT ''")\n            if "sync_proxmox_tags" not in columns:\n                connection.execute("ALTER TABLE connections ADD COLUMN sync_proxmox_tags INTEGER NOT NULL DEFAULT 1")\n''',
+          )
+          replace(
+              service,
+              '''        for key in ("verify_tls", "sync_lxc", "sync_templates", "active", "auto_sync"):\n''',
+              '''        for key in ("verify_tls", "sync_proxmox_tags", "sync_lxc", "sync_templates", "active", "auto_sync"):\n''',
+          )
+          replace(
+              service,
+              '''                    id,name,endpoint,credential_id,verify_tls,ca_certificate,default_ssh_user,\n                    environment,location,tags_json,sync_lxc,sync_templates,active,auto_sync,\n                    created_at,updated_at,created_by,updated_by\n                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)\n''',
+              '''                    id,name,endpoint,credential_id,verify_tls,ca_certificate,default_ssh_user,\n                    project,environment,location,tags_json,sync_proxmox_tags,sync_lxc,sync_templates,active,auto_sync,\n                    created_at,updated_at,created_by,updated_by\n                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)\n''',
+          )
+          replace(
+              service,
+              '''                    verify_tls=excluded.verify_tls,ca_certificate=excluded.ca_certificate,\n                    default_ssh_user=excluded.default_ssh_user,environment=excluded.environment,\n                    location=excluded.location,tags_json=excluded.tags_json,sync_lxc=excluded.sync_lxc,\n                    sync_templates=excluded.sync_templates,active=excluded.active,auto_sync=excluded.auto_sync,\n''',
+              '''                    verify_tls=excluded.verify_tls,ca_certificate=excluded.ca_certificate,\n                    default_ssh_user=excluded.default_ssh_user,project=excluded.project,environment=excluded.environment,\n                    location=excluded.location,tags_json=excluded.tags_json,sync_proxmox_tags=excluded.sync_proxmox_tags,\n                    sync_lxc=excluded.sync_lxc,sync_templates=excluded.sync_templates,active=excluded.active,\n                    auto_sync=excluded.auto_sync,\n''',
+          )
+          replace(
+              service,
+              '''                    value["default_ssh_user"],\n                    value["environment"],\n                    value["location"],\n                    json.dumps(value["tags"]),\n                    int(value["sync_lxc"]),\n''',
+              '''                    value["default_ssh_user"],\n                    value["project"],\n                    value["environment"],\n                    value["location"],\n                    json.dumps(value["tags"]),\n                    int(value["sync_proxmox_tags"]),\n                    int(value["sync_lxc"]),\n''',
+          )
+          replace(
+              service,
+              '''    def _resources(self, connection: dict[str, Any], client: ProxmoxApiClient | None = None) -> list[dict[str, Any]]:\n''',
+              '''    @staticmethod\n    def _parse_proxmox_tags(value: Any) -> list[str]:\n        if isinstance(value, list):\n            items = [str(item).strip() for item in value]\n        else:\n            items = [item.strip() for item in str(value or "").split(";")]\n        return list(dict.fromkeys(item for item in items if item))\n\n    @staticmethod\n    def _tag_slug(value: str, prefix: str = "") -> str:\n        normalized = re.sub(r"[^a-z0-9_.-]+", "-", value.casefold()).strip("._-")\n        normalized = re.sub(r"-{2,}", "-", normalized)\n        if not normalized:\n            return ""\n        if prefix:\n            available = max(1, 40 - len(prefix) - 1)\n            normalized = normalized[:available].rstrip("._-")\n            return f"{prefix}-{normalized}" if normalized else ""\n        return normalized[:40].rstrip("._-")\n\n    @classmethod\n    def _managed_proxmox_tags(\n        cls,\n        connection: dict[str, Any],\n        resource: dict[str, Any],\n        host: dict[str, Any],\n    ) -> list[str]:\n        variables = dict(host.get("variables") or {})\n        tags = ["algen"]\n        metadata = (\n            ("project", str(variables.get("algen_project") or connection.get("project") or "")),\n            ("env", str(host.get("environment") or "")),\n            ("location", str(host.get("location") or "")),\n        )\n        for prefix, value in metadata:\n            if tag := cls._tag_slug(value, prefix):\n                tags.append(tag)\n        tags.append("type-vm" if resource.get("type") == "qemu" else "type-lxc")\n        for value in host.get("tags") or []:\n            if tag := cls._tag_slug(str(value)):\n                tags.append(tag)\n        return list(dict.fromkeys(tags))[:50]\n\n    def _sync_resource_tags(\n        self,\n        client: ProxmoxApiClient,\n        connection: dict[str, Any],\n        resource: dict[str, Any],\n        host: dict[str, Any],\n        existing: dict[str, Any] | None,\n    ) -> tuple[list[str], list[str], bool]:\n        node = urllib.parse.quote(str(resource["node"]), safe="")\n        path = f"nodes/{node}/{resource['type']}/{int(resource['vmid'])}/config"\n        config = client.get(path)\n        if not isinstance(config, dict):\n            raise ProxmoxApiError("Proxmox VM configuration response is invalid")\n        current = self._parse_proxmox_tags(config.get("tags"))\n        previous_variables = dict(existing.get("variables") or {}) if existing else {}\n        previous_managed = set(self._parse_proxmox_tags(previous_variables.get("proxmox_managed_tags")))\n        desired = self._managed_proxmox_tags(connection, resource, host)\n        unmanaged = [tag for tag in current if tag not in previous_managed]\n        final = list(dict.fromkeys([*unmanaged, *desired]))\n        changed = set(final) != set(current)\n        if changed:\n            client.put(path, {"tags": ";".join(final)})\n        return desired, final, changed\n\n    def _resources(self, connection: dict[str, Any], client: ProxmoxApiClient | None = None) -> list[dict[str, Any]]:\n''',
+          )
+          replace(
+              service,
+              '''                    "maxdisk": int(value.get("maxdisk") or 0),\n''',
+              '''                    "maxdisk": int(value.get("maxdisk") or 0),\n                    "tags": self._parse_proxmox_tags(value.get("tags")),\n''',
+          )
+          replace(
+              service,
+              '''        variables.update(ProxmoxManagerService._provider_variables(connection["id"], resource, present=present))\n\n        if existing:\n''',
+              '''        variables.update(ProxmoxManagerService._provider_variables(connection["id"], resource, present=present))\n        project = str(connection.get("project") or "")\n        if project:\n            variables["algen_project"] = project\n        else:\n            variables.pop("algen_project", None)\n\n        if existing:\n''',
+          )
+          replace(
+              service,
+              '''        created = updated = disabled = 0\n        skipped: list[dict[str, Any]] = []\n        synchronized: list[dict[str, Any]] = []\n''',
+              '''        created = updated = disabled = tagged = 0\n        skipped: list[dict[str, Any]] = []\n        tag_errors: list[dict[str, Any]] = []\n        synchronized: list[dict[str, Any]] = []\n''',
+          )
+          replace(
+              service,
+              '''            payload = self._host_payload(existing, connection, resource, address, name=name, present=True)\n            host = host_registry().save_host(payload, actor, str(existing["id"]) if existing else None, source=PROVIDER)\n''',
+              '''            payload = self._host_payload(existing, connection, resource, address, name=name, present=True)\n            if connection.get("sync_proxmox_tags", True):\n                try:\n                    managed_tags, proxmox_tags, changed = self._sync_resource_tags(\n                        client,\n                        connection,\n                        resource,\n                        payload.model_dump(mode="json"),\n                        existing,\n                    )\n                    payload.variables["proxmox_managed_tags"] = managed_tags\n                    payload.variables["proxmox_tags"] = proxmox_tags\n                    payload.variables.pop("proxmox_tag_sync_error", None)\n                    resource["tags"] = proxmox_tags\n                    if changed:\n                        tagged += 1\n                except ProxmoxApiError as error:\n                    payload.variables["proxmox_tag_sync_error"] = str(error)[:500]\n                    tag_errors.append({"vmid": resource["vmid"], "name": resource["name"], "error": str(error)})\n            host = host_registry().save_host(payload, actor, str(existing["id"]) if existing else None, source=PROVIDER)\n''',
+          )
+          replace(
+              service,
+              '''                    "status": resource["status"],\n                }\n''',
+              '''                    "status": resource["status"],\n                    "tags": list(resource.get("tags") or []),\n                }\n''',
+              1,
+          )
+          replace(
+              service,
+              '''        self._set_sync_status(connection_id, "completed")\n''',
+              '''        sync_status = "completed_with_warnings" if tag_errors else "completed"\n        sync_error = f"{len(tag_errors)} Proxmox VM tag update(s) failed" if tag_errors else ""\n        self._set_sync_status(connection_id, sync_status, sync_error)\n''',
+          )
+          replace(
+              service,
+              '''                "disabled": disabled,\n                "skipped": len(skipped),\n''',
+              '''                "disabled": disabled,\n                "tagged": tagged,\n                "tag_errors": len(tag_errors),\n                "skipped": len(skipped),\n''',
+          )
+          replace(
+              service,
+              '''            "disabled": disabled,\n            "skipped": skipped,\n            "hosts": synchronized,\n''',
+              '''            "disabled": disabled,\n            "tagged": tagged,\n            "tag_errors": tag_errors,\n            "skipped": skipped,\n            "hosts": synchronized,\n''',
+          )
+
+          app = "frontend/src/features/modules/proxmox/ProxmoxManagerApp.tsx"
+          replace(
+              app,
+              '''      toast(`Proxmox sync: ${result.created} created, ${result.updated} updated, ${result.disabled} disabled, ${result.skipped.length} skipped.`, "ok", "admin", "proxmox-manager");\n''',
+              '''      toast(`Proxmox sync: ${result.created} created, ${result.updated} updated, ${result.disabled} disabled, ${result.tagged} Proxmox tag set(s) updated, ${result.tag_errors.length} tag error(s), ${result.skipped.length} skipped.`, result.tag_errors.length ? "warning" : "ok", "admin", "proxmox-manager");\n''',
+          )
+          replace(
+              app,
+              '''<th>Status</th><th>Resources</th><th>Shared host</th><th>Actions</th>''',
+              '''<th>Status</th><th>Resources</th><th>Tags</th><th>Shared host</th><th>Actions</th>''',
+          )
+          replace(
+              app,
+              '''</small></td><td>{vm.host_id ? <><code>{vm.host_id}</code>''',
+              '''</small></td><td>{vm.tags.length ? <small>{vm.tags.join(" · ")}</small> : <span>—</span>}</td><td>{vm.host_id ? <><code>{vm.host_id}</code>''',
+          )
+          replace(
+              app,
+              '''return <tr key={item.id}><td><strong>{item.name}</strong><br /><small>{item.environment || "no environment"}</small></td>''',
+              '''return <tr key={item.id}><td><strong>{item.name}</strong><br /><small>{item.project || "no project"} · {item.environment || "no environment"}</small></td>''',
+          )
+          replace(
+              app,
+              '''default_ssh_user: value?.default_ssh_user || "algen-ansible", environment: value?.environment || "", location: value?.location || "", tags: value?.tags?.length ? value.tags : ["proxmox"], sync_lxc: value?.sync_lxc ?? true, sync_templates: value?.sync_templates ?? false, active: value?.active ?? true, auto_sync: false''',
+              '''default_ssh_user: value?.default_ssh_user || "algen-ansible", project: value?.project || "", environment: value?.environment || "", location: value?.location || "", tags: value?.tags?.length ? value.tags : ["proxmox"], sync_proxmox_tags: value?.sync_proxmox_tags ?? true, sync_lxc: value?.sync_lxc ?? true, sync_templates: value?.sync_templates ?? false, active: value?.active ?? true, auto_sync: value?.auto_sync ?? false''',
+          )
+          replace(
+              app,
+              '''</label><label className="field-label">Environment<input value={form.environment}''',
+              '''</label><label className="field-label">Project<input value={form.project} onChange={(event) => setForm({ ...form, project: event.target.value })} /><small>Used for the managed Proxmox tag project-&lt;name&gt;.</small></label><label className="field-label">Environment<input value={form.environment}''',
+          )
+          replace(
+              app,
+              '''<label className="field-label">Tags<input value={form.tags.join(",")} onChange={(event) => setForm({ ...form, tags: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /></label><label className="field-label">Custom CA certificate''',
+              '''<label className="field-label">Tags<input value={form.tags.join(",")} onChange={(event) => setForm({ ...form, tags: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /><small>Additional Host Registry tags copied to Proxmox during synchronization.</small></label><label><input type="checkbox" checked={form.sync_proxmox_tags} onChange={(event) => setForm({ ...form, sync_proxmox_tags: event.target.checked })} /> Synchronize project/environment/location/host tags to Proxmox</label><br /><label className="field-label">Custom CA certificate''',
+          )
+
+          tests = "backend/tests/test_proxmox_manager.py"
+          replace(
+              tests,
+              '''def resource(status: str = "running", *, node: str = "pve01") -> dict[str, Any]:\n''',
+              '''def resource(status: str = "running", *, node: str = "pve01", tags: str = "") -> dict[str, Any]:\n''',
+          )
+          replace(
+              tests,
+              '''        "maxdisk": 20 * 1024 * 1024 * 1024,\n    }\n''',
+              '''        "maxdisk": 20 * 1024 * 1024 * 1024,\n        "tags": tags,\n    }\n''',
+          )
+          replace(
+              tests,
+              '''        default_ssh_user="algen-ansible",\n        environment="lab",\n        location="rack-a",\n        tags=["proxmox", "lab"],\n''',
+              '''        default_ssh_user="algen-ansible",\n        project="atlas",\n        environment="lab",\n        location="rack-a",\n        tags=["proxmox", "lab"],\n        sync_proxmox_tags=False,\n''',
+          )
+          replace(
+              tests,
+              '''    assert "token" not in columns\n''',
+              '''    assert "project" in columns\n    assert "sync_proxmox_tags" in columns\n    assert "token" not in columns\n''',
+          )
+          marker = '''def test_power_action_uses_current_node_after_vm_migration(monkeypatch, tmp_path):\n'''
+          new_tests = '''def test_sync_pushes_metadata_tags_to_proxmox_and_preserves_manual_tags(monkeypatch, tmp_path):\n    registry = FakeHostRegistry()\n    patch_registry(monkeypatch, registry)\n    manager = ProxmoxManagerService(tmp_path / "proxmox.sqlite3")\n    payload = connection_input().model_copy(\n        update={\n            "project": "Atlas Project",\n            "environment": "Prod EU",\n            "location": "Rack A",\n            "tags": ["proxmox", "api"],\n            "sync_proxmox_tags": True,\n        }\n    )\n    connection = manager.save_connection(payload, "admin")\n    current = [resource(tags="manual;legacy")]\n    current_config_tags = "manual;legacy"\n    puts: list[tuple[str, dict[str, Any]]] = []\n\n    class FakeClient:\n        def get(self, path: str) -> dict[str, Any]:\n            assert path == "nodes/pve01/qemu/101/config"\n            return {"tags": current_config_tags}\n\n        def put(self, path: str, data: dict[str, Any] | None = None) -> str:\n            nonlocal current_config_tags\n            assert data is not None\n            puts.append((path, dict(data)))\n            current_config_tags = str(data["tags"])\n            return "UPID:pve01:tag-update"\n\n    client = FakeClient()\n    monkeypatch.setattr(manager, "_client", lambda _: client)\n    monkeypatch.setattr(manager, "_resources", lambda _connection, _client=None: [dict(item) for item in current])\n    monkeypatch.setattr(manager, "_resolve_address", lambda _client, _resource: "10.0.10.21")\n\n    first = manager.sync(connection["id"], "admin")\n    assert first["tagged"] == 1\n    assert first["tag_errors"] == []\n    assert len(puts) == 1\n    first_tags = set(str(puts[-1][1]["tags"]).split(";"))\n    assert {\n        "manual",\n        "legacy",\n        "algen",\n        "project-atlas-project",\n        "env-prod-eu",\n        "location-rack-a",\n        "type-vm",\n        "proxmox",\n        "api",\n    } <= first_tags\n    managed = set(registry.hosts[0]["variables"]["proxmox_managed_tags"])\n    assert "manual" not in managed\n    assert "project-atlas-project" in managed\n\n    registry.hosts[0]["environment"] = "staging"\n    registry.hosts[0]["tags"] = ["proxmox", "worker"]\n    current_config_tags += ";manual-two"\n    second = manager.sync(connection["id"], "admin")\n    assert second["tagged"] == 1\n    second_tags = set(str(puts[-1][1]["tags"]).split(";"))\n    assert "env-prod-eu" not in second_tags\n    assert "api" not in second_tags\n    assert {"manual", "legacy", "manual-two", "env-staging", "worker"} <= second_tags\n\n\ndef test_proxmox_tag_permission_failure_does_not_block_host_sync(monkeypatch, tmp_path):\n    registry = FakeHostRegistry()\n    patch_registry(monkeypatch, registry)\n    manager = ProxmoxManagerService(tmp_path / "proxmox.sqlite3")\n    payload = connection_input().model_copy(update={"sync_proxmox_tags": True})\n    connection = manager.save_connection(payload, "admin")\n    monkeypatch.setattr(manager, "_resources", lambda _connection, _client=None: [resource()])\n    monkeypatch.setattr(manager, "_resolve_address", lambda _client, _resource: "10.0.10.21")\n\n    class DeniedClient:\n        def get(self, _path: str) -> dict[str, Any]:\n            raise proxmox_module.ProxmoxApiError("Proxmox API returned HTTP 403", status=403)\n\n    monkeypatch.setattr(manager, "_client", lambda _: DeniedClient())\n    result = manager.sync(connection["id"], "admin")\n\n    assert result["created"] == 1\n    assert result["tagged"] == 0\n    assert result["tag_errors"][0]["vmid"] == 101\n    assert len(registry.hosts) == 1\n    assert registry.hosts[0]["variables"]["proxmox_tag_sync_error"]\n\n\n'''
+          replace(tests, marker, new_tests + marker)
+
+          docs = "PROXMOX_MANAGER.md"
+          replace(
+              docs,
+              '''## Ansible integration\n''',
+              '''## Proxmox metadata tags\n\nWhen `sync_proxmox_tags` is enabled for a Proxmox connection, every discovered VM/CT receives managed Proxmox tags during synchronization. The default managed set contains:\n\n- `algen`\n- `project-<project>` from the connection project\n- `env-<environment>` from the canonical Host Registry host\n- `location-<location>` from the canonical Host Registry host\n- `type-vm` or `type-lxc`\n- normalized custom Host Registry tags\n\nGenerated values are normalized to lowercase Proxmox-safe tags. Proxmox stores multiple tags as a semicolon-separated value. The module reads the current guest configuration before updating it, preserves tags that were added manually in Proxmox, and records only its own managed tag set in `proxmox_managed_tags`. On later syncs it can therefore replace stale managed metadata without deleting unrelated administrator tags.\n\nTag synchronization is best-effort. If the API token lacks permission to modify guest options or the Proxmox Datacenter tag policy rejects a tag, normal Host Registry synchronization still succeeds and the per-VM tag error is returned in the sync result. Proxmox requires suitable guest configuration permissions (normally `VM.Config.Options`), and Datacenter → Options → User Tag Access can further restrict which tags may be set.\n\n## Ansible integration\n''',
+          )
+
+          changelog = "CHANGELOG.md"
+          replace(
+              changelog,
+              '''- Added native **Proxmox Manager** with Proxmox VE API connections, shared Hosts Manager identity, centralized `proxmox_api` credentials, VM/LXC synchronization, live-node power actions, and direct reuse of the same `host_id` by Hosts Manager and Ansible Automation Controller.\n''',
+              '''- Added native **Proxmox Manager** with Proxmox VE API connections, shared Hosts Manager identity, centralized `proxmox_api` credentials, VM/LXC synchronization, live-node power actions, and direct reuse of the same `host_id` by Hosts Manager and Ansible Automation Controller.\n\n- Added managed Proxmox VM/CT metadata tags for project, environment, location, resource type and Host Registry tags, while preserving administrator-created Proxmox tags and reporting permission/tag-policy failures without blocking host synchronization.\n''',
+          )
+
+          version_files = [
+              "backend/app/__init__.py",
+              "backend/app/bootstrap.py",
+              "pyproject.toml",
+              "frontend/package.json",
+              "frontend/package-lock.json",
+              "frontend/src/features/settings/SettingsApp.tsx",
+              "frontend/src/features/settings/SettingsApp.test.tsx",
+              "backend/tests/test_host_info.py",
+          ]
+          for path in version_files:
+              target = Path(path)
+              text = target.read_text()
+              if "0.1.15" not in text:
+                  raise SystemExit(f"version 0.1.15 not found in {path}")
+              target.write_text(text.replace("0.1.15", "0.1.16"))
+          PY
+      - name: Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends rsync
+      - name: Backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements-dev.txt
+      - name: Backend quality
+        run: |
+          python -m ruff check backend
+          python -m mypy
+          python -m bandit -c pyproject.toml -r backend/app
+          python -m pytest -q backend/tests/test_module_registry.py backend/tests/test_architecture_boundaries.py
+          python -m build
+      - name: Backend tests
+        run: python -m pytest -ra
+      - name: Frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend lint and typecheck
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm run typecheck
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test -- --reporter=default
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+      - name: Verify deployed frontend contract
+        run: python scripts/verify_frontend_build.py frontend/dist
+      - name: Bash syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do bash -n "$script"; done < <(find . -type f -name '*.sh' -not -path './.git/*' -print0)
+      - name: Commit validated feature
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend frontend PROXMOX_MANAGER.md CHANGELOG.md pyproject.toml
+          git commit -m "feat: sync VM metadata tags to Proxmox"
+          git push origin HEAD:feature/proxmox-vm-tags
