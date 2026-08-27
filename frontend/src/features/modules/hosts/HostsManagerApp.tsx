@@ -52,6 +52,7 @@ import {
   type HostsDataColumn,
 } from "./components/HostsDataTable";
 import "./hosts-group-picker.css";
+import "./hosts-credential-module-select.css";
 import "./hosts-installer.css";
 import "./hosts-search-select.css";
 
@@ -2523,6 +2524,87 @@ function Inventory({
     </section>
   );
 }
+type CredentialShareModule = { id: string; name: string };
+
+function CredentialModuleSelect({
+  modules,
+  selected,
+  loading,
+  onChange,
+  t,
+}: {
+  modules: CredentialShareModule[];
+  selected: string[];
+  loading: boolean;
+  onChange: (value: string[]) => void;
+  t: Translate;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const options = useMemo(() => {
+    const known = new Map(modules.map((item) => [item.id, item]));
+    selected.forEach((id) => {
+      if (!known.has(id)) known.set(id, { id, name: id });
+    });
+    return [...known.values()].sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+  }, [modules, selected]);
+  const optionIds = options.map((item) => item.id);
+  const allSelected = optionIds.length > 0 && optionIds.every((id) => selected.includes(id));
+  const summary = loading
+    ? t("hosts.credentials.loadingModules")
+    : allSelected
+      ? t("hosts.credentials.allModules")
+      : selected.length === 0
+        ? t("hosts.credentials.noModules")
+        : `${selected.length}/${options.length} ${t("hosts.credentials.modulesSelected")}`;
+
+  function toggle(id: string, checked: boolean) {
+    onChange(checked ? [...new Set([...selected, id])] : selected.filter((value) => value !== id));
+  }
+
+  return <div className="hosts-credential-module-select" ref={rootRef}>
+    <button
+      type="button"
+      className="hosts-credential-module-trigger"
+      aria-label={t("hosts.credentials.sharedWith")}
+      aria-haspopup="true"
+      aria-expanded={open}
+      onClick={() => setOpen((value) => !value)}
+    >
+      <span>{summary}</span>
+      <ChevronDown aria-hidden="true" />
+    </button>
+    {open && <div className="hosts-credential-module-menu">
+      <div className="hosts-credential-module-actions">
+        <button type="button" disabled={!optionIds.length} onClick={() => onChange(optionIds)}>{t("hosts.credentials.selectAllModules")}</button>
+        <button type="button" disabled={!selected.length} onClick={() => onChange([])}>{t("hosts.credentials.clearModules")}</button>
+      </div>
+      <div className="hosts-credential-module-options" role="group" aria-label={t("hosts.credentials.sharedWith")}>
+        {options.map((item) => <label key={item.id} className="hosts-credential-module-option">
+          <input
+            type="checkbox"
+            aria-label={`${item.name} (${item.id})`}
+            checked={selected.includes(item.id)}
+            onChange={(event) => toggle(item.id, event.target.checked)}
+          />
+          <span><strong>{item.name}</strong><small>{item.id}</small></span>
+        </label>)}
+        {!options.length && <div className="hosts-credential-module-empty">{loading ? t("hosts.credentials.loadingModules") : t("hosts.credentials.noModulesAvailable")}</div>}
+      </div>
+    </div>}
+  </div>;
+}
+
 function Credentials({
   items,
   environments,
@@ -2549,15 +2631,6 @@ function Credentials({
     "username_password", "ssh_password", "ssh_private_key", "become_password", "api_token", "generic_secret",
     "proxmox_api", "redfish", "ipmi", "git_private_key", "wol",
   ];
-  const defaultShares: Partial<Record<CredentialType, string[]>> = {
-    ssh_password: ["hosts-manager", "ansible-controller"],
-    ssh_private_key: ["hosts-manager", "ansible-controller"],
-    become_password: ["hosts-manager", "ansible-controller"],
-    git_private_key: ["hosts-manager", "ansible-controller"],
-    proxmox_api: ["proxmox-manager"],
-    redfish: ["hosts-manager"], ipmi: ["hosts-manager"], wol: ["hosts-manager"],
-    username_password: ["hosts-manager"], api_token: ["hosts-manager"], generic_secret: ["hosts-manager"],
-  };
   const profiles: Partial<Record<CredentialType, CredentialFieldProfile>> = {
     username_password: {
       username: { label: t("hosts.credentials.field.login"), placeholder: "user@example", required: true },
@@ -2610,14 +2683,43 @@ function Credentials({
   const [description, setDescription] = useState("");
   const [secret, setSecret] = useState("");
   const [passphrase, setPassphrase] = useState("");
-  const [sharedWith, setSharedWith] = useState("");
+  const [sharedWith, setSharedWith] = useState<string[]>([]);
+  const [shareModules, setShareModules] = useState<CredentialShareModule[]>([]);
+  const [shareModulesLoading, setShareModulesLoading] = useState(true);
+  const [shareSelectionInitialized, setShareSelectionInitialized] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setShareModulesLoading(true);
+    void api.modules()
+      .then((modules) => {
+        if (!active) return;
+        setShareModules(modules
+          .filter((module) => Boolean(module.id))
+          .map((module) => ({ id: module.id, name: module.manifest.name || module.id }))
+          .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id)));
+      })
+      .catch((error: unknown) => {
+        if (active) toast(hostsManagerError(error, t), "error", "admin", "hosts-manager");
+      })
+      .finally(() => {
+        if (active) setShareModulesLoading(false);
+      });
+    return () => { active = false; };
+  }, [t, toast]);
+
+  const allShareModuleIds = useMemo(() => shareModules.map((module) => module.id), [shareModules]);
+  useEffect(() => {
+    if (!open || editing || shareSelectionInitialized || shareModulesLoading) return;
+    setSharedWith(allShareModuleIds);
+    setShareSelectionInitialized(true);
+  }, [allShareModuleIds, editing, open, shareModulesLoading, shareSelectionInitialized]);
 
   function setCredentialType(next: CredentialType) {
     setType(next);
     setUsername("");
     setSecret("");
     setPassphrase("");
-    if (!editing) setSharedWith((defaultShares[next] || []).join(", "));
   }
 
   function showEditor(item?: HostsManagerCredential) {
@@ -2630,17 +2732,17 @@ function Credentials({
     setDescription(item?.description || "");
     setSecret("");
     setPassphrase("");
-    setSharedWith((item?.shared_with || defaultShares[nextType] || []).join(", "));
+    setSharedWith(item ? [...(item.shared_with || [])] : (shareModulesLoading ? [] : allShareModuleIds));
+    setShareSelectionInitialized(Boolean(item) || !shareModulesLoading);
     setOpen(true);
   }
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
     try {
-      const modules = [...new Set(sharedWith.split(",").map((value) => value.trim()).filter(Boolean))];
       await api.saveHostsManagerCredential({
         name, type, username, environment_id: environmentId || null, secret, passphrase, description,
-        shared_with: modules, confirm: true,
+        shared_with: [...new Set(sharedWith)], confirm: true,
       }, editing?.id);
       setSecret("");
       setPassphrase("");
@@ -2686,7 +2788,7 @@ function Credentials({
         {profile.passphrase && <label>{t("hosts.credentials.passphrase")}<input aria-label={t("hosts.credentials.passphrase")} type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} autoComplete="new-password" /></label>}
         {type === "wol" && <div className="module-form-span module-info"><strong>{t("hosts.credentials.wolNoSecret")}</strong><p>{t("hosts.credentials.wolNoSecretHint")}</p></div>}
         <label>{t("hosts.environment.title")}<select value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)}><option value="">{t("hosts.environment.all")}</option>{environments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>{t("hosts.credentials.sharedWith")}<input value={sharedWith} onChange={(event) => setSharedWith(event.target.value)} placeholder={(defaultShares[type] || []).join(", ")} /><small>{t("hosts.credentials.sharedWithHint")}</small></label>
+        <div className="hosts-credential-share-field"><span className="hosts-credential-share-label">{t("hosts.credentials.sharedWith")}</span><CredentialModuleSelect modules={shareModules} selected={sharedWith} loading={shareModulesLoading} onChange={setSharedWith} t={t} /><small>{t("hosts.credentials.sharedWithHint")}</small></div>
         <label className="module-form-span">{t("common.description")}<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       </form>
     </Modal>}
