@@ -77,6 +77,23 @@ def test_network_interfaces_tolerate_missing_sys_state(monkeypatch):
     assert interfaces[0]["state"] == "unknown"
 
 
+def test_system_network_interface_uses_sysfs_topology(tmp_path: Path):
+    class_net = tmp_path / "class" / "net"
+    bridge = class_net / "br0"
+    bridge.mkdir(parents=True)
+    (bridge / "bridge").mkdir()
+    physical = class_net / "eno1"
+    physical.mkdir()
+    virtual_target = tmp_path / "devices" / "virtual" / "net" / "veth42"
+    virtual_target.mkdir(parents=True)
+    (class_net / "veth42").symlink_to(virtual_target, target_is_directory=True)
+
+    assert resource_dashboard.is_system_network_interface("lo", class_net) is True
+    assert resource_dashboard.is_system_network_interface("br0", class_net) is True
+    assert resource_dashboard.is_system_network_interface("veth42", class_net) is True
+    assert resource_dashboard.is_system_network_interface("eno1", class_net) is False
+
+
 def test_allowed_root_usage_uses_allowed_roots(monkeypatch, tmp_path: Path):
     root = tmp_path / "home"
     alias = root / "files"
@@ -135,13 +152,14 @@ def test_alert_thresholds():
     ]
 
 
-def test_top_processes_returns_complete_list_and_respects_limit(monkeypatch):
+def test_top_processes_is_bounded_by_default_and_supports_explicit_full_list(monkeypatch):
     output = "\n".join(f"{pid} user proc{pid} 1.0 2.0 4 S" for pid in range(1, 61))
     monkeypatch.setattr(resource_dashboard.shutil, "which", lambda command: "/usr/bin/ps" if command == "ps" else None)
     monkeypatch.setattr(resource_dashboard.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=output))
 
-    assert len(resource_dashboard.top_processes()) == 60
+    assert len(resource_dashboard.top_processes()) == resource_dashboard.DEFAULT_PROCESS_LIMIT
     assert len(resource_dashboard.top_processes(25)) == 25
+    assert len(resource_dashboard.top_processes(None)) == 60
     assert resource_dashboard.top_processes(25)[-1]["pid"] == 25
 
 
@@ -158,7 +176,7 @@ def test_collect_dashboard_hides_admin_only_and_unrelated_disk_data(monkeypatch)
     monkeypatch.setattr(resource_dashboard, "network_interfaces", lambda sample: [])
     monkeypatch.setattr(resource_dashboard, "mountpoint_usage", lambda: [{"mountpoint": "/", "percent": 50}])
     monkeypatch.setattr(resource_dashboard, "webnas_service_status", lambda: "active")
-    monkeypatch.setattr(resource_dashboard, "top_processes", lambda: [{"pid": 1}])
+    monkeypatch.setattr(resource_dashboard, "top_processes", lambda limit=resource_dashboard.DEFAULT_PROCESS_LIMIT: [{"pid": 1}])
 
     payload = resource_dashboard.collect_dashboard("alice", is_admin=False)
 
@@ -170,7 +188,8 @@ def test_collect_dashboard_hides_admin_only_and_unrelated_disk_data(monkeypatch)
     assert payload["allowed_roots"][0]["read_bytes_per_sec"] == 30.0
 
 
-def test_collect_dashboard_exposes_admin_metrics(monkeypatch):
+def test_collect_dashboard_exposes_bounded_admin_metrics(monkeypatch):
+    process_limits = []
     monkeypatch.setattr(resource_dashboard, "memory_stats", lambda: {"ram": _metric(40), "swap": _metric(0)})
     monkeypatch.setattr(resource_dashboard, "realtime_sample", _sample)
     monkeypatch.setattr(resource_dashboard, "allowed_root_usage", lambda username: [])
@@ -182,11 +201,12 @@ def test_collect_dashboard_exposes_admin_metrics(monkeypatch):
     monkeypatch.setattr(resource_dashboard, "network_interfaces", lambda sample: [])
     monkeypatch.setattr(resource_dashboard, "mountpoint_usage", lambda: [{"mountpoint": "/", "percent": 50}])
     monkeypatch.setattr(resource_dashboard, "webnas_service_status", lambda: "active")
-    monkeypatch.setattr(resource_dashboard, "top_processes", lambda: [{"pid": 1}])
+    monkeypatch.setattr(resource_dashboard, "top_processes", lambda limit: process_limits.append(limit) or [{"pid": 1}])
 
     payload = resource_dashboard.collect_dashboard("root", is_admin=True)
 
     assert payload["scope"] == "admin"
     assert payload["mountpoints"]
     assert payload["processes"] == [{"pid": 1}]
+    assert process_limits == [resource_dashboard.DEFAULT_PROCESS_LIMIT]
     assert {item["device"] for item in payload["disk_io"]} == {"sda", "sdb"}
