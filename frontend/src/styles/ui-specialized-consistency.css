@@ -1,0 +1,294 @@
+/* Specialized feature normalization.
+ *
+ * These components intentionally use richer layouts, but they should still use
+ * the same DSM radii, spacing, elevation and window-relative breakpoints.
+ */
+
+/* Docker container details ------------------------------------------------ */
+.desktop .docker-details-modern {
+  gap: 0.625rem;
+}
+
+.desktop .docker-detail-topbar {
+  gap: 0.5rem;
+}
+
+.desktop .docker-detail-hero {
+  grid-template-columns: minmax(15rem, 1fr) auto;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+.desktop .docker-detail-title {
+  gap: 0.625rem;
+}
+
+.desktop .docker-detail-container-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .docker-detail-container-icon svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.desktop .docker-detail-title h2 {
+  margin: 0.0625rem 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.desktop .docker-detail-title span {
+  font-weight: 600;
+  letter-spacing: 0.035em;
+}
+
+.desktop .docker-detail-statuses {
+  gap: 0.375rem;
+}
+
+.desktop .docker-detail-health,
+.desktop :where(.docker-detail-kind, .docker-detail-access, .docker-detail-chip) {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.desktop .docker-detail-kpis > div {
+  min-width: 8.5rem;
+  padding: 0.625rem 0.75rem 0;
+}
+
+.desktop .docker-details-modern .docker-detail-tabs {
+  gap: 0;
+  padding: 0.25rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .docker-details-modern .docker-detail-tabs button {
+  min-height: 2rem;
+  padding-inline: 0.625rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--font-size-sm);
+}
+
+.desktop .docker-details-modern .docker-detail-tabs button.active {
+  border: 0;
+  color: var(--accent);
+  background: var(--surface-selected);
+  box-shadow: inset 0 -0.125rem var(--accent);
+  font-weight: 600;
+}
+
+.desktop :where(.docker-horizontal-overview, .docker-detail-stats-view, .docker-container-settings-horizontal) {
+  gap: 0.625rem;
+}
+
+.desktop .docker-detail-section {
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+.desktop .docker-detail-section-header {
+  gap: 0.5625rem;
+  padding: 0.5625rem 0.75rem;
+}
+
+.desktop .docker-detail-section-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .docker-detail-section-icon svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.desktop .docker-detail-section-header h3 {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.desktop .docker-detail-row {
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.desktop .docker-detail-row dt {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.desktop :where(.docker-detail-network-line, .docker-detail-port-line, .docker-detail-mount-line, .docker-detail-key-value) {
+  gap: 0.375rem;
+  padding: 0.4375rem 0.5625rem;
+  border-radius: var(--radius-control);
+}
+
+.desktop .docker-detail-stat-strip {
+  gap: 0.4375rem;
+}
+
+.desktop .docker-detail-stat-strip article {
+  min-width: 10rem;
+  flex-basis: 10rem;
+  padding: 0.625rem;
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+.desktop .docker-detail-stat-strip article strong {
+  margin-bottom: 0.375rem;
+  font-size: var(--font-size-base);
+}
+
+.desktop .docker-detail-log-toolbar {
+  gap: 0.375rem;
+  padding: 0.4375rem 0.5625rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .docker-container-settings-horizontal fieldset {
+  padding: 0.75rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .docker-settings-horizontal-row {
+  gap: 0.5625rem;
+}
+
+/* Hosts Manager selectors ------------------------------------------------- */
+.desktop .hosts-manager-app .hosts-installer .hosts-installer-actions {
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .hosts-manager-app .hosts-installer .hosts-installer-actions > button {
+  min-height: 3.5rem;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.5625rem;
+  padding: 0.5rem 0.5625rem;
+  border-radius: var(--radius-control);
+}
+
+.desktop .hosts-manager-app .hosts-installer .hosts-installer-actions > button > svg {
+  width: 2rem;
+  height: 2rem;
+  padding: 0.5rem;
+  border-radius: var(--radius-panel);
+  transition: color .14s ease, background .14s ease;
+}
+
+.desktop .hosts-manager-app .hosts-installer .hosts-installer-actions > button:hover:not(:disabled),
+.desktop .hosts-manager-app .hosts-installer .hosts-installer-actions > button:hover > svg {
+  transform: none;
+}
+
+.desktop .hosts-manager-app .hosts-installer .hosts-installer-actions > button.active,
+.desktop .hosts-manager-app .hosts-installer .hosts-installer-actions > button.active > svg {
+  box-shadow: none;
+}
+
+.desktop .hosts-manager-app .hosts-group-picker-options {
+  gap: 0.375rem;
+  padding: 0.375rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .hosts-manager-app .hosts-group-picker-options > button {
+  min-height: 2.5rem;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.5625rem;
+  border-radius: var(--radius-control);
+  box-shadow: none;
+  font-weight: 600;
+  transition: border-color .14s ease, color .14s ease, background .14s ease;
+}
+
+.desktop .hosts-manager-app .hosts-group-picker-options > button:hover,
+.desktop .hosts-manager-app .hosts-group-picker-options > button.selected {
+  box-shadow: none;
+  transform: none;
+}
+
+.desktop .hosts-manager-app .hosts-group-picker-check {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: var(--radius-control);
+}
+
+.desktop .hosts-manager-app .hosts-group-picker-options > button.selected .hosts-group-picker-check {
+  box-shadow: none;
+}
+
+.desktop .hosts-manager-app .hosts-search-select-options {
+  gap: 0.125rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .hosts-manager-app .hosts-search-select-options > button {
+  min-height: 2rem;
+  padding: 0.375rem 0.5rem;
+}
+
+/* Replace viewport-driven detail layout with actual application-window size. */
+@container app-window (max-width: 47.5rem) {
+  .desktop .docker-detail-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .docker-detail-statuses {
+    justify-content: flex-start;
+  }
+
+  .desktop .docker-detail-row {
+    grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
+  }
+
+  .desktop .hosts-manager-app .hosts-installer .hosts-installer-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container app-window (max-width: 34rem) {
+  .desktop .docker-detail-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+  }
+
+  .desktop .docker-detail-row dt {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .desktop .docker-detail-network-line > strong {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .desktop .docker-detail-access {
+    margin-left: 0;
+  }
+
+  .desktop .docker-detail-kpis > div {
+    min-width: 7.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop .hosts-manager-app .hosts-installer .hosts-installer-actions > button > svg,
+  .desktop .hosts-manager-app .hosts-group-picker-options > button,
+  .desktop .hosts-manager-app .hosts-group-picker-check {
+    transition: none;
+  }
+}

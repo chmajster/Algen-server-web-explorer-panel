@@ -1,0 +1,711 @@
+/* Remaining feature-level normalization.
+ *
+ * This layer is loaded after ui-consistency.css and aligns feature-specific
+ * layouts that still carried their own spacing, radii, button chrome and
+ * viewport assumptions. Desktop chrome and intentionally modal surfaces are
+ * left untouched.
+ */
+
+/* Settings and Activity use the same compact application header language. */
+.desktop :where(.settings-header, .activity-header) {
+  min-height: 3.5rem;
+  gap: 0.75rem;
+  padding: 0.5625rem 0.875rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-elevated);
+  backdrop-filter: none;
+}
+
+.desktop :where(.settings-header h2, .activity-header h2) {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.desktop :where(.settings-header p, .activity-header p, .settings-header small) {
+  margin-top: 0.125rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.3;
+}
+
+.desktop .settings-header {
+  padding-inline: 0.875rem;
+}
+
+.desktop .settings-save-state {
+  font-size: var(--font-size-xs);
+}
+
+.desktop .settings-content.policy-content {
+  min-height: calc(100% - 3.5rem);
+}
+
+.desktop .settings-content.identity-content {
+  height: calc(100% - 3.5rem);
+}
+
+.desktop .settings-search-results > button,
+.desktop .interface-font-options button,
+.desktop .policy-rule-card {
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+/* Activity Center --------------------------------------------------------- */
+.desktop .activity-app {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-primary);
+}
+
+.desktop .activity-header button,
+.desktop .activity-error button {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0 0.6875rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background: linear-gradient(var(--surface-elevated), var(--surface-secondary));
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--text-primary) 8%, transparent);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  line-height: 1;
+  text-decoration: none;
+}
+
+#root .desktop :where(.activity-header button, .activity-error button):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  background: var(--surface-hover);
+}
+
+.desktop .activity-summary {
+  grid-template-columns: repeat(5, minmax(6rem, 1fr));
+  gap: 0.4375rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.desktop .activity-summary button {
+  min-height: 3.25rem;
+  gap: 0.4375rem;
+  padding: 0.5rem 0.5625rem;
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface-elevated);
+  box-shadow: none;
+}
+
+.desktop .activity-summary button:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
+  background: var(--surface-hover);
+}
+
+.desktop .activity-summary button.selected {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border-subtle));
+  color: var(--accent);
+  background: var(--surface-selected);
+}
+
+.desktop .activity-summary strong {
+  font-size: var(--font-size-base);
+}
+
+.desktop .activity-filters {
+  gap: 0.4375rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-secondary);
+}
+
+.desktop .activity-filters input,
+.desktop .activity-filters select {
+  min-height: var(--control-height);
+  border-color: var(--border-strong);
+  border-radius: var(--radius-control);
+}
+
+.desktop .activity-search svg,
+.desktop .activity-actor svg {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.desktop .activity-feed {
+  padding: 0.625rem 0.75rem;
+}
+
+.desktop .activity-feed ol {
+  gap: 0.375rem;
+}
+
+.desktop .activity-row {
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.5625rem;
+  padding: 0.5625rem 0.625rem;
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+.desktop .activity-category-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .activity-footer {
+  min-height: 2.5rem;
+  padding: 0.3125rem 0.75rem;
+}
+
+.desktop .activity-footer button {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-height: var(--control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: linear-gradient(var(--surface-elevated), var(--surface-secondary));
+}
+
+.desktop .activity-footer button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  background: var(--surface-hover);
+}
+
+/* Transfer Center --------------------------------------------------------- */
+.desktop .transfer-center {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--surface-primary);
+}
+
+.desktop .transfer-center .filter-tabs {
+  flex: 0 0 auto;
+}
+
+.desktop .transfer-list {
+  min-width: 0;
+  min-height: 0;
+  align-content: start;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.desktop .transfer-card {
+  min-width: 0;
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-left: 0.1875rem solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-elevated);
+  box-shadow: none;
+}
+
+.desktop .transfer-card.running,
+.desktop .transfer-card.queued,
+.desktop .transfer-card.paused {
+  border-left-color: var(--accent);
+}
+
+.desktop .transfer-card.completed {
+  border-left-color: var(--success);
+}
+
+.desktop .transfer-card.failed,
+.desktop .transfer-card.cancelled {
+  border-left-color: var(--danger);
+}
+
+.desktop .transfer-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.desktop .transfer-kind {
+  padding: 0.125rem 0.375rem;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--surface-secondary);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.desktop .transfer-name {
+  min-width: 0;
+  display: grid;
+  gap: 0.125rem;
+}
+
+.desktop .transfer-name strong,
+.desktop .transfer-name small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop .transfer-name strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.desktop .transfer-name small {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.desktop .transfer-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.desktop .transfer-actions button {
+  width: var(--control-height);
+  min-width: var(--control-height);
+  height: var(--control-height);
+  min-height: var(--control-height);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background: linear-gradient(var(--surface-elevated), var(--surface-secondary));
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+.desktop .transfer-actions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.desktop .transfer-actions svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+
+.desktop .transfer-center .progress-track {
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-subtle) 75%, transparent);
+}
+
+.desktop .transfer-center .progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.desktop .transfer-card.completed .progress-track > span {
+  background: var(--success);
+}
+
+.desktop :where(.transfer-card.failed, .transfer-card.cancelled) .progress-track > span {
+  background: var(--danger);
+}
+
+.desktop .transfer-stats {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.desktop .transfer-details {
+  min-width: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.desktop .transfer-details dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4375rem 0.75rem;
+  margin: 0;
+}
+
+.desktop .transfer-details dt {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.desktop .transfer-details dd {
+  min-width: 0;
+  margin: 0.125rem 0 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.desktop .transfer-details .error-log {
+  max-height: 10rem;
+  overflow: auto;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--border-subtle));
+  border-radius: var(--radius-panel);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 5%, var(--surface-secondary));
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+}
+
+/* Network resources ------------------------------------------------------- */
+.desktop .network-mounts-page-header {
+  gap: 0.75rem;
+  padding-bottom: 0.625rem;
+}
+
+.desktop .network-mounts-title {
+  gap: 0.5625rem;
+}
+
+.desktop .network-mounts-title > span {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-panel);
+  background: var(--surface-selected);
+}
+
+.desktop .network-mounts-title svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.desktop .network-mounts-title h3 {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.desktop .network-mounts-header-actions {
+  gap: 0.375rem;
+}
+
+.desktop :where(
+  .network-mounts-header-actions button,
+  .network-mount-card > footer button,
+  .network-mounts-empty button,
+  .mount-actions-popover button
+):not(.button-primary):not(.button-danger) {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0 0.6875rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background: linear-gradient(var(--surface-elevated), var(--surface-secondary));
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--text-primary) 8%, transparent);
+  font-size: var(--font-size-sm);
+}
+
+#root .desktop :where(
+  .network-mounts-header-actions button,
+  .network-mount-card > footer button,
+  .network-mounts-empty button,
+  .mount-actions-popover button
+):not(.button-primary):not(.button-danger):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  background: var(--surface-hover);
+}
+
+.desktop .network-mounts-summary {
+  gap: 0.4375rem;
+}
+
+.desktop .network-mounts-summary article {
+  gap: 0.5625rem;
+  padding: 0.625rem 0.6875rem;
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+}
+
+.desktop .network-mounts-summary article > svg {
+  width: 1rem;
+  height: 1rem;
+  padding: 0.375rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .network-mounts-summary strong {
+  font-size: var(--font-size-md);
+}
+
+.desktop .network-mounts-toolbar {
+  gap: 0.4375rem;
+  padding: 0.5rem 0.5625rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .network-mounts-toolbar input,
+.desktop .network-mounts-toolbar select {
+  height: var(--control-height);
+  min-height: var(--control-height);
+  border-radius: var(--radius-control);
+}
+
+.desktop .network-mount-card {
+  gap: 0.625rem;
+  padding: 0.6875rem;
+  border-radius: var(--radius-panel);
+  box-shadow: none;
+  transition: border-color .14s ease, background .14s ease;
+}
+
+.desktop .network-mount-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border-subtle));
+  box-shadow: none;
+  transform: none;
+}
+
+.desktop .mount-card-collapse-toggle {
+  min-height: var(--control-height);
+}
+
+.desktop .mount-card-identity {
+  gap: 0.5rem;
+}
+
+.desktop .mount-card-identity > span {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .mount-card-identity > span svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.desktop .mount-path-row code {
+  border-radius: var(--radius-control);
+}
+
+.desktop .mount-path-row button {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-height: var(--control-height);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background: linear-gradient(var(--surface-elevated), var(--surface-secondary));
+}
+
+.desktop .mount-path-row button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.desktop .network-mount-card > footer {
+  gap: 0.375rem;
+  padding-top: 0.5625rem;
+}
+
+.desktop .network-mount-card > footer button {
+  min-height: var(--control-height);
+  padding-inline: 0.5625rem;
+  font-size: var(--font-size-xs);
+}
+
+.desktop .mount-actions-popover {
+  gap: 0.125rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-panel);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-menu);
+}
+
+.desktop .mount-actions-popover button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.desktop .mount-actions-popover .danger {
+  border-color: transparent;
+  color: var(--danger);
+  background: transparent;
+  box-shadow: none;
+}
+
+.desktop .mount-actions-popover .danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border-subtle));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-elevated));
+}
+
+.desktop .mount-form fieldset,
+.desktop .mount-form-advanced {
+  border-radius: var(--radius-panel);
+}
+
+.desktop .network-settings-tabs {
+  gap: 0;
+  padding: 0.25rem;
+  border-radius: var(--radius-panel);
+}
+
+.desktop .network-settings-tabs button {
+  min-height: 2rem;
+  padding: 0 0.5625rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  font-size: var(--font-size-sm);
+}
+
+.desktop .network-settings-tabs button.active {
+  border: 0;
+  color: var(--accent);
+  background: var(--surface-selected);
+  box-shadow: inset 0 -0.125rem var(--accent);
+  font-weight: 600;
+}
+
+/* Window-relative responsive behavior ------------------------------------ */
+@container app-window (max-width: 47.5rem) {
+  .desktop .activity-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .desktop .activity-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop .activity-search {
+    grid-column: 1 / -1;
+  }
+
+  .desktop .transfer-summary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .desktop .transfer-actions {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
+
+  .desktop .network-mounts-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop .network-mounts-toolbar > p {
+    margin: 0;
+    align-self: center;
+  }
+}
+
+@container app-window (max-width: 36rem) {
+  .desktop .settings-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .desktop .activity-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop .activity-filters,
+  .desktop .transfer-details dl,
+  .desktop .network-mounts-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .activity-search {
+    grid-column: auto;
+  }
+
+  .desktop .transfer-summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .desktop .transfer-kind,
+  .desktop .transfer-summary > .status-badge {
+    justify-self: start;
+  }
+
+  .desktop .transfer-name {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .desktop .transfer-actions {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .desktop .network-mounts-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .desktop .network-mounts-header-actions {
+    width: 100%;
+  }
+
+  .desktop .network-mounts-header-actions button {
+    flex: 1 1 0;
+  }
+
+  .desktop .network-mounts-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container app-window (max-width: 28rem) {
+  .desktop .activity-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .activity-header button span {
+    display: none;
+  }
+
+  .desktop .activity-header button {
+    width: var(--control-height);
+    padding: 0;
+  }
+
+  .desktop .transfer-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop .network-mounts-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .network-settings-tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop .network-mount-card,
+  .desktop .transfer-center .progress-track > span {
+    transition: none;
+  }
+}

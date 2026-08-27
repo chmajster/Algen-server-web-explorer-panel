@@ -1,0 +1,73 @@
+/* Review fixes for the final UI normalization layers.
+ * Loaded last so semantic states and grid behavior remain authoritative.
+ */
+
+/* Keep Resource Monitor content in the flexible row even when a refresh error
+ * is rendered between the status strip and stale dashboard content. */
+.desktop .monitor-app {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.desktop .monitor-content {
+  grid-row: 4;
+}
+
+/* Activity Center also inserts an optional error between filters and the stale
+ * feed. Reserve a dedicated error row so the feed keeps the flexible row. */
+.desktop .activity-app {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.desktop .activity-feed {
+  grid-row: 5;
+}
+
+.desktop .activity-footer {
+  grid-row: 6;
+}
+
+/* The generic monitor table wrapper is reused by Network diagnostics. The
+ * fixed monitor minimum belongs only to the Resource Monitor, not stacked DNS
+ * cards on narrow Settings windows. */
+.desktop .network-settings .monitor-table-wrap table {
+  min-width: 0;
+}
+
+/* Later generic toolbar hover rules must not erase semantic button colors. */
+#root .desktop :where(.button-primary, button.button-primary):hover:not(:disabled) {
+  border-color: #117eaf;
+  color: var(--text-on-accent);
+  background: linear-gradient(#35b5ea, #1384b8);
+}
+
+#root .desktop :where(.button-danger, button.button-danger):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 82%, #000);
+  color: var(--text-on-danger);
+  background: color-mix(in srgb, var(--danger) 86%, #000);
+}
+
+/* TransferCenter renders alternating dt/dd nodes. Keep the label/value pairing
+ * explicit instead of placing six nodes sequentially into a three-column grid. */
+.desktop .transfer-details dl {
+  grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
+}
+
+.desktop .transfer-details dt {
+  grid-column: 1;
+  align-self: center;
+}
+
+.desktop .transfer-details dd {
+  grid-column: 2;
+  align-self: center;
+}
+
+@container app-window (max-width: 36rem) {
+  .desktop .transfer-details dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .transfer-details :where(dt, dd) {
+    grid-column: 1;
+  }
+}
