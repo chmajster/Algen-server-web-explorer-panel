@@ -17,6 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from . import __version__
+
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -1875,7 +1877,7 @@ def admin_system_status(user: SessionUser = Depends(_current_user)):
     cfg = get_config()
     return {
         "service": "webnas",
-        "version": "0.1.18",
+        "version": __version__,
         "port": cfg.server.port,
         "data_dir": cfg.paths.data_dir,
         "log_dir": cfg.paths.log_dir,

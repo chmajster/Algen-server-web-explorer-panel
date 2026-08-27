@@ -1,10 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, type ResourceDashboard } from "../../api";
+import { api, type ProcessMetric, type ResourceDashboard } from "../../api";
 import { MonitorApp } from "./MonitorApp";
 
-vi.mock("../../api", () => ({ api: { resources: vi.fn() } }));
+vi.mock("../../api", () => ({ api: { resources: vi.fn(), resourceProcesses: vi.fn() } }));
 
 const t = (key: string) => key;
 const fixture: ResourceDashboard = {
@@ -35,10 +35,13 @@ const fixture: ResourceDashboard = {
 
 describe("MonitorApp", () => {
   const resources = vi.mocked(api.resources);
+  const resourceProcesses = vi.mocked(api.resourceProcesses);
 
   beforeEach(() => {
     resources.mockReset();
+    resourceProcesses.mockReset();
     resources.mockResolvedValue(fixture);
+    resourceProcesses.mockResolvedValue(fixture.processes);
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   });
 
@@ -46,25 +49,62 @@ describe("MonitorApp", () => {
     vi.useRealTimers();
   });
 
-  it("renders live system, storage, network and administrator process data", async () => {
+  it("renders the dashboard with live system, storage, network and full admin process data", async () => {
     render(<MonitorApp t={t} />);
 
     expect(await screen.findByText("test-server")).toBeInTheDocument();
-    expect(screen.getByText("monitor.disabled")).toBeInTheDocument();
+    expect(screen.getAllByText("monitor.disabled").length).toBeGreaterThan(0);
     expect(screen.getByText("/home/alice")).toBeInTheDocument();
     expect(screen.getByText("/srv/alice")).toBeInTheDocument();
     expect(screen.getByText("eth0")).toBeInTheDocument();
     expect(screen.getByText("worker")).toBeInTheDocument();
+    expect(resourceProcesses).toHaveBeenCalledTimes(1);
     expect(document.querySelector(".monitor-storage-card.critical")).toBeInTheDocument();
     expect(document.querySelector(".monitor-metric.warning")).toBeInTheDocument();
     expect(screen.getByText(/monitor.alert.disk_usage/)).toBeInTheDocument();
+    expect(screen.queryByText("Low free space on /home/alice")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".monitor-overview-grid .monitor-metric")).toHaveLength(4);
   });
 
-  it("does not render administrator-only tables for a regular user", async () => {
+  it("renders safely with null CPU, disabled swap and no temperature", async () => {
+    resources.mockResolvedValue({ ...fixture, cpu_percent: null, cpu_cores: [null, 25], temperature_c: null, alerts: [], warnings: [] });
+    render(<MonitorApp t={t} />);
+
+    expect(await screen.findByText("test-server")).toBeInTheDocument();
+    expect(screen.getAllByText("monitor.disabled").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("monitor.ready").length).toBeGreaterThan(0);
+  });
+
+  it("renders an empty network section without crashing", async () => {
+    resources.mockResolvedValue({ ...fixture, network_interfaces: [] });
+    render(<MonitorApp t={t} />);
+
+    expect(await screen.findByText("test-server")).toBeInTheDocument();
+    expect(document.querySelectorAll(".monitor-network-card")).toHaveLength(0);
+  });
+
+  it("renders multiple network interfaces", async () => {
+    resources.mockResolvedValue({
+      ...fixture,
+      network_interfaces: [
+        fixture.network_interfaces[0],
+        { name: "br0", state: "up", rx_bytes: 500, tx_bytes: 700, rx_bytes_per_sec: 3, tx_bytes_per_sec: 4, system: true },
+      ],
+    });
+    render(<MonitorApp t={t} />);
+
+    expect(await screen.findByText("eth0")).toBeInTheDocument();
+    expect(screen.getByText("br0")).toBeInTheDocument();
+    expect(screen.getByText("monitor.systemInterface")).toBeInTheDocument();
+  });
+
+  it("does not request or render administrator-only data for a regular user", async () => {
     resources.mockResolvedValue({ ...fixture, scope: "user", mountpoints: [], processes: [], webnas_service: null });
     render(<MonitorApp t={t} />);
 
     expect(await screen.findByText("test-server")).toBeInTheDocument();
+    expect(resourceProcesses).not.toHaveBeenCalled();
     expect(screen.queryByText("monitor.allMounts")).not.toBeInTheDocument();
     expect(screen.queryByText("monitor.processes")).not.toBeInTheDocument();
   });
@@ -80,14 +120,56 @@ describe("MonitorApp", () => {
     expect(screen.getByText("test-server")).toBeInTheDocument();
   });
 
+  it("keeps bounded resource data when the process detail request fails", async () => {
+    resourceProcesses.mockRejectedValueOnce(new Error("process detail offline"));
+    render(<MonitorApp t={t} />);
+
+    expect(await screen.findByText("test-server")).toBeInTheDocument();
+    expect(screen.getByText("worker")).toBeInTheDocument();
+    expect(screen.getByText(/process detail offline/)).toBeInTheDocument();
+  });
+
+  it("filters processes locally without additional API requests", async () => {
+    const processes: ProcessMetric[] = [
+      fixture.processes[0],
+      { pid: 77, user: "root", name: "database", cpu_percent: 3, memory_percent: 9, rss: 8192, state: "S" },
+    ];
+    resourceProcesses.mockResolvedValue(processes);
+    render(<MonitorApp t={t} />);
+    expect(await screen.findByText("database")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "monitor.processes" }), { target: { value: "worker" } });
+
+    expect(screen.getByText("worker")).toBeInTheDocument();
+    expect(screen.queryByText("database")).not.toBeInTheDocument();
+    expect(resources).toHaveBeenCalledTimes(1);
+    expect(resourceProcesses).toHaveBeenCalledTimes(1);
+  });
+
+  it("sorts processes by PID", async () => {
+    resourceProcesses.mockResolvedValue([
+      { pid: 90, user: "root", name: "late", cpu_percent: 1, memory_percent: 1, rss: 100, state: "S" },
+      { pid: 10, user: "root", name: "early", cpu_percent: 2, memory_percent: 1, rss: 100, state: "S" },
+    ]);
+    render(<MonitorApp t={t} />);
+    await screen.findByText("late");
+
+    fireEvent.click(screen.getByRole("button", { name: "PID" }));
+    const table = document.querySelector(".monitor-process-table");
+    expect(table).not.toBeNull();
+    const rows = within(table as HTMLElement).getAllByRole("row");
+    expect(within(rows[1]).getByText("10")).toBeInTheDocument();
+  });
+
   it("pauses polling while hidden and prevents overlapping requests", async () => {
     vi.useFakeTimers();
     resources.mockResolvedValueOnce(fixture);
     render(<MonitorApp t={t} />);
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(resources).toHaveBeenCalledTimes(1);
 
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    fireEvent(document, new Event("visibilitychange"));
     await act(async () => { vi.advanceTimersByTime(4000); });
     expect(resources).toHaveBeenCalledTimes(1);
 
@@ -98,7 +180,7 @@ describe("MonitorApp", () => {
     await act(async () => { vi.advanceTimersByTime(10000); });
     expect(resources).toHaveBeenCalledTimes(2);
 
-    await act(async () => { resolveRequest?.(fixture); await Promise.resolve(); });
+    await act(async () => { resolveRequest?.(fixture); await Promise.resolve(); await Promise.resolve(); });
   });
 
   it("allows choosing the refresh interval", async () => {
@@ -110,15 +192,27 @@ describe("MonitorApp", () => {
     expect(screen.getByLabelText("monitor.interval")).toHaveValue("5000");
   });
 
+  it("allows disabling automatic refresh", async () => {
+    vi.useFakeTimers();
+    render(<MonitorApp t={t} />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(resources).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    await act(async () => { vi.advanceTimersByTime(10000); });
+
+    expect(resources).toHaveBeenCalledTimes(1);
+  });
+
   it("polls at the default two-second interval", async () => {
     vi.useFakeTimers();
     render(<MonitorApp t={t} />);
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(resources).toHaveBeenCalledTimes(1);
 
     await act(async () => { vi.advanceTimersByTime(1999); });
     expect(resources).toHaveBeenCalledTimes(1);
-    await act(async () => { vi.advanceTimersByTime(1); await Promise.resolve(); });
+    await act(async () => { vi.advanceTimersByTime(1); await Promise.resolve(); await Promise.resolve(); });
 
     expect(resources).toHaveBeenCalledTimes(2);
   });
