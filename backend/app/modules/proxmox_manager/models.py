@@ -27,9 +27,11 @@ class ProxmoxConnectionInput(StrictModel):
         max_length=64,
         pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$",
     )
+    project: str = Field(default="", max_length=64)
     environment: str = Field(default="", max_length=64)
     location: str = Field(default="", max_length=128)
     tags: list[str] = Field(default_factory=lambda: ["proxmox"], max_length=50)
+    sync_proxmox_tags: bool = True
     sync_lxc: bool = True
     sync_templates: bool = False
     active: bool = True
