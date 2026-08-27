@@ -81,7 +81,9 @@ run_target() {
     return 1
   fi
 
-  if ! bash "$temp_script" "$@"; then
+  if bash "$temp_script" "$@"; then
+    exit_code=0
+  else
     exit_code=$?
   fi
 
