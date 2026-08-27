@@ -1,0 +1,376 @@
+name: Temporary Proxmox diagnostics patch
+
+on:
+  push:
+    branches:
+      - feat/proxmox-connection-test-diagnostics
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/proxmox-connection-test-diagnostics
+          fetch-depth: 0
+      - name: Apply diagnostic error changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          service = Path("backend/app/modules/proxmox_manager/service.py")
+          text = service.read_text()
+          old = "import re\nimport secrets\nimport sqlite3"
+          new = "import re\nimport secrets\nimport socket\nimport sqlite3"
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+
+          old = '''class ProxmoxApiError(RuntimeError):
+              def __init__(self, message: str, *, status: int = 0) -> None:
+                  super().__init__(message)
+                  self.status = status
+          '''
+          new = '''class ProxmoxApiError(RuntimeError):
+              def __init__(
+                  self,
+                  message: str,
+                  *,
+                  status: int = 0,
+                  stage: str = "",
+                  endpoint: str = "",
+                  reason: str = "",
+                  hint: str = "",
+              ) -> None:
+                  super().__init__(message)
+                  self.status = status
+                  self.stage = stage
+                  self.endpoint = endpoint
+                  self.reason = reason
+                  self.hint = hint
+
+              def diagnostic_details(self) -> dict[str, Any]:
+                  return {
+                      "stage": self.stage,
+                      "endpoint": self.endpoint,
+                      "reason": self.reason,
+                      "hint": self.hint,
+                  }
+
+
+          def _safe_error_text(value: object) -> str:
+              return " ".join(str(value or "").split())[:500]
+
+
+          def _network_failure_details(error: BaseException) -> tuple[str, str, str]:
+              root = error.reason if isinstance(error, urllib.error.URLError) else error
+              if isinstance(root, ssl.SSLCertVerificationError):
+                  reason = f"TLS certificate verification failed: {_safe_error_text(root)}"
+                  hint = (
+                      "Verify the Proxmox certificate chain, configure the issuing CA, or disable TLS verification "
+                      "only for a trusted lab endpoint."
+                  )
+                  return "tls", reason, hint
+              if isinstance(root, ssl.SSLError):
+                  return (
+                      "tls",
+                      f"TLS negotiation failed: {_safe_error_text(root)}",
+                      "Check the endpoint protocol, certificate, TLS configuration, and any reverse proxy in front of Proxmox.",
+                  )
+              if isinstance(root, socket.gaierror):
+                  return (
+                      "dns",
+                      f"DNS resolution failed: {_safe_error_text(root)}",
+                      "Check the Proxmox hostname or use a reachable IP address and verify DNS from the WebNAS host.",
+                  )
+              if isinstance(root, ConnectionRefusedError):
+                  return (
+                      "tcp",
+                      f"Connection refused: {_safe_error_text(root)}",
+                      "Check that the host is reachable and pveproxy is listening on the configured port (normally 8006).",
+                  )
+              if isinstance(root, (TimeoutError, socket.timeout)):
+                  return (
+                      "tcp",
+                      f"Connection timed out: {_safe_error_text(root)}",
+                      "Check routing, firewall rules, Proxmox availability, and whether TCP port 8006 is reachable from WebNAS.",
+                  )
+              return (
+                  "tcp",
+                  f"{type(root).__name__}: {_safe_error_text(root)}",
+                  "Check the Proxmox address, port, routing, firewall rules, and service availability from the WebNAS host.",
+              )
+
+
+          def _http_failure_detail(error: urllib.error.HTTPError) -> str:
+              try:
+                  body = json.loads(error.read(128 * 1024).decode("utf-8"))
+              except (ValueError, UnicodeDecodeError):
+                  return ""
+              if not isinstance(body, dict):
+                  return ""
+              value = body.get("errors") or body.get("message") or ""
+              if isinstance(value, dict):
+                  return "; ".join(f"{key}: {_safe_error_text(item)}" for key, item in value.items())[:500]
+              return _safe_error_text(value)
+
+
+          def _http_failure_hint(status: int) -> str:
+              if status == 401:
+                  return "Check the Proxmox user@realm/password or API token ID and token secret."
+              if status == 403:
+                  return "Authentication succeeded, but the Proxmox account/token does not have the required privileges."
+              if status == 404:
+                  return "Check that the endpoint points to the Proxmox API origin and is not rewriting /api2/json paths."
+              if status >= 500:
+                  return "The Proxmox API or pveproxy returned a server error; check Proxmox service status and logs."
+              return "Check the Proxmox API response, endpoint configuration, and account permissions."
+
+
+          def _failure_message(operation: str, endpoint: str, stage: str, reason: str, hint: str) -> str:
+              return f"Proxmox {operation} failed for {endpoint}. Stage: {stage.upper()}. Cause: {reason}. Hint: {hint}"
+          '''
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+
+          old = '''        try:
+                      with urllib.request.urlopen(request, timeout=self.timeout, context=self.ssl_context) as response:  # nosec B310
+                          payload = json.loads(response.read(1024 * 1024).decode("utf-8"))
+                  except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, ssl.SSLError, ValueError, UnicodeDecodeError) as error:
+                      raise ProxmoxApiError(f"Proxmox login failed: {type(error).__name__}") from error
+                  data = payload.get("data") if isinstance(payload, dict) else None
+                  if not isinstance(data, dict) or not data.get("ticket") or not data.get("CSRFPreventionToken"):
+                      raise ProxmoxApiError("Proxmox login returned an invalid response")
+          '''
+          new = '''        try:
+                      with urllib.request.urlopen(request, timeout=self.timeout, context=self.ssl_context) as response:  # nosec B310
+                          payload = json.loads(response.read(1024 * 1024).decode("utf-8"))
+                  except urllib.error.HTTPError as error:
+                      detail = _http_failure_detail(error)
+                      reason = f"HTTP {error.code}" + (f": {detail}" if detail else "")
+                      hint = _http_failure_hint(error.code)
+                      raise ProxmoxApiError(
+                          _failure_message("login", self.endpoint, "login", reason, hint),
+                          status=error.code,
+                          stage="login",
+                          endpoint=self.endpoint,
+                          reason=reason,
+                          hint=hint,
+                      ) from error
+                  except (urllib.error.URLError, TimeoutError, OSError, ssl.SSLError) as error:
+                      stage, reason, hint = _network_failure_details(error)
+                      raise ProxmoxApiError(
+                          _failure_message("login", self.endpoint, stage, reason, hint),
+                          stage=stage,
+                          endpoint=self.endpoint,
+                          reason=reason,
+                          hint=hint,
+                      ) from error
+                  except (ValueError, UnicodeDecodeError) as error:
+                      reason = f"Invalid login response: {type(error).__name__}: {_safe_error_text(error)}"
+                      hint = "Verify that the configured address and port expose the Proxmox API rather than another web service."
+                      raise ProxmoxApiError(
+                          _failure_message("login", self.endpoint, "login", reason, hint),
+                          stage="login",
+                          endpoint=self.endpoint,
+                          reason=reason,
+                          hint=hint,
+                      ) from error
+                  data = payload.get("data") if isinstance(payload, dict) else None
+                  if not isinstance(data, dict) or not data.get("ticket") or not data.get("CSRFPreventionToken"):
+                      reason = "Proxmox login returned an invalid response without a ticket and CSRF token"
+                      hint = "Verify the endpoint, reverse proxy configuration, and Proxmox authentication service."
+                      raise ProxmoxApiError(
+                          _failure_message("login", self.endpoint, "login", reason, hint),
+                          stage="login",
+                          endpoint=self.endpoint,
+                          reason=reason,
+                          hint=hint,
+                      )
+          '''
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+
+          old = '''        except urllib.error.HTTPError as error:
+                      detail = ""
+                      try:
+                          body = json.loads(error.read(128 * 1024).decode("utf-8"))
+                          detail = str(body.get("errors") or body.get("message") or "")
+                      except (ValueError, UnicodeDecodeError):
+                          detail = ""
+                      raise ProxmoxApiError(
+                          f"Proxmox API returned HTTP {error.code}" + (f": {detail}" if detail else ""),
+                          status=error.code,
+                      ) from error
+                  except (urllib.error.URLError, TimeoutError, OSError, ssl.SSLError) as error:
+                      raise ProxmoxApiError(f"Proxmox API connection failed: {type(error).__name__}") from error
+                  if not isinstance(payload, dict) or "data" not in payload:
+                      raise ProxmoxApiError("Proxmox API returned an invalid response")
+          '''
+          new = '''        except urllib.error.HTTPError as error:
+                      detail = _http_failure_detail(error)
+                      reason = f"HTTP {error.code}" + (f": {detail}" if detail else "")
+                      hint = _http_failure_hint(error.code)
+                      raise ProxmoxApiError(
+                          _failure_message("API request", self.endpoint, "api", reason, hint),
+                          status=error.code,
+                          stage="api",
+                          endpoint=self.endpoint,
+                          reason=reason,
+                          hint=hint,
+                      ) from error
+                  except (urllib.error.URLError, TimeoutError, OSError, ssl.SSLError) as error:
+                      stage, reason, hint = _network_failure_details(error)
+                      raise ProxmoxApiError(
+                          _failure_message("API request", self.endpoint, stage, reason, hint),
+                          stage=stage,
+                          endpoint=self.endpoint,
+                          reason=reason,
+                          hint=hint,
+                      ) from error
+                  if not isinstance(payload, dict) or "data" not in payload:
+                      reason = "Proxmox API returned a response without the expected data field"
+                      hint = "Verify that the configured address and port expose a compatible Proxmox API endpoint."
+                      raise ProxmoxApiError(
+                          _failure_message("API request", self.endpoint, "api", reason, hint),
+                          stage="api",
+                          endpoint=self.endpoint,
+                          reason=reason,
+                          hint=hint,
+                      )
+          '''
+          assert text.count(old) == 1
+          service.write_text(text)
+
+          router = Path("backend/app/modules/proxmox_manager/router.py")
+          text = router.read_text()
+          old = '''    if isinstance(error, ProxmoxApiError):
+                      api_error(502, "PROXMOX_API_ERROR", str(error), upstream_status=error.status)
+          '''
+          new = '''    if isinstance(error, ProxmoxApiError):
+                      api_error(
+                          502,
+                          "PROXMOX_API_ERROR",
+                          str(error),
+                          upstream_status=error.status,
+                          **error.diagnostic_details(),
+                      )
+          '''
+          assert text.count(old) == 1
+          router.write_text(text.replace(old, new))
+
+          tests = Path("backend/tests/test_proxmox_manager.py")
+          text = tests.read_text()
+          old = '''import importlib
+          from typing import Any
+
+          from app.modules.proxmox_manager.models import ProxmoxConnectionInput
+          from app.modules.proxmox_manager.service import ProxmoxManagerService
+          '''
+          new = '''import importlib
+          import io
+          import ssl
+          import urllib.error
+          from typing import Any
+
+          import pytest
+
+          from app.modules.proxmox_manager.models import ProxmoxConnectionInput
+          from app.modules.proxmox_manager.service import ProxmoxApiClient, ProxmoxApiError, ProxmoxManagerService
+          '''
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+          marker = '''def test_connection_accepts_shared_username_password_credential(monkeypatch, tmp_path):
+          '''
+          assert text.count(marker) == 1
+          diagnostic_tests = '''def test_api_client_reports_connection_refused_diagnostics(monkeypatch):
+              client = ProxmoxApiClient(
+                  "https://10.0.0.10:8006",
+                  "root@pam",
+                  "super-secret-password",
+                  credential_type="username_password",
+              )
+
+              def fail(*_args: Any, **_kwargs: Any):
+                  raise urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
+
+              monkeypatch.setattr(proxmox_module.urllib.request, "urlopen", fail)
+              with pytest.raises(ProxmoxApiError) as raised:
+                  client.get("version")
+
+              error = raised.value
+              assert error.stage == "tcp"
+              assert error.endpoint == "https://10.0.0.10:8006"
+              assert "Connection refused" in error.reason
+              assert "pveproxy" in error.hint
+              assert "10.0.0.10:8006" in str(error)
+              assert "super-secret-password" not in str(error)
+
+
+          def test_api_client_reports_tls_verification_diagnostics(monkeypatch):
+              client = ProxmoxApiClient(
+                  "https://pve.example:8006",
+                  "automation@pve!algen",
+                  "token-secret",
+              )
+
+              def fail(*_args: Any, **_kwargs: Any):
+                  certificate_error = ssl.SSLCertVerificationError(1, "certificate verify failed: self-signed certificate")
+                  raise urllib.error.URLError(certificate_error)
+
+              monkeypatch.setattr(proxmox_module.urllib.request, "urlopen", fail)
+              with pytest.raises(ProxmoxApiError) as raised:
+                  client.get("version")
+
+              error = raised.value
+              assert error.stage == "tls"
+              assert "certificate verification failed" in error.reason.lower()
+              assert "issuing CA" in error.hint
+              assert "token-secret" not in str(error)
+
+
+          def test_api_client_reports_http_authentication_details(monkeypatch):
+              client = ProxmoxApiClient(
+                  "https://pve.example:8006",
+                  "automation@pve!algen",
+                  "token-secret",
+              )
+
+              def fail(*_args: Any, **_kwargs: Any):
+                  raise urllib.error.HTTPError(
+                      "https://pve.example:8006/api2/json/version",
+                      401,
+                      "Unauthorized",
+                      hdrs=None,
+                      fp=io.BytesIO(b'{"message":"authentication failure"}'),
+                  )
+
+              monkeypatch.setattr(proxmox_module.urllib.request, "urlopen", fail)
+              with pytest.raises(ProxmoxApiError) as raised:
+                  client.get("version")
+
+              error = raised.value
+              assert error.status == 401
+              assert error.stage == "api"
+              assert error.reason == "HTTP 401: authentication failure"
+              assert "user@realm/password" in error.hint
+              assert error.diagnostic_details()["endpoint"] == "https://pve.example:8006"
+              assert "token-secret" not in str(error)
+
+
+          '''
+          text = text.replace(marker, diagnostic_tests + marker)
+          tests.write_text(text)
+          PY
+      - name: Commit patch and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-proxmox-diagnostics.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/modules/proxmox_manager/service.py backend/app/modules/proxmox_manager/router.py backend/tests/test_proxmox_manager.py .github/workflows/tmp-proxmox-diagnostics.yml
+          git commit -m "feat: expand Proxmox API error diagnostics"
+          git push origin HEAD:feat/proxmox-connection-test-diagnostics
