@@ -17,6 +17,7 @@ PSEUDO_FILESYSTEMS = {
     "devtmpfs", "efivarfs", "fusectl", "hugetlbfs", "mqueue", "overlay", "proc", "pstore",
     "securityfs", "sysfs", "tmpfs", "tracefs",
 }
+DEFAULT_PROCESS_LIMIT = 12
 _sample_lock = Lock()
 _last_sample: dict | None = None
 
@@ -299,6 +300,20 @@ def os_name() -> str:
     return values.get("PRETTY_NAME") or values.get("NAME") or platform.system()
 
 
+def is_system_network_interface(name: str, sys_class_net: Path = Path("/sys/class/net")) -> bool:
+    if name == "lo":
+        return True
+    interface = sys_class_net / name
+    if (interface / "bridge").exists():
+        return True
+    try:
+        resolved = interface.resolve(strict=True)
+    except OSError:
+        return False
+    parts = resolved.parts
+    return any(parts[index:index + 2] == ("virtual", "net") for index in range(len(parts) - 1))
+
+
 def network_interfaces(sample: dict) -> list[dict]:
     result = []
     for name, (received, sent) in sample["network"].items():
@@ -308,7 +323,7 @@ def network_interfaces(sample: dict) -> list[dict]:
             "rx_bytes": received, "tx_bytes": sent,
             "rx_bytes_per_sec": sample["network_rates"].get(name, (None, None))[0],
             "tx_bytes_per_sec": sample["network_rates"].get(name, (None, None))[1],
-            "system": name == "lo",
+            "system": is_system_network_interface(name),
         })
     return sorted(result, key=lambda item: (item["system"], item["name"]))
 
@@ -334,7 +349,7 @@ def _block_device_name(device: str | None) -> str:
         return path.name
 
 
-def top_processes(limit: int | None = None) -> list[dict]:
+def top_processes(limit: int | None = DEFAULT_PROCESS_LIMIT) -> list[dict]:
     if not shutil.which("ps"):
         return []
     try:
@@ -373,7 +388,7 @@ def build_alerts(volumes: list[dict], ram: dict, temperature: float | None, serv
     return alerts
 
 
-def collect_dashboard(username: str, *, is_admin: bool) -> dict:
+def collect_dashboard(username: str, *, is_admin: bool, process_limit: int | None = DEFAULT_PROCESS_LIMIT) -> dict:
     memory = memory_stats()
     sample = realtime_sample()
     allowed = allowed_root_usage(username)
@@ -405,5 +420,5 @@ def collect_dashboard(username: str, *, is_admin: bool) -> dict:
             if alert["code"] == "disk_usage" else f"{alert['code']}:{alert['target']}"
             for alert in alerts
         ],
-        "processes": top_processes() if is_admin else [],
+        "processes": top_processes(process_limit) if is_admin else [],
     }
