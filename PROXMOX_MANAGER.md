@@ -43,15 +43,20 @@ User-owned host fields such as SSH credential, groups, approval status and manua
 
 ## Credentials
 
-Proxmox API secrets are stored only in Hosts Manager → Credentials.
+The **Add Proxmox connection** dialog supports two authentication modes:
 
-Create a credential with:
+1. **Saved Hosts Manager credential** — select an existing credential shared with `proxmox-manager`.
+2. **Login + password** — enter a Proxmox `user@realm` login such as `root@pam` and its password directly in the connection dialog.
+
+When Login + password is selected, the UI creates a `username_password` credential in Hosts Manager, shares it only with `proxmox-manager`, and then saves the Proxmox connection using only the resulting `credential_id`. The password is never copied into the Proxmox Manager database. If connection creation fails before the connection is saved, the newly created credential is removed again.
+
+API-token authentication remains supported through a saved Hosts Manager credential:
 
 - type: `proxmox_api`
 - username: `user@realm!tokenid`, for example `automation@pve!algen`
 - secret: Proxmox API token secret
 
-Proxmox Manager stores only the resulting `credential_id`. The token secret is decrypted by the controlled Hosts Manager credential API only when a Proxmox request is made.
+For username/password credentials, Proxmox Manager exchanges the stored password server-side for a Proxmox authentication ticket and CSRF token. For API tokens it uses the `PVEAPIToken` authorization header. Secrets are decrypted by the controlled Hosts Manager credential API only when a Proxmox request is made.
 
 TLS verification is enabled by default. A custom CA certificate can be configured for a private Proxmox CA. Disabling TLS verification is available per connection but should be limited to isolated lab environments.
 
@@ -138,7 +143,7 @@ Shutdown, reboot and immediate stop require explicit confirmation using the exac
 | Data | Owner |
 | --- | --- |
 | Proxmox endpoint/TLS settings | Proxmox Manager |
-| Proxmox token secret | Hosts Manager Credentials |
+| Proxmox token/password secret | Hosts Manager Credentials |
 | VMID/node/provider metadata | Shared host `variables` |
 | Host name/address/SSH user/groups/environment | Hosts Manager Host Registry |
 | SSH credentials and trust | Hosts Manager |
