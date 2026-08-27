@@ -45,6 +45,7 @@ const baseSettings: HostsManagerSettings = {
 
 describe("HostsManagerApp", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     vi.mocked(api.hostsManagerDashboard).mockResolvedValue({ total: 1, online: 1, offline: 0, unverified: 1, fingerprint_errors: 0, pending_approval: 1, ansible_available: 0, power_managed: 0, recent_operations: [], recent_errors: [] });
     vi.mocked(api.hostsManagerSettings).mockResolvedValue(baseSettings);
@@ -147,6 +148,33 @@ describe("HostsManagerApp", () => {
     const payload = vi.mocked(api.saveHostsManagerCredential).mock.calls[0][0];
     expect(payload.shared_with).toEqual(["dcst", "hosts-manager"]);
   });
+
+  it("shows a newly saved credential immediately without refreshing the whole workspace", async () => {
+  const saved = {
+    id: "c".repeat(32), name: "Proxmox test", type: "username_password" as const, username: "root@pam",
+    description: "", secret_configured: true, active: true, created_at: 2, updated_at: 2,
+    environment_id: null, last_used_at: null, host_count: 0, shared_with: ["hosts-manager"],
+  };
+  vi.mocked(api.saveHostsManagerCredential).mockResolvedValue(saved);
+  const toast = vi.fn();
+  render(<HostsManagerApp permissions={[...permissions, "hosts-manager.credentials.view", "hosts-manager.credentials.manage"]} t={t} toast={toast} />);
+  await screen.findByText("hosts.dashboard.total");
+  fireEvent.click(screen.getByRole("button", { name: /module.section.credentials/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "hosts.credentials.add" }));
+
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("common.name"), { target: { value: saved.name } });
+  fireEvent.change(within(dialog).getByLabelText("hosts.credentials.field.login"), { target: { value: saved.username } });
+  fireEvent.change(within(dialog).getByLabelText("hosts.credentials.field.password"), { target: { value: "secret" } });
+  const dashboardCalls = vi.mocked(api.hostsManagerDashboard).mock.calls.length;
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "action.save" }));
+
+  await waitFor(() => expect(api.saveHostsManagerCredential).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText(saved.name)).toBeInTheDocument();
+  expect(api.hostsManagerDashboard).toHaveBeenCalledTimes(dashboardCalls);
+  expect(toast).not.toHaveBeenCalledWith(expect.stringContaining("CREDENTIAL_SAVE_INVALID_RESPONSE"), expect.anything(), expect.anything(), expect.anything());
+});
 
   it("keeps APMID selectors for enrollment without duplicating the management form", async () => {
     render(<HostsManagerApp permissions={permissions} t={t} toast={vi.fn()} />);

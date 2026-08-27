@@ -50,7 +50,7 @@ export const hostsManagerClient = {
   startHostsManagerScan: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/api/modules/hosts-manager/scans", { method: "POST", body: JSON.stringify(payload) }),
   validateHostsManagerInventory: (content: string, format = "yaml") => request<Record<string, unknown>>("/api/modules/hosts-manager/inventory/validate", { method: "POST", body: JSON.stringify({ content, format, confirm: false }) }),
   importHostsManagerInventory: (content: string, format = "yaml") => request<Record<string, unknown>>("/api/modules/hosts-manager/inventory/import", { method: "POST", body: JSON.stringify({ content, format, confirm: true }) }),
-  saveHostsManagerCredential: (payload: Record<string, unknown>, id = "") => request<Record<string, unknown>>(id ? `/api/modules/hosts-manager/credentials/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/credentials", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
+  saveHostsManagerCredential: (payload: Record<string, unknown>, id = "") => request<HostsManagerCredential>(id ? `/api/modules/hosts-manager/credentials/${encodeURIComponent(id)}` : "/api/modules/hosts-manager/credentials", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
   deleteHostsManagerCredential: (id: string) => request<{ ok: boolean }>(`/api/modules/hosts-manager/credentials/${encodeURIComponent(id)}`, { method: "DELETE" }),
   hostsManagerDiagnostics: () => request<{ schema_version: number; checks: Array<{ id: string; status: string; message: string }> }>("/api/modules/hosts-manager/diagnostics"),
   hostsManagerBackups: () => request<HostsManagerBackup[]>("/api/modules/hosts-manager/backups"),

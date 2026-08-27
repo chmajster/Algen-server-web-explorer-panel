@@ -235,7 +235,7 @@ export function HostsManagerApp({ permissions, initialOperationId, t, toast, onD
         canManage={can("hosts-manager.credentials.manage")}
         t={t}
         toast={toast}
-        refresh={refresh}
+        onItemsChange={setCredentials}
       />
     );
   else
@@ -2611,14 +2611,14 @@ function Credentials({
   canManage,
   t,
   toast,
-  refresh,
+  onItemsChange,
 }: {
   items: HostsManagerCredential[];
   environments: HostsManagerEnvironment[];
   canManage: boolean;
   t: Translate;
   toast: ToastFn;
-  refresh: () => Promise<void>;
+  onItemsChange: (items: HostsManagerCredential[]) => void;
 }) {
   type CredentialType = HostsManagerCredential["type"];
   type CredentialFieldProfile = {
@@ -2687,6 +2687,7 @@ function Credentials({
   const [shareModules, setShareModules] = useState<CredentialShareModule[]>([]);
   const [shareModulesLoading, setShareModulesLoading] = useState(true);
   const [shareSelectionInitialized, setShareSelectionInitialized] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -2738,30 +2739,42 @@ function Credentials({
   }
 
   async function save(event: React.FormEvent) {
-    event.preventDefault();
-    try {
-      await api.saveHostsManagerCredential({
-        name, type, username, environment_id: environmentId || null, secret, passphrase, description,
-        shared_with: [...new Set(sharedWith)], confirm: true,
-      }, editing?.id);
-      setSecret("");
-      setPassphrase("");
-      setOpen(false);
-      await refresh();
-    } catch (error) {
-      toast(hostsManagerError(error, t), "error", "admin", "hosts-manager");
+  event.preventDefault();
+  if (saving) return;
+  setSaving(true);
+  try {
+    const saved = await api.saveHostsManagerCredential({
+      name, type, username, environment_id: environmentId || null, secret, passphrase, description,
+      shared_with: [...new Set(sharedWith)], confirm: true,
+    }, editing?.id);
+    if (!saved?.id) {
+      throw new ApiError("Backend zapisał poświadczenie, ale nie zwrócił jego identyfikatora.", 500, "CREDENTIAL_SAVE_INVALID_RESPONSE");
     }
+    const normalized = { ...saved, host_count: saved.host_count ?? editing?.host_count ?? 0 };
+    onItemsChange([
+      ...items.filter((item) => item.id !== normalized.id),
+      normalized,
+    ].sort((left, right) => left.name.localeCompare(right.name)));
+    setSecret("");
+    setPassphrase("");
+    setEditing(null);
+    setOpen(false);
+  } catch (error) {
+    toast(hostsManagerError(error, t), "error", "admin", "hosts-manager");
+  } finally {
+    setSaving(false);
   }
+}
 
-  async function remove(item: HostsManagerCredential) {
-    if (!(await confirmDialog(t("hosts.credentials.deleteConfirm"), t))) return;
-    try {
-      await api.deleteHostsManagerCredential(item.id);
-      await refresh();
-    } catch (error) {
-      toast(hostsManagerError(error, t), "error", "admin", "hosts-manager");
-    }
+async function remove(item: HostsManagerCredential) {
+  if (!(await confirmDialog(t("hosts.credentials.deleteConfirm"), t))) return;
+  try {
+    await api.deleteHostsManagerCredential(item.id);
+    onItemsChange(items.filter((candidate) => candidate.id !== item.id));
+  } catch (error) {
+    toast(hostsManagerError(error, t), "error", "admin", "hosts-manager");
   }
+}
 
   const environmentNames = new Map(environments.map((item) => [item.id, item.name]));
   const columns: HostsDataColumn<HostsManagerCredential>[] = [
@@ -2779,7 +2792,7 @@ function Credentials({
 
   return <section className="ansible-panel"><header><div><h3>{t("hosts.credentials.title")}</h3><p>{t("hosts.credentials.hint")}</p></div>{canManage && <button onClick={() => showEditor()}><Plus />{t("hosts.credentials.add")}</button>}</header>
     <HostsDataTable items={items} columns={columns} rowKey={(item) => item.id} empty={t("hosts.credentials.empty")} />
-    {open && <Modal title={editing ? t("hosts.credentials.edit") : t("hosts.credentials.add")} closeLabel={t("action.close")} onClose={() => setOpen(false)} footer={<button className="button-primary" type="submit" form="credential-form">{t("action.save")}</button>}>
+    {open && <Modal title={editing ? t("hosts.credentials.edit") : t("hosts.credentials.add")} closeLabel={t("action.close")} onClose={() => setOpen(false)} footer={<button className="button-primary" type="submit" form="credential-form" disabled={saving}>{t("action.save")}</button>}>
       <form id="credential-form" className="module-form-grid" onSubmit={save}>
         <label className="module-form-span">{t("hosts.credentials.type")}<select aria-label={t("hosts.credentials.type")} autoFocus value={type} onChange={(event) => setCredentialType(event.target.value as CredentialType)} disabled={Boolean(editing)}>{credentialTypes.map((value) => <option key={value} value={value}>{t(`hosts.credentials.type.${value}`)}</option>)}</select><small>{editing ? t("hosts.credentials.typeLocked") : t("hosts.credentials.typeHint")}</small></label>
         <label>{t("common.name")}<input required value={name} placeholder={t("hosts.credentials.namePlaceholder")} onChange={(event) => setName(event.target.value)} /></label>
