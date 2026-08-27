@@ -1,0 +1,11 @@
+id: dcst
+name: DATA Communication & Segmentation Tool - DCST
+category: infrastructure
+icon: shield
+permissions: [dcst.read]
+routers: [app.modules.dcst.router:router]
+dependencies: [hosts-manager, proxmox-manager, apmid]
+capabilities: [firewall, segmentation, ipsets, ports, services, drift-detection, audit]
+actions: [sync, dry-run, block, unblock, diagnostics, logs]
+jobs: []
+menu: [{id: dcst, label: DCST, icon: shield, permission: dcst.read}]
