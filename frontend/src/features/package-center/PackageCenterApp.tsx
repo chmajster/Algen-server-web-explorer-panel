@@ -105,7 +105,7 @@ export function PackageCenterApp({ selectedJobId, permissions = defaultPackagePe
           ? <div className="error-state package-center-error" role="alert"><strong>{t("status.error")}</strong><span>{state.error}</span><button type="button" onClick={() => void state.refresh()}>{t("action.retry")}</button></div>
           : <>
             {catalogTab && <PackageGrid modules={state.visibleModules} loading={state.loading} view={view} permissions={permissions} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: getPackageDisplayName(item, t) })} />}
-            {state.tab === "jobs" && <PackageJobs jobs={state.jobs} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
+            {state.tab === "jobs" && <PackageJobs jobs={state.jobs} permissions={permissions} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
             {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
             {canManageSources && state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
           </>}

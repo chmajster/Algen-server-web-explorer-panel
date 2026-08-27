@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModuleSummary, PackageModule } from "../../api";
-import { getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, isPackageUpdateAvailable, mergePackageCatalog } from "./packageState";
+import { canManagePackageJob, getPackageActions, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, isPackageUpdateAvailable, matchesPackageSearch, mergePackageCatalog } from "./packageState";
 
 function packageItem(options: { installed?: boolean; running?: boolean; update?: boolean; needsConfig?: boolean; error?: boolean } = {}): ModuleSummary {
   const installed = options.installed ?? false;
@@ -45,6 +45,43 @@ describe("Package Center state matrix", () => {
     expect(samba.id).toBe("samba");
     expect(samba.manifest.apt_packages).toContain("cifs-utils");
     expect(getPackageActions(samba)).toEqual(["install"]);
+  });
+
+  it("deduplicates catalog and runtime entries using the module id", () => {
+    const runtime = packageItem({ installed: true, running: true });
+    const catalog: PackageModule = {
+      id: runtime.id,
+      manifest: runtime.manifest,
+      state: { ...runtime.state, installed: false },
+      services: {},
+      status: "available",
+      compatible: true,
+      blocked_by_proxmox: false,
+      distribution: runtime.distribution,
+      jobs: [],
+    };
+
+    const merged = mergePackageCatalog([catalog], [runtime]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toBe(runtime);
+  });
+
+  it("searches module names, descriptions and real manifest categories", () => {
+    const item = packageItem();
+    const t = (key: string) => key === "package.category.system_tools" ? "System tools" : key;
+
+    expect(matchesPackageSearch(item, "demo", t)).toBe(true);
+    expect(matchesPackageSearch(item, "system_tools", t)).toBe(true);
+    expect(matchesPackageSearch(item, "system tools", t)).toBe(true);
+    expect(matchesPackageSearch(item, "database", t)).toBe(false);
+  });
+
+  it("maps job mutation permissions to the original operation", () => {
+    expect(canManagePackageJob("install", ["modules.view"])).toBe(false);
+    expect(canManagePackageJob("install", ["modules.install"])).toBe(true);
+    expect(canManagePackageJob("restart", ["modules.configure"])).toBe(true);
+    expect(canManagePackageJob("unknown", ["modules.install", "modules.configure"])).toBe(false);
   });
 
   it("offers only installation for a package that is not installed", () => {

@@ -3,7 +3,7 @@ import { api, type AppJob, type ModuleSummary, type PackageHistoryItem, type Pac
 import type { Translate } from "../../../app/types";
 import { useRefreshOnConnectionRestored } from "../../connection/ConnectionStatusMonitor";
 import type { PackageTab } from "../types";
-import { getPackageDisplayName, getPackageUiStatus, isPackageUpdateAvailable, mergePackageCatalog } from "../packageState";
+import { getPackageUiStatus, isPackageUpdateAvailable, matchesPackageSearch, mergePackageCatalog } from "../packageState";
 
 export function usePackageCenter(t: Translate, { canManageSources = true }: { canManageSources?: boolean } = {}) {
   const [modules, setModules] = useState<ModuleSummary[]>([]);
@@ -28,7 +28,7 @@ export function usePackageCenter(t: Translate, { canManageSources = true }: { ca
         api.appCategories(),
         api.appJobs(),
         api.appHistory(),
-        canManageSources ? api.packageSources() : Promise.resolve([]),
+        canManageSources ? api.packageSources() : Promise.resolve([] as PackageSource[]),
       ]);
       setModules(mergePackageCatalog(catalog, nextModules));
       setCategories(nextCategories);
@@ -71,9 +71,7 @@ export function usePackageCenter(t: Translate, { canManageSources = true }: { ca
   }, [activeIds, refresh, refreshModule]);
 
   const visibleModules = useMemo(() => modules.filter((item) => {
-    const needle = search.trim().toLowerCase();
-    const categoryLabel = t(`package.category.${item.manifest.category}`);
-    if (needle && !`${getPackageDisplayName(item, t)} ${item.manifest.name} ${item.manifest.description} ${item.manifest.long_description} ${item.manifest.category} ${categoryLabel}`.toLowerCase().includes(needle)) return false;
+    if (!matchesPackageSearch(item, search, t)) return false;
     if (category && item.manifest.category !== category) return false;
     if (status && getPackageUiStatus(item) !== status) return false;
     if (tab === "installed" && !item.state.installed) return false;
