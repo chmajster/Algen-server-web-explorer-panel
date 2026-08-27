@@ -5,6 +5,7 @@ from typing import Any, NoReturn
 from fastapi import APIRouter, Depends, Query
 
 from ...activity import ActivityCategory, ActivityStatus, record_activity
+from ...core.events import bus
 from ...identity.permissions import Permission, authorize, require_permission
 from ...package_center.models import api_error
 from ...security import SessionUser
@@ -136,17 +137,14 @@ def sync_connection(
     except Exception as error:
         _activity(user.username, "proxmox_sync", connection_id, {"error": str(error)}, failed=True)
         _api_failure(error)
-    _activity(
-        user.username,
-        "proxmox_sync",
-        connection_id,
-        {
-            "created": result["created"],
-            "updated": result["updated"],
-            "disabled": result["disabled"],
-            "skipped": len(result["skipped"]),
-        },
-    )
+    details = {
+        "created": result["created"],
+        "updated": result["updated"],
+        "disabled": result["disabled"],
+        "skipped": len(result["skipped"]),
+    }
+    _activity(user.username, "proxmox_sync", connection_id, details)
+    bus.publish("PROXMOX_INVENTORY_CHANGED", {"actor": user.username, "connection_id": connection_id, **details})
     return result
 
 
@@ -184,26 +182,11 @@ def vm_power(
         api_error(404, "PROXMOX_VM_NOT_FOUND", "Proxmox VM not found")
     dangerous = payload.action in {"stop", "shutdown", "reboot"}
     if not payload.confirm or (dangerous and payload.confirmation_text != vm["name"]):
-        api_error(
-            422,
-            "CONFIRMATION_REQUIRED",
-            "Power action requires confirmation and the exact VM name for destructive actions",
-        )
+        api_error(422, "CONFIRMATION_REQUIRED", "Power action requires confirmation and the exact VM name for destructive actions")
     try:
         result = service().execute_vm_action(connection_id, vmid, payload.action, user.username)
     except Exception as error:
-        _activity(
-            user.username,
-            f"proxmox_vm_{payload.action}",
-            str(vm.get("host_id") or vmid),
-            {"connection_id": connection_id, "vmid": vmid, "error": str(error)},
-            failed=True,
-        )
+        _activity(user.username, f"proxmox_vm_{payload.action}", str(vm.get("host_id") or vmid), {"connection_id": connection_id, "vmid": vmid, "error": str(error)}, failed=True)
         _api_failure(error)
-    _activity(
-        user.username,
-        f"proxmox_vm_{payload.action}",
-        str(vm.get("host_id") or vmid),
-        {"connection_id": connection_id, "vmid": vmid, "task": result.get("task")},
-    )
+    _activity(user.username, f"proxmox_vm_{payload.action}", str(vm.get("host_id") or vmid), {"connection_id": connection_id, "vmid": vmid, "task": result.get("task")})
     return result
