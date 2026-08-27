@@ -37,15 +37,18 @@ function MetricCard({ label, value, percent, details, chart }: { label: string; 
 }
 
 export function AlertsPanel({ alerts, warnings, t }: { alerts: ResourceAlert[]; warnings: string[]; t: Translate }) {
-  if (alerts.length === 0 && warnings.length === 0) {
+  const fallbackWarnings = alerts.length === 0 ? warnings : [];
+  const issueCount = alerts.length + fallbackWarnings.length;
+
+  if (issueCount === 0) {
     return <div className="monitor-health monitor-health-ok" aria-live="polite"><span className="monitor-state up">{t("monitor.ready")}</span></div>;
   }
 
   return <section className="monitor-alerts" aria-labelledby="monitor-alerts-title">
-    <header><strong id="monitor-alerts-title">{t("monitor.alerts")}</strong><span>{alerts.length}</span></header>
+    <header><strong id="monitor-alerts-title">{t("monitor.alerts")}</strong><span>{issueCount}</span></header>
     <div className="monitor-alert-list">
       {alerts.map((alert, index) => <p className={alert.severity} key={`${alert.code}-${alert.target}-${index}`} role="alert"><AlertIcon severity={alert.severity} /><strong>{t(`monitor.severity.${alert.severity}`)}</strong><span>{alertMessage(alert, t)}</span></p>)}
-      {warnings.map((warning, index) => <p className="warning" key={`${warning}-${index}`}><AlertTriangle aria-hidden="true" /><strong>{t("monitor.severity.warning")}</strong><span>{warning}</span></p>)}
+      {fallbackWarnings.map((warning, index) => <p className="warning" key={`${warning}-${index}`}><AlertTriangle aria-hidden="true" /><strong>{t("monitor.severity.warning")}</strong><span>{warning}</span></p>)}
     </div>
   </section>;
 }
