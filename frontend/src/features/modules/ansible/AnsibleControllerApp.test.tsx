@@ -74,20 +74,29 @@ describe("AnsibleControllerApp", () => {
     expect(screen.getByText(/hostname -f/)).toBeInTheDocument();
   });
 
-  it("shows credential fields appropriate for the selected type", async () => {
+  it("opens new credentials with login and password authentication by default", async () => {
     const credentialPermissions = [...permissions, "ansible-controller.credentials.manage"];
     render(<AnsibleControllerApp permissions={credentialPermissions} t={t} toast={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: /module.section.credentials/ }));
     fireEvent.click(await screen.findByRole("button", { name: /ansible.credential.add/ }));
 
     const type = screen.getByLabelText("ansible.credential.type");
-    fireEvent.change(type, { target: { value: "ssh_password" } });
+    expect(type).toHaveValue("ssh_password");
     expect(screen.getByLabelText("ansible.credential.localUsername")).toBeRequired();
     expect(screen.getByLabelText("ansible.credential.secret.ssh_password")).toHaveAttribute("type", "password");
 
     fireEvent.change(type, { target: { value: "awx_token" } });
     expect(screen.queryByLabelText("ansible.credential.localUsername")).not.toBeInTheDocument();
     expect(screen.getByLabelText("ansible.credential.secret.awx_token")).toHaveAttribute("type", "password");
+  });
+
+  it("allows password credentials when manually adding a host", async () => {
+    mocks.credentials.mockResolvedValue([{ id: "password-credential", name: "Root password", type: "ssh_password", username: "root", description: "", secret_configured: true, active: true, created_at: 1, updated_at: 1 }]);
+    render(<AnsibleControllerApp permissions={permissions} t={t} toast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /module.section.hosts/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /ansible.host.add/ }));
+
+    await waitFor(() => expect(screen.getAllByRole("option", { name: "Root password" })).toHaveLength(2));
   });
 
   it("changes the default managed account used for host onboarding", async () => {
