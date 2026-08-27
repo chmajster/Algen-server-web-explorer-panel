@@ -175,17 +175,27 @@ def test_provider_preserves_external_rules_and_generates_direction_ports():
     class Client:
         def __init__(self):
             self.rules = [{"pos": 0, "type": "in", "action": "ACCEPT", "comment": "external-rule"}]
+
         def get(self, path):
-            if path == "cluster/firewall/rules": return list(self.rules)
-            if path == "cluster/firewall/ipset": return []
+            if path == "cluster/firewall/rules":
+                return list(self.rules)
+            if path == "cluster/firewall/ipset":
+                return []
             return []
+
         def post(self, path, data=None):
-            if path == "cluster/firewall/rules": self.rules.append(dict(data or {}) | {"pos": len(self.rules)})
+            if path == "cluster/firewall/rules":
+                self.rules.append(dict(data or {}) | {"pos": len(self.rules)})
+
         def request(self, method, path, data=None):
             if method == "DELETE" and "cluster/firewall/rules/" in path:
-                position = int(path.rsplit("/", 1)[1]); self.rules = [row for row in self.rules if int(row.get("pos", -1)) != position]
-                for index, row in enumerate(self.rules): row["pos"] = index
-        def put(self, path, data=None): return None
+                position = int(path.rsplit("/", 1)[1])
+                self.rules = [row for row in self.rules if int(row.get("pos", -1)) != position]
+                for index, row in enumerate(self.rules):
+                    row["pos"] = index
+
+        def put(self, path, data=None):
+            return None
 
     provider = ProxmoxFirewallProvider()
     client = Client()
