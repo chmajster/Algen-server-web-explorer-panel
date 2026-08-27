@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from .models import ConnectionType, CredentialInput, EnrollmentTokenInput, GroupInput, HostInput
+from .network_inventory import network_inventory
 from .service import (
     HostCapabilityProvider,
     ManagedGroupConflictError,
@@ -68,5 +69,5 @@ def find_host(*, address: str = "", variable_key: str = "", variable_value: str 
 __all__ = [
     "ConnectionType", "CredentialInput", "EnrollmentTokenInput", "GroupInput", "HostCapabilityProvider",
     "HostInput", "ManagedGroupConflictError", "ManagedGroupProtectedError", "find_host", "host_names",
-    "provider_hosts", "registry",
+    "network_inventory", "provider_hosts", "registry",
 ]
