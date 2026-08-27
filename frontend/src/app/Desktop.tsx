@@ -1,3 +1,4 @@
+import { confirmDialog } from "../components/DialogService";
 import { Bell, ShieldCheck, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
@@ -518,7 +519,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     return () => { active = false; window.clearInterval(elapsedTimer); window.clearInterval(probeTimer); };
   }, [applicationRestarting]);
   function moduleDirty(item: WindowInstance, dirty: boolean) { setDirtyWindows((current) => { const next = new Set(current); if (dirty) next.add(item.id); else next.delete(item.id); return next; }); }
-  function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !window.confirm(t("module.unsavedClose"))) return; const draftPrefix = `webnas_window_draft_${user.username}_${item.id}`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
+  async function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !(await confirmDialog(t("module.unsavedClose"), t))) return; const draftPrefix = `webnas_window_draft_${user.username}_${item.id}`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
   function taskbarWindow(item: WindowInstance, action: TaskbarWindowAction) {
     if (action === "close") closeWindow(item);
     else if (action === "focus") dispatch({ type: "focus", id: item.id });

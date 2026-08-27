@@ -8,6 +8,7 @@ import { ConnectionStatusMonitor } from "../features/connection/ConnectionStatus
 import { useUploadManager } from "../features/transfers/useUploadManager";
 import { UpdateCompletionDialog, UpdateStatusPage } from "../features/settings/UpdateStatusPage";
 import { Login } from "../features/auth/Login";
+import { DialogInfrastructure } from "../components/DialogService";
 
 const COMPLETED_UPDATE_RELOAD_KEY = "webnas_completed_update_reload";
 const reloadWindow = () => window.location.reload();
@@ -220,6 +221,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   return <>
     {connectionStatus}
     <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={clearAuthenticatedUi} />
+    <DialogInfrastructure />
     {completionNotice && <UpdateCompletionDialog
       notice={completionNotice}
       t={t}

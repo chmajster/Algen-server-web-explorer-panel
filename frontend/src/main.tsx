@@ -4,5 +4,10 @@ import { App } from "./app/App";
 import "./styles/app.css";
 import "./styles/update-transition-fix.css";
 import "./styles/dsm.css";
+import "./styles/dialog-compat.css";
 
-createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);

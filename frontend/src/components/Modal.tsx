@@ -1,8 +1,20 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { Maximize2, Minimize2, X } from "lucide-react";
 
 const FOCUSABLE = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])";
+const minimizedSlots = new Set<number>();
+
+function reserveMinimizedSlot(): number {
+  let slot = 0;
+  while (minimizedSlots.has(slot)) slot += 1;
+  minimizedSlots.add(slot);
+  return slot;
+}
+
+function releaseMinimizedSlot(slot: number | null) {
+  if (slot !== null) minimizedSlots.delete(slot);
+}
 
 export function Modal({ title, children, onClose, footer, wide = false, closeLabel = "×", className = "" }: {
   title: string;
@@ -17,14 +29,22 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   const panel = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(typeof document === "undefined" ? null : document.activeElement as HTMLElement | null);
   const onCloseRef = useRef(onClose);
+  const minimizedSlotRef = useRef<number | null>(null);
+  const [minimizedSlot, setMinimizedSlot] = useState<number | null>(null);
+  const minimized = minimizedSlot !== null;
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => { minimizedSlotRef.current = minimizedSlot; }, [minimizedSlot]);
 
   useEffect(() => {
-    const restoreFocus = previousFocus.current;
+    if (minimized) return;
     const autofocus = panel.current?.querySelector<HTMLElement>("[autofocus]");
     const focusable = autofocus || panel.current?.querySelector<HTMLElement>(FOCUSABLE);
     if (!panel.current?.contains(document.activeElement)) (focusable || panel.current)?.focus();
+  }, [minimized]);
+
+  useEffect(() => {
+    if (minimized) return;
     function escape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -33,37 +53,105 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
       }
     }
     document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [minimized]);
+
+  useEffect(() => {
+    const restoreFocus = previousFocus.current;
     return () => {
-      document.removeEventListener("keydown", escape);
+      releaseMinimizedSlot(minimizedSlotRef.current);
       restoreFocus?.focus();
     };
   }, []);
 
-  function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "Tab" || !panel.current) return;
-    const nodes = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)].sort((left, right) => (
-      left === right ? 0 : left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
-    ));
-    if (!nodes.length) {
-      event.preventDefault();
-      panel.current.focus();
-      return;
-    }
-    const first = nodes[0];
-    const last = nodes[nodes.length - 1];
-    if (event.shiftKey && (event.target === first || document.activeElement === first || event.target === panel.current)) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && (event.target === last || document.activeElement === last)) { event.preventDefault(); first.focus(); }
+  function minimize() {
+    setMinimizedSlot((current) => current ?? reserveMinimizedSlot());
   }
 
-  const dialog = (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCloseRef.current()}>
-      <div ref={panel} className={`modal-panel ${wide ? "modal-wide" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={trapFocus} onPointerDown={(event) => event.stopPropagation()}>
-        <header className="modal-header"><h2 id={titleId}>{title}</h2><button className="icon-button" type="button" aria-label={closeLabel} onClick={onClose}><X size={18} /></button></header>
+  function restore() {
+    setMinimizedSlot((current) => {
+      releaseMinimizedSlot(current);
+      return null;
+    });
+  }
+
+  const dialogWindow = (
+    <div
+      className="dialog-window-layer"
+      role="presentation"
+      hidden={minimized}
+      style={{ position: "fixed", zIndex: 3500, inset: 0, pointerEvents: "none" }}
+    >
+      <div
+        ref={panel}
+        className={`modal-panel dialog-window ${wide ? "modal-wide" : ""} ${className}`.trim()}
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onPointerDown={(event) => event.stopPropagation()}
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          pointerEvents: "auto",
+        }}
+      >
+        <header className="modal-header">
+          <h2 id={titleId}>{title}</h2>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: ".25rem" }}>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={`Minimize ${title}`}
+              title={`Minimize ${title}`}
+              onClick={minimize}
+            >
+              <Minimize2 size={18} />
+            </button>
+            <button className="icon-button" type="button" aria-label={closeLabel} onClick={onClose}><X size={18} /></button>
+          </div>
+        </header>
         <div className="modal-body">{children}</div>
         {footer && <footer className="modal-footer">{footer}</footer>}
       </div>
     </div>
   );
+
+  const restoreButton = minimizedSlot !== null ? (
+    <button
+      type="button"
+      className="button modal-minimized-entry"
+      data-minimized-slot={minimizedSlot}
+      aria-label={`Restore ${title}`}
+      title={`Restore ${title}`}
+      onClick={restore}
+      style={{
+        position: "fixed",
+        zIndex: 3900,
+        right: "1rem",
+        bottom: `calc(3.75rem + ${minimizedSlot * 3}rem)`,
+        maxWidth: "min(22rem, calc(100vw - 2rem))",
+        minHeight: "2.5rem",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: ".5rem",
+        padding: "0 .875rem",
+        border: "1px solid var(--border-strong)",
+        borderRadius: "var(--radius-medium)",
+        color: "var(--text-primary)",
+        background: "var(--surface-elevated)",
+        boxShadow: "var(--shadow-menu)",
+        pointerEvents: "auto",
+      }}
+    >
+      <Maximize2 size={16} />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+    </button>
+  ) : null;
+
+  const dialog = <>{dialogWindow}{restoreButton}</>;
   const portalTarget = typeof document === "undefined" ? null : document.querySelector<HTMLElement>(".desktop") || document.body;
   return portalTarget ? createPortal(dialog, portalTarget) : dialog;
 }
@@ -91,8 +179,9 @@ export function InputDialog({ title, label, value, confirmLabel, cancelLabel, ty
   onClose: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  return <Modal title={title} closeLabel={cancelLabel} onClose={onClose} footer={<><button type="button" onClick={onClose}>{cancelLabel}</button><button className="button-primary" type="submit" form="input-dialog-form">{confirmLabel}</button></>}>
-    <form id="input-dialog-form" onSubmit={(event) => { event.preventDefault(); const next = input.current?.value.trim(); if (next) onConfirm(next); }}>
+  const formId = useId();
+  return <Modal title={title} closeLabel={cancelLabel} onClose={onClose} footer={<><button type="button" onClick={onClose}>{cancelLabel}</button><button className="button-primary" type="submit" form={formId}>{confirmLabel}</button></>}>
+    <form id={formId} onSubmit={(event) => { event.preventDefault(); const next = input.current?.value.trim(); if (next) onConfirm(next); }}>
       <label className="field-label">{label}<input ref={input} defaultValue={value} type={type} autoFocus /></label>
     </form>
   </Modal>;

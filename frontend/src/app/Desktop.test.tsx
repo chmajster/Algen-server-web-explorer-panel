@@ -288,9 +288,10 @@ describe("personalized desktop", () => {
     renderDesktop({ is_admin: true, startup_windows: "last", permissions: [...settingsFixture().permissions, "modules.view", "modules.configure"] });
     fireEvent.click(await screen.findByRole("button", { name: "mark-module-dirty" }));
     fireEvent.click(screen.getByRole("button", { name: "action.close" }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("dialog", { name: "app.samba" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "action.close" }));
-    expect(screen.queryByRole("dialog", { name: "app.samba" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "app.samba" })).not.toBeInTheDocument());
     expect(confirm).toHaveBeenCalledTimes(2);
     confirm.mockRestore();
     localStorage.removeItem("webnas_windows_test");

@@ -91,13 +91,13 @@ describe("PackageJobDialog", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it("renders operation progress as a separate modal window", () => {
+  it("renders operation progress as a separate nonblocking window", () => {
     render(<PackageJobDialog initialJob={queued} moduleName="Menedżer kontenerów" t={(key) => key} onClose={vi.fn()} />);
 
     const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveAttribute("aria-modal", "false");
     expect(dialog).toHaveClass("operation-progress-dialog");
-    expect(dialog.closest(".modal-backdrop")).not.toBeNull();
+    expect(dialog.closest(".modal-backdrop")).toBeNull();
   });
 
   it("renders frameless content inside a native desktop window", () => {

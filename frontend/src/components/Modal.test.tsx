@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ConfirmDialog, Modal } from "./Modal";
+import { ConfirmDialog, InputDialog, Modal } from "./Modal";
 
-describe("modal", () => {
+describe("dialog window", () => {
   it("closes with Escape and confirms without using a native dialog", () => {
     const close = vi.fn(); const confirm = vi.fn();
     const { rerender } = render(<ConfirmDialog title="Delete" message="Really?" confirmLabel="Delete" cancelLabel="Cancel" onConfirm={confirm} onClose={close} />);
@@ -32,40 +32,84 @@ describe("modal", () => {
     expect(latestClose).toHaveBeenCalledOnce();
   });
 
-  it("renders over the desktop instead of being clipped by a parent window", () => {
+  it("renders as a non-blocking desktop window without a blurred backdrop", () => {
     const close = vi.fn();
     const { rerender } = render(<div className="desktop" data-testid="desktop"><div data-testid="small-window" /></div>);
-    rerender(<div className="desktop" data-testid="desktop"><div data-testid="small-window"><Modal title="Full overlay" onClose={close}><p>Content</p></Modal></div></div>);
+    rerender(<div className="desktop" data-testid="desktop"><div data-testid="small-window"><Modal title="Floating dialog" onClose={close}><p>Content</p></Modal></div></div>);
 
     const desktop = screen.getByTestId("desktop");
     const smallWindow = screen.getByTestId("small-window");
-    const dialog = screen.getByRole("dialog", { name: "Full overlay" });
-    const backdrop = dialog.parentElement;
-    expect(backdrop).toHaveClass("modal-backdrop");
-    expect(backdrop?.parentElement).toBe(desktop);
+    const dialog = screen.getByRole("dialog", { name: "Floating dialog" });
+    const layer = dialog.parentElement;
+    expect(dialog).toHaveAttribute("aria-modal", "false");
+    expect(layer).toHaveClass("dialog-window-layer");
+    expect(layer).not.toHaveClass("modal-backdrop");
+    expect(layer?.parentElement).toBe(desktop);
     expect(smallWindow).not.toContainElement(dialog);
+    expect(document.querySelector(".modal-backdrop")).not.toBeInTheDocument();
   });
 
-  it("keeps keyboard focus inside the dialog and restores it after closing", () => {
+  it("can be minimized and restored while keeping its content", () => {
+    const close = vi.fn();
+    render(<Modal title="Minimizable" onClose={close}><input aria-label="Draft" defaultValue="keep me" /></Modal>);
+    const draft = screen.getByLabelText("Draft");
+    fireEvent.change(draft, { target: { value: "changed" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Minimizable" }));
+    expect(screen.queryByRole("dialog", { name: "Minimizable" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore Minimizable" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore Minimizable" }));
+    expect(screen.getByRole("dialog", { name: "Minimizable" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Draft")).toHaveValue("changed");
+  });
+
+  it("ignores Escape while minimized", () => {
+    const close = vi.fn();
+    render(<Modal title="Minimized escape" onClose={close}><input aria-label="Draft" /></Modal>);
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Minimized escape" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(close).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Restore Minimized escape" })).toBeInTheDocument();
+  });
+
+  it("assigns distinct restore slots to concurrent minimized dialogs", () => {
+    render(<><Modal title="First minimized" onClose={vi.fn()}><p>First</p></Modal><Modal title="Second minimized" onClose={vi.fn()}><p>Second</p></Modal></>);
+    fireEvent.click(screen.getByRole("button", { name: "Minimize First minimized" }));
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Second minimized" }));
+    const first = screen.getByRole("button", { name: "Restore First minimized" });
+    const second = screen.getByRole("button", { name: "Restore Second minimized" });
+    expect(first).not.toHaveAttribute("data-minimized-slot", second.getAttribute("data-minimized-slot"));
+    expect(first.style.bottom).not.toBe(second.style.bottom);
+  });
+
+  it("gives concurrent input dialogs unique form ids", () => {
+    render(<><InputDialog title="First input" label="First value" confirmLabel="Save first" cancelLabel="Cancel" onConfirm={vi.fn()} onClose={vi.fn()} /><InputDialog title="Second input" label="Second value" confirmLabel="Save second" cancelLabel="Cancel" onConfirm={vi.fn()} onClose={vi.fn()} /></>);
+    const firstButton = screen.getByRole("button", { name: "Save first" });
+    const secondButton = screen.getByRole("button", { name: "Save second" });
+    expect(firstButton.getAttribute("form")).toBeTruthy();
+    expect(secondButton.getAttribute("form")).toBeTruthy();
+    expect(firstButton.getAttribute("form")).not.toBe(secondButton.getAttribute("form"));
+    expect(document.getElementById(firstButton.getAttribute("form") || "")).toBeInstanceOf(HTMLFormElement);
+    expect(document.getElementById(secondButton.getAttribute("form") || "")).toBeInstanceOf(HTMLFormElement);
+  });
+
+  it("does not trap focus and restores the opener after closing", () => {
     const opener = document.createElement("button");
-    document.body.appendChild(opener);
+    const outside = document.createElement("button");
+    document.body.append(opener, outside);
     opener.focus();
     const close = vi.fn();
-    const { unmount } = render(<Modal title="Keyboard dialog" onClose={close} footer={<button>Last action</button>}><input aria-label="First field" autoFocus /></Modal>);
+    const { unmount } = render(<Modal title="Keyboard dialog" onClose={close}><input aria-label="First field" autoFocus /></Modal>);
     const first = screen.getByLabelText("First field");
-    const last = screen.getByRole("button", { name: "Last action" });
-    const closeButton = screen.getByRole("button", { name: "×" });
 
     expect(first).toHaveFocus();
-    last.focus();
-    const dialog = screen.getByRole("dialog", { name: "Keyboard dialog" });
-    fireEvent.keyDown(dialog, { key: "Tab" });
-    expect(closeButton).toHaveFocus();
-    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
-    expect(last).toHaveFocus();
+    outside.focus();
+    expect(outside).toHaveFocus();
 
     unmount();
     expect(opener).toHaveFocus();
     opener.remove();
+    outside.remove();
   });
 });
