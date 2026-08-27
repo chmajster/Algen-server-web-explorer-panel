@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { DiskMetric, NetworkMetric } from "../../../api";
+import type { History } from "./monitorUtils";
 import { dedupeStorage, MAX_SAMPLES, pushSample, summarizeNetwork, usageLevel } from "./monitorUtils";
 
 describe("monitorUtils", () => {
   it("keeps resource history bounded", () => {
-    let history = {};
+    let history: History = {};
     for (let index = 0; index < MAX_SAMPLES + 20; index += 1) history = pushSample(history, "cpu", index);
     expect(history.cpu).toHaveLength(MAX_SAMPLES);
     expect(history.cpu[0]).toBe(20);
