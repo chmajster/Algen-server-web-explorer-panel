@@ -45,6 +45,7 @@ const baseSettings: HostsManagerSettings = {
 
 describe("HostsManagerApp", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     vi.mocked(api.hostsManagerDashboard).mockResolvedValue({ total: 1, online: 1, offline: 0, unverified: 1, fingerprint_errors: 0, pending_approval: 1, ansible_available: 0, power_managed: 0, recent_operations: [], recent_errors: [] });
     vi.mocked(api.hostsManagerSettings).mockResolvedValue(baseSettings);
