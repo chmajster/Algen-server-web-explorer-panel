@@ -51,6 +51,7 @@ Main project goals:
 | **Users & Groups** | Manage local Linux users, groups, roles and granular permissions |
 | **Networking** | Interfaces, VLANs, bridges, bonds, DNS, routing, diagnostics and controlled network changes |
 | **Network Resources** | SMB/CIFS, NFS, SSHFS and WebDAV integrated with File Manager |
+| **DCST** | Logical `APMID.ENV` segmentation, reusable Ports/IPSets/Services, Proxmox Firewall reconciliation, block/unblock, drift detection and firewall diagnostics |
 | **Containers** | Docker Engine, images, containers, Compose, networks, volumes, registries, backups and diagnostics |
 | **Package Center** | Install and manage WebNAS modules |
 | **Logs** | System logs, `journalctl`, kernel, services and Docker container logs |
@@ -70,6 +71,8 @@ Available and supported modules include:
 - Ansible Automation Controller
 - Docker / Containers Manager
 - Linux Updates
+- DATA Communication & Segmentation Tool - DCST
+- Proxmox Manager
 - Nginx
 - Squid Proxy
 - Syncthing
@@ -196,6 +199,7 @@ Detailed documentation is available in separate files:
 | [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
 | [CRON_MANAGER.md](CRON_MANAGER.md) | Cron Manager |
 | [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases and safe configuration lifecycle |
+| [DCST.md](DCST.md) | DCST architecture, Proxmox Firewall integration, Services, Ports, IPSets, TAGS, drift detection and troubleshooting |
 | [PACKAGE_CENTER.md](PACKAGE_CENTER.md) | Package Center |
 | [MODULES.md](MODULES.md) | Module architecture |
 | [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) | Infrastructure modules |
