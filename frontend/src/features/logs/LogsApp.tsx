@@ -1,3 +1,4 @@
+import { promptDialog } from "../../components/DialogService";
 import {
   AlertCircle, Archive, BookMarked, Box, ChevronRight, CirclePause, CirclePlay, Clock3,
   Copy, Download, FileText, Filter, FolderTree, PanelLeftClose, PanelLeftOpen, RefreshCw, Save,
@@ -235,7 +236,7 @@ export function LogsApp({ permissions, t, toast }: { permissions: string[]; t: T
     setFilters({ ...emptyFilters, ...view.filters, priority: Array.isArray(view.filters.priority) ? view.filters.priority as number[] : [] } as Filters);
   }
   async function saveView() {
-    const name = window.prompt(t("logs.savedViewName"));
+    const name = (await promptDialog(t, t("logs.savedViewName")));
     if (!name?.trim()) return;
     try {
       const item = await api.createLogSavedView({ name: name.trim(), source, query, filters: filters as unknown as Record<string, string | number | boolean | number[]>, columns: ["timestamp", "severity", "source", "unit", "pid", "hostname", "message"], sort: "newest", view_mode: viewMode });

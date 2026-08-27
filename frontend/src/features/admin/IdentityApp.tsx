@@ -1,3 +1,4 @@
+import { confirmDialog } from "../../components/DialogService";
 import { History, KeyRound, Lock, Plus, RefreshCw, Search, ShieldCheck, Trash2, Unlock, UserCog, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type IdentityGroup, type IdentityHistory, type IdentityRoles, type IdentityUser, type PermissionMetadata, type RbacRole } from "../../api";
@@ -152,7 +153,7 @@ export function AccessPolicies({ permissions, initialSubject, t, toast }: { perm
   function chooseGroup(group: IdentityGroup) { setSelectedGroup(group); setSelectedUser(null); setPolicy({ allow: group.allow, deny: group.deny }); }
   async function save() {
     const subject = selectedUser?.username || selectedGroup?.name;
-    if (!subject || !window.confirm(`${t("identity.savePolicy")}: ${subject}`)) return;
+    if (!subject || !(await confirmDialog(`${t("identity.savePolicy")}: ${subject}`, t))) return;
     try {
       if (selectedUser) await api.saveIdentityUserPolicy(selectedUser.username, { role, ...policy });
       else if (selectedGroup) await api.saveIdentityGroupPolicy(selectedGroup.name, policy);

@@ -99,4 +99,24 @@ describe("ApmidApp", () => {
     expect(screen.getByRole("button", { name: "apmid.member.addFirst" })).toBeInTheDocument();
     expect(within(screen.getByRole("dialog")).queryByRole("table")).not.toBeInTheDocument();
   });
+
+  it("coalesces duplicate backup restores while one request is pending", async () => {
+    vi.mocked(api.apmidBackups).mockResolvedValue([{
+      id: "backup-1", schema_version: 1, created_at: 1, created_by: "admin",
+      description: "test", sha256: "abc", database: "/tmp/apmid.db",
+    }]);
+    vi.mocked(api.restoreApmidBackup).mockImplementation(() => new Promise(() => {}));
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("RESTORE");
+
+    render(<ApmidApp permissions={["apmid.restore"]} t={t} toast={vi.fn()} />);
+    await screen.findByText("apmid.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: "module.section.backups" }));
+    const restore = await screen.findByRole("button", { name: "apmid.backup.restore" });
+    fireEvent.click(restore);
+    fireEvent.click(restore);
+
+    await waitFor(() => expect(api.restoreApmidBackup).toHaveBeenCalledTimes(1));
+    expect(prompt).toHaveBeenCalledTimes(1);
+    prompt.mockRestore();
+  });
 });

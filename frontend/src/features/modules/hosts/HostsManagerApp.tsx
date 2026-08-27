@@ -1,3 +1,4 @@
+import { confirmDialog } from "../../../components/DialogService";
 import {
   AlertTriangle,
   Check,
@@ -460,7 +461,7 @@ function Hosts({
   const operatingSystems = [...new Set(items.map((item) => item.distribution || "").filter(Boolean))].sort();
   const canManage = permissions.includes("hosts-manager.hosts.manage");
   async function remove(item: HostsManagerHost) {
-    if (!window.confirm(t("hosts.host.deleteConfirm").replace("{name}", item.name))) return;
+    if (!(await confirmDialog(t("hosts.host.deleteConfirm").replace("{name}", item.name), t))) return;
     try {
       await api.deleteHostsManagerHost(item.id, item.name);
       await refresh();
@@ -469,7 +470,7 @@ function Hosts({
     }
   }
   async function disable(item: HostsManagerHost) {
-    if (!window.confirm(t("hosts.host.disableConfirm").replace("{name}", item.name))) return;
+    if (!(await confirmDialog(t("hosts.host.disableConfirm").replace("{name}", item.name), t))) return;
     try {
       await api.disableHostsManagerHost(item.id);
       await refresh();
@@ -478,7 +479,7 @@ function Hosts({
     }
   }
   async function bulkDisable() {
-    if (!selectedIds.length || !window.confirm(t("hosts.bulk.disableConfirm").replace("{count}", String(selectedIds.length)))) return;
+    if (!selectedIds.length || !(await confirmDialog(t("hosts.bulk.disableConfirm").replace("{count}", String(selectedIds.length)), t))) return;
     try {
       await Promise.all(selectedIds.map((id) => api.disableHostsManagerHost(id)));
       setSelectedIds([]);
@@ -999,7 +1000,7 @@ function HostDetails({
     }
   }
   async function regenerateIdentity() {
-    if (!window.confirm(t("hosts.agent.regenerateConfirm"))) return;
+    if (!(await confirmDialog(t("hosts.agent.regenerateConfirm"), t))) return;
     try {
       const result = await api.regenerateHostsManagerAgentIdentity(value.id);
       setAgentToken(result.token);
@@ -1009,7 +1010,7 @@ function HostDetails({
     }
   }
   async function invalidateIdentity() {
-    if (!window.confirm(t("hosts.agent.invalidateConfirm"))) return;
+    if (!(await confirmDialog(t("hosts.agent.invalidateConfirm"), t))) return;
     try {
       await api.invalidateHostsManagerAgentIdentity(value.id);
       toast(t("hosts.agent.identityInvalidated"), "ok");
@@ -1291,7 +1292,7 @@ function EnvironmentManager({
     }
   }
   async function remove(item: HostsManagerEnvironment) {
-    if (!window.confirm(t("hosts.environment.deleteConfirm").replace("{name}", item.name))) return;
+    if (!(await confirmDialog(t("hosts.environment.deleteConfirm").replace("{name}", item.name), t))) return;
     try {
       await api.deleteHostsManagerEnvironment(item.id);
       await refresh();
@@ -1376,7 +1377,7 @@ function Groups({
     }
   }
   async function remove(item: HostsManagerGroup) {
-    if (!window.confirm(t("hosts.group.deleteConfirm").replace("{name}", item.name))) return;
+    if (!(await confirmDialog(t("hosts.group.deleteConfirm").replace("{name}", item.name), t))) return;
     try {
       await api.deleteHostsManagerGroup(item.id);
       await refresh();
@@ -2594,7 +2595,7 @@ function Credentials({
   }
 
   async function remove(item: HostsManagerCredential) {
-    if (!window.confirm(t("hosts.credentials.deleteConfirm"))) return;
+    if (!(await confirmDialog(t("hosts.credentials.deleteConfirm"), t))) return;
     try {
       await api.deleteHostsManagerCredential(item.id);
       await refresh();
@@ -3282,9 +3283,8 @@ function HostnamePatterns({
 
   async function remove(item: HostsManagerHostnamePattern) {
     if (
-      !window.confirm(
-        t("hosts.pattern.deleteConfirm").replace("{name}", item.name),
-      )
+      !(await confirmDialog(
+        t("hosts.pattern.deleteConfirm").replace("{name}", item.name), t))
     )
       return;
     try {

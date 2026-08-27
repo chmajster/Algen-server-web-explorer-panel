@@ -1,0 +1,80 @@
+/* Compatibility for legacy dialogs that have not yet migrated to the shared Modal component. */
+[data-nonblocking-dialog-layer="true"] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  pointer-events: none !important;
+}
+
+[data-nonblocking-dialog="true"] {
+  pointer-events: auto !important;
+}
+
+.modal-header-controls {
+  grid-column: 3;
+  justify-self: end;
+  min-width: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.legacy-dialog-minimize {
+  width: 1.875rem;
+  height: 1.875rem;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  margin-left: auto;
+  border-radius: 0.3125rem;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+.legacy-dialog-minimize:hover {
+  background: var(--surface-hover);
+}
+
+.dialog-restore-tray {
+  position: fixed;
+  z-index: 3900;
+  inset: 0;
+  pointer-events: none;
+}
+
+.modal-minimized-entry,
+.dialog-restore-tray > .legacy-dialog-restore {
+  position: fixed;
+  z-index: 3900;
+  right: 1rem;
+  bottom: calc(3.75rem + var(--dialog-minimized-offset, 0rem));
+  width: auto;
+  max-width: min(22rem, calc(100vw - 2rem));
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding: 0 0.875rem;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-medium);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-menu);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+@media (max-width: 920px) {
+  .modal-minimized-entry,
+  .dialog-restore-tray > .legacy-dialog-restore {
+    right: 0.5rem;
+    bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + var(--dialog-minimized-offset, 0rem));
+    max-width: calc(100vw - 1rem);
+  }
+}

@@ -51,6 +51,7 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
     const root = panel.current;
     root?.querySelector<HTMLElement>("input, select, button")?.focus();
     const keyboard = (event: globalThis.KeyboardEvent) => {
+      if (root?.hidden) return;
       if (event.key === "Escape") closeRef.current();
       if (event.key !== "Tab" || !root) return;
       const focusable = Array.from(root.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex='0']"));

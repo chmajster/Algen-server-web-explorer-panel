@@ -430,7 +430,7 @@ body,
 }
 
 .admin-action-form > .field-label,
-#input-dialog-form > .field-label {
+.input-dialog-form > .field-label {
   display: grid;
   grid-template-columns: minmax(8rem, 10rem) minmax(11.25rem, 1fr);
   align-items: center;
@@ -440,7 +440,7 @@ body,
 }
 
 .admin-action-form > .field-label > :where(input, select, textarea, span),
-#input-dialog-form > .field-label > :where(input, select, textarea, span) {
+.input-dialog-form > .field-label > :where(input, select, textarea, span) {
   grid-column: 2;
   width: 100%;
   text-align: left;
@@ -693,14 +693,14 @@ body,
   }
 
   .admin-action-form > .field-label,
-  #input-dialog-form > .field-label {
+  .input-dialog-form > .field-label {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.3125rem;
     text-align: left;
   }
 
   .admin-action-form > .field-label > :where(input, select, textarea, span),
-  #input-dialog-form > .field-label > :where(input, select, textarea, span) {
+  .input-dialog-form > .field-label > :where(input, select, textarea, span) {
     grid-column: 1;
   }
 }

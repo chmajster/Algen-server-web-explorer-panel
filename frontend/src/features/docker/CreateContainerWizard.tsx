@@ -241,11 +241,14 @@ export function CreateContainerWizard({
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
+      const titleId = composeMode ? "docker-compose-import-title" : "docker-create-title";
+      const dialog = document.getElementById(titleId)?.closest<HTMLElement>('[role="dialog"]');
+      if (dialog?.hidden) return;
       if (event.key === "Escape" && pathPickerMountId === null) onClose();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [onClose, pathPickerMountId]);
+  }, [composeMode, onClose, pathPickerMountId]);
 
   useEffect(() => {
     let active = true;
