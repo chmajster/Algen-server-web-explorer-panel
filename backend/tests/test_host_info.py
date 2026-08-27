@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app import host_info, settings
+from app import __version__, host_info, settings
 
 
 def test_cpu_details_report_physical_cores_threads_and_model(monkeypatch):
@@ -61,7 +61,7 @@ def test_collect_host_info_combines_safe_system_metrics(monkeypatch):
     assert result["memory"]["total"] == 16
     assert result["gpus"] == ["Example GPU"]
     assert result["storage"]["free"] == 60
-    assert result["application_version"] == "0.1.20"
+    assert result["application_version"] == __version__
 
 
 def test_host_info_endpoint_requires_system_status_permission(monkeypatch):
