@@ -251,7 +251,7 @@ class ProxmoxManagerService:
         )
         if not credential or credential.get("type") not in {"proxmox_api", "username_password"}:
             raise KeyError("Proxmox credential not found")
-        if "proxmox-manager" not in set(credential.get("shared_with") or ["proxmox-manager"] if credential.get("type") == "proxmox_api" else []):
+        if "proxmox-manager" not in set(credential.get("shared_with") or (["proxmox-manager"] if credential.get("type") == "proxmox_api" else [])):
             raise PermissionError("credential is not shared with Proxmox Manager")
         now = time.time()
         item_id = connection_id or secrets.token_hex(16)
