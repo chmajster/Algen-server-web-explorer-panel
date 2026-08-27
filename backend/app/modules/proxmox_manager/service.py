@@ -44,14 +44,27 @@ class ProxmoxApiClient:
         token_id: str,
         token_secret: str,
         *,
+        credential_type: str = "proxmox_api",
         verify_tls: bool = True,
         ca_certificate: str = "",
         timeout: int = 20,
     ) -> None:
-        if not token_id or "!" not in token_id or not token_secret:
-            raise ValueError("Proxmox API credential requires username user@realm!tokenid and token secret")
         self.endpoint = endpoint.rstrip("/")
-        self.authorization = f"PVEAPIToken={token_id}={token_secret}"
+        self.credential_type = credential_type
+        self.username = token_id
+        self.secret = token_secret
+        self.authorization = ""
+        self.ticket = ""
+        self.csrf_token = ""
+        if credential_type == "proxmox_api":
+            if not token_id or "!" not in token_id or not token_secret:
+                raise ValueError("Proxmox API credential requires username user@realm!tokenid and token secret")
+            self.authorization = f"PVEAPIToken={token_id}={token_secret}"
+        elif credential_type == "username_password":
+            if not token_id or "@" not in token_id or not token_secret:
+                raise ValueError("Proxmox username/password credential requires user@realm and password")
+        else:
+            raise ValueError("unsupported Proxmox credential type")
         self.timeout = timeout
         if verify_tls:
             self.ssl_context = ssl.create_default_context()
@@ -60,19 +73,38 @@ class ProxmoxApiClient:
         else:
             self.ssl_context = ssl._create_unverified_context()  # nosec B323 - explicit per-connection opt-out
 
+    def _login(self) -> None:
+        encoded = urllib.parse.urlencode({"username": self.username, "password": self.secret}).encode()
+        request = urllib.request.Request(
+            f"{self.endpoint}/api2/json/access/ticket",
+            data=encoded,
+            method="POST",
+            headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout, context=self.ssl_context) as response:  # nosec B310
+                payload = json.loads(response.read(1024 * 1024).decode("utf-8"))
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError, ssl.SSLError, ValueError, UnicodeDecodeError) as error:
+            raise ProxmoxApiError(f"Proxmox login failed: {type(error).__name__}") from error
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict) or not data.get("ticket") or not data.get("CSRFPreventionToken"):
+            raise ProxmoxApiError("Proxmox login returned an invalid response")
+        self.ticket = str(data["ticket"])
+        self.csrf_token = str(data["CSRFPreventionToken"])
+
     def request(self, method: str, path: str, data: dict[str, Any] | None = None) -> Any:
         encoded = urllib.parse.urlencode(data or {}, doseq=True).encode() if method != "GET" else None
         url = f"{self.endpoint}/api2/json/{path.lstrip('/')}"
-        request = urllib.request.Request(
-            url,
-            data=encoded,
-            method=method,
-            headers={
-                "Authorization": self.authorization,
-                "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
+        headers = {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}
+        if self.credential_type == "proxmox_api":
+            headers["Authorization"] = self.authorization
+        else:
+            if not self.ticket:
+                self._login()
+            headers["Cookie"] = f"PVEAuthCookie={self.ticket}"
+            if method != "GET":
+                headers["CSRFPreventionToken"] = self.csrf_token
+        request = urllib.request.Request(url, data=encoded, method=method, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout, context=self.ssl_context) as response:  # nosec B310
                 payload = json.loads(response.read(4 * 1024 * 1024).decode("utf-8"))
@@ -217,8 +249,10 @@ class ProxmoxManagerService:
             (item for item in host_registry().credentials() if item["id"] == payload.credential_id and item.get("active", True)),
             None,
         )
-        if not credential or credential.get("type") != "proxmox_api":
-            raise KeyError("Proxmox API credential not found")
+        if not credential or credential.get("type") not in {"proxmox_api", "username_password"}:
+            raise KeyError("Proxmox credential not found")
+        if "proxmox-manager" not in set(credential.get("shared_with") or ["proxmox-manager"] if credential.get("type") == "proxmox_api" else []):
+            raise PermissionError("credential is not shared with Proxmox Manager")
         now = time.time()
         item_id = connection_id or secrets.token_hex(16)
         value = payload.model_dump(mode="json")
@@ -285,12 +319,13 @@ class ProxmoxManagerService:
             module_id=MODULE_ID,
             purpose="proxmox-api",
         )
-        if credential["type"] != "proxmox_api":
-            raise ValueError("configured credential is not a Proxmox API credential")
+        if credential["type"] not in {"proxmox_api", "username_password"}:
+            raise ValueError("configured credential is not supported by Proxmox Manager")
         return ProxmoxApiClient(
             str(item["endpoint"]),
             credential["username"],
             credential["secret"],
+            credential_type=credential["type"],
             verify_tls=bool(item["verify_tls"]),
             ca_certificate=str(item.get("ca_certificate") or ""),
         )

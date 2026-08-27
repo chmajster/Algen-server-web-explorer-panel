@@ -108,6 +108,32 @@ def test_crud_validation_and_secret_free_connection_metadata(tmp_path: Path):
         HostInput(name="bad", address="192.168.1.2", variables={"password": "secret"})
 
 
+
+def test_generic_credentials_are_module_scoped_and_secret_preserving(tmp_path: Path):
+    store = service(tmp_path)
+    credential = store.save_credential(
+        CredentialInput(
+            name="PVE Login", type=CredentialType.username_password, username="automation@pve",
+            secret="s3cret", shared_with=["proxmox-manager"],
+        ),
+        "admin",
+    )
+    assert credential["shared_with"] == ["proxmox-manager"]
+    assert credential["secret_configured"] is True
+    with pytest.raises(PermissionError, match="not shared"):
+        store.verified_credential(credential["id"], module_id="ansible-controller", purpose="ssh")
+    assert store.verified_credential(credential["id"], module_id="proxmox-manager", purpose="proxmox-api")["secret"] == "s3cret"
+
+    updated = store.save_credential(
+        CredentialInput(
+            name="PVE Login", type=CredentialType.username_password, username="automation@pve",
+            secret="", shared_with=["proxmox-manager", "dcst"],
+        ),
+        "admin", credential["id"],
+    )
+    assert updated["shared_with"] == ["proxmox-manager", "dcst"]
+    assert store.verified_credential(credential["id"], module_id="proxmox-manager", purpose="proxmox-api")["secret"] == "s3cret"
+
 def test_enrollment_token_is_hashed_one_time_bounded_and_hostname_scoped(tmp_path: Path):
     store = service(tmp_path)
     created = store.create_enrollment_token(enrollment_input(store, expires_minutes=1), "admin")

@@ -3841,5 +3841,18 @@
   "permissions.cron.delete": "Usuwanie zadań cron",
   "permissions.cron.logs": "Wyświetlanie logów i historii cron",
   "permissions.cron.admin": "Administrowanie Cron Managerem",
-  "permissions.category.cron.description": "Konfiguracja poleceń cyklicznych wysokiego ryzyka i diagnostyka cron"
+  "permissions.category.cron.description": "Konfiguracja poleceń cyklicznych wysokiego ryzyka i diagnostyka cron",
+  "hosts.credentials.type.username_password": "Login i hasło",
+  "hosts.credentials.type.api_token": "Token API",
+  "hosts.credentials.type.generic_secret": "Sekret ogólny",
+  "hosts.credentials.type.proxmox_api": "Token API Proxmox",
+  "hosts.credentials.type.redfish": "Login Redfish",
+  "hosts.credentials.type.ipmi": "Login IPMI",
+  "hosts.credentials.type.wol": "Wake-on-LAN",
+  "hosts.credentials.type.git_private_key": "Klucz prywatny Git",
+  "hosts.credentials.sharedWith": "Udostępnione modułom",
+  "hosts.credentials.sharedWithHint": "Identyfikatory modułów rozdzielone przecinkami. Tylko wskazane moduły backendu mogą odszyfrować to poświadczenie.",
+  "hosts.credentials.notShared": "Nieudostępnione",
+  "hosts.credentials.usernameHint": "Login/nazwa użytkownika, jeśli wymaga tego typ poświadczenia.",
+  "hosts.credentials.keepSecret": "Podczas edycji pozostaw puste, aby zachować obecny sekret."
 }

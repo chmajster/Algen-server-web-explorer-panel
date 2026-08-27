@@ -27,11 +27,29 @@ class CredentialType(StrEnum):
     ssh_private_key = "ssh_private_key"
     ssh_password = "ssh_password"
     become_password = "become_password"
+    username_password = "username_password"
+    api_token = "api_token"
+    generic_secret = "generic_secret"
     redfish = "redfish"
     ipmi = "ipmi"
     proxmox_api = "proxmox_api"
     wol = "wol"
     git_private_key = "git_private_key"
+
+
+DEFAULT_CREDENTIAL_SHARES: dict[CredentialType, tuple[str, ...]] = {
+    CredentialType.ssh_private_key: ("hosts-manager", "ansible-controller"),
+    CredentialType.ssh_password: ("hosts-manager", "ansible-controller"),
+    CredentialType.become_password: ("hosts-manager", "ansible-controller"),
+    CredentialType.git_private_key: ("hosts-manager", "ansible-controller"),
+    CredentialType.redfish: ("hosts-manager",),
+    CredentialType.ipmi: ("hosts-manager",),
+    CredentialType.proxmox_api: ("proxmox-manager",),
+    CredentialType.wol: ("hosts-manager",),
+    CredentialType.username_password: ("hosts-manager",),
+    CredentialType.api_token: ("hosts-manager",),
+    CredentialType.generic_secret: ("hosts-manager",),
+}
 
 
 class PowerProvider(StrEnum):
@@ -198,16 +216,19 @@ class CredentialInput(StrictModel):
     passphrase: str = Field(default="", max_length=4096)
     description: str = Field(default="", max_length=500)
     environment_id: str | None = Field(default=None, max_length=64, pattern=ID_PATTERN)
+    shared_with: list[str] | None = Field(default=None, max_length=64)
     confirm: bool = False
 
     @model_validator(mode="after")
     def valid_secret(self) -> "CredentialInput":
-        if self.type != CredentialType.wol and not self.secret:
-            raise ValueError("credential secret is required")
-        if self.type in {CredentialType.ssh_private_key, CredentialType.git_private_key} and "PRIVATE KEY-----" not in self.secret:
+        if self.secret and self.type in {CredentialType.ssh_private_key, CredentialType.git_private_key} and "PRIVATE KEY-----" not in self.secret:
             raise ValueError("private-key credential is invalid")
-        if self.type not in {CredentialType.ssh_private_key, CredentialType.git_private_key} and ("\n" in self.secret or "\r" in self.secret):
+        if self.secret and self.type not in {CredentialType.ssh_private_key, CredentialType.git_private_key} and ("\n" in self.secret or "\r" in self.secret):
             raise ValueError("credential secret must be a single line")
+        shares = list(DEFAULT_CREDENTIAL_SHARES.get(self.type, ())) if self.shared_with is None else self.shared_with
+        if any(not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", module_id) for module_id in shares):
+            raise ValueError("shared module identifier is invalid")
+        self.shared_with = list(dict.fromkeys(shares))
         return self
 
 

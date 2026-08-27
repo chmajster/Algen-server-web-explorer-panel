@@ -559,9 +559,10 @@ export type HostsManagerGroup = AnsibleGroup & {
   managed?: boolean;
   managed_by?: { apmid_id: string; environment_id: string } | null;
 };
+export type HostsManagerCredentialType = AnsibleCredential["type"] | "username_password" | "api_token" | "generic_secret" | "redfish" | "ipmi" | "proxmox_api" | "wol";
 export type HostsManagerCredential = Omit<AnsibleCredential, "type"> & {
-  type: AnsibleCredential["type"] | "redfish" | "ipmi" | "proxmox_api" | "wol";
-  environment_id?: string | null; last_used_at?: number | null; host_count?: number;
+  type: HostsManagerCredentialType;
+  environment_id?: string | null; last_used_at?: number | null; host_count?: number; shared_with: string[];
 };
 export type HostsManagerCapability = { id: string; name: string; icon: string; permission: string; module_id: string; deep_link: string };
 export type HostsManagerOperation = { id: string; host_id?: string | null; capability_id: string; module_id: string; status: string; stage: string; progress: number; package_job_id?: string | null; error: string; details: Record<string, unknown>; created_at: number; updated_at: number };
