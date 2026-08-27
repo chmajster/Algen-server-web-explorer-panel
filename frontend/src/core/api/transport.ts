@@ -44,8 +44,35 @@ export function onAuthenticationInvalidated(listener: AuthenticationInvalidatedL
 export function resetAuthenticationState() { clearAuthenticationState(undefined, false); }
 function isReplayableBody(body: BodyInit | null | undefined) { return !body || typeof ReadableStream === "undefined" || !(body instanceof ReadableStream); }
 
+function diagnosticValue(details: Record<string, unknown> | undefined, key: string): string {
+  const value = details?.[key];
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function enrichErrorMessage(message: string, status: number, code?: string, details?: Record<string, unknown>): string {
+  const stage = diagnosticValue(details, "stage");
+  const endpoint = diagnosticValue(details, "endpoint");
+  const reason = diagnosticValue(details, "reason");
+  const hint = diagnosticValue(details, "hint");
+  const requestId = diagnosticValue(details, "request_id");
+  const upstreamStatus = diagnosticValue(details, "upstream_status");
+  const hasDiagnostics = Boolean(stage || endpoint || reason || hint || requestId || upstreamStatus);
+  if (!hasDiagnostics && status < 500) return message;
+
+  const parts = [`HTTP ${status}`];
+  if (code) parts.push(`Kod: ${code}`);
+  if (requestId) parts.push(`ID błędu: ${requestId}`);
+  if (stage) parts.push(`Etap: ${stage.toUpperCase()}`);
+  if (endpoint) parts.push(`Endpoint: ${endpoint}`);
+  if (reason) parts.push(`Przyczyna: ${reason}`);
+  if (upstreamStatus && upstreamStatus !== "0") parts.push(`HTTP upstream: ${upstreamStatus}`);
+  if (hint) parts.push(`Sugestia: ${hint}`);
+  if (!hasDiagnostics) parts.push("Backend nie zwrócił szczegółów diagnostycznych; sprawdź logi serwera WebNAS.");
+  return `${message || "Błąd API"} — ${parts.join(" · ")}`;
+}
+
 export function errorFromResponse(body: string, status: number, statusText: string) {
-  let message = body || statusText;
+  let message = body || statusText || `HTTP ${status}`;
   let code: string | undefined;
   let field: string | undefined;
   let details: Record<string, unknown> | undefined;
@@ -73,7 +100,7 @@ export function errorFromResponse(body: string, status: number, statusText: stri
       details = payload.detail;
     }
   } catch { /* Non-JSON responses retain their original text. */ }
-  return new ApiError(message, status, code, field, details);
+  return new ApiError(enrichErrorMessage(message, status, code, details), status, code, field, details);
 }
 
 async function send<T>(url: string, options: RequestInit, token = ""): Promise<T> {

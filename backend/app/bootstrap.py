@@ -15,7 +15,7 @@ from . import __version__
 from .audit import configure_logging
 from .config import AppConfig, get_config
 from .core.modules import ModuleRegistry
-from .core.errors import DomainError, domain_error_handler, success_payload
+from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
 from .platform_api import frontend_cache_policy
 from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
 from .modules.os_repositories.scheduler import start_scheduler as start_os_repositories_scheduler
@@ -125,6 +125,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.state.modules = module_registry
     app.state.container = container
     app.add_exception_handler(DomainError, domain_error_handler)
+    app.add_exception_handler(Exception, unhandled_error_handler)
     app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     app.middleware("http")(frontend_cache_policy)
     module_registry.install_routers(app)

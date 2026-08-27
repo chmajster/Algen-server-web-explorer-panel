@@ -10,6 +10,35 @@ describe("shared API transport", () => {
     expect(error.details).toEqual({ policy: "files" });
   });
 
+  it("surfaces FastAPI diagnostic details in the visible error message", () => {
+    const error = errorFromResponse(JSON.stringify({ detail: {
+      code: "PROXMOX_INTERNAL_ERROR",
+      message: "Proxmox Manager encountered an unexpected server error.",
+      stage: "configuration",
+      endpoint: "https://10.0.0.10:8006",
+      reason: "PermissionError",
+      request_id: "abc123def456",
+      hint: "Check the WebNAS backend logs.",
+      upstream_status: 500,
+    } }), 500, "Internal Server Error");
+
+    expect(error).toMatchObject({ status: 500, code: "PROXMOX_INTERNAL_ERROR" });
+    expect(error.message).toContain("HTTP 500");
+    expect(error.message).toContain("Kod: PROXMOX_INTERNAL_ERROR");
+    expect(error.message).toContain("ID błędu: abc123def456");
+    expect(error.message).toContain("Etap: CONFIGURATION");
+    expect(error.message).toContain("Endpoint: https://10.0.0.10:8006");
+    expect(error.message).toContain("Przyczyna: PermissionError");
+    expect(error.message).toContain("Sugestia: Check the WebNAS backend logs.");
+  });
+
+  it("explains an unstructured backend 500 instead of showing only Internal Server Error", () => {
+    const error = errorFromResponse("Internal Server Error", 500, "Internal Server Error");
+    expect(error.message).toContain("Internal Server Error");
+    expect(error.message).toContain("HTTP 500");
+    expect(error.message).toContain("Backend nie zwrócił szczegółów diagnostycznych");
+  });
+
   it("adds cookies and decodes typed JSON", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
