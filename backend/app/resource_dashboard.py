@@ -334,7 +334,7 @@ def _block_device_name(device: str | None) -> str:
         return path.name
 
 
-def top_processes(limit: int = 12) -> list[dict]:
+def top_processes(limit: int | None = None) -> list[dict]:
     if not shutil.which("ps"):
         return []
     try:
@@ -353,7 +353,7 @@ def top_processes(limit: int = 12) -> list[dict]:
                 processes.append({"pid": int(fields[0]), "user": fields[1], "name": fields[2], "cpu_percent": float(fields[3]), "memory_percent": float(fields[4]), "rss": int(fields[5]) * 1024, "state": fields[6]})
         except ValueError:
             continue
-        if len(processes) >= limit:
+        if limit is not None and len(processes) >= limit:
             break
     return processes
 
