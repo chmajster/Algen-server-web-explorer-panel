@@ -8,7 +8,7 @@ const visibleDialogOrder: symbol[] = [];
 const DIALOG_MARGIN = 8;
 const DIALOG_MIN_WIDTH = 320;
 const DIALOG_MIN_HEIGHT = 180;
-const MOBILE_DIALOG_QUERY = "(max-width: 700px)";
+const MOBILE_DIALOG_WIDTH = 700;
 
 type DialogRect = { x: number; y: number; width: number; height: number };
 type ResizeEdge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
@@ -100,23 +100,23 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   const [minimizedSlot, setMinimizedSlot] = useState<number | null>(null);
   const [rect, setRect] = useState<DialogRect | null>(null);
   const [maximized, setMaximized] = useState(false);
-  const [mobileFullscreen, setMobileFullscreen] = useState(() => typeof window !== "undefined" && window.matchMedia(MOBILE_DIALOG_QUERY).matches);
+  const [mobileFullscreen, setMobileFullscreen] = useState(() => typeof window !== "undefined" && window.innerWidth <= MOBILE_DIALOG_WIDTH);
   const minimized = minimizedSlot !== null;
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
-    const media = window.matchMedia(MOBILE_DIALOG_QUERY);
-    const update = () => {
-      setMobileFullscreen(media.matches);
-      if (media.matches) {
+    function updateMobileMode() {
+      const mobile = window.innerWidth <= MOBILE_DIALOG_WIDTH;
+      setMobileFullscreen(mobile);
+      if (mobile) {
         gesture.current = null;
         setMaximized(false);
         setRect(null);
       }
-    };
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
+    }
+    window.addEventListener("resize", updateMobileMode);
+    return () => window.removeEventListener("resize", updateMobileMode);
   }, []);
 
   useEffect(() => {
