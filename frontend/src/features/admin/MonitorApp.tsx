@@ -37,25 +37,36 @@ export function MonitorApp({ t }: { t: Translate }) {
 
     try {
       const next = await api.resources();
+      let dashboard = next;
+
+      if (next.scope === "admin") {
+        try {
+          const processes = await api.resourceProcesses();
+          dashboard = { ...next, processes };
+        } catch (reason) {
+          if (mounted.current) setError(reason instanceof Error ? reason.message : t("error.generic"));
+        }
+      }
+
       if (!mounted.current) return;
 
-      setData(next);
-      setLastUpdate(new Date(next.timestamp * 1000));
+      setData(dashboard);
+      setLastUpdate(new Date(dashboard.timestamp * 1000));
       setHistory((current) => {
-        let updated = pushSample(current, "cpu", next.cpu_percent);
-        updated = pushSample(updated, "ram", next.ram.percent);
-        updated = pushSample(updated, "swap", next.swap.total > 0 ? next.swap.percent : 0);
+        let updated = pushSample(current, "cpu", dashboard.cpu_percent);
+        updated = pushSample(updated, "ram", dashboard.ram.percent);
+        updated = pushSample(updated, "swap", dashboard.swap.total > 0 ? dashboard.swap.percent : 0);
 
-        const networkSummary = summarizeNetwork(next.network_interfaces);
+        const networkSummary = summarizeNetwork(dashboard.network_interfaces);
         updated = pushSample(updated, "network:aggregate:rx", networkSummary.rxBytesPerSec);
         updated = pushSample(updated, "network:aggregate:tx", networkSummary.txBytesPerSec);
 
-        for (const network of next.network_interfaces) {
+        for (const network of dashboard.network_interfaces) {
           updated = pushSample(updated, `net:${network.name}:rx`, network.rx_bytes_per_sec);
           updated = pushSample(updated, `net:${network.name}:tx`, network.tx_bytes_per_sec);
         }
 
-        for (const disk of dedupeStorage(next.allowed_roots)) {
+        for (const disk of dedupeStorage(dashboard.allowed_roots)) {
           const id = disk.filesystem_id || disk.device || disk.mountpoint || disk.path;
           updated = pushSample(updated, `disk:${id}:read`, disk.read_bytes_per_sec);
           updated = pushSample(updated, `disk:${id}:write`, disk.write_bytes_per_sec);
