@@ -1,0 +1,50 @@
+name: PR4 final dialog fixes
+
+on:
+  push:
+    branches:
+      - ui/nonblocking-minimizable-dialogs
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v6
+        with:
+          ref: ui/nonblocking-minimizable-dialogs
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply final review fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected source fragment not found in {path}: {old[:120]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          modal = "frontend/src/components/Modal.tsx"
+          replace_once(
+              modal,
+              'const FOCUSABLE = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex=\' -1\'])";',
+              'const FOCUSABLE = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex=\' -1\'])";'
+          )
+          PY
