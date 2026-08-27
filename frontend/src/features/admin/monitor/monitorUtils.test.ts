@@ -26,11 +26,11 @@ describe("monitorUtils", () => {
     expect(result[0].paths).toEqual(expect.arrayContaining(["/data", "/srv/data"]));
   });
 
-  it("excludes system and virtual interfaces from aggregate traffic when a normal interface is active", () => {
+  it("excludes backend-classified virtual and system interfaces when a normal interface is active", () => {
     const interfaces: NetworkMetric[] = [
       { name: "eth0", state: "up", rx_bytes: 100, tx_bytes: 200, rx_bytes_per_sec: 10, tx_bytes_per_sec: 20, system: false },
-      { name: "docker0", state: "up", rx_bytes: 1000, tx_bytes: 2000, rx_bytes_per_sec: 100, tx_bytes_per_sec: 200, system: false },
-      { name: "veth1234", state: "up", rx_bytes: 500, tx_bytes: 600, rx_bytes_per_sec: 50, tx_bytes_per_sec: 60, system: false },
+      { name: "br0", state: "up", rx_bytes: 1000, tx_bytes: 2000, rx_bytes_per_sec: 100, tx_bytes_per_sec: 200, system: true },
+      { name: "veth1234", state: "up", rx_bytes: 500, tx_bytes: 600, rx_bytes_per_sec: 50, tx_bytes_per_sec: 60, system: true },
       { name: "lo", state: "up", rx_bytes: 900, tx_bytes: 900, rx_bytes_per_sec: 90, tx_bytes_per_sec: 90, system: true },
     ];
     const summary = summarizeNetwork(interfaces);
@@ -39,9 +39,9 @@ describe("monitorUtils", () => {
     expect(summary.txBytesPerSec).toBe(20);
   });
 
-  it("falls back to an active non-system interface when only virtual links are available", () => {
+  it("falls back to active non-loopback traffic when only system-classified links are available", () => {
     const interfaces: NetworkMetric[] = [
-      { name: "docker0", state: "up", rx_bytes: 1000, tx_bytes: 2000, rx_bytes_per_sec: 100, tx_bytes_per_sec: 200, system: false },
+      { name: "docker0", state: "up", rx_bytes: 1000, tx_bytes: 2000, rx_bytes_per_sec: 100, tx_bytes_per_sec: 200, system: true },
       { name: "lo", state: "up", rx_bytes: 900, tx_bytes: 900, rx_bytes_per_sec: 90, tx_bytes_per_sec: 90, system: true },
     ];
     const summary = summarizeNetwork(interfaces);
