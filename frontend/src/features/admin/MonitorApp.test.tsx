@@ -58,6 +58,7 @@ describe("MonitorApp", () => {
     expect(document.querySelector(".monitor-storage-card.critical")).toBeInTheDocument();
     expect(document.querySelector(".monitor-metric.warning")).toBeInTheDocument();
     expect(screen.getByText(/monitor.alert.disk_usage/)).toBeInTheDocument();
+    expect(screen.queryByText("Low free space on /home/alice")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".monitor-overview-grid .monitor-metric")).toHaveLength(4);
   });
 
