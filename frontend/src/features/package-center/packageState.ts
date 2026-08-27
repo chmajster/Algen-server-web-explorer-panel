@@ -7,6 +7,19 @@ export type PackageDisplayAction = PackageAction | "open" | "configure";
 
 const RUNNING_STATES = new Set(["active", "running", "started", "online"]);
 const ERROR_STATES = new Set(["error", "failed", "incompatible", "blocked"]);
+const PACKAGE_ACTION_PERMISSIONS: Record<PackageAction, string> = {
+  install: "modules.install",
+  reinstall: "modules.update",
+  update: "modules.update",
+  uninstall: "modules.uninstall",
+  start: "modules.configure",
+  stop: "modules.configure",
+  restart: "modules.configure",
+};
+
+export function canRunPackageAction(action: PackageAction, permissions: readonly string[]): boolean {
+  return permissions.includes(PACKAGE_ACTION_PERMISSIONS[action]);
+}
 
 export function getPackageDisplayName(item: Pick<PackageModule, "id" | "manifest">, t: Translate): string {
   return item.id === "docker" ? t("app.containers") : item.manifest.name;

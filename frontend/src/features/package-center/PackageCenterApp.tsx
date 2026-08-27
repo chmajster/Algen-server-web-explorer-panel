@@ -13,15 +13,17 @@ import { PackageSources } from "./PackageSources";
 import { PackageTabs } from "./PackageTabs";
 import { PackageToolbar } from "./PackageToolbar";
 import { usePackageCenter } from "./hooks/usePackageCenter";
-import { getPackageDisplayName, isPackageUpdateAvailable } from "./packageState";
+import { canRunPackageAction, getPackageDisplayName, isPackageUpdateAvailable } from "./packageState";
 import type { PackageAction, PackageView } from "./types";
 import "./package-center.css";
 
 type CredentialAction = { job: AppJob; operation: "cancel" | "retry" } | null;
 const packageViewStorageKey = "webnas_package_center_view";
+const defaultPackagePermissions = ["modules.install", "modules.update", "modules.uninstall", "modules.configure"];
 
-export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSelectedJobClose }: { selectedJobId?: string; t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void; onSelectedJobClose?: () => void }) {
-  const state = usePackageCenter(t);
+export function PackageCenterApp({ selectedJobId, permissions = defaultPackagePermissions, t, toast, onOpenModule, onSelectedJobClose }: { selectedJobId?: string; permissions?: readonly string[]; t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void; onSelectedJobClose?: () => void }) {
+  const canManageSources = permissions.includes("modules.install");
+  const state = usePackageCenter(t, { canManageSources });
   const [view, setView] = useState<PackageView>(() => window.localStorage.getItem(packageViewStorageKey) === "list" ? "list" : "grid");
   const [selected, setSelected] = useState<ModuleSummary | null>(null);
   const [action, setAction] = useState<{ item: ModuleSummary; action: PackageAction } | null>(null);
@@ -43,10 +45,11 @@ export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSele
     updates: state.modules.filter(isPackageUpdateAvailable).length,
     jobs: state.jobs.filter((job) => ["queued", "running"].includes(job.status)).length,
     history: state.history.length,
-    sources: state.sources.length,
-  }), [state.history.length, state.jobs, state.modules, state.sources.length]);
+    ...(canManageSources ? { sources: state.sources.length } : {}),
+  }), [canManageSources, state.history.length, state.jobs, state.modules, state.sources.length]);
 
   function begin(item: ModuleSummary, nextAction: PackageAction) {
+    if (!canRunPackageAction(nextAction, permissions)) return;
     if (item.id === "docker" && item.state.installed && onOpenModule) {
       setSelected(null);
       window.setTimeout(() => onOpenModule("docker"), 0);
@@ -96,19 +99,19 @@ export function PackageCenterApp({ selectedJobId, t, toast, onOpenModule, onSele
     </header>
     <PackageToolbar search={state.search} category={state.category} status={state.status} categories={state.categories} updates={counts.updates} updatesActive={state.tab === "updates"} loading={state.loading} view={view} showView={catalogTab} t={t} onSearch={state.setSearch} onCategory={state.setCategory} onStatus={state.setStatus} onUpdates={() => state.setTab("updates")} onRefresh={() => void state.refresh()} onView={selectView} />
     <div className="package-center-layout">
-      <PackageTabs active={state.tab} counts={counts} t={t} onChange={state.setTab} />
+      <PackageTabs active={state.tab} counts={counts} showSources={canManageSources} t={t} onChange={state.setTab} />
       <main className="package-center-content" aria-busy={state.loading}>
         {state.error
           ? <div className="error-state package-center-error" role="alert"><strong>{t("status.error")}</strong><span>{state.error}</span><button type="button" onClick={() => void state.refresh()}>{t("action.retry")}</button></div>
           : <>
-            {catalogTab && <PackageGrid modules={state.visibleModules} loading={state.loading} view={view} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: getPackageDisplayName(item, t) })} />}
+            {catalogTab && <PackageGrid modules={state.visibleModules} loading={state.loading} view={view} permissions={permissions} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: getPackageDisplayName(item, t) })} />}
             {state.tab === "jobs" && <PackageJobs jobs={state.jobs} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
             {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
-            {state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
+            {canManageSources && state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}
           </>}
       </main>
     </div>
-    {selected && <PackageDetails item={selected} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => openSelectedModule(selected) : undefined} />}
+    {selected && <PackageDetails item={selected} permissions={permissions} t={t} onClose={() => setSelected(null)} onAction={(nextAction) => begin(selected, nextAction)} onConfigure={onOpenModule ? () => openSelectedModule(selected) : undefined} />}
     {action && action.item.id === "docker"
       ? <AdminActionDialog
           title={t(`docker.engineAction.${action.action}`)}
