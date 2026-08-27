@@ -7,6 +7,10 @@ export type UsageLevel = "normal" | "warning" | "critical";
 export type SortDirection = "asc" | "desc";
 export type ProcessSortKey = "cpu_percent" | "memory_percent" | "rss" | "pid" | "name";
 
+const VIRTUAL_INTERFACE_PREFIXES = [
+  "br-", "cni", "docker", "flannel", "kube", "lxc", "lxd", "podman", "tap", "tailscale", "tun", "veth", "virbr", "vnet", "vmnet", "wg",
+];
+
 export function pushSample(history: History, key: string, value: number | null | undefined): History {
   return {
     ...history,
@@ -76,10 +80,17 @@ export type NetworkSummary = {
   txBytes: number;
 };
 
+export function isAggregateNetworkInterface(network: NetworkMetric): boolean {
+  if (network.system || network.state !== "up") return false;
+  const name = network.name.toLocaleLowerCase();
+  return !VIRTUAL_INTERFACE_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
+
 export function summarizeNetwork(networks: NetworkMetric[]): NetworkSummary {
   const active = networks.filter((network) => network.state === "up");
-  const external = active.filter((network) => !network.system);
-  const interfaces = external.length > 0 ? external : active;
+  const preferred = active.filter(isAggregateNetworkInterface);
+  const nonSystem = active.filter((network) => !network.system);
+  const interfaces = preferred.length > 0 ? preferred : nonSystem.length > 0 ? nonSystem : active;
 
   return interfaces.reduce<NetworkSummary>((summary, network) => ({
     interfaces,
