@@ -50,7 +50,7 @@ def network_inventory(*, provider: str = "proxmox") -> list[dict[str, Any]]:
     by_fallback: dict[tuple[str, str], str] = {}
     for row in group_rows:
         key = f"{row['apmid_id']}:{row['environment_id']}"
-        item = {
+        item: dict[str, Any] = {
             "id": key,
             "apmid_id": str(row["apmid_id"]),
             "apmid": str(row["apmid"]),
@@ -61,29 +61,33 @@ def network_inventory(*, provider: str = "proxmox") -> list[dict[str, Any]]:
             "hosts": [],
         }
         groups[key] = item
-        by_group_id[item["group_id"]] = key
-        for environment_value in {item["environment"].casefold(), item["environment_slug"].casefold()}:
-            by_fallback[(item["apmid"].casefold(), environment_value)] = key
+        by_group_id[str(item["group_id"])] = key
+        environment_name = str(item["environment"])
+        environment_slug = str(item["environment_slug"])
+        apmid = str(item["apmid"])
+        for environment_value in {environment_name.casefold(), environment_slug.casefold()}:
+            by_fallback[(apmid.casefold(), environment_value)] = key
 
     attached: set[str] = set()
     for row in host_rows:
         variables = _variables(row["variables_json"])
         if provider and str(variables.get("algen_provider") or "") != provider:
             continue
-        key = by_group_id.get(str(row["group_id"] or ""))
-        if not key:
+        group_key: str | None = by_group_id.get(str(row["group_id"] or ""))
+        if not group_key:
             project = str(variables.get("algen_project") or "").strip().casefold()
             environment = str(row["environment"] or "").strip().casefold()
-            key = by_fallback.get((project, environment))
-        if not key:
+            group_key = by_fallback.get((project, environment))
+        if not group_key:
             continue
         host_id = str(row["id"])
-        membership_key = f"{key}:{host_id}"
+        membership_key = f"{group_key}:{host_id}"
         if membership_key in attached:
             continue
         attached.add(membership_key)
         vmid = variables.get("proxmox_vmid") or variables.get("algen_provider_resource_id")
-        groups[key]["hosts"].append(
+        vmid_text = str(vmid or "")
+        groups[group_key]["hosts"].append(
             {
                 "id": host_id,
                 "name": str(row["name"]),
@@ -94,14 +98,17 @@ def network_inventory(*, provider: str = "proxmox") -> list[dict[str, Any]]:
                 "provider": str(variables.get("algen_provider") or ""),
                 "provider_instance_id": str(variables.get("algen_provider_instance_id") or ""),
                 "provider_resource_id": str(variables.get("algen_provider_resource_id") or ""),
-                "vmid": int(vmid) if str(vmid or "").isdigit() else None,
+                "vmid": int(vmid_text) if vmid_text.isdigit() else None,
                 "node": str(variables.get("proxmox_node") or ""),
                 "resource_type": str(variables.get("proxmox_resource_type") or ""),
                 "present": variables.get("proxmox_present", True) is not False,
             }
         )
 
-    return sorted(groups.values(), key=lambda item: (item["apmid"].casefold(), item["environment"].casefold()))
+    return sorted(
+        groups.values(),
+        key=lambda item: (str(item["apmid"]).casefold(), str(item["environment"]).casefold()),
+    )
 
 
 __all__ = ["network_inventory"]
