@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Finished the application UI consistency layer across resource monitoring, settings, activity and transfer centers, network resources, Docker details, and Hosts Manager controls, with container-responsive regression coverage.
 
 - Replaced blocking shared confirmations and prompts with non-blocking, minimizable desktop dialogs; preserved drafts across minimization, isolated concurrent dialogs, cancelled queued actions on logout, suspended hidden legacy-dialog keyboard handlers, and coalesced duplicate privileged Ansible operations.
 
