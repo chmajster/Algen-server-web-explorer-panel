@@ -829,7 +829,9 @@ def test_migration_is_idempotent_and_preserves_ids_groups_facts_keys_and_credent
     assert migrated and migrated["id"] == host["id"]
     assert group["id"] in migrated["group_ids"]
     assert target.host_keys(host["id"])[0]["fingerprint"].startswith("SHA256:")
-    assert target.verified_credential(credential["id"], module_id="test", purpose="migration")["secret"] == "secret"
+    migrated_credential = next(item for item in target.credentials() if item["id"] == credential["id"])
+    assert migrated_credential["shared_with"] == ["hosts-manager", "ansible-controller"]
+    assert target.verified_credential(credential["id"], module_id="ansible-controller", purpose="migration")["secret"] == "secret"
     assert list((tmp_path / "hosts-manager" / "backups").glob("ansible-controller-pre-migration-*.sqlite3"))
     second = HostRegistryService(tmp_path / "hosts-manager" / "hosts.sqlite3", tmp_path / "secrets" / "hosts-manager.key", legacy_path)
     assert second.migrate_ansible_controller() == {}
