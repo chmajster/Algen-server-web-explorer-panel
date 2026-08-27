@@ -1178,3 +1178,118 @@ body,
     max-width: 100%;
   }
 }
+
+
+/* DCST control-plane workspace */
+.dcst-app { --dcst-gap: 0.75rem; min-width: 0; background: var(--surface-primary); }
+.dcst-app .dcst-header { min-height: 5.25rem; align-items: center; gap: 1rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-subtle); background: linear-gradient(135deg, var(--surface-elevated), var(--surface-secondary)); }
+.dcst-header-identity, .dcst-header-side, .dcst-runtime-status, .dcst-section-heading, .dcst-panel > header, .dcst-editor-card > header { display: flex; align-items: center; }
+.dcst-header-identity { min-width: 0; gap: 0.75rem; }
+.dcst-title-icon { width: 2.625rem; height: 2.625rem; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: var(--radius-panel); color: var(--accent); background: var(--surface-elevated); box-shadow: var(--shadow-control); }
+.dcst-title-icon svg { width: 1.35rem; height: 1.35rem; }
+.dcst-app .dcst-header h2 { margin: 0.125rem 0 0.2rem; font-size: clamp(1rem, 1.45vw, 1.25rem); line-height: 1.15; }
+.dcst-app .dcst-header h2 small { margin-left: 0.35rem; color: var(--text-secondary); font-size: 0.72em; font-weight: 600; }
+.dcst-app .dcst-header p, .dcst-section-heading p { margin: 0; color: var(--text-secondary); font-size: var(--font-size-sm); }
+.dcst-eyebrow { display: block; color: var(--text-muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.075em; line-height: 1.2; text-transform: uppercase; }
+.dcst-header-side { min-width: max-content; justify-content: flex-end; gap: 0.75rem; }
+.dcst-runtime-status { gap: 0.5rem; padding-right: 0.75rem; border-right: 1px solid var(--border-subtle); }
+.dcst-runtime-status > div { display: grid; gap: 0.1rem; }
+.dcst-runtime-status strong { font-size: var(--font-size-sm); }
+.dcst-runtime-status small { color: var(--text-muted); }
+.dcst-status-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--text-muted); box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--text-muted) 15%, transparent); }
+.dcst-status-dot.ready { background: var(--success); box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--success) 15%, transparent); }
+.dcst-status-dot.busy { background: var(--warning); box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--warning) 15%, transparent); }
+.dcst-app .dcst-tabs { min-width: 0; display: flex; overflow-x: auto; padding: 0 0.75rem; border-bottom: 1px solid var(--border-subtle); background: var(--surface-elevated); scrollbar-width: thin; }
+.dcst-app .dcst-tabs button { min-height: 2.5rem; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 0.45rem; padding: 0 0.75rem; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--text-secondary); background: transparent; box-shadow: none; font-size: var(--font-size-sm); white-space: nowrap; }
+.dcst-app .dcst-tabs button:hover { color: var(--text-primary); background: var(--surface-secondary); }
+.dcst-app .dcst-tabs button.active { border-bottom-color: var(--accent); color: var(--accent); background: transparent; }
+.dcst-tab-count, .dcst-count-pill { min-width: 1.4rem; min-height: 1.25rem; display: inline-grid; place-items: center; padding: 0 0.38rem; border: 1px solid var(--border-subtle); border-radius: 999px; color: var(--text-secondary); background: var(--surface-secondary); font-size: 0.68rem; font-variant-numeric: tabular-nums; }
+.dcst-app .dcst-tabs button.active .dcst-tab-count { border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle)); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-secondary)); }
+.dcst-overview, .dcst-section { min-width: 0; display: grid; align-content: start; gap: var(--dcst-gap); padding: var(--dcst-gap); }
+.dcst-metric-grid { display: grid; grid-template-columns: repeat(7, minmax(7.5rem, 1fr)); gap: 0.5rem; }
+.dcst-app .dcst-metric-card { min-width: 0; display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-items: center; gap: 0.55rem; padding: 0.65rem; border-top: 2px solid var(--border-strong); }
+.dcst-metric-card.primary { border-top-color: var(--accent); }
+.dcst-metric-card.healthy { border-top-color: var(--success); }
+.dcst-metric-card.danger { border-top-color: var(--danger); }
+.dcst-metric-icon { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: var(--radius-control); color: var(--text-secondary); background: var(--surface-secondary); }
+.dcst-metric-card.primary .dcst-metric-icon { color: var(--accent); }
+.dcst-metric-card.healthy .dcst-metric-icon { color: var(--success); }
+.dcst-metric-card.danger .dcst-metric-icon { color: var(--danger); }
+.dcst-metric-icon svg { width: 1rem; height: 1rem; }
+.dcst-metric-card > div { min-width: 0; display: grid; gap: 0.1rem; }
+.dcst-metric-card small { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.dcst-metric-card strong { font-size: 1.15rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.dcst-overview-layout { min-width: 0; display: grid; grid-template-columns: minmax(15rem, 0.32fr) minmax(0, 1fr); gap: var(--dcst-gap); }
+.dcst-app .dcst-panel, .dcst-app .dcst-editor-card { min-width: 0; overflow: hidden; padding: 0; }
+.dcst-panel > header, .dcst-editor-card > header { gap: 0.55rem; min-height: 2.75rem; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border-subtle); background: var(--surface-secondary); }
+.dcst-panel > header > div, .dcst-editor-card > header > div { min-width: 0; display: grid; gap: 0.08rem; }
+.dcst-panel > header svg, .dcst-editor-card > header svg { width: 1rem; height: 1rem; color: var(--accent); }
+.dcst-panel > header small, .dcst-editor-card > header small { color: var(--text-muted); font-weight: 400; }
+.dcst-posture-card { align-content: start; padding-bottom: 0.7rem !important; }
+.dcst-posture-score { display: flex; align-items: baseline; gap: 0.4rem; padding: 0.9rem 0.8rem 0.35rem; }
+.dcst-posture-score strong { font-size: 1.75rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.dcst-posture-score span { color: var(--text-secondary); font-size: var(--font-size-sm); }
+.dcst-progress { height: 0.4rem; margin: 0 0.8rem 0.75rem; overflow: hidden; border-radius: 999px; background: var(--surface-secondary); }
+.dcst-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--success); transition: width 160ms ease; }
+.dcst-posture-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem; margin: 0; padding: 0 0.8rem; }
+.dcst-posture-card dl > div { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.42rem 0.5rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); }
+.dcst-posture-card dt { color: var(--text-secondary); font-size: var(--font-size-sm); }
+.dcst-posture-card dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dcst-recent-card .table-scroll { min-height: 9rem; max-height: 22rem; border: 0; }
+.dcst-recent-card table { margin: 0; }
+.dcst-recent-card thead th, .dcst-service-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-secondary); }
+.dcst-inline-empty { padding: 1.25rem; color: var(--text-muted); text-align: center; }
+.dcst-section-heading { min-width: 0; justify-content: space-between; gap: 1rem; padding: 0.1rem 0.15rem; }
+.dcst-section-heading > div { min-width: 0; }
+.dcst-section-heading h3 { margin: 0.1rem 0 0.2rem; font-size: 1rem; }
+.dcst-count-pill { min-width: 2rem; min-height: 1.55rem; font-size: var(--font-size-sm); }
+.dcst-app .dcst-filter-bar { min-height: 2.75rem; gap: 0.45rem; padding: 0.4rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--surface-elevated); }
+.dcst-filter-bar .search-box { min-width: min(20rem, 100%); flex: 1 1 18rem; }
+.dcst-filter-bar > select { min-width: 8rem; }
+.dcst-service-table { max-height: min(30rem, 52dvh); border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--surface-elevated); }
+.dcst-service-table table { min-width: 58rem; }
+.dcst-service-table tbody tr:hover { background: var(--surface-secondary); }
+.dcst-service-table td:first-child, .dcst-service-table th:first-child { width: 2.25rem; text-align: center; }
+.dcst-service-table td:last-child { white-space: nowrap; }
+.dcst-service-table .data-actions { flex-wrap: nowrap; gap: 0.25rem; }
+.dcst-service-table .data-actions button { min-height: 1.75rem; padding: 0 0.45rem; }
+.dcst-object-grid, .dcst-tag-grid, .dcst-utilities-grid { grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr)); align-items: start; }
+.dcst-app .dcst-object-grid > .data-card, .dcst-app .dcst-tag-grid > .data-card, .dcst-app .dcst-utilities-grid > .data-card { min-width: 0; border-top: 2px solid var(--border-strong); background: var(--surface-elevated); }
+.dcst-app .dcst-tag-grid > .data-card { border-top-color: var(--accent); }
+.dcst-app .dcst-object-grid code { display: block; max-height: 7rem; overflow: auto; padding: 0.4rem; border-radius: var(--radius-control); background: var(--surface-secondary); }
+.dcst-app .dcst-object-grid .data-actions { margin-top: auto; padding-top: 0.35rem; border-top: 1px solid var(--border-subtle); }
+.dcst-app .dcst-editor-card { margin-top: 0.15rem; border-top: 2px solid var(--accent); }
+.dcst-editor-card > .form-grid, .dcst-editor-card > label, .dcst-editor-card > fieldset, .dcst-editor-card > .data-actions { margin-right: 0.75rem; margin-left: 0.75rem; }
+.dcst-editor-card > .form-grid { margin-top: 0.7rem; }
+.dcst-editor-card > fieldset { margin-top: 0.7rem; padding: 0.65rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); }
+.dcst-editor-card > .data-actions { justify-content: flex-end; margin-top: 0.75rem; margin-bottom: 0.75rem; padding-top: 0.65rem; border-top: 1px solid var(--border-subtle); }
+.dcst-app .settings-card-stack { min-width: 0; display: grid; gap: 0.45rem; padding: 0.55rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-secondary); }
+.dcst-app .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.35rem; }
+.dcst-app .checkbox-grid label { min-height: 2rem; display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.45rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); }
+.dcst-utilities-grid pre { min-height: 8rem; max-height: 20rem; overflow: auto; margin: 0; padding: 0.6rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); }
+
+@container app-window (max-width: 68rem) {
+  .dcst-metric-grid { grid-template-columns: repeat(4, minmax(7rem, 1fr)); }
+  .dcst-overview-layout { grid-template-columns: minmax(13rem, 0.42fr) minmax(0, 1fr); }
+  .dcst-header-side { align-items: flex-end; flex-direction: column; gap: 0.4rem; }
+  .dcst-runtime-status { padding-right: 0; border-right: 0; }
+}
+@container app-window (max-width: 48rem) {
+  .dcst-app .dcst-header { align-items: stretch; display: grid; }
+  .dcst-header-side { min-width: 0; align-items: stretch; }
+  .dcst-header-side .header-actions { justify-content: flex-start; }
+  .dcst-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dcst-overview-layout { grid-template-columns: minmax(0, 1fr); }
+  .dcst-section-heading { align-items: flex-start; }
+  .dcst-filter-bar > select { min-width: 0; flex: 1 1 8rem; }
+}
+@container app-window (max-width: 30rem) {
+  .dcst-title-icon { display: none; }
+  .dcst-app .dcst-header { padding: 0.65rem; }
+  .dcst-app .dcst-header h2 small { display: block; margin: 0.2rem 0 0; }
+  .dcst-overview, .dcst-section { padding: 0.5rem; }
+  .dcst-metric-grid { grid-template-columns: minmax(0, 1fr); }
+  .dcst-posture-card dl { grid-template-columns: minmax(0, 1fr); }
+  .dcst-section-heading { display: grid; }
+  .dcst-count-pill { justify-self: start; }
+}
