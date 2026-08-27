@@ -135,6 +135,16 @@ def test_alert_thresholds():
     ]
 
 
+def test_top_processes_returns_complete_list_and_respects_limit(monkeypatch):
+    output = "\n".join(f"{pid} user proc{pid} 1.0 2.0 4 S" for pid in range(1, 61))
+    monkeypatch.setattr(resource_dashboard.shutil, "which", lambda command: "/usr/bin/ps" if command == "ps" else None)
+    monkeypatch.setattr(resource_dashboard.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=output))
+
+    assert len(resource_dashboard.top_processes()) == 60
+    assert len(resource_dashboard.top_processes(25)) == 25
+    assert resource_dashboard.top_processes(25)[-1]["pid"] == 25
+
+
 def test_collect_dashboard_hides_admin_only_and_unrelated_disk_data(monkeypatch):
     allowed = [{"path": "/home/alice", "paths": ["/home/alice"], "filesystem_id": "fs-8-0", "device": "/dev/sda", **_metric()}]
     monkeypatch.setattr(resource_dashboard, "memory_stats", lambda: {"ram": _metric(40), "swap": _metric(0)})
