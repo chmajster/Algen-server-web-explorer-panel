@@ -4,6 +4,23 @@ import { Maximize2, Minimize2, X } from "lucide-react";
 import { minimizedDialogOffset, releaseDialogMinimizedSlot, reserveDialogMinimizedSlot } from "./dialogMinimizedSlots";
 
 const FOCUSABLE = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])";
+const visibleDialogOrder: symbol[] = [];
+
+function activateDialog(token: symbol) {
+  const index = visibleDialogOrder.indexOf(token);
+  if (index >= 0) visibleDialogOrder.splice(index, 1);
+  visibleDialogOrder.push(token);
+}
+
+function deactivateDialog(token: symbol) {
+  const index = visibleDialogOrder.indexOf(token);
+  if (index >= 0) visibleDialogOrder.splice(index, 1);
+}
+
+function isActiveDialog(token: symbol) {
+  return visibleDialogOrder[visibleDialogOrder.length - 1] === token;
+}
+
 export function Modal({ title, children, onClose, footer, wide = false, closeLabel = "×", className = "" }: {
   title: string;
   children: React.ReactNode;
@@ -14,6 +31,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   className?: string;
 }) {
   const titleId = useId();
+  const [dialogToken] = useState(() => Symbol("dialog"));
   const panel = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(typeof document === "undefined" ? null : document.activeElement as HTMLElement | null);
   const onCloseRef = useRef(onClose);
@@ -31,9 +49,18 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   }, [minimized]);
 
   useEffect(() => {
+    if (minimized) {
+      deactivateDialog(dialogToken);
+      return;
+    }
+    activateDialog(dialogToken);
+    return () => deactivateDialog(dialogToken);
+  }, [dialogToken, minimized]);
+
+  useEffect(() => {
     if (minimized) return;
     function escape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && isActiveDialog(dialogToken)) {
         event.preventDefault();
         event.stopPropagation();
         onCloseRef.current();
@@ -41,7 +68,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
     }
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
-  }, [minimized]);
+  }, [dialogToken, minimized]);
 
   useEffect(() => {
     const restoreFocus = previousFocus.current;
@@ -78,7 +105,8 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
         aria-modal="false"
         aria-labelledby={titleId}
         tabIndex={-1}
-        onPointerDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => { activateDialog(dialogToken); event.stopPropagation(); }}
+        onFocusCapture={() => activateDialog(dialogToken)}
         style={{
           position: "absolute",
           top: "50%",

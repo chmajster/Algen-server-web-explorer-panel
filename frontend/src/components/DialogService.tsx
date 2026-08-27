@@ -104,8 +104,8 @@ function isUpdateDialog(dialog: HTMLElement): boolean {
   const classes = [
     dialog.className,
     dialog.closest<HTMLElement>(".modal-backdrop")?.className || "",
-  ].join(" ");
-  return labelledBy.startsWith("update-") || /(^|\s)update-(progress|completion|details|status)/.test(classes);
+  ].join(" ").split(/\s+/);
+  return labelledBy === "update-progress-title" || classes.includes("update-progress-backdrop") || classes.includes("update-progress-dialog");
 }
 
 function restoreTray(): HTMLElement {

@@ -65,6 +65,21 @@ describe("dialog window", () => {
     expect(screen.getByLabelText("Draft")).toHaveValue("changed");
   });
 
+  it("closes only the active visible dialog with Escape", () => {
+    const firstClose = vi.fn();
+    const secondClose = vi.fn();
+    render(<><Modal title="First active" onClose={firstClose}><p>First</p></Modal><Modal title="Second active" onClose={secondClose}><p>Second</p></Modal></>);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(firstClose).not.toHaveBeenCalled();
+    expect(secondClose).toHaveBeenCalledOnce();
+
+    fireEvent.pointerDown(screen.getByRole("dialog", { name: "First active" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(firstClose).toHaveBeenCalledOnce();
+    expect(secondClose).toHaveBeenCalledOnce();
+  });
+
   it("ignores Escape while minimized", () => {
     const close = vi.fn();
     render(<Modal title="Minimized escape" onClose={close}><input aria-label="Draft" /></Modal>);

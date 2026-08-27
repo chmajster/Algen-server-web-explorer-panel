@@ -1,6 +1,6 @@
 import { confirmDialog, promptDialog } from "../../../components/DialogService";
 import { Pencil, Plus, RefreshCw, Search, Trash2, UserPlus, Users } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError, api, type AdminUser, type ApmidBackup, type ApmidDashboard, type ApmidHistory, type ApmidItem,
   type ApmidMember, type ApmidResourcePermission, type ApmidRole, type ModuleStatus,
@@ -197,14 +197,25 @@ function History({ items, t }: { items: ApmidHistory[]; t: Translate }) {
 }
 
 function Backups({ values, canCreate, canRestore, t, toast, onRefresh }: { values: ApmidBackup[]; canCreate: boolean; canRestore: boolean; t: Translate; toast: ToastFn; onRefresh: () => Promise<void> }) {
+  const pendingRestores = useRef(new Set<ApmidBackup["id"]>());
   async function create() {
     const description = (await promptDialog(t, t("apmid.backup.description"), "")) ?? "";
     try { await api.createApmidBackup(description); await onRefresh(); toast(t("apmid.backup.created"), "ok"); } catch (error) { toast(message(error, t), "error"); }
   }
   async function restore(backup: ApmidBackup) {
-    const confirmation = (await promptDialog(t, t("apmid.backup.restoreConfirm"), "")) ?? "";
-    if (!confirmation) return;
-    try { await api.restoreApmidBackup(backup.id, confirmation); await onRefresh(); toast(t("apmid.backup.restored"), "ok"); } catch (error) { toast(message(error, t), "error"); }
+    if (pendingRestores.current.has(backup.id)) return;
+    pendingRestores.current.add(backup.id);
+    try {
+      const confirmation = (await promptDialog(t, t("apmid.backup.restoreConfirm"), "")) ?? "";
+      if (!confirmation) return;
+      await api.restoreApmidBackup(backup.id, confirmation);
+      await onRefresh();
+      toast(t("apmid.backup.restored"), "ok");
+    } catch (error) {
+      toast(message(error, t), "error");
+    } finally {
+      pendingRestores.current.delete(backup.id);
+    }
   }
   return <section className="apmid-panel"><header className="apmid-toolbar"><div><h3>{t("apmid.backup.title")}</h3></div>{canCreate && <button className="button-primary" onClick={() => void create()}>{t("apmid.backup.create")}</button>}</header>{values.length ? <div className="module-table-wrap"><table><thead><tr><th>{t("apmid.history.date")}</th><th>{t("apmid.history.actor")}</th><th>{t("apmid.backup.description")}</th><th>{t("apmid.backup.checksum")}</th><th>{t("column.actions")}</th></tr></thead><tbody>{values.map((backup) => <tr key={backup.id}><td>{new Date(backup.created_at * 1000).toLocaleString()}</td><td>{backup.created_by}</td><td>{backup.description || "—"}</td><td><code>{backup.sha256}</code></td><td>{canRestore && <button className="button-danger" onClick={() => void restore(backup)}>{t("apmid.backup.restore")}</button>}</td></tr>)}</tbody></table></div> : <div className="empty-state">{t("apmid.backup.empty")}</div>}</section>;
 }
