@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs -- pointer gesture refs are only read and mutated by pointer event handlers */
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Maximize2, Minimize2, X } from "lucide-react";
