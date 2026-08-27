@@ -26,14 +26,27 @@ describe("monitorUtils", () => {
     expect(result[0].paths).toEqual(expect.arrayContaining(["/data", "/srv/data"]));
   });
 
-  it("excludes system interfaces from aggregate traffic when normal interfaces are active", () => {
+  it("excludes system and virtual interfaces from aggregate traffic when a normal interface is active", () => {
     const interfaces: NetworkMetric[] = [
       { name: "eth0", state: "up", rx_bytes: 100, tx_bytes: 200, rx_bytes_per_sec: 10, tx_bytes_per_sec: 20, system: false },
-      { name: "docker0", state: "up", rx_bytes: 1000, tx_bytes: 2000, rx_bytes_per_sec: 100, tx_bytes_per_sec: 200, system: true },
+      { name: "docker0", state: "up", rx_bytes: 1000, tx_bytes: 2000, rx_bytes_per_sec: 100, tx_bytes_per_sec: 200, system: false },
+      { name: "veth1234", state: "up", rx_bytes: 500, tx_bytes: 600, rx_bytes_per_sec: 50, tx_bytes_per_sec: 60, system: false },
+      { name: "lo", state: "up", rx_bytes: 900, tx_bytes: 900, rx_bytes_per_sec: 90, tx_bytes_per_sec: 90, system: true },
     ];
     const summary = summarizeNetwork(interfaces);
     expect(summary.interfaces.map((item) => item.name)).toEqual(["eth0"]);
     expect(summary.rxBytesPerSec).toBe(10);
     expect(summary.txBytesPerSec).toBe(20);
+  });
+
+  it("falls back to an active non-system interface when only virtual links are available", () => {
+    const interfaces: NetworkMetric[] = [
+      { name: "docker0", state: "up", rx_bytes: 1000, tx_bytes: 2000, rx_bytes_per_sec: 100, tx_bytes_per_sec: 200, system: false },
+      { name: "lo", state: "up", rx_bytes: 900, tx_bytes: 900, rx_bytes_per_sec: 90, tx_bytes_per_sec: 90, system: true },
+    ];
+    const summary = summarizeNetwork(interfaces);
+    expect(summary.interfaces.map((item) => item.name)).toEqual(["docker0"]);
+    expect(summary.rxBytesPerSec).toBe(100);
+    expect(summary.txBytesPerSec).toBe(200);
   });
 });
