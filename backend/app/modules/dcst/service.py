@@ -183,7 +183,7 @@ class DcstService:
 
     def ipsets(self) -> list[dict[str, Any]]:
         services = self.repository.services()
-        result = []
+        result: list[dict[str, Any]] = []
         for item in self.repository.ipsets():
             refs = [service for service in services if (service["source_type"] == "ipset" and service["source_value"] in {item["id"], item["name"]}) or (service["destination_type"] == "ipset" and service["destination_value"] in {item["id"], item["name"]})]
             result.append(item | {"dependencies": [{"id": ref["id"], "name": ref["name"]} for ref in refs]})
@@ -205,7 +205,7 @@ class DcstService:
             raise DcstNotFound("IPSet not found")
         if item["type"] != "manual":
             raise DcstConflict("Only manual IPSets can be deleted")
-        dependencies = next((value["dependencies"] for value in self.ipsets() if value["id"] == item_id), [])
+        dependencies: list[dict[str, Any]] = next((value["dependencies"] for value in self.ipsets() if value["id"] == item_id), [])
         if dependencies:
             raise DcstConflict(f"IPSet is referenced by {len(dependencies)} Service(s)")
         result = self.repository.delete_ipset(item_id)
