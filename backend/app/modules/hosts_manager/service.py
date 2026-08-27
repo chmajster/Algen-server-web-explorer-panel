@@ -26,7 +26,7 @@ from ..apmid.public import (
     ApmidNotFoundError as DomainApmidNotFoundError,
 )
 from .models import (
-    ApmidInput, CredentialInput, EnrollmentTokenInput, EnvironmentInput, GroupInput, HostInput, HostnamePatternInput,
+    ApmidInput, CredentialInput, CredentialType, DEFAULT_CREDENTIAL_SHARES, EnrollmentTokenInput, EnvironmentInput, GroupInput, HostInput, HostnamePatternInput,
     HostsManagerSettingsUpdate, PowerProfileInput, RepositoryInput, hostname_template_parts, render_hostname,
 )
 
@@ -380,8 +380,13 @@ class HostRegistryService:
                                 encrypted = self.cipher.encrypt(plain, associated_data=str(item["id"]))
                             except Exception:
                                 encrypted = ""
-                        target.execute("""INSERT OR IGNORE INTO credentials(id,name,type,username,description,encrypted_secret,active,created_at,updated_at,created_by,updated_by)
-                            VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (item["id"], item["name"], item["type"], item.get("username", ""), item.get("description", ""), encrypted, item.get("active", 1), item["created_at"], item["updated_at"], item["created_by"], item["updated_by"]))
+                        try:
+                            credential_type = CredentialType(str(item["type"]))
+                        except ValueError:
+                            credential_type = None
+                        shares = json.dumps(list(DEFAULT_CREDENTIAL_SHARES.get(credential_type, ("hosts-manager",))))
+                        target.execute("""INSERT OR IGNORE INTO credentials(id,name,type,username,description,encrypted_secret,active,shared_with_json,created_at,updated_at,created_by,updated_by)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (item["id"], item["name"], item["type"], item.get("username", ""), item.get("description", ""), encrypted, item.get("active", 1), shares, item["created_at"], item["updated_at"], item["created_by"], item["updated_by"]))
                         counts["credentials"] += 1
                 if "hosts" in tables:
                     source.row_factory = sqlite3.Row
