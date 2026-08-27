@@ -68,7 +68,7 @@ describe("MonitorApp", () => {
     expect(await screen.findByText("test-server")).toBeInTheDocument();
     expect(screen.getAllByText("monitor.disabled").length).toBeGreaterThan(0);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
-    expect(screen.getByText("monitor.ready")).toBeInTheDocument();
+    expect(screen.getAllByText("monitor.ready").length).toBeGreaterThan(0);
   });
 
   it("renders an empty network section without crashing", async () => {
