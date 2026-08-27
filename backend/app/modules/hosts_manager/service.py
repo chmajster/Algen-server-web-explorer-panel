@@ -384,7 +384,8 @@ class HostRegistryService:
                             credential_type = CredentialType(str(item["type"]))
                         except ValueError:
                             credential_type = None
-                        shares = json.dumps(list(DEFAULT_CREDENTIAL_SHARES.get(credential_type, ("hosts-manager",))))
+                        default_shares = DEFAULT_CREDENTIAL_SHARES[credential_type] if credential_type is not None else ("hosts-manager",)
+                        shares = json.dumps(list(default_shares))
                         target.execute("""INSERT OR IGNORE INTO credentials(id,name,type,username,description,encrypted_secret,active,shared_with_json,created_at,updated_at,created_by,updated_by)
                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (item["id"], item["name"], item["type"], item.get("username", ""), item.get("description", ""), encrypted, item.get("active", 1), shares, item["created_at"], item["updated_at"], item["created_by"], item["updated_by"]))
                         counts["credentials"] += 1
