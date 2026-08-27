@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type PackageModule } from "../../api";
+import { api, type ModuleSummary, type PackageModule } from "../../api";
 import { ModuleHub } from "./ModuleHub";
 
 vi.mock("../../api", () => ({ api: { apps: vi.fn(), modules: vi.fn() } }));
@@ -35,5 +35,18 @@ describe("ModuleHub", () => {
     expect(screen.getByText("SMB/CIFS file sharing")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "managed.openModule" }));
     expect(open).toHaveBeenCalledWith("samba");
+  });
+
+  it("renders the fast catalog before runtime status loading finishes", async () => {
+    let resolveRuntime!: (value: ModuleSummary[]) => void;
+    vi.mocked(api.modules).mockReturnValue(new Promise((resolve) => { resolveRuntime = resolve; }));
+
+    render(<ModuleHub t={(key) => key} toast={vi.fn()} onOpen={vi.fn()} />);
+
+    expect(await screen.findByText("Samba")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "action.refresh" }).querySelector(".spin")).toBeInTheDocument();
+
+    await act(async () => { resolveRuntime([]); });
+    expect(screen.getByRole("button", { name: "action.refresh" }).querySelector(".spin")).not.toBeInTheDocument();
   });
 });
