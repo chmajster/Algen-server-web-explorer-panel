@@ -1,5 +1,15 @@
 # WebNAS infrastructure modules
 
+## Module Center integration
+
+Infrastructure modules are managed through the shared **Module Center**. There is no separate "Infrastructure Modules" management screen or second frontend catalog. The visible `store` launcher is available to users with `modules.view` and renders the same Package Center catalog, status model, details, jobs, history, search, filters and lifecycle UI used for every other module.
+
+The legacy frontend application id `modules` is retained only as a hidden compatibility alias and renders the same Module Center. It is not published as a second menu entry. This keeps persisted/deep-linked application state working without maintaining a parallel implementation.
+
+Package and runtime data continue to come from the existing `/api/apps` and `/api/modules` APIs and are normalized by the shared Package Center merge layer. Module ids are the deduplication key. Infrastructure-specific backend providers, routers and permissions remain unchanged; the consolidation is a frontend/navigation concern and does not move backend implementations.
+
+The catalog continues to use the real categories declared by module manifests (for example `file_sharing`, DNS, database or system-tool categories). "Infrastructure" remains an architectural description in this document rather than a synthetic catalog category, because the previous Infrastructure Modules view did not define a separate authoritative infrastructure registry. Search covers module names, descriptions and manifest categories, so infrastructure modules remain discoverable without duplicating classification data.
+
 This document covers the Linux Updates, Docker, Pi-hole, AdGuard Home, PostgreSQL, MariaDB, Redis, Home Assistant, and Cron Manager modules, role-based access control, and desktop widgets. The shared provider and job architecture is described in [MODULES.md](MODULES.md).
 
 Cron Manager stores stable WebNAS job metadata privately, renders only `/etc/cron.d/webnas`, applies backup-first atomic replacement with rollback, and exposes existing host entries as read-only records. It detects both `cron` and `crond`, never executes browser-supplied command text in the API, and blocks mutations under Proxmox Safe Mode. See [CRON_MANAGER.md](CRON_MANAGER.md).
@@ -16,6 +26,8 @@ Authentication is unchanged: every session belongs to a real local Linux user au
 | `user` | Files, transfers, personal settings, monitor, and personal widgets. |
 
 Assignments are stored atomically in `paths.data_dir/rbac.json` with mode `0600`. A record can add or deny individual permissions from the closed backend list. UID 0 and members of `sudo` or `wheel` always resolve to `administrator`; an assignment cannot downgrade them. State-changing routes require session authentication, CSRF and the current user's rate-limited PAM password. Permissions are enforced in backend dependencies; hidden controls are only a usability layer.
+
+The unified Module Center applies the same permission split in its UI. `modules.view` grants read-only access to the catalog, module status, jobs and history. Install, update/reinstall, uninstall, service control/configuration, and package-source management remain gated by their existing granular permissions. Job cancel/retry controls are shown only when the user has the permission required by the job's original lifecycle action.
 
 ## Linux system updates
 
