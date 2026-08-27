@@ -63,22 +63,31 @@ run_target() {
   shift
   local local_target="${SCRIPT_DIR}/${target}"
   local temp_script=""
+  local exit_code=0
 
   if [[ -n "$SCRIPT_DIR" && -f "$local_target" ]]; then
     exec bash "$local_target" "$@"
   fi
 
   temp_script="$(mktemp -t webnas-launcher.XXXXXX.sh)"
-  trap 'rm -f -- "$temp_script"' EXIT
+  trap "rm -f -- $(printf '%q' "$temp_script")" EXIT
+
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL "${RAW_BASE_URL}/${target}" -o "$temp_script"
   elif command -v wget >/dev/null 2>&1; then
     wget -qO "$temp_script" "${RAW_BASE_URL}/${target}"
   else
     printf '[ERROR] curl or wget is required to download %s\n' "$target" >&2
-    exit 1
+    return 1
   fi
-  bash "$temp_script" "$@"
+
+  if ! bash "$temp_script" "$@"; then
+    exit_code=$?
+  fi
+
+  rm -f -- "$temp_script"
+  trap - EXIT
+  return "$exit_code"
 }
 
 if [[ "$MODE" == "portable" ]]; then
