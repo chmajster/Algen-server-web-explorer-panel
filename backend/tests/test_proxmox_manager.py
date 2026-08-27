@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import importlib
+import io
+import ssl
+import urllib.error
 from typing import Any
 
+import pytest
+
 from app.modules.proxmox_manager.models import ProxmoxConnectionInput
-from app.modules.proxmox_manager.service import ProxmoxManagerService
+from app.modules.proxmox_manager.service import ProxmoxApiClient, ProxmoxApiError, ProxmoxManagerService
 
 proxmox_module = importlib.import_module("app.modules.proxmox_manager.service")
 
@@ -131,6 +136,84 @@ def configured_manager(monkeypatch, tmp_path) -> tuple[FakeHostRegistry, Proxmox
     monkeypatch.setattr(manager, "_resolve_address", lambda _client, _resource: "10.0.10.21")
     return registry, manager, connection, current
 
+
+
+def test_api_client_reports_connection_refused_diagnostics(monkeypatch):
+    client = ProxmoxApiClient(
+        "https://10.0.0.10:8006",
+        "root@pam",
+        "super-secret-password",
+        credential_type="username_password",
+    )
+
+    def fail(*_args: Any, **_kwargs: Any):
+        raise urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
+
+    monkeypatch.setattr(proxmox_module.urllib.request, "urlopen", fail)
+    with pytest.raises(ProxmoxApiError) as raised:
+        client.get("version")
+
+    error = raised.value
+    assert error.stage == "tcp"
+    assert error.endpoint == "https://10.0.0.10:8006"
+    assert "Connection refused" in error.reason
+    assert "pveproxy" in error.hint
+    assert "10.0.0.10:8006" in str(error)
+    assert "super-secret-password" not in str(error)
+
+
+def test_api_client_reports_tls_verification_diagnostics(monkeypatch):
+    client = ProxmoxApiClient(
+        "https://pve.example:8006",
+        "automation@pve!algen",
+        "token-secret",
+    )
+
+    def fail(*_args: Any, **_kwargs: Any):
+        certificate_error = ssl.SSLCertVerificationError(
+            1,
+            "certificate verify failed: self-signed certificate",
+        )
+        raise urllib.error.URLError(certificate_error)
+
+    monkeypatch.setattr(proxmox_module.urllib.request, "urlopen", fail)
+    with pytest.raises(ProxmoxApiError) as raised:
+        client.get("version")
+
+    error = raised.value
+    assert error.stage == "tls"
+    assert "certificate verification failed" in error.reason.lower()
+    assert "issuing CA" in error.hint
+    assert "token-secret" not in str(error)
+
+
+def test_api_client_reports_http_authentication_details(monkeypatch):
+    client = ProxmoxApiClient(
+        "https://pve.example:8006",
+        "automation@pve!algen",
+        "token-secret",
+    )
+
+    def fail(*_args: Any, **_kwargs: Any):
+        raise urllib.error.HTTPError(
+            "https://pve.example:8006/api2/json/version",
+            401,
+            "Unauthorized",
+            hdrs=None,
+            fp=io.BytesIO(b'{"message":"authentication failure"}'),
+        )
+
+    monkeypatch.setattr(proxmox_module.urllib.request, "urlopen", fail)
+    with pytest.raises(ProxmoxApiError) as raised:
+        client.get("version")
+
+    error = raised.value
+    assert error.status == 401
+    assert error.stage == "api"
+    assert error.reason == "HTTP 401: authentication failure"
+    assert "user@realm/password" in error.hint
+    assert error.diagnostic_details()["endpoint"] == "https://pve.example:8006"
+    assert "token-secret" not in str(error)
 
 
 def test_connection_accepts_shared_username_password_credential(monkeypatch, tmp_path):

@@ -37,7 +37,13 @@ def _api_failure(error: Exception) -> NoReturn:
     if isinstance(error, ValueError):
         api_error(422, "PROXMOX_INVALID_CONFIGURATION", str(error))
     if isinstance(error, ProxmoxApiError):
-        api_error(502, "PROXMOX_API_ERROR", str(error), upstream_status=error.status)
+    api_error(
+        502,
+        "PROXMOX_API_ERROR",
+        str(error),
+        upstream_status=error.status,
+        **error.diagnostic_details(),
+    )
     raise error
 
 
