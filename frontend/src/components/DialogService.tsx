@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Translate } from "../app/types";
 import { ConfirmDialog, InputDialog } from "./Modal";
+import { minimizedDialogOffset, releaseDialogMinimizedSlot, reserveDialogMinimizedSlot } from "./dialogMinimizedSlots";
 
 type ConfirmRequest = {
   id: number;
@@ -128,7 +129,7 @@ function LegacyDialogCompatibility() {
       dialog.dataset.nonblockingDialog = "true";
       dialog.style.pointerEvents = "auto";
 
-      const layer = dialog.closest<HTMLElement>(".modal-backdrop, .network-modal-backdrop");
+      const layer = dialog.closest<HTMLElement>(".modal-backdrop, .network-modal-backdrop, .ansible-details-backdrop");
       const previousLayerStyle = layer ? {
         background: layer.style.background,
         backdropFilter: layer.style.backdropFilter,
@@ -155,18 +156,25 @@ function LegacyDialogCompatibility() {
       else dialog.prepend(minimize);
 
       let restore: HTMLButtonElement | null = null;
+      let restoreSlot: number | null = null;
       const minimizeDialog = (event: Event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (dialog.hidden || restore) return;
+        restoreSlot = reserveDialogMinimizedSlot();
         dialog.hidden = true;
         restore = document.createElement("button");
         restore.type = "button";
         restore.className = "button legacy-dialog-restore";
         restore.textContent = title;
+        restore.dataset.minimizedSlot = String(restoreSlot);
+        restore.style.setProperty("--dialog-minimized-offset", minimizedDialogOffset(restoreSlot));
         restore.setAttribute("aria-label", `Restore ${title}`);
         restore.title = `Restore ${title}`;
         restore.addEventListener("click", () => {
           dialog.hidden = false;
+          releaseDialogMinimizedSlot(restoreSlot);
+          restoreSlot = null;
           restore?.remove();
           restore = null;
           dialog.focus();
@@ -178,6 +186,8 @@ function LegacyDialogCompatibility() {
       cleanups.set(dialog, () => {
         minimize.removeEventListener("click", minimizeDialog);
         minimize.remove();
+        releaseDialogMinimizedSlot(restoreSlot);
+        restoreSlot = null;
         restore?.remove();
         dialog.hidden = false;
         delete dialog.dataset.nonblockingDialog;

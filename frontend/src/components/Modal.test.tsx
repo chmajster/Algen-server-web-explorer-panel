@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ConfirmDialog, InputDialog, Modal } from "./Modal";
 
@@ -80,7 +81,16 @@ describe("dialog window", () => {
     const first = screen.getByRole("button", { name: "Restore First minimized" });
     const second = screen.getByRole("button", { name: "Restore Second minimized" });
     expect(first).not.toHaveAttribute("data-minimized-slot", second.getAttribute("data-minimized-slot"));
-    expect(first.style.bottom).not.toBe(second.style.bottom);
+    expect(first.style.getPropertyValue("--dialog-minimized-offset")).not.toBe(second.style.getPropertyValue("--dialog-minimized-offset"));
+  });
+
+  it("does not leak minimized slots under StrictMode", () => {
+    render(<StrictMode><Modal title="Strict minimized" onClose={vi.fn()}><p>Draft</p></Modal></StrictMode>);
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Strict minimized" }));
+    const firstSlot = screen.getByRole("button", { name: "Restore Strict minimized" }).getAttribute("data-minimized-slot");
+    fireEvent.click(screen.getByRole("button", { name: "Restore Strict minimized" }));
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Strict minimized" }));
+    expect(screen.getByRole("button", { name: "Restore Strict minimized" })).toHaveAttribute("data-minimized-slot", firstSlot);
   });
 
   it("gives concurrent input dialogs unique form ids", () => {
@@ -92,6 +102,7 @@ describe("dialog window", () => {
     expect(firstButton.getAttribute("form")).not.toBe(secondButton.getAttribute("form"));
     expect(document.getElementById(firstButton.getAttribute("form") || "")).toBeInstanceOf(HTMLFormElement);
     expect(document.getElementById(secondButton.getAttribute("form") || "")).toBeInstanceOf(HTMLFormElement);
+    expect(document.getElementById(firstButton.getAttribute("form") || "")).toHaveClass("input-dialog-form");
   });
 
   it("does not trap focus and restores the opener after closing", () => {

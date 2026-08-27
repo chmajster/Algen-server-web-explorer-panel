@@ -1,21 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Maximize2, Minimize2, X } from "lucide-react";
+import { minimizedDialogOffset, releaseDialogMinimizedSlot, reserveDialogMinimizedSlot } from "./dialogMinimizedSlots";
 
 const FOCUSABLE = "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])";
-const minimizedSlots = new Set<number>();
-
-function reserveMinimizedSlot(): number {
-  let slot = 0;
-  while (minimizedSlots.has(slot)) slot += 1;
-  minimizedSlots.add(slot);
-  return slot;
-}
-
-function releaseMinimizedSlot(slot: number | null) {
-  if (slot !== null) minimizedSlots.delete(slot);
-}
-
 export function Modal({ title, children, onClose, footer, wide = false, closeLabel = "×", className = "" }: {
   title: string;
   children: React.ReactNode;
@@ -34,7 +22,6 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   const minimized = minimizedSlot !== null;
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
-  useEffect(() => { minimizedSlotRef.current = minimizedSlot; }, [minimizedSlot]);
 
   useEffect(() => {
     if (minimized) return;
@@ -59,20 +46,22 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   useEffect(() => {
     const restoreFocus = previousFocus.current;
     return () => {
-      releaseMinimizedSlot(minimizedSlotRef.current);
+      releaseDialogMinimizedSlot(minimizedSlotRef.current);
       restoreFocus?.focus();
     };
   }, []);
 
   function minimize() {
-    setMinimizedSlot((current) => current ?? reserveMinimizedSlot());
+    if (minimizedSlotRef.current !== null) return;
+    const slot = reserveDialogMinimizedSlot();
+    minimizedSlotRef.current = slot;
+    setMinimizedSlot(slot);
   }
 
   function restore() {
-    setMinimizedSlot((current) => {
-      releaseMinimizedSlot(current);
-      return null;
-    });
+    releaseDialogMinimizedSlot(minimizedSlotRef.current);
+    minimizedSlotRef.current = null;
+    setMinimizedSlot(null);
   }
 
   const dialogWindow = (
@@ -100,7 +89,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
       >
         <header className="modal-header">
           <h2 id={titleId}>{title}</h2>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: ".25rem" }}>
+          <div className="modal-header-controls">
             <button
               className="icon-button"
               type="button"
@@ -127,24 +116,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
       aria-label={`Restore ${title}`}
       title={`Restore ${title}`}
       onClick={restore}
-      style={{
-        position: "fixed",
-        zIndex: 3900,
-        right: "1rem",
-        bottom: `calc(3.75rem + ${minimizedSlot * 3}rem)`,
-        maxWidth: "min(22rem, calc(100vw - 2rem))",
-        minHeight: "2.5rem",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: ".5rem",
-        padding: "0 .875rem",
-        border: "1px solid var(--border-strong)",
-        borderRadius: "var(--radius-medium)",
-        color: "var(--text-primary)",
-        background: "var(--surface-elevated)",
-        boxShadow: "var(--shadow-menu)",
-        pointerEvents: "auto",
-      }}
+      style={{ "--dialog-minimized-offset": minimizedDialogOffset(minimizedSlot) } as React.CSSProperties}
     >
       <Maximize2 size={16} />
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
@@ -181,7 +153,7 @@ export function InputDialog({ title, label, value, confirmLabel, cancelLabel, ty
   const input = useRef<HTMLInputElement>(null);
   const formId = useId();
   return <Modal title={title} closeLabel={cancelLabel} onClose={onClose} footer={<><button type="button" onClick={onClose}>{cancelLabel}</button><button className="button-primary" type="submit" form={formId}>{confirmLabel}</button></>}>
-    <form id={formId} onSubmit={(event) => { event.preventDefault(); const next = input.current?.value.trim(); if (next) onConfirm(next); }}>
+    <form id={formId} className="input-dialog-form" onSubmit={(event) => { event.preventDefault(); const next = input.current?.value.trim(); if (next) onConfirm(next); }}>
       <label className="field-label">{label}<input ref={input} defaultValue={value} type={type} autoFocus /></label>
     </form>
   </Modal>;
