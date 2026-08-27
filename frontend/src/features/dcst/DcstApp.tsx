@@ -60,7 +60,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
     ...ipsets.map((item) => ({ type: "ipset", value: item.id, label: `${item.name} · IPSet` })),
   ], [tags, ipsets]);
 
-  function success(message: string) { toast(message, "success", "admin"); }
+  function success(message: string) { toast(message, "ok", "admin"); }
   function setEndpointType(side: EndpointSide, value: DcstServiceInput["source_type"]) {
     if (side === "source") setServiceDraft((old) => ({ ...old, source_type: value, source_value: "" }));
     else setServiceDraft((old) => ({ ...old, destination_type: value, destination_value: "" }));
