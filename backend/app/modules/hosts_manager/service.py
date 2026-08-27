@@ -26,16 +26,16 @@ from ..apmid.public import (
     ApmidNotFoundError as DomainApmidNotFoundError,
 )
 from .models import (
-    ApmidInput, CredentialInput, EnrollmentTokenInput, EnvironmentInput, GroupInput, HostInput, HostnamePatternInput,
+    ApmidInput, CredentialInput, CredentialType, DEFAULT_CREDENTIAL_SHARES, EnrollmentTokenInput, EnvironmentInput, GroupInput, HostInput, HostnamePatternInput,
     HostsManagerSettingsUpdate, PowerProfileInput, RepositoryInput, hostname_template_parts, render_hostname,
 )
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 JSON_COLUMNS = {
     "tags_json": "tags", "variables_json": "variables", "group_ids_json": "group_ids",
     "host_ids_json": "host_ids", "facts_json": "facts", "details_json": "details",
-    "report_json": "report",
+    "report_json": "report", "shared_with_json": "shared_with",
 }
 
 
@@ -116,7 +116,7 @@ class HostRegistryService:
                 CREATE TABLE IF NOT EXISTS credentials(
                     id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT NOT NULL, username TEXT NOT NULL DEFAULT '',
                     description TEXT NOT NULL DEFAULT '', encrypted_secret TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
-                    environment_id TEXT, last_used_at REAL,
+                    environment_id TEXT, last_used_at REAL, shared_with_json TEXT NOT NULL DEFAULT '[]',
                     created_at REAL NOT NULL, updated_at REAL NOT NULL, created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS hosts(
                     id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, hostname TEXT NOT NULL DEFAULT '', fqdn TEXT NOT NULL DEFAULT '',
@@ -253,6 +253,16 @@ class HostRegistryService:
                     created_by TEXT NOT NULL, updated_by TEXT NOT NULL);
                 """
             )
+            credential_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(credentials)").fetchall()}
+            if "shared_with_json" not in credential_columns:
+                connection.execute("ALTER TABLE credentials ADD COLUMN shared_with_json TEXT NOT NULL DEFAULT '[]'")
+            connection.execute(
+                """UPDATE credentials SET shared_with_json=CASE
+                    WHEN type IN ('ssh_private_key','ssh_password','become_password','git_private_key') THEN '[\"hosts-manager\",\"ansible-controller\"]'
+                    WHEN type='proxmox_api' THEN '[\"proxmox-manager\"]'
+                    ELSE '[\"hosts-manager\"]' END
+                   WHERE shared_with_json IS NULL OR shared_with_json='' OR shared_with_json='[]'"""
+            )
             token_columns = {row[1] for row in connection.execute("PRAGMA table_info(enrollment_tokens)")}
             for name, definition in (
                 ("assigned_hostname", "TEXT NOT NULL DEFAULT ''"),
@@ -370,8 +380,14 @@ class HostRegistryService:
                                 encrypted = self.cipher.encrypt(plain, associated_data=str(item["id"]))
                             except Exception:
                                 encrypted = ""
-                        target.execute("""INSERT OR IGNORE INTO credentials(id,name,type,username,description,encrypted_secret,active,created_at,updated_at,created_by,updated_by)
-                            VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (item["id"], item["name"], item["type"], item.get("username", ""), item.get("description", ""), encrypted, item.get("active", 1), item["created_at"], item["updated_at"], item["created_by"], item["updated_by"]))
+                        try:
+                            credential_type = CredentialType(str(item["type"]))
+                        except ValueError:
+                            credential_type = None
+                        default_shares = DEFAULT_CREDENTIAL_SHARES[credential_type] if credential_type is not None else ("hosts-manager",)
+                        shares = json.dumps(list(default_shares))
+                        target.execute("""INSERT OR IGNORE INTO credentials(id,name,type,username,description,encrypted_secret,active,shared_with_json,created_at,updated_at,created_by,updated_by)
+                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (item["id"], item["name"], item["type"], item.get("username", ""), item.get("description", ""), encrypted, item.get("active", 1), shares, item["created_at"], item["updated_at"], item["created_by"], item["updated_by"]))
                         counts["credentials"] += 1
                 if "hosts" in tables:
                     source.row_factory = sqlite3.Row
@@ -948,13 +964,21 @@ class HostRegistryService:
 
     def save_credential(self, payload: CredentialInput, actor: str, credential_id: str | None = None) -> dict[str, Any]:
         now, item_id = time.time(), credential_id or stable_id()
-        envelope = self.cipher.encrypt(json.dumps({"secret": payload.secret, "passphrase": payload.passphrase}), associated_data=item_id) if payload.secret else ""
         with self.connect() as connection:
-            old = connection.execute("SELECT created_at,created_by FROM credentials WHERE id=?", (item_id,)).fetchone()
+            old = connection.execute("SELECT created_at,created_by,encrypted_secret FROM credentials WHERE id=?", (item_id,)).fetchone()
+            if payload.secret:
+                envelope = self.cipher.encrypt(json.dumps({"secret": payload.secret, "passphrase": payload.passphrase}), associated_data=item_id)
+            elif old:
+                envelope = str(old["encrypted_secret"] or "")
+            elif payload.type.value != "wol":
+                raise ValueError("credential secret is required")
+            else:
+                envelope = ""
             created_at, created_by = (old["created_at"], old["created_by"]) if old else (now, actor)
-            connection.execute("""INSERT INTO credentials(id,name,type,username,description,encrypted_secret,active,environment_id,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,?,1,?,?,?,?,?)
-                ON CONFLICT(id) DO UPDATE SET name=excluded.name,type=excluded.type,username=excluded.username,description=excluded.description,encrypted_secret=excluded.encrypted_secret,active=1,environment_id=excluded.environment_id,updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
-                (item_id, payload.name, payload.type.value, payload.username, payload.description, envelope, payload.environment_id, created_at, now, created_by, actor))
+            shares = json.dumps(payload.shared_with or [], ensure_ascii=False, separators=(",", ":"))
+            connection.execute("""INSERT INTO credentials(id,name,type,username,description,encrypted_secret,active,environment_id,shared_with_json,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,?,1,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET name=excluded.name,type=excluded.type,username=excluded.username,description=excluded.description,encrypted_secret=excluded.encrypted_secret,active=1,environment_id=excluded.environment_id,shared_with_json=excluded.shared_with_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
+                (item_id, payload.name, payload.type.value, payload.username, payload.description, envelope, payload.environment_id, shares, created_at, now, created_by, actor))
         return self._credential_metadata(self._get("credentials", item_id) or {})
 
     def verified_credential(self, credential_id: str, *, module_id: str, purpose: str) -> dict[str, str]:
@@ -963,6 +987,8 @@ class HostRegistryService:
         item = self._get("credentials", credential_id)
         if not item or not item.get("active") or not item.get("encrypted_secret"):
             raise KeyError("credential not found")
+        if module_id not in set(item.get("shared_with") or []):
+            raise PermissionError(f"credential is not shared with module {module_id}")
         value = json.loads(self.cipher.decrypt(str(item["encrypted_secret"]), associated_data=credential_id))
         with self.connect() as connection:
             connection.execute("UPDATE credentials SET last_used_at=? WHERE id=?", (time.time(), credential_id))

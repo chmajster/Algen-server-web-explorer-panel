@@ -3841,5 +3841,18 @@
   "permissions.cron.delete": "Delete cron jobs",
   "permissions.cron.logs": "View cron logs and history",
   "permissions.cron.admin": "Administer Cron Manager",
-  "permissions.category.cron.description": "High-risk scheduled command configuration and cron diagnostics"
+  "permissions.category.cron.description": "High-risk scheduled command configuration and cron diagnostics",
+  "hosts.credentials.type.username_password": "Username and password",
+  "hosts.credentials.type.api_token": "API token",
+  "hosts.credentials.type.generic_secret": "Generic secret",
+  "hosts.credentials.type.proxmox_api": "Proxmox API token",
+  "hosts.credentials.type.redfish": "Redfish login",
+  "hosts.credentials.type.ipmi": "IPMI login",
+  "hosts.credentials.type.wol": "Wake-on-LAN",
+  "hosts.credentials.type.git_private_key": "Git private key",
+  "hosts.credentials.sharedWith": "Shared with modules",
+  "hosts.credentials.sharedWithHint": "Comma-separated module IDs. Only listed backend modules may decrypt this credential.",
+  "hosts.credentials.notShared": "Not shared",
+  "hosts.credentials.usernameHint": "Login/user name where the credential type requires one.",
+  "hosts.credentials.keepSecret": "Leave empty while editing to keep the existing secret."
 }

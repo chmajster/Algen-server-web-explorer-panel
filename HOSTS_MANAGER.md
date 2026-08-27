@@ -86,3 +86,12 @@ Backup creates a consistent SQLite snapshot and versioned manifest in a checksum
 10. Configure Wake-on-LAN and verify the result says only that a request was sent.
 11. Assign/sync a Git repository and inspect its recorded commit.
 12. Create/validate/restore a backup and verify operator/auditor RBAC restrictions.
+
+
+## Shared credentials
+
+Hosts Manager is the central encrypted credential vault for infrastructure modules. Credentials may be SSH passwords/keys, privilege passwords, generic username/password pairs, API tokens, generic secrets, Proxmox API tokens, Redfish/IPMI credentials, Wake-on-LAN data, or Git private keys.
+
+Each credential has an explicit `shared_with` module allowlist. The browser only receives metadata and never secret material. A backend module must identify itself and its purpose when requesting a credential; Hosts Manager rejects access unless that module is present in the credential allowlist and records the use in the operation audit trail. Existing credentials are migrated with compatibility-safe defaults (for example SSH → Hosts Manager/Ansible and Proxmox API → Proxmox Manager).
+
+Proxmox Manager accepts either a `proxmox_api` token (`user@realm!tokenid` + token secret) or a `username_password` credential (`user@realm` + password) that is shared with `proxmox-manager`. Password authentication is exchanged server-side for a Proxmox ticket and CSRF token; the password is never copied into the Proxmox Manager database.

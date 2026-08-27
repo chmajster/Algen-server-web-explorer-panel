@@ -132,6 +132,19 @@ def configured_manager(monkeypatch, tmp_path) -> tuple[FakeHostRegistry, Proxmox
     return registry, manager, connection, current
 
 
+
+def test_connection_accepts_shared_username_password_credential(monkeypatch, tmp_path):
+    registry = FakeHostRegistry()
+    registry._credentials = [{
+        "id": "proxmox-credential", "name": "PVE Login", "type": "username_password",
+        "username": "automation@pve", "secret_configured": True, "active": True,
+        "shared_with": ["proxmox-manager"],
+    }]
+    patch_registry(monkeypatch, registry)
+    manager = ProxmoxManagerService(tmp_path / "proxmox.sqlite3")
+    saved = manager.save_connection(connection_input(), "admin")
+    assert saved["credential"]["type"] == "username_password"
+
 def test_sync_uses_one_shared_host_identity_and_disables_missing(monkeypatch, tmp_path):
     registry, manager, connection, current = configured_manager(monkeypatch, tmp_path)
 
