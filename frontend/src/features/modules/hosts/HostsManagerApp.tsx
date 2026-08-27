@@ -2539,8 +2539,14 @@ function Credentials({
   refresh: () => Promise<void>;
 }) {
   type CredentialType = HostsManagerCredential["type"];
+  type CredentialFieldProfile = {
+    username?: { label: string; hint?: string; placeholder?: string; required?: boolean };
+    secret?: { label: string; hint?: string; placeholder?: string; multiline?: boolean; required?: boolean };
+    passphrase?: boolean;
+  };
+
   const credentialTypes: CredentialType[] = [
-    "ssh_password", "ssh_private_key", "become_password", "username_password", "api_token", "generic_secret",
+    "username_password", "ssh_password", "ssh_private_key", "become_password", "api_token", "generic_secret",
     "proxmox_api", "redfish", "ipmi", "git_private_key", "wol",
   ];
   const defaultShares: Partial<Record<CredentialType, string[]>> = {
@@ -2552,10 +2558,53 @@ function Credentials({
     redfish: ["hosts-manager"], ipmi: ["hosts-manager"], wol: ["hosts-manager"],
     username_password: ["hosts-manager"], api_token: ["hosts-manager"], generic_secret: ["hosts-manager"],
   };
+  const profiles: Partial<Record<CredentialType, CredentialFieldProfile>> = {
+    username_password: {
+      username: { label: t("hosts.credentials.field.login"), placeholder: "user@example", required: true },
+      secret: { label: t("hosts.credentials.field.password"), required: true },
+    },
+    ssh_password: {
+      username: { label: t("hosts.credentials.field.sshUser"), placeholder: "root", required: true },
+      secret: { label: t("hosts.credentials.field.sshPassword"), required: true },
+    },
+    ssh_private_key: {
+      username: { label: t("hosts.credentials.field.sshUser"), placeholder: "root", required: true },
+      secret: { label: t("hosts.credentials.field.privateKey"), placeholder: "-----BEGIN OPENSSH PRIVATE KEY-----", multiline: true, required: true },
+      passphrase: true,
+    },
+    become_password: {
+      secret: { label: t("hosts.credentials.field.becomePassword"), required: true },
+    },
+    api_token: {
+      secret: { label: t("hosts.credentials.field.apiToken"), required: true },
+    },
+    generic_secret: {
+      secret: { label: t("hosts.credentials.field.genericSecret"), required: true },
+    },
+    proxmox_api: {
+      username: { label: t("hosts.credentials.field.proxmoxTokenId"), hint: t("hosts.credentials.field.proxmoxTokenIdHint"), placeholder: "automation@pve!algen", required: true },
+      secret: { label: t("hosts.credentials.field.proxmoxTokenSecret"), required: true },
+    },
+    redfish: {
+      username: { label: t("hosts.credentials.field.redfishUser"), required: true },
+      secret: { label: t("hosts.credentials.field.redfishPassword"), required: true },
+    },
+    ipmi: {
+      username: { label: t("hosts.credentials.field.ipmiUser"), required: true },
+      secret: { label: t("hosts.credentials.field.ipmiPassword"), required: true },
+    },
+    git_private_key: {
+      username: { label: t("hosts.credentials.field.gitUser"), hint: t("hosts.credentials.field.optional") },
+      secret: { label: t("hosts.credentials.field.privateKey"), placeholder: "-----BEGIN OPENSSH PRIVATE KEY-----", multiline: true, required: true },
+      passphrase: true,
+    },
+    wol: {},
+  };
+
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<HostsManagerCredential | null>(null);
   const [name, setName] = useState("");
-  const [type, setType] = useState<CredentialType>("ssh_password");
+  const [type, setType] = useState<CredentialType>("username_password");
   const [username, setUsername] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [description, setDescription] = useState("");
@@ -2565,18 +2614,23 @@ function Credentials({
 
   function setCredentialType(next: CredentialType) {
     setType(next);
+    setUsername("");
+    setSecret("");
+    setPassphrase("");
     if (!editing) setSharedWith((defaultShares[next] || []).join(", "));
   }
+
   function showEditor(item?: HostsManagerCredential) {
+    const nextType = item?.type || "username_password";
     setEditing(item || null);
     setName(item?.name || "");
-    setType(item?.type || "ssh_password");
+    setType(nextType);
     setUsername(item?.username || "");
     setEnvironmentId(item?.environment_id || "");
     setDescription(item?.description || "");
     setSecret("");
     setPassphrase("");
-    setSharedWith((item?.shared_with || defaultShares[item?.type || "ssh_password"] || []).join(", "));
+    setSharedWith((item?.shared_with || defaultShares[nextType] || []).join(", "));
     setOpen(true);
   }
 
@@ -2589,50 +2643,56 @@ function Credentials({
         shared_with: modules, confirm: true,
       }, editing?.id);
       setSecret("");
+      setPassphrase("");
       setOpen(false);
       await refresh();
     } catch (error) {
-      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+      toast(hostsManagerError(error, t), "error", "admin", "hosts-manager");
     }
   }
 
   async function remove(item: HostsManagerCredential) {
     if (!(await confirmDialog(t("hosts.credentials.deleteConfirm"), t))) return;
-    try { await api.deleteHostsManagerCredential(item.id); await refresh(); }
-    catch (error) { toast(error instanceof Error ? error.message : t("error.generic"), "error"); }
+    try {
+      await api.deleteHostsManagerCredential(item.id);
+      await refresh();
+    } catch (error) {
+      toast(hostsManagerError(error, t), "error", "admin", "hosts-manager");
+    }
   }
 
   const environmentNames = new Map(environments.map((item) => [item.id, item.name]));
   const columns: HostsDataColumn<HostsManagerCredential>[] = [
     { id: "name", label: t("common.name"), sortValue: (item) => item.name, cell: (item) => <strong>{item.name}</strong> },
     { id: "type", label: t("hosts.credentials.type"), sortValue: (item) => item.type, cell: (item) => t(`hosts.credentials.type.${item.type}`) },
-    { id: "username", label: t("hosts.host.user"), sortValue: (item) => item.username, cell: (item) => item.username || t("common.none") },
+    { id: "username", label: t("hosts.credentials.account"), sortValue: (item) => item.username, cell: (item) => item.username || t("common.none") },
     { id: "shared", label: t("hosts.credentials.sharedWith"), sortValue: (item) => (item.shared_with || []).join(","), cell: (item) => item.shared_with?.length ? item.shared_with.join(", ") : t("hosts.credentials.notShared") },
     { id: "environment", label: t("hosts.environment.title"), sortValue: (item) => environmentNames.get(item.environment_id || "") || "", cell: (item) => environmentNames.get(item.environment_id || "") || t("hosts.environment.all") },
     { id: "hosts", label: t("hosts.credentials.hostCount"), sortValue: (item) => item.host_count || 0, cell: (item) => item.host_count || 0 },
     { id: "created", label: t("hosts.credentials.createdAt"), sortValue: (item) => item.created_at || 0, cell: (item) => new Date(item.created_at * 1000).toLocaleString() },
     { id: "lastUsed", label: t("hosts.credentials.lastUsed"), sortValue: (item) => item.last_used_at || 0, cell: (item) => item.last_used_at ? new Date(item.last_used_at * 1000).toLocaleString() : t("common.none") },
-    { id: "actions", label: t("common.actions"), cell: (item) => canManage ? <div className="hosts-table-actions"><button type="button" onClick={() => showEditor(item)}>{t("action.edit")}</button><button className="button-danger" type="button" onClick={() => void remove(item)}>{t("action.delete")}</button></div> : null },
+    { id: "actions", label: t("column.actions"), cell: (item) => canManage ? <div className="hosts-table-actions"><button type="button" onClick={() => showEditor(item)}>{t("action.edit")}</button><button className="button-danger" type="button" onClick={() => void remove(item)}>{t("action.delete")}</button></div> : null },
   ];
-  const keyType = type === "ssh_private_key" || type === "git_private_key";
-  const usernameRequired = ["ssh_password", "ssh_private_key", "username_password", "proxmox_api", "redfish", "ipmi"].includes(type);
+  const profile = profiles[type] || {};
 
   return <section className="ansible-panel"><header><div><h3>{t("hosts.credentials.title")}</h3><p>{t("hosts.credentials.hint")}</p></div>{canManage && <button onClick={() => showEditor()}><Plus />{t("hosts.credentials.add")}</button>}</header>
     <HostsDataTable items={items} columns={columns} rowKey={(item) => item.id} empty={t("hosts.credentials.empty")} />
     {open && <Modal title={editing ? t("hosts.credentials.edit") : t("hosts.credentials.add")} closeLabel={t("action.close")} onClose={() => setOpen(false)} footer={<button className="button-primary" type="submit" form="credential-form">{t("action.save")}</button>}>
       <form id="credential-form" className="module-form-grid" onSubmit={save}>
-        <label>{t("common.name")}<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label>{t("hosts.credentials.type")}<select value={type} onChange={(event) => setCredentialType(event.target.value as CredentialType)}>{credentialTypes.map((value) => <option key={value} value={value}>{t(`hosts.credentials.type.${value}`)}</option>)}</select></label>
-        <label>{t("hosts.host.user")}<input required={usernameRequired} value={username} onChange={(event) => setUsername(event.target.value)} /><small>{t("hosts.credentials.usernameHint")}</small></label>
+        <label className="module-form-span">{t("hosts.credentials.type")}<select aria-label={t("hosts.credentials.type")} autoFocus value={type} onChange={(event) => setCredentialType(event.target.value as CredentialType)} disabled={Boolean(editing)}>{credentialTypes.map((value) => <option key={value} value={value}>{t(`hosts.credentials.type.${value}`)}</option>)}</select><small>{editing ? t("hosts.credentials.typeLocked") : t("hosts.credentials.typeHint")}</small></label>
+        <label>{t("common.name")}<input required value={name} placeholder={t("hosts.credentials.namePlaceholder")} onChange={(event) => setName(event.target.value)} /></label>
+        {profile.username && <label>{profile.username.label}<input aria-label={profile.username.label} required={profile.username.required} value={username} placeholder={profile.username.placeholder || ""} onChange={(event) => setUsername(event.target.value)} /><small>{profile.username.hint || ""}</small></label>}
+        {profile.secret && <label className={profile.secret.multiline ? "module-form-span" : undefined}>{profile.secret.label}{profile.secret.multiline ? <textarea aria-label={profile.secret.label} rows={7} required={!editing && profile.secret.required} value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={editing ? t("hosts.credentials.keepSecret") : profile.secret.placeholder || ""} /> : <input aria-label={profile.secret.label} type="password" required={!editing && profile.secret.required} value={secret} onChange={(event) => setSecret(event.target.value)} autoComplete="new-password" placeholder={editing ? t("hosts.credentials.keepSecret") : profile.secret.placeholder || ""} />}<small>{editing ? t("hosts.credentials.keepSecret") : profile.secret.hint || ""}</small></label>}
+        {profile.passphrase && <label>{t("hosts.credentials.passphrase")}<input aria-label={t("hosts.credentials.passphrase")} type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} autoComplete="new-password" /></label>}
+        {type === "wol" && <div className="module-form-span module-info"><strong>{t("hosts.credentials.wolNoSecret")}</strong><p>{t("hosts.credentials.wolNoSecretHint")}</p></div>}
         <label>{t("hosts.environment.title")}<select value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)}><option value="">{t("hosts.environment.all")}</option>{environments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>{t("hosts.credentials.sharedWith")}<input value={sharedWith} onChange={(event) => setSharedWith(event.target.value)} placeholder={(defaultShares[type] || []).join(", ")} /><small>{t("hosts.credentials.sharedWithHint")}</small></label>
         <label className="module-form-span">{t("common.description")}<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-        <label className="module-form-span">{t("hosts.credentials.sharedWith")}<input value={sharedWith} onChange={(event) => setSharedWith(event.target.value)} placeholder="hosts-manager, proxmox-manager" /><small>{t("hosts.credentials.sharedWithHint")}</small></label>
-        <label className={keyType ? "module-form-span" : undefined}>{t("hosts.credentials.secret")}{keyType ? <textarea rows={7} required={!editing} value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={editing ? t("hosts.credentials.keepSecret") : "-----BEGIN PRIVATE KEY-----"} /> : <input type="password" required={!editing && type !== "wol"} value={secret} onChange={(event) => setSecret(event.target.value)} autoComplete="new-password" placeholder={editing ? t("hosts.credentials.keepSecret") : ""} />}<small>{editing ? t("hosts.credentials.keepSecret") : ""}</small></label>
-        {keyType && <label>{t("hosts.credentials.passphrase")}<input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} autoComplete="new-password" /></label>}
       </form>
     </Modal>}
   </section>;
 }
+
 function Repositories({
   items,
   canManage,
