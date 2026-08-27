@@ -17,9 +17,11 @@ export type ProxmoxConnection = {
   verify_tls: boolean;
   ca_certificate: string;
   default_ssh_user: string;
+  project: string;
   environment: string;
   location: string;
   tags: string[];
+  sync_proxmox_tags: boolean;
   sync_lxc: boolean;
   sync_templates: boolean;
   active: boolean;
@@ -45,6 +47,7 @@ export type ProxmoxVm = {
   maxmem: number;
   disk: number;
   maxdisk: number;
+  tags: string[];
   host_id?: string | null;
   host_address?: string;
   host_active?: boolean;
@@ -64,9 +67,11 @@ export type ProxmoxConnectionInput = {
   verify_tls: boolean;
   ca_certificate: string;
   default_ssh_user: string;
+  project: string;
   environment: string;
   location: string;
   tags: string[];
+  sync_proxmox_tags: boolean;
   sync_lxc: boolean;
   sync_templates: boolean;
   active: boolean;
@@ -99,6 +104,8 @@ export const proxmoxManagerClient = {
       created: number;
       updated: number;
       disabled: number;
+      tagged: number;
+      tag_errors: Array<{ vmid: number; name: string; error: string }>;
       skipped: Array<{ vmid: number; name: string; reason: string }>;
       hosts: Array<Record<string, unknown>>;
     }>(`/api/modules/proxmox-manager/connections/${encodeURIComponent(id)}/sync`, {
