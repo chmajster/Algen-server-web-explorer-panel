@@ -87,7 +87,7 @@ def patch_registry(monkeypatch, registry: FakeHostRegistry) -> None:
     )
 
 
-def resource(status: str = "running", *, node: str = "pve01") -> dict[str, Any]:
+def resource(status: str = "running", *, node: str = "pve01", tags: str = "") -> dict[str, Any]:
     return {
         "vmid": 101,
         "name": "app-01",
@@ -102,6 +102,7 @@ def resource(status: str = "running", *, node: str = "pve01") -> dict[str, Any]:
         "maxmem": 2 * 1024 * 1024 * 1024,
         "disk": 0,
         "maxdisk": 20 * 1024 * 1024 * 1024,
+        "tags": tags,
     }
 
 
@@ -111,9 +112,11 @@ def connection_input() -> ProxmoxConnectionInput:
         endpoint="https://pve.example:8006",
         credential_id="proxmox-credential",
         default_ssh_user="algen-ansible",
+        project="atlas",
         environment="lab",
         location="rack-a",
         tags=["proxmox", "lab"],
+        sync_proxmox_tags=False,
     )
 
 
@@ -197,10 +200,101 @@ def test_connection_database_never_stores_token_secret(monkeypatch, tmp_path):
     with manager.connect() as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(connections)").fetchall()}
         raw = dict(connection.execute("SELECT * FROM connections WHERE id=?", (saved["id"],)).fetchone())
+    assert "project" in columns
+    assert "sync_proxmox_tags" in columns
     assert "token" not in columns
     assert "secret" not in columns
     assert "password" not in columns
     assert "token-secret" not in str(raw)
+
+
+def test_sync_pushes_metadata_tags_to_proxmox_and_preserves_manual_tags(monkeypatch, tmp_path):
+    registry = FakeHostRegistry()
+    patch_registry(monkeypatch, registry)
+    manager = ProxmoxManagerService(tmp_path / "proxmox.sqlite3")
+    payload = connection_input().model_copy(
+        update={
+            "project": "Atlas Project",
+            "environment": "Prod EU",
+            "location": "Rack A",
+            "tags": ["proxmox", "api"],
+            "sync_proxmox_tags": True,
+        }
+    )
+    connection = manager.save_connection(payload, "admin")
+    current = [resource(tags="manual;legacy")]
+    current_config_tags = "manual;legacy"
+    puts: list[tuple[str, dict[str, Any]]] = []
+
+    class FakeClient:
+        def get(self, path: str) -> dict[str, Any]:
+            assert path == "nodes/pve01/qemu/101/config"
+            return {"tags": current_config_tags}
+
+        def put(self, path: str, data: dict[str, Any] | None = None) -> str:
+            nonlocal current_config_tags
+            assert data is not None
+            puts.append((path, dict(data)))
+            current_config_tags = str(data["tags"])
+            return "UPID:pve01:tag-update"
+
+    client = FakeClient()
+    monkeypatch.setattr(manager, "_client", lambda _: client)
+    monkeypatch.setattr(manager, "_resources", lambda _connection, _client=None: [dict(item) for item in current])
+    monkeypatch.setattr(manager, "_resolve_address", lambda _client, _resource: "10.0.10.21")
+
+    first = manager.sync(connection["id"], "admin")
+    assert first["tagged"] == 1
+    assert first["tag_errors"] == []
+    assert len(puts) == 1
+    first_tags = set(str(puts[-1][1]["tags"]).split(";"))
+    assert {
+        "manual",
+        "legacy",
+        "algen",
+        "project-atlas-project",
+        "env-prod-eu",
+        "location-rack-a",
+        "type-vm",
+        "proxmox",
+        "api",
+    } <= first_tags
+    managed = set(registry.hosts[0]["variables"]["proxmox_managed_tags"])
+    assert "manual" not in managed
+    assert "project-atlas-project" in managed
+
+    registry.hosts[0]["environment"] = "staging"
+    registry.hosts[0]["tags"] = ["proxmox", "worker"]
+    current_config_tags += ";manual-two"
+    second = manager.sync(connection["id"], "admin")
+    assert second["tagged"] == 1
+    second_tags = set(str(puts[-1][1]["tags"]).split(";"))
+    assert "env-prod-eu" not in second_tags
+    assert "api" not in second_tags
+    assert {"manual", "legacy", "manual-two", "env-staging", "worker"} <= second_tags
+
+
+def test_proxmox_tag_permission_failure_does_not_block_host_sync(monkeypatch, tmp_path):
+    registry = FakeHostRegistry()
+    patch_registry(monkeypatch, registry)
+    manager = ProxmoxManagerService(tmp_path / "proxmox.sqlite3")
+    payload = connection_input().model_copy(update={"sync_proxmox_tags": True})
+    connection = manager.save_connection(payload, "admin")
+    monkeypatch.setattr(manager, "_resources", lambda _connection, _client=None: [resource()])
+    monkeypatch.setattr(manager, "_resolve_address", lambda _client, _resource: "10.0.10.21")
+
+    class DeniedClient:
+        def get(self, _path: str) -> dict[str, Any]:
+            raise proxmox_module.ProxmoxApiError("Proxmox API returned HTTP 403", status=403)
+
+    monkeypatch.setattr(manager, "_client", lambda _: DeniedClient())
+    result = manager.sync(connection["id"], "admin")
+
+    assert result["created"] == 1
+    assert result["tagged"] == 0
+    assert result["tag_errors"][0]["vmid"] == 101
+    assert len(registry.hosts) == 1
+    assert registry.hosts[0]["variables"]["proxmox_tag_sync_error"]
 
 
 def test_power_action_uses_current_node_after_vm_migration(monkeypatch, tmp_path):

@@ -99,6 +99,9 @@ class ProxmoxApiClient:
     def post(self, path: str, data: dict[str, Any] | None = None) -> Any:
         return self.request("POST", path, data)
 
+    def put(self, path: str, data: dict[str, Any] | None = None) -> Any:
+        return self.request("PUT", path, data)
+
 
 class ProxmoxManagerService:
     """Proxmox connection registry and synchronization bridge to Hosts Manager."""
@@ -132,9 +135,11 @@ class ProxmoxManagerService:
                     verify_tls INTEGER NOT NULL DEFAULT 1,
                     ca_certificate TEXT NOT NULL DEFAULT '',
                     default_ssh_user TEXT NOT NULL DEFAULT 'algen-ansible',
+                    project TEXT NOT NULL DEFAULT '',
                     environment TEXT NOT NULL DEFAULT '',
                     location TEXT NOT NULL DEFAULT '',
                     tags_json TEXT NOT NULL DEFAULT '["proxmox"]',
+                    sync_proxmox_tags INTEGER NOT NULL DEFAULT 1,
                     sync_lxc INTEGER NOT NULL DEFAULT 1,
                     sync_templates INTEGER NOT NULL DEFAULT 0,
                     active INTEGER NOT NULL DEFAULT 1,
@@ -150,13 +155,18 @@ class ProxmoxManagerService:
                 CREATE INDEX IF NOT EXISTS idx_proxmox_connections_active ON connections(active,name);
                 """
             )
+            columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(connections)").fetchall()}
+            if "project" not in columns:
+                connection.execute("ALTER TABLE connections ADD COLUMN project TEXT NOT NULL DEFAULT ''")
+            if "sync_proxmox_tags" not in columns:
+                connection.execute("ALTER TABLE connections ADD COLUMN sync_proxmox_tags INTEGER NOT NULL DEFAULT 1")
 
     @staticmethod
     def _decode(row: sqlite3.Row | None) -> dict[str, Any] | None:
         if row is None:
             return None
         value = dict(row)
-        for key in ("verify_tls", "sync_lxc", "sync_templates", "active", "auto_sync"):
+        for key in ("verify_tls", "sync_proxmox_tags", "sync_lxc", "sync_templates", "active", "auto_sync"):
             value[key] = bool(value[key])
         try:
             value["tags"] = json.loads(value.pop("tags_json") or "[]")
@@ -223,15 +233,16 @@ class ProxmoxManagerService:
                 """
                 INSERT INTO connections(
                     id,name,endpoint,credential_id,verify_tls,ca_certificate,default_ssh_user,
-                    environment,location,tags_json,sync_lxc,sync_templates,active,auto_sync,
+                    project,environment,location,tags_json,sync_proxmox_tags,sync_lxc,sync_templates,active,auto_sync,
                     created_at,updated_at,created_by,updated_by
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,endpoint=excluded.endpoint,credential_id=excluded.credential_id,
                     verify_tls=excluded.verify_tls,ca_certificate=excluded.ca_certificate,
-                    default_ssh_user=excluded.default_ssh_user,environment=excluded.environment,
-                    location=excluded.location,tags_json=excluded.tags_json,sync_lxc=excluded.sync_lxc,
-                    sync_templates=excluded.sync_templates,active=excluded.active,auto_sync=excluded.auto_sync,
+                    default_ssh_user=excluded.default_ssh_user,project=excluded.project,environment=excluded.environment,
+                    location=excluded.location,tags_json=excluded.tags_json,sync_proxmox_tags=excluded.sync_proxmox_tags,
+                    sync_lxc=excluded.sync_lxc,sync_templates=excluded.sync_templates,active=excluded.active,
+                    auto_sync=excluded.auto_sync,
                     updated_at=excluded.updated_at,updated_by=excluded.updated_by
                 """,
                 (
@@ -242,9 +253,11 @@ class ProxmoxManagerService:
                     int(value["verify_tls"]),
                     value["ca_certificate"],
                     value["default_ssh_user"],
+                    value["project"],
                     value["environment"],
                     value["location"],
                     json.dumps(value["tags"]),
+                    int(value["sync_proxmox_tags"]),
                     int(value["sync_lxc"]),
                     int(value["sync_templates"]),
                     int(value["active"]),
@@ -311,6 +324,73 @@ class ProxmoxManagerService:
         value = str(item.get("type") or "")
         return value if value in {"qemu", "lxc"} else ""
 
+    @staticmethod
+    def _parse_proxmox_tags(value: Any) -> list[str]:
+        if isinstance(value, list):
+            items = [str(item).strip() for item in value]
+        else:
+            items = [item.strip() for item in str(value or "").split(";")]
+        return list(dict.fromkeys(item for item in items if item))
+
+    @staticmethod
+    def _tag_slug(value: str, prefix: str = "") -> str:
+        normalized = re.sub(r"[^a-z0-9_.-]+", "-", value.casefold()).strip("._-")
+        normalized = re.sub(r"-{2,}", "-", normalized)
+        if not normalized:
+            return ""
+        if prefix:
+            available = max(1, 40 - len(prefix) - 1)
+            normalized = normalized[:available].rstrip("._-")
+            return f"{prefix}-{normalized}" if normalized else ""
+        return normalized[:40].rstrip("._-")
+
+    @classmethod
+    def _managed_proxmox_tags(
+        cls,
+        connection: dict[str, Any],
+        resource: dict[str, Any],
+        host: dict[str, Any],
+    ) -> list[str]:
+        variables = dict(host.get("variables") or {})
+        tags = ["algen"]
+        metadata = (
+            ("project", str(variables.get("algen_project") or connection.get("project") or "")),
+            ("env", str(host.get("environment") or "")),
+            ("location", str(host.get("location") or "")),
+        )
+        for prefix, value in metadata:
+            if tag := cls._tag_slug(value, prefix):
+                tags.append(tag)
+        tags.append("type-vm" if resource.get("type") == "qemu" else "type-lxc")
+        for value in host.get("tags") or []:
+            if tag := cls._tag_slug(str(value)):
+                tags.append(tag)
+        return list(dict.fromkeys(tags))[:50]
+
+    def _sync_resource_tags(
+        self,
+        client: ProxmoxApiClient,
+        connection: dict[str, Any],
+        resource: dict[str, Any],
+        host: dict[str, Any],
+        existing: dict[str, Any] | None,
+    ) -> tuple[list[str], list[str], bool]:
+        node = urllib.parse.quote(str(resource["node"]), safe="")
+        path = f"nodes/{node}/{resource['type']}/{int(resource['vmid'])}/config"
+        config = client.get(path)
+        if not isinstance(config, dict):
+            raise ProxmoxApiError("Proxmox VM configuration response is invalid")
+        current = self._parse_proxmox_tags(config.get("tags"))
+        previous_variables = dict(existing.get("variables") or {}) if existing else {}
+        previous_managed = set(self._parse_proxmox_tags(previous_variables.get("proxmox_managed_tags")))
+        desired = self._managed_proxmox_tags(connection, resource, host)
+        unmanaged = [tag for tag in current if tag not in previous_managed]
+        final = list(dict.fromkeys([*unmanaged, *desired]))
+        changed = set(final) != set(current)
+        if changed:
+            client.put(path, {"tags": ";".join(final)})
+        return desired, final, changed
+
     def _resources(self, connection: dict[str, Any], client: ProxmoxApiClient | None = None) -> list[dict[str, Any]]:
         client = client or self._client(connection)
         raw = client.get("cluster/resources?type=vm")
@@ -340,6 +420,7 @@ class ProxmoxManagerService:
                     "maxmem": int(value.get("maxmem") or 0),
                     "disk": int(value.get("disk") or 0),
                     "maxdisk": int(value.get("maxdisk") or 0),
+                    "tags": self._parse_proxmox_tags(value.get("tags")),
                 }
             )
         return sorted(resources, key=lambda row: (row["node"], row["vmid"]))
@@ -442,6 +523,11 @@ class ProxmoxManagerService:
         variables = dict(existing.get("variables") or {}) if existing else {}
         was_present = variables.get("proxmox_present", True) is not False
         variables.update(ProxmoxManagerService._provider_variables(connection["id"], resource, present=present))
+        project = str(connection.get("project") or "")
+        if project:
+            variables["algen_project"] = project
+        else:
+            variables.pop("algen_project", None)
 
         if existing:
             active = False if not present else (True if not was_present else bool(existing.get("active", True)))
@@ -536,8 +622,9 @@ class ProxmoxManagerService:
         }
         occupied_names = shared_host_names()
         seen: set[tuple[str, str]] = set()
-        created = updated = disabled = 0
+        created = updated = disabled = tagged = 0
         skipped: list[dict[str, Any]] = []
+        tag_errors: list[dict[str, Any]] = []
         synchronized: list[dict[str, Any]] = []
 
         for resource in resources:
@@ -564,6 +651,24 @@ class ProxmoxManagerService:
                 suffix = f"-{connection_id[:6]}-{resource['vmid']}"
                 name = f"{name[: max(1, 128 - len(suffix))]}{suffix}"
             payload = self._host_payload(existing, connection, resource, address, name=name, present=True)
+            if connection.get("sync_proxmox_tags", True):
+                try:
+                    managed_tags, proxmox_tags, changed = self._sync_resource_tags(
+                        client,
+                        connection,
+                        resource,
+                        payload.model_dump(mode="json"),
+                        existing,
+                    )
+                    payload.variables["proxmox_managed_tags"] = managed_tags
+                    payload.variables["proxmox_tags"] = proxmox_tags
+                    payload.variables.pop("proxmox_tag_sync_error", None)
+                    resource["tags"] = proxmox_tags
+                    if changed:
+                        tagged += 1
+                except ProxmoxApiError as error:
+                    payload.variables["proxmox_tag_sync_error"] = str(error)[:500]
+                    tag_errors.append({"vmid": resource["vmid"], "name": resource["name"], "error": str(error)})
             host = host_registry().save_host(payload, actor, str(existing["id"]) if existing else None, source=PROVIDER)
             occupied_names.add(str(host["name"]).casefold())
             if existing:
@@ -577,6 +682,7 @@ class ProxmoxManagerService:
                     "host_id": host["id"],
                     "address": host["address"],
                     "status": resource["status"],
+                    "tags": list(resource.get("tags") or []),
                 }
             )
 
@@ -603,7 +709,9 @@ class ProxmoxManagerService:
                 host_registry().save_host(payload, actor, str(existing["id"]), source=PROVIDER)
                 disabled += 1
 
-        self._set_sync_status(connection_id, "completed")
+        sync_status = "completed_with_warnings" if tag_errors else "completed"
+        sync_error = f"{len(tag_errors)} Proxmox VM tag update(s) failed" if tag_errors else ""
+        self._set_sync_status(connection_id, sync_status, sync_error)
         host_registry().operation(
             None,
             "proxmox.sync",
@@ -617,6 +725,8 @@ class ProxmoxManagerService:
                 "created": created,
                 "updated": updated,
                 "disabled": disabled,
+                "tagged": tagged,
+                "tag_errors": len(tag_errors),
                 "skipped": len(skipped),
             },
         )
@@ -625,6 +735,8 @@ class ProxmoxManagerService:
             "created": created,
             "updated": updated,
             "disabled": disabled,
+            "tagged": tagged,
+            "tag_errors": tag_errors,
             "skipped": skipped,
             "hosts": synchronized,
         }

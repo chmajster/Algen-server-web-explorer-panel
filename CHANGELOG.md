@@ -6,6 +6,8 @@
 
 - Added native **Proxmox Manager** with Proxmox VE API connections, shared Hosts Manager identity, centralized `proxmox_api` credentials, VM/LXC synchronization, live-node power actions, and direct reuse of the same `host_id` by Hosts Manager and Ansible Automation Controller.
 
+- Added managed Proxmox VM/CT metadata tags for project, environment, location, resource type and Host Registry tags, while preserving administrator-created Proxmox tags and reporting permission/tag-policy failures without blocking host synchronization.
+
 - Added a disposable `--portable` installer mode that runs WebNAS without installing it as a system service and keeps its isolated runtime below the launch directory.
 
 - Fixed portable mode to consistently use `./portable-run/` for source, runtime, configuration, and cleanup, preserving compatibility when launched from an existing repository checkout.

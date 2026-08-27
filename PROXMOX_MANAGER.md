@@ -72,6 +72,21 @@ A newly discovered host is not automatically approved. This keeps Ansible remote
 
 If a guest does not expose a usable IP address, synchronization falls back to a valid DNS-style VM name. If neither an address nor a usable name is available, the VM is reported as skipped rather than creating an invalid central host.
 
+## Proxmox metadata tags
+
+When `sync_proxmox_tags` is enabled for a Proxmox connection, every discovered VM/CT receives managed Proxmox tags during synchronization. The default managed set contains:
+
+- `algen`
+- `project-<project>` from the connection project
+- `env-<environment>` from the canonical Host Registry host
+- `location-<location>` from the canonical Host Registry host
+- `type-vm` or `type-lxc`
+- normalized custom Host Registry tags
+
+Generated values are normalized to lowercase Proxmox-safe tags. Proxmox stores multiple tags as a semicolon-separated value. The module reads the current guest configuration before updating it, preserves tags that were added manually in Proxmox, and records only its own managed tag set in `proxmox_managed_tags`. On later syncs it can therefore replace stale managed metadata without deleting unrelated administrator tags.
+
+Tag synchronization is best-effort. If the API token lacks permission to modify guest options or the Proxmox Datacenter tag policy rejects a tag, normal Host Registry synchronization still succeeds and the per-VM tag error is returned in the sync result. Proxmox requires suitable guest configuration permissions (normally `VM.Config.Options`), and Datacenter → Options → User Tag Access can further restrict which tags may be set.
+
 ## Ansible integration
 
 Ansible Automation Controller already consumes Hosts Manager host records and keeps their central IDs. No Proxmox-specific Ansible inventory table is required.
