@@ -1,0 +1,51 @@
+name: Temporary Resource Monitor CSS scope fix
+
+on:
+  push:
+    branches:
+      - feat/resource-monitor-dashboard
+
+permissions:
+  contents: write
+
+jobs:
+  scope-monitor-table-styles:
+    if: ${{ !contains(github.event.head_commit.message, '[css-scope-fix]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: feat/resource-monitor-dashboard
+
+      - name: Scope monitor table selectors
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("frontend/src/styles/resource-monitor.css")
+          text = path.read_text(encoding="utf-8")
+          replacements = {
+              ".monitor-table-wrap {": ".monitor-app .monitor-table-wrap {",
+              ".monitor-table-wrap table {": ".monitor-app .monitor-table-wrap table {",
+              ".monitor-table-wrap th,\n.monitor-table-wrap td {": ".monitor-app .monitor-table-wrap th,\n.monitor-app .monitor-table-wrap td {",
+              ".monitor-table-wrap th {": ".monitor-app .monitor-table-wrap th {",
+              ".monitor-table-wrap tbody tr:last-child td {": ".monitor-app .monitor-table-wrap tbody tr:last-child td {",
+              ".monitor-table-wrap tbody tr:hover td {": ".monitor-app .monitor-table-wrap tbody tr:hover td {",
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"Expected selector not found: {old!r}")
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Commit scoped selectors and remove temporary workflow
+        run: |
+          git rm .github/workflows/tmp-css-scope.yml
+          git config user.name "chmajster"
+          git config user.email "44300091+chmajster@users.noreply.github.com"
+          git add frontend/src/styles/resource-monitor.css
+          git commit -m "fix: scope Resource Monitor table styles [css-scope-fix]"
+          git push origin HEAD:feat/resource-monitor-dashboard
