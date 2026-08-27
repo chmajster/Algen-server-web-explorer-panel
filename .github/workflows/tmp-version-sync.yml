@@ -1,0 +1,58 @@
+name: Temporary version metadata sync
+
+on:
+  push:
+    branches:
+      - feat/resource-monitor-dashboard
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version-metadata:
+    if: ${{ !contains(github.event.head_commit.message, '[version-sync]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: feat/resource-monitor-dashboard
+
+      - name: Synchronize version metadata
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          version = "0.1.20"
+
+          settings = Path("backend/app/settings.py")
+          text = settings.read_text(encoding="utf-8")
+          if "from . import __version__" not in text:
+              text = text.replace("from typing import Literal\n", "from typing import Literal\n\nfrom . import __version__\n", 1)
+          text = text.replace('"version": "0.1.18"', '"version": __version__', 1)
+          settings.write_text(text, encoding="utf-8")
+
+          frontend = Path("frontend/src/features/settings/SettingsApp.tsx")
+          text = frontend.read_text(encoding="utf-8")
+          if 'import packageMetadata from "../../../package.json";' not in text:
+              text = 'import packageMetadata from "../../../package.json";\n' + text
+          text = text.replace("<dd>0.1.18</dd>", "<dd>{packageMetadata.version}</dd>", 1)
+          frontend.write_text(text, encoding="utf-8")
+
+          lock_path = Path("frontend/package-lock.json")
+          lock = json.loads(lock_path.read_text(encoding="utf-8"))
+          lock["version"] = version
+          lock["packages"][""]["version"] = version
+          lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Commit synchronized metadata and remove temporary workflow
+        run: |
+          git rm .github/workflows/tmp-version-sync.yml
+          git config user.name "chmajster"
+          git config user.email "44300091+chmajster@users.noreply.github.com"
+          git add backend/app/settings.py frontend/src/features/settings/SettingsApp.tsx frontend/package-lock.json
+          git commit -m "chore: synchronize 0.1.20 version metadata [version-sync]"
+          git push origin HEAD:feat/resource-monitor-dashboard
