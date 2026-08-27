@@ -41,12 +41,14 @@ class ProxmoxConnectionInput(StrictModel):
     @classmethod
     def valid_endpoint(cls, value: str) -> str:
         parsed = urlsplit(value)
-        if parsed.scheme != "https" or not parsed.hostname:
-            raise ValueError("Proxmox endpoint must use HTTPS")
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("Proxmox endpoint must use HTTP or HTTPS")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("Proxmox endpoint cannot contain credentials, query or fragment")
         if parsed.path not in {"", "/"}:
-            raise ValueError("Proxmox endpoint must be an origin, for example https://pve.example:8006")
+            raise ValueError(
+                "Proxmox endpoint must be an origin, for example http://pve.example:8006 or https://pve.example:8006"
+            )
         return value.rstrip("/")
 
     @field_validator("tags")
