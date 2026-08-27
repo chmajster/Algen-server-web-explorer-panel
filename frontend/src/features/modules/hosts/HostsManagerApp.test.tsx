@@ -5,7 +5,7 @@ import { HostsManagerApp } from "./HostsManagerApp";
 
 vi.mock("../../../api", async () => {
   const actual = await vi.importActual<typeof import("../../../api")>("../../../api");
-  return { ...actual, api: { ...actual.api, hostsManagerDashboard: vi.fn(), hostsManagerSettings: vi.fn(), saveHostsManagerSettings: vi.fn(), hostsManagerHosts: vi.fn(), hostsManagerGroups: vi.fn(), hostsManagerEnvironments: vi.fn(), hostsManagerApmids: vi.fn(), hostsManagerHostnamePatterns: vi.fn(), hostsManagerEnrollmentTokens: vi.fn(), hostsManagerOperations: vi.fn(), hostsManagerCredentials: vi.fn(), saveHostsManagerCredential: vi.fn(), deleteHostsManagerCredential: vi.fn(), hostsManagerRepositories: vi.fn(), hostsManagerPowerProfiles: vi.fn(), hostsManagerDiagnostics: vi.fn(), hostsManagerBackups: vi.fn(), hostsManagerCapabilities: vi.fn(), saveHostsManagerHost: vi.fn(), createHostsManagerEnrollmentToken: vi.fn(), downloadHostsManagerEnrollmentScript: vi.fn() } };
+  return { ...actual, api: { ...actual.api, hostsManagerDashboard: vi.fn(), hostsManagerSettings: vi.fn(), saveHostsManagerSettings: vi.fn(), hostsManagerHosts: vi.fn(), hostsManagerGroups: vi.fn(), hostsManagerEnvironments: vi.fn(), hostsManagerApmids: vi.fn(), hostsManagerHostnamePatterns: vi.fn(), hostsManagerEnrollmentTokens: vi.fn(), hostsManagerOperations: vi.fn(), hostsManagerCredentials: vi.fn(), saveHostsManagerCredential: vi.fn(), deleteHostsManagerCredential: vi.fn(), hostsManagerRepositories: vi.fn(), hostsManagerPowerProfiles: vi.fn(), hostsManagerDiagnostics: vi.fn(), hostsManagerBackups: vi.fn(), hostsManagerCapabilities: vi.fn(), modules: vi.fn(), saveHostsManagerHost: vi.fn(), createHostsManagerEnrollmentToken: vi.fn(), downloadHostsManagerEnrollmentScript: vi.fn() } };
 });
 
 const t = (key: string) => key;
@@ -68,6 +68,11 @@ describe("HostsManagerApp", () => {
     vi.mocked(api.hostsManagerDiagnostics).mockResolvedValue({ schema_version: 5, checks: [] });
     vi.mocked(api.hostsManagerBackups).mockResolvedValue([]);
     vi.mocked(api.hostsManagerCapabilities).mockResolvedValue([]);
+    vi.mocked(api.modules).mockResolvedValue([
+      { id: "hosts-manager", manifest: { name: "Hosts Manager" } },
+      { id: "proxmox-manager", manifest: { name: "Proxmox Manager" } },
+      { id: "dcst", manifest: { name: "DCST" } },
+    ] as never);
   });
 
   afterEach(() => vi.restoreAllMocks());
@@ -111,6 +116,35 @@ describe("HostsManagerApp", () => {
     fireEvent.change(typeSelect, { target: { value: "wol" } });
     expect(screen.getByText("hosts.credentials.wolNoSecret")).toBeInTheDocument();
     expect(screen.queryByLabelText("hosts.credentials.field.privateKey")).not.toBeInTheDocument();
+  });
+
+  it("selects every module by default and saves the checked credential shares", async () => {
+    vi.mocked(api.saveHostsManagerCredential).mockResolvedValue({} as never);
+    render(<HostsManagerApp permissions={[...permissions, "hosts-manager.credentials.view", "hosts-manager.credentials.manage"]} t={t} toast={vi.fn()} />);
+    await screen.findByText("hosts.dashboard.total");
+    fireEvent.click(screen.getByRole("button", { name: /module.section.credentials/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "hosts.credentials.add" }));
+
+    const moduleSelect = await screen.findByRole("button", { name: "hosts.credentials.sharedWith" });
+    await waitFor(() => expect(moduleSelect).toHaveTextContent("hosts.credentials.allModules"));
+    fireEvent.click(moduleSelect);
+
+    const hostsModule = screen.getByRole("checkbox", { name: "Hosts Manager (hosts-manager)" });
+    const proxmoxModule = screen.getByRole("checkbox", { name: "Proxmox Manager (proxmox-manager)" });
+    const dcstModule = screen.getByRole("checkbox", { name: "DCST (dcst)" });
+    expect(hostsModule).toBeChecked();
+    expect(proxmoxModule).toBeChecked();
+    expect(dcstModule).toBeChecked();
+
+    fireEvent.click(proxmoxModule);
+    fireEvent.change(screen.getByLabelText("common.name"), { target: { value: "Shared credential" } });
+    fireEvent.change(screen.getByLabelText("hosts.credentials.field.login"), { target: { value: "automation" } });
+    fireEvent.change(screen.getByLabelText("hosts.credentials.field.password"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "action.save" }));
+
+    await waitFor(() => expect(api.saveHostsManagerCredential).toHaveBeenCalled());
+    const payload = vi.mocked(api.saveHostsManagerCredential).mock.calls[0][0];
+    expect(payload.shared_with).toEqual(["dcst", "hosts-manager"]);
   });
 
   it("keeps APMID selectors for enrollment without duplicating the management form", async () => {
