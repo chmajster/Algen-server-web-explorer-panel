@@ -5,6 +5,7 @@ export type E2EState = {
   ports: Array<Record<string, unknown>>;
   ipsets: Array<Record<string, unknown>>;
   services: Array<Record<string, unknown>>;
+  packageInstalled: boolean;
   calls: string[];
 };
 
@@ -28,12 +29,15 @@ const profile = {
   gid: 1000, groups: ["users"], home: "/home/e2e", shell: "/bin/bash", gecos: "E2E User", is_admin: true, role: "admin", role_source: "test", permissions,
 };
 
+const directory = { name: "Documents", path: "/home/e2e/Documents", type: "directory", is_dir: true, size: 0, owner: "e2e", group: "users", mode: "0755", permissions: "drwxr-xr-x", modified: 1, mtime: 1, mime: "inode/directory", can_read: true, can_write: true, can_delete: true, can_rename: true, is_symlink: false };
+const textFile = { name: "readme.txt", path: "/home/e2e/readme.txt", type: "text", is_dir: false, size: 4, owner: "e2e", group: "users", mode: "0644", permissions: "-rw-r--r--", modified: 2, mtime: 2, mime: "text/plain", can_read: true, can_write: true, can_delete: true, can_rename: true, is_symlink: false };
+
 function respond(route: Route, value: unknown, status = 200) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
 }
 
 export async function installMockApi(page: Page, authenticated = true): Promise<E2EState> {
-  const state: E2EState = { authenticated, ports: [], ipsets: [], services: [], calls: [] };
+  const state: E2EState = { authenticated, ports: [], ipsets: [], services: [], packageInstalled: false, calls: [] };
   await page.addInitScript(() => localStorage.setItem("webnas_language", "en-US"));
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -56,9 +60,14 @@ export async function installMockApi(page: Page, authenticated = true): Promise<
     if (path.includes("updates/progress") || path === "/api/system/update-status") return respond(route, { state: "idle", running: false, progress: 0, steps: [], blockers: [], lines: [], log: "", message: "", active_count: 0 });
     if (path.includes("updates/completion")) return respond(route, { notice: null });
     if (path === "/api/files/local-disks" || path === "/api/mounts" || path === "/api/mounts/roots") return respond(route, []);
-    if (path === "/api/files/tree") return respond(route, { path: "/home/e2e", items: [{ name: "Documents", path: "/home/e2e/Documents", type: "directory", is_dir: true, size: 0, owner: "e2e", group: "users", mode: "0755", permissions: "drwxr-xr-x", modified: 1, mtime: 1, mime: "inode/directory", can_read: true, can_write: true, can_delete: true, can_rename: true, is_symlink: false }] });
-    if (path === "/api/files/list") return respond(route, { path: "/home/e2e", current_path: "/home/e2e", parent_path: "/home", items: [{ name: "Documents", path: "/home/e2e/Documents", type: "directory", is_dir: true, size: 0, owner: "e2e", group: "users", mode: "0755", permissions: "drwxr-xr-x", modified: 1, mtime: 1, mime: "inode/directory", can_read: true, can_write: true, can_delete: true, can_rename: true, is_symlink: false }], page: 1, page_size: 50, total_items: 1, total_pages: 1, sort: "name", direction: "asc", can_write: true, can_upload: true, can_delete: true });
-    if (path.startsWith("/api/files/")) return respond(route, method === "POST" ? { task_id: "file-task" } : { ok: true });
+    if (path === "/api/files/tree") return respond(route, { path: url.searchParams.get("path") || "/home/e2e", items: [directory] });
+    if (path === "/api/files/list") return respond(route, { path: url.searchParams.get("path") || "/home/e2e", current_path: url.searchParams.get("path") || "/home/e2e", parent_path: "/home/e2e", items: [directory, textFile], page: 1, page_size: 50, total_items: 2, total_pages: 1, sort: "name", direction: "asc", can_write: true, can_upload: true, can_delete: true });
+    if (path === "/api/files/uploads" && method === "POST") return respond(route, { upload_id: "upload-e2e", offset: 0, size: 4, path: "/home/e2e/upload.txt", completed: false });
+    if (path === "/api/files/uploads/upload-e2e" && method === "PATCH") return respond(route, { upload_id: "upload-e2e", offset: 4, size: 4, path: "/home/e2e/upload.txt", completed: true });
+    if (path === "/api/files/download") return route.fulfill({ status: 200, body: "test", headers: { "content-type": "text/plain", "content-disposition": "attachment; filename=readme.txt" } });
+    if (path === "/api/files/mkdir" || path === "/api/files/rename") return respond(route, { ok: true });
+    if (path === "/api/files/delete") return respond(route, { task_id: "delete-e2e" });
+    if (path.startsWith("/api/files/")) return respond(route, { ok: true });
     if (path === "/api/apps/samba/config") return respond(route, { shares: [] });
 
     if (path === "/api/modules/dcst/overview") return respond(route, { services: state.services.length, active_services: state.services.length, blocked_services: 0, ports: state.ports.length, ipsets: state.ipsets.length, tags: 1, firewall_rules: state.services.length, firewall: {}, last_inventory_sync: { at: 1 }, last_firewall_sync: {}, recent_changes: [] });
@@ -71,12 +80,13 @@ export async function installMockApi(page: Page, authenticated = true): Promise<
     if (path === "/api/modules/dcst/services" && method === "POST") { const item = { id: `service-${state.services.length + 1}`, blocked: false, system_service: false, sync_status: "ok", state: "ACTIVE", last_error: "", ...(request.postDataJSON() as object) }; state.services.push(item); return respond(route, item); }
     if (path.startsWith("/api/modules/dcst/")) return respond(route, { ok: true });
 
-    const module = { id: "samba", manifest: { id: "samba", name: "Samba", description: "File sharing", long_description: "Samba test package", category: "file_sharing", version: "1.0.0", maintainer: "WebNAS", homepage: null, icon: "share-2", screenshots: [], license: "GPL", supported_distributions: ["debian"], supported_architectures: ["x86_64"], apt_packages: ["samba"], dnf_packages: [], systemd_services: ["smbd"], ports: ["445/tcp"], dependencies: [], conflicts: [], permissions: [], config_paths: [], data_paths: [], backup_paths: [] }, state: { installed: false, installed_version: null, available_version: "1.0.0", update_available: false, requires_reboot: false, needs_configuration: false }, services: { smbd: "inactive" }, status: "available", compatible: true, blocked_by_proxmox: false, distribution: { id: "debian", name: "Debian", architecture: "x86_64", package_manager: "apt-get" }, jobs: [], module_status: { installed: false, package_version: null, available_version: "1.0.0", update_available: false, service_state: "inactive", service_enabled: false, services: {}, health: "not_installed", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} }, capabilities: { install: true, update: true, uninstall: true, configure: true, service_control: true, reload: true, logs: true, diagnostics: true, backups: true, import_export: true, healthcheck: true, resources: [], actions: [] }, active_job: null };
+    const module = { id: "samba", manifest: { id: "samba", name: "Samba", description: "File sharing", long_description: "Samba test package", category: "file_sharing", version: "1.0.0", maintainer: "WebNAS", homepage: null, icon: "share-2", screenshots: [], license: "GPL", supported_distributions: ["debian"], supported_architectures: ["x86_64"], apt_packages: ["samba"], dnf_packages: [], systemd_services: ["smbd"], ports: ["445/tcp"], dependencies: [], conflicts: [], permissions: [], config_paths: [], data_paths: [], backup_paths: [] }, state: { installed: state.packageInstalled, installed_version: state.packageInstalled ? "1.0.0" : null, available_version: "1.0.0", update_available: false, requires_reboot: false, needs_configuration: false }, services: { smbd: state.packageInstalled ? "active" : "inactive" }, status: state.packageInstalled ? "running" : "available", compatible: true, blocked_by_proxmox: false, distribution: { id: "debian", name: "Debian", architecture: "x86_64", package_manager: "apt-get" }, jobs: [], module_status: { installed: state.packageInstalled, package_version: state.packageInstalled ? "1.0.0" : null, available_version: "1.0.0", update_available: false, service_state: state.packageInstalled ? "active" : "inactive", service_enabled: state.packageInstalled, services: {}, health: state.packageInstalled ? "healthy" : "not_installed", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} }, capabilities: { install: true, update: true, uninstall: true, configure: true, service_control: true, reload: true, logs: true, diagnostics: true, backups: true, import_export: true, healthcheck: true, resources: [], actions: [] }, active_job: null };
     if (path === "/api/apps" || path === "/api/modules") return respond(route, [module]);
     if (path === "/api/apps/categories") return respond(route, ["file_sharing"]);
     if (path === "/api/apps/jobs" || path === "/api/apps/history" || path === "/api/apps/sources") return respond(route, []);
-    if (path.includes("/api/apps/samba/plan")) return respond(route, { module_id: "samba", action: "install", distribution: { id: "debian", name: "Debian", version_id: "12", architecture: "x86_64", package_manager: "apt-get" }, compatible: true, blocked_by_proxmox: false, packages: ["samba"], services: ["smbd"], ports: [], config_paths: [], data_paths: [], permissions: [], dependencies: [], conflicts: [], warnings: [], requires_reboot: false, remove_data: false, target_version: "1.0.0", steps: ["apt-get install -y samba"] });
-    if (path.includes("/api/apps/samba/install")) return respond(route, { job: { id: "job-1", module_id: "samba", action: "install", status: "completed", progress: 100, created_at: 1, finished_at: 2, log_tail: [], error: "", warnings: [], result: {} } });
+    if (path.includes("/api/apps/samba/plan")) return respond(route, { module_id: "samba", action: url.searchParams.get("action") || "install", distribution: { id: "debian", name: "Debian", version_id: "12", architecture: "x86_64", package_manager: "apt-get" }, compatible: true, blocked_by_proxmox: false, packages: ["samba"], services: ["smbd"], ports: [], config_paths: [], data_paths: [], permissions: [], dependencies: [], conflicts: [], warnings: [], requires_reboot: false, remove_data: false, target_version: "1.0.0", steps: ["apt-get install -y samba"] });
+    if (path === "/api/apps/samba/install" && method === "POST") { state.packageInstalled = true; return respond(route, { job: { id: "job-install", module_id: "samba", action: "install", status: "completed", progress: 100, created_at: 1, finished_at: 2, log_tail: [], error: "", warnings: [], result: {} } }); }
+    if (path === "/api/apps/samba/uninstall" && method === "POST") { state.packageInstalled = false; return respond(route, { job: { id: "job-uninstall", module_id: "samba", action: "uninstall", status: "completed", progress: 100, created_at: 1, finished_at: 2, log_tail: [], error: "", warnings: [], result: {} } }); }
     return respond(route, {});
   });
   return state;
