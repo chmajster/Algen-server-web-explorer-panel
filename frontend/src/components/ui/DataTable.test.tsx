@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
+import { describe, expect, it } from "vitest";
 import { DataTable, type DataTableColumn } from "./DataTable";
 
 type Row = { id: string; name: string };
