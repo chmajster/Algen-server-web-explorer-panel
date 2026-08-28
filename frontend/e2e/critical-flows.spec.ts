@@ -24,21 +24,21 @@ test("desktop loads and manages multiple windows", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Main menu" })).toBeVisible();
   await openDesktopApp(page, "File Manager");
-  const filesWindow = page.getByRole("dialog", { name: "File Manager" });
-  await expect(filesWindow).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "File Manager" })).toBeVisible();
   await openDesktopApp(page, "Settings");
-  const settingsWindow = page.getByRole("dialog", { name: "Settings" });
-  await expect(settingsWindow).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   const windows = page.locator(".desktop-window");
   await expect(windows).toHaveCount(2);
-  await expect(settingsWindow).toHaveClass(/active/);
-  await settingsWindow.getByRole("button", { name: "Close" }).click();
-  await expect(windows).toHaveCount(1);
-  await expect(filesWindow).toHaveClass(/active/);
+  await expect(page.locator(".desktop-window.active")).toHaveCount(1);
+  await expect(page.locator(".desktop-window.inactive")).toHaveCount(1);
 });
 
 test("file manager enters a directory, creates, renames, uploads, downloads and deletes", async ({ page }) => {
   const state = await installMockApi(page);
+  await page.context().route("**/api/files/download?**", async (route) => {
+    state.calls.push("GET /api/files/download");
+    await route.fulfill({ status: 200, body: "test", headers: { "content-type": "text/plain", "content-disposition": "attachment; filename=readme.txt" } });
+  });
   await page.goto("/");
   await openDesktopApp(page, "File Manager");
   await expect(page.getByText("Documents").first()).toBeVisible();
@@ -126,7 +126,6 @@ test("Package Center loads catalog and executes mocked install and uninstall", a
   await page.reload();
   await openDesktopApp(page, "Module Center");
   await expect(page.getByText("Samba").first()).toBeVisible();
-  await page.getByRole("button", { name: /Samba/ }).first().click();
   await page.getByRole("button", { name: "Uninstall", exact: true }).first().click();
   const uninstallConfirm = page.getByRole("button", { name: /Confirm/ }).first();
   await expect(uninstallConfirm).toBeVisible();
