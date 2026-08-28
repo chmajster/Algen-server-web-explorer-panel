@@ -43,5 +43,6 @@ describe("normalizeFirewallLog", () => {
   it("does not invent a timestamp when a raw log has none", () => {
     const row = normalizeFirewallLog({ node: "pve1", t: "ACTION=ACCEPT" });
     expect(row.dcst_time).toBe("");
+    expect(row.dcst_action).toBe("ACCEPT");
   });
 });
