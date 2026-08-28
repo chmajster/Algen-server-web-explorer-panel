@@ -36,8 +36,19 @@ def login(payload: LoginRequest, request: Request, response: Response):
         rate_limiter.check(key)
         authenticate(username, payload.password)
     except HTTPException as error:
-        record_activity(ActivityCategory.login, "login", username or "unknown", status=ActivityStatus.failure, details={"client": client, "status_code": error.status_code}, source="auth")
+        if error.status_code != 429:
+            rate_limiter.record_failure(key)
+        record_activity(
+            ActivityCategory.login,
+            "login",
+            username or "unknown",
+            status=ActivityStatus.failure,
+            details={"client": client, "status_code": error.status_code},
+            source="auth",
+        )
         raise
+
+    rate_limiter.clear(key)
     csrf = create_session(response, username, remember_me=payload.remember_me)
     logger.info("login user=%s", username)
     record_activity(ActivityCategory.login, "login", username, details={"client": client, "persistent": payload.remember_me}, source="auth")
