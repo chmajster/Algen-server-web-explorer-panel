@@ -49,21 +49,38 @@ describe("MonitorApp", () => {
     vi.useRealTimers();
   });
 
-  it("renders the dashboard with live system, storage, network and full admin process data", async () => {
+  it("renders horizontal resource tabs and switches between dashboard sections", async () => {
     render(<MonitorApp t={t} />);
 
     expect(await screen.findByText("test-server")).toBeInTheDocument();
+    const tablist = screen.getByRole("tablist", { name: "app.monitor" });
+    expect(within(tablist).getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "monitor.overview",
+      "monitor.cpu",
+      "monitor.memory",
+      "monitor.network",
+      "monitor.storage",
+      "monitor.processes",
+      "monitor.allMounts",
+    ]);
+    expect(screen.getByRole("tab", { name: "monitor.overview" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getAllByText("monitor.disabled").length).toBeGreaterThan(0);
-    expect(screen.getByText("/home/alice")).toBeInTheDocument();
-    expect(screen.getByText("/srv/alice")).toBeInTheDocument();
-    expect(screen.getByText("eth0")).toBeInTheDocument();
-    expect(screen.getByText("worker")).toBeInTheDocument();
-    expect(resourceProcesses).toHaveBeenCalledTimes(1);
-    expect(document.querySelector(".monitor-storage-card.critical")).toBeInTheDocument();
     expect(document.querySelector(".monitor-metric.warning")).toBeInTheDocument();
     expect(screen.getByText(/monitor.alert.disk_usage/)).toBeInTheDocument();
     expect(screen.queryByText("Low free space on /home/alice")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".monitor-overview-grid .monitor-metric")).toHaveLength(4);
+
+    fireEvent.click(screen.getByRole("tab", { name: "monitor.storage" }));
+    expect(screen.getByText("/home/alice")).toBeInTheDocument();
+    expect(screen.getByText("/srv/alice")).toBeInTheDocument();
+    expect(document.querySelector(".monitor-storage-card.critical")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "monitor.network" }));
+    expect(screen.getByText("eth0")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "monitor.processes" }));
+    expect(screen.getByText("worker")).toBeInTheDocument();
+    expect(resourceProcesses).toHaveBeenCalledTimes(1);
   });
 
   it("renders safely with null CPU, disabled swap and no temperature", async () => {
@@ -81,6 +98,7 @@ describe("MonitorApp", () => {
     render(<MonitorApp t={t} />);
 
     expect(await screen.findByText("test-server")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "monitor.network" }));
     expect(document.querySelectorAll(".monitor-network-card")).toHaveLength(0);
   });
 
@@ -94,19 +112,21 @@ describe("MonitorApp", () => {
     });
     render(<MonitorApp t={t} />);
 
-    expect(await screen.findByText("eth0")).toBeInTheDocument();
+    expect(await screen.findByText("test-server")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "monitor.network" }));
+    expect(screen.getByText("eth0")).toBeInTheDocument();
     expect(screen.getByText("br0")).toBeInTheDocument();
     expect(screen.getByText("monitor.systemInterface")).toBeInTheDocument();
   });
 
-  it("does not request or render administrator-only data for a regular user", async () => {
+  it("does not request or expose administrator-only tabs for a regular user", async () => {
     resources.mockResolvedValue({ ...fixture, scope: "user", mountpoints: [], processes: [], webnas_service: null });
     render(<MonitorApp t={t} />);
 
     expect(await screen.findByText("test-server")).toBeInTheDocument();
     expect(resourceProcesses).not.toHaveBeenCalled();
-    expect(screen.queryByText("monitor.allMounts")).not.toBeInTheDocument();
-    expect(screen.queryByText("monitor.processes")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "monitor.allMounts" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "monitor.processes" })).not.toBeInTheDocument();
   });
 
   it("retains the last successful data when refresh fails", async () => {
@@ -125,6 +145,7 @@ describe("MonitorApp", () => {
     render(<MonitorApp t={t} />);
 
     expect(await screen.findByText("test-server")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "monitor.processes" }));
     expect(screen.getByText("worker")).toBeInTheDocument();
     expect(screen.getByText(/process detail offline/)).toBeInTheDocument();
   });
@@ -136,6 +157,8 @@ describe("MonitorApp", () => {
     ];
     resourceProcesses.mockResolvedValue(processes);
     render(<MonitorApp t={t} />);
+    await screen.findByText("test-server");
+    fireEvent.click(screen.getByRole("tab", { name: "monitor.processes" }));
     expect(await screen.findByText("database")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "monitor.processes" }), { target: { value: "worker" } });
@@ -152,6 +175,8 @@ describe("MonitorApp", () => {
       { pid: 10, user: "root", name: "early", cpu_percent: 2, memory_percent: 1, rss: 100, state: "S" },
     ]);
     render(<MonitorApp t={t} />);
+    await screen.findByText("test-server");
+    fireEvent.click(screen.getByRole("tab", { name: "monitor.processes" }));
     await screen.findByText("late");
 
     fireEvent.click(screen.getByRole("button", { name: "PID" }));
