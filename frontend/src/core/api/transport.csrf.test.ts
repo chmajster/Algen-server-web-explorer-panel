@@ -119,11 +119,17 @@ describe("CSRF API error presentation", () => {
       .mockResolvedValueOnce(csrfFailure("token_mismatch"));
     vi.stubGlobal("fetch", fetchMock);
 
-    const error = await request("/api/settings", { method: "PATCH", body: "{}" }).catch((reason) => reason as ApiError);
+    let error: ApiError | null = null;
+    try {
+      await request("/api/settings", { method: "PATCH", body: "{}" });
+    } catch (reason) {
+      expect(reason).toBeInstanceOf(ApiError);
+      error = reason as ApiError;
+    }
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(error).toMatchObject({ status: 403, code: "INVALID_CSRF_TOKEN" });
-    expect(error.message).toContain("Odśwież stronę i spróbuj ponownie");
-    expect(error.message).toContain("Kod błędu: INVALID_CSRF_TOKEN");
+    expect(error?.message).toContain("Odśwież stronę i spróbuj ponownie");
+    expect(error?.message).toContain("Kod błędu: INVALID_CSRF_TOKEN");
   });
 });
