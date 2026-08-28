@@ -36,10 +36,12 @@ def test_jobs_own_persistence_and_controlled_runner():
     assert "threading.Thread" not in runner
 
 
-def test_package_center_uses_controlled_job_runner():
+def test_package_center_executes_through_global_job_service():
     source = (BACKEND / "package_center" / "jobs.py").read_text(encoding="utf-8")
-    assert "JobRunner" in source
+    assert "JobService" in source
+    assert "submit_callable" in source
     assert "threading.Thread" not in source
+    assert "JobRunner" not in source
 
 
 def test_plugin_subsystem_does_not_depend_on_apps_internals():

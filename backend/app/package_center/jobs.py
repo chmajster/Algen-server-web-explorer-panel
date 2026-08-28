@@ -6,7 +6,7 @@ import time
 
 from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..audit import logger
-from ..jobs.runner import JobRunner
+from ..jobs.service import JobContext, JobService, service as operation_service
 from ..update_coordination import coordination_lock, operation_admission, update_blocks_operations
 from .detached_updates import detached_update_session
 from .executor import execute
@@ -16,13 +16,21 @@ from .repository import PackageRepository
 
 
 class PackageJobManager:
-    def __init__(self, repository: PackageRepository) -> None:
+    """Compatibility manager backed by the global persistent JobService.
+
+    ``package_jobs`` remains the public Module Center persistence contract while
+    each actual background execution is also represented by the global operation
+    store. This permits gradual API migration without changing existing payloads.
+    """
+
+    def __init__(self, repository: PackageRepository, operations: JobService | None = None) -> None:
         self.repository = repository
+        self._operations = operations or operation_service()
         self._lock = threading.RLock()
-        self._runner = JobRunner()
+        self._scheduled: set[str] = set()
         for job in repository.active_jobs():
             if job["status"] == PackageJobStatus.running.value and detached_update_session(job.get("plan", {})):
-                self._runner.submit(job["id"], lambda job_id=job["id"]: self._run(job_id))
+                self._submit_operation(job, resume=True)
         self._schedule()
 
     def enqueue(self, plan: PackagePlan, actor: str, *, retry_of: str | None = None) -> dict:
@@ -43,6 +51,30 @@ class PackageJobManager:
             self._schedule()
         return self.repository.get_job(job["id"]) or job
 
+    def _submit_operation(self, job: dict, *, resume: bool = False) -> None:
+        job_id = str(job["id"])
+        with self._lock:
+            if job_id in self._scheduled:
+                return
+            self._scheduled.add(job_id)
+        plan = PackagePlan.model_validate(job["plan"])
+        operation = str(plan.payload.get("operation") or plan.action.value)
+        try:
+            central = self._operations.submit_callable(
+                job_type=f"package.{operation}",
+                module=plan.module_id,
+                created_by=str(job["created_by"]),
+                metadata={"package_job_id": job_id, "package_action": plan.action.value, "resume": resume},
+                handler=lambda context, _metadata: self._run_as_operation(job_id, context),
+                retryable=False,
+                cancellable=not bool(detached_update_session(job.get("plan", {}))),
+            )
+            self.repository.append_log(job_id, f"Global operation job: {central.id}", "system")
+        except Exception:
+            with self._lock:
+                self._scheduled.discard(job_id)
+            raise
+
     def _schedule(self) -> None:
         with coordination_lock():
             if update_blocks_operations():
@@ -51,17 +83,32 @@ class PackageJobManager:
                 running = [job for job in self.repository.active_jobs() if job["status"] == PackageJobStatus.running.value]
                 if running:
                     return
-                queued = [job for job in self.repository.active_jobs() if job["status"] == PackageJobStatus.queued.value]
+                queued = [job for job in self.repository.active_jobs() if job["status"] == PackageJobStatus.queued.value and job["id"] not in self._scheduled]
                 if not queued:
                     return
                 job = queued[0]
                 self.repository.update_job(job["id"], status=PackageJobStatus.running.value, started_at=time.time(), current_step="Starting")
-                self._runner.submit(job["id"], lambda: self._run(job["id"]))
+                self._submit_operation(self.repository.get_job(job["id"]) or job)
 
     def schedule_pending(self) -> None:
         self._schedule()
 
-    def _run(self, job_id: str) -> None:
+    def _run_as_operation(self, job_id: str, context: JobContext) -> dict:
+        try:
+            self._run(job_id, context)
+            final = self.repository.get_job(job_id)
+            if not final:
+                raise RuntimeError("Package job disappeared during execution")
+            if final["status"] == PackageJobStatus.failed.value:
+                raise RuntimeError(final.get("error") or "Package operation failed")
+            if final["status"] == PackageJobStatus.cancelled.value:
+                raise InterruptedError(final.get("error") or "Package operation cancelled")
+            return {"package_job_id": job_id, "status": final["status"], "module_id": final["module_id"], "action": final["action"]}
+        finally:
+            with self._lock:
+                self._scheduled.discard(job_id)
+
+    def _run(self, job_id: str, context: JobContext | None = None) -> None:
         job = self.repository.get_job(job_id)
         if not job:
             return
@@ -72,11 +119,18 @@ class PackageJobManager:
             self.repository.append_log(job_id, line, stream)
 
         def progress(percent: int, step: str) -> None:
-            self.repository.update_job(job_id, progress=max(0, min(100, percent)), current_step=step)
+            bounded = max(0, min(100, percent))
+            self.repository.update_job(job_id, progress=bounded, current_step=step)
+            if context is not None:
+                context.update_progress(bounded, step)
 
         def cancelled() -> bool:
             current = self.repository.get_job(job_id)
-            return bool(current and current["cancellation_requested"])
+            package_cancel = bool(current and current["cancellation_requested"])
+            central_cancel = bool(context and context.cancellation_requested())
+            if central_cancel and not package_cancel:
+                self.repository.update_job(job_id, cancellation_requested=True, current_step="Cancellation requested; waiting for a safe step")
+            return package_cancel or central_cancel
 
         try:
             operation = str(plan.payload.get("operation") or plan.action.value)
