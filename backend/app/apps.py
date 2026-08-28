@@ -284,3 +284,12 @@ def app_logs(app_id: str, user: SessionUser):
 
     jobs = repository().list_jobs(module_id=app_id, limit=20)
     return {"jobs": jobs, "lines": [entry["line"] for job in reversed(jobs) for entry in job["log_tail"]][-500:]}
+
+
+def __getattr__(name: str):
+    """Expose only private Samba hooks still referenced by legacy providers/tests."""
+    if name == "_prepare_share_directory":
+        return _samba._prepare_share_directory
+    if name == "_ensure_smb_conf_include":
+        return _samba._ensure_smb_conf_include
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
