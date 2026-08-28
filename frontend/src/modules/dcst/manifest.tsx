@@ -1,6 +1,9 @@
 import { Shield } from "lucide-react";
+import { lazy } from "react";
+import { lazyView } from "../../app/registry/rendering";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
-import { DcstApp } from "../../features/dcst/DcstApp";
+
+const DcstApp = lazy(() => import("../../features/dcst/DcstApp").then((loaded) => ({ default: loaded.DcstApp })));
 
 const manifest: FrontendModuleManifest = {
   id: "dcst",
@@ -11,7 +14,10 @@ const manifest: FrontendModuleManifest = {
   dependencies: ["hosts", "proxmox", "apmid", "modules"],
   minWidth: 1040,
   minHeight: 680,
-  render: (context) => <DcstApp permissions={context.profile.permissions} t={context.t} toast={context.toast} />,
+  render: (context) => lazyView(
+    <DcstApp permissions={context.profile.permissions} t={context.t} toast={context.toast} />,
+    context.t("status.loading"),
+  ),
 };
 
 export default manifest;

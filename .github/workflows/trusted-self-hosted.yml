@@ -7,13 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: Run the production deployment gate
+        description: Deploy the selected main revision after trusted checks
         required: false
-        default: false
+        default: true
         type: boolean
 
 permissions:
   contents: read
+
+concurrency:
+  group: trusted-main-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   trusted-integration:
@@ -22,52 +26,78 @@ jobs:
     runs-on:
       - self-hosted
       - linux
-    concurrency:
-      group: trusted-integration-${{ github.ref }}
-      cancel-in-progress: true
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
-      - name: Check out trusted main
+      - name: Check out trusted main revision
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Verify version metadata
-        run: python3 scripts/sync-version.py --check
-
-      - name: Confirm trusted runner context
+      - name: Verify merged main revision
+        shell: bash
         run: |
+          set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/main"
-          printf 'Trusted main commit: %s\n' "${GITHUB_SHA}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          python3.14 scripts/sync-version.py --check
+
+      - name: Prepare isolated trusted test environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.14 -m venv .trusted-venv
+          .trusted-venv/bin/pip install --disable-pip-version-check -r backend/requirements-dev.txt
+
+      - name: Run trusted Linux, PAM and systemd tests
+        run: .trusted-venv/bin/python -m pytest -ra -m system
+
+      - name: Run release deployment regression tests
+        run: .trusted-venv/bin/python -m pytest -q backend/tests/test_release_deployment.py backend/tests/test_installer.py
 
   production-deployment:
-    name: Production deployment gate
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy == true
+    name: Production blue-green deployment
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy == true))
     needs:
       - trusted-integration
     runs-on:
       - self-hosted
       - linux
       - deploy
+    environment: production
+    timeout-minutes: 45
     concurrency:
       group: production-deployment
       cancel-in-progress: false
-    environment: production
-    timeout-minutes: 30
 
     steps:
-      - name: Check out trusted main
+      - name: Check out approved main revision
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Validate release metadata before deployment
-        run: python3 scripts/sync-version.py --check
-
-      - name: Deployment command placeholder
+      - name: Verify deployment provenance
+        shell: bash
         run: |
-          echo "Production environment gate passed."
-          echo "No repository-specific deployment target is configured; add only the required deployment command and environment secrets."
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          python3.14 scripts/sync-version.py --check
+
+      - name: Deploy candidate through existing blue-green release mechanism
+        shell: bash
+        env:
+          WEBNAS_ROOT: ${{ vars.WEBNAS_ROOT || '/opt/webnas' }}
+          WEBNAS_CONFIG: ${{ vars.WEBNAS_CONFIG || '/etc/webnas/config.yaml' }}
+          WEBNAS_SERVICE_USER: ${{ vars.WEBNAS_SERVICE_USER || 'webnas' }}
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=WEBNAS_ROOT,WEBNAS_CONFIG,WEBNAS_SERVICE_USER \
+            ./scripts/deploy_from_checkout.sh "${GITHUB_WORKSPACE}" "${GITHUB_SHA}"
+
+      - name: Record deployed revision
+        run: printf 'Deployed trusted main revision %s\n' "${GITHUB_SHA}" >> "${GITHUB_STEP_SUMMARY}"

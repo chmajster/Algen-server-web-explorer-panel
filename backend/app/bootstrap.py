@@ -58,6 +58,7 @@ def _start_schedulers() -> None:
 @asynccontextmanager
 async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     module_registry: ModuleRegistry = app.state.modules
+    app.state.ready = False
     await module_registry.startup()
     repository = package_repository()
     manager = package_job_manager(repository)
@@ -88,9 +89,11 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await asyncio.sleep(0.25)
 
         promotion_task = asyncio.create_task(promote_candidate())
+    app.state.ready = True
     try:
         yield
     finally:
+        app.state.ready = False
         if promotion_task and not promotion_task.done():
             promotion_task.cancel()
         await module_registry.shutdown()
@@ -121,6 +124,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     module_registry = registry or build_module_registry()
     container = ApplicationContainer(application_settings, module_registry)
     app = FastAPI(title="WebNAS", version=__version__, lifespan=application_lifespan)
+    app.state.ready = False
     app.state.settings = application_settings
     app.state.modules = module_registry
     app.state.container = container

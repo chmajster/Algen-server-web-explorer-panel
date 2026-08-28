@@ -168,6 +168,8 @@ Core technology stack:
 - **File transfers:** rsync
 - **Application/module state:** configuration files and SQLite depending on the component
 
+The frontend uses feature boundaries, a shared WebNAS Design System and generated OpenAPI TypeScript DTOs. See [docs/frontend-architecture.md](docs/frontend-architecture.md) for component ownership, import rules and the standard `PageHeader -> DataTable -> Drawer/Modal` administrative UX pattern.
+
 ## Security
 
 WebNAS uses local Linux accounts as the primary identity source.
@@ -182,6 +184,9 @@ The project includes:
 - user and administrator activity auditing,
 - controlled high-risk operations,
 - automatic rollback for selected network changes,
+- dependency auditing for Python and npm,
+- CodeQL analysis for Python and JavaScript/TypeScript,
+- release SBOM generation,
 - **Proxmox Safe Mode** when a Proxmox VE host is detected.
 
 > [!IMPORTANT]
@@ -194,6 +199,9 @@ Detailed documentation is available in separate files:
 | Document | Description |
 |---|---|
 | [INSTALL.md](INSTALL.md) | Installation, updates, configuration and troubleshooting |
+| [docs/frontend-architecture.md](docs/frontend-architecture.md) | Frontend feature boundaries, Design System, generated API DTOs and module rules |
+| [docs/testing.md](docs/testing.md) | Unit, integration, trusted system and Playwright E2E testing |
+| [docs/deployment.md](docs/deployment.md) | CI/CD, trusted runner, production Environment, blue/green health checks and rollback |
 | [HOSTS_MANAGER.md](HOSTS_MANAGER.md) | Hosts Manager |
 | [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md) | Ansible Automation Controller |
 | [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
@@ -212,11 +220,13 @@ Detailed documentation is available in separate files:
 
 ## CI, versioning and releases
 
-Pull Request CI runs only on GitHub-hosted `ubuntu-latest` runners. Self-hosted homelab jobs are separated into a trusted workflow that accepts only merged `main` code; the optional deployment path is protected by the `production` GitHub Environment.
+Pull Request CI runs on GitHub-hosted runners and validates backend quality/unit/integration/security, frontend lint/type/Vitest/build/OpenAPI contract, Playwright E2E, dependency audits and shell syntax. CodeQL and dependency review run as separate security workflows.
+
+Self-hosted homelab jobs are separated into a trusted workflow that accepts only merged `main` code. Production deployment uses a trusted `self-hosted`, `linux`, `deploy` runner and the `production` GitHub Environment. The deployment reuses the existing blue/green slots, checks liveness/readiness after handover and restores the previous release if post-deploy smoke tests fail.
 
 `VERSION` is the single source of truth for the application version. Verify synchronization with `python scripts/sync-version.py --check` and bump with `--bump patch`, `--bump minor`, or `--bump major`.
 
-Tags in the form `vX.Y.Z` trigger the release workflow. The tag must match `VERSION`; the workflow rebuilds and tests the backend and frontend, creates SHA256 checksums, and publishes the artifacts as a GitHub Release. See the two documents above for runner hardening and the complete release procedure.
+Tags in the form `vX.Y.Z` trigger the release workflow. The tag must match `VERSION`; the workflow rebuilds and tests the backend and frontend, creates SHA256 checksums, generates CycloneDX backend/frontend SBOM files and publishes the artifacts as a GitHub Release.
 
 ## Useful Commands
 

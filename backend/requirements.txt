@@ -7,5 +7,4 @@ python-pam==2.0.2
 six==1.17.0
 itsdangerous==2.2.0
 aiofiles==24.1.0
-pytest==9.0.3
 httpx==0.28.1

@@ -1,0 +1,19 @@
+import type { DcstIPSet, DcstPort, DcstTag } from "../api/types";
+import { DcstInfoDrawer } from "./DcstObjectDrawers";
+import { DcstStatusBadge } from "./DcstPrimitives";
+
+export function DcstObjectDetails({ tag, ipset, port, portUsage, onCloseTag, onCloseIPSet, onClosePort }: {
+  tag: DcstTag | null; ipset: DcstIPSet | null; port: DcstPort | null; portUsage: Map<string, number>; onCloseTag: () => void; onCloseIPSet: () => void; onClosePort: () => void;
+}) {
+  return <>
+    <DcstInfoDrawer title={tag?.name || "Tag"} description="APMID.ENV inventory security object" open={Boolean(tag)} onClose={onCloseTag}>
+      {tag ? <><section className="dcst-details-summary"><div><span>APMID</span><strong>{tag.apmid}</strong></div><div><span>Environment</span><strong>{tag.environment}</strong></div><div><span>Virtual machines</span><strong>{tag.vm_count}</strong></div><div><span>Sync state</span><DcstStatusBadge status={tag.sync_status || "SYNCED"} /></div></section><section className="dcst-form-section"><header><span>01</span><div><strong>Addresses</strong><small>Resolved VM management addresses</small></div></header><div className="dcst-address-list">{tag.addresses.map((address) => <code key={address}>{address}</code>)}</div></section><section className="dcst-form-section"><header><span>02</span><div><strong>Virtual machines</strong><small>Inventory members</small></div></header><div className="table-scroll"><table><thead><tr><th>VM</th><th>IP</th><th>Node</th></tr></thead><tbody>{tag.hosts.map((host) => <tr key={host.id}><td>{host.name}</td><td><code>{host.address}</code></td><td>{host.node || "—"}</td></tr>)}</tbody></table></div></section></> : null}
+    </DcstInfoDrawer>
+    <DcstInfoDrawer title={ipset?.name || "IP Set"} description={ipset?.description || "Reusable network address object"} open={Boolean(ipset)} onClose={onCloseIPSet}>
+      {ipset ? <><section className="dcst-details-summary"><div><span>Type</span><strong>{ipset.type.toUpperCase()}</strong></div><div><span>Entries</span><strong>{ipset.entries.length}</strong></div><div><span>Used by</span><strong>{ipset.dependencies?.length || 0}</strong></div><div><span>State</span><DcstStatusBadge status={ipset.sync_status || "SYNCED"} /></div></section><section className="dcst-form-section"><header><span>01</span><div><strong>Entries</strong><small>Addresses and CIDR ranges</small></div></header><div className="dcst-address-list">{ipset.entries.map((entry) => <code key={entry.id}>{entry.address}</code>)}</div></section>{ipset.dependencies?.length ? <section className="dcst-form-section"><header><span>02</span><div><strong>Used by</strong><small>Communication services referencing this object</small></div></header><div className="dcst-dependency-list">{ipset.dependencies.map((dependency) => <span key={dependency.id}>{dependency.name}</span>)}</div></section> : null}</> : null}
+    </DcstInfoDrawer>
+    <DcstInfoDrawer title={port?.name || "Port Object"} description={port?.description || "Reusable transport object"} open={Boolean(port)} onClose={onClosePort}>
+      {port ? <><section className="dcst-details-summary"><div><span>Protocol</span><strong>{port.protocol.toUpperCase()}</strong></div><div><span>Port / Range</span><code>{port.port_from ? `${port.port_from}${port.port_to && port.port_to !== port.port_from ? `–${port.port_to}` : ""}` : "—"}</code></div><div><span>Used by</span><strong>{portUsage.get(port.id) || 0} policies</strong></div></section>{port.dependencies?.length ? <section className="dcst-form-section"><header><span>01</span><div><strong>Used by</strong><small>Communication services referencing this object</small></div></header><div className="dcst-dependency-list">{port.dependencies.map((dependency) => <span key={dependency.id}>{dependency.name}</span>)}</div></section> : null}</> : null}
+    </DcstInfoDrawer>
+  </>;
+}

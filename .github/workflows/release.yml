@@ -64,12 +64,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements-dev.txt
 
-      - name: Run backend quality and tests
+      - name: Run backend quality, security and tests
         run: |
-          python -m ruff check backend
+          python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py
           python -m mypy
           python -m bandit -c pyproject.toml -r backend/app
-          python -m pytest -ra
+          python -m pip_audit -r backend/requirements.txt
+          python -m pytest -ra -m "not system"
 
       - name: Build backend distribution
         run: python -m build
@@ -83,18 +84,38 @@ jobs:
         run: |
           npm run lint
           npm run typecheck
+          npm run api:check
+          npm audit --audit-level=high
           npm test
           npm run build
 
       - name: Verify frontend production build
         run: python scripts/verify_frontend_build.py frontend/dist
 
+      - name: Prepare release artifact directory
+        run: mkdir -p release-artifacts
+
+      - name: Generate backend CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./backend
+          format: cyclonedx-json
+          output-file: ./release-artifacts/sbom-backend.json
+          upload-artifact: false
+
+      - name: Generate frontend CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./frontend
+          format: cyclonedx-json
+          output-file: ./release-artifacts/sbom-frontend.json
+          upload-artifact: false
+
       - name: Package release artifacts and checksums
         shell: bash
         run: |
           set -euo pipefail
           version="$(tr -d '\r\n' < VERSION)"
-          mkdir -p release-artifacts
           cp dist/* release-artifacts/
           tar -C frontend -czf "release-artifacts/webnas-frontend-${version}.tar.gz" dist
           (
