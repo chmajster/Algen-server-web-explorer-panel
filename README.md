@@ -207,6 +207,16 @@ Detailed documentation is available in separate files:
 | [APMID.md](APMID.md) | Application ownership and resource registry |
 | [OS_REPOSITORIES.md](OS_REPOSITORIES.md) | Central APT/RPM repositories |
 | [CHANGELOG.md](CHANGELOG.md) | Project changelog |
+| [docs/self-hosted-runner-security.md](docs/self-hosted-runner-security.md) | Self-hosted runner trust boundary, labels and hardening |
+| [docs/releasing.md](docs/releasing.md) | Version bump, tag and GitHub Release process |
+
+## CI, versioning and releases
+
+Pull Request CI runs only on GitHub-hosted `ubuntu-latest` runners. Self-hosted homelab jobs are separated into a trusted workflow that accepts only merged `main` code; the optional deployment path is protected by the `production` GitHub Environment.
+
+`VERSION` is the single source of truth for the application version. Verify synchronization with `python scripts/sync-version.py --check` and bump with `--bump patch`, `--bump minor`, or `--bump major`.
+
+Tags in the form `vX.Y.Z` trigger the release workflow. The tag must match `VERSION`; the workflow rebuilds and tests the backend and frontend, creates SHA256 checksums, and publishes the artifacts as a GitHub Release. See the two documents above for runner hardening and the complete release procedure.
 
 ## Useful Commands
 
