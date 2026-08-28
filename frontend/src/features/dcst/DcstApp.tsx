@@ -1,5 +1,5 @@
 import { Activity, Globe, Pencil, Plus, RefreshCw, Search, Shield, Trash2, Wrench } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ToastFn, Translate } from "../../app/types";
 import { dcstClient, type DcstIPSet, type DcstPort, type DcstService, type DcstServiceInput, type DcstTag } from "../../modules/dcst/api/client";
 import { DcstConfirmDialog, type DcstConfirmAction } from "./components/DcstConfirmDialog";
@@ -67,6 +67,22 @@ function recordSummary(record: Record<string, unknown>): Array<[string, unknown]
   return entries.length ? entries : [["status", "No structured data"]];
 }
 
+function firewallLogToken(raw: string, key: string): string {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return raw.match(new RegExp(`(?:^|\\s)${escaped}=([^\\s]+)`, "i"))?.[1] || "";
+}
+
+export function normalizeFirewallLog(row: Record<string, unknown>): Record<string, unknown> {
+  const raw = String(row.t || row.msg || row.message || row.raw || JSON.stringify(row));
+  const prefixedTime = raw.match(/\b\d{4}-\d{2}-\d{2}[T ][0-9:.+-]+Z?\b/)?.[0] || "";
+  const time = row.time || row.timestamp || row.at || firewallLogToken(raw, "TIME") || prefixedTime;
+  const direction = String(row.direction || row.dir || firewallLogToken(raw, "DIRECTION") || firewallLogToken(raw, "DIR") || "").toUpperCase();
+  const action = String(row.action || row.policy_action || firewallLogToken(raw, "ACTION") || "").toUpperCase();
+  const source = String(row.source || row.src || row.src_ip || firewallLogToken(raw, "SRC") || firewallLogToken(raw, "SOURCE") || "");
+  const destination = String(row.destination || row.dst || row.dst_ip || firewallLogToken(raw, "DST") || firewallLogToken(raw, "DESTINATION") || "");
+  return { ...row, dcst_time: time, dcst_direction: direction, dcst_action: action, dcst_source: source, dcst_destination: destination, dcst_raw: raw };
+}
+
 export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: Translate; toast: ToastFn }) {
   const [tab, setTab] = useState<DcstTab>("overview");
   const [loading, setLoading] = useState(true);
@@ -94,6 +110,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
   const [serviceSaving, setServiceSaving] = useState(false);
   const [detailService, setDetailService] = useState<DcstService | null>(null);
   const [detailPreview, setDetailPreview] = useState<Record<string, unknown> | null>(null);
+  const previewRequest = useRef(0);
 
   const [portDraft, setPortDraft] = useState(blankPort);
   const [portEdit, setPortEdit] = useState("");
@@ -171,7 +188,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
   }), [services, search, direction, action, state]);
 
   const inventoryReady = tags.length > 0 || Boolean(syncTimestamp(overview.last_inventory_sync));
-  const lastSyncSource = syncTimestamp(overview.last_firewall_sync) ? overview.last_firewall_sync : overview.last_inventory_sync;
+  const lastSyncSource = overview.last_firewall_sync;
   const lastSyncLabel = relativeTime(lastSyncSource);
   const lastSyncExact = exactTime(lastSyncSource);
   const managedObjectCount = services.length + tags.length + ipsets.length + ports.length;
@@ -259,17 +276,39 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
     }
   }
 
+  function confirmBulkBlock() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setConfirm({
+      title: `Block ${ids.length} communication service${ids.length === 1 ? "" : "s"}?`,
+      message: "Blocking these services applies traffic-blocking firewall rules and can interrupt live communication. Confirm only if this disruption is intended.",
+      confirmLabel: "Block selected",
+      destructive: true,
+      run: async () => {
+        await dcstClient.bulk("block", ids);
+        success("Bulk block completed");
+        setSelected(new Set());
+        await refresh();
+      },
+    });
+  }
+
   function viewService(item: DcstService) {
+    const requestId = ++previewRequest.current;
     setDetailService(item);
     setDetailPreview(null);
-    void dcstClient.previewService(item.id).then(setDetailPreview).catch(notifyError);
+    void dcstClient.previewService(item.id).then((preview) => {
+      if (previewRequest.current === requestId) setDetailPreview(preview);
+    }).catch((error) => {
+      if (previewRequest.current === requestId) notifyError(error);
+    });
   }
 
   function confirmDeleteService(item: DcstService) {
     setConfirm({
       title: "Delete communication service?",
       subject: item.name,
-      message: "This action removes the DCST policy object. Firewall changes will be applied during synchronization.",
+      message: "Deleting this service removes its managed firewall rules immediately. Live traffic may change as soon as deletion succeeds; this does not wait for a later synchronization.",
       confirmLabel: "Delete",
       destructive: true,
       run: async () => { await dcstClient.deleteService(item.id); await refresh(); success("Communication service deleted"); },
@@ -374,17 +413,18 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
     }
   }
 
+  const normalizedLogs = useMemo(() => logs.map(normalizeFirewallLog), [logs]);
   const filteredLogs = useMemo(() => {
-    const now = logs.reduce((latest, row) => Math.max(latest, syncTimestamp(row.time ?? row.timestamp ?? row.at) ?? 0), 0);
+    const now = normalizedLogs.reduce((latest, row) => Math.max(latest, syncTimestamp({ time: row.dcst_time }) ?? 0), 0);
     const rangeMs = logRange === "15m" ? 15 * 60_000 : logRange === "1h" ? 60 * 60_000 : logRange === "24h" ? 24 * 60 * 60_000 : 0;
-    return logs.filter((row) => {
-      const raw = JSON.stringify(row).toLowerCase();
+    return normalizedLogs.filter((row) => {
+      const raw = String(row.dcst_raw || JSON.stringify(row)).toLowerCase();
       const rowNode = String(row.node || "").toLowerCase();
-      const rowDirection = String(row.direction || row.dir || "").toUpperCase();
-      const rowAction = String(row.action || row.policy_action || "").toUpperCase();
-      const rowSource = String(row.source || row.src || row.src_ip || "").toLowerCase();
-      const rowDestination = String(row.destination || row.dst || row.dst_ip || "").toLowerCase();
-      const timestamp = syncTimestamp(row.time ?? row.timestamp ?? row.at);
+      const rowDirection = String(row.dcst_direction || "").toUpperCase();
+      const rowAction = String(row.dcst_action || "").toUpperCase();
+      const rowSource = String(row.dcst_source || "").toLowerCase();
+      const rowDestination = String(row.dcst_destination || "").toLowerCase();
+      const timestamp = syncTimestamp({ time: row.dcst_time });
       return (!logSearch || raw.includes(logSearch.toLowerCase()))
         && (!logNode || rowNode === logNode.toLowerCase())
         && (!logDirection || rowDirection === logDirection)
@@ -393,9 +433,9 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
         && (!logDestination || rowDestination.includes(logDestination.toLowerCase()))
         && (!rangeMs || !timestamp || now - timestamp <= rangeMs);
     });
-  }, [logs, logSearch, logNode, logDirection, logAction, logSource, logDestination, logRange]);
+  }, [normalizedLogs, logSearch, logNode, logDirection, logAction, logSource, logDestination, logRange]);
 
-  const logNodes = useMemo(() => [...new Set(logs.map((row) => String(row.node || "")).filter(Boolean))].sort(), [logs]);
+  const logNodes = useMemo(() => [...new Set(normalizedLogs.map((row) => String(row.node || "")).filter(Boolean))].sort(), [normalizedLogs]);
 
   return <section className="system-app module-app dcst-app">
     <DcstHeader
@@ -437,7 +477,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
         <strong>{selected.size} service{selected.size === 1 ? "" : "s"} selected</strong>
         <div>
           {can("dcst.manage_services") && <><button onClick={() => void bulk("enable")}>Enable</button><button onClick={() => void bulk("disable")}>Disable</button></>}
-          {can("dcst.block_traffic") && <><button onClick={() => void bulk("block")}>Block</button><button onClick={() => void bulk("unblock")}>Unblock</button></>}
+          {can("dcst.block_traffic") && <><button onClick={confirmBulkBlock}>Block</button><button onClick={() => void bulk("unblock")}>Unblock</button></>}
           {can("dcst.sync") && <button onClick={() => void bulk("sync")}><RefreshCw /> Synchronize</button>}
           <button onClick={() => setSelected(new Set())}>Clear selection</button>
         </div>
@@ -455,6 +495,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
         canManage={can("dcst.manage_services")}
         canBlock={can("dcst.block_traffic")}
         canSync={can("dcst.sync")}
+        canInventorySync={can("dcst.manage_tags")}
         onToggle={(id, checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(id); else next.delete(id); return next; })}
         onToggleAll={(checked) => setSelected(checked ? new Set(visibleServices.map((item) => item.id)) : new Set())}
         onView={viewService}
@@ -531,14 +572,14 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
           <label><span>Time range</span><select value={logRange} onChange={(event) => setLogRange(event.target.value)}><option value="">All</option><option value="15m">15 minutes</option><option value="1h">1 hour</option><option value="24h">24 hours</option></select></label>
         </div>
         <div className="table-scroll dcst-log-table"><table><thead><tr><th>Node</th><th>Time</th><th>Direction</th><th>Action</th><th>Source</th><th>Destination</th><th>Raw message</th></tr></thead>
-          <tbody>{filteredLogs.map((row, index) => <tr key={String(row.id || index)}><td>{String(row.node || "—")}</td><td><code>{String(row.time || row.timestamp || row.at || "—")}</code></td><td>{String(row.direction || row.dir || "—")}</td><td>{String(row.action || row.policy_action || "—")}</td><td><code>{String(row.source || row.src || row.src_ip || "—")}</code></td><td><code>{String(row.destination || row.dst || row.dst_ip || "—")}</code></td><td><code>{String(row.t || row.msg || row.message || row.raw || JSON.stringify(row))}</code></td></tr>)}</tbody>
+          <tbody>{filteredLogs.map((row, index) => <tr key={String(row.id || index)}><td>{String(row.node || "—")}</td><td><code>{String(row.dcst_time || "—")}</code></td><td>{String(row.dcst_direction || "—")}</td><td>{String(row.dcst_action || "—")}</td><td><code>{String(row.dcst_source || "—")}</code></td><td><code>{String(row.dcst_destination || "—")}</code></td><td><code>{String(row.dcst_raw || JSON.stringify(row))}</code></td></tr>)}</tbody>
         </table></div>
         {!utilitiesLoading && !filteredLogs.length && <div className="dcst-inline-empty">No firewall logs match the current filters.</div>}
       </article>}
     </div>}
 
     <DcstServiceDrawer open={serviceDrawerOpen} editId={serviceEdit} draft={serviceDraft} tags={tags} ipsets={ipsets} ports={ports} errors={serviceErrors} saving={serviceSaving} onDraftChange={setServiceDraft} onClose={closeServiceDrawer} onSubmit={() => void saveService()} />
-    <DcstServiceDetails service={detailService} preview={detailPreview} ports={ports} tags={tags} ipsets={ipsets} lastSyncLabel={lastSyncExact} onClose={() => { setDetailService(null); setDetailPreview(null); }} />
+    <DcstServiceDetails service={detailService} preview={detailPreview} ports={ports} tags={tags} ipsets={ipsets} lastSyncLabel={lastSyncExact} onClose={() => { previewRequest.current += 1; setDetailService(null); setDetailPreview(null); }} />
     <DcstIPSetDrawer open={ipsetDrawerOpen} editId={ipsetEdit} draft={ipsetDraft} saving={ipsetSaving} onDraftChange={setIPSetDraft} onClose={() => { if (!ipsetSaving) setIPSetDrawerOpen(false); }} onSubmit={() => void saveIPSet()} />
     <DcstPortDrawer open={portDrawerOpen} editId={portEdit} draft={portDraft} saving={portSaving} onDraftChange={setPortDraft} onClose={() => { if (!portSaving) setPortDrawerOpen(false); }} onSubmit={() => void savePort()} />
 
