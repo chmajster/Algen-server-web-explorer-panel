@@ -413,9 +413,15 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
     }
   }
 
+  const portUsage = useMemo(() => {
+    const counts = new Map<string, number>();
+    services.forEach((service) => service.port_ids.forEach((portId) => counts.set(portId, (counts.get(portId) || 0) + 1)));
+    return counts;
+  }, [services]);
+
   const normalizedLogs = useMemo(() => logs.map(normalizeFirewallLog), [logs]);
   const filteredLogs = useMemo(() => {
-    const now = normalizedLogs.reduce((latest, row) => Math.max(latest, syncTimestamp({ time: row.dcst_time }) ?? 0), 0);
+    const now = Date.now();
     const rangeMs = logRange === "15m" ? 15 * 60_000 : logRange === "1h" ? 60 * 60_000 : logRange === "24h" ? 24 * 60 * 60_000 : 0;
     return normalizedLogs.filter((row) => {
       const raw = String(row.dcst_raw || JSON.stringify(row)).toLowerCase();
@@ -544,7 +550,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
         <table><thead><tr><th>Name</th><th>Protocol</th><th>Port / Range</th><th>Used by</th><th>Description</th><th>Actions</th></tr></thead>
           <tbody>{ports.map((port) => <tr key={port.id}>
             <td><button className="dcst-service-name" onClick={() => setPortDetails(port)}>{port.name}</button></td><td><span className="dcst-protocol-badge">{port.protocol.toUpperCase()}</span></td>
-            <td><code>{port.port_from ? `${port.port_from}${port.port_to && port.port_to !== port.port_from ? `–${port.port_to}` : ""}` : "—"}</code></td><td>{port.dependencies?.length || 0} policies</td><td>{port.description || "—"}</td>
+            <td><code>{port.port_from ? `${port.port_from}${port.port_to && port.port_to !== port.port_from ? `–${port.port_to}` : ""}` : "—"}</code></td><td>{portUsage.get(port.id) || 0} policies</td><td>{port.description || "—"}</td>
             <td>{can("dcst.manage_ports") && <div className="dcst-inline-actions"><button aria-label={`Edit ${port.name}`} onClick={() => editPort(port)}><Pencil /></button><button className="danger" aria-label={`Delete ${port.name}`} onClick={() => setConfirm({ title: "Delete port object?", subject: port.name, message: "Services using this object will prevent deletion.", confirmLabel: "Delete", destructive: true, run: async () => { await dcstClient.deletePort(port.id); await refresh(); } })}><Trash2 /></button></div>}</td>
           </tr>)}</tbody>
         </table>
@@ -592,7 +598,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
     </DcstInfoDrawer>
 
     <DcstInfoDrawer title={portDetails?.name || "Port Object"} description={portDetails?.description || "Reusable transport object"} open={Boolean(portDetails)} onClose={() => setPortDetails(null)}>
-      {portDetails && <><section className="dcst-details-summary"><div><span>Protocol</span><strong>{portDetails.protocol.toUpperCase()}</strong></div><div><span>Port / Range</span><code>{portDetails.port_from ? `${portDetails.port_from}${portDetails.port_to && portDetails.port_to !== portDetails.port_from ? `–${portDetails.port_to}` : ""}` : "—"}</code></div><div><span>Used by</span><strong>{portDetails.dependencies?.length || 0} policies</strong></div></section>{portDetails.dependencies?.length ? <section className="dcst-form-section"><header><span>01</span><div><strong>Used by</strong><small>Communication services referencing this object</small></div></header><div className="dcst-dependency-list">{portDetails.dependencies.map((dependency) => <span key={dependency.id}>{dependency.name}</span>)}</div></section> : null}</>}
+      {portDetails && <><section className="dcst-details-summary"><div><span>Protocol</span><strong>{portDetails.protocol.toUpperCase()}</strong></div><div><span>Port / Range</span><code>{portDetails.port_from ? `${portDetails.port_from}${portDetails.port_to && portDetails.port_to !== portDetails.port_from ? `–${portDetails.port_to}` : ""}` : "—"}</code></div><div><span>Used by</span><strong>{portUsage.get(portDetails.id) || 0} policies</strong></div></section>{portDetails.dependencies?.length ? <section className="dcst-form-section"><header><span>01</span><div><strong>Used by</strong><small>Communication services referencing this object</small></div></header><div className="dcst-dependency-list">{portDetails.dependencies.map((dependency) => <span key={dependency.id}>{dependency.name}</span>)}</div></section> : null}</>}
     </DcstInfoDrawer>
 
     <DcstConfirmDialog action={confirm} busy={confirmBusy} onCancel={() => { if (!confirmBusy) setConfirm(null); }} onConfirm={() => void runConfirmation()} />
