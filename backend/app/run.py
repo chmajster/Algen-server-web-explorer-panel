@@ -69,7 +69,7 @@ class RuntimeWatchdog:
 
     def expired(self, now: float | None = None) -> bool:
         current = time.monotonic() if now is None else now
-        return current - self._last_heartbeat > self.timeout_seconds
+        return current > self._last_heartbeat + self.timeout_seconds
 
     def start(self) -> None:
         if self._thread is not None:
@@ -123,8 +123,6 @@ class WebNasServer(uvicorn.Server):
             heartbeat_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await heartbeat_task
-            if self.runtime_watchdog is not None:
-                self.runtime_watchdog.stop()
 
     async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
         if self.runtime_watchdog is not None:
@@ -134,34 +132,24 @@ class WebNasServer(uvicorn.Server):
 
     async def _heartbeat_loop(self, interval: float, notify_systemd: bool) -> None:
         while not self.should_exit:
-            # Readiness is intentionally local-only. If module-registry state
-            # becomes unhealthy, stop both heartbeats. systemd or the internal
-            # supervisor will then recycle the backend instead of leaving a
-            # process alive but unusable.
-            if bool(getattr(app.state, "ready", False)):
-                if self.runtime_watchdog is not None:
-                    self.runtime_watchdog.heartbeat()
-                if notify_systemd:
-                    _systemd_notify("WATCHDOG=1")
+            if self.runtime_watchdog is not None:
+                self.runtime_watchdog.heartbeat()
+            if notify_systemd:
+                _systemd_notify("WATCHDOG=1")
             await asyncio.sleep(interval)
 
 
 def main() -> None:
     cfg = get_config()
-    host = os.environ.get("WEBNAS_BIND_HOST", cfg.server.host)
-    port = int(os.environ.get("WEBNAS_BIND_PORT", cfg.server.port))
-    behind_gateway = "WEBNAS_BIND_PORT" in os.environ
-    if cfg.server.use_https and not behind_gateway:
-        config = uvicorn.Config(
-            app,
-            host=host,
-            port=port,
-            ssl_certfile=cfg.server.tls_cert,
-            ssl_keyfile=cfg.server.tls_key,
-        )
-    else:
-        config = uvicorn.Config(app, host=host, port=port)
-    WebNasServer(config).run()
+    config = uvicorn.Config(
+        app,
+        host=cfg.server.host,
+        port=cfg.server.port,
+        log_level="info",
+        proxy_headers=False,
+    )
+    server = WebNasServer(config)
+    asyncio.run(server.serve())
 
 
 if __name__ == "__main__":
