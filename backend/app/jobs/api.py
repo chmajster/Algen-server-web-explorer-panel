@@ -19,11 +19,18 @@ def _user(request: Request) -> SessionUser:
 
 
 def _can_view_all(user: SessionUser) -> bool:
-    return has_permission(user.username, Permission.AUDIT_VIEW_ALL) or has_permission(user.username, Permission.MODULES_VIEW)
+    # Global operation visibility is intentionally narrower than modules.view.
+    # Operators may inspect module-scoped jobs, while audit administrators can
+    # inspect every user's operations across all modules.
+    return has_permission(user.username, Permission.AUDIT_VIEW_ALL) or has_permission(user.username, Permission.ACCESS_MANAGE_ROLES)
+
+
+def _can_view_module(user: SessionUser, module: str) -> bool:
+    return bool(module) and has_permission(user.username, Permission.MODULES_VIEW)
 
 
 def _visible(job: Job, user: SessionUser) -> bool:
-    return job.created_by == user.username or _can_view_all(user)
+    return job.created_by == user.username or _can_view_all(user) or _can_view_module(user, job.module)
 
 
 @router.get("", response_model=JobPage)
@@ -38,7 +45,7 @@ def list_jobs(
     offset: int = Query(default=0, ge=0),
     user: SessionUser = Depends(_user),
 ):
-    if not _can_view_all(user):
+    if not _can_view_all(user) and not (module and _can_view_module(user, module)):
         created_by = user.username
     return service().list(status=status, module=module, job_type=type, created_by=created_by, since=since, until=until, limit=limit, offset=offset)
 
