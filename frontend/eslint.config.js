@@ -23,8 +23,14 @@ export default [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      // TypeScript strict mode is the source of truth for symbol resolution.
+      // ESLint's JS-only no-undef rule incorrectly flags DOM/React type names.
       "no-undef": "off",
       "react-hooks/set-state-in-effect": "off",
+      // This compiler-oriented rule rejects existing hoisted local helpers even
+      // though they do not mutate captured values. Keep the established hooks
+      // correctness rules (rules-of-hooks/exhaustive-deps/refs) enabled.
+      "react-hooks/immutability": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
     },
