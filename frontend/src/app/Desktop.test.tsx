@@ -156,7 +156,7 @@ describe("personalized desktop", () => {
     fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
     fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
     expect(screen.queryByRole("button", { name: "app.samba" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "app.modules" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "app.modules" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "app.store" })).toBeInTheDocument();
   });
 
