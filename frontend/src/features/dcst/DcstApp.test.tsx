@@ -29,4 +29,14 @@ describe("normalizeFirewallLog", () => {
     expect(row.dcst_source).toBe("tag:APP.PROD");
     expect(row.dcst_destination).toBe("10.0.20.0/24");
   });
+
+  it("parses action from the backend raw-only firewall log shape", () => {
+    const row = normalizeFirewallLog({
+      node: "pve1",
+      t: "policy IN=vmbr0 OUT=fwbr100i0 ACTION=ACCEPT",
+    });
+
+    expect(row.dcst_action).toBe("ACCEPT");
+    expect(row.dcst_raw).toContain("ACTION=ACCEPT");
+  });
 });
