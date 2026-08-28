@@ -3,7 +3,7 @@ name: Module Center
 category: system
 icon: package
 permissions: [modules.view, modules.install]
-routers: [app.package_center.router:router, app.apps:router, app.modules.router:router]
+routers: [app.package_center.router:router, app.jobs.api:router, app.plugins.api:router, app.apps:router, app.modules.router:router]
 capabilities: [catalog, install, update, uninstall, backups]
 actions: [install, update, uninstall, restore]
 jobs: [package-operation]

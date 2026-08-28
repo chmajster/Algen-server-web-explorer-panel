@@ -14,15 +14,17 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .audit import configure_logging
 from .config import AppConfig, get_config
-from .core.modules import ModuleRegistry
 from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
-from .platform_api import frontend_cache_policy
+from .core.modules import ModuleRegistry
+from .jobs.models import JobStatus
+from .jobs.service import service as job_service
 from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
 from .modules.os_repositories.scheduler import start_scheduler as start_os_repositories_scheduler
 from .modules.proxmox_manager.scheduler import start_scheduler as start_proxmox_scheduler
 from .network_mounts import active_mount_jobs
 from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
+from .platform_api import frontend_cache_policy
 from .power_control import router as power_control_router
 from .security import SessionUser, get_session_user
 from .settings import start_auto_update_scheduler
@@ -59,6 +61,7 @@ def _start_schedulers() -> None:
 async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     module_registry: ModuleRegistry = app.state.modules
     app.state.ready = False
+    global_jobs = job_service()
     await module_registry.startup()
     repository = package_repository()
     manager = package_job_manager(repository)
@@ -68,6 +71,14 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
         task_store.schedule_pending,
     )
     register_operation_provider("package", repository.active_jobs, manager.schedule_pending)
+    register_operation_provider(
+        "job",
+        lambda: [
+            item.model_dump(mode="json")
+            for status in (JobStatus.queued, JobStatus.running, JobStatus.cancel_requested)
+            for item in global_jobs.list(status=status, limit=500).items
+        ],
+    )
     register_operation_provider("mount", active_mount_jobs)
     register_operation_provider("upload", active_uploads)
     register_operation_provider("direct", active_transient_operations)
