@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +15,24 @@ OUTPUT = ROOT / "openapi" / "openapi.json"
 
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
+
+# Composition imports instantiate a small number of legacy stores. Give them an
+# isolated writable runtime instead of allowing documentation generation to
+# touch /var/lib/webnas or /var/log/webnas on developer/CI machines.
+_RUNTIME = tempfile.TemporaryDirectory(prefix="webnas-openapi-")
+_RUNTIME_ROOT = Path(_RUNTIME.name)
+_RUNTIME_CONFIG = _RUNTIME_ROOT / "config.yaml"
+_RUNTIME_CONFIG.write_text(
+    "paths:\n"
+    f"  data_dir: {_RUNTIME_ROOT / 'data'}\n"
+    f"  log_dir: {_RUNTIME_ROOT / 'log'}\n"
+    f"  temp_dir: {_RUNTIME_ROOT / 'tmp'}\n"
+    "security:\n"
+    "  session_secret: openapi-generation-only\n",
+    encoding="utf-8",
+)
+os.environ["WEBNAS_CONFIG"] = str(_RUNTIME_CONFIG)
+os.environ["WEBNAS_CANDIDATE"] = "1"
 
 from app.bootstrap import create_app  # noqa: E402
 
