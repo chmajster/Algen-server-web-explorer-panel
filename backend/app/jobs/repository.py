@@ -214,15 +214,17 @@ class JobRepository:
 
     def recover_interrupted(self) -> int:
         now = time.time()
-        message = "Application restarted while operation was running"
         with self._lock, self._connect() as connection:
             rows = connection.execute(
-                "SELECT id FROM jobs WHERE status IN (?,?)",
-                (JobStatus.running.value, JobStatus.cancel_requested.value),
+                "SELECT id,status FROM jobs WHERE status IN (?,?,?)",
+                (JobStatus.queued.value, JobStatus.running.value, JobStatus.cancel_requested.value),
             ).fetchall()
             for row in rows:
+                was_queued = row["status"] == JobStatus.queued.value
+                message = "Application restarted before queued operation started" if was_queued else "Application restarted while operation was running"
+                state_message = "Interrupted before execution" if was_queued else "Interrupted"
                 connection.execute(
                     "UPDATE jobs SET status=?,finished_at=?,message=?,error=? WHERE id=?",
-                    (JobStatus.failed.value, now, "Interrupted", message, row["id"]),
+                    (JobStatus.failed.value, now, state_message, message, row["id"]),
                 )
         return len(rows)
