@@ -7,7 +7,9 @@ StartLimitIntervalSec=120
 StartLimitBurst=4
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+WatchdogSec=60s
 WorkingDirectory=/opt/webnas/backend
 Environment=PYTHONPATH=/opt/webnas/backend
 Environment=WEBNAS_CONFIG=/etc/webnas/config.yaml
