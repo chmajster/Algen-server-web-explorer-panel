@@ -106,7 +106,7 @@ class WebNasServer(uvicorn.Server):
         timeout = _runtime_watchdog_timeout()
         self.runtime_watchdog = RuntimeWatchdog(timeout) if timeout is not None else None
 
-    async def startup(self, sockets=None) -> None:
+    async def startup(self, sockets: list[socket.socket] | None = None) -> None:
         await super().startup(sockets=sockets)
         if not self.should_exit:
             if self.runtime_watchdog is not None:
@@ -126,7 +126,7 @@ class WebNasServer(uvicorn.Server):
             if self.runtime_watchdog is not None:
                 self.runtime_watchdog.stop()
 
-    async def shutdown(self, sockets=None) -> None:
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
         if self.runtime_watchdog is not None:
             self.runtime_watchdog.stop()
         _systemd_notify("STOPPING=1\nSTATUS=WebNAS backend stopping")
@@ -151,11 +151,17 @@ def main() -> None:
     host = os.environ.get("WEBNAS_BIND_HOST", cfg.server.host)
     port = int(os.environ.get("WEBNAS_BIND_PORT", cfg.server.port))
     behind_gateway = "WEBNAS_BIND_PORT" in os.environ
-    options: dict[str, object] = {"host": host, "port": port}
     if cfg.server.use_https and not behind_gateway:
-        options.update({"ssl_certfile": cfg.server.tls_cert, "ssl_keyfile": cfg.server.tls_key})
-    server = WebNasServer(uvicorn.Config(app, **options))
-    server.run()
+        config = uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            ssl_certfile=cfg.server.tls_cert,
+            ssl_keyfile=cfg.server.tls_key,
+        )
+    else:
+        config = uvicorn.Config(app, host=host, port=port)
+    WebNasServer(config).run()
 
 
 if __name__ == "__main__":
