@@ -4,9 +4,9 @@ import { lazyView } from "../../app/registry/rendering";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 import type { SettingsCategory } from "../../features/settings/SettingsApp";
 import type { PolicySubject } from "../../features/admin/IdentityApp";
-import { UpdateDetailsPolicyControl } from "../../features/settings/UpdateDetailsPolicyControl";
 
 const SettingsApp = lazy(() => import("../../features/settings/SettingsApp").then((loaded) => ({ default: loaded.SettingsAppView })));
+const UpdateDetailsPolicyControl = lazy(() => import("../../features/settings/UpdateDetailsPolicyControl").then((loaded) => ({ default: loaded.UpdateDetailsPolicyControl })));
 const categories = new Set<SettingsCategory>(["system", "personalization", "files", "transfers", "notifications", "accessibility", "language", "account", "identity", "network", "networkResources", "updates", "policies", "administration", "about"]);
 const category = (value?: string): SettingsCategory => value && categories.has(value as SettingsCategory) ? value as SettingsCategory : "system";
 const policySubject = (value?: string): PolicySubject | undefined => {
