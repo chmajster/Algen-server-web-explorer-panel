@@ -41,20 +41,22 @@ For a production setup, prefer separate runners:
 
 ```text
 build-runner
-- labels: self-hosted, linux, homelab
+- required labels: self-hosted, linux
+- recommended additional label: homelab
 - no sudo
 - no Docker socket unless required
 - no production credentials
 
 deploy-runner
-- labels: self-hosted, linux, homelab, deploy
+- required labels: self-hosted, linux, deploy
+- recommended additional label: homelab
 - trusted main only
 - only required network access
 - only required environment secrets
 - narrowly scoped sudo rules when unavoidable
 ```
 
-The repository workflow expects `self-hosted`, `linux`, and `homelab` labels for trusted integration work. The optional production deployment gate additionally expects `deploy`.
+The trusted integration workflow intentionally matches the existing repository runner convention: `self-hosted` and `linux`. If several Linux self-hosted runners are registered, use a dedicated runner group or extend the workflow with an installation-specific label such as `homelab` and add the same label to the intended runner. The optional production deployment gate additionally requires `deploy`, so ordinary build runners cannot pick up deployment jobs.
 
 ## GitHub permissions and secrets
 
