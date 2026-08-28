@@ -1,0 +1,44 @@
+name: Refresh frontend lockfile
+
+on:
+  push:
+    branches:
+      - refactor/frontend-platform-20260828
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-frontend-lock
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refactor/frontend-platform-20260828
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Regenerate lockfile through the normal npm resolver
+        working-directory: frontend
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Commit deterministic lockfile update
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- frontend/package-lock.json; then
+            echo 'package-lock.json already current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add frontend/package-lock.json
+          git commit -m 'Refresh frontend dependency lockfile'
+          git push origin HEAD:refactor/frontend-platform-20260828
