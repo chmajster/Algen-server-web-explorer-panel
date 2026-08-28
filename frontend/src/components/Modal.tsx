@@ -13,6 +13,7 @@ const DIALOG_MIN_HEIGHT = 180;
 const MOBILE_DIALOG_WIDTH = 700;
 
 type DialogRect = { x: number; y: number; width: number; height: number };
+type DialogWorkspace = { x: number; y: number; width: number; height: number };
 type ResizeEdge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 type DialogGesture = {
   mode: "move" | "resize";
@@ -49,17 +50,67 @@ function viewportSize() {
   };
 }
 
-function clampDialogRect(rect: DialogRect): DialogRect {
+function dialogWorkspace(): DialogWorkspace {
   const viewport = viewportSize();
-  const maxWidth = Math.max(DIALOG_MIN_WIDTH, viewport.width - DIALOG_MARGIN * 2);
-  const maxHeight = Math.max(DIALOG_MIN_HEIGHT, viewport.height - DIALOG_MARGIN * 2);
-  const width = Math.min(Math.max(DIALOG_MIN_WIDTH, rect.width), maxWidth);
-  const height = Math.min(Math.max(DIALOG_MIN_HEIGHT, rect.height), maxHeight);
-  const maxX = Math.max(DIALOG_MARGIN, viewport.width - width - DIALOG_MARGIN);
-  const maxY = Math.max(DIALOG_MARGIN, viewport.height - height - DIALOG_MARGIN);
+  const desktop = document.querySelector<HTMLElement>(".desktop");
+  const desktopRect = desktop?.getBoundingClientRect();
+  const hasDesktopBounds = Boolean(desktopRect && desktopRect.width > 0 && desktopRect.height > 0);
+  const x = hasDesktopBounds ? desktopRect!.left : 0;
+  const y = hasDesktopBounds ? desktopRect!.top : 0;
+  const width = hasDesktopBounds ? desktopRect!.width : viewport.width;
+  let height = hasDesktopBounds ? desktopRect!.height : viewport.height;
+
+  const taskbar = desktop?.querySelector<HTMLElement>(".taskbar");
+  if (taskbar) {
+    const taskbarRect = taskbar.getBoundingClientRect();
+    const style = window.getComputedStyle(taskbar);
+    const visible = style.display !== "none"
+      && style.visibility !== "hidden"
+      && taskbarRect.width > 0
+      && taskbarRect.height > 0;
+    const right = x + width;
+    const bottom = y + height;
+    if (visible
+      && taskbarRect.left < right
+      && taskbarRect.right > x
+      && taskbarRect.top < bottom
+      && taskbarRect.bottom > y) {
+      height = Math.max(0, Math.min(height, taskbarRect.top - y));
+    }
+  }
+
+  return { x, y, width, height };
+}
+
+function maximizedDialogRect(): DialogRect {
+  const workspace = dialogWorkspace();
+  const marginX = Math.min(DIALOG_MARGIN, workspace.width / 2);
+  const marginY = Math.min(DIALOG_MARGIN, workspace.height / 2);
   return {
-    x: Math.min(Math.max(DIALOG_MARGIN, rect.x), maxX),
-    y: Math.min(Math.max(DIALOG_MARGIN, rect.y), maxY),
+    x: workspace.x + marginX,
+    y: workspace.y + marginY,
+    width: Math.max(0, workspace.width - marginX * 2),
+    height: Math.max(0, workspace.height - marginY * 2),
+  };
+}
+
+function clampDialogRect(rect: DialogRect): DialogRect {
+  const workspace = dialogWorkspace();
+  const marginX = Math.min(DIALOG_MARGIN, workspace.width / 2);
+  const marginY = Math.min(DIALOG_MARGIN, workspace.height / 2);
+  const maxWidth = Math.max(0, workspace.width - marginX * 2);
+  const maxHeight = Math.max(0, workspace.height - marginY * 2);
+  const minWidth = Math.min(DIALOG_MIN_WIDTH, maxWidth);
+  const minHeight = Math.min(DIALOG_MIN_HEIGHT, maxHeight);
+  const width = Math.min(Math.max(minWidth, rect.width), maxWidth);
+  const height = Math.min(Math.max(minHeight, rect.height), maxHeight);
+  const minX = workspace.x + marginX;
+  const minY = workspace.y + marginY;
+  const maxX = Math.max(minX, workspace.x + workspace.width - width - marginX);
+  const maxY = Math.max(minY, workspace.y + workspace.height - height - marginY);
+  return {
+    x: Math.min(Math.max(minX, rect.x), maxX),
+    y: Math.min(Math.max(minY, rect.y), maxY),
     width,
     height,
   };
@@ -69,9 +120,9 @@ function measuredDialogRect(element: HTMLElement): DialogRect {
   const bounds = element.getBoundingClientRect();
   const width = bounds.width || element.offsetWidth || DIALOG_MIN_WIDTH;
   const height = bounds.height || element.offsetHeight || DIALOG_MIN_HEIGHT;
-  const viewport = viewportSize();
-  const x = bounds.width ? bounds.left : Math.max(DIALOG_MARGIN, (viewport.width - width) / 2);
-  const y = bounds.height ? bounds.top : Math.max(DIALOG_MARGIN, (viewport.height - height) / 2);
+  const workspace = dialogWorkspace();
+  const x = bounds.width ? bounds.left : workspace.x + Math.max(DIALOG_MARGIN, (workspace.width - width) / 2);
+  const y = bounds.height ? bounds.top : workspace.y + Math.max(DIALOG_MARGIN, (workspace.height - height) / 2);
   return clampDialogRect({ x, y, width, height });
 }
 
@@ -109,6 +160,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   const [rect, setRect] = useState<DialogRect | null>(null);
   const [maximized, setMaximized] = useState(false);
   const [mobileFullscreen, setMobileFullscreen] = useState(() => typeof window !== "undefined" && window.innerWidth <= MOBILE_DIALOG_WIDTH);
+  const [workspace, setWorkspace] = useState<DialogWorkspace>(() => dialogWorkspace());
   const minimized = minimizedSlot !== null;
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
@@ -116,6 +168,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   useEffect(() => {
     function updateMobileMode() {
       const mobile = window.innerWidth <= MOBILE_DIALOG_WIDTH;
+      setWorkspace(dialogWorkspace());
       setMobileFullscreen(mobile);
       if (mobile) {
         gesture.current = null;
@@ -197,8 +250,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
     if (mobileFullscreen || (!rect && !maximized)) return;
     function resize() {
       if (maximized) {
-        const viewport = viewportSize();
-        setRect({ x: DIALOG_MARGIN, y: DIALOG_MARGIN, width: Math.max(DIALOG_MIN_WIDTH, viewport.width - DIALOG_MARGIN * 2), height: Math.max(DIALOG_MIN_HEIGHT, viewport.height - DIALOG_MARGIN * 2) });
+        setRect(maximizedDialogRect());
       } else {
         setRect((current) => current ? clampDialogRect(current) : current);
       }
@@ -267,21 +319,17 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
       return;
     }
     restoreRect.current = rect || measuredDialogRect(panel.current);
-    const viewport = viewportSize();
-    setRect({
-      x: DIALOG_MARGIN,
-      y: DIALOG_MARGIN,
-      width: Math.max(DIALOG_MIN_WIDTH, viewport.width - DIALOG_MARGIN * 2),
-      height: Math.max(DIALOG_MIN_HEIGHT, viewport.height - DIALOG_MARGIN * 2),
-    });
+    setRect(maximizedDialogRect());
     setMaximized(true);
   }
 
+  const centeredMaxWidth = Math.max(0, workspace.width - Math.min(DIALOG_MARGIN, workspace.width / 2) * 2);
+  const centeredMaxHeight = Math.max(0, workspace.height - Math.min(DIALOG_MARGIN, workspace.height / 2) * 2);
   const positionedStyle: React.CSSProperties = mobileFullscreen
-    ? { position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", pointerEvents: "auto" }
+    ? { position: "absolute", left: workspace.x, top: workspace.y, width: workspace.width, height: workspace.height, transform: "none", pointerEvents: "auto", maxWidth: "none", maxHeight: "none" }
     : rect
       ? { position: "absolute", left: rect.x, top: rect.y, width: rect.width, height: rect.height, transform: "none", pointerEvents: "auto", maxWidth: "none", maxHeight: "none" }
-      : { position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", pointerEvents: "auto" };
+      : { position: "absolute", top: workspace.y + workspace.height / 2, left: workspace.x + workspace.width / 2, transform: "translate(-50%, -50%)", pointerEvents: "auto", maxWidth: centeredMaxWidth, maxHeight: centeredMaxHeight };
 
   const dialogWindow = (
     <div
