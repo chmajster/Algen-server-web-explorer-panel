@@ -15,7 +15,7 @@ export function FormField({ label, htmlFor, error, hint, disabled = false, child
   className?: string;
 }) {
   const descriptionId = `${htmlFor}-description`;
-  return <div className={classes("wn-form-field", disabled && "is-disabled", error && "has-error", className)}>
+  return <div className={classes("wn-form-field", disabled && "is-disabled", Boolean(error) && "has-error", className)}>
     <label htmlFor={htmlFor}>{label}</label>
     {children}
     {error ? <small id={descriptionId} className="wn-field-error" role="alert">{error}</small> : hint ? <small id={descriptionId} className="wn-field-hint">{hint}</small> : null}
