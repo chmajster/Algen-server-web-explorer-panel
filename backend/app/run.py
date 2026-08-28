@@ -69,7 +69,7 @@ class RuntimeWatchdog:
 
     def expired(self, now: float | None = None) -> bool:
         current = time.monotonic() if now is None else now
-        return current - self._last_heartbeat > self.timeout_seconds
+        return current > self._last_heartbeat + self.timeout_seconds
 
     def start(self) -> None:
         if self._thread is not None:
