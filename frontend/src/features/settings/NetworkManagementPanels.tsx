@@ -138,9 +138,40 @@ function GeneralPanel({ state, onChange, onNavigate }: { state: NetworkManagemen
 }
 
 function DnsForm({ state, onClose, onSubmit }: { state: NetworkManagementState; onClose: () => void; onSubmit: (dns: NonNullable<NetworkManagementState["managed"]["dns"]>) => void }) {
-  const [servers, setServers] = useState((state.managed.dns?.servers || state.dns.resolv_conf.nameservers).join(", "));
+  const effectiveServers = state.managed.dns?.servers?.length
+    ? state.managed.dns.servers
+    : state.dns.systemd_resolved.global_servers.length
+      ? state.dns.systemd_resolved.global_servers
+      : state.dns.resolv_conf.nameservers;
+  const [servers, setServers] = useState<string[]>(() => effectiveServers.length ? [...effectiveServers] : [""]);
   const [domains, setDomains] = useState((state.managed.dns?.search_domains || state.dns.resolv_conf.search).join(", "));
-  return <Modal title="Konfiguracja DNS" onClose={onClose}><form onSubmit={(e) => { e.preventDefault(); const parsed = servers.split(",").map((v) => v.trim()).filter(Boolean); onSubmit({ automatic: false, servers: parsed, search_domains: domains.split(",").map((v) => v.trim()).filter(Boolean), routing_domains: [], per_interface: Object.fromEntries(state.interfaces.filter((item) => !item.system).map((item) => [item.name, parsed])), priority: 100, ignore_dhcp: true }); }}><div className="network-form-grid"><Field label="Serwery DNS"><input required value={servers} onChange={(e) => setServers(e.target.value)} placeholder="1.1.1.1, 2606:4700:4700::1111" /></Field><Field label="Domeny wyszukiwania"><input value={domains} onChange={(e) => setDomains(e.target.value)} /></Field></div><footer><button type="button" onClick={onClose}>Anuluj</button><button className="button-primary">Przejdź do planu</button></footer></form></Modal>;
+  const updateServer = (index: number, value: string) => setServers((current) => current.map((server, currentIndex) => currentIndex === index ? value : server));
+  const removeServer = (index: number) => setServers((current) => current.length > 1 ? current.filter((_, currentIndex) => currentIndex !== index) : current);
+  const addServer = () => setServers((current) => [...current, ""]);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const parsed = [...new Set(servers.map((value) => value.trim()).filter(Boolean))];
+    if (!parsed.length) return;
+    onSubmit({
+      automatic: false,
+      servers: parsed,
+      search_domains: domains.split(",").map((value) => value.trim()).filter(Boolean),
+      routing_domains: [],
+      per_interface: Object.fromEntries(state.interfaces.filter((item) => !item.system).map((item) => [item.name, parsed])),
+      priority: 100,
+      ignore_dhcp: true,
+    });
+  };
+  return <Modal title="Konfiguracja DNS" onClose={onClose}><form onSubmit={submit}><div className="network-form-grid">
+    <div className="network-form-field"><span>Serwery DNS</span><div className="network-management-stack">
+      {servers.map((server, index) => <div className="network-inline-inputs" key={index}>
+        <input aria-label={`Serwer DNS ${index + 1}`} required value={server} onChange={(event) => updateServer(index, event.target.value)} placeholder={index === 0 ? "1.1.1.1" : "8.8.8.8"} />
+        <button type="button" aria-label={`Usuń serwer DNS ${index + 1}`} disabled={servers.length === 1} onClick={() => removeServer(index)}><Trash2 aria-hidden="true" /></button>
+      </div>)}
+      <button type="button" onClick={addServer}><Plus aria-hidden="true" />Dodaj serwer DNS</button>
+    </div></div>
+    <Field label="Domeny wyszukiwania"><input value={domains} onChange={(event) => setDomains(event.target.value)} /></Field>
+  </div><footer><button type="button" onClick={onClose}>Anuluj</button><button className="button-primary">Przejdź do planu</button></footer></form></Modal>;
 }
 
 function InterfacesPanel({ state, onChange }: { state: NetworkManagementState; onChange: (change: NetworkChange) => void }) {
