@@ -94,5 +94,7 @@ export async function installMockApi(page: Page, authenticated = true): Promise<
 
 export async function openDesktopApp(page: Page, name: string) {
   await page.getByRole("button", { name: "Main menu" }).click();
-  await page.getByRole("button", { name, exact: true }).first().click();
+  const launcher = page.locator(".app-launcher");
+  await launcher.locator(".launcher-search input").fill(name);
+  await launcher.getByRole("button", { name, exact: true }).first().click();
 }
