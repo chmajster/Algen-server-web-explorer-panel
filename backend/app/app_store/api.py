@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..audit import logger
 from ..identity.permissions import Permission, authorize
-from ..modules.planning import provider_plan
 from ..package_center.models import PackageAction
 from ..security import SessionUser, get_session_user, require_csrf
 from .models import AdminAction, SambaApplyRequest, SambaPassword, SambaSecuredApplyRequest, SambaServiceAction, SambaUserAction
@@ -25,6 +24,9 @@ def _current_user(request: Request) -> SessionUser:
 
 
 def _enqueue_samba_config(config, confirm_smb1: bool, user: SessionUser) -> dict:
+    # Provider/planning imports stay inside the operation boundary. Importing
+    # them while app.apps is being loaded creates a cycle through SambaProvider.
+    from ..modules.planning import provider_plan
     from ..modules.providers.samba import SambaProvider
     from ..package_center.jobs import manager
     from ..package_center.service import repository
@@ -74,6 +76,7 @@ def samba_rollback(payload: AdminAction, user: SessionUser = Depends(_current_us
 def samba_service(payload: SambaServiceAction, user: SessionUser = Depends(_current_user)):
     if payload.action not in {"start", "stop", "restart", "reload"}:
         raise HTTPException(400, "Unsupported Samba service action")
+    from ..modules.planning import provider_plan
     from ..modules.router import ModuleAdminRequest, _enqueue
 
     authorize(user, Permission.MODULES_CONFIGURE)
