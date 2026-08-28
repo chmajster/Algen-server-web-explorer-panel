@@ -72,7 +72,8 @@ def test_modules_only_use_public_cross_module_contracts():
 def test_frontend_has_discovered_manifests_and_composed_api_clients():
     frontend = REPOSITORY / "frontend" / "src"
     api_source = (frontend / "api.ts").read_text(encoding="utf-8")
-    desktop_source = (frontend / "app" / "Desktop.tsx").read_text(encoding="utf-8")
+    desktop_root_source = (frontend / "app" / "Desktop.tsx").read_text(encoding="utf-8")
+    desktop_controller_source = (frontend / "app" / "DesktopController.tsx").read_text(encoding="utf-8")
     manifests = list((frontend / "modules").glob("*/manifest.tsx"))
     clients = list((frontend / "modules").glob("*/api/client.ts"))
 
@@ -80,5 +81,7 @@ def test_frontend_has_discovered_manifests_and_composed_api_clients():
     assert "request<" not in api_source
     assert len(manifests) >= 10
     assert len(clients) >= 10
-    assert "switch (item.app)" not in desktop_source
-    assert "moduleRegistry.render" in desktop_source
+    assert "switch (item.app)" not in desktop_root_source
+    assert "switch (item.app)" not in desktop_controller_source
+    assert "moduleRegistry.render" in desktop_controller_source
+    assert len(desktop_root_source.splitlines()) < 30
