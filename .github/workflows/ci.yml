@@ -63,6 +63,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements-dev.txt
 
+      - name: Verify deterministic OpenAPI snapshot
+        run: python scripts/generate-openapi.py --check
+
       - name: Run Ruff
         run: python -m ruff check backend
 
@@ -73,7 +76,7 @@ jobs:
         run: python -m bandit -c pyproject.toml -r backend/app
 
       - name: Validate module manifests and architecture boundaries
-        run: python -m pytest -q backend/tests/test_module_registry.py backend/tests/test_architecture_boundaries.py
+        run: python -m pytest -q backend/tests/test_module_registry.py backend/tests/test_architecture_boundaries.py backend/tests/test_refactor_boundaries.py
 
       - name: Build Python package
         run: python -m build
@@ -162,6 +165,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Verify generated TypeScript API contracts
+        run: npm run api:check
 
       - name: Run ESLint
         run: npm run lint

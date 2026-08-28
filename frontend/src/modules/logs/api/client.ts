@@ -1,5 +1,9 @@
 import { ApiError, request } from "../../../core/api/transport";
+import type { components } from "../../../core/api/generated/api-types";
 import type { LogBoot, LogContainer, LogEntriesResponse, LogEntry, LogQuery, LogSavedView, LogService, LogSourcesResponse, SystemLogs } from "../../../core/api/contracts";
+
+type LogSavedViewPayload = components["schemas"]["SavedViewPayload"];
+type LogExportRequest = components["schemas"]["ExportRequest"];
 
 export const logsClient = {
   systemLogs: (lines = 160) => request<SystemLogs>(`/api/admin/system/logs?lines=${lines}`),
@@ -18,10 +22,10 @@ export const logsClient = {
   logContainers: () => request<{ items: LogContainer[]; status: string; error?: string }>("/api/logs/containers"),
   logFields: () => request<{ items: string[] }>("/api/logs/fields"),
   logSavedViews: () => request<{ items: LogSavedView[] }>("/api/logs/saved-views"),
-  createLogSavedView: (payload: Omit<LogSavedView, "id" | "builtin">) => request<LogSavedView>("/api/logs/saved-views", { method: "POST", body: JSON.stringify(payload) }),
-  updateLogSavedView: (id: string, payload: Omit<LogSavedView, "id" | "builtin">) => request<LogSavedView>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  createLogSavedView: (payload: LogSavedViewPayload) => request<LogSavedView>("/api/logs/saved-views", { method: "POST", body: JSON.stringify(payload) }),
+  updateLogSavedView: (id: string, payload: LogSavedViewPayload) => request<LogSavedView>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteLogSavedView: (id: string) => request<{ ok: boolean }>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
-  exportLogs: async (payload: LogQuery & { format: "txt" | "json" | "jsonl" | "csv"; limit?: number }) => {
+  exportLogs: async (payload: LogExportRequest) => {
     const headers = new Headers({ "Content-Type": "application/json" });
     const res = await fetch("/api/logs/export", { method: "POST", body: JSON.stringify(payload), headers, credentials: "include" });
     if (!res.ok) {

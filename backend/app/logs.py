@@ -15,6 +15,7 @@ from . import log_system as _log_system
 from .activity import record_activity
 from .config import get_config
 from .identity.permissions import authorize, has_permission
+from .log_system import adapters as _adapters
 from .log_system import api as _api
 from .log_system import files as _files
 from .log_system import filtering as _filtering
@@ -77,10 +78,10 @@ def _write_views(username, views):
 def _sync_service_hooks() -> None:
     _service._authorize_source = _authorize_source
     _service._source_known = _source_known
-    _service._journal_entries = _journal_entries
-    _service._file_entries = _file_entries
-    _service._dmesg_entries = _dmesg_entries
     _service.has_permission = has_permission
+    _adapters.journal_reader = _journal_entries
+    _adapters.file_reader = _file_entries
+    _adapters.dmesg_reader = _dmesg_entries
 
 
 def query_entries(user, **kwargs):

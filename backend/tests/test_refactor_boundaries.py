@@ -22,10 +22,15 @@ def test_logs_is_only_a_compatibility_facade():
 
 
 def test_log_sources_use_explicit_protocol_adapters():
-    source = (BACKEND / "log_system" / "sources.py").read_text(encoding="utf-8")
+    source = (BACKEND / "log_system" / "adapters.py").read_text(encoding="utf-8")
     assert "class LogSource(Protocol)" in source
+    assert "def available(" in source
+    assert "def read(" in source
     assert "class JournalLogSource" in source
     assert "class FileLogSource" in source
+    service = (BACKEND / "log_system" / "service.py").read_text(encoding="utf-8")
+    assert "resolve_log_source" in service
+    assert "elif source" not in service
 
 
 def test_jobs_own_persistence_and_controlled_runner():
@@ -58,8 +63,11 @@ def test_plugin_models_do_not_persist_secret_payload_fields():
     assert "credential_id" in source
 
 
-def test_generated_types_live_only_in_generated_directory():
+def test_generated_types_are_single_source_and_marked_generated():
     generated = ROOT / "frontend" / "src" / "core" / "api" / "generated" / "api-types.ts"
-    assert generated.parent.name == "generated"
+    assert generated.exists()
+    source = generated.read_text(encoding="utf-8")
+    assert "AUTO-GENERATED FILE" in source
+    assert "DO NOT EDIT MANUALLY" in source
     for path in (ROOT / "frontend" / "src").rglob("api-types.ts"):
         assert path == generated

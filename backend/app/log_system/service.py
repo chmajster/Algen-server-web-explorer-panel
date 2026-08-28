@@ -7,20 +7,11 @@ from fastapi import HTTPException
 
 from ..identity.permissions import Permission, has_permission
 from ..security import SessionUser
-from .files import file_entries as _file_entries
+from .adapters import resolve_log_source
 from .filtering import decode_cursor, encode_cursor, matches, validate_regex
 from .models import MAX_RESPONSE_BYTES, SOURCE_RE, LogEntry
 from .parsing import group_traceback_entries
-from .sources import (
-    activity_entries,
-    authorize_source as _authorize_source,
-    container_entries,
-    dmesg_entries as _dmesg_entries,
-    journal_entries as _journal_entries,
-    package_entries,
-    security_entry,
-    source_known as _source_known,
-)
+from .sources import authorize_source as _authorize_source, security_entry, source_known as _source_known
 
 
 def query_entries(
@@ -62,6 +53,7 @@ def query_entries(
         raise HTTPException(400, "Start time must be before end time")
     if query and regex:
         validate_regex(query)
+
     continuation = decode_cursor(cursor, source)
     fetch_limit = min(5000, max(limit * 5, limit + 1))
     journal_source = source in {"journal", "current-boot", "kernel", "webnas"} or source.startswith("service:")
@@ -69,40 +61,30 @@ def query_entries(
         offset = max(0, int(continuation.get("offset", "0"))) if not journal_source else 0
     except ValueError as error:
         raise HTTPException(400, "Invalid continuation offset") from error
-    provider_limit = fetch_limit if journal_source else 5000
-    if source.startswith(("file:", "webnas-file:")):
-        entries = _file_entries(source, provider_limit)
-    elif source == "dmesg":
-        entries = _dmesg_entries(provider_limit)
-    elif source in {"activity", "activity-own"}:
-        entries = activity_entries(user, source == "activity", provider_limit, since, until)
-    elif source.startswith("container:"):
-        entries = container_entries(source, provider_limit, since, until)
-    elif source == "packages":
-        entries = package_entries(provider_limit)
-    else:
-        entries = _journal_entries(
-            source,
-            limit=fetch_limit,
-            priority=priority or [],
-            unit=unit,
-            pid=pid,
-            uid=uid,
-            identifier=identifier,
-            transport=transport,
-            hostname=hostname,
-            device=device,
-            username=username,
-            group=group,
-            boot_id=boot_id,
-            since=since,
-            until=until,
-            continuation=continuation,
-            direction=direction,
-        )
+
+    provider = resolve_log_source(user, source, since=since, until=until)
+    entries = provider.read(
+        limit=fetch_limit if journal_source else 5000,
+        priority=priority or [],
+        unit=unit,
+        pid=pid,
+        uid=uid,
+        identifier=identifier,
+        transport=transport,
+        hostname=hostname,
+        device=device,
+        username=username,
+        group=group,
+        boot_id=boot_id,
+        since=since,
+        until=until,
+        continuation=continuation,
+        direction=direction,
+    )
     entries = group_traceback_entries(entries)
     if not has_permission(user.username, Permission.LOGS_VIEW_SECURITY):
         entries = [item for item in entries if not security_entry(item)]
+
     filtered: list[LogEntry] = []
     search_started = time.monotonic()
     for item in entries:
@@ -110,6 +92,7 @@ def query_entries(
             raise HTTPException(408, "Log search exceeded its execution limit")
         if (not priority or item.priority in priority) and matches(item, query=query, regex=regex, case_sensitive=case_sensitive, negate=negate, message_only=message_only):
             filtered.append(item)
+
     selected = filtered[offset : offset + limit + 1]
     has_more = len(selected) > limit
     selected = selected[:limit]
