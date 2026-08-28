@@ -125,6 +125,7 @@ test("Package Center loads catalog and executes mocked install and uninstall", a
 
   await page.reload();
   await expect(page.getByRole("button", { name: "Main menu" })).toBeVisible();
+  await openDesktopApp(page, "Module Center");
   const moduleCenter = page.locator('.desktop-window.active[aria-label="Module Center"]');
   await expect(moduleCenter).toBeVisible();
   await expect(moduleCenter.getByText("Samba").first()).toBeVisible();
