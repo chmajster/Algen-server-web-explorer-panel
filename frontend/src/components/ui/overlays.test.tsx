@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { ConfirmDialog, Drawer } from "./overlays";
 
 describe("Drawer", () => {
-  it("opens, focuses content and closes with Escape", () => {
+  it("opens, focuses the first interactive control and closes with Escape", () => {
     const onClose = vi.fn();
     render(<Drawer open title="Edit service" onClose={onClose}><button>First action</button></Drawer>);
     expect(screen.getByRole("dialog", { name: "Edit service" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "First action" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
