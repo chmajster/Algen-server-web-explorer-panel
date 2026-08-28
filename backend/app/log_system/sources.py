@@ -28,6 +28,12 @@ from .models import (
 )
 from .parsing import parse_dmesg_record, parse_journal_record, safe_fields
 
+WEBNAS_SERVICE_UNITS = (
+    "webnas-backend-blue.service",
+    "webnas-backend-green.service",
+    "webnas.service",
+)
+
 
 class LogSource(Protocol):
     def read(self, *, limit: int, **kwargs) -> list[LogEntry]: ...
@@ -121,8 +127,12 @@ def journal_entries(
     args = [executable, "--output=json", "--no-pager", "-n", str(min(5000, max(limit * 5, limit + 1)))]
     if direction == "older":
         args.append("--reverse")
-    selected_unit = "webnas.service" if source == "webnas" else source.removeprefix("service:") if source.startswith("service:") else unit
-    if selected_unit:
+    if source == "webnas":
+        selected_units = WEBNAS_SERVICE_UNITS
+    else:
+        selected_unit = source.removeprefix("service:") if source.startswith("service:") else unit
+        selected_units = (selected_unit,) if selected_unit else ()
+    for selected_unit in selected_units:
         if not UNIT_RE.fullmatch(selected_unit):
             raise HTTPException(400, "Invalid systemd unit")
         args.extend(["--unit", selected_unit])
