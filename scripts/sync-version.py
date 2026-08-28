@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+PYTHON_VERSION_RE = re.compile(r'(?m)^__version__\s*=\s*"([^"]+)"\s*$')
 
 
 class VersionError(RuntimeError):
@@ -65,6 +66,20 @@ def set_project_version(text: str, version: str) -> str:
     return text[: section.start(1)] + replaced + text[section.end(1) :]
 
 
+def python_version(text: str, label: str) -> str:
+    match = PYTHON_VERSION_RE.search(text)
+    if not match:
+        raise VersionError(f'{label} is missing __version__ = "...".')
+    return match.group(1)
+
+
+def set_python_version(text: str, version: str, label: str) -> str:
+    replaced, count = PYTHON_VERSION_RE.subn(f'__version__ = "{version}"', text, count=1)
+    if count != 1:
+        raise VersionError(f'{label} is missing __version__ = "...".')
+    return replaced
+
+
 def json_version(text: str, label: str) -> str:
     try:
         data = json.loads(text)
@@ -108,6 +123,7 @@ def atomic_write(path: Path, content: str) -> None:
 def load_targets(root: Path) -> list[tuple[Path, str, str]]:
     targets = [
         (root / "pyproject.toml", "pyproject", "pyproject.toml"),
+        (root / "backend" / "app" / "__init__.py", "python", "backend/app/__init__.py"),
         (root / "frontend" / "package.json", "json", "frontend/package.json"),
     ]
     lock = root / "frontend" / "package-lock.json"
@@ -126,12 +142,16 @@ def load_targets(root: Path) -> list[tuple[Path, str, str]]:
 def current_target_version(kind: str, content: str, label: str) -> str:
     if kind == "pyproject":
         return project_version(content)
+    if kind == "python":
+        return python_version(content, label)
     return json_version(content, label)
 
 
 def synchronized_content(kind: str, content: str, version: str, label: str) -> str:
     if kind == "pyproject":
         return set_project_version(content, version)
+    if kind == "python":
+        return set_python_version(content, version, label)
     return set_json_version(content, version, label)
 
 

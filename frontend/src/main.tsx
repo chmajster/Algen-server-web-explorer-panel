@@ -9,6 +9,7 @@ import "./styles/ui-consistency.css";
 import "./styles/ui-feature-consistency.css";
 import "./styles/ui-specialized-consistency.css";
 import "./styles/ui-review-fixes.css";
+import "./styles/dcst.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
