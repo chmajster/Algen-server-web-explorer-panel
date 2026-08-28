@@ -118,3 +118,24 @@ def test_require_csrf_rejects_missing_and_invalid_tokens(session_store, submitte
     assert error.value.detail == "Invalid CSRF token"
 
     security.require_csrf(make_request(cookie, csrf), user)
+
+
+def test_login_rate_limiter_counts_only_recorded_failures(monkeypatch):
+    cfg = security.get_config().model_copy(deep=True)
+    cfg.security.rate_limit_login_per_minute = 2
+    monkeypatch.setattr(security, "get_config", lambda: cfg)
+    limiter = security.LoginRateLimiter()
+
+    for _ in range(10):
+        limiter.check("client:alice")
+
+    limiter.record_failure("client:alice")
+    limiter.check("client:alice")
+    limiter.record_failure("client:alice")
+
+    with pytest.raises(HTTPException) as error:
+        limiter.check("client:alice")
+    assert error.value.status_code == 429
+
+    limiter.clear("client:alice")
+    limiter.check("client:alice")
