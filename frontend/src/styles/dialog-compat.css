@@ -10,6 +10,22 @@
   pointer-events: auto !important;
 }
 
+/* Keep system chrome above every application window and shared dialog. */
+.desktop > .taskbar {
+  z-index: 5000;
+}
+
+.desktop > .app-launcher,
+.desktop > .calendar-flyout,
+.desktop > .actions-center,
+.desktop > .notification-center {
+  z-index: 5100;
+}
+
+.desktop > .taskbar-context-menu {
+  z-index: 5200;
+}
+
 .modal-header-controls {
   grid-column: 3;
   justify-self: end;

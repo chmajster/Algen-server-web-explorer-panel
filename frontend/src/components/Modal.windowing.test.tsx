@@ -77,4 +77,40 @@ describe("desktop dialog windowing", () => {
     expect(Number(settingsLayer?.style.zIndex)).toBeGreaterThan(Number(editLayer?.style.zIndex));
   });
 
+  it("keeps maximized dialogs above the taskbar", () => {
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1200 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+
+    const desktop = document.createElement("div");
+    desktop.className = "desktop";
+    const taskbar = document.createElement("div");
+    taskbar.className = "taskbar";
+    desktop.appendChild(taskbar);
+    document.body.appendChild(desktop);
+
+    vi.spyOn(desktop, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1200, bottom: 800,
+      width: 1200, height: 800, toJSON: () => ({}),
+    } as DOMRect);
+    vi.spyOn(taskbar, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 740, left: 0, top: 740, right: 1200, bottom: 800,
+      width: 1200, height: 60, toJSON: () => ({}),
+    } as DOMRect);
+
+    const result = render(<Modal title="Taskbar Safe" onClose={vi.fn()}><p>Form</p></Modal>);
+    const dialog = screen.getByRole("dialog", { name: "Taskbar Safe" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Maximize Taskbar Safe" }));
+    expect(dialog.style.left).toBe("8px");
+    expect(dialog.style.top).toBe("8px");
+    expect(dialog.style.width).toBe("1184px");
+    expect(dialog.style.height).toBe("724px");
+
+    result.unmount();
+    desktop.remove();
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
+  });
 });
