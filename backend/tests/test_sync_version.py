@@ -15,11 +15,13 @@ SPEC.loader.exec_module(sync_version)
 
 def make_repo(root: Path, version: str = "0.1.21") -> Path:
     (root / "frontend").mkdir(parents=True)
+    (root / "backend" / "app").mkdir(parents=True)
     (root / "VERSION").write_text(f"{version}\n", encoding="utf-8")
     (root / "pyproject.toml").write_text(
         '[build-system]\nrequires = ["setuptools"]\n\n[project]\nname = "webnas"\nversion = "0.1.21"\n',
         encoding="utf-8",
     )
+    (root / "backend" / "app" / "__init__.py").write_text('__version__ = "0.1.21"\n', encoding="utf-8")
     package = {"name": "webnas-frontend", "version": "0.1.21", "private": True}
     (root / "frontend" / "package.json").write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
     lock = {
@@ -60,6 +62,12 @@ def test_check_detects_mismatched_versions(tmp_path: Path) -> None:
     assert sync_version.main(["--root", str(root), "--check"]) == 1
 
 
+def test_check_detects_mismatched_backend_runtime_version(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    (root / "backend" / "app" / "__init__.py").write_text('__version__ = "9.9.9"\n', encoding="utf-8")
+    assert sync_version.main(["--root", str(root), "--check"]) == 1
+
+
 @pytest.mark.parametrize(
     ("part", "expected"),
     [("patch", "0.1.22"), ("minor", "0.2.0"), ("major", "1.0.0")],
@@ -69,6 +77,10 @@ def test_bump_updates_all_version_files(tmp_path: Path, part: str, expected: str
     assert sync_version.main(["--root", str(root), "--bump", part]) == 0
     assert (root / "VERSION").read_text(encoding="utf-8") == f"{expected}\n"
     assert sync_version.project_version((root / "pyproject.toml").read_text(encoding="utf-8")) == expected
+    assert sync_version.python_version(
+        (root / "backend" / "app" / "__init__.py").read_text(encoding="utf-8"),
+        "backend/app/__init__.py",
+    ) == expected
     package = json.loads((root / "frontend" / "package.json").read_text(encoding="utf-8"))
     lock = json.loads((root / "frontend" / "package-lock.json").read_text(encoding="utf-8"))
     assert package["version"] == expected
@@ -76,10 +88,14 @@ def test_bump_updates_all_version_files(tmp_path: Path, part: str, expected: str
     assert lock["packages"][""]["version"] == expected
 
 
-def test_sync_repairs_package_json_and_pyproject(tmp_path: Path) -> None:
+def test_sync_repairs_package_json_pyproject_and_backend_runtime(tmp_path: Path) -> None:
     root = make_repo(tmp_path, version="2.3.4")
     assert sync_version.main(["--root", str(root)]) == 0
     assert sync_version.project_version((root / "pyproject.toml").read_text(encoding="utf-8")) == "2.3.4"
+    assert sync_version.python_version(
+        (root / "backend" / "app" / "__init__.py").read_text(encoding="utf-8"),
+        "backend/app/__init__.py",
+    ) == "2.3.4"
     package = json.loads((root / "frontend" / "package.json").read_text(encoding="utf-8"))
     assert package["version"] == "2.3.4"
 
