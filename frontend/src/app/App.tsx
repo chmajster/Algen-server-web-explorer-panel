@@ -61,7 +61,13 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   }, [clearAuthenticatedUi]);
   useEffect(() => {
     if (!user) { setProfile(null); return; }
-    api.settingsMe().then((data) => { profileRef.current = data; setProfile(data); setLanguage(data.language); setTheme(data.theme); }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
+    api.settingsMe().then((data) => {
+      profileRef.current = data;
+      setProfile(data);
+      setLanguage(data.language);
+      localStorage.setItem("webnas_language", data.language);
+      setTheme(data.theme);
+    }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
   }, [t, toast, user]);
   useEffect(() => {
     if (!user || !profile) return;
@@ -101,6 +107,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
       profileRef.current = data;
       setProfile(data);
       setLanguage(data.language);
+      localStorage.setItem("webnas_language", data.language);
       setTheme(data.theme);
     }).catch(() => undefined);
     void (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);

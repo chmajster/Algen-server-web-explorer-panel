@@ -115,7 +115,11 @@ def test_require_csrf_rejects_missing_and_invalid_tokens(session_store, submitte
         security.require_csrf(make_request(cookie, submitted_token), user)
 
     assert error.value.status_code == 403
-    assert error.value.detail == "Invalid CSRF token"
+    assert error.value.detail["code"] == "INVALID_CSRF_TOKEN"
+    assert error.value.detail["message"] == "Invalid CSRF token"
+    assert error.value.detail["reason_code"] == ("missing_header" if submitted_token is None else "token_mismatch")
+    assert error.value.detail["csrf_header_present"] is (submitted_token is not None)
+    assert error.value.detail["session_valid"] is True
 
     security.require_csrf(make_request(cookie, csrf), user)
 

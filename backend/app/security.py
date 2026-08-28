@@ -200,5 +200,28 @@ def get_session_user(request: Request) -> SessionUser:
 
 def require_csrf(request: Request, user: SessionUser) -> None:
     token = request.headers.get("x-csrf-token")
-    if not token or not secrets.compare_digest(token, user.csrf_token):
-        raise HTTPException(HTTPStatus.FORBIDDEN, "Invalid CSRF token")
+    if token and secrets.compare_digest(token, user.csrf_token):
+        return
+
+    reason_code = "missing_header" if not token else "token_mismatch"
+    reason = (
+        "The X-CSRF-Token header is missing."
+        if not token
+        else "The submitted CSRF token does not match the current authenticated session."
+    )
+    raise HTTPException(
+        HTTPStatus.FORBIDDEN,
+        detail={
+            "code": "INVALID_CSRF_TOKEN",
+            "message": "Invalid CSRF token",
+            "reason_code": reason_code,
+            "reason": reason,
+            "hint": "Refresh the page and retry the operation. If the problem persists, sign out and sign in again.",
+            "recovery": "refresh_or_reauthenticate",
+            "endpoint": request.url.path,
+            "request_method": request.method,
+            "expected_header": "X-CSRF-Token",
+            "csrf_header_present": bool(token),
+            "session_valid": True,
+        },
+    )
