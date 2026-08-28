@@ -15,10 +15,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: trusted-homelab-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   trusted-integration:
     name: Trusted integration checks
@@ -26,6 +22,9 @@ jobs:
     runs-on:
       - self-hosted
       - linux
+    concurrency:
+      group: trusted-integration-${{ github.ref }}
+      cancel-in-progress: true
     timeout-minutes: 30
 
     steps:
@@ -52,6 +51,9 @@ jobs:
       - self-hosted
       - linux
       - deploy
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
     environment: production
     timeout-minutes: 30
 
