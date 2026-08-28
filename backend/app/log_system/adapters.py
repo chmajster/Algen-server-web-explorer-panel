@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -14,7 +15,7 @@ from . import sources as source_impl
 # Injection points keep the historical app.logs facade/monkeypatch tests stable
 # without leaking test hooks into the implementation modules themselves.
 journal_reader = source_impl.journal_entries
-file_reader = files.file_entries
+file_reader: Callable[[str, int], list[LogEntry]] = lambda source, limit: files.file_entries(source, limit)
 dmesg_reader = source_impl.dmesg_entries
 activity_reader = source_impl.activity_entries
 container_reader = source_impl.container_entries

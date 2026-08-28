@@ -15,7 +15,7 @@ def _semver_tuple(value: str) -> tuple[int, int, int]:
     match = SEMVER_RE.fullmatch(value)
     if not match:
         raise ValueError("invalid semantic version")
-    return tuple(int(match.group(index)) for index in (1, 2, 3))
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
 
 def compatible_with_algen(minimum: str, current: str = ALGEN_VERSION) -> bool:

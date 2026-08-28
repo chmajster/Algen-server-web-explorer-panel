@@ -68,7 +68,7 @@ class JobRepository:
             id=str(row["id"]),
             type=str(row["type"]),
             module=str(row["module"]),
-            status=str(row["status"]),
+            status=JobStatus(str(row["status"])),
             created_at=float(row["created_at"]),
             started_at=row["started_at"],
             finished_at=row["finished_at"],
