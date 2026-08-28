@@ -39,6 +39,7 @@ export async function installMockApi(page: Page, authenticated = true): Promise<
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
+    if (!path.startsWith("/api/")) return route.continue();
     const method = request.method();
     state.calls.push(`${method} ${path}`);
 
