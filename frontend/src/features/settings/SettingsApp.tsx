@@ -304,6 +304,7 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [runningUpdate, setRunningUpdate] = useState(false);
+  const [savingNpmAutoUpdate, setSavingNpmAutoUpdate] = useState(false);
   const [updateDialog, setUpdateDialog] = useState<UpdateDialogState | null>(null);
   const [updateError, setUpdateError] = useState("");
   const [renderedAt, setRenderedAt] = useState(() => Date.now());
@@ -351,6 +352,26 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     catch (error) { setUpdateError(error instanceof Error ? error.message : t("settings.updateUnavailable")); }
     finally { setChecking(false); }
   }, [t]);
+  async function enableAutomaticNpmUpdates() {
+    if (!updatePolicy || updatePolicy.npm_audit_fix) return;
+    setSavingNpmAutoUpdate(true);
+    try {
+      const saved = await api.saveAutoUpdate({
+        check_enabled: true,
+        enabled: updatePolicy.enabled,
+        interval_hours: updatePolicy.interval_hours,
+        update_config: updatePolicy.update_config,
+        npm_audit_fix: true,
+      });
+      setUpdatePolicy(saved);
+      toast(t("settings.saved"), "ok", "admin");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("error.generic");
+      toast(message, "error", "admin");
+    } finally {
+      setSavingNpmAutoUpdate(false);
+    }
+  }
   async function runUpdateNow(npmAuditFix = false) {
     if (!window.confirm(t(npmAuditFix ? "settings.confirmNpmUpdateNow" : "settings.confirmUpdateNow"))) return;
     setRunningUpdate(true);
@@ -457,7 +478,10 @@ function AdministrationSection({ view, locale, t, toast, onOpenApp }: { view: "a
     </Card>
     <Card title={t("settings.npmPackages")}>
       <div className="npm-packages-overview"><span><Package /></span><div><strong>{t("settings.npmPackagesFrontend")}</strong><small>{t("settings.npmPackagesHint")}</small></div></div>
-      <SettingRow title={t("settings.automaticNpmUpdates")} description={t("settings.automaticNpmUpdatesHint")}><span className={`settings-status-pill ${updatePolicy?.npm_audit_fix ? "success" : ""}`}>{updatePolicy ? t(updatePolicy.npm_audit_fix ? "common.enabled" : "common.disabled") : "—"}</span></SettingRow>
+      <div className="update-settings-status npm-auto-update-status">
+        <SettingRow title={t("settings.automaticNpmUpdates")} description={t("settings.automaticNpmUpdatesHint")}><span className={`settings-status-pill ${updatePolicy?.npm_audit_fix ? "success" : ""}`}>{updatePolicy ? t(updatePolicy.npm_audit_fix ? "common.enabled" : "common.disabled") : "—"}</span></SettingRow>
+        {!updatePolicy?.npm_audit_fix && <button className="button-primary" type="button" disabled={!updatePolicy || savingNpmAutoUpdate} onClick={() => void enableAutomaticNpmUpdates()}><ShieldCheck className={savingNpmAutoUpdate ? "spin" : ""} />{locale === "pl-PL" ? "Włącz" : "Enable"}</button>}
+      </div>
       <div className="update-now-action npm-update-action"><button className="update-now-button npm-update-button" type="button" disabled={runningUpdate} onClick={() => void runUpdateNow(true)}><ShieldCheck className={runningUpdate ? "spin" : ""} />{t("settings.updateNpmNow")}</button><small>{t("settings.updateNpmNowHint")}</small></div>
     </Card>
     {updateDialog && <UpdateProgressDialog value={updateDialog} t={t} onClose={closeUpdateDialog} />}
