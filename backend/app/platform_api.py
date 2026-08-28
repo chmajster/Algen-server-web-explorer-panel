@@ -12,6 +12,12 @@ router = APIRouter(tags=["platform"])
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 ASSET_PREFIX = "/assets/"
 _RANGE_REQUEST_HEADERS = {b"range", b"if-range"}
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
 
 
 def _strip_asset_range_headers(request: Request) -> None:
@@ -34,6 +40,12 @@ def _asset_response_is_complete(response) -> bool:
     return bool(content_length and content_length.isdigit() and int(content_length) > 0)
 
 
+def _apply_security_headers(response: Response) -> None:
+    for name, value in _SECURITY_HEADERS.items():
+        if name not in response.headers:
+            response.headers[name] = value
+
+
 async def frontend_cache_policy(request: Request, call_next):
     path = request.url.path
     is_asset = path.startswith(ASSET_PREFIX)
@@ -45,11 +57,11 @@ async def frontend_cache_policy(request: Request, call_next):
         _strip_asset_range_headers(request)
 
     response = await call_next(request)
+    _apply_security_headers(response)
 
     if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
         return response
-
-    response.headers["X-Content-Type-Options"] = "nosniff"
 
     if is_asset:
         response.headers["Accept-Ranges"] = "none"
