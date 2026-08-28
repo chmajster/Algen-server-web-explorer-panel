@@ -3,11 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type ResourceDashboard } from "../../api";
 import type { Translate } from "../../app/types";
+import { Tabs } from "../../components/ui/layout";
 import "../../styles/resource-monitor.css";
 import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { AlertsPanel, AllMountsPanel, CpuPanel, MemoryPanel, NetworkPanel, OverviewCards, ProcessesPanel, StoragePanel } from "./monitor/MonitorPanels";
 import type { History } from "./monitor/monitorUtils";
 import { dedupeStorage, formatDuration, pushSample, summarizeNetwork } from "./monitor/monitorUtils";
+
+type MonitorTab = "overview" | "cpu" | "memory" | "network" | "storage" | "processes" | "mounts";
 
 function serviceState(service: string | null): "up" | "down" | "unknown" {
   if (service === "active") return "up";
@@ -24,6 +27,7 @@ export function MonitorApp({ t }: { t: Translate }) {
   const [automatic, setAutomatic] = useState(true);
   const [visible, setVisible] = useState(() => document.visibilityState === "visible");
   const [intervalMs, setIntervalMs] = useState(2000);
+  const [activeTab, setActiveTab] = useState<MonitorTab>("overview");
   const inFlight = useRef(false);
   const mounted = useRef(true);
 
@@ -105,8 +109,26 @@ export function MonitorApp({ t }: { t: Translate }) {
     return () => window.clearInterval(timer);
   }, [automatic, intervalMs, refresh, visible]);
 
+  useEffect(() => {
+    if (data?.scope !== "admin" && (activeTab === "processes" || activeTab === "mounts")) setActiveTab("overview");
+  }, [activeTab, data?.scope]);
+
   const storage = useMemo(() => dedupeStorage(data?.allowed_roots || []), [data?.allowed_roots]);
   const currentServiceState = serviceState(data?.webnas_service || null);
+
+  const tabs: Array<{ id: MonitorTab; label: string }> = [
+    { id: "overview", label: t("monitor.overview") },
+    { id: "cpu", label: t("monitor.cpu") },
+    { id: "memory", label: t("monitor.memory") },
+    { id: "network", label: t("monitor.network") },
+    { id: "storage", label: t("monitor.storage") },
+  ];
+  if (data?.scope === "admin") {
+    tabs.push(
+      { id: "processes", label: t("monitor.processes") },
+      { id: "mounts", label: t("monitor.allMounts") },
+    );
+  }
 
   return <section className="system-app monitor-app">
     <header className="monitor-header">
@@ -127,14 +149,20 @@ export function MonitorApp({ t }: { t: Translate }) {
     {error && <p className="error-state compact-error monitor-refresh-error" role="alert">{t("monitor.refreshError")}: {error}</p>}
     {!data && loading && <div className="loading-state">{t("status.loading")}</div>}
 
-    {data && <div className="monitor-content">
-      <AlertsPanel alerts={data.alerts} warnings={data.warnings} t={t} />
-      <OverviewCards data={data} storage={storage} history={history} t={t} />
-      <div className="monitor-primary-grid"><CpuPanel data={data} history={history} t={t} /><MemoryPanel data={data} history={history} t={t} /></div>
-      <StoragePanel storage={storage} diskIo={data.disk_io} history={history} t={t} />
-      <NetworkPanel networks={data.network_interfaces} history={history} t={t} />
-      {data.scope === "admin" && <ProcessesPanel processes={data.processes} t={t} />}
-      {data.scope === "admin" && <AllMountsPanel mountpoints={data.mountpoints} t={t} />}
-    </div>}
+    {data && <>
+      <Tabs items={tabs} active={activeTab} onChange={setActiveTab} ariaLabel={t("app.monitor")} className="monitor-section-tabs" />
+      <div className="monitor-content" role="tabpanel">
+        {activeTab === "overview" && <>
+          <AlertsPanel alerts={data.alerts} warnings={data.warnings} t={t} />
+          <OverviewCards data={data} storage={storage} history={history} t={t} />
+        </>}
+        {activeTab === "cpu" && <CpuPanel data={data} history={history} t={t} />}
+        {activeTab === "memory" && <MemoryPanel data={data} history={history} t={t} />}
+        {activeTab === "network" && <NetworkPanel networks={data.network_interfaces} history={history} t={t} />}
+        {activeTab === "storage" && <StoragePanel storage={storage} diskIo={data.disk_io} history={history} t={t} />}
+        {activeTab === "processes" && data.scope === "admin" && <ProcessesPanel processes={data.processes} t={t} />}
+        {activeTab === "mounts" && data.scope === "admin" && <AllMountsPanel mountpoints={data.mountpoints} t={t} />}
+      </div>
+    </>}
   </section>;
 }
