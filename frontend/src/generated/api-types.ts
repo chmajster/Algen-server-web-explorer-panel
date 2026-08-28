@@ -1043,11 +1043,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Store Plugins */
-        get: operations["list_store_plugins_api_apps_plugins_get"];
+        /** List Plugins */
+        get: operations["list_plugins_api_apps_plugins_get"];
         put?: never;
-        /** Create Store Plugin */
-        post: operations["create_store_plugin_api_apps_plugins_post"];
+        /** Create Plugin */
+        post: operations["create_plugin_api_apps_plugins_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1062,11 +1062,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Update Store Plugin */
-        put: operations["update_store_plugin_api_apps_plugins__plugin_id__put"];
+        /** Update Plugin */
+        put: operations["update_plugin_api_apps_plugins__plugin_id__put"];
         post?: never;
-        /** Delete Store Plugin */
-        delete: operations["delete_store_plugin_api_apps_plugins__plugin_id__delete"];
+        /** Delete Plugin */
+        delete: operations["delete_plugin_api_apps_plugins__plugin_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2344,6 +2344,74 @@ export interface paths {
         put?: never;
         /** Identity User Unlock */
         post: operations["identity_user_unlock_api_identity_users__username__unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Jobs */
+        get: operations["list_jobs_api_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job */
+        get: operations["get_job_api_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Job */
+        post: operations["cancel_job_api_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Job */
+        post: operations["retry_job_api_jobs__job_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10657,6 +10725,82 @@ export interface components {
              */
             format: string;
         };
+        /** Job */
+        Job: {
+            /**
+             * Cancel Requested
+             * @default false
+             */
+            cancel_requested: boolean;
+            /**
+             * Cancellable
+             * @default false
+             */
+            cancellable: boolean;
+            /** Created At */
+            created_at: number;
+            /** Created By */
+            created_by: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Finished At */
+            finished_at?: number | null;
+            /** Id */
+            id: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Module */
+            module: string;
+            /** Parent Job Id */
+            parent_job_id?: string | null;
+            /** Progress */
+            progress?: number | null;
+            /** Result */
+            result?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Retry Count
+             * @default 0
+             */
+            retry_count: number;
+            /**
+             * Retryable
+             * @default false
+             */
+            retryable: boolean;
+            /** Started At */
+            started_at?: number | null;
+            status: components["schemas"]["JobStatus"];
+            /** Type */
+            type: string;
+        };
+        /** JobPage */
+        JobPage: {
+            /** Items */
+            items: components["schemas"]["Job"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * JobStatus
+         * @enum {string}
+         */
+        JobStatus: "queued" | "running" | "success" | "failed" | "cancel_requested" | "cancelled" | "retrying" | "waiting";
         /** LaunchInput */
         LaunchInput: {
             /** Check Mode */
@@ -11528,6 +11672,11 @@ export interface components {
             /** Project Id */
             project_id: string;
         };
+        /**
+         * PluginTrust
+         * @enum {string}
+         */
+        PluginTrust: "unverified" | "trusted" | "blocked";
         /** PolicyResetRequest */
         PolicyResetRequest: {
             /**
@@ -12579,23 +12728,44 @@ export interface components {
         };
         /** StorePlugin */
         StorePlugin: {
+            /** Available Version */
+            available_version?: string | null;
             /**
              * Branch
              * @default main
              */
             branch: string;
-            /** Codex Instructions */
+            /** Capabilities */
+            capabilities?: string[];
+            /** Checksum Sha256 */
+            checksum_sha256?: string | null;
+            /**
+             * Codex Instructions
+             * @default
+             */
             codex_instructions: string;
             /**
              * Created At
              * @default 0
              */
             created_at: number;
+            /** Credential Id */
+            credential_id?: string | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             /**
              * Enabled
              * @default true
              */
             enabled: boolean;
+            /**
+             * Entrypoint
+             * @default
+             */
+            entrypoint: string;
             /** Github Url */
             github_url: string;
             /**
@@ -12603,13 +12773,46 @@ export interface components {
              * @default
              */
             id: string;
+            /** Installed Version */
+            installed_version?: string | null;
+            /**
+             * Min Algen Version
+             * @default 0.1.0
+             */
+            min_algen_version: string;
             /** Name */
             name: string;
+            /** Permissions */
+            permissions?: string[];
+            /**
+             * Publisher
+             * @default unknown
+             */
+            publisher: string;
+            /** Resolved Commit */
+            resolved_commit?: string | null;
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Source Ref
+             * @default main
+             */
+            source_ref: string;
+            /** @default unverified */
+            trust: components["schemas"]["PluginTrust"];
             /**
              * Updated At
              * @default 0
              */
             updated_at: number;
+            /**
+             * Version
+             * @default 0.0.0
+             */
+            version: string;
         };
         /** TemplateInput */
         TemplateInput: {
@@ -15796,7 +15999,7 @@ export interface operations {
             };
         };
     };
-    list_store_plugins_api_apps_plugins_get: {
+    list_plugins_api_apps_plugins_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -15816,7 +16019,7 @@ export interface operations {
             };
         };
     };
-    create_store_plugin_api_apps_plugins_post: {
+    create_plugin_api_apps_plugins_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -15849,7 +16052,7 @@ export interface operations {
             };
         };
     };
-    update_store_plugin_api_apps_plugins__plugin_id__put: {
+    update_plugin_api_apps_plugins__plugin_id__put: {
         parameters: {
             query?: never;
             header?: never;
@@ -15884,7 +16087,7 @@ export interface operations {
             };
         };
     };
-    delete_store_plugin_api_apps_plugins__plugin_id__delete: {
+    delete_plugin_api_apps_plugins__plugin_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -18544,6 +18747,137 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_api_jobs_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["JobStatus"] | null;
+                module?: string | null;
+                type?: string | null;
+                created_by?: string | null;
+                since?: number | null;
+                until?: number | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_api_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_api_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_job_api_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             /** @description Validation Error */
