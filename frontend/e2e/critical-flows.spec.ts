@@ -5,10 +5,10 @@ test("authentication covers invalid login, login, logout and missing session", a
   const state = await installMockApi(page, false);
   await page.goto("/");
   await page.getByLabel("Linux user").fill("e2e");
-  await page.getByLabel("Password").fill("wrong");
+  await page.getByLabel("Password", { exact: true }).fill("wrong");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("alert")).toContainText("Invalid username or password");
-  await page.getByLabel("Password").fill("correct");
+  await page.getByLabel("Password", { exact: true }).fill("correct");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("button", { name: "Main menu" })).toBeVisible();
   await page.getByRole("button", { name: "Main menu" }).click();
