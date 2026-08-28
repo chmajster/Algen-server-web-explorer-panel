@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from webnas_release import Deployment, atomic_json, atomic_write
+from webnas_release import Deployment, atomic_json, atomic_write, command
 
 
 def parser() -> argparse.ArgumentParser:
@@ -57,10 +57,6 @@ def main() -> int:
     active_unit = deployment.unit_name(str(active_slot)) if active_slot else ""
 
     deployment.write_units()
-    result = deployment.command if hasattr(deployment, "command") else None
-    del result  # keep static analyzers explicit; module-level command is used below.
-    from webnas_release import command
-
     command("systemctl", "enable", previous_unit)
     command("systemctl", "start", previous_unit)
     deployment.health(int(previous_port))
