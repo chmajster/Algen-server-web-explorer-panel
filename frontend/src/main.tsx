@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import "./styles/app.css";
+import "./styles/design-system.css";
 import "./styles/update-transition-fix.css";
 import "./styles/dsm.css";
 import "./styles/dialog-compat.css";
