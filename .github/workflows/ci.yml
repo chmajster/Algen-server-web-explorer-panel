@@ -33,6 +33,8 @@ jobs:
           python-version: "3.14"
       - name: Verify synchronized project version
         run: python scripts/sync-version.py --check
+      - name: Verify synchronized backend runtime dependencies
+        run: python scripts/sync-python-deps.py --check
 
   backend-quality:
     name: Backend quality
