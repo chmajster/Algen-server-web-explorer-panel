@@ -17,6 +17,11 @@ PSEUDO_FILESYSTEMS = {
     "devtmpfs", "efivarfs", "fusectl", "hugetlbfs", "mqueue", "overlay", "proc", "pstore",
     "securityfs", "sysfs", "tmpfs", "tracefs",
 }
+WEBNAS_SERVICE_UNITS = (
+    "webnas-backend-blue.service",
+    "webnas-backend-green.service",
+    "webnas.service",
+)
 DEFAULT_PROCESS_LIMIT = 12
 _sample_lock = Lock()
 _last_sample: dict | None = None
@@ -255,12 +260,28 @@ def load_average() -> list[float] | None:
 def webnas_service_status() -> str:
     if not shutil.which("systemctl"):
         return "unknown"
+    statuses: list[str] = []
     try:
-        result = subprocess.run(["systemctl", "is-active", "webnas.service"], capture_output=True, text=True, timeout=2, check=False, shell=False)
-        return result.stdout.strip() or "unknown"
+        for unit in WEBNAS_SERVICE_UNITS:
+            result = subprocess.run(
+                ["systemctl", "is-active", unit],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+                shell=False,
+            )
+            status = result.stdout.strip() or "unknown"
+            statuses.append(status)
+            if status == "active":
+                return "active"
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("resource_service_status_unavailable error=%s", type(exc).__name__)
         return "unknown"
+    for status in statuses:
+        if status not in {"inactive", "unknown"}:
+            return status
+    return "inactive" if "inactive" in statuses else "unknown"
 
 
 def cpu_temperature() -> float | None:
