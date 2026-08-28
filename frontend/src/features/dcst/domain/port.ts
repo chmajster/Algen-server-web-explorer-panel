@@ -1,6 +1,12 @@
 import type { DcstPort } from "../api/types";
 
-export type PortDraft = Omit<DcstPort, "id" | "dependencies">;
+export type PortDraft = {
+  name: string;
+  protocol: DcstPort["protocol"];
+  port_from: number | null;
+  port_to: number | null;
+  description: string;
+};
 
 export const emptyPortDraft: PortDraft = {
   name: "",
