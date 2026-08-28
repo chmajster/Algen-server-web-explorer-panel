@@ -14,8 +14,12 @@ from . import sources as source_impl
 
 # Injection points keep the historical app.logs facade/monkeypatch tests stable
 # without leaking test hooks into the implementation modules themselves.
+def _read_file(source: str, limit: int) -> list[LogEntry]:
+    return files.file_entries(source, limit)
+
+
 journal_reader = source_impl.journal_entries
-file_reader: Callable[[str, int], list[LogEntry]] = lambda source, limit: files.file_entries(source, limit)
+file_reader: Callable[[str, int], list[LogEntry]] = _read_file
 dmesg_reader = source_impl.dmesg_entries
 activity_reader = source_impl.activity_entries
 container_reader = source_impl.container_entries
