@@ -35,21 +35,41 @@ test("desktop loads and manages multiple windows", async ({ page }) => {
   await expect(windows).toHaveCount(1);
 });
 
-test("file manager enters a directory and exposes create, rename, upload, download and delete actions", async ({ page }) => {
+test("file manager enters a directory, creates, renames, uploads, downloads and deletes", async ({ page }) => {
   const state = await installMockApi(page);
   await page.goto("/");
   await openDesktopApp(page, "File Manager");
   await expect(page.getByText("Documents").first()).toBeVisible();
   await page.getByText("Documents").first().dblclick();
-  await expect.poll(() => state.calls.some((call) => call === "GET /api/files/list")).toBeTruthy();
-  await expect(page.getByTitle("New folder")).toBeVisible();
-  await expect(page.getByTitle("Upload")).toBeVisible();
-  await expect(page.getByTitle("Rename")).toBeVisible();
-  await expect(page.getByTitle("Download")).toBeVisible();
-  await expect(page.getByTitle("Delete")).toBeVisible();
+  await expect.poll(() => state.calls.filter((call) => call === "GET /api/files/list").length).toBeGreaterThan(1);
+
+  await page.getByTitle("New folder").click();
+  await page.getByLabel("Folder name").fill("e2e-folder");
+  await page.getByRole("button", { name: "Create" }).click();
+  await expect.poll(() => state.calls.some((call) => call === "POST /api/files/mkdir")).toBeTruthy();
+
+  await page.getByLabel("Select Documents").click();
+  await page.getByTitle("Rename").click();
+  await page.getByLabel("New name").fill("Documents-renamed");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect.poll(() => state.calls.some((call) => call === "POST /api/files/rename")).toBeTruthy();
+
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "upload.txt", mimeType: "text/plain", buffer: Buffer.from("test") });
+  await expect.poll(() => state.calls.some((call) => call === "POST /api/files/uploads")).toBeTruthy();
+  await expect.poll(() => state.calls.some((call) => call === "PATCH /api/files/uploads/upload-e2e")).toBeTruthy();
+
+  await page.getByLabel("Select readme.txt").click();
+  const download = page.waitForEvent("download");
+  await page.getByTitle("Download").click();
+  await download;
+  await expect.poll(() => state.calls.some((call) => call === "GET /api/files/download")).toBeTruthy();
+
+  await page.getByTitle("Delete").click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => state.calls.some((call) => call === "POST /api/files/delete")).toBeTruthy();
 });
 
-test("DCST loads, creates Port and IPSet, validates Service and submits a valid Service", async ({ page }) => {
+test("DCST loads, creates Port and IPSet, validates and creates Service, then deletes a test object", async ({ page }) => {
   const state = await installMockApi(page);
   await page.goto("/");
   await openDesktopApp(page, "DCST");
@@ -81,9 +101,14 @@ test("DCST loads, creates Port and IPSet, validates Service and submits a valid 
   await objectTypes.nth(1).selectOption("any");
   await service.getByRole("button", { name: "Create Service" }).click();
   await expect.poll(() => state.services.length).toBe(1);
+
+  await page.getByRole("button", { name: /Ports/ }).click();
+  await page.getByRole("button", { name: "Delete E2E_HTTPS" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => state.calls.some((call) => call === "DELETE /api/modules/dcst/ports/port-1")).toBeTruthy();
 });
 
-test("Package Center loads catalog and starts mocked install", async ({ page }) => {
+test("Package Center loads catalog and executes mocked install and uninstall", async ({ page }) => {
   const state = await installMockApi(page);
   await page.goto("/");
   await openDesktopApp(page, "Module Center");
@@ -92,4 +117,13 @@ test("Package Center loads catalog and starts mocked install", async ({ page }) 
   await expect(page.getByText("apt-get install -y samba")).toBeVisible();
   await page.getByRole("button", { name: /Confirm/ }).click();
   await expect.poll(() => state.calls.some((call) => call === "POST /api/apps/samba/install")).toBeTruthy();
+  await expect.poll(() => state.packageInstalled).toBeTruthy();
+
+  await page.reload();
+  await openDesktopApp(page, "Module Center");
+  await expect(page.getByText("Samba").first()).toBeVisible();
+  await page.getByRole("button", { name: /Samba/ }).first().click();
+  await page.getByRole("button", { name: "Uninstall" }).first().click();
+  await page.getByRole("button", { name: /Confirm/ }).click();
+  await expect.poll(() => state.calls.some((call) => call === "POST /api/apps/samba/uninstall")).toBeTruthy();
 });
