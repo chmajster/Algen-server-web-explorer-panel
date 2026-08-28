@@ -135,6 +135,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
   const [logSource, setLogSource] = useState("");
   const [logDestination, setLogDestination] = useState("");
   const [logRange, setLogRange] = useState("");
+  const [logSnapshotTime, setLogSnapshotTime] = useState(0);
 
   const can = useCallback((permission: string) => permissions.includes(permission), [permissions]);
   const notifyError = useCallback((error: unknown) => toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin"), [t, toast]);
@@ -171,6 +172,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
     try {
       const [nextLogs, nextDiagnostics] = await Promise.all([dcstClient.firewallLogs(), dcstClient.diagnostics()]);
       setLogs(nextLogs);
+      setLogSnapshotTime(Date.now());
       setDiagnostics(nextDiagnostics);
     } catch (error) {
       notifyError(error);
@@ -421,7 +423,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
 
   const normalizedLogs = useMemo(() => logs.map(normalizeFirewallLog), [logs]);
   const filteredLogs = useMemo(() => {
-    const now = Date.now();
+    const now = logSnapshotTime;
     const rangeMs = logRange === "15m" ? 15 * 60_000 : logRange === "1h" ? 60 * 60_000 : logRange === "24h" ? 24 * 60 * 60_000 : 0;
     return normalizedLogs.filter((row) => {
       const raw = String(row.dcst_raw || JSON.stringify(row)).toLowerCase();
@@ -439,7 +441,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
         && (!logDestination || rowDestination.includes(logDestination.toLowerCase()))
         && (!rangeMs || !timestamp || now - timestamp <= rangeMs);
     });
-  }, [normalizedLogs, logSearch, logNode, logDirection, logAction, logSource, logDestination, logRange]);
+  }, [normalizedLogs, logSearch, logNode, logDirection, logAction, logSource, logDestination, logRange, logSnapshotTime]);
 
   const logNodes = useMemo(() => [...new Set(normalizedLogs.map((row) => String(row.node || "")).filter(Boolean))].sort(), [normalizedLogs]);
 
@@ -575,7 +577,7 @@ export function DcstApp({ permissions, t, toast }: { permissions: string[]; t: T
           <label><span>Action</span><select value={logAction} onChange={(event) => setLogAction(event.target.value)}><option value="">All</option><option>ACCEPT</option><option>DROP</option><option>REJECT</option></select></label>
           <label><span>Source</span><input value={logSource} onChange={(event) => setLogSource(event.target.value)} placeholder="IP / object" /></label>
           <label><span>Destination</span><input value={logDestination} onChange={(event) => setLogDestination(event.target.value)} placeholder="IP / object" /></label>
-          <label><span>Time range</span><select value={logRange} onChange={(event) => setLogRange(event.target.value)}><option value="">All</option><option value="15m">15 minutes</option><option value="1h">1 hour</option><option value="24h">24 hours</option></select></label>
+          <label><span>Time range</span><select value={logRange} onChange={(event) => { setLogRange(event.target.value); setLogSnapshotTime(Date.now()); }}><option value="">All</option><option value="15m">15 minutes</option><option value="1h">1 hour</option><option value="24h">24 hours</option></select></label>
         </div>
         <div className="table-scroll dcst-log-table"><table><thead><tr><th>Node</th><th>Time</th><th>Direction</th><th>Action</th><th>Source</th><th>Destination</th><th>Raw message</th></tr></thead>
           <tbody>{filteredLogs.map((row, index) => <tr key={String(row.id || index)}><td>{String(row.node || "—")}</td><td><code>{String(row.dcst_time || "—")}</code></td><td>{String(row.dcst_direction || "—")}</td><td>{String(row.dcst_action || "—")}</td><td><code>{String(row.dcst_source || "—")}</code></td><td><code>{String(row.dcst_destination || "—")}</code></td><td><code>{String(row.dcst_raw || JSON.stringify(row))}</code></td></tr>)}</tbody>
