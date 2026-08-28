@@ -4,6 +4,34 @@ import type { LogBoot, LogContainer, LogEntriesResponse, LogEntry, LogQuery, Log
 
 type LogSavedViewPayload = components["schemas"]["SavedViewPayload"];
 type LogExportRequest = components["schemas"]["ExportRequest"];
+type LogExportInput = Partial<LogExportRequest> & Pick<LogExportRequest, "format">;
+
+function normalizeLogExport(payload: LogExportInput): LogExportRequest {
+  return {
+    source: "journal",
+    query: "",
+    regex: false,
+    case_sensitive: false,
+    negate: false,
+    message_only: false,
+    priority: [],
+    unit: "",
+    pid: null,
+    uid: null,
+    identifier: "",
+    transport: "",
+    hostname: "",
+    device: "",
+    username: "",
+    group: "",
+    boot_id: "",
+    container_id: "",
+    since: null,
+    until: null,
+    limit: 1000,
+    ...payload,
+  };
+}
 
 export const logsClient = {
   systemLogs: (lines = 160) => request<SystemLogs>(`/api/admin/system/logs?lines=${lines}`),
@@ -25,9 +53,10 @@ export const logsClient = {
   createLogSavedView: (payload: LogSavedViewPayload) => request<LogSavedView>("/api/logs/saved-views", { method: "POST", body: JSON.stringify(payload) }),
   updateLogSavedView: (id: string, payload: LogSavedViewPayload) => request<LogSavedView>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteLogSavedView: (id: string) => request<{ ok: boolean }>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
-  exportLogs: async (payload: LogExportRequest) => {
+  exportLogs: async (payload: LogExportInput) => {
+    const requestPayload = normalizeLogExport(payload);
     const headers = new Headers({ "Content-Type": "application/json" });
-    const res = await fetch("/api/logs/export", { method: "POST", body: JSON.stringify(payload), headers, credentials: "include" });
+    const res = await fetch("/api/logs/export", { method: "POST", body: JSON.stringify(requestPayload), headers, credentials: "include" });
     if (!res.ok) {
       const body = await res.text();
       let message = body || res.statusText;
@@ -38,6 +67,6 @@ export const logsClient = {
       throw new ApiError(message, res.status);
     }
     const disposition = res.headers.get("content-disposition") || "";
-    return { blob: await res.blob(), filename: disposition.match(/filename="([^"]+)"/)?.[1] || `webnas-logs.${payload.format}`, truncated: res.headers.get("x-webnas-truncated") === "true" };
+    return { blob: await res.blob(), filename: disposition.match(/filename="([^"]+)"/)?.[1] || `webnas-logs.${requestPayload.format}`, truncated: res.headers.get("x-webnas-truncated") === "true" };
   }
 } as const;
