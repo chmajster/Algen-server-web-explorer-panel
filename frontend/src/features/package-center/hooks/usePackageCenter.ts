@@ -22,19 +22,24 @@ export function usePackageCenter(t: Translate, { canManageSources = true }: { ca
     if (!quiet) setLoading(true);
     setError("");
     try {
-      const [catalog, nextModules, nextCategories, nextJobs, nextHistory, nextSources] = await Promise.all([
-        api.apps(),
-        api.modules().catch(() => []),
+      const catalog = await api.apps();
+      setModules(mergePackageCatalog(catalog, []));
+      if (!quiet) setLoading(false);
+
+      const [modulesResult, categoriesResult, jobsResult, historyResult, sourcesResult] = await Promise.allSettled([
+        api.modules(),
         api.appCategories(),
         api.appJobs(),
         api.appHistory(),
         canManageSources ? api.packageSources() : Promise.resolve([] as PackageSource[]),
       ]);
+
+      const nextModules = modulesResult.status === "fulfilled" ? modulesResult.value : [];
       setModules(mergePackageCatalog(catalog, nextModules));
-      setCategories(nextCategories);
-      setJobs(nextJobs);
-      setHistory(nextHistory);
-      setSources(nextSources);
+      if (categoriesResult.status === "fulfilled") setCategories(categoriesResult.value);
+      if (jobsResult.status === "fulfilled") setJobs(jobsResult.value);
+      if (historyResult.status === "fulfilled") setHistory(historyResult.value);
+      if (sourcesResult.status === "fulfilled") setSources(sourcesResult.value);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Module Center request failed"); }
     finally { if (!quiet) setLoading(false); }
   }, [canManageSources]);
@@ -53,6 +58,12 @@ export function usePackageCenter(t: Translate, { canManageSources = true }: { ca
   const activeIds = jobs.filter((job) => ["queued", "running"].includes(job.status)).map((job) => job.id).join("|");
   useEffect(() => {
     if (!activeIds) return;
+
+    if (typeof EventSource === "undefined") {
+      const fallback = window.setInterval(() => void refresh(true), 2500);
+      return () => window.clearInterval(fallback);
+    }
+
     const events = activeIds.split("|").map((id) => {
       const source = new EventSource(`/api/apps/jobs/${encodeURIComponent(id)}/events`);
       source.onmessage = (event) => {
