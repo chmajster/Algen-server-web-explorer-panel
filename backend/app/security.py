@@ -108,18 +108,34 @@ class SessionStore:
 
 
 class LoginRateLimiter:
+    """Thread-safe sliding-window limiter that tracks authentication failures only."""
+
     def __init__(self) -> None:
         self._attempts: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def _window(self, key: str, now: float) -> deque[float]:
+        window = self._attempts[key]
+        while window and window[0] < now - 60:
+            window.popleft()
+        return window
 
     def check(self, key: str) -> None:
         cfg = get_config()
         now = time.time()
-        window = self._attempts[key]
-        while window and window[0] < now - 60:
-            window.popleft()
-        if len(window) >= cfg.security.rate_limit_login_per_minute:
-            raise HTTPException(HTTPStatus.TOO_MANY_REQUESTS, "Too many login attempts")
-        window.append(now)
+        with self._lock:
+            window = self._window(key, now)
+            if len(window) >= cfg.security.rate_limit_login_per_minute:
+                raise HTTPException(HTTPStatus.TOO_MANY_REQUESTS, "Too many login attempts")
+
+    def record_failure(self, key: str) -> None:
+        now = time.time()
+        with self._lock:
+            self._window(key, now).append(now)
+
+    def clear(self, key: str) -> None:
+        with self._lock:
+            self._attempts.pop(key, None)
 
 
 rate_limiter = LoginRateLimiter()
