@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from .update_coordination import read_update_request
@@ -64,8 +64,7 @@ async def frontend_cache_policy(request: Request, call_next):
     return response
 
 
-@router.get("/api/health")
-def health():
+def _deployment_metadata() -> dict[str, object | None]:
     deployment_phase = None
     update_id = None
     try:
@@ -75,7 +74,31 @@ def health():
             update_id = request_state.get("id") or None
     except OSError:
         pass
-    return {"status": "ok", "service": "webnas", "deployment_phase": deployment_phase, "update_id": update_id}
+    return {"deployment_phase": deployment_phase, "update_id": update_id}
+
+
+@router.get("/api/health/live")
+def liveness():
+    """Process-level health only; external providers never affect liveness."""
+
+    return {"status": "ok", "service": "webnas", "check": "liveness", **_deployment_metadata()}
+
+
+@router.get("/api/health/ready")
+def readiness(request: Request, response: Response):
+    """Report whether local startup and module-registry initialization completed."""
+
+    ready = bool(getattr(request.app.state, "ready", False))
+    if not ready:
+        response.status_code = 503
+    return {"status": "ok" if ready else "not_ready", "service": "webnas", "check": "readiness", **_deployment_metadata()}
+
+
+@router.get("/api/health")
+def health():
+    """Backward-compatible health endpoint retained for existing installers."""
+
+    return {"status": "ok", "service": "webnas", **_deployment_metadata()}
 
 
 @router.get("/update-status", include_in_schema=False)
