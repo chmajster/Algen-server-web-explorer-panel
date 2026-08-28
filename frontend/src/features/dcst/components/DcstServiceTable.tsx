@@ -19,6 +19,7 @@ export function DcstServiceTable({
   canManage,
   canBlock,
   canSync,
+  canInventorySync,
   onToggle,
   onToggleAll,
   onView,
@@ -41,6 +42,7 @@ export function DcstServiceTable({
   canManage: boolean;
   canBlock: boolean;
   canSync: boolean;
+  canInventorySync: boolean;
   onToggle: (id: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
   onView: (item: DcstService) => void;
@@ -63,8 +65,8 @@ export function DcstServiceTable({
       description={inventoryReady
         ? "Create your first communication policy between APMID.ENV groups, IP sets or network addresses."
         : "Synchronize DCST inventory to import APMID.ENV groups from managed virtual machines."}
-      actionLabel={inventoryReady ? (canManage ? "+ Create Service" : undefined) : (canSync ? "Synchronize inventory" : undefined)}
-      onAction={inventoryReady ? (canManage ? onCreate : undefined) : (canSync ? onSynchronizeInventory : undefined)}
+      actionLabel={inventoryReady ? (canManage ? "+ Create Service" : undefined) : (canInventorySync ? "Synchronize inventory" : undefined)}
+      onAction={inventoryReady ? (canManage ? onCreate : undefined) : (canInventorySync ? onSynchronizeInventory : undefined)}
     />;
   }
 
