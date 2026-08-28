@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import { clearWindowDrafts, desktopStorageKeys, pushRecentApp, readRecentApps } from "./persistence";
 
 describe("desktop persistence", () => {
