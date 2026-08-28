@@ -48,25 +48,31 @@ function percent(value: number): string {
   return `${Math.max(0, value * 100).toFixed(1)}%`;
 }
 
-function splitEndpoint(value: string): EndpointFields {
+export function splitEndpoint(value: string): EndpointFields {
+  const trimmed = value.trim();
+  const explicitScheme = /^https?:\/\//i.test(trimmed);
   try {
-    const parsed = new URL(value);
-    const defaultPort = parsed.protocol === "http:" ? "80" : parsed.protocol === "https:" ? "443" : "8006";
+    const parsed = new URL(explicitScheme ? trimmed : `http://${trimmed}`);
+    const defaultPort = explicitScheme
+      ? parsed.protocol === "http:" ? "80" : "443"
+      : "8006";
+    const hostname = parsed.hostname.includes(":") ? `[${parsed.hostname}]` : parsed.hostname;
     return {
-      address: `${parsed.protocol}//${parsed.hostname}`,
+      address: hostname,
       port: parsed.port || defaultPort,
     };
   } catch {
-    const match = value.trim().match(/^(https?:\/\/[^/:]+)(?::(\d+))?\/?$/i);
     return {
-      address: match?.[1] || value,
-      port: match?.[2] || "8006",
+      address: trimmed.replace(/^https?:\/\//i, "").replace(/:\d+\/?$/, ""),
+      port: trimmed.match(/:(\d+)\/?$/)?.[1] || "8006",
     };
   }
 }
 
-function buildEndpoint(address: string, port: string): string {
-  const parsed = new URL(address.trim());
+export function buildEndpoint(address: string, port: string): string {
+  const trimmed = address.trim();
+  const explicitScheme = /^https?:\/\//i.test(trimmed);
+  const parsed = new URL(explicitScheme ? trimmed : `http://${trimmed}`);
   if (!(["http:", "https:"] as string[]).includes(parsed.protocol)) throw new Error("invalid protocol");
   if (!parsed.hostname || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("invalid address");
   if (parsed.pathname !== "/" && parsed.pathname !== "") throw new Error("invalid path");
@@ -75,9 +81,9 @@ function buildEndpoint(address: string, port: string): string {
   const numericPort = Number(port);
   if (!Number.isInteger(numericPort) || numericPort < 1 || numericPort > 65535) throw new RangeError("invalid port");
 
-  parsed.port = String(numericPort);
-  parsed.pathname = "";
-  return parsed.origin;
+  const hostname = parsed.hostname.includes(":") ? `[${parsed.hostname}]` : parsed.hostname;
+  const authority = `${hostname}:${numericPort}`;
+  return explicitScheme ? `${parsed.protocol}//${authority}` : authority;
 }
 
 function powerActionLabel(t: Translate, action: PowerAction): string {
@@ -197,7 +203,6 @@ export function ProxmoxManagerApp({ permissions, t, toast }: { permissions: stri
       setBusyVm("");
     }
   }
-
   const content = section === "overview"
     ? <Overview connections={connections} vms={vms} errors={errors} t={t} />
     : section === "hosts"
@@ -288,7 +293,7 @@ function ConnectionsPanel({ connections, canConfigure, canManageHosts, busyConne
 }
 
 function ConnectionDialog({ value, credentials, canManageCredentials, t, toast, onClose, onSaved }: { value: ProxmoxConnection | null; credentials: HostsManagerCredential[]; canManageCredentials: boolean; t: Translate; toast: ToastFn; onClose: () => void; onSaved: () => Promise<void> }) {
-  const endpointFields = splitEndpoint(value?.endpoint || "https://pve.example:8006");
+  const endpointFields = splitEndpoint(value?.endpoint || "pve.example:8006");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ProxmoxConnectionInput>({
     name: value?.name || "",
@@ -385,7 +390,7 @@ function ConnectionDialog({ value, credentials, canManageCredentials, t, toast, 
     <form id="proxmox-connection-form" onSubmit={submit}>
       <p>{t("proxmox.dialog.description")}</p>
       <label className="field-label">{t("proxmox.dialog.name")}<input autoFocus required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
-      <label className="field-label">{t("proxmox.dialog.address")}<input required type="url" value={form.endpoint} placeholder="http://10.0.0.10" onChange={(event) => setForm({ ...form, endpoint: event.target.value })} /><small>{t("proxmox.dialog.addressHint")}</small></label>
+      <label className="field-label">{t("proxmox.dialog.address")}<input required type="text" inputMode="url" autoCapitalize="none" spellCheck={false} value={form.endpoint} placeholder="10.0.0.10" onChange={(event) => setForm({ ...form, endpoint: event.target.value })} /></label>
       <label className="field-label">{t("proxmox.dialog.port")}<input required type="number" min={1} max={65535} step={1} value={endpointPort} onChange={(event) => setEndpointPort(event.target.value)} /><small>{t("proxmox.dialog.portHint")}</small></label>
       <label className="field-label">{t("proxmox.dialog.authentication")}<select value={authMode} onChange={(event) => setAuthMode(event.target.value as ConnectionAuthMode)}><option value="saved">{t("proxmox.dialog.savedCredential")}</option><option value="username_password" disabled={!canManageCredentials}>{t("proxmox.dialog.loginPassword")}</option></select>{!canManageCredentials && <small>{t("proxmox.dialog.permissionCredential")}</small>}</label>
       {inlineLogin ? <>

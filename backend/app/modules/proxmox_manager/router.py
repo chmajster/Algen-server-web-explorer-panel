@@ -10,6 +10,7 @@ from ...core.events import bus
 from ...identity.permissions import Permission, authorize, require_permission
 from ...package_center.models import api_error
 from ...security import SessionUser
+from .endpoint import detect_endpoint
 from .models import ProxmoxConnectionInput, ProxmoxDeleteInput, ProxmoxPowerInput, ProxmoxSyncInput
 from .service import ProxmoxApiError, register_host_capabilities, service
 
@@ -64,6 +65,11 @@ def _safe_activity_error(error: Exception) -> str:
     return type(error).__name__
 
 
+def _resolve_connection_endpoint(payload: ProxmoxConnectionInput) -> ProxmoxConnectionInput:
+    endpoint = detect_endpoint(payload.endpoint)
+    return payload.model_copy(update={"endpoint": endpoint})
+
+
 @router.get("/dashboard")
 def dashboard(user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_VIEW))):
     connections = service().connections()
@@ -91,7 +97,7 @@ def create_connection(
     user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_CONFIGURE)),
 ):
     try:
-        item = service().save_connection(payload, user.username)
+        item = service().save_connection(_resolve_connection_endpoint(payload), user.username)
     except Exception as error:
         _api_failure(error, stage="configuration", endpoint=str(payload.endpoint))
     _activity(user.username, "proxmox_connection_create", item["id"], {"endpoint": item["endpoint"]})
@@ -107,7 +113,7 @@ def update_connection(
     if not service().connection(connection_id):
         api_error(404, "PROXMOX_CONNECTION_NOT_FOUND", "Proxmox connection not found")
     try:
-        item = service().save_connection(payload, user.username, connection_id)
+        item = service().save_connection(_resolve_connection_endpoint(payload), user.username, connection_id)
     except Exception as error:
         _api_failure(error, stage="configuration", endpoint=str(payload.endpoint))
     _activity(user.username, "proxmox_connection_update", connection_id, {"endpoint": item["endpoint"]})
