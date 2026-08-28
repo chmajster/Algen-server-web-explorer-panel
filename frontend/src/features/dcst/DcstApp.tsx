@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import type { ToastFn, Translate } from "../../app/types";
+import "../../styles/dcst.css";
 import { dcstClient } from "./api/client";
 import type { DcstIPSet, DcstPort, DcstService } from "./api/types";
 import { DcstConfirmDialog, type DcstConfirmAction } from "./components/DcstConfirmDialog";

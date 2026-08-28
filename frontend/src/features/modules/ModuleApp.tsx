@@ -1,5 +1,5 @@
 import { Play, RefreshCw, RotateCcw, Stethoscope } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { lazy, useCallback, useEffect, useState } from "react";
 import { api, type ModuleBackup, type ModuleDiagnostic, type ModuleJob, type ModuleStatus, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate, WindowDeepLink } from "../../app/types";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
@@ -8,15 +8,16 @@ import { PackageJobDialog } from "../package-center/PackageJobDialog";
 import { ModuleAppShell, ModuleHealthCard, translateServiceState, type ModuleSection } from "./common/ModuleAppShell";
 import { ModuleBackups, ModuleDangerZone, ModuleDiagnostics, ModuleJobProgress, ModuleLogs, ModuleServiceControls } from "./common/ModuleComponents";
 import { ModuleUninstallDialog } from "./common/ModuleUninstallDialog";
-import { SambaModuleApp } from "./samba/SambaModuleApp";
-import { ManagedModuleApp } from "./ManagedModuleApp";
-import { DockerManagerApp } from "../docker/DockerManagerApp";
-import { AnsibleControllerApp } from "./ansible/AnsibleControllerApp";
-import { HostsManagerApp } from "./hosts/HostsManagerApp";
-import { ApmidApp } from "./apmid/ApmidApp";
-import { OsRepositoriesApp } from "./os-repositories/OsRepositoriesApp";
-import { CronManagerApp } from "./cron/CronManagerApp";
-import { DhcpManagerApp } from "./dhcp/DhcpManagerApp";
+
+const SambaModuleApp = lazy(() => import("./samba/SambaModuleApp").then((loaded) => ({ default: loaded.SambaModuleApp })));
+const ManagedModuleApp = lazy(() => import("./ManagedModuleApp").then((loaded) => ({ default: loaded.ManagedModuleApp })));
+const DockerManagerApp = lazy(() => import("../docker/DockerManagerApp").then((loaded) => ({ default: loaded.DockerManagerApp })));
+const AnsibleControllerApp = lazy(() => import("./ansible/AnsibleControllerApp").then((loaded) => ({ default: loaded.AnsibleControllerApp })));
+const HostsManagerApp = lazy(() => import("./hosts/HostsManagerApp").then((loaded) => ({ default: loaded.HostsManagerApp })));
+const ApmidApp = lazy(() => import("./apmid/ApmidApp").then((loaded) => ({ default: loaded.ApmidApp })));
+const OsRepositoriesApp = lazy(() => import("./os-repositories/OsRepositoriesApp").then((loaded) => ({ default: loaded.OsRepositoriesApp })));
+const CronManagerApp = lazy(() => import("./cron/CronManagerApp").then((loaded) => ({ default: loaded.CronManagerApp })));
+const DhcpManagerApp = lazy(() => import("./dhcp/DhcpManagerApp").then((loaded) => ({ default: loaded.DhcpManagerApp })));
 
 const emptyStatus: ModuleStatus = { installed: false, update_available: false, service_state: "unknown", service_enabled: false, services: {}, health: "unknown", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} };
 
