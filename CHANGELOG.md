@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v0.1.23 — 2026-08-29
+
+- Hardened hosted/trusted CI and production deployment so manual production promotion requires a successful hosted test run for the exact `main` revision; authentication diagnostics and baseline HTTP security headers were also strengthened.
+- Consolidated persistent jobs, logs, plugins and the application/module-store architecture, and moved Credentials into a standalone application while preserving centralized secret handling and module integrations.
+- Improved runtime resilience with watchdog recovery, blue/green service detection, application-log source handling and filtering of unavailable legacy WebNAS systemd units.
+- Reduced frontend startup cost through lazy feature/module boundaries and bundle budgets, and improved desktop UX with taskbar-safe dialogs plus horizontal Resource Monitor navigation.
+- Improved Proxmox endpoint handling with scheme-less input and automatic API protocol detection, and expanded localized CSRF diagnostics.
+- Added ordered multi-server DNS management with dedicated inputs, deduplication and `systemd-resolved` global DNS discovery.
+- Prevented durable JobService records from remaining permanently `queued` after a process restart by recovering interrupted queued work into an explicit failed/retryable state.
+- Refreshed supported backend/frontend dependencies and kept generated dependency metadata synchronized with the project source of truth.
+
+
 ## v0.1.22 — 2026-08-28
 - Reworked the DCST network-security control plane and hardened bulk blocking, live deletion warnings, preview concurrency, inventory permissions, policy-sync timestamps, and raw firewall-log filtering.
 
