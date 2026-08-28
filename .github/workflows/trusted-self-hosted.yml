@@ -1,7 +1,11 @@
 name: Trusted homelab jobs
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - Automated tests
+    types:
+      - completed
     branches:
       - main
   workflow_dispatch:
@@ -16,13 +20,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: trusted-main-${{ github.ref }}
+  group: trusted-main-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false
+
+env:
+  TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   trusted-integration:
     name: Trusted integration checks
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      github.event_name == 'workflow_dispatch'
     runs-on:
       - self-hosted
       - linux
@@ -32,15 +44,16 @@ jobs:
       - name: Check out trusted main revision
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.TARGET_SHA }}
           persist-credentials: false
 
-      - name: Verify merged main revision
+      - name: Verify tested main revision
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF}" = "refs/heads/main"
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "${TARGET_SHA}" origin/main
           python3.14 scripts/sync-version.py --check
 
       - name: Prepare isolated trusted test environment
@@ -59,8 +72,8 @@ jobs:
   production-deployment:
     name: Production blue-green deployment
     if: >-
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy == true))
+      github.event_name == 'workflow_run' ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy == true)
     needs:
       - trusted-integration
     runs-on:
@@ -77,15 +90,16 @@ jobs:
       - name: Check out approved main revision
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.TARGET_SHA }}
           persist-credentials: false
 
       - name: Verify deployment provenance
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF}" = "refs/heads/main"
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git rev-parse HEAD)" = "${TARGET_SHA}"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "${TARGET_SHA}" origin/main
           python3.14 scripts/sync-version.py --check
 
       - name: Deploy candidate through existing blue-green release mechanism
@@ -97,7 +111,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo --preserve-env=WEBNAS_ROOT,WEBNAS_CONFIG,WEBNAS_SERVICE_USER \
-            ./scripts/deploy_from_checkout.sh "${GITHUB_WORKSPACE}" "${GITHUB_SHA}"
+            ./scripts/deploy_from_checkout.sh "${GITHUB_WORKSPACE}" "${TARGET_SHA}"
 
       - name: Record deployed revision
-        run: printf 'Deployed trusted main revision %s\n' "${GITHUB_SHA}" >> "${GITHUB_STEP_SUMMARY}"
+        run: printf 'Deployed trusted main revision %s\n' "${TARGET_SHA}" >> "${GITHUB_STEP_SUMMARY}"
