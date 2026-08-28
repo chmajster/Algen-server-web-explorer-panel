@@ -127,6 +127,7 @@ def journal_entries(
     args = [executable, "--output=json", "--no-pager", "-n", str(min(5000, max(limit * 5, limit + 1)))]
     if direction == "older":
         args.append("--reverse")
+    selected_units: tuple[str, ...]
     if source == "webnas":
         selected_units = WEBNAS_SERVICE_UNITS
     else:
