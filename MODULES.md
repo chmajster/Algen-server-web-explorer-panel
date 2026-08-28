@@ -1,5 +1,15 @@
 # WebNAS module-management framework
 
+## Single Module Center
+
+WebNAS has one user-facing module-management surface: **Module Center** (`store`). It combines the existing package catalog (`/api/apps`) with runtime module data (`/api/modules`) through the shared Package Center normalization/merge layer and uses the module id as the deduplication key. The former `ModuleHub`/"Infrastructure Modules" frontend is not a second registry and has been removed.
+
+The backend `package-center` manifest publishes only the `store` menu entry. The historical frontend app id `modules` remains registered as a hidden compatibility alias that renders the same `PackageCenterApp`, so persisted window state or internal references do not fail while the navigation exposes only one center. Module-specific detail applications remain available through the existing hidden `module` entry.
+
+Module Center is readable with `modules.view`. Existing granular backend permissions are preserved for mutations: `modules.install`, `modules.update`, `modules.uninstall` and `modules.configure` control lifecycle buttons; package sources require `modules.install`; cancel/retry of a package job follows the permission required by that job's original action. Hiding controls is only UX hardening—the backend remains authoritative.
+
+Catalog categories come directly from validated manifests. The UI does not create a second hard-coded `infrastructureModules` list or synthetic Infrastructure category because the previous infrastructure view consumed the same combined catalog and did not provide an authoritative independent classification. Real manifest categories remain filterable and are also included in text search together with module name and description.
+
 The `apmid` module is a zero-package, Proxmox-safe administration module with a
 dedicated application and private SQLite domain. Manifest installation state
 and `/api/modules/apmid/access` jointly control launcher visibility, including
@@ -29,7 +39,10 @@ package_center.manifests + Pydantic validation
                      /api/modules endpoints
                               │
                               ▼
-frontend/features/modules/common + module-specific application
+            Package Center normalization/merge
+                              │
+                              ▼
+                     Module Center (`store`)
 ```
 
 `ModuleProvider` is the controlled adapter boundary. The base provider implements status, declared systemd service actions, journal logs, generic diagnostics, capability checks, typed resource names and typed management actions. It accepts only services declared by the manifest and only fixed action enums. `SambaProvider` adds typed Samba configuration, while the infrastructure providers add controlled package, Docker, private HTTP API, database-socket and container adapters.

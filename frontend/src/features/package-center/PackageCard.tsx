@@ -1,10 +1,11 @@
 import { Box, Network, PackageCheck, RefreshCw, Server, Share2, ShieldAlert } from "lucide-react";
 import type { AppJob, ModuleSummary } from "../../api";
 import type { Translate } from "../../app/types";
-import { getPackageActions, getPackageDisplayName, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, isPackageUpdateAvailable, packageActionLabelKey, type PackageDisplayAction } from "./packageState";
+import { canRunPackageAction, getPackageActions, getPackageDisplayName, getPackageInstalledVersion, getPackageServiceStatus, getPackageUiStatus, isPackageUpdateAvailable, packageActionLabelKey, type PackageDisplayAction } from "./packageState";
 import type { PackageAction } from "./types";
 
 const KNOWN_OPERATIONS = new Set(["install", "reinstall", "update", "uninstall", "start", "stop", "restart"]);
+const defaultPackagePermissions = ["modules.install", "modules.update", "modules.uninstall", "modules.configure"];
 
 function catalogIcon(icon: string) {
   if (icon === "share-2") return <Share2 />;
@@ -20,6 +21,7 @@ function operationLabel(item: ModuleSummary, t: Translate): string {
 
 type PackageCardProps = {
   item: ModuleSummary;
+  permissions?: readonly string[];
   t: Translate;
   onDetails: () => void;
   onOpen?: () => void;
@@ -27,7 +29,7 @@ type PackageCardProps = {
   onShowJob: (job: AppJob) => void;
 };
 
-export function PackageCard({ item, t, onDetails, onOpen, onAction, onShowJob }: PackageCardProps) {
+export function PackageCard({ item, permissions = defaultPackagePermissions, t, onDetails, onOpen, onAction, onShowJob }: PackageCardProps) {
   const status = getPackageUiStatus(item);
   const serviceStatus = getPackageServiceStatus(item);
   const updateAvailable = isPackageUpdateAvailable(item);
@@ -35,7 +37,10 @@ export function PackageCard({ item, t, onDetails, onOpen, onAction, onShowJob }:
   const runtimePackageManager = String(item.module_status.metrics.package_manager || item.distribution.package_manager || t("module.notAvailable"));
   const activeJob = item.active_job && ["queued", "running", "waiting_for_confirmation"].includes(item.active_job.status) ? item.active_job : null;
   const busy = Boolean(activeJob);
-  const actions = getPackageActions(item).filter((action) => !["open", "configure"].includes(action) || onOpen);
+  const actions = getPackageActions(item).filter((action) => {
+    if (action === "open" || action === "configure") return Boolean(onOpen);
+    return canRunPackageAction(action, permissions);
+  });
   const titleId = `package-card-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   const displayName = getPackageDisplayName(item, t);
 

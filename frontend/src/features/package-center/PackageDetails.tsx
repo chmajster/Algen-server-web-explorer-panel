@@ -3,14 +3,17 @@ import type { Translate } from "../../app/types";
 import { Modal } from "../../components/Modal";
 import type { ModuleSummary } from "../../api";
 import type { PackageAction } from "./types";
-import { getPackageActions, getPackageDisplayName, getPackageInstalledVersion, getPackageUiStatus, normalizeServiceState, packageActionLabelKey } from "./packageState";
+import { canRunPackageAction, getPackageActions, getPackageDisplayName, getPackageInstalledVersion, getPackageUiStatus, normalizeServiceState, packageActionLabelKey } from "./packageState";
+
+const defaultPackagePermissions = ["modules.install", "modules.update", "modules.uninstall", "modules.configure"];
 
 function List({ values }: { values: string[] }) {
   return values.length ? <ul>{values.map((value) => <li key={value}>{value}</li>)}</ul> : <span>—</span>;
 }
 
-export function PackageDetails({ item, t, onClose, onAction, onConfigure }: {
+export function PackageDetails({ item, permissions = defaultPackagePermissions, t, onClose, onAction, onConfigure }: {
   item: ModuleSummary;
+  permissions?: readonly string[];
   t: Translate;
   onClose: () => void;
   onAction: (action: PackageAction) => void;
@@ -18,7 +21,10 @@ export function PackageDetails({ item, t, onClose, onAction, onConfigure }: {
 }) {
   const status = getPackageUiStatus(item);
   const busy = Boolean(item.active_job && ["queued", "running", "waiting_for_confirmation"].includes(item.active_job.status));
-  const actions = getPackageActions(item, { advanced: true }).filter((action) => !["open", "configure"].includes(action) || onConfigure);
+  const actions = getPackageActions(item, { advanced: true }).filter((action) => {
+    if (action === "open" || action === "configure") return Boolean(onConfigure);
+    return canRunPackageAction(action, permissions);
+  });
   const logs = item.jobs.flatMap((job) => job.log_tail).slice(-50);
   const displayName = getPackageDisplayName(item, t);
 

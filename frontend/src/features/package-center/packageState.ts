@@ -7,9 +7,38 @@ export type PackageDisplayAction = PackageAction | "open" | "configure";
 
 const RUNNING_STATES = new Set(["active", "running", "started", "online"]);
 const ERROR_STATES = new Set(["error", "failed", "incompatible", "blocked"]);
+const PACKAGE_ACTIONS = new Set<PackageAction>(["install", "reinstall", "update", "uninstall", "start", "stop", "restart"]);
+const PACKAGE_ACTION_PERMISSIONS: Record<PackageAction, string> = {
+  install: "modules.install",
+  reinstall: "modules.update",
+  update: "modules.update",
+  uninstall: "modules.uninstall",
+  start: "modules.configure",
+  stop: "modules.configure",
+  restart: "modules.configure",
+};
+
+export function isPackageAction(action: string): action is PackageAction {
+  return PACKAGE_ACTIONS.has(action as PackageAction);
+}
+
+export function canRunPackageAction(action: PackageAction, permissions: readonly string[]): boolean {
+  return permissions.includes(PACKAGE_ACTION_PERMISSIONS[action]);
+}
+
+export function canManagePackageJob(action: string, permissions: readonly string[]): boolean {
+  return isPackageAction(action) && canRunPackageAction(action, permissions);
+}
 
 export function getPackageDisplayName(item: Pick<PackageModule, "id" | "manifest">, t: Translate): string {
   return item.id === "docker" ? t("app.containers") : item.manifest.name;
+}
+
+export function matchesPackageSearch(item: Pick<PackageModule, "id" | "manifest">, search: string, t: Translate): boolean {
+  const needle = search.trim().toLowerCase();
+  if (!needle) return true;
+  const categoryLabel = t(`package.category.${item.manifest.category}`);
+  return `${getPackageDisplayName(item, t)} ${item.manifest.name} ${item.manifest.description} ${item.manifest.long_description} ${item.manifest.category} ${categoryLabel}`.toLowerCase().includes(needle);
 }
 
 function manifestCapabilities(item: PackageModule): ModuleCapability {

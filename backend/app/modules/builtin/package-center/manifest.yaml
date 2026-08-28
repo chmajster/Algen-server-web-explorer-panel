@@ -9,5 +9,4 @@ actions: [install, update, uninstall, restore]
 jobs: [package-operation]
 system_capabilities: [package-manager, systemd]
 menu:
-  - {id: modules, label: app.modules, icon: boxes, permission: modules.view}
-  - {id: store, label: app.store, icon: package, permission: modules.install}
+  - {id: store, label: app.store, icon: package, permission: modules.view}

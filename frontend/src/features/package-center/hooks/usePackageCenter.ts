@@ -3,9 +3,9 @@ import { api, type AppJob, type ModuleSummary, type PackageHistoryItem, type Pac
 import type { Translate } from "../../../app/types";
 import { useRefreshOnConnectionRestored } from "../../connection/ConnectionStatusMonitor";
 import type { PackageTab } from "../types";
-import { getPackageDisplayName, getPackageUiStatus, isPackageUpdateAvailable, mergePackageCatalog } from "../packageState";
+import { getPackageUiStatus, isPackageUpdateAvailable, matchesPackageSearch, mergePackageCatalog } from "../packageState";
 
-export function usePackageCenter(t: Translate) {
+export function usePackageCenter(t: Translate, { canManageSources = true }: { canManageSources?: boolean } = {}) {
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [jobs, setJobs] = useState<AppJob[]>([]);
@@ -22,11 +22,22 @@ export function usePackageCenter(t: Translate) {
     if (!quiet) setLoading(true);
     setError("");
     try {
-      const [catalog, nextModules, nextCategories, nextJobs, nextHistory, nextSources] = await Promise.all([api.apps(), api.modules().catch(() => []), api.appCategories(), api.appJobs(), api.appHistory(), api.packageSources()]);
-      setModules(mergePackageCatalog(catalog, nextModules)); setCategories(nextCategories); setJobs(nextJobs); setHistory(nextHistory); setSources(nextSources);
+      const [catalog, nextModules, nextCategories, nextJobs, nextHistory, nextSources] = await Promise.all([
+        api.apps(),
+        api.modules().catch(() => []),
+        api.appCategories(),
+        api.appJobs(),
+        api.appHistory(),
+        canManageSources ? api.packageSources() : Promise.resolve([] as PackageSource[]),
+      ]);
+      setModules(mergePackageCatalog(catalog, nextModules));
+      setCategories(nextCategories);
+      setJobs(nextJobs);
+      setHistory(nextHistory);
+      setSources(nextSources);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Module Center request failed"); }
     finally { if (!quiet) setLoading(false); }
-  }, []);
+  }, [canManageSources]);
 
   const refreshModule = useCallback(async (moduleId: string) => {
     try {
@@ -60,8 +71,7 @@ export function usePackageCenter(t: Translate) {
   }, [activeIds, refresh, refreshModule]);
 
   const visibleModules = useMemo(() => modules.filter((item) => {
-    const needle = search.trim().toLowerCase();
-    if (needle && !`${getPackageDisplayName(item, t)} ${item.manifest.name} ${item.manifest.description} ${item.manifest.long_description}`.toLowerCase().includes(needle)) return false;
+    if (!matchesPackageSearch(item, search, t)) return false;
     if (category && item.manifest.category !== category) return false;
     if (status && getPackageUiStatus(item) !== status) return false;
     if (tab === "installed" && !item.state.installed) return false;
