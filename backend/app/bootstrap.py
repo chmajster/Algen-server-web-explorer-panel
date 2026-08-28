@@ -16,7 +16,6 @@ from .audit import configure_logging
 from .config import AppConfig, get_config
 from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
 from .core.modules import ModuleRegistry
-from .jobs.api import router as jobs_router
 from .jobs.models import JobStatus
 from .jobs.service import service as job_service
 from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
@@ -144,7 +143,6 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.middleware("http")(frontend_cache_policy)
     module_registry.install_routers(app)
     app.include_router(_registry_router(module_registry))
-    app.include_router(jobs_router)
     app.include_router(update_detail_policy_router)
     app.include_router(power_control_router)
     if mount_frontend and FRONTEND_DIST.exists():
