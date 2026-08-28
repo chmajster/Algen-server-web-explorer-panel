@@ -68,7 +68,7 @@ test("file manager enters a directory, creates, renames, uploads, downloads and 
   await expect.poll(() => state.calls.some((call) => call === "GET /api/files/download")).toBeTruthy();
 
   await page.getByTitle("Delete").click();
-  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByText("Delete", { exact: true }).last().click();
   await expect.poll(() => state.calls.some((call) => call === "POST /api/files/delete")).toBeTruthy();
 });
 
@@ -126,7 +126,10 @@ test("Package Center loads catalog and executes mocked install and uninstall", a
   await page.reload();
   await openDesktopApp(page, "Module Center");
   await expect(page.getByText("Samba").first()).toBeVisible();
-  await page.getByRole("button", { name: "Uninstall", exact: true }).first().click();
+  await page.getByRole("button", { name: "Details", exact: true }).first().click();
+  const uninstall = page.getByRole("button", { name: "Uninstall", exact: true }).first();
+  await expect(uninstall).toBeVisible();
+  await uninstall.click();
   const uninstallConfirm = page.getByRole("button", { name: /Confirm/ }).first();
   await expect(uninstallConfirm).toBeVisible();
   await uninstallConfirm.click();
