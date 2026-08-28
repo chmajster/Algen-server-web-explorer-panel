@@ -20,7 +20,7 @@ Release tags run `.github/workflows/release.yml`, rebuild and test the tagged ma
 
 The production job uses a runner with `self-hosted`, `linux` and `deploy` labels and GitHub Environment `production`. Configure required reviewers on that Environment to make approval mandatory. Repository/environment variables may override `WEBNAS_ROOT`, `WEBNAS_CONFIG` and `WEBNAS_SERVICE_USER`; defaults match the installer.
 
-The workflow checks out exactly `github.sha`, disables persisted Git credentials and verifies that HEAD equals the trusted `main` revision before deployment.
+The workflow checks out the exact target revision, disables persisted Git credentials and verifies that the revision is reachable from `main` before deployment. Automatic promotion through `workflow_run` can proceed only after the `Automated tests` workflow succeeds. A manual `workflow_dispatch` with `deploy=true` performs an additional GitHub Actions API check and refuses deployment unless the exact `TARGET_SHA` has a successful `Automated tests` run triggered by a push to `main`. Manual trusted checks with `deploy=false` do not require this deployment gate.
 
 ## Existing blue/green mechanism
 
@@ -67,4 +67,4 @@ The workflow exits failed after a rollback so GitHub records that the attempted 
 
 ## Concurrency and secrets
 
-Production deployment uses a single concurrency group with cancellation disabled. Deployment has an explicit timeout. No secret value is echoed; the workflow uses environment variables only for non-secret paths/user configuration, while repository credentials are not persisted into the checkout.
+Production deployment uses a single concurrency group with cancellation disabled. Deployment has an explicit timeout. No secret value is echoed; the workflow uses environment variables only for non-secret paths/user configuration, while repository credentials are not persisted into the checkout. The trusted workflow has read-only `actions` permission solely to verify the prior CI result for a manual production deployment.
