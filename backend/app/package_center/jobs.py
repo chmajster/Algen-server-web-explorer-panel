@@ -6,6 +6,7 @@ import time
 
 from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..audit import logger
+from ..jobs.runner import JobRunner
 from ..update_coordination import coordination_lock, operation_admission, update_blocks_operations
 from .detached_updates import detached_update_session
 from .executor import execute
@@ -18,9 +19,10 @@ class PackageJobManager:
     def __init__(self, repository: PackageRepository) -> None:
         self.repository = repository
         self._lock = threading.RLock()
+        self._runner = JobRunner()
         for job in repository.active_jobs():
             if job["status"] == PackageJobStatus.running.value and detached_update_session(job.get("plan", {})):
-                threading.Thread(target=self._run, args=(job["id"],), daemon=True, name=f"package-resume-{job['id'][:8]}").start()
+                self._runner.submit(job["id"], lambda job_id=job["id"]: self._run(job_id))
         self._schedule()
 
     def enqueue(self, plan: PackagePlan, actor: str, *, retry_of: str | None = None) -> dict:
@@ -54,7 +56,7 @@ class PackageJobManager:
                     return
                 job = queued[0]
                 self.repository.update_job(job["id"], status=PackageJobStatus.running.value, started_at=time.time(), current_step="Starting")
-                threading.Thread(target=self._run, args=(job["id"],), daemon=True, name=f"package-{job['id'][:8]}").start()
+                self._runner.submit(job["id"], lambda: self._run(job["id"]))
 
     def schedule_pending(self) -> None:
         self._schedule()
