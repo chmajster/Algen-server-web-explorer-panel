@@ -37,11 +37,11 @@ jobs:
           path = Path("CHANGELOG.md")
           text = path.read_text(encoding="utf-8")
           if "## v0.1.22 — 2026-08-28" not in text:
-              marker = "## Unreleased\n\n"
+              marker = "## Unreleased\n"
               replacement = (
                   "## Unreleased\n\n"
-                  "## v0.1.22 — 2026-08-28\n\n"
-                  "- Reworked the DCST network-security control plane and hardened bulk blocking, live deletion warnings, preview concurrency, inventory permissions, policy-sync timestamps, and raw firewall-log filtering.\n"
+                  "## v0.1.22 — 2026-08-28\n"
+                  "- Reworked the DCST network-security control plane and hardened bulk blocking, live deletion warnings, preview concurrency, inventory permissions, policy-sync timestamps, and raw firewall-log filtering.\n\n"
               )
               if marker not in text:
                   raise SystemExit("CHANGELOG.md does not contain the expected Unreleased section")
