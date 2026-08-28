@@ -256,7 +256,8 @@ def log_export(payload: ExportRequest, user: SessionUser = Depends(_mutating_use
     elif payload.format == "csv":
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=["timestamp", "priority", "severity", "original_priority", "original_severity", "severity_inferred", "severity_reason", "source", "unit", "identifier", "pid", "uid", "hostname", "message"], extrasaction="ignore")
-        writer.writeheader(); writer.writerows(items)
+        writer.writeheader()
+        writer.writerows(items)
         content, media = output.getvalue(), "text/csv"
     else:
         content = "\n".join(f"{item.get('timestamp') or '-'} [{item['severity'].upper()} priority={item['priority']}; original={item['original_severity']}/{item['original_priority']}{'; inferred=' + str(item.get('severity_reason')) if item.get('severity_inferred') else ''}] {item.get('unit') or item.get('identifier') or item['source']}: {item['message']}" for item in items) + "\n"

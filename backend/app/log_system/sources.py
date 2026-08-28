@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import grp
 import hashlib
-import json
 import pwd
 import shutil
 from datetime import UTC, datetime
@@ -24,10 +23,8 @@ from .models import (
     IDENTIFIER_RE,
     LOG_PRIORITIES,
     MAX_MESSAGE,
-    SOURCE_RE,
     UNIT_RE,
     LogEntry,
-    _int,
 )
 from .parsing import parse_dmesg_record, parse_journal_record, safe_fields
 

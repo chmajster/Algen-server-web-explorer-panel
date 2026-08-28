@@ -14,8 +14,17 @@ from fastapi import HTTPException
 
 from .app_store import samba as _samba
 from .app_store import state as _state
-from .app_store.api import router
-from .app_store.models import AdminAction, SambaApplyRequest, SambaConfig, SambaPassword, SambaSecuredApplyRequest, SambaServiceAction, SambaShare, SambaUserAction
+from .app_store.api import router as router
+from .app_store.models import (
+    AdminAction,
+    SambaApplyRequest as SambaApplyRequest,
+    SambaConfig,
+    SambaPassword as SambaPassword,
+    SambaSecuredApplyRequest as SambaSecuredApplyRequest,
+    SambaServiceAction as SambaServiceAction,
+    SambaShare,
+    SambaUserAction as SambaUserAction,
+)
 from .app_store.service import all_manifests as _all_manifests
 from .app_store.service import load_manifest as _load_manifest
 from .audit import logger

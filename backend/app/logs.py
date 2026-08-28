@@ -9,8 +9,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 
-_SUBPROCESS_MODULE = subprocess
-
 from . import log_system as _log_system
 from .activity import record_activity
 from .config import get_config
@@ -24,6 +22,8 @@ from .log_system import service as _service
 from .log_system import sources as _sources
 from .log_system import storage as _storage
 from .log_system.execution import run_bounded as _run_bounded
+
+_SUBPROCESS_MODULE = subprocess
 
 router = _api.router
 parse_journal_boots = _api.parse_journal_boots
