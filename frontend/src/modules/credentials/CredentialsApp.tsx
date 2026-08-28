@@ -1,4 +1,11 @@
-import { ChevronDown, Plus, RefreshCw } from "lucide-react";
+import {
+  ChevronDown,
+  KeyRound,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
@@ -14,7 +21,6 @@ import {
   HostsDataTable,
   type HostsDataColumn,
 } from "../../features/modules/hosts/components/HostsDataTable";
-import "../../features/modules/hosts/hosts-credential-module-select.css";
 
 type Props = {
   permissions: string[];
@@ -72,8 +78,15 @@ function CredentialModuleSelect({
     const close = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", keyboard);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", keyboard);
+    };
   }, [open]);
 
   const options = useMemo(() => {
@@ -86,6 +99,7 @@ function CredentialModuleSelect({
         left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
     );
   }, [modules, selected]);
+
   const optionIds = options.map((item) => item.id);
   const allSelected =
     optionIds.length > 0 && optionIds.every((id) => selected.includes(id));
@@ -169,6 +183,32 @@ function CredentialModuleSelect({
   );
 }
 
+function CredentialShareChips({
+  ids,
+  names,
+  empty,
+}: {
+  ids: string[];
+  names: Map<string, string>;
+  empty: string;
+}) {
+  if (!ids.length) return <span className="credentials-muted">{empty}</span>;
+  const visible = ids.slice(0, 3);
+  const remaining = ids.length - visible.length;
+  return (
+    <div className="credentials-share-chips">
+      {visible.map((id) => (
+        <span key={id} className="credentials-chip" title={id}>
+          {names.get(id) || id}
+        </span>
+      ))}
+      {remaining > 0 && (
+        <span className="credentials-chip credentials-chip-more">+{remaining}</span>
+      )}
+    </div>
+  );
+}
+
 export function CredentialsApp({ permissions, t, toast }: Props) {
   const [items, setItems] = useState<HostsManagerCredential[]>([]);
   const [environments, setEnvironments] = useState<HostsManagerEnvironment[]>([]);
@@ -187,6 +227,10 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
   const [shareModulesLoading, setShareModulesLoading] = useState(true);
   const [shareSelectionInitialized, setShareSelectionInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [environmentFilter, setEnvironmentFilter] = useState("");
+  const [moduleFilter, setModuleFilter] = useState("");
   const canManage = permissions.includes("hosts-manager.credentials.manage");
 
   const credentialTypes: CredentialType[] = [
@@ -202,6 +246,7 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
     "git_private_key",
     "wol",
   ];
+
   const profiles: Partial<Record<CredentialType, CredentialFieldProfile>> = {
     username_password: {
       username: {
@@ -318,6 +363,7 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
   useRefreshOnConnectionRestored(() => {
     void refresh();
   });
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -360,6 +406,7 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
     () => shareModules.map((module) => module.id),
     [shareModules],
   );
+
   useEffect(() => {
     if (!open || editing || shareSelectionInitialized || shareModulesLoading) return;
     setSharedWith(allShareModuleIds);
@@ -372,11 +419,41 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
     shareSelectionInitialized,
   ]);
 
+  const environmentNames = useMemo(
+    () => new Map(environments.map((item) => [item.id, item.name])),
+    [environments],
+  );
+  const moduleNames = useMemo(
+    () => new Map(shareModules.map((item) => [item.id, item.name])),
+    [shareModules],
+  );
+
+  const filteredItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return items.filter((item) => {
+      if (typeFilter && item.type !== typeFilter) return false;
+      if (environmentFilter && (item.environment_id || "") !== environmentFilter)
+        return false;
+      if (moduleFilter && !(item.shared_with || []).includes(moduleFilter)) return false;
+      if (!normalizedQuery) return true;
+      return [item.name, item.username, item.description, item.type]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery));
+    });
+  }, [environmentFilter, items, moduleFilter, query, typeFilter]);
+
   function setCredentialType(next: CredentialType) {
     setType(next);
     setUsername("");
     setSecret("");
     setPassphrase("");
+  }
+
+  function closeEditor() {
+    setSecret("");
+    setPassphrase("");
+    setEditing(null);
+    setOpen(false);
   }
 
   function showEditor(item?: HostsManagerCredential) {
@@ -435,10 +512,7 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
           normalized,
         ].sort((left, right) => left.name.localeCompare(right.name)),
       );
-      setSecret("");
-      setPassphrase("");
-      setEditing(null);
-      setOpen(false);
+      closeEditor();
     } catch (error) {
       toast(credentialsError(error, t), "error", "admin", "hosts-manager");
     } finally {
@@ -456,36 +530,37 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
     }
   }
 
-  const environmentNames = new Map(
-    environments.map((item) => [item.id, item.name]),
-  );
   const columns: HostsDataColumn<HostsManagerCredential>[] = [
     {
       id: "name",
       label: t("common.name"),
       sortValue: (item) => item.name,
-      cell: (item) => <strong>{item.name}</strong>,
+      cell: (item) => (
+        <div className="credentials-name-cell">
+          <strong>{item.name}</strong>
+          {item.description && <small>{item.description}</small>}
+        </div>
+      ),
     },
     {
       id: "type",
       label: t("hosts.credentials.type"),
       sortValue: (item) => item.type,
-      cell: (item) => t(`hosts.credentials.type.${item.type}`),
+      cell: (item) => (
+        <span className="credentials-type-badge">
+          {t(`hosts.credentials.type.${item.type}`)}
+        </span>
+      ),
     },
     {
       id: "username",
       label: t("hosts.credentials.account"),
       sortValue: (item) => item.username,
-      cell: (item) => item.username || t("common.none"),
-    },
-    {
-      id: "shared",
-      label: t("hosts.credentials.sharedWith"),
-      sortValue: (item) => (item.shared_with || []).join(","),
-      cell: (item) =>
-        item.shared_with?.length
-          ? item.shared_with.join(", ")
-          : t("hosts.credentials.notShared"),
+      cell: (item) => (
+        <span className={item.username ? "credentials-account" : "credentials-muted"}>
+          {item.username || t("common.none")}
+        </span>
+      ),
     },
     {
       id: "environment",
@@ -496,32 +571,30 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
         t("hosts.environment.all"),
     },
     {
+      id: "shared",
+      label: t("hosts.credentials.sharedWith"),
+      sortValue: (item) => (item.shared_with || []).join(","),
+      cell: (item) => (
+        <CredentialShareChips
+          ids={item.shared_with || []}
+          names={moduleNames}
+          empty={t("hosts.credentials.notShared")}
+        />
+      ),
+    },
+    {
       id: "hosts",
       label: t("hosts.credentials.hostCount"),
       sortValue: (item) => item.host_count || 0,
+      align: "center",
       cell: (item) => item.host_count || 0,
-    },
-    {
-      id: "created",
-      label: t("hosts.credentials.createdAt"),
-      sortValue: (item) => item.created_at || 0,
-      cell: (item) => new Date(item.created_at * 1000).toLocaleString(),
-    },
-    {
-      id: "lastUsed",
-      label: t("hosts.credentials.lastUsed"),
-      sortValue: (item) => item.last_used_at || 0,
-      cell: (item) =>
-        item.last_used_at
-          ? new Date(item.last_used_at * 1000).toLocaleString()
-          : t("common.none"),
     },
     {
       id: "actions",
       label: t("column.actions"),
       cell: (item) =>
         canManage ? (
-          <div className="hosts-table-actions">
+          <div className="hosts-table-actions credentials-row-actions">
             <button type="button" onClick={() => showEditor(item)}>
               {t("action.edit")}
             </button>
@@ -536,36 +609,118 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
         ) : null,
     },
   ];
+
   const profile = profiles[type] || {};
 
   return (
-    <div className="hosts-manager-app credentials-app">
-      <section className="ansible-panel">
-        <header>
-          <div>
-            <h3>{t("hosts.credentials.title")}</h3>
-            <p>{t("hosts.credentials.hint")}</p>
+    <div className="credentials-app">
+      <section className="credentials-workspace">
+        <header className="credentials-header">
+          <div className="credentials-heading">
+            <span className="credentials-heading-icon" aria-hidden="true">
+              <KeyRound />
+            </span>
+            <div>
+              <h2>{t("hosts.credentials.title")}</h2>
+              <p>{t("hosts.credentials.hint")}</p>
+            </div>
           </div>
-          <div className="module-section-toolbar">
+          <div className="credentials-header-actions">
             <button type="button" onClick={() => void refresh()} disabled={loading}>
-              <RefreshCw className={loading ? "spin" : ""} />
+              <RefreshCw className={loading ? "spin" : ""} aria-hidden="true" />
               {t("action.refresh")}
             </button>
             {canManage && (
-              <button className="button-primary" type="button" onClick={() => showEditor()}>
-                <Plus />
+              <button
+                className="button-primary"
+                type="button"
+                onClick={() => showEditor()}
+              >
+                <Plus aria-hidden="true" />
                 {t("hosts.credentials.add")}
               </button>
             )}
           </div>
         </header>
+
+        <div className="credentials-security-note" role="note">
+          <ShieldCheck aria-hidden="true" />
+          <span>{t("hosts.credentials.hint")}</span>
+        </div>
+
+        <div className="credentials-toolbar">
+          <label className="credentials-search-field">
+            <span className="credentials-visually-hidden">{t("action.search")}</span>
+            <Search aria-hidden="true" />
+            <input
+              aria-label={t("action.search")}
+              type="search"
+              value={query}
+              placeholder={`${t("action.search")}…`}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>{t("hosts.credentials.type")}</span>
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+            >
+              <option value="">{t("filter.all")}</option>
+              {credentialTypes.map((value) => (
+                <option key={value} value={value}>
+                  {t(`hosts.credentials.type.${value}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t("hosts.environment.title")}</span>
+            <select
+              value={environmentFilter}
+              onChange={(event) => setEnvironmentFilter(event.target.value)}
+            >
+              <option value="">{t("filter.all")}</option>
+              {environments.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t("hosts.credentials.sharedWith")}</span>
+            <select
+              value={moduleFilter}
+              onChange={(event) => setModuleFilter(event.target.value)}
+            >
+              <option value="">{t("filter.all")}</option>
+              {shareModules.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <output className="credentials-count" aria-live="polite">
+            {filteredItems.length} / {items.length}
+          </output>
+        </div>
+
         <HostsDataTable
-          items={items}
+          items={filteredItems}
           columns={columns}
           rowKey={(item) => item.id}
           loading={loading}
-          empty={t("hosts.credentials.empty")}
+          empty={
+            <div className="credentials-empty-state">
+              <KeyRound aria-hidden="true" />
+              <strong>{t("hosts.credentials.empty")}</strong>
+              <small>{t("hosts.credentials.hint")}</small>
+            </div>
+          }
         />
+
         {open && (
           <Modal
             title={
@@ -574,7 +729,7 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
                 : t("hosts.credentials.add")
             }
             closeLabel={t("action.close")}
-            onClose={() => setOpen(false)}
+            onClose={closeEditor}
             footer={
               <button
                 className="button-primary"
@@ -586,144 +741,158 @@ export function CredentialsApp({ permissions, t, toast }: Props) {
               </button>
             }
           >
-            <form id="credential-form" className="module-form-grid" onSubmit={save}>
-              <label className="module-form-span">
-                {t("hosts.credentials.type")}
-                <select
-                  aria-label={t("hosts.credentials.type")}
-                  autoFocus
-                  value={type}
-                  onChange={(event) =>
-                    setCredentialType(event.target.value as CredentialType)
-                  }
-                  disabled={Boolean(editing)}
-                >
-                  {credentialTypes.map((value) => (
-                    <option key={value} value={value}>
-                      {t(`hosts.credentials.type.${value}`)}
-                    </option>
-                  ))}
-                </select>
-                <small>
-                  {editing
-                    ? t("hosts.credentials.typeLocked")
-                    : t("hosts.credentials.typeHint")}
-                </small>
-              </label>
-              <label>
-                {t("common.name")}
-                <input
-                  required
-                  value={name}
-                  placeholder={t("hosts.credentials.namePlaceholder")}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </label>
-              {profile.username && (
+            <form
+              id="credential-form"
+              className="credentials-form"
+              onSubmit={save}
+            >
+              <div className="credentials-form-section credentials-form-grid">
                 <label>
-                  {profile.username.label}
+                  {t("common.name")}
                   <input
-                    aria-label={profile.username.label}
-                    required={profile.username.required}
-                    value={username}
-                    placeholder={profile.username.placeholder || ""}
-                    onChange={(event) => setUsername(event.target.value)}
+                    autoFocus
+                    required
+                    value={name}
+                    placeholder={t("hosts.credentials.namePlaceholder")}
+                    onChange={(event) => setName(event.target.value)}
                   />
-                  <small>{profile.username.hint || ""}</small>
                 </label>
-              )}
-              {profile.secret && (
-                <label
-                  className={profile.secret.multiline ? "module-form-span" : undefined}
-                >
-                  {profile.secret.label}
-                  {profile.secret.multiline ? (
-                    <textarea
-                      aria-label={profile.secret.label}
-                      rows={7}
-                      required={!editing && profile.secret.required}
-                      value={secret}
-                      onChange={(event) => setSecret(event.target.value)}
-                      placeholder={
-                        editing
-                          ? t("hosts.credentials.keepSecret")
-                          : profile.secret.placeholder || ""
-                      }
-                    />
-                  ) : (
-                    <input
-                      aria-label={profile.secret.label}
-                      type="password"
-                      required={!editing && profile.secret.required}
-                      value={secret}
-                      onChange={(event) => setSecret(event.target.value)}
-                      autoComplete="new-password"
-                      placeholder={
-                        editing
-                          ? t("hosts.credentials.keepSecret")
-                          : profile.secret.placeholder || ""
-                      }
-                    />
-                  )}
+                <label>
+                  {t("hosts.credentials.type")}
+                  <select
+                    aria-label={t("hosts.credentials.type")}
+                    value={type}
+                    onChange={(event) =>
+                      setCredentialType(event.target.value as CredentialType)
+                    }
+                    disabled={Boolean(editing)}
+                  >
+                    {credentialTypes.map((value) => (
+                      <option key={value} value={value}>
+                        {t(`hosts.credentials.type.${value}`)}
+                      </option>
+                    ))}
+                  </select>
                   <small>
                     {editing
-                      ? t("hosts.credentials.keepSecret")
-                      : profile.secret.hint || ""}
+                      ? t("hosts.credentials.typeLocked")
+                      : t("hosts.credentials.typeHint")}
                   </small>
                 </label>
-              )}
-              {profile.passphrase && (
-                <label>
-                  {t("hosts.credentials.passphrase")}
+                <label className="credentials-form-span">
+                  {t("common.description")}
                   <input
-                    aria-label={t("hosts.credentials.passphrase")}
-                    type="password"
-                    value={passphrase}
-                    onChange={(event) => setPassphrase(event.target.value)}
-                    autoComplete="new-password"
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
                   />
                 </label>
-              )}
-              {type === "wol" && (
-                <div className="module-form-span module-info">
-                  <strong>{t("hosts.credentials.wolNoSecret")}</strong>
-                  <p>{t("hosts.credentials.wolNoSecretHint")}</p>
-                </div>
-              )}
-              <label>
-                {t("hosts.environment.title")}
-                <select
-                  value={environmentId}
-                  onChange={(event) => setEnvironmentId(event.target.value)}
-                >
-                  <option value="">{t("hosts.environment.all")}</option>
-                  {environments.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="hosts-credential-share-field">
-                <span className="hosts-credential-share-label">
-                  {t("hosts.credentials.sharedWith")}
-                </span>
-                <CredentialModuleSelect
-                  modules={shareModules}
-                  selected={sharedWith}
-                  loading={shareModulesLoading}
-                  onChange={setSharedWith}
-                  t={t}
-                />
-                <small>{t("hosts.credentials.sharedWithHint")}</small>
               </div>
-              <label className="module-form-span">
-                {t("common.description")}
-                <input
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                />
-              </label>
+
+              <div className="credentials-form-section credentials-form-grid">
+                {profile.username && (
+                  <label>
+                    {profile.username.label}
+                    <input
+                      aria-label={profile.username.label}
+                      required={profile.username.required}
+                      value={username}
+                      placeholder={profile.username.placeholder || ""}
+                      onChange={(event) => setUsername(event.target.value)}
+                    />
+                    {profile.username.hint && <small>{profile.username.hint}</small>}
+                  </label>
+                )}
+                {profile.secret && (
+                  <label
+                    className={
+                      profile.secret.multiline ? "credentials-form-span" : undefined
+                    }
+                  >
+                    {profile.secret.label}
+                    {profile.secret.multiline ? (
+                      <textarea
+                        aria-label={profile.secret.label}
+                        rows={7}
+                        required={!editing && profile.secret.required}
+                        value={secret}
+                        onChange={(event) => setSecret(event.target.value)}
+                        placeholder={
+                          editing
+                            ? t("hosts.credentials.keepSecret")
+                            : profile.secret.placeholder || ""
+                        }
+                      />
+                    ) : (
+                      <input
+                        aria-label={profile.secret.label}
+                        type="password"
+                        required={!editing && profile.secret.required}
+                        value={secret}
+                        onChange={(event) => setSecret(event.target.value)}
+                        autoComplete="new-password"
+                        placeholder={
+                          editing
+                            ? t("hosts.credentials.keepSecret")
+                            : profile.secret.placeholder || ""
+                        }
+                      />
+                    )}
+                    <small>
+                      {editing
+                        ? t("hosts.credentials.keepSecret")
+                        : profile.secret.hint || ""}
+                    </small>
+                  </label>
+                )}
+                {profile.passphrase && (
+                  <label>
+                    {t("hosts.credentials.passphrase")}
+                    <input
+                      aria-label={t("hosts.credentials.passphrase")}
+                      type="password"
+                      value={passphrase}
+                      onChange={(event) => setPassphrase(event.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                )}
+                {type === "wol" && (
+                  <div className="credentials-form-span module-info">
+                    <strong>{t("hosts.credentials.wolNoSecret")}</strong>
+                    <p>{t("hosts.credentials.wolNoSecretHint")}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="credentials-form-section credentials-form-grid">
+                <label>
+                  {t("hosts.environment.title")}
+                  <select
+                    value={environmentId}
+                    onChange={(event) => setEnvironmentId(event.target.value)}
+                  >
+                    <option value="">{t("hosts.environment.all")}</option>
+                    {environments.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="hosts-credential-share-field credentials-form-span">
+                  <span className="hosts-credential-share-label">
+                    {t("hosts.credentials.sharedWith")}
+                  </span>
+                  <CredentialModuleSelect
+                    modules={shareModules}
+                    selected={sharedWith}
+                    loading={shareModulesLoading}
+                    onChange={setSharedWith}
+                    t={t}
+                  />
+                  <small>{t("hosts.credentials.sharedWithHint")}</small>
+                </div>
+              </div>
             </form>
           </Modal>
         )}

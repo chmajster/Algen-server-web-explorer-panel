@@ -1,10 +1,11 @@
 import { KeyRound } from "lucide-react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 import { CredentialsApp } from "./CredentialsApp";
+import "./credentials.css";
 
 const credentialsManifest: FrontendModuleManifest = {
   id: "credentials",
-  labelKey: "hosts.credentials.title",
+  labelKey: "module.section.credentials",
   icon: <KeyRound />,
   category: "infrastructure",
   permission: "hosts-manager.credentials.view",
@@ -14,7 +15,11 @@ const credentialsManifest: FrontendModuleManifest = {
   render: (context) => (
     <CredentialsApp
       permissions={context.profile.permissions}
-      t={context.t}
+      t={(key) =>
+        key === "hosts.credentials.title"
+          ? context.t("module.section.credentials")
+          : context.t(key)
+      }
       toast={context.toast}
     />
   ),
