@@ -13,6 +13,21 @@ def test_apps_is_only_a_compatibility_facade():
     assert source.count("\n") < 320
 
 
+def test_logs_is_only_a_compatibility_facade():
+    source = (BACKEND / "logs.py").read_text(encoding="utf-8")
+    assert source.count("\n") < 140
+    assert "subprocess.Popen(" not in source
+    assert "@router.get" not in source
+    assert "log_system" in source
+
+
+def test_log_sources_use_explicit_protocol_adapters():
+    source = (BACKEND / "log_system" / "sources.py").read_text(encoding="utf-8")
+    assert "class LogSource(Protocol)" in source
+    assert "class JournalLogSource" in source
+    assert "class FileLogSource" in source
+
+
 def test_jobs_own_persistence_and_controlled_runner():
     repository = (BACKEND / "jobs" / "repository.py").read_text(encoding="utf-8")
     runner = (BACKEND / "jobs" / "runner.py").read_text(encoding="utf-8")
