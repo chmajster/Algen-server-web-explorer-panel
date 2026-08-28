@@ -14,7 +14,7 @@ const entrySources = import.meta.glob<string>("../../main.tsx", {
 
 describe("frontend lazy-loading architecture", () => {
   it("keeps feature implementations out of eager module manifests", () => {
-    const staticFeatureImport = /(^|\n)\s*import\s+(?!type\b)(?!\()[\s\S]*?\sfrom\s+["'][^"']*\/features\//g;
+    const staticFeatureImport = /(^|\n)\s*import\s+(?!type\b)(?!\()[^;]+from\s+["'][^"']*\/features\//g;
 
     for (const [path, source] of Object.entries(manifestSources)) {
       expect(source, `${path} must lazy-load runtime feature implementations`).not.toMatch(staticFeatureImport);
