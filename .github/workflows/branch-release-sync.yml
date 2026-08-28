@@ -1,0 +1,61 @@
+name: Branch release metadata sync
+
+on:
+  push:
+    branches:
+      - refactor/operations-hardening
+    paths:
+      - .github/workflows/branch-release-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v7
+        with:
+          ref: refactor/operations-hardening
+          fetch-depth: 0
+
+      - name: Bump patch version
+        run: python scripts/sync-version.py --bump patch
+
+      - name: Update changelog
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("CHANGELOG.md")
+          text = path.read_text(encoding="utf-8")
+          marker = "## Unreleased\n"
+          if marker not in text:
+              raise SystemExit("CHANGELOG.md is missing the Unreleased section")
+          release = """## Unreleased
+
+          ## v0.1.23 — 2026-08-29
+
+          - Hardened hosted/trusted CI and production deployment so manual production promotion requires a successful hosted test run for the exact `main` revision; authentication diagnostics and baseline HTTP security headers were also strengthened.
+          - Consolidated persistent jobs, logs, plugins and the application/module-store architecture, and moved Credentials into a standalone application while preserving centralized secret handling and module integrations.
+          - Improved runtime resilience with watchdog recovery, blue/green service detection, application-log source handling and filtering of unavailable legacy WebNAS systemd units.
+          - Reduced frontend startup cost through lazy feature/module boundaries and bundle budgets, and improved desktop UX with taskbar-safe dialogs plus horizontal Resource Monitor navigation.
+          - Improved Proxmox endpoint handling with scheme-less input and automatic API protocol detection, and expanded localized CSRF diagnostics.
+          - Added ordered multi-server DNS management with dedicated inputs, deduplication and `systemd-resolved` global DNS discovery.
+          - Prevented durable JobService records from remaining permanently `queued` after a process restart by recovering interrupted queued work into an explicit failed/retryable state.
+          - Refreshed supported backend/frontend dependencies and kept generated dependency metadata synchronized with the project source of truth.
+
+          """
+          path.write_text(text.replace(marker, release, 1), encoding="utf-8")
+
+      - name: Verify synchronized version metadata
+        run: python scripts/sync-version.py --check
+
+      - name: Commit release metadata
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION CHANGELOG.md pyproject.toml backend/app/__init__.py frontend/package.json frontend/package-lock.json
+          git commit -m "chore(release): release WebNAS 0.1.23"
+          git push origin HEAD:refactor/operations-hardening
