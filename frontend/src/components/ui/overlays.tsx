@@ -29,8 +29,6 @@ export function Drawer({ open, title, description, children, footer, onClose, si
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLElement>(null);
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -41,7 +39,7 @@ export function Drawer({ open, title, description, children, footer, onClose, si
     function keydown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeRef.current();
+        onClose();
         return;
       }
       if (event.key !== "Tab" || !panelRef.current) return;
@@ -66,7 +64,7 @@ export function Drawer({ open, title, description, children, footer, onClose, si
       document.removeEventListener("keydown", keydown);
       previous?.focus();
     };
-  }, [open]);
+  }, [onClose, open]);
 
   if (!open || typeof document === "undefined") return null;
   return createPortal(<div className="wn-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
