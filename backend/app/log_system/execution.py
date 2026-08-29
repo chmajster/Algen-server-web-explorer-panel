@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ..modules.ansible_controller.security import redact_text
+from ..core.redaction import redact_text
 from .models import MAX_COMMAND_BYTES
 
 
