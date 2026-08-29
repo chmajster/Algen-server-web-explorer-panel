@@ -12,6 +12,8 @@ import {
   type UpdateProgress,
 } from "../../api";
 import type { Translate } from "../../app/types";
+import { runtimeConnectionState, subscribeRuntimeConnection, subscribeRuntimeEvent, type RuntimeConnectionState } from "../../core/realtime/runtimeEvents";
+import { pageIsVisible, subscribePageVisibility } from "../../core/runtime/pageVisibility";
 import {
   dedupeAndSortActions,
   normalizeAnsibleExecution,
@@ -55,6 +57,39 @@ function replaceById<T extends { id: string }>(items: T[], next: T) {
   return [next, ...items.filter((item) => item.id !== next.id)];
 }
 
+function sameTarget(current: BackgroundAction["target"], next: BackgroundAction["target"]) {
+  return current.app === next.app
+    && current.moduleId === next.moduleId
+    && current.initialPath === next.initialPath
+    && current.entityId === next.entityId
+    && current.jobId === next.jobId
+    && current.section === next.section
+    && current.detailType === next.detailType;
+}
+
+function sameAction(current: BackgroundAction, next: BackgroundAction) {
+  return current.key === next.key
+    && current.id === next.id
+    && current.relatedJobId === next.relatedJobId
+    && current.source === next.source
+    && current.title === next.title
+    && current.subtitle === next.subtitle
+    && current.status === next.status
+    && current.progress === next.progress
+    && current.currentStep === next.currentStep
+    && current.error === next.error
+    && current.createdAt === next.createdAt
+    && current.updatedAt === next.updatedAt
+    && current.finishedAt === next.finishedAt
+    && current.cancellable === next.cancellable
+    && current.retryable === next.retryable
+    && sameTarget(current.target, next.target);
+}
+
+function sameActions(current: BackgroundAction[], next: BackgroundAction[]) {
+  return current.length === next.length && current.every((action, index) => sameAction(action, next[index]));
+}
+
 function isAllowedAction(action: BackgroundAction, permissions: ReadonlySet<string>) {
   if (action.target.detailType === "transfer") {
     return permissions.has("transfers.view_own") || permissions.has("transfers.view_all");
@@ -85,6 +120,7 @@ export function useBackgroundActions({
   const [sources, setSources] = useState<Sources>(emptySources);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [rememberedActions, setRememberedActions] = useState<BackgroundAction[]>([]);
+  const [runtimeState, setRuntimeState] = useState<RuntimeConnectionState>(() => runtimeConnectionState());
   const mounted = useRef(true);
   const lastSeen = useRef(new Map<string, number>());
   const refreshSequence = useRef(0);
@@ -147,41 +183,26 @@ export function useBackgroundActions({
     return tracked;
   }, [can]);
 
+  useEffect(() => subscribeRuntimeConnection(() => setRuntimeState(runtimeConnectionState())), []);
+
   useEffect(() => {
     mounted.current = true;
-    const pollWhenVisible = () => {
-      if (!document.hidden) void refresh();
-    };
-    pollWhenVisible();
-    const timer = window.setInterval(pollWhenVisible, pollInterval);
-    document.addEventListener("visibilitychange", pollWhenVisible);
+    const refreshWhenVisible = () => { if (pageIsVisible()) void refresh(); };
+    refreshWhenVisible();
+    const unsubscribeVisibility = subscribePageVisibility((visible) => { if (visible) void refresh(); });
+    const unsubscribeEvents = ["job.updated", "module.updated", "update.progress"].map((eventType) => subscribeRuntimeEvent(eventType, refreshWhenVisible));
     return () => {
       mounted.current = false;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", pollWhenVisible);
+      unsubscribeVisibility();
+      unsubscribeEvents.forEach((unsubscribe) => unsubscribe());
     };
-  }, [pollInterval, refresh]);
+  }, [refresh]);
 
-  const activeAppJobIds = sources.appJobs.filter((job) => ["queued", "running", "waiting_for_confirmation"].includes(job.status)).map((job) => job.id).sort().join("|");
   useEffect(() => {
-    if (!activeAppJobIds || typeof EventSource === "undefined") return;
-    const eventSources = activeAppJobIds.split("|").map((id) => {
-      const source = new EventSource(`/api/apps/jobs/${encodeURIComponent(id)}/events`, { withCredentials: true });
-      source.onmessage = (event) => {
-        try {
-          const job = JSON.parse(event.data) as AppJob;
-          streamRevisions.current.appJobs += 1;
-          setSources((current) => ({ ...current, appJobs: replaceById(current.appJobs, job) }));
-          if (["completed", "failed", "cancelled"].includes(job.status)) source.close();
-        } catch {
-          source.close();
-        }
-      };
-      source.onerror = () => source.close();
-      return source;
-    });
-    return () => eventSources.forEach((source) => source.close());
-  }, [activeAppJobIds]);
+    if (runtimeState !== "fallback") return;
+    const timer = window.setInterval(() => { if (pageIsVisible()) void refresh(); }, pollInterval);
+    return () => window.clearInterval(timer);
+  }, [pollInterval, refresh, runtimeState]);
 
   const activeAnsibleIds = sources.ansibleJobs.filter((job) => ["queued", "running"].includes(job.status)).map((job) => job.id).sort().join("|");
   useEffect(() => {
@@ -263,7 +284,7 @@ export function useBackgroundActions({
         }
       }
       const next = dedupeAndSortActions([...remembered.values()]);
-      return JSON.stringify(next) === JSON.stringify(previous) ? previous : next;
+      return sameActions(next, previous) ? previous : next;
     });
   }, [currentActions]);
 
