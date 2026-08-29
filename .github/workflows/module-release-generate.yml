@@ -1,0 +1,167 @@
+name: Prepare security modules release artifacts
+
+on:
+  push:
+    branches:
+      - feature/firewall-security-network-tools
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/firewall-security-network-tools
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install tooling
+        run: |
+          python -m pip install -r backend/requirements-dev.txt
+          cd frontend
+          npm ci
+      - name: Normalize new Python sources
+        run: |
+          python -m ruff check --fix \
+            backend/app/modules/firewall_manager \
+            backend/app/modules/security_center \
+            backend/app/modules/network_tools \
+            backend/app/privileged_broker/firewall_policy.py \
+            backend/tests/test_firewall_manager.py \
+            backend/tests/test_security_center.py \
+            backend/tests/test_network_tools.py
+      - name: Apply release fixes and documentation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"anchor not found in {path}: {old[:80]!r}")
+              target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # Firewall safety/typing corrections found during implementation review.
+          path = Path("backend/app/modules/firewall_manager/router.py")
+          text = path.read_text(encoding="utf-8")
+          if "from ...activity import ActivityStatus" not in text:
+              text = text.replace("from fastapi import APIRouter, Depends, Request\n", "from fastapi import APIRouter, Depends, Request\n\nfrom ...activity import ActivityStatus\n")
+          text = text.replace('status="failure"', "status=ActivityStatus.failure")
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("backend/app/modules/firewall_manager/service.py")
+          text = path.read_text(encoding="utf-8").replace('if operation in {"disable", "enable"}:', 'if operation in {"disable", "enable", "restore"}:')
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("backend/app/privileged_broker/firewall_policy.py")
+          text = path.read_text(encoding="utf-8")
+          old = '        if any(not _SAFE_TOKEN.fullmatch(item) and not _INTERFACE.fullmatch(item) for item in args[5:]):\n            raise base.PolicyError("invalid nftables token")\n'
+          new = '''        for index, item in enumerate(args[5:], start=5):\n            if index > 0 and args[index - 1] == "comment":\n                if len(item) > 120 or any(ord(character) < 32 for character in item):\n                    raise base.PolicyError("invalid nftables comment")\n                continue\n            if not _SAFE_TOKEN.fullmatch(item) and not _INTERFACE.fullmatch(item):\n                raise base.PolicyError("invalid nftables token")\n'''
+          if old not in text:
+              raise SystemExit("nftables validation anchor not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          readme = Path("README.md")
+          text = readme.read_text(encoding="utf-8")
+          text = text.replace(
+              "| **DHCP** | Kea DHCPv4 / ISC DHCP subnets, pools, reservations, leases, diagnostics and transactional configuration |\n",
+              "| **DHCP** | Kea DHCPv4 / ISC DHCP subnets, pools, reservations, leases, diagnostics and transactional configuration |\n"
+              "| **Firewall Manager** | Local UFW/firewalld/nftables status, rules, open ports, safe changes, backups and rollback |\n"
+              "| **Security Center** | Security Score, findings, SSH/authentication, updates, exposure, TLS, users and audit signals |\n"
+              "| **Network Tools** | Safe ping, traceroute, DNS, TCP/HTTP tests, route lookup, neighbors, interfaces and connections |\n",
+              1,
+          )
+          text = text.replace(
+              "- DHCP Manager (Kea DHCPv4 / ISC DHCP)\n",
+              "- DHCP Manager (Kea DHCPv4 / ISC DHCP)\n- Firewall Manager\n- Security Center\n- Network Tools\n",
+              1,
+          )
+          text = text.replace(
+              "| [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases and safe configuration lifecycle |\n",
+              "| [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases and safe configuration lifecycle |\n"
+              "| [FIREWALL_MANAGER.md](FIREWALL_MANAGER.md) | Local host firewall management, safety transaction, API and RBAC |\n"
+              "| [SECURITY_CENTER.md](SECURITY_CENTER.md) | Security Score, findings, scan architecture and data sources |\n"
+              "| [NETWORK_TOOLS.md](NETWORK_TOOLS.md) | Safe diagnostic tools, validation, limits and API |\n",
+              1,
+          )
+          readme.write_text(text, encoding="utf-8")
+
+          modules = Path("MODULES.md")
+          text = modules.read_text(encoding="utf-8")
+          anchor = "Cron Manager is the native scheduled-task module. It uses a dedicated typed router and provider, the shared durable package-operation queue for mutations, Identity RBAC/CSRF/PAM and Activity Center audit. It owns only `/etc/cron.d/webnas`; system and user cron entries are discovered as read only. See [CRON_MANAGER.md](CRON_MANAGER.md).\n"
+          addition = anchor + "\nFirewall Manager, Security Center and Network Tools follow the same dedicated-domain pattern. Firewall Manager owns only the local host firewall boundary and does not replace DCST/Proxmox Firewall. Security Center aggregates existing WebNAS and host signals without creating parallel user, update, networking or audit stores. Network Tools reuses `network_diagnostics.py` for existing inventory/connectivity primitives and adds only typed missing diagnostics. All three register granular permissions in the shared Identity registry and write operational history to Activity Center. See [FIREWALL_MANAGER.md](FIREWALL_MANAGER.md), [SECURITY_CENTER.md](SECURITY_CENTER.md) and [NETWORK_TOOLS.md](NETWORK_TOOLS.md).\n"
+          if anchor not in text:
+              raise SystemExit("MODULES.md anchor not found")
+          modules.write_text(text.replace(anchor, addition, 1), encoding="utf-8")
+
+          changelog = Path("CHANGELOG.md")
+          text = changelog.read_text(encoding="utf-8")
+          anchor = "## Unreleased\n"
+          addition = "## Unreleased\n\n- Added **Firewall Manager** for local UFW/firewalld/nftables administration with typed rules, open-port correlation, PAM/RBAC/CSRF/audit enforcement, lockout warnings, automatic backups and verified rollback.\n- Added **Security Center** with a 0-100 Security Score, actionable findings, job-based scans and aggregation of firewall, SSH, updates, network exposure, HTTPS, users, permissions and failed-login signals.\n- Added **Network Tools** with safe ping/traceroute/DNS/reverse-DNS/TCP/HTTP/route diagnostics plus route, neighbor, interface, listening-port, connection and DNS-configuration views, including bounded concurrency, rate limiting, timeouts and output limits.\n"
+          if anchor not in text:
+              raise SystemExit("CHANGELOG.md anchor not found")
+          changelog.write_text(text.replace(anchor, addition, 1), encoding="utf-8")
+
+          Path("FIREWALL_MANAGER.md").write_text('''# Firewall Manager\n\n## Purpose\n\nFirewall Manager manages the firewall of the local Linux host. It is intentionally separate from DCST, which retains responsibility for logical segmentation and Proxmox Firewall reconciliation. Supported local backends are UFW, firewalld and nftables; the active backend is detected server-side.\n\n## Architecture and safety\n\nThe frontend sends typed rule fields only. It never sends executables, shell fragments or configuration paths. FastAPI validates the models, enforces the shared session/RBAC/CSRF boundary and requires PAM re-authentication plus exact confirmation for mutations. Privileged firewall execution crosses the existing Unix-socket privileged broker through the dedicated `firewall` operation. The broker revalidates backend and argv shape and never uses `shell=True`.\n\nEvery mutation is executed as a WebNAS job with the sequence `validate -> plan/diff -> backup -> apply -> verify -> rollback on failure`. Changes that may affect SSH, the current WebNAS port, the current administrator source address, global firewall state or a blocking rule return a lockout warning and require explicit acknowledgement. nftables writes are limited to the dedicated `inet webnas` table; unrelated administrator nftables rules are read-only.\n\n## UI\n\nSections: Overview, Rules, Open Ports, Backups and Activity. Open Ports correlates `ss` listeners with normalized firewall rules and shows process/service information when the kernel exposes it. The layout uses the shared WebNAS table/form conventions and responsive CSS for desktop, tablet and phone layouts.\n\n## API\n\n- `GET /api/modules/firewall-manager/status`\n- `GET /api/modules/firewall-manager/rules`\n- `GET /api/modules/firewall-manager/listening-ports`\n- `POST /api/modules/firewall-manager/rules/plan`\n- `POST /api/modules/firewall-manager/rules`\n- `PUT /api/modules/firewall-manager/rules/{id}`\n- `DELETE /api/modules/firewall-manager/rules/{id}`\n- `POST /api/modules/firewall-manager/enable`\n- `POST /api/modules/firewall-manager/disable`\n- `POST /api/modules/firewall-manager/reload`\n- `GET /api/modules/firewall-manager/export`\n- `GET/POST /api/modules/firewall-manager/backups`\n- `POST /api/modules/firewall-manager/backups/{id}/restore`\n- `GET /api/modules/firewall-manager/activity`\n\n## Permissions\n\n`firewall.view`, `firewall.rules.create`, `firewall.rules.edit`, `firewall.rules.delete`, `firewall.enable`, `firewall.disable`, `firewall.reload`, `firewall.backup`, `firewall.restore`. Backend authorization is authoritative; hidden frontend controls are not a security boundary.\n\n## Packages\n\nAPT: `ufw`, `nftables`, `iproute2`. DNF/YUM: `firewalld`, `nftables`, `iproute`. Module Center uses the existing apt/dnf/yum package executor.\n\n## Limitations\n\nFirewall Manager normalizes common UFW/firewalld/nftables rules. Arbitrary pre-existing nftables expressions remain visible but are intentionally not editable unless they belong to the WebNAS nftables table. Rule-level enable/disable is exposed only where the backend has a stable native representation; deletion/recreation is not presented as a fake enable toggle. Import/export uses the normalized WebNAS schema rather than accepting raw firewall scripts.\n\n## Troubleshooting\n\nIf no backend is detected, install/enable one supported firewall through Module Center and refresh status. If a mutation fails, inspect the corresponding global WebNAS job and Activity Center event; the automatic pre-change backup ID is retained in the job result. A rollback failure is reported explicitly and never hidden.\n''', encoding="utf-8")
+
+          Path("SECURITY_CENTER.md").write_text('''# Security Center\n\n## Purpose\n\nSecurity Center is an advisory aggregation layer for WebNAS and the local host. It calculates a Security Score from 0 to 100 and presents actionable findings without applying automatic remediation.\n\n## Data sources\n\nThe scan reuses Firewall Manager for firewall/open-port state, Linux Updates for package/security-update state, WebNAS HTTPS transport settings, SSH effective configuration, NSS/local account data, configuration-file permissions and bounded systemd journal inspection for failed authentication events. It does not create replacement user, networking, update, package, job or audit registries. Only finding acknowledgement/resolution state is persisted in `security-center.sqlite3`.\n\n## Findings and score\n\nSeverities are Critical, High, Medium, Low, Info and Passed. Findings contain severity, title, description, affected resource, detection source, recommendation, timestamp, category and status (`open`, `acknowledged`, `resolved`). Score penalties are severity-weighted and clamped to 0-100. Area summaries cover firewall, authentication/SSH, updates, network exposure, TLS/HTTPS, users, permissions and system security.\n\nImplemented checks include disabled/no-rule firewall state, permissive SSH root/password/empty-password settings, security/package updates and reboot requirement, public listeners without an explicit firewall match, WebNAS without HTTPS, multiple UID 0 accounts, unsafe WebNAS configuration write permissions and elevated failed-login volume. Unavailable data sources degrade to informational findings instead of silently reporting success.\n\n## Scan flow\n\n`POST /api/modules/security-center/scan` creates a standard WebNAS Job. Scan start/completion and finding state changes are written to Activity Center. Security Center never performs fixes as a side effect of scanning. Remediation remains a separate administrator workflow in the owning module.\n\n## API\n\n- `GET /api/modules/security-center/summary`\n- `GET /api/modules/security-center/findings`\n- `POST /api/modules/security-center/scan`\n- `POST /api/modules/security-center/findings/{id}/state`\n- `GET /api/modules/security-center/checks`\n\n## Permissions\n\n`security.view`, `security.scan`, `security.findings.manage`.\n\n## UI\n\nSections: Overview, Findings, Authentication, Network, Updates, Certificates and Audit. The dashboard displays score, severity totals, area scores and scan age; filtered views reuse the same authoritative finding set.\n\n## Limitations\n\nThe initial scanner is deliberately non-destructive and focuses on local-host/WebNAS posture. Distribution-specific MAC frameworks, kernel-hardening policies and advanced certificate-chain policy can be added as independent checks later without changing the finding contract. A finding marked resolved is administrative state; a new scan still detects the underlying condition and keeps the detection evidence current.\n\n## Troubleshooting\n\nIf a source is unavailable, verify the owning WebNAS module/tool first (Firewall Manager, Linux Updates, `sshd`, `journalctl`, HTTPS settings). Scan jobs and redacted failures are available in the shared Jobs/Activity surfaces.\n''', encoding="utf-8")
+
+          Path("NETWORK_TOOLS.md").write_text('''# Network Tools\n\n## Purpose\n\nNetwork Tools provides bounded diagnostics without exposing a browser shell or generic command executor. Hostnames, IPv4/IPv6 addresses, DNS servers, ports, record types and URLs are validated by typed Pydantic models before execution.\n\n## Architecture\n\nExisting Networking collectors are reused: `network_diagnostics.test_connectivity`, `network_overview`, `routing_snapshot` and `dns_configuration`. Network Tools adds the missing typed DNS record lookup, reverse DNS, route lookup, neighbor/connection views and HTTP/TLS probe. System utilities are selected server-side and always invoked as argv arrays with `shell=False`.\n\nThe module limits diagnostics to four concurrent operations and thirty requests per actor per minute. Commands and sockets use explicit timeouts, and command/result output is bounded. Every diagnostic creates a secret-free Activity Center event.\n\n## Tools\n\n- Ping: 3 bounded ICMP probes through the existing diagnostics helper.\n- Traceroute: `tracepath`/`traceroute`, max 20 hops.\n- DNS Lookup: A, AAAA, CNAME, MX, TXT, NS and PTR; optional validated DNS server IP.\n- Reverse DNS: validated IPv4/IPv6 address through the system resolver.\n- TCP Port Test: hostname/IP + port, success/failure and latency.\n- HTTP/HTTPS Test: DNS resolution, resolved IPs, TCP connect timing, TLS handshake timing, HTTP status, response timing, redirect chain and basic peer-certificate metadata.\n- Route Lookup: fixed `ip -j route get` command.\n- Routing Table: shared Networking routing snapshot.\n- ARP/Neighbor Table: fixed `ip -j neigh show`.\n- Interfaces: shared Networking interface inventory.\n- Listening Ports: shared Firewall Manager listener correlation.\n- Active Connections: bounded `ss -H -tunap` parsing.\n- DNS Configuration: shared resolver configuration inventory.\n\n## API\n\n- `GET /api/modules/network-tools/overview`\n- `POST /api/modules/network-tools/ping`\n- `POST /api/modules/network-tools/traceroute`\n- `POST /api/modules/network-tools/dns`\n- `POST /api/modules/network-tools/reverse-dns`\n- `POST /api/modules/network-tools/port-test`\n- `POST /api/modules/network-tools/http-test`\n- `POST /api/modules/network-tools/route-lookup`\n- `GET /api/modules/network-tools/routes`\n- `GET /api/modules/network-tools/neighbors`\n- `GET /api/modules/network-tools/interfaces`\n- `GET /api/modules/network-tools/connections`\n- `GET /api/modules/network-tools/listening-ports`\n- `GET /api/modules/network-tools/dns-configuration`\n\n## Permissions\n\n`network_tools.view`, `network_tools.ping`, `network_tools.traceroute`, `network_tools.dns`, `network_tools.port_test`, `network_tools.http_test`, `network_tools.routes`, `network_tools.connections`.\n\n## Packages\n\nAPT: `iproute2`, `iputils-ping`, `traceroute`, `dnsutils`. DNF/YUM: `iproute`, `iputils`, `traceroute`, `bind-utils`.\n\n## Security limitations\n\nThe tools intentionally permit an authorized administrator/operator to test private or public network destinations because this is a diagnostic function. They do not permit custom binaries, switches, shell syntax, file paths or environment variables. HTTP URLs reject embedded credentials and redirects are bounded. The feature is not a port scanner and exposes only one explicit TCP port per request.\n\n## Troubleshooting\n\nMissing `dig`, `ip`, `ss`, `ping` or traceroute tooling is reported as an unavailable diagnostic rather than falling back to a shell. Install the declared Module Center dependencies and repeat the test.\n''', encoding="utf-8")
+
+          # Playwright mock permissions/endpoints and one cross-module smoke flow.
+          mock = Path("frontend/e2e/mockApi.ts")
+          text = mock.read_text(encoding="utf-8")
+          permission_anchor = '  "dcst.manage_tags", "dcst.manage_ipsets", "dcst.manage_ports", "dcst.view_logs",\n'
+          permission_add = permission_anchor + '  "firewall.view", "firewall.rules.create", "firewall.rules.delete", "firewall.enable", "firewall.disable", "firewall.reload", "firewall.backup", "firewall.restore",\n  "security.view", "security.scan", "security.findings.manage", "network_tools.view", "network_tools.ping", "network_tools.traceroute", "network_tools.dns",\n  "network_tools.port_test", "network_tools.http_test", "network_tools.routes", "network_tools.connections",\n'
+          if permission_anchor not in text:
+              raise SystemExit("mockApi permissions anchor not found")
+          text = text.replace(permission_anchor, permission_add, 1)
+          endpoint_anchor = '    const module = { id: "samba",'
+          endpoint_add = '''    if (path === "/api/modules/firewall-manager/status") return respond(route, { backend: "ufw", available_backends: ["ufw"], active: true, detail: "Status: active", rules: 1 });\n    if (path === "/api/modules/firewall-manager/rules") return respond(route, { items: [{ id: "ufw:1", backend: "ufw", action: "allow", direction: "in", protocol: "tcp", port: "22", source: "10.0.0.0/24", destination: "any", interface: "", comment: "SSH", family: "ipv4", enabled: true, editable: true }], total: 1 });\n    if (path === "/api/modules/firewall-manager/listening-ports") return respond(route, { items: [], total: 0 });\n    if (path === "/api/modules/firewall-manager/backups" || path === "/api/modules/firewall-manager/activity") return respond(route, { items: [] });\n    if (path === "/api/modules/security-center/summary") return respond(route, { score: 92, findings: 1, last_scan: 1, severity: { critical: 0, high: 0, medium: 1, low: 0, info: 0, passed: 0 }, areas: { firewall: { score: 100, findings: 0, critical: 0, high: 0 } }, metrics: {} });\n    if (path === "/api/modules/security-center/findings") return respond(route, { items: [{ id: "finding-1", check_id: "network.public_unmatched", severity: "medium", title: "Public listening port", description: "Test finding", affected_resource: "tcp:8080", detection_source: "Networking", recommendation: "Review exposure", timestamp: 1, status: "open", category: "network" }], total: 1 });\n    if (path === "/api/modules/network-tools/ping") return respond(route, { kind: "ping", target: "example.com", success: true, duration_ms: 4, output: "3 packets transmitted, 3 received" });\n\n    const module = { id: "samba",'''
+          if endpoint_anchor not in text:
+              raise SystemExit("mockApi endpoint anchor not found")
+          text = text.replace(endpoint_anchor, endpoint_add, 1)
+          mock.write_text(text, encoding="utf-8")
+
+          spec = Path("frontend/e2e/critical-flows.spec.ts")
+          text = spec.read_text(encoding="utf-8")
+          text += '''\n\ntest("Firewall Manager, Security Center and Network Tools load as native desktop modules", async ({ page }) => {\n  await installMockApi(page);\n  await page.goto("/");\n  await openDesktopApp(page, "Firewall Manager");\n  await expect(page.getByRole("navigation", { name: "Firewall sections" })).toBeVisible();\n  await openDesktopApp(page, "Security Center");\n  await expect(page.getByText("92/100")).toBeVisible();\n  await openDesktopApp(page, "Network Tools");\n  const networkWindow = page.locator('.desktop-window.active[aria-label="Network Tools"]');\n  await networkWindow.getByRole("button", { name: "Run", exact: true }).click();\n  await expect(networkWindow.getByText(/3 packets transmitted/)).toBeVisible();\n});\n'''
+          spec.write_text(text, encoding="utf-8")
+          PY
+      - name: Bump and synchronize project version
+        run: python scripts/sync-version.py --bump patch
+      - name: Generate OpenAPI TypeScript contract
+        working-directory: frontend
+        run: npm run api:generate
+      - name: Final source lint
+        run: |
+          python -m ruff check \
+            backend/app/modules/firewall_manager \
+            backend/app/modules/security_center \
+            backend/app/modules/network_tools \
+            backend/app/privileged_broker/firewall_policy.py \
+            backend/tests/test_firewall_manager.py \
+            backend/tests/test_security_center.py \
+            backend/tests/test_network_tools.py
+      - name: Commit generated release artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/module-release-generate.yml
+          git add -A
+          git commit -m "docs: finalize security and network modules"
+          git push origin HEAD:feature/firewall-security-network-tools
