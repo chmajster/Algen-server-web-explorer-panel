@@ -69,7 +69,12 @@ jobs:
           replace_once(
               "backend/tests/test_webhook_manager.py",
               'import app.modules.webhook_manager.service as webhook_module\n',
-              'webhook_module = importlib.import_module("app.modules.webhook_manager.service")\n',
+              '',
+          )
+          replace_once(
+              "backend/tests/test_webhook_manager.py",
+              'from app.modules.webhook_manager.service import WebhookManagerService, WebhookValidationError\n',
+              'from app.modules.webhook_manager.service import WebhookManagerService, WebhookValidationError\n\nwebhook_module = importlib.import_module("app.modules.webhook_manager.service")\n',
           )
           PY
       - name: Install backend development dependencies
