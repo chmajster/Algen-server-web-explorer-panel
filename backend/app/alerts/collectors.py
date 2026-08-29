@@ -68,7 +68,8 @@ def collect_host_health() -> int:
             "",
         )
         if effective:
-            agent = host.get("agent") if isinstance(host.get("agent"), dict) else {}
+            agent_value = host.get("agent")
+            agent = agent_value if isinstance(agent_value, dict) else {}
             manager.fire(
                 AlertEvent(
                     source="host.offline",
