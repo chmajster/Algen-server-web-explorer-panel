@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import { detectLanguage, loadLanguageWithFallback } from "./i18n";
 import "./styles/app.css";
 import "./styles/design-system.css";
 import "./styles/update-transition-fix.css";
@@ -11,8 +12,14 @@ import "./styles/ui-feature-consistency.css";
 import "./styles/ui-specialized-consistency.css";
 import "./styles/ui-review-fixes.css";
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+async function bootstrap() {
+  const preferredLanguage = detectLanguage(localStorage.getItem("webnas_language"));
+  await loadLanguageWithFallback(preferredLanguage);
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+void bootstrap();
