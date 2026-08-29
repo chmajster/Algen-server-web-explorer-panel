@@ -68,7 +68,6 @@ def test_managed_config_is_atomic_validated_and_reloaded(tmp_path: Path):
 
 
 def test_invalid_config_value_is_rejected_without_writing(tmp_path: Path):
-    service = Fail2BanService(jail_dir=tmp_path)
     with pytest.raises(ValidationError):
         JailConfigInput(
             enabled=True,
