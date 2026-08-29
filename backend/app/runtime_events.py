@@ -114,11 +114,33 @@ def _fingerprint(paths: tuple[Path, ...]) -> tuple[tuple[int, int] | None, ...]:
     values: list[tuple[int, int] | None] = []
     for path in paths:
         try:
-            stat = path.stat()
-            values.append((stat.st_mtime_ns, stat.st_size))
+            file_stat = path.stat()
+            values.append((file_stat.st_mtime_ns, file_stat.st_size))
         except OSError:
             values.append(None)
     return tuple(values)
+
+
+def _tree_fingerprint(path: Path) -> tuple[int, int, int]:
+    """Return a cheap recursive fingerprint that notices updates to existing transaction files."""
+
+    latest_mtime = 0
+    total_size = 0
+    entries = 0
+    try:
+        candidates = (path, *path.rglob("*"))
+    except OSError:
+        return (0, 0, 0)
+    for candidate in candidates:
+        try:
+            file_stat = candidate.stat()
+        except OSError:
+            continue
+        entries += 1
+        latest_mtime = max(latest_mtime, file_stat.st_mtime_ns)
+        if candidate.is_file():
+            total_size += file_stat.st_size
+    return (latest_mtime, total_size, entries)
 
 
 async def watch_update_progress() -> None:
@@ -130,12 +152,22 @@ async def watch_update_progress() -> None:
         "task.updated": (data_dir / "transfers.sqlite3", data_dir / "transfers.sqlite3-wal"),
         "job.updated": (data_dir / "jobs.sqlite3", data_dir / "jobs.sqlite3-wal"),
         "module.updated": (data_dir / "package-center.sqlite3", data_dir / "package-center.sqlite3-wal"),
+        "mount.updated": (
+            data_dir / "mounts" / "network_mounts.sqlite3",
+            data_dir / "mounts" / "network_mounts.sqlite3-wal",
+        ),
     }
+    network_transactions = data_dir / "network-management" / "transactions"
     previous = {event_type: _fingerprint(paths) for event_type, paths in watched.items()}
+    previous_network_transactions = _tree_fingerprint(network_transactions)
     while True:
         for event_type, paths in watched.items():
             current = _fingerprint(paths)
             if current != previous[event_type]:
                 previous[event_type] = current
                 publish_runtime_event(event_type)
+        current_network_transactions = _tree_fingerprint(network_transactions)
+        if current_network_transactions != previous_network_transactions:
+            previous_network_transactions = current_network_transactions
+            publish_runtime_event("network.transaction.updated")
         await asyncio.sleep(0.5)
