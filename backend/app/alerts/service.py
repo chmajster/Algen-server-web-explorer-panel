@@ -353,6 +353,7 @@ class AlertService:
             return False
         safe_details = redact(event.details)
         for key, expected in matcher.items():
+            actual: Any
             if key == "object_ref":
                 actual = event.object_ref
             else:
