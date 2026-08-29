@@ -1,0 +1,52 @@
+id: firewall-manager
+name: Firewall Manager
+description: Manage the local Linux host firewall through typed and auditable workflows.
+long_description: Detect UFW, firewalld or nftables, inspect exposure, manage rules, create rollback backups and protect active WebNAS/SSH sessions from accidental lockout.
+category: security
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: shield
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [ufw, nftables, iproute2]
+  dnf: [firewalld, nftables, iproute]
+  yum: [firewalld, nftables, iproute]
+installations:
+  apt: {type: system_package, packages: [ufw, nftables, iproute2]}
+  dnf: {type: system_package, packages: [firewalld, nftables, iproute]}
+  yum: {type: system_package, packages: [firewalld, nftables, iproute]}
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: true
+  service_control: false
+  reload: true
+  logs: false
+  diagnostics: true
+  backups: true
+  import_export: true
+  healthcheck: true
+  resources: [rules, listening-ports, backups]
+  actions: [rule_create, rule_edit, rule_delete, enable, disable, reload, backup, restore]
+ports: []
+dependencies: []
+conflicts: []
+permissions: [firewall.view, firewall.rules.create, firewall.rules.edit, firewall.rules.delete, firewall.enable, firewall.disable, firewall.reload, firewall.backup, firewall.restore]
+config_paths: [/etc/ufw, /etc/firewalld, /etc/nftables.conf]
+data_paths: [/var/lib/webnas/firewall-manager]
+backup_paths: [/var/lib/webnas/firewall-manager/backups]
+proxmox_safe: true
+requires_reboot: false
+requires_root: true
+configurable: true
+removable: true
+package_less: false
+healthcheck: health.py
+ui: {hidden: false}
+changelog:
+  - Initial local firewall management with UFW, firewalld and nftables detection, safe rule workflows and rollback backups.

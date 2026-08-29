@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from app.core.redaction import redact_text
 
-from .extended_policy import dispatch
+from .firewall_policy import dispatch
 from .protocol import BrokerRequest, BrokerResponse, MAX_FRAME_BYTES, encode_frame
 
 
@@ -45,13 +45,7 @@ def authorize_peer(uid: int, *, expected_uid: int) -> bool:
 
 
 def _error_response(request_id: str, code: str, message: str, exit_code: int = 126) -> BrokerResponse:
-    return BrokerResponse(
-        request_id=request_id if len(request_id) == 32 else "0" * 32,
-        ok=False,
-        exit_code=exit_code,
-        error_code=code,
-        stderr=redact_text(message, limit=2000),
-    )
+    return BrokerResponse(request_id=request_id if len(request_id) == 32 else "0" * 32, ok=False, exit_code=exit_code, error_code=code, stderr=redact_text(message, limit=2000))
 
 
 def _receive_frame(connection: socket.socket) -> bytes:
@@ -90,23 +84,9 @@ def handle_connection(connection: socket.socket, *, expected_uid: int) -> None:
         except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as error:
             connection.sendall(encode_frame(_error_response(request_id, "INVALID_REQUEST", type(error).__name__)))
             return
-        logger.info(
-            "privileged_broker_request request_id=%s actor=%s operation=%s peer_pid=%s peer_uid=%s",
-            request.request_id,
-            request.actor,
-            request.operation.value,
-            pid,
-            uid,
-        )
+        logger.info("privileged_broker_request request_id=%s actor=%s operation=%s peer_pid=%s peer_uid=%s", request.request_id, request.actor, request.operation.value, pid, uid)
         response = dispatch(request)
-        logger.info(
-            "privileged_broker_result request_id=%s operation=%s ok=%s exit_code=%s error_code=%s",
-            request.request_id,
-            request.operation.value,
-            response.ok,
-            response.exit_code,
-            response.error_code or "",
-        )
+        logger.info("privileged_broker_result request_id=%s operation=%s ok=%s exit_code=%s error_code=%s", request.request_id, request.operation.value, response.ok, response.exit_code, response.error_code or "")
         connection.sendall(encode_frame(response))
     except (OSError, ValueError, RuntimeError) as error:
         logger.warning("privileged_broker_protocol_error error=%s", type(error).__name__)
@@ -158,13 +138,7 @@ def serve_forever() -> None:
         if not _workers.acquire(timeout=5):
             connection.close()
             continue
-        threading.Thread(
-            target=handle_connection,
-            args=(connection,),
-            kwargs={"expected_uid": expected_uid},
-            daemon=True,
-            name="webnas-privileged-request",
-        ).start()
+        threading.Thread(target=handle_connection, args=(connection,), kwargs={"expected_uid": expected_uid}, daemon=True, name="webnas-privileged-request").start()
 
 
 def main() -> int:
