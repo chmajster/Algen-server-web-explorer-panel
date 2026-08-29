@@ -49,14 +49,50 @@ def test_hosted_frontend_artifact_is_stamped_and_includes_hidden_integrity_files
     assert "name: frontend-dist" in workflow
 
 
-def test_production_deploy_script_requires_tested_artifact_and_does_not_rebuild_frontend() -> None:
+def test_hosted_python_wheelhouse_is_built_verified_and_stamped() -> None:
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "Build deployment wheelhouse" in workflow
+    assert "python -m pip wheel --wheel-dir deployment-wheelhouse -r backend/requirements.txt" in workflow
+    assert 'printf \'%s\\n\' "${GITHUB_SHA}" > deployment-wheelhouse/.webnas-source-sha' in workflow
+    assert "deployment-wheelhouse/.webnas-wheelhouse.sha256" in workflow
+    assert "Verify wheelhouse installs without package index access" in workflow
+    assert "--no-index" in workflow
+    assert "--find-links deployment-wheelhouse" in workflow
+    assert "name: python-wheelhouse" in workflow
+    assert "include-hidden-files: true" in workflow
+
+
+def test_production_downloads_python_wheelhouse_from_the_same_verified_ci_run() -> None:
+    workflow = TRUSTED_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "Download tested Python wheelhouse" in workflow
+    assert "name: python-wheelhouse" in workflow
+    assert "path: .trusted-artifacts/python-wheelhouse" in workflow
+    assert "run-id: ${{ needs.trusted-integration.outputs.ci_run_id }}" in workflow
+    assert "Verify tested Python wheelhouse provenance" in workflow
+    assert ".webnas-wheelhouse.sha256" in workflow
+    assert "sha256sum --check .webnas-wheelhouse.sha256" in workflow
+    assert "PYTHON_WHEELHOUSE_MANIFEST_SHA256" in workflow
+    assert '"${GITHUB_WORKSPACE}/.trusted-artifacts/python-wheelhouse"' in workflow
+
+
+def test_production_deploy_script_requires_tested_artifacts_and_does_not_rebuild() -> None:
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     assert 'FRONTEND_DIST="${3:?tested frontend artifact directory is required}"' in script
+    assert 'PYTHON_WHEELHOUSE="${4:?tested Python wheelhouse artifact directory is required}"' in script
     assert ".webnas-assets.json" in script
     assert ".webnas-source-sha" in script
+    assert ".webnas-wheelhouse.sha256" in script
     assert '[[ "${ARTIFACT_SOURCE_SHA}" == "${SOURCE_SHA}" ]]' in script
+    assert '[[ "${WHEELHOUSE_SOURCE_SHA}" == "${SOURCE_SHA}" ]]' in script
     assert 'rsync -a --delete "${FRONTEND_DIST}/" "${RELEASE_DIR}/frontend/dist/"' in script
+    assert "sha256sum --check .webnas-wheelhouse.sha256" in script
+    assert "--no-index" in script
+    assert '--find-links "${PYTHON_WHEELHOUSE}"' in script
     assert "npm ci" not in script
     assert "npm run build" not in script
+    assert 'pip" install --disable-pip-version-check -r' not in script
     assert ".webnas-frontend-manifest-sha256" in script
+    assert ".webnas-python-wheelhouse-manifest-sha256" in script
