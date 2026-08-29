@@ -14,18 +14,18 @@ export function ProxmoxTasksView({ refreshKey, t, toast }: { refreshKey: number;
     try {
       const result = await api.proxmoxTasks("", false, 100);
       setTasks(result.tasks);
-      if (selected) {
-        const updated = result.tasks.find((item) => item.connection_id === selected.connection_id && item.upid === selected.upid);
-        if (updated) setSelected(updated);
-      }
+      setSelected((current) => {
+        if (!current) return current;
+        return result.tasks.find((item) => item.connection_id === current.connection_id && item.upid === current.upid) || current;
+      });
     } catch (error) {
       if (!quiet) toast(error instanceof Error ? error.message : t("error.generic"), "error", "admin", "proxmox-manager");
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [selected, t, toast]);
+  }, [t, toast]);
 
-  useEffect(() => { void refresh(); }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void refresh(); }, [refresh, refreshKey]);
   useEffect(() => {
     if (!tasks.some((item) => item.status === "Queued" || item.status === "Running")) return undefined;
     const timer = window.setInterval(() => void refresh(true), 2000);
