@@ -78,7 +78,7 @@ def publish_runtime_event(event_type: str, data: dict[str, Any] | None = None) -
     return runtime_events.publish(event_type, data)
 
 
-@router.get("")
+@router.get("", include_in_schema=False)
 async def stream_runtime_events(_user: SessionUser = Depends(get_session_user)) -> StreamingResponse:
     queue = runtime_events.subscribe()
 
