@@ -11,8 +11,17 @@ from ...identity.permissions import Permission, authorize, require_permission
 from ...package_center.models import api_error
 from ...package_center.service import repository as package_repository
 from ...security import SessionUser
+from .offline_hosts import offline_hosts_integration
 from .offline_jobs import offline_job_manager
-from .offline_models import BundlePinInput, OfflineBundleType, OfflineExportInput, OfflineImportInput, OfflineSettingsInput, OfflineTargetInput
+from .offline_models import (
+    BundlePinInput,
+    OfflineBundleType,
+    OfflineExportInput,
+    OfflineHostGroupTargetInput,
+    OfflineImportInput,
+    OfflineSettingsInput,
+    OfflineTargetInput,
+)
 from .offline_permissions import (
     OFFLINE_AIRGAP_MANAGE,
     OFFLINE_CONFIGURE,
@@ -100,6 +109,29 @@ def update_target(target_id: str, payload: OfflineTargetInput, user: SessionUser
 def delete_target(target_id: str, user: SessionUser = Depends(require_permission(OFFLINE_TARGETS_MANAGE))):
     ready()
     return {"ok": controlled(lambda: offline_service().delete_target(target_id, user.username))}
+
+
+@router.get("/hosts/groups/{group_id}/compatibility")
+def host_group_compatibility(
+    group_id: str,
+    repository_id: list[str] = Query(..., min_length=1, max_length=100),
+    user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False)),
+):
+    ready()
+    authorize(user, Permission.HOSTS_MANAGER_HOSTS_VIEW)
+    return controlled(lambda: offline_hosts_integration().compatibility(group_id, repository_id))
+
+
+@router.post("/targets/from-host-group")
+def create_targets_from_host_group(
+    payload: OfflineHostGroupTargetInput,
+    user: SessionUser = Depends(require_permission(OFFLINE_TARGETS_MANAGE)),
+):
+    ready()
+    authorize(user, Permission.HOSTS_MANAGER_HOSTS_VIEW)
+    if not payload.confirm:
+        api_error(422, "CONFIRMATION_REQUIRED", "Hosts Manager target generation requires confirmation")
+    return controlled(lambda: offline_hosts_integration().generate_targets(payload, user.username))
 
 
 @router.post("/exports/plan")
