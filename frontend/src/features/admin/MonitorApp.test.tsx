@@ -147,7 +147,7 @@ describe("MonitorApp", () => {
     expect(await screen.findByText("test-server")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "monitor.processes" }));
     expect(screen.getByText("worker")).toBeInTheDocument();
-    expect(screen.getByText(/process detail offline/)).toBeInTheDocument();
+    expect(await screen.findByText(/process detail offline/)).toBeInTheDocument();
   });
 
   it("filters processes locally without additional API requests", async () => {
