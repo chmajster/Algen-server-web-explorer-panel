@@ -19,6 +19,7 @@ from .alerts.scheduler import start_scheduler as start_alert_scheduler
 from .appliance_backup import router as appliance_backup_router
 from .audit import configure_logging
 from .config import AppConfig, get_config
+from .core.cache import SLOW_CACHE_TTL_SECONDS, TTLCache
 from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
 from .core.modules import ModuleRegistry
 from .jobs.models import JobStatus
@@ -137,14 +138,17 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def _registry_router(registry: ModuleRegistry) -> APIRouter:
     router = APIRouter(prefix="/api/v1/modules", tags=["module-registry"])
+    catalog_cache: TTLCache[list[dict]] = TTLCache(SLOW_CACHE_TTL_SECONDS)
 
     @router.get("")
     def module_catalog(_user: SessionUser = Depends(get_session_user)):
-        return success_payload(registry.public_catalog(), total=len(registry.manifests))
+        catalog = catalog_cache.get_or_load(registry.public_catalog)
+        return success_payload(catalog, total=len(registry.manifests))
 
     @router.get("/health")
     async def module_health(_user: SessionUser = Depends(get_session_user)):
         diagnostics = await registry.health()
+        catalog_cache.invalidate()
         return success_payload({
             "status": "ok" if all(item["state"] in {"active", "disabled"} for item in diagnostics) else "degraded",
             "modules": diagnostics,
