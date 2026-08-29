@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
@@ -67,6 +69,7 @@ def test_tiers_refresh_at_independent_intervals(monkeypatch):
 def test_ten_clients_share_one_fast_sample_and_one_user_slow_probe(monkeypatch):
     sampler = sampler_module.ResourceSampler(fast_interval=60, medium_interval=60, slow_interval=60)
     calls = SimpleNamespace(fast=0, roots=0)
+    start = threading.Barrier(10)
 
     def fast():
         calls.fast += 1
@@ -87,12 +90,17 @@ def test_ten_clients_share_one_fast_sample_and_one_user_slow_probe(monkeypatch):
 
     def roots(_username: str):
         calls.roots += 1
+        time.sleep(0.05)
         return []
+
+    def dashboard(_index: int):
+        start.wait(timeout=2)
+        return sampler.dashboard("alice", is_admin=False)
 
     monkeypatch.setattr(sampler_module.metrics, "allowed_root_usage", roots)
 
     with ThreadPoolExecutor(max_workers=10) as pool:
-        payloads = list(pool.map(lambda _index: sampler.dashboard("alice", is_admin=False), range(10)))
+        payloads = list(pool.map(dashboard, range(10)))
 
     assert calls.fast == 1
     assert sampler.fast_sample_count == 1
