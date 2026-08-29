@@ -31,6 +31,7 @@ from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
 from .platform_api import frontend_cache_policy
 from .power_control import router as power_control_router
+from .resource_sampler import resource_sampler_loop
 from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
@@ -94,14 +95,17 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     promotion_task: asyncio.Task[None] | None = None
     collector_task: asyncio.Task[None] | None = None
     runtime_event_task: asyncio.Task[None] | None = None
+    resource_sampler_task: asyncio.Task[None] | None = None
 
     def start_runtime_side_effects() -> None:
-        nonlocal collector_task, runtime_event_task
+        nonlocal collector_task, runtime_event_task, resource_sampler_task
         _start_schedulers()
         if collector_task is None or collector_task.done():
             collector_task = asyncio.create_task(alert_collector_loop(module_registry))
         if runtime_event_task is None or runtime_event_task.done():
             runtime_event_task = asyncio.create_task(watch_update_progress())
+        if resource_sampler_task is None or resource_sampler_task.done():
+            resource_sampler_task = asyncio.create_task(resource_sampler_loop())
 
     if os.environ.get("WEBNAS_CANDIDATE") != "1":
         start_runtime_side_effects()
@@ -131,6 +135,8 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
             collector_task.cancel()
         if runtime_event_task and not runtime_event_task.done():
             runtime_event_task.cancel()
+        if resource_sampler_task and not resource_sampler_task.done():
+            resource_sampler_task.cancel()
         await module_registry.shutdown()
 
 
