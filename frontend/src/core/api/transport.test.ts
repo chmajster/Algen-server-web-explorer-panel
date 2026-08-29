@@ -60,7 +60,10 @@ describe("shared API transport", () => {
   });
 
   it("does not deduplicate mutating requests", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ ok: true, csrf_token: "csrf" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })));
     vi.stubGlobal("fetch", fetchMock);
     await Promise.all([
       request("/api/example", { method: "POST", body: "{}" }),
