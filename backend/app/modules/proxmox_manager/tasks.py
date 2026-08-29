@@ -46,26 +46,30 @@ def register_task(
     resource_type: str = "",
     host_id: str | None = None,
     sync_on_complete: bool = False,
+    operation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ensure_runtime_schema(manager)
     upid = _extract_upid(task_value)
-    task_node = node or _node_from_upid(upid)
-    operation = host_registry().operation(
-        host_id,
-        f"proxmox.{action}",
-        actor,
-        module_id=MODULE_ID,
-        status="queued",
-        stage="proxmox-task",
-        progress=10,
-        details={
-            "connection_id": connection["id"],
-            "vmid": vmid,
-            "node": task_node,
-            "resource_type": resource_type,
-            "upid": upid,
-        },
-    )
+    # The UPID node is authoritative. Clone/migrate may target another node while
+    # the task itself remains owned by the source node.
+    task_node = _node_from_upid(upid) or node
+    if operation is None:
+        operation = host_registry().operation(
+            host_id,
+            f"proxmox.{action}",
+            actor,
+            module_id=MODULE_ID,
+            status="queued",
+            stage="proxmox-task",
+            progress=10,
+            details={
+                "connection_id": connection["id"],
+                "vmid": vmid,
+                "node": task_node,
+                "resource_type": resource_type,
+                "upid": upid,
+            },
+        )
     now = time.time()
     with manager.connect() as db:
         db.execute(
@@ -155,7 +159,7 @@ def refresh_task(manager: ProxmoxManagerService, task: dict[str, Any]) -> dict[s
         task["last_error"] = "Proxmox connection is unavailable"
         _persist_task_status(manager, task)
         return task
-    node = str(task.get("node") or _node_from_upid(str(task["upid"])))
+    node = _node_from_upid(str(task["upid"])) or str(task.get("node") or "")
     if not node:
         task["last_error"] = "Unable to resolve task node from UPID"
         _persist_task_status(manager, task)
@@ -185,6 +189,7 @@ def refresh_task(manager: ProxmoxManagerService, task: dict[str, Any]) -> dict[s
     else:
         task["status"] = "Queued"
         task["progress"] = max(10, int(task.get("progress") or 0))
+    task["node"] = node
     task["started_at"] = float(status.get("starttime") or task.get("started_at") or task.get("created_at") or time.time())
     task["exitstatus"] = exitstatus
     task["last_error"] = "" if task["status"] != "Failed" else exitstatus
@@ -259,7 +264,7 @@ def task_log(
     connection = manager.connection(str(task["connection_id"]))
     if not connection or not connection.get("active"):
         raise KeyError("Proxmox connection not found")
-    node = str(task.get("node") or _node_from_upid(str(task["upid"])))
+    node = _node_from_upid(str(task["upid"])) or str(task.get("node") or "")
     encoded_node = urllib.parse.quote(node, safe="")
     encoded_upid = urllib.parse.quote(str(task["upid"]), safe="")
     data = manager._client(connection).get(
