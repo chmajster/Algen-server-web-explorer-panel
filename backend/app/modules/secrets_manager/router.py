@@ -21,12 +21,12 @@ def _allow(user: SessionUser, permission: str) -> None:
 def _controlled(operation):
     try:
         return operation()
-    except KeyError as error:
-        api_error(404, "SECRET_NOT_FOUND", str(error).strip("'"))
-    except PermissionError as error:
-        api_error(403, "SECRET_ACCESS_DENIED", str(error))
-    except ValueError as error:
-        api_error(422, "SECRET_VALIDATION_FAILED", str(error))
+    except KeyError:
+        api_error(404, "SECRET_NOT_FOUND", "Secret not found")
+    except PermissionError:
+        api_error(403, "SECRET_ACCESS_DENIED", "Secret access denied")
+    except ValueError:
+        api_error(422, "SECRET_VALIDATION_FAILED", "Secret operation failed validation")
 
 
 @router.get("/status")
