@@ -19,7 +19,7 @@ const copy = {
     enabledHint: "Po zapisaniu nginx przełączy publiczny port na TLS i przeglądarka otworzy adres HTTPS.",
     cert: "Certyfikat TLS",
     key: "Klucz prywatny TLS",
-    pathsHint: "Podaj bezwzględne ścieżki na serwerze. Domyślna instalacja przygotowuje lokalny certyfikat w /etc/webnas/tls/.",
+    pathsHint: "Podaj bezwzględne ścieżki na serwerze. Przed włączeniem HTTPS certyfikat i klucz muszą istnieć oraz być czytelne dla nginx.",
     save: "Zapisz transport",
     saving: "Zapisywanie…",
     current: "Aktualny protokół",
@@ -33,7 +33,7 @@ const copy = {
     enabledHint: "After saving, nginx switches the public port to TLS and the browser opens the HTTPS address.",
     cert: "TLS certificate",
     key: "TLS private key",
-    pathsHint: "Use absolute server paths. The default installation prepares a local certificate under /etc/webnas/tls/.",
+    pathsHint: "Use absolute server paths. Before enabling HTTPS, the certificate and key must exist and be readable by nginx.",
     save: "Save transport",
     saving: "Saving…",
     current: "Current protocol",
@@ -95,6 +95,10 @@ export function HttpsSettingsControl({ active, locale, toast }: Props) {
     }
   }
 
+  const scheme = settings?.scheme || (draft?.use_https ? "https" : "http");
+  const publicPort = settings?.public_port || Number(window.location.port || (scheme === "https" ? 443 : 80));
+  const publicAddress = `${scheme}://${window.location.hostname}:${publicPort}`;
+
   const card = active && target && draft ? createPortal(
     <div className="settings-card-stack" data-testid="https-settings-card">
       <section className="settings-card">
@@ -114,7 +118,7 @@ export function HttpsSettingsControl({ active, locale, toast }: Props) {
         </div>
         <div className="setting-row">
           <div><strong>{text.current}</strong></div>
-          <div className="setting-control"><code>{settings?.scheme || (draft.use_https ? "https" : "http")}://:{settings?.public_port || window.location.port}</code></div>
+          <div className="setting-control"><code>{publicAddress}</code></div>
         </div>
         <div className="settings-actions"><button className="button-primary" type="button" disabled={saving || (draft.use_https && (!draft.tls_cert || !draft.tls_key))} onClick={() => void save()}>{saving ? text.saving : text.save}</button></div>
       </section>
