@@ -101,6 +101,89 @@ export type StorageSnapshot = {
   issues: StorageIssue[];
 };
 
+export type LvmPhysicalVolume = {
+  path: string;
+  volume_group: string;
+  size: number;
+  free: number;
+  attributes: string;
+};
+
+export type LvmVolumeGroup = {
+  name: string;
+  size: number;
+  free: number;
+  pv_count: number;
+  lv_count: number;
+  attributes: string;
+};
+
+export type LvmLogicalVolume = {
+  name: string;
+  volume_group: string;
+  path: string;
+  size: number;
+  attributes: string;
+  pool: string;
+  origin: string;
+  data_percent: number | null;
+  metadata_percent: number | null;
+};
+
+export type SwapItem = {
+  name: string;
+  type: string;
+  size: number;
+  used: number;
+  priority: number;
+};
+
+export type FstabEntry = {
+  source: string;
+  mount_point: string;
+  filesystem: string;
+  options: string[];
+  dump: number;
+  pass: number;
+  active: boolean;
+  current_source: string;
+  current_filesystem: string;
+  noauto: boolean;
+  automount: boolean;
+  protected: boolean;
+  state: "active" | "inactive" | "disabled" | string;
+};
+
+export type DiskIoItem = {
+  name: string;
+  reads_completed: number;
+  bytes_read: number;
+  read_ms: number;
+  writes_completed: number;
+  bytes_written: number;
+  write_ms: number;
+  io_in_progress: number;
+  io_ms: number;
+  weighted_io_ms: number;
+};
+
+export type StorageDetails = {
+  read_only: true;
+  generated_at: number;
+  duration_ms: number;
+  tools: Record<string, boolean>;
+  lvm: {
+    available: boolean;
+    physical_volumes: LvmPhysicalVolume[];
+    volume_groups: LvmVolumeGroup[];
+    logical_volumes: LvmLogicalVolume[];
+  };
+  swap: SwapItem[];
+  fstab: FstabEntry[];
+  disk_io: DiskIoItem[];
+};
+
 export const storageManagerClient = {
   summary: () => request<StorageSnapshot>("/api/storage/summary"),
+  details: () => request<StorageDetails>("/api/storage/details"),
 } as const;
