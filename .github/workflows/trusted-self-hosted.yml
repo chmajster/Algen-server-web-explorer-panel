@@ -40,6 +40,8 @@ jobs:
       - self-hosted
       - linux
     timeout-minutes: 35
+    outputs:
+      ci_run_id: ${{ steps.resolve-ci-run.outputs.run_id }}
 
     steps:
       - name: Check out trusted main revision
@@ -47,6 +49,11 @@ jobs:
         with:
           ref: ${{ env.TARGET_SHA }}
           persist-credentials: false
+
+      - name: Set up Node.js for installer validation
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
 
       - name: Verify tested main revision
         shell: bash
@@ -57,13 +64,30 @@ jobs:
           git merge-base --is-ancestor "${TARGET_SHA}" origin/main
           python3.14 scripts/sync-version.py --check
 
-      - name: Require successful hosted CI before manual production deployment
-        if: github.event_name == 'workflow_dispatch' && inputs.deploy == true
+      - name: Resolve successful hosted CI artifact provenance
+        id: resolve-ci-run
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          DEPLOY_REQUESTED: ${{ inputs.deploy }}
         run: |
           set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            [[ "${WORKFLOW_RUN_ID}" =~ ^[0-9]+$ ]] || {
+              echo "Workflow-run event is missing its source run id." >&2
+              exit 1
+            }
+            printf 'run_id=%s\n' "${WORKFLOW_RUN_ID}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${DEPLOY_REQUESTED:-false}" != "true" ]]; then
+            printf 'run_id=\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
           python3.14 - <<'PY'
           import json
           import os
@@ -100,12 +124,16 @@ jobs:
               and run.get("head_branch") == "main"
               and run.get("event") == "push"
               and run.get("conclusion") == "success"
+              and isinstance(run.get("id"), int)
           ]
           if not matching_runs:
               raise SystemExit(
                   f"Refusing manual production deployment: no successful Automated tests push run for main commit {target_sha}."
               )
-          print(f"Verified successful Automated tests run for {target_sha}.")
+          run_id = matching_runs[0]["id"]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              stream.write(f"run_id={run_id}\n")
+          print(f"Verified successful Automated tests run {run_id} for {target_sha}.")
           PY
 
       - name: Prepare isolated trusted test environment
@@ -145,6 +173,11 @@ jobs:
           ref: ${{ env.TARGET_SHA }}
           persist-credentials: false
 
+      - name: Set up Node.js for frontend artifact validation
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
       - name: Verify deployment provenance
         shell: bash
         run: |
@@ -153,6 +186,31 @@ jobs:
           git fetch --no-tags origin main
           git merge-base --is-ancestor "${TARGET_SHA}" origin/main
           python3.14 scripts/sync-version.py --check
+          [[ "${{ needs.trusted-integration.outputs.ci_run_id }}" =~ ^[0-9]+$ ]]
+
+      - name: Download tested frontend artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: frontend-dist
+          path: .trusted-artifacts/frontend-dist
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.trusted-integration.outputs.ci_run_id }}
+
+      - name: Verify tested frontend artifact provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="${GITHUB_WORKSPACE}/.trusted-artifacts/frontend-dist"
+          test -f "${artifact}/index.html"
+          test -f "${artifact}/.webnas-assets.json"
+          test -f "${artifact}/.webnas-source-sha"
+          test "$(tr -d '\r\n' < "${artifact}/.webnas-source-sha")" = "${TARGET_SHA}"
+          python3.14 scripts/verify_frontend_build.py "${artifact}"
+          manifest_sha="$(sha256sum "${artifact}/.webnas-assets.json" | awk '{print $1}')"
+          printf 'FRONTEND_ARTIFACT_MANIFEST_SHA256=%s\n' "${manifest_sha}" >> "${GITHUB_ENV}"
+          printf 'Verified frontend artifact from CI run %s with manifest SHA-256 %s\n' \
+            "${{ needs.trusted-integration.outputs.ci_run_id }}" "${manifest_sha}" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Deploy candidate through existing blue-green release mechanism
         shell: bash
@@ -163,7 +221,14 @@ jobs:
         run: |
           set -euo pipefail
           sudo --preserve-env=WEBNAS_ROOT,WEBNAS_CONFIG,WEBNAS_SERVICE_USER \
-            ./scripts/deploy_from_checkout.sh "${GITHUB_WORKSPACE}" "${TARGET_SHA}"
+            ./scripts/deploy_from_checkout.sh \
+            "${GITHUB_WORKSPACE}" \
+            "${TARGET_SHA}" \
+            "${GITHUB_WORKSPACE}/.trusted-artifacts/frontend-dist"
 
       - name: Record deployed revision
-        run: printf 'Deployed trusted main revision %s\n' "${TARGET_SHA}" >> "${GITHUB_STEP_SUMMARY}"
+        run: |
+          printf 'Deployed trusted main revision %s using hosted CI run %s and frontend manifest %s\n' \
+            "${TARGET_SHA}" \
+            "${{ needs.trusted-integration.outputs.ci_run_id }}" \
+            "${FRONTEND_ARTIFACT_MANIFEST_SHA256}" >> "${GITHUB_STEP_SUMMARY}"

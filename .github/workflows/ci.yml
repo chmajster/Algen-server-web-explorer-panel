@@ -182,6 +182,9 @@ jobs:
       - name: Verify deployed frontend contract
         working-directory: .
         run: python scripts/verify_frontend_build.py frontend/dist
+      - name: Stamp frontend artifact provenance
+        working-directory: .
+        run: printf '%s\n' "${GITHUB_SHA}" > frontend/dist/.webnas-source-sha
       - name: Upload frontend test report
         if: always()
         uses: actions/upload-artifact@v7
@@ -195,6 +198,7 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
