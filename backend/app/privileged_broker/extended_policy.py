@@ -295,9 +295,11 @@ def _quota(payload: dict[str, Any], runner: base.Runner) -> base.CommandResult:
 def _package_path(value: str) -> str:
     roots = [Path("/run/webnas-package-center"), Path("/var/lib/webnas")]
     try:
-        roots.append(Path(get_config().paths.data_dir))
-    except Exception:  # noqa: BLE001
-        pass
+        configured_root = Path(get_config().paths.data_dir)
+    except Exception:  # noqa: BLE001 - invalid/unavailable config falls back to fixed package roots.
+        configured_root = None
+    if configured_root is not None:
+        roots.append(configured_root)
     return str(base._safe_absolute_path(value, roots=roots))
 
 
@@ -463,9 +465,11 @@ def _mount_option(option: str) -> str:
     if key in {"credentials", "conf"}:
         roots = [Path("/var/lib/webnas")]
         try:
-            roots.append(Path(get_config().paths.data_dir))
-        except Exception:  # noqa: BLE001
-            pass
+            configured_root = Path(get_config().paths.data_dir)
+        except Exception:  # noqa: BLE001 - invalid/unavailable config falls back to the fixed data root.
+            configured_root = None
+        if configured_root is not None:
+            roots.append(configured_root)
         safe_path = base._safe_absolute_path(value, roots=roots)
         return f"{key}={safe_path}"
     if key in {"uid", "gid", "port", "file_mode", "dir_mode", "ServerAliveInterval", "timeo", "retrans", "rsize", "wsize", "actimeo"}:
