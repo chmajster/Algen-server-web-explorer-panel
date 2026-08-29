@@ -1,5 +1,5 @@
 import { HardDrive } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, logout, me, onAuthenticationInvalidated, type SettingsMe, type SettingsPatch, type Task, type UpdateCompletionNotice, type UpdateProgress, type UserPreferences } from "../api";
 import { detectLanguage, type Language, translate } from "../i18n";
 import type { Theme, Toast, User } from "./types";
@@ -31,6 +31,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   const settingsRevision = useRef(0);
   const settingRevisions = useRef<Partial<Record<keyof UserPreferences, number>>>({});
   const uploads = useUploadManager();
+  const mergedTasks = useMemo(() => [...tasks, ...uploads.tasks], [tasks, uploads.tasks]);
   const t = useCallback((key: string) => translate(language, key), [language]);
   const toast = useCallback((text: string, type: "ok" | "error" = "ok", category: "general" | "admin" | "transfer" = "general", moduleId?: string) => {
     const id = Date.now() + Math.random();
@@ -71,8 +72,18 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   }, [t, toast, user]);
   useEffect(() => {
     if (!user || !profile) return;
-    const refresh = () => (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);
-    void refresh(); const timer = setInterval(refresh, 1500); return () => clearInterval(timer);
+    const refresh = () => {
+      if (document.hidden) return;
+      void (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1500);
+    const onVisibility = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [profile, user]);
   const refreshUpdateProgress = useCallback(async (detailed = true) => {
     try {
@@ -120,13 +131,17 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
       return;
     }
     const detailed = profile.permissions.includes("updates.view");
+    const poll = () => { if (!document.hidden) void refreshUpdateProgress(detailed); };
     void refreshUpdateProgress(detailed);
-    const timer = window.setInterval(() => void refreshUpdateProgress(detailed), 1500);
+    const timer = window.setInterval(poll, 1500);
     const refresh = () => void refreshUpdateProgress(detailed);
+    const onVisibility = () => { if (!document.hidden) poll(); };
     window.addEventListener("webnas:update-status", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("webnas:update-status", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [profile, refreshUpdateProgress, user]);
   useEffect(() => {
@@ -227,7 +242,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   }
   return <>
     {connectionStatus}
-    <Desktop user={user} profile={profile} language={language} theme={theme} tasks={[...tasks, ...uploads.tasks]} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={clearAuthenticatedUi} />
+    <Desktop user={user} profile={profile} language={language} theme={theme} tasks={mergedTasks} uploadControls={uploads.controls} toasts={toasts} t={t} toast={toast} onSettingsChange={updateSettings} onTheme={changeTheme} onLoggedOut={clearAuthenticatedUi} />
     <DialogInfrastructure />
     {completionNotice && <UpdateCompletionDialog
       notice={completionNotice}
