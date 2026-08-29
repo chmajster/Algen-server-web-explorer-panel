@@ -1,0 +1,12 @@
+id: fail2ban-manager
+name: Fail2Ban Manager
+version: 1.0.0
+category: security
+icon: shield-ban
+permissions: [fail2ban-manager.view, fail2ban-manager.manage, fail2ban-manager.ban, fail2ban-manager.unban, fail2ban-manager.logs.view, fail2ban-manager.configure]
+routers: [app.modules.fail2ban_manager.router:router]
+dependencies: [identity]
+capabilities: [status, jails, bans, managed-config, logs, audit]
+system_capabilities: [fail2ban-client, systemctl, journalctl]
+actions: [ban, unban, enable, disable, reload, restart, configure]
+menu: [{id: fail2ban-manager, label: fail2ban-manager.name, icon: shield-ban, permission: fail2ban-manager.view}]
