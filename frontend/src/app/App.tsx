@@ -13,7 +13,9 @@ import { Login } from "../features/auth/Login";
 import { DialogInfrastructure } from "../components/DialogService";
 
 const COMPLETED_UPDATE_RELOAD_KEY = "webnas_completed_update_reload";
-const FALLBACK_POLL_INTERVAL = 1500;
+const TASK_FALLBACK_POLL_INTERVAL = 5000;
+const UPDATE_ACTIVE_FALLBACK_POLL_INTERVAL = 1500;
+const UPDATE_IDLE_FALLBACK_POLL_INTERVAL = 10000;
 const reloadWindow = () => window.location.reload();
 
 function sameStringArray(current: string[], next: string[]) {
@@ -179,7 +181,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
 
   useEffect(() => {
     if (!user || !profile || runtimeState !== "fallback") return;
-    const timer = window.setInterval(refreshTasks, FALLBACK_POLL_INTERVAL);
+    const timer = window.setInterval(refreshTasks, TASK_FALLBACK_POLL_INTERVAL);
     return () => window.clearInterval(timer);
   }, [profile, refreshTasks, runtimeState, user]);
 
@@ -243,9 +245,11 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   useEffect(() => {
     if (!user || !profile || runtimeState !== "fallback") return;
     const detailed = profile.permissions.includes("updates.view");
-    const timer = window.setInterval(() => { if (pageIsVisible()) void refreshUpdateProgress(detailed); }, FALLBACK_POLL_INTERVAL);
+    const activeUpdate = Boolean(updateProgress && ["waiting", "preparing", "running"].includes(updateProgress.state));
+    const interval = activeUpdate ? UPDATE_ACTIVE_FALLBACK_POLL_INTERVAL : UPDATE_IDLE_FALLBACK_POLL_INTERVAL;
+    const timer = window.setInterval(() => { if (pageIsVisible()) void refreshUpdateProgress(detailed); }, interval);
     return () => window.clearInterval(timer);
-  }, [profile, refreshUpdateProgress, runtimeState, user]);
+  }, [profile, refreshUpdateProgress, runtimeState, updateProgress, user]);
   useEffect(() => {
     if (!updateProgress) return;
     const active = ["waiting", "preparing", "running"].includes(updateProgress.state);
