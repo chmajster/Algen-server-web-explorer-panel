@@ -1,0 +1,68 @@
+name: Temporary defer global bootstrap tasks
+
+on:
+  push:
+    branches:
+      - perf/bootstrap-backend-cache
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Defer unbounded global transfer history
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path_str: str, old: str, new: str) -> None:
+              path = Path(path_str)
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path_str}: expected one match, got {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(
+              'backend/app/startup_bootstrap.py',
+              '''    if "transfers.view_all" in permissions:\n        task_scope = "all"\n        tasks = [task.to_dict() for task in task_store.list_all()]\n''',
+              '''    if "transfers.view_all" in permissions:\n        # Global transfer history may be large and includes log/diagnostic tails.\n        # Defer it until after session restoration instead of blocking bootstrap.\n        task_scope = "none"\n        tasks = []\n''',
+          )
+
+          test_path = Path('backend/tests/test_startup_bootstrap.py')
+          text = test_path.read_text(encoding='utf-8')
+          old = '''def test_bootstrap_uses_global_transfer_and_detailed_update_permissions(monkeypatch) -> None:\n    calls: list[str] = []\n    monkeypatch.setattr(\n        startup_bootstrap,\n        "settings_me",\n        lambda request, user: {\n            "username": user.username,\n            "home": f"/home/{user.username}",\n            "permissions": ["transfers.view_all", "updates.view"],\n            "language": "en-US",\n        },\n    )\n    monkeypatch.setattr(\n        startup_bootstrap,\n        "task_store",\n        SimpleNamespace(\n            list_all=lambda: (calls.append("all") or [_Task("global")]),\n            list_for=lambda username: (calls.append(f"own:{username}") or [_Task("own")]),\n        ),\n    )\n    monkeypatch.setattr(startup_bootstrap, "admin_updates_progress", lambda user: {"state": "idle", "detailed": True})\n    monkeypatch.setattr(startup_bootstrap, "system_update_status", _unexpected("public update endpoint used"))\n    payload = startup_bootstrap.build_startup_payload(_request(), SessionUser("alice", "csrf"))\n\n    assert payload["user"] == {"username": "alice", "home": "/home/alice", "csrf_token": "csrf"}\n    assert payload["task_scope"] == "all"\n    assert payload["tasks"] == [{"id": "global"}]\n    assert payload["update_detailed"] is True\n    assert payload["update_progress"] == {"state": "idle", "detailed": True}\n    assert "update_completion" not in payload\n    assert calls == ["all"]\n'''
+          new = '''def test_bootstrap_defers_global_transfer_history_and_keeps_detailed_updates(monkeypatch) -> None:\n    monkeypatch.setattr(\n        startup_bootstrap,\n        "settings_me",\n        lambda request, user: {\n            "username": user.username,\n            "home": f"/home/{user.username}",\n            "permissions": ["transfers.view_all", "updates.view"],\n            "language": "en-US",\n        },\n    )\n    monkeypatch.setattr(\n        startup_bootstrap,\n        "task_store",\n        SimpleNamespace(\n            list_all=_unexpected("global transfer history must not block bootstrap"),\n            list_for=_unexpected("own tasks used for global transfer permission"),\n        ),\n    )\n    monkeypatch.setattr(startup_bootstrap, "admin_updates_progress", lambda user: {"state": "idle", "detailed": True})\n    monkeypatch.setattr(startup_bootstrap, "system_update_status", _unexpected("public update endpoint used"))\n    payload = startup_bootstrap.build_startup_payload(_request(), SessionUser("alice", "csrf"))\n\n    assert payload["user"] == {"username": "alice", "home": "/home/alice", "csrf_token": "csrf"}\n    assert payload["task_scope"] == "none"\n    assert payload["tasks"] == []\n    assert payload["update_detailed"] is True\n    assert payload["update_progress"] == {"state": "idle", "detailed": True}\n    assert "update_completion" not in payload\n'''
+          if text.count(old) != 1:
+              raise SystemExit('backend global bootstrap test block not found exactly once')
+          test_path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(
+              'frontend/src/core/api/transport.ts',
+              '''  if (data.task_scope === "all") seededGets.set("/api/admin/transfers", data.tasks);\n  else seededGets.set("/api/files/tasks", data.tasks);\n''',
+              '''  if (data.task_scope === "all") seededGets.set("/api/admin/transfers", data.tasks);\n  else if (data.task_scope === "own") seededGets.set("/api/files/tasks", data.tasks);\n''',
+          )
+
+          test_path = Path('frontend/src/core/api/transport.test.ts')
+          text = test_path.read_text(encoding='utf-8')
+          anchor = '''  it("keeps update completion off the bootstrap critical path", async () => {\n'''
+          if text.count(anchor) != 1:
+              raise SystemExit('frontend transport test anchor not found exactly once')
+          added = '''  it("defers global transfer history when bootstrap carries no task snapshot", async () => {\n    const fullTasks = [{ id: "global-1" }, { id: "global-2" }];\n    const fetchMock = vi.fn().mockImplementation((url: string) => {\n      if (url === "/api/bootstrap") return Promise.resolve(new Response(JSON.stringify({\n        user: { username: "admin", home: "/home/admin", csrf_token: "csrf" },\n        profile: { username: "admin", permissions: ["transfers.view_all"] },\n        tasks: [],\n        task_scope: "none",\n        update_progress: { state: "idle" },\n        update_detailed: false,\n      }), { status: 200, headers: { "content-type": "application/json" } }));\n      if (url === "/api/admin/transfers") return Promise.resolve(new Response(JSON.stringify(fullTasks), {\n        status: 200,\n        headers: { "content-type": "application/json" },\n      }));\n      throw new Error(`Unexpected request: ${url}`);\n    });\n    vi.stubGlobal("fetch", fetchMock);\n\n    await me();\n    await expect(request("/api/admin/transfers")).resolves.toEqual(fullTasks);\n    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/bootstrap", "/api/admin/transfers"]);\n  });\n\n'''
+          test_path.write_text(text.replace(anchor, added + anchor, 1), encoding='utf-8')
+          PY
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/app/startup_bootstrap.py backend/tests/test_startup_bootstrap.py frontend/src/core/api/transport.ts frontend/src/core/api/transport.test.ts
+          git commit -m 'fix(perf): defer unbounded global transfer bootstrap'
+          git push origin HEAD:perf/bootstrap-backend-cache
