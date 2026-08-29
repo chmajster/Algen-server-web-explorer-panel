@@ -2,6 +2,8 @@
 Description=WebNAS web administration panel
 After=network-online.target
 Wants=network-online.target
+Requires=webnas-privileged.socket
+After=webnas-privileged.socket
 StartLimitIntervalSec=120
 # systemd counts the initial start, so four starts allow three automatic retries.
 StartLimitBurst=4
@@ -17,9 +19,10 @@ ExecStart=/opt/webnas/backend/.venv/bin/python -m app.run
 Restart=on-failure
 RestartSec=30
 # WebNAS uses PAM, user-context file workers and validated package operations.
-User=root
-Group=root
-NoNewPrivileges=false
+User=webnas
+Group=webnas
+Environment=WEBNAS_PRIVILEGED_BROKER=required
+NoNewPrivileges=true
 PrivateTmp=true
 # Package managers require writes below /etc, /usr and /var.
 ProtectSystem=false
@@ -30,7 +33,7 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 # Validated package-manager jobs must be able to install distribution packages
 # containing required SUID/SGID helpers (for example cifs-utils/mount.cifs).
-RestrictSUIDSGID=false
+RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 SystemCallArchitectures=native

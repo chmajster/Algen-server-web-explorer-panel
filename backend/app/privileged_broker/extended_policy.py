@@ -5,6 +5,7 @@ import json
 import os
 import pwd
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -506,16 +507,12 @@ def _mount(payload: dict[str, Any], runner: base.Runner) -> base.CommandResult:
         target = _mount_root(args[0], allow_home=True)
         return runner([base._resolve_tool("umount"), target], None, timeout)
     if tool == "mount":
-        if len(args) != 7 or args[0] != "-t" or args[2] != "-o" or args[1] not in {"cifs", "nfs", "davfs"}:
+        if len(args) != 6 or args[0] != "-t" or args[2] != "-o" or args[1] not in {"cifs", "nfs", "davfs"}:
             raise base.PolicyError("unsupported mount command")
         filesystem = args[1]
         options = _validated_mount_options(args[3])
         remote = _clean_token(args[4], "mount remote", limit=4096)
-        target = _mount_root(args[5] if len(args) == 6 else args[6])
-        # Historical call shape is: mount -t TYPE -o OPTIONS REMOTE TARGET.
-        if len(args) == 7:
-            # Reject an unexpected extra field rather than guessing at it.
-            raise base.PolicyError("invalid mount argument count")
+        target = _mount_root(args[5])
         return runner([base._resolve_tool("mount"), "-t", filesystem, "-o", options, remote, target], None, timeout)
     if tool == "sshfs":
         if len(args) != 4 or args[2] != "-o":
@@ -685,25 +682,25 @@ def _update_service(payload: dict[str, Any], runner: base.Runner) -> base.Comman
         command.append("--update-config")
     if npm_audit_fix:
         command.append("--npm-audit-fix")
-    command_text = " ".join(subprocess.list2cmdline([item]) for item in command)
+    command_text = " ".join(shlex.quote(item) for item in command)
     runner_text = "\n".join([
         "#!/usr/bin/env bash",
         "set +e",
-        f"touch {subprocess.list2cmdline([str(log_path)])}",
-        f"chown {webnas_user.pw_uid}:{webnas_group.gr_gid} {subprocess.list2cmdline([str(log_path)])}",
-        f"chmod 0640 {subprocess.list2cmdline([str(log_path)])}",
-        f"exec >> {subprocess.list2cmdline([str(log_path)])} 2>&1",
-        f"printf '\\n=== WebNAS update started (%s) ===\\n' {subprocess.list2cmdline([unit_name])}",
-        f"printf '{{\"running\":true,\"exit_code\":null,\"started_at\":%s,\"finished_at\":null,\"pid\":%s,\"unit\":\"{unit_name}\"}}\\n' \"$(date +%s)\" \"$$\" > {subprocess.list2cmdline([str(progress)])}.tmp",
-        f"chown {webnas_user.pw_uid}:{webnas_group.gr_gid} {subprocess.list2cmdline([str(progress)])}.tmp",
-        f"chmod 0640 {subprocess.list2cmdline([str(progress)])}.tmp",
-        f"mv -f -- {subprocess.list2cmdline([str(progress)])}.tmp {subprocess.list2cmdline([str(progress)])}",
+        f"touch {shlex.quote(str(log_path))}",
+        f"chown {webnas_user.pw_uid}:{webnas_group.gr_gid} {shlex.quote(str(log_path))}",
+        f"chmod 0640 {shlex.quote(str(log_path))}",
+        f"exec >> {shlex.quote(str(log_path))} 2>&1",
+        f"printf '\\n=== WebNAS update started (%s) ===\\n' {shlex.quote(unit_name)}",
+        f"printf '{{\"running\":true,\"exit_code\":null,\"started_at\":%s,\"finished_at\":null,\"pid\":%s,\"unit\":\"{unit_name}\"}}\\n' \"$(date +%s)\" \"$$\" > {shlex.quote(str(progress))}.tmp",
+        f"chown {webnas_user.pw_uid}:{webnas_group.gr_gid} {shlex.quote(str(progress))}.tmp",
+        f"chmod 0640 {shlex.quote(str(progress))}.tmp",
+        f"mv -f -- {shlex.quote(str(progress))}.tmp {shlex.quote(str(progress))}",
         command_text,
         "rc=$?",
-        f"printf '{{\"running\":false,\"exit_code\":%s,\"started_at\":null,\"finished_at\":%s,\"pid\":%s,\"unit\":\"{unit_name}\"}}\\n' \"$rc\" \"$(date +%s)\" \"$$\" > {subprocess.list2cmdline([str(progress)])}.tmp",
-        f"chown {webnas_user.pw_uid}:{webnas_group.gr_gid} {subprocess.list2cmdline([str(progress)])}.tmp",
-        f"chmod 0640 {subprocess.list2cmdline([str(progress)])}.tmp",
-        f"mv -f -- {subprocess.list2cmdline([str(progress)])}.tmp {subprocess.list2cmdline([str(progress)])}",
+        f"printf '{{\"running\":false,\"exit_code\":%s,\"started_at\":null,\"finished_at\":%s,\"pid\":%s,\"unit\":\"{unit_name}\"}}\\n' \"$rc\" \"$(date +%s)\" \"$$\" > {shlex.quote(str(progress))}.tmp",
+        f"chown {webnas_user.pw_uid}:{webnas_group.gr_gid} {shlex.quote(str(progress))}.tmp",
+        f"chmod 0640 {shlex.quote(str(progress))}.tmp",
+        f"mv -f -- {shlex.quote(str(progress))}.tmp {shlex.quote(str(progress))}",
         "exit \"$rc\"",
         "",
     ])

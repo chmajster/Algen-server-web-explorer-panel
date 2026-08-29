@@ -12,6 +12,10 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from ..path_policy import resolve_user_path
+from ..config import get_config
+from ..privileged_broker.runtime import (
+    broker_command, broker_required, filesystem_chmod, filesystem_mkdir, managed_file_write, ownership_change,
+)
 from ..proxmox_guard import safe_mode_active
 from . import state
 from .models import SambaConfig, SambaShare
@@ -43,7 +47,11 @@ SAFE_SAMBA_VFS_OBJECTS = {"acl_xattr", "catia", "fruit", "streams_xattr", "recyc
 
 
 def _run(args: list[str], *, input_text: str | None = None, timeout: int = 600) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=timeout, check=False, shell=False)
+    result = None
+    if broker_required():
+        result = broker_command(args, input_text=input_text, timeout=timeout, actor="samba-manager")
+    if result is None:
+        result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=timeout, check=False, shell=False)
     if result.returncode != 0:
         output = result.stderr.strip() or result.stdout.strip()
         raise HTTPException(400, output or f"{Path(args[0]).name} failed with exit code {result.returncode}")
@@ -54,8 +62,26 @@ def read_samba_config() -> SambaConfig:
     payload = state.read_state("samba")
     return SambaConfig.model_validate(payload.get("config") or {})
 
+def _safe_legacy_backup(source: Path, stem: str, now: str | None = None) -> Path | None:
+    if not source.exists():
+        return None
+    if not broker_required():
+        return None
+    stamp = now or time.strftime("%Y%m%d-%H%M%S")
+    root = Path(get_config().paths.data_dir) / "module-backups" / "samba" / "legacy"
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    target = root / f"{stem}-{stamp}.conf"
+    try:
+        target.write_bytes(source.read_bytes())
+    except OSError:
+        return None
+    os.chmod(target, 0o600)
+    return target
+
 
 def backup_smb_conf(now: str | None = None) -> Path | None:
+    if broker_required():
+        return _safe_legacy_backup(SAMBA_CONF, "smb", now)
     if not SAMBA_CONF.exists():
         return None
     stamp = now or time.strftime("%Y%m%d-%H%M%S")
@@ -65,6 +91,8 @@ def backup_smb_conf(now: str | None = None) -> Path | None:
 
 
 def backup_algen_smb_conf(now: str | None = None) -> Path | None:
+    if broker_required():
+        return _safe_legacy_backup(SAMBA_ALGEN_CONF, "algen-shares", now)
     if not SAMBA_ALGEN_CONF.exists():
         return None
     stamp = now or time.strftime("%Y%m%d-%H%M%S")
@@ -146,6 +174,10 @@ def _ensure_smb_conf_include() -> None:
     if "[global]" not in text.lower():
         text = "[global]\n" + text
     text = text.rstrip() + f"\n\n# Managed by Algen Web Explorer Panel\n{include_line}\n"
+    if broker_required():
+        mode = (SAMBA_CONF.stat().st_mode & 0o777) if existed else 0o644
+        managed_file_write("samba_main", text, actor="samba-manager", mode=mode if mode in {0o600, 0o640, 0o644} else 0o644)
+        return
     temporary = SAMBA_CONF.with_name(f".{SAMBA_CONF.name}.{uuid4().hex}.tmp")
     try:
         with temporary.open("w", encoding="utf-8") as handle:
@@ -165,6 +197,10 @@ def remove_smb_conf_include() -> None:
     original = SAMBA_CONF.read_text(encoding="utf-8", errors="replace")
     lines = [line for line in original.splitlines() if str(SAMBA_ALGEN_CONF) not in line and line.strip() != "# Managed by Algen Web Explorer Panel"]
     updated = "\n".join(lines).rstrip() + "\n"
+    if broker_required():
+        mode = SAMBA_CONF.stat().st_mode & 0o777
+        managed_file_write("samba_main", updated, actor="samba-manager", mode=mode if mode in {0o600, 0o640, 0o644} else 0o644)
+        return
     temporary = SAMBA_CONF.with_name(f".{SAMBA_CONF.name}.{uuid4().hex}.tmp")
     try:
         with temporary.open("w", encoding="utf-8") as handle:
@@ -180,7 +216,10 @@ def remove_smb_conf_include() -> None:
 
 def _prepare_share_directory(share: SambaShare, resolved: Path) -> None:
     if share.create_directory:
-        resolved.mkdir(parents=True, exist_ok=True)
+        if broker_required():
+            filesystem_mkdir(resolved, mode=int(share.directory_mode, 8) if share.directory_mode else 0o750, actor="samba-manager")
+        else:
+            resolved.mkdir(parents=True, exist_ok=True)
     if not resolved.exists():
         raise HTTPException(400, "Share path does not exist")
     if not resolved.is_dir():
@@ -188,21 +227,28 @@ def _prepare_share_directory(share: SambaShare, resolved: Path) -> None:
     owner = share.directory_owner.strip()
     group = share.directory_group.strip()
     if owner or group:
-        uid = -1
-        gid = -1
-        if owner:
-            import pwd
+        if broker_required():
+            ownership_change(resolved, owner=owner, group=group, actor="samba-manager")
+        else:
+            uid = -1
+            gid = -1
+            if owner:
+                import pwd
 
-            uid = pwd.getpwnam(owner).pw_uid
-        if group:
-            import grp
+                uid = pwd.getpwnam(owner).pw_uid
+            if group:
+                import grp
 
-            gid = grp.getgrnam(group).gr_gid
-        os.chown(resolved, uid, gid)
+                gid = grp.getgrnam(group).gr_gid
+            os.chown(resolved, uid, gid)
     if share.directory_mode:
         if not MASK_RE.fullmatch(share.directory_mode):
             raise HTTPException(400, "Invalid directory permission mode")
-        os.chmod(resolved, int(share.directory_mode, 8))
+        mode = int(share.directory_mode, 8)
+        if broker_required():
+            filesystem_chmod(resolved, mode, actor="samba-manager")
+        else:
+            os.chmod(resolved, mode)
 
 
 def validate_share_path(username: str, share: SambaShare) -> Path:
@@ -336,7 +382,10 @@ def write_samba_config(username: str, config: SambaConfig) -> None:
         _prepare_share_directory(share, Path(share.path))
     backup = backup_algen_smb_conf()
     _ensure_smb_conf_include()
-    SAMBA_ALGEN_CONF.write_text(preview["config"], encoding="utf-8")
+    if broker_required():
+        managed_file_write("samba_shares", preview["config"], actor="samba-manager", mode=0o644)
+    else:
+        SAMBA_ALGEN_CONF.write_text(preview["config"], encoding="utf-8")
     payload = state.read_state("samba")
     payload["installed"] = payload.get("installed", False)
     payload["configured"] = True
@@ -400,7 +449,10 @@ def rollback_samba_config(username: str) -> dict:
     if not validation["ok"]:
         raise HTTPException(400, "Backup config failed Samba validation")
     current_backup = backup_algen_smb_conf()
-    shutil.copy2(backup, SAMBA_ALGEN_CONF)
+    if broker_required():
+        managed_file_write("samba_shares", backup.read_text(encoding="utf-8", errors="replace"), actor="samba-manager", mode=0o644)
+    else:
+        shutil.copy2(backup, SAMBA_ALGEN_CONF)
     payload["last_validation"] = validation
     payload["last_backup"] = str(current_backup) if current_backup else payload.get("last_backup")
     payload.setdefault("changes", []).append({"ts": time.time(), "actor": username, "action": "rollback_config"})

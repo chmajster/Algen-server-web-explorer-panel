@@ -18,6 +18,8 @@ from .manifests import module_script
 from .models import InstallationType, ModuleManifest, PackageAction, PackagePlan
 from .distro import installation_for
 from .package_managers import resolve_package_manager_executable
+from ..config import get_config
+from ..privileged_broker.runtime import broker_command, broker_required, module_hook
 
 LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, str], None]
@@ -253,14 +255,18 @@ def command_preview(plan: PackagePlan, manifest: ModuleManifest) -> list[list[st
 
 
 def _shared_temporary_directory(prefix: str) -> tempfile.TemporaryDirectory[str]:
-    """Create files visible both inside WebNAS' PrivateTmp and transient admin units."""
+    """Create package files in a directory visible to the privileged broker."""
 
+    if broker_required():
+        runtime = Path(get_config().paths.data_dir) / "package-center-runtime"
+        runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(runtime, 0o700)
+        return tempfile.TemporaryDirectory(prefix=prefix, dir=runtime)
     try:
         SHARED_RUNTIME_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(SHARED_RUNTIME_ROOT, 0o700)
         return tempfile.TemporaryDirectory(prefix=prefix, dir=SHARED_RUNTIME_ROOT)
     except OSError:
-        # Non-root tests and non-systemd environments use the normal temporary directory.
         return tempfile.TemporaryDirectory(prefix=prefix)
 
 
@@ -297,9 +303,21 @@ def _transient_admin_command(args: list[str], timeout: int) -> list[str]:
 
 
 def _run(args: list[str], timeout: int, log: LogCallback) -> None:
-    if not args or shutil.which(args[0]) is None:
-        raise RuntimeError(f"Required executable is unavailable: {args[0] if args else 'unknown'}")
+    if not args:
+        raise RuntimeError("Required executable is unavailable: unknown")
     log("command", " ".join(args))
+    if broker_required():
+        broker_result = broker_command(args, timeout=timeout, actor="package-center")
+        if broker_result is not None:
+            for line in broker_result.stdout.splitlines():
+                log("stdout", redact(line))
+            for line in broker_result.stderr.splitlines():
+                log("stderr", redact(line))
+            if broker_result.returncode != 0:
+                raise CommandExecutionError(Path(args[0]).name, broker_result.returncode, broker_result.stderr or broker_result.stdout)
+            return
+    if shutil.which(args[0]) is None:
+        raise RuntimeError(f"Required executable is unavailable: {args[0]}")
     execution_args = _transient_admin_command(args, timeout)
     if execution_args is not args:
         log("stdout", "Executing trusted system mutation in a transient administrative systemd unit")
@@ -524,6 +542,15 @@ def _run_hook(manifest: ModuleManifest, action: str, log: LogCallback) -> None:
     script = module_script(manifest.id, action)
     if not script:
         return
+    if broker_required():
+        result = module_hook(manifest.id, action, actor="package-center")
+        for line in result.stdout.splitlines():
+            log("stdout", redact(line))
+        for line in result.stderr.splitlines():
+            log("stderr", redact(line))
+        if result.returncode != 0:
+            raise CommandExecutionError(f"{manifest.id}:{action}", result.returncode, result.stderr or result.stdout)
+        return
     args = [sys.executable, str(script)] if script.suffix == ".py" else ["/bin/bash", str(script)]
     _run(args, 1800 if action in {"prepare", "rollback", "health"} else 300, log)
 
@@ -574,8 +601,8 @@ def _remove_data(manifest: ModuleManifest, log: LogCallback) -> None:
 
 
 def execute(plan: PackagePlan, manifest: ModuleManifest, log: LogCallback, progress: ProgressCallback, cancelled: CancelCallback) -> None:
-    if manifest.requires_root and hasattr(os, "geteuid") and os.geteuid() != 0:
-        raise PermissionError("Package operations require the WebNAS service to run as root")
+    if manifest.requires_root and hasattr(os, "geteuid") and os.geteuid() != 0 and not broker_required():
+        raise PermissionError("Package operations require root or the privileged broker")
     if plan.action in {PackageAction.install, PackageAction.reinstall, PackageAction.update} and module_script(manifest.id, "prepare"):
         if cancelled():
             raise InterruptedError("Package operation cancelled before repository preparation")

@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...local_disks import NETWORK_FILESYSTEMS, PSEUDO_FILESYSTEMS, parse_proc_mounts
+from ...privileged_broker.runtime import broker_required, storage_probe
 
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,9 @@ class StorageInventoryService:
         if executable is None:
             return None
         try:
+            if broker_required() and name in {"smartctl", "nvme"}:
+                result = storage_probe(name, list(args), timeout=timeout)
+                return CommandResult(result.returncode, result.stdout, result.stderr)
             return self._runner([executable, *args], timeout)
         except (OSError, subprocess.SubprocessError) as error:
             logger.warning("storage_probe_failed tool=%s error=%s", name, type(error).__name__)

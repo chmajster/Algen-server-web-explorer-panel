@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from app.core.redaction import redact_text
 
-from .policy import dispatch
+from .extended_policy import dispatch
 from .protocol import BrokerRequest, BrokerResponse, MAX_FRAME_BYTES, encode_frame
 
 
