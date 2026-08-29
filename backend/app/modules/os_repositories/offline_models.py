@@ -42,6 +42,23 @@ class OfflineTargetInput(StrictModel):
         return self
 
 
+class OfflineHostGroupTargetInput(StrictModel):
+    host_group_id: str = Field(pattern=ID_PATTERN)
+    repository_ids: list[str] = Field(min_length=1, max_length=100)
+    name_prefix: str = Field(default="Offline", min_length=1, max_length=64)
+    channel: ChannelName = ChannelName.production
+    package_names: list[str] = Field(default_factory=list, max_length=5000)
+    include_dependencies: bool = True
+    confirm: bool = False
+
+    @model_validator(mode="after")
+    def validate_repository_ids(self) -> "OfflineHostGroupTargetInput":
+        if any(not value or len(value) != 32 for value in self.repository_ids):
+            raise ValueError("repository IDs must be 32-character identifiers")
+        self.repository_ids = list(dict.fromkeys(self.repository_ids))
+        return self
+
+
 class OfflineExportInput(StrictModel):
     repository_id: str = Field(pattern=ID_PATTERN)
     snapshot_id: str | None = Field(default=None, pattern=ID_PATTERN)
