@@ -32,8 +32,7 @@ def _unexpected(message: str):
     return fail
 
 
-def test_bootstrap_uses_global_transfer_and_detailed_update_permissions(monkeypatch) -> None:
-    calls: list[str] = []
+def test_bootstrap_defers_global_transfer_history_and_keeps_detailed_updates(monkeypatch) -> None:
     monkeypatch.setattr(
         startup_bootstrap,
         "settings_me",
@@ -48,8 +47,8 @@ def test_bootstrap_uses_global_transfer_and_detailed_update_permissions(monkeypa
         startup_bootstrap,
         "task_store",
         SimpleNamespace(
-            list_all=lambda: (calls.append("all") or [_Task("global")]),
-            list_for=lambda username: (calls.append(f"own:{username}") or [_Task("own")]),
+            list_all=_unexpected("global transfer history must not block bootstrap"),
+            list_for=_unexpected("own tasks used for global transfer permission"),
         ),
     )
     monkeypatch.setattr(startup_bootstrap, "admin_updates_progress", lambda user: {"state": "idle", "detailed": True})
@@ -57,12 +56,11 @@ def test_bootstrap_uses_global_transfer_and_detailed_update_permissions(monkeypa
     payload = startup_bootstrap.build_startup_payload(_request(), SessionUser("alice", "csrf"))
 
     assert payload["user"] == {"username": "alice", "home": "/home/alice", "csrf_token": "csrf"}
-    assert payload["task_scope"] == "all"
-    assert payload["tasks"] == [{"id": "global"}]
+    assert payload["task_scope"] == "none"
+    assert payload["tasks"] == []
     assert payload["update_detailed"] is True
     assert payload["update_progress"] == {"state": "idle", "detailed": True}
     assert "update_completion" not in payload
-    assert calls == ["all"]
 
 
 def test_bootstrap_uses_own_tasks_and_public_update_state(monkeypatch) -> None:

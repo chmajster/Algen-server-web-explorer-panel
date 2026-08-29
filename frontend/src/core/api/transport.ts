@@ -215,7 +215,7 @@ function isBootstrapResponse(value: unknown): value is BootstrapResponse {
 function seedBootstrap(data: BootstrapResponse) {
   seededGets.set("/api/settings/me", data.profile);
   if (data.task_scope === "all") seededGets.set("/api/admin/transfers", data.tasks);
-  else seededGets.set("/api/files/tasks", data.tasks);
+  else if (data.task_scope === "own") seededGets.set("/api/files/tasks", data.tasks);
   seededGets.set(
     data.update_detailed ? "/api/admin/system/updates/progress" : "/api/system/update-status",
     data.update_progress,

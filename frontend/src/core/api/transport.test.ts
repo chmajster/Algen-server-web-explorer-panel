@@ -82,6 +82,30 @@ describe("shared API transport", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/bootstrap");
   });
 
+  it("defers global transfer history when bootstrap carries no task snapshot", async () => {
+    const fullTasks = [{ id: "global-1" }, { id: "global-2" }];
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/bootstrap") return Promise.resolve(new Response(JSON.stringify({
+        user: { username: "admin", home: "/home/admin", csrf_token: "csrf" },
+        profile: { username: "admin", permissions: ["transfers.view_all"] },
+        tasks: [],
+        task_scope: "none",
+        update_progress: { state: "idle" },
+        update_detailed: false,
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+      if (url === "/api/admin/transfers") return Promise.resolve(new Response(JSON.stringify(fullTasks), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await me();
+    await expect(request("/api/admin/transfers")).resolves.toEqual(fullTasks);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/bootstrap", "/api/admin/transfers"]);
+  });
+
   it("keeps update completion off the bootstrap critical path", async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === "/api/bootstrap") return Promise.resolve(new Response(JSON.stringify({

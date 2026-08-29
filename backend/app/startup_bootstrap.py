@@ -22,8 +22,10 @@ def build_startup_payload(request: Request, user: SessionUser) -> dict[str, Any]
 
     task_scope: TaskScope
     if "transfers.view_all" in permissions:
-        task_scope = "all"
-        tasks = [task.to_dict() for task in task_store.list_all()]
+        # Global transfer history may be large and includes log/diagnostic tails.
+        # Defer it until after session restoration instead of blocking bootstrap.
+        task_scope = "none"
+        tasks = []
     elif "transfers.view_own" in permissions:
         task_scope = "own"
         tasks = [task.to_dict() for task in task_store.list_for(user.username)]
