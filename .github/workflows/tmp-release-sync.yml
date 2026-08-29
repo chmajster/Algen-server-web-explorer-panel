@@ -1,0 +1,63 @@
+name: Temporary release metadata sync
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'perf/event-driven-runtime-optimization'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Synchronize v0.1.24 metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/sync-version.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('CHANGELOG.md')
+          text = path.read_text(encoding='utf-8')
+          heading = '## v0.1.24 — 2026-08-29'
+          if heading not in text:
+              entry = '''## v0.1.24 — 2026-08-29
+
+          - Added real browser-to-FastAPI E2E coverage and hardened appliance backup/restore validation and recovery workflows.
+          - Added native Alert Manager and safe read-only Storage Manager, and completed the typed privileged-operation broker so FastAPI can run unprivileged while privileged host mutations remain controlled.
+          - Reduced idle runtime work with lazy process enumeration, session-resolution caching, gzip compression, request deduplication, shared visibility handling, and event-driven task, job, update, mount, and network-transaction refresh with polling only as fallback.
+          - Added backend WebSocket health monitoring with reconnect coverage and fixed Credentials refresh rendering so the table no longer flickers during automatic updates.
+          - Bounded the session cache with LRU eviction and explicit invalidation, removed process scans from base Resource Monitor metrics, and added regression coverage for event fan-out, reconnects, cache invalidation, request deduplication, and recursive transaction invalidation.
+
+          '''
+              marker = '## Unreleased\n\n'
+              if marker not in text:
+                  raise SystemExit('CHANGELOG.md is missing the Unreleased marker')
+              text = text.replace(marker, marker + entry, 1)
+              path.write_text(text, encoding='utf-8')
+          PY
+          python scripts/sync-version.py --check
+          if git diff --quiet -- VERSION pyproject.toml backend/app/__init__.py frontend/package.json frontend/package-lock.json CHANGELOG.md; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VERSION pyproject.toml backend/app/__init__.py frontend/package.json frontend/package-lock.json CHANGELOG.md
+          git commit -m 'release: synchronize v0.1.24 metadata'
+          git push origin HEAD:${{ github.head_ref }}
