@@ -1,8 +1,13 @@
-import enUS from "./locales/en-US.json";
-import plPL from "./locales/pl-PL.json";
-
 export type Language = "pl-PL" | "en-US";
 export const supportedLanguages: Language[] = ["pl-PL", "en-US"];
+
+type Dictionary = Record<string, string>;
+type LocaleModule = { default?: Dictionary } & Dictionary;
+
+const localeLoaders: Record<Language, () => Promise<LocaleModule>> = {
+  "pl-PL": () => import("./locales/pl-PL.json") as unknown as Promise<LocaleModule>,
+  "en-US": () => import("./locales/en-US.json") as unknown as Promise<LocaleModule>,
+};
 
 const dockerActionOverrides: Record<Language, Record<string, string>> = {
   "pl-PL": {
@@ -240,10 +245,44 @@ const proxmoxManagerOverrides: Record<Language, Record<string, string>> = {
   },
 };
 
-const dictionaries: Record<Language, Record<string, string>> = {
-  "pl-PL": { ...plPL, ...dockerActionOverrides["pl-PL"], ...proxmoxManagerOverrides["pl-PL"] },
-  "en-US": { ...enUS, ...dockerActionOverrides["en-US"], ...proxmoxManagerOverrides["en-US"] },
-};
+const dictionaries: Partial<Record<Language, Dictionary>> = {};
+const loadingLanguages: Partial<Record<Language, Promise<void>>> = {};
+
+function asDictionary(module: LocaleModule): Dictionary {
+  const value = module.default ?? module;
+  return value as Dictionary;
+}
+
+export async function loadLanguage(language: Language): Promise<void> {
+  if (dictionaries[language]) return;
+  if (loadingLanguages[language]) return loadingLanguages[language];
+  const pending = localeLoaders[language]().then((module) => {
+    dictionaries[language] = {
+      ...asDictionary(module),
+      ...dockerActionOverrides[language],
+      ...proxmoxManagerOverrides[language],
+    };
+  }).finally(() => {
+    delete loadingLanguages[language];
+  });
+  loadingLanguages[language] = pending;
+  return pending;
+}
+
+export async function loadLanguageWithFallback(language: Language): Promise<Language> {
+  try {
+    await loadLanguage(language);
+    return language;
+  } catch (error) {
+    if (language === "en-US") throw error;
+    await loadLanguage("en-US");
+    return "en-US";
+  }
+}
+
+export function isLanguageLoaded(language: Language): boolean {
+  return Boolean(dictionaries[language]);
+}
 
 export function detectLanguage(language?: string | null): Language {
   if (language && supportedLanguages.includes(language as Language)) return language as Language;
@@ -254,5 +293,10 @@ export function detectLanguage(language?: string | null): Language {
 }
 
 export function translate(language: Language, key: string) {
-  return dictionaries[language][key] || dictionaries["pl-PL"][key] || key;
+  return dictionaries[language]?.[key]
+    || dictionaries["en-US"]?.[key]
+    || dictionaries["pl-PL"]?.[key]
+    || dockerActionOverrides[language][key]
+    || proxmoxManagerOverrides[language][key]
+    || key;
 }

@@ -80,14 +80,18 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
                 assert_write_allowed(payload[key])
     if not current_process_can_impersonate():
         raise HTTPException(503, "File operations require the service to run as root for per-user impersonation")
-    cmd = [sys.executable, "-m", "app.worker", "--user", username, "--op", op, "--payload", _encode(payload)]
-    # Editor content is sent through stdin so file data is never exposed in the
-    # worker process command line. Other small metadata payloads keep the
-    # backwards-compatible argument transport.
-    stdin_payload = _encode(payload) if op == "write_text" else None
-    if stdin_payload is not None:
-        cmd[-1] = "-"
-    result = subprocess.run(cmd, input=stdin_payload, capture_output=True, text=True, timeout=3600, check=False)
+    # The child process has a constant argv. Authenticated username, operation
+    # name and operation data are carried in one encoded stdin envelope instead
+    # of being exposed as command-line arguments.
+    cmd = [sys.executable, "-m", "app.worker", "--user", "-", "--op", "-", "--payload", "-"]
+    stdin_payload = _encode({"user": username, "op": op, "payload": payload})
+    # Keep the short-lived process boundary for per-user UID/GID dropping.
+    # The existing privileged broker is a multi-threaded root process; calling
+    # setuid/setgid from one broker thread would alter credentials process-wide
+    # and weaken isolation. Search is bounded separately so an inaccessible or
+    # extremely large tree cannot occupy a worker for an hour.
+    timeout = 30 if op == "search" else 3600
+    result = subprocess.run(cmd, input=stdin_payload, capture_output=True, text=True, timeout=timeout, check=False)
     if result.returncode != 0:
         raise _worker_http_error(result.stderr)
     return json.loads(result.stdout or "{}")
@@ -117,6 +121,32 @@ def _filter_items(items: list[dict], query: str | None) -> list[dict]:
     ]
 
 
+def _legacy_paginate(
+    raw_items: list[dict[str, Any]],
+    *,
+    sort: str | None,
+    direction: str,
+    page: int,
+    page_size: int,
+    folders_first: bool,
+    filter_text: str | None,
+    show_hidden: bool,
+) -> tuple[list[dict[str, Any]], int, int, int]:
+    if not show_hidden:
+        raw_items = [item for item in raw_items if not str(item.get("name", "")).startswith(".")]
+    items = _filter_items(raw_items, filter_text)
+    reverse = direction == "desc"
+    if sort:
+        items.sort(key=lambda item: _item_sort_value(item, sort), reverse=reverse)
+    if folders_first:
+        items.sort(key=lambda item: not item.get("is_dir", False))
+    total_items = len(items)
+    total_pages = max(1, math.ceil(total_items / page_size))
+    page = min(page, total_pages)
+    start = (page - 1) * page_size
+    return items[start : start + page_size], page, total_items, total_pages
+
+
 def list_dir(
     username: str,
     path: str | None,
@@ -136,21 +166,43 @@ def list_dir(
         raise HTTPException(400, "Invalid sort direction")
     page = max(1, page)
     page_size = min(max(1, page_size), 200)
-    worker_result = run_user_op(username, "list", {"path": str(target)})
-    raw_items = _worker_items(worker_result)
-    if not show_hidden:
-        raw_items = [item for item in raw_items if not str(item.get("name", "")).startswith(".")]
-    items = _filter_items(raw_items, filter_text)
-    reverse = direction == "desc"
-    if sort:
-        items.sort(key=lambda item: _item_sort_value(item, sort), reverse=reverse)
-    if folders_first:
-        items.sort(key=lambda item: not item.get("is_dir", False))
-    total_items = len(items)
-    total_pages = max(1, math.ceil(total_items / page_size))
-    if page > total_pages:
-        page = total_pages
-    start = (page - 1) * page_size
+    worker_result = run_user_op(
+        username,
+        "list",
+        {
+            "path": str(target),
+            "paginate": True,
+            "sort": sort,
+            "direction": direction,
+            "page": page,
+            "page_size": page_size,
+            "folders_first": folders_first,
+            "filter": filter_text,
+            "show_hidden": show_hidden,
+        },
+    )
+
+    pagination = worker_result.get("pagination") if isinstance(worker_result, dict) else None
+    if isinstance(pagination, dict):
+        items = _worker_items(worker_result)
+        page = int(pagination.get("page", page))
+        page_size = int(pagination.get("page_size", page_size))
+        total_items = int(pagination.get("total_items", len(items)))
+        total_pages = int(pagination.get("total_pages", max(1, math.ceil(total_items / page_size))))
+    else:
+        # Compatibility path for older workers and unit-test doubles. Installed
+        # deployments use the worker-side pagination above.
+        items, page, total_items, total_pages = _legacy_paginate(
+            _worker_items(worker_result),
+            sort=sort,
+            direction=direction,
+            page=page,
+            page_size=page_size,
+            folders_first=folders_first,
+            filter_text=filter_text,
+            show_hidden=show_hidden,
+        )
+
     parent = None
     for root in allowed_roots(username):
         try:
@@ -163,7 +215,7 @@ def list_dir(
     directory = worker_result.get("directory", {}) if isinstance(worker_result, dict) else {}
     can_write = bool(directory.get("can_write", os.access(target, os.W_OK)))
     return {
-        "items": items[start : start + page_size],
+        "items": items,
         "page": page,
         "page_size": page_size,
         "total_items": total_items,

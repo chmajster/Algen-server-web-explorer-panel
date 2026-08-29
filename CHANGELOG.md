@@ -2,12 +2,6 @@
 
 ## Unreleased
 
-## v0.1.25 — 2026-08-29
-
-- Reduced authenticated cold-start request fan-out by aggregating profile, permitted tasks, and update state behind the internal `/api/bootstrap` endpoint while preserving existing standalone API contracts and rolling-deployment fallback.
-- Added one-shot frontend bootstrap seeding so settings, task, and update consumers reuse the aggregate response instead of issuing duplicate startup GET requests.
-- Added explicit FAST/MEDIUM/SLOW backend cache tiers and a thread-safe read-through cache, applying the SLOW tier only to the non-sensitive public module catalog with explicit invalidation coverage.
-
 ## v0.1.24 — 2026-08-29
 
 - Added real browser-to-FastAPI E2E coverage and hardened appliance backup/restore validation and recovery workflows.

@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from .security import SessionUser, get_session_user
 from .settings import admin_updates_progress, settings_me, system_update_status
-from .tasks import task_store
 
 
 router = APIRouter(tags=["startup"])
@@ -15,23 +14,17 @@ TaskScope = Literal["all", "own", "none"]
 
 
 def build_startup_payload(request: Request, user: SessionUser) -> dict[str, Any]:
-    """Compose the data needed before rendering the desktop without weakening RBAC."""
+    """Compose bounded startup data without weakening RBAC or loading transfer history."""
 
     profile = settings_me(request, user)
     permissions = {str(value) for value in profile.get("permissions", [])}
 
-    task_scope: TaskScope
-    if "transfers.view_all" in permissions:
-        # Global transfer history may be large and includes log/diagnostic tails.
-        # Defer it until after session restoration instead of blocking bootstrap.
-        task_scope = "none"
-        tasks = []
-    elif "transfers.view_own" in permissions:
-        task_scope = "own"
-        tasks = [task.to_dict() for task in task_store.list_for(user.username)]
-    else:
-        task_scope = "none"
-        tasks = []
+    # Transfer history is deliberately kept off the authentication critical path.
+    # Both global and per-user stores are unbounded and task serialization includes
+    # log/diagnostic tails. The frontend already knows the transfer permissions from
+    # `profile` and fetches the appropriate endpoint after the session is restored.
+    task_scope: TaskScope = "none"
+    tasks: list[dict[str, Any]] = []
 
     update_detailed = "updates.view" in permissions
     update_progress = admin_updates_progress(user) if update_detailed else system_update_status(user)
