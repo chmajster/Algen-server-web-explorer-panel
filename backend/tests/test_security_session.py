@@ -119,6 +119,19 @@ def test_session_cache_is_bounded_and_evicts_oldest_entry(tmp_path):
     assert store._hash("token-2") in store._cache
 
 
+def test_explicit_cache_invalidation_observes_persisted_session_changes(tmp_path):
+    store = security.SessionStore(tmp_path / "sessions.sqlite3", "test-session-secret", cache_ttl_seconds=60)
+    store.create("token", "alice", "csrf", persistent=False, expires_at=time.time() + 60)
+    assert store.resolve("token") is not None
+
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("UPDATE auth_sessions SET expires_at=0 WHERE token_hash=?", (store._hash("token"),))
+        connection.commit()
+
+    store.invalidate("token")
+    assert store.resolve("token") is None
+
+
 def test_revoke_user_invalidates_database_and_cached_sessions(tmp_path):
     store = security.SessionStore(tmp_path / "sessions.sqlite3", "test-session-secret", cache_ttl_seconds=60)
     store.create("alice-1", "alice", "csrf-1", persistent=False, expires_at=time.time() + 60)
