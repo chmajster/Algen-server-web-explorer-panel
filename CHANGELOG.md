@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.1.24 — 2026-08-29
+
+- Added real browser-to-FastAPI E2E coverage and hardened appliance backup/restore validation and recovery workflows.
+- Added native Alert Manager and safe read-only Storage Manager, and completed the typed privileged-operation broker so FastAPI can run unprivileged while privileged host mutations remain controlled.
+- Reduced idle runtime work with lazy process enumeration, session-resolution caching, gzip compression, request deduplication, shared visibility handling, and event-driven task, job, update, mount, and network-transaction refresh with polling only as fallback.
+- Added backend WebSocket health monitoring with reconnect coverage and fixed Credentials refresh rendering so the table no longer flickers during automatic updates.
+- Bounded the session cache with LRU eviction and explicit invalidation, removed process scans from base Resource Monitor metrics, and added regression coverage for event fan-out, reconnects, cache invalidation, request deduplication, and recursive transaction invalidation.
+
 ## v0.1.23 — 2026-08-29
 
 - Hardened hosted/trusted CI and production deployment so manual production promotion requires a successful hosted test run for the exact `main` revision; authentication diagnostics and baseline HTTP security headers were also strengthened.
