@@ -1,0 +1,12 @@
+id: secrets-manager
+name: Secrets Manager
+version: 1.0.0
+category: infrastructure
+icon: key-round
+permissions: [secrets-manager.view, secrets-manager.manage, secrets-manager.use, secrets-manager.audit.view, secrets-manager.backup, secrets-manager.restore, secrets-manager.rotate]
+routers: [app.modules.secrets_manager.router:router]
+dependencies: [ansible-controller]
+capabilities: [secrets, encrypted-storage, audit, backup, credential-compatibility]
+actions: [create, update, delete, backup, restore, rotate-plan]
+startup: app.modules.secrets_manager.compat:startup
+menu: [{id: secrets-manager, label: secrets-manager.name, icon: key-round, permission: secrets-manager.view}]

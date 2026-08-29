@@ -1,54 +1,57 @@
 # Credential encryption and recovery
 
-WebNAS keeps credential master keys outside SQLite and never returns stored secret envelopes through browser APIs.
+Secrets Manager is the authoritative secret store for WebNAS. WebNAS keeps secret master keys outside SQLite and never returns stored plaintext values or encrypted envelopes through browser APIs.
 
 ## Envelope versions
 
-- `WAC2` is the current write format. It uses ChaCha20-Poly1305 from the maintained `cryptography` package with a random 96-bit nonce and associated data bound to the credential identifier or backup context.
-- `WAC1` is the legacy authenticated envelope. It remains read-only compatible so upgrades do not make existing credentials or encrypted backups inaccessible.
-- New or edited credential secrets and newly exported encrypted backups are written as `WAC2`.
+- `WAC2` is the current write format. It uses ChaCha20-Poly1305 from the maintained `cryptography` package with a random 96-bit nonce and associated data bound to the secret identifier or backup context.
+- `WAC1` is the legacy authenticated envelope. It remains read-only compatible so upgrades and migration do not make existing credentials inaccessible.
+- New or edited Secrets Manager values and newly exported encrypted backups are written as `WAC2`.
 
-The 256-bit master key remains a root/private file outside the Hosts Manager SQLite database. The WAC2 AEAD key is domain-separated from that master key before use.
+The 256-bit master key remains a root/private file outside SQLite. The WAC2 AEAD key is domain-separated from that master key before use.
 
-## Migrating existing WAC1 credentials
+## Hosts Manager -> Secrets Manager migration
 
-First inspect without changing anything:
+The historical credential store uses:
 
-```bash
-sudo python3.14 scripts/migrate_credentials_wac2.py
-```
+- database: `/var/lib/webnas/hosts-manager/hosts.sqlite3`;
+- key: `/var/lib/webnas/secrets/hosts-manager.key`.
 
-The command reports only counts. It never prints plaintext or stored envelopes.
+The authoritative Secrets Manager store uses:
 
-For the actual migration, place WebNAS in maintenance mode and stop the application services so no credential write can race the migration. Then run:
+- database: `/var/lib/webnas/secrets-manager/secrets.sqlite3`;
+- key: `/var/lib/webnas/secrets/secrets-manager.key`.
 
-```bash
-sudo systemctl stop 'webnas@*.service'
-sudo python3.14 scripts/migrate_credentials_wac2.py --apply
-```
+At first successful Secrets Manager startup, the migration creates a mode-`0600` SQLite backup of the legacy database, reads the legacy credential rows, decrypts each non-empty WAC1/WAC2 envelope only in memory with the historical key and original credential ID as associated data, immediately writes a WAC2 envelope with the Secrets Manager key and the same ID, authenticates the new envelope, and commits all destination rows with an idempotent migration marker.
 
-Before modifying SQLite, the command creates a mode-`0600` online backup beside the Hosts Manager database. Only active non-empty WAC1 envelopes are rewritten. WAC2 records are left byte-for-byte unchanged. If any WAC1 authentication check fails, the transaction is rolled back.
+Credential IDs, metadata, `shared_with`, environment relationships, timestamps and actors are preserved. The historical credential rows are retained unchanged as rollback/reference artifacts. If any legacy envelope fails authentication, the destination transaction is rolled back and the legacy runtime remains active.
 
-After migration, start WebNAS and verify health before deleting the pre-migration backup.
+The old `scripts/migrate_credentials_wac2.py` utility remains relevant for an installation that needs to normalize legacy WAC1 Hosts Manager data before a controlled migration, but it is no longer the primary ownership transition mechanism.
 
 ## Master-key backup
 
-Treat the Hosts Manager database and `/var/lib/webnas/secrets/hosts-manager.key` as one recovery unit. Back up both through a trusted root-only channel. Losing the key makes WAC1 and WAC2 data unrecoverable; copying only SQLite is not a usable credential backup.
+Treat each encrypted database and the key that protects it as one recovery unit. For the authoritative store, back up `/var/lib/webnas/secrets-manager/secrets.sqlite3` and `/var/lib/webnas/secrets/secrets-manager.key` through a trusted root-only channel. Losing the key makes the encrypted secret data unrecoverable; copying only SQLite is not a usable backup.
 
-Do not store the master key inside SQLite, in Git, in the frontend bundle, in logs, or in a WebNAS API response.
+During the post-upgrade rollback window, keep the pre-migration Hosts Manager database backup together with `/var/lib/webnas/secrets/hosts-manager.key`.
+
+Do not store a master key inside SQLite, in Git, in the frontend bundle, in logs, event payloads, audit details, or WebNAS API responses.
 
 ## Master-key rotation
 
-Do not replace `hosts-manager.key` in place while encrypted records still depend on it. A safe rotation requires an offline re-encryption transaction:
+Do not replace `secrets-manager.key` in place while encrypted records still depend on it. A safe rotation requires offline maintenance because the external key-file replacement and SQLite envelope replacement cannot be made crash-atomic while requests are being served.
+
+Supported procedure:
 
 1. stop WebNAS services;
-2. take and verify a backup of the current database and current master key as one recovery set;
-3. migrate all WAC1 records to WAC2 first;
+2. take and verify a backup of the current Secrets Manager database and current master key as one recovery set;
+3. ensure all active envelopes are readable and WAC2 is the write format;
 4. generate a new random 32-byte key as a root-only temporary file with mode `0600`;
 5. decrypt every envelope with the old key in memory and immediately re-encrypt it with the new key using the same associated-data identifier;
-6. verify every new envelope with the new key before committing the database transaction;
+6. authenticate every new envelope with the new key before committing the database transaction;
 7. atomically replace the master-key file only as part of the controlled rotation procedure;
-8. start WebNAS and verify credential-backed operations;
-9. keep the old database/key recovery set until the rotation is operationally confirmed.
+8. start WebNAS and verify Hosts Manager, Ansible, Proxmox, webhook and other secret-backed operations;
+9. keep the old database/key recovery set until rotation is operationally confirmed.
 
-A raw key-file replacement without re-encryption is destructive and is not a supported rotation method.
+`POST /api/modules/secrets-manager/rotate-key` deliberately returns this maintenance plan instead of performing a dangerous online raw-key replacement.
+
+A raw key-file replacement without re-encryption is destructive and unsupported.

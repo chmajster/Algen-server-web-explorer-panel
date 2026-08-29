@@ -13,6 +13,16 @@ WebNAS is a Linux-first administration panel with a FastAPI backend and a React/
 
 The systemd service runs as root because impersonating arbitrary local users requires privilege. The worker immediately drops privileges before touching user files.
 
+## Infrastructure module boundaries
+
+Backend modules are discovered from manifests and may consume another module only through an explicitly supported public contract. Secrets Manager is the authoritative encrypted secret boundary. Browser-facing APIs expose metadata only; plaintext is returned only to a backend consumer that provides its module ID and purpose and is present in the secret's `shared_with` allowlist.
+
+The Secrets Manager master key is stored outside SQLite with private filesystem permissions. Existing Hosts Manager credential IDs remain stable during migration: legacy envelopes are decrypted only in memory, re-encrypted with the Secrets Manager WAC2 key, authenticated before commit and backed up before migration. The legacy database remains a rollback artifact, while new compatibility rows needed for local foreign keys contain no encrypted secret material.
+
+Webhook Manager references Secrets Manager IDs rather than storing credentials. A webhook target is resolved and validated immediately before each attempt; blocked address classes fail closed. Delivery connects to the validated numeric address rather than resolving the hostname again, preserves the original hostname for HTTP `Host` and TLS certificate verification, and does not automatically follow redirects. Private RFC1918/ULA targets require the separate critical `webhook-manager.configure` permission.
+
+Fail2Ban Manager owns only WebNAS-managed override files, uses fixed subprocess argument arrays, validates jail/IP/config input, validates the complete Fail2Ban configuration before reload and restores the previous managed file on failure. Fail2Ban and Secrets Manager publish metadata-only events to the existing in-process event bus; Webhook Manager subscribes through a bounded worker queue.
+
 ## Performance architecture
 
 ### Resource Sampler
