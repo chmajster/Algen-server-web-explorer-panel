@@ -170,3 +170,48 @@ export function HardwareDialog({ vm, details, t, toast, onClose, onDone }: { vm:
     <label className="field-label">Confirm exact VM name<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={vm.name} /></label>
   </Modal>;
 }
+
+export function DiskResizeDialog({ vm, details, t, toast, onClose, onDone }: { vm: ProxmoxVm; details: ProxmoxVmDetails; t: Translate; toast: ToastFn; onClose: () => void; onDone: () => Promise<void> }) {
+  const disks = details.hardware.disks.filter((disk) => Boolean(disk.device));
+  const [disk, setDisk] = useState(disks[0]?.device || "");
+  const selected = disks.find((item) => item.device === disk);
+  const currentMatch = String(selected?.size || "").match(/^([0-9]+(?:\.[0-9]+)?)G$/i);
+  const currentGb = currentMatch ? Number(currentMatch[1]) : 0;
+  const [newSize, setNewSize] = useState(currentGb ? String(Math.ceil(currentGb) + 1) : "");
+  const [confirmation, setConfirmation] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function chooseDisk(value: string) {
+    setDisk(value);
+    const item = disks.find((entry) => entry.device === value);
+    const match = String(item?.size || "").match(/^([0-9]+(?:\.[0-9]+)?)G$/i);
+    const size = match ? Number(match[1]) : 0;
+    setNewSize(size ? String(Math.ceil(size) + 1) : "");
+  }
+
+  async function apply() {
+    setBusy(true);
+    try {
+      await api.resizeProxmoxDisk(vm.connection_id, vm.vmid, {
+        disk,
+        new_size_gb: Number(newSize),
+        confirm: true,
+        confirmation_text: confirmation,
+      });
+      await onDone();
+      onClose();
+    } catch (error) {
+      toast(failure(error, t), "error", "admin", "proxmox-manager");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const requested = Number(newSize);
+  return <Modal title={`Resize disk: ${vm.name}`} onClose={onClose} footer={<><button type="button" onClick={onClose}>{t("action.cancel")}</button><button className="button-primary" type="button" disabled={busy || !disk || !currentGb || requested <= currentGb || confirmation !== vm.name} onClick={() => void apply()}>Resize</button></>}>
+    <label className="field-label">Disk<select value={disk} onChange={(event) => chooseDisk(event.target.value)}>{disks.map((item) => <option key={item.device} value={item.device}>{item.device} · {item.storage || "storage"} · {item.size || "unknown size"}</option>)}</select></label>
+    <label className="field-label">New size (GiB)<input type="number" min={currentGb ? Math.floor(currentGb) + 1 : 1} value={newSize} onChange={(event) => setNewSize(event.target.value)} /></label>
+    <section className="module-info"><h4>Current → New</h4><p><strong>{disk || "disk"}</strong>: {currentGb ? `${currentGb} GiB` : "unknown"} → {requested ? `${requested} GiB` : "—"}</p><p>Disk shrinking is blocked by both the UI and backend.</p></section>
+    <label className="field-label">Confirm exact VM name<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={vm.name} /></label>
+  </Modal>;
+}
