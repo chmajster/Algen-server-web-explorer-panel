@@ -1554,11 +1554,29 @@ install_release_integrations() {
   INSTALL_DIR="$application_root"
 }
 
+effective_transport_scheme() {
+  local transport_state="${DATA_DIR}/settings/transport.json"
+  if [[ -f "$transport_state" ]]; then
+    if grep -Eq '"use_https"[[:space:]]*:[[:space:]]*true' "$transport_state"; then
+      printf '%s' "https"
+    else
+      printf '%s' "http"
+    fi
+    return
+  fi
+  if grep -Eq '^\s*use_https:\s*true\s*$' "$CONFIG_FILE"; then
+    printf '%s' "https"
+  else
+    printf '%s' "http"
+  fi
+}
+
 validate_release_installation() {
   section "Validation"
-  local scheme="http"
+  local scheme=""
   local curl_options=(--fail --silent --show-error --max-time 3)
-  grep -Eq '^\s*use_https:\s*true\s*$' "$CONFIG_FILE" && scheme="https" && curl_options+=(--insecure)
+  scheme="$(effective_transport_scheme)"
+  [[ "$scheme" != "https" ]] || curl_options+=(--insecure)
   systemctl is-active --quiet nginx || fail "Stable nginx gateway is not active"
   [[ -L "${INSTALL_DIR}/current" ]] || fail "Active release symlink is unavailable"
   [[ -f "${INSTALL_DIR}/current/frontend/dist/index.html" ]] || fail "Active frontend is unavailable"
@@ -1652,11 +1670,12 @@ configure_firewall() {
 }
 
 print_finish() {
-  local ip_addr
+  local scheme ip_addr
+  scheme="$(effective_transport_scheme)"
   ip_addr="$(hostname -I 2>/dev/null | awk '{print $1}')"
   [[ -n "$ip_addr" ]] || ip_addr="IP_SERWERA"
   section "Installation complete"
-  printf '%b[OK]%b WebNAS panel: http://%s:%s\n' "$GREEN" "$RESET" "$ip_addr" "$PORT"
+  printf '%b[OK]%b WebNAS panel: %s://%s:%s\n' "$GREEN" "$RESET" "$scheme" "$ip_addr" "$PORT"
   cat <<EOF
 
 Helpful commands:

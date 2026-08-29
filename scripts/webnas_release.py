@@ -33,6 +33,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.core.redaction import redact_text  # noqa: E402
+from app.transport import TransportSettings, render_nginx_transport  # noqa: E402
 
 
 SLOTS = {"blue": 15101, "green": 15102}
@@ -214,13 +215,49 @@ class Deployment:
             except OSError as error:
                 raise RuntimeError(f"Configured {label} path is not writable: {path}: {error}") from error
 
+    def transport_settings(self) -> TransportSettings:
+        defaults = TransportSettings(
+            use_https=config_value(self.config, "server", "use_https", "false").lower() == "true",
+            tls_cert=config_value(self.config, "server", "tls_cert"),
+            tls_key=config_value(self.config, "server", "tls_key"),
+        )
+        data_dir = Path(config_value(self.config, "paths", "data_dir", "/var/lib/webnas"))
+        state_path = data_dir / "settings" / "transport.json"
+        try:
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return defaults
+        if not isinstance(payload, dict):
+            return defaults
+        try:
+            return TransportSettings.model_validate({**defaults.model_dump(), **payload})
+        except ValueError:
+            return defaults
+
+    def transport_include_path(self) -> Path:
+        data_dir = Path(config_value(self.config, "paths", "data_dir", "/var/lib/webnas"))
+        return data_dir / "settings" / "nginx-transport.conf"
+
+    def write_transport_include(self) -> None:
+        path = self.transport_include_path()
+        settings = self.transport_settings()
+        atomic_write(path, render_nginx_transport(settings, self.public_port), 0o640)
+        try:
+            shutil.chown(path.parent, user=self.service_user, group=self.service_user)
+            shutil.chown(path, user=self.service_user, group=self.service_user)
+        except (LookupError, OSError):
+            pass
+
     def ensure_tls_certificate(self) -> None:
-        if config_value(self.config, "server", "use_https", "false").lower() != "true":
+        transport = self.transport_settings()
+        if not transport.use_https:
             return
-        raw_cert = config_value(self.config, "server", "tls_cert")
-        raw_key = config_value(self.config, "server", "tls_key")
+        raw_cert = transport.tls_cert
+        raw_key = transport.tls_key
         if not raw_cert or not raw_key:
-            raise RuntimeError("TLS is enabled but server.tls_cert or server.tls_key is not configured")
+            if transport.use_https:
+                raise RuntimeError("TLS is enabled but server.tls_cert or server.tls_key is not configured")
+            return
         cert = Path(raw_cert)
         key = Path(raw_key)
         if cert.is_file() and key.is_file() and cert.stat().st_size > 0 and key.stat().st_size > 0:
@@ -377,29 +414,9 @@ class Deployment:
         raise RuntimeError(f"Candidate health check failed on port {port}: {last_error}")
 
     def nginx(self, port: int) -> str:
-        use_https = config_value(self.config, "server", "use_https", "false").lower() == "true"
-        tls_cert = config_value(self.config, "server", "tls_cert")
-        tls_key = config_value(self.config, "server", "tls_key")
-        insecure_policy = config_value(self.config, "security", "allow_insecure_http", "legacy").lower()
-        if not use_https and insecure_policy == "false":
-            raise RuntimeError(
-                "Refusing public plaintext HTTP because security.allow_insecure_http=false; "
-                "enable TLS or explicitly opt in only for an isolated lab"
-            )
-        if not use_https and insecure_policy not in {"true", "false"}:
-            print(
-                "WebNAS security warning: legacy configuration still publishes plaintext HTTP. "
-                "Enable TLS or set security.allow_insecure_http=true explicitly only for an isolated lab.",
-                file=sys.stderr,
-            )
-        listen = f"listen {self.public_port}{' ssl' if use_https else ''};"
-        tls = ""
-        if use_https:
-            if not tls_cert or not tls_key or not Path(tls_cert).is_file() or not Path(tls_key).is_file():
-                raise RuntimeError("TLS is enabled but its certificate or key is unavailable")
-            tls = f"\n    ssl_certificate {tls_cert};\n    ssl_certificate_key {tls_key};"
+        include_path = self.transport_include_path()
         return f"""server {{
-    {listen}{tls}
+    include {include_path};
     client_max_body_size 0;
     location / {{
         proxy_pass http://127.0.0.1:{port};
@@ -418,6 +435,7 @@ class Deployment:
 """
 
     def activate_nginx(self, port: int) -> None:
+        self.write_transport_include()
         candidate = self.nginx_config.with_suffix(".candidate")
         previous = self.nginx_config.with_suffix(".previous")
         atomic_write(candidate, self.nginx(port))
@@ -444,7 +462,7 @@ class Deployment:
         os.replace(temporary, self.current_link)
 
     def public_health(self, attempts: int = 20) -> None:
-        use_https = config_value(self.config, "server", "use_https", "false").lower() == "true"
+        use_https = self.transport_settings().use_https
         scheme = "https" if use_https else "http"
         context = ssl._create_unverified_context() if use_https else None  # noqa: S323 - validates local handover only.
         last_error = ""

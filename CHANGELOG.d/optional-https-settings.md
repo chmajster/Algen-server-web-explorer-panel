@@ -1,0 +1,6 @@
+- Fresh standard installations now use HTTP by default instead of requiring HTTPS.
+- Added Administration settings for enabling/disabling HTTPS and configuring TLS certificate/key paths without reinstalling WebNAS.
+- The nginx blue/green gateway persists the selected transport mode across application updates.
+- Installer health checks and the final panel URL follow the persisted HTTP/HTTPS transport selection.
+- Default HTTP mode does not require OpenSSL or TLS certificate generation.
+- The generated OpenAPI TypeScript contract includes the transport settings endpoints.

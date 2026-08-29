@@ -17,6 +17,7 @@ from fastapi import HTTPException, Request, Response
 
 from .config import get_config
 from .sqlite_utils import ClosingConnection
+from .transport import cookie_secure as transport_cookie_secure
 
 
 SESSION_CACHE_TTL_SECONDS = 2.0
@@ -195,7 +196,7 @@ def create_session(response: Response, username: str, *, remember_me: bool = Fal
         # Use the configured transport policy for both browser-session and
         # persistent cookies. Forcing Secure only for remembered sessions
         # makes them unusable on the default HTTP installation.
-        secure=cfg.security.cookie_secure,
+        secure=transport_cookie_secure(cfg),
         samesite="strict",
         max_age=lifetime if remember_me else None,
         path="/",
@@ -212,7 +213,7 @@ def clear_session(response: Response, request: Request | None = None) -> None:
     response.delete_cookie(
         cfg.auth.session_cookie_name,
         path="/",
-        secure=cfg.security.cookie_secure,
+        secure=transport_cookie_secure(cfg),
         httponly=True,
         samesite="strict",
     )
