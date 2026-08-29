@@ -36,6 +36,8 @@ export function HostsDataTable<T>({
       String(column.sortValue?.(left) ?? "").localeCompare(String(column.sortValue?.(right) ?? ""), undefined, { numeric: true }) * direction
     );
   }, [columns, items, sort]);
+  const showLoading = loading && sorted.length === 0;
+
   function changeSort(column: HostsDataColumn<T>) {
     if (!column.sortValue) return;
     setSort((current) => current?.id === column.id
@@ -47,7 +49,7 @@ export function HostsDataTable<T>({
     event.preventDefault();
     onSelect(item);
   }
-  return <div className="hosts-data-table" role="region" tabIndex={0}>
+  return <div className="hosts-data-table" role="region" tabIndex={0} aria-busy={loading}>
     <table>
       <thead><tr>{columns.map((column) =>
         <th key={column.id} className={`align-${column.align || "start"}`} aria-sort={sort?.id === column.id ? sort.direction : column.sortValue ? "none" : undefined}>
@@ -57,7 +59,7 @@ export function HostsDataTable<T>({
         </th>
       )}</tr></thead>
       <tbody>
-        {!loading && sorted.map((item) => {
+        {sorted.map((item) => {
           const key = rowKey(item);
           return <tr key={key} className={selectedKey === key ? "selected" : ""} tabIndex={onSelect ? 0 : undefined} aria-selected={onSelect ? selectedKey === key : undefined} onClick={() => onSelect?.(item)} onKeyDown={(event) => keyboard(event, item)}>
             {columns.map((column) => <td key={column.id} className={`align-${column.align || "start"}`}>{column.cell(item)}</td>)}
@@ -65,7 +67,7 @@ export function HostsDataTable<T>({
         })}
       </tbody>
     </table>
-    {loading && <div className="hosts-table-state" aria-live="polite">…</div>}
+    {showLoading && <div className="hosts-table-state" aria-live="polite">…</div>}
     {!loading && !sorted.length && <div className="hosts-table-state">{empty}</div>}
   </div>;
 }
