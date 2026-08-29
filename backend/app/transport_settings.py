@@ -101,8 +101,12 @@ def save_transport_settings(payload: TransportSettings, request: Request, user: 
             include_path.write_bytes(previous_include)
         try:
             _reload_nginx(f"transport-rollback-{user.username}")
-        except Exception:
-            pass
+        except Exception as rollback_error:
+            logger.warning(
+                "transport_settings_rollback_reload_failed actor=%s error=%s",
+                user.username,
+                rollback_error,
+            )
         raise HTTPException(400, f"Could not apply transport settings: {error}") from error
 
     logger.info(
