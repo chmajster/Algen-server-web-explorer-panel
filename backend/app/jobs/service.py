@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
@@ -79,11 +80,21 @@ class JobContext:
 
 
 class JobService:
-    def __init__(self, repository: JobRepository, runner: JobRunner | None = None) -> None:
+    def __init__(self, repository: JobRepository, runner: JobRunner | Any | None = None) -> None:
         self.repository = repository
         self.runner = runner or JobRunner()
         self._handlers: dict[str, HandlerRegistration] = {}
         self._lock = threading.RLock()
+        self._module_limit = min(max(int(os.environ.get("WEBNAS_JOB_MODULE_WORKERS", "2")), 1), 16)
+        self._module_gates: dict[str, threading.BoundedSemaphore] = {}
+
+    def _module_gate(self, module: str) -> threading.BoundedSemaphore:
+        with self._lock:
+            gate = self._module_gates.get(module)
+            if gate is None:
+                gate = threading.BoundedSemaphore(self._module_limit)
+                self._module_gates[module] = gate
+            return gate
 
     def recover(self) -> int:
         recovered = self.repository.recover_interrupted()
@@ -106,11 +117,17 @@ class JobService:
             if existing:
                 return existing
         status = JobStatus.waiting if dependencies else JobStatus.queued
-        job = self.repository.create(job_type=job_type, module=module, created_by=created_by, metadata=sanitize(metadata or {}),
+        job = self.repository.create(
+            job_type=job_type, module=module, created_by=created_by, metadata=sanitize(metadata or {}),
             retryable=retryable, cancellable=cancellable, parent_job_id=parent_job_id, retry_count=retry_count,
             name=name or job_type, description=description, priority=priority, max_retries=max_retries, timeout=timeout,
-            correlation_id=correlation_id or uuid4().hex, dedup_key=dedup_key, status=status, total_steps=total_steps)
-        self.repository.add_dependencies(job.id, dependencies or [])
+            correlation_id=correlation_id or uuid4().hex, dedup_key=dedup_key, status=status, total_steps=total_steps,
+        )
+        try:
+            self.repository.add_dependencies(job.id, dependencies or [])
+        except Exception:
+            self.repository.mark_blocked(job.id, "Invalid job dependency")
+            raise
         self.log(job.id, "info", "Job created", {"status": status.value, "priority": priority.value})
         return job
 
@@ -121,10 +138,12 @@ class JobService:
         registration = self._handlers.get(job_type)
         if registration is None:
             raise KeyError(f"No job handler registered for {job_type}")
-        job = self.create_job(job_type=job_type, module=module, created_by=created_by, metadata=metadata,
+        job = self.create_job(
+            job_type=job_type, module=module, created_by=created_by, metadata=metadata,
             retryable=registration.retryable, cancellable=registration.cancellable, priority=priority, name=name,
             description=description, max_retries=registration.max_retries, timeout=registration.timeout,
-            dependencies=dependencies, dedup_key=dedup_key, correlation_id=correlation_id, total_steps=total_steps)
+            dependencies=dependencies, dedup_key=dedup_key, correlation_id=correlation_id, total_steps=total_steps,
+        )
         if job.status == JobStatus.waiting:
             self._reconcile_waiting(job.id)
         elif job.status == JobStatus.queued:
@@ -139,11 +158,20 @@ class JobService:
                         priority: JobPriority = JobPriority.normal, max_retries: int = 0, timeout: float | None = None,
                         name: str = "", description: str = "", dedup_key: str | None = None,
                         correlation_id: str | None = None, total_steps: int | None = None) -> Job:
-        job = self.create_job(job_type=job_type, module=module, created_by=created_by, metadata=metadata,
+        job = self.create_job(
+            job_type=job_type, module=module, created_by=created_by, metadata=metadata,
             retryable=retryable, cancellable=cancellable, priority=priority, max_retries=max_retries, timeout=timeout,
-            name=name, description=description, dedup_key=dedup_key, correlation_id=correlation_id, total_steps=total_steps)
+            name=name, description=description, dedup_key=dedup_key, correlation_id=correlation_id, total_steps=total_steps,
+        )
         self._dispatch(job.id, HandlerRegistration(handler, retryable, cancellable, max_retries, timeout))
         return self.get(job.id) or job
+
+    def _submit_runner(self, job_id: str, execute: Any, priority: JobPriority) -> None:
+        try:
+            self.runner.submit(job_id, execute, priority)
+        except TypeError:
+            # Preserve the established custom-runner contract used by tests/plugins.
+            self.runner.submit(job_id, execute)
 
     def _dispatch(self, job_id: str, registration: HandlerRegistration) -> None:
         job = self.get(job_id)
@@ -151,50 +179,53 @@ class JobService:
             return
 
         def execute() -> None:
-            import threading as _threading
-            running = self.repository.mark_running(job_id, _threading.current_thread().name)
-            if running is None:
-                return
-            started = time.monotonic()
-            self.log(job_id, "info", "Job started", {"worker": running.worker})
-            context = JobContext(self, job_id)
-            try:
-                result = registration.handler(context, dict(running.metadata)) or {}
-                context.raise_if_cancelled()
-                elapsed = time.monotonic() - started
-                if registration.timeout and elapsed > registration.timeout:
-                    finished = self.repository.mark_timed_out(job_id, f"Job exceeded timeout of {registration.timeout:g}s")
+            gate = self._module_gate(job.module)
+            with gate:
+                running = self.repository.mark_running(job_id, threading.current_thread().name)
+                if running is None:
+                    return
+                started = time.monotonic()
+                self.log(job_id, "info", "Job started", {"worker": running.worker})
+                context = JobContext(self, job_id)
+                try:
+                    result = registration.handler(context, dict(running.metadata)) or {}
+                    context.raise_if_cancelled()
+                    elapsed = time.monotonic() - started
+                    if registration.timeout and elapsed > registration.timeout:
+                        finished = self.repository.mark_timed_out(job_id, f"Job exceeded timeout of {registration.timeout:g}s")
+                        if finished:
+                            self.log(job_id, "error", finished.error)
+                            emit_job_failed(finished)
+                    else:
+                        finished = self.repository.mark_success(job_id, result=sanitize(result))
+                        if finished and finished.status == JobStatus.success:
+                            self.log(job_id, "info", "Job completed", {"duration_seconds": round(elapsed, 3)})
+                            emit_job_succeeded(finished)
+                except InterruptedError as error:
+                    finished = self.repository.mark_cancelled(job_id, message=str(error) or "Cancelled")
                     if finished:
-                        self.log(job_id, "error", finished.error)
-                        emit_job_failed(finished)
-                else:
-                    finished = self.repository.mark_success(job_id, result=sanitize(result))
-                    if finished and finished.status == JobStatus.success:
-                        self.log(job_id, "info", "Job completed", {"duration_seconds": round(elapsed, 3)})
-                        emit_job_succeeded(finished)
-            except InterruptedError as error:
-                finished = self.repository.mark_cancelled(job_id, message=str(error) or "Cancelled")
-                if finished:
-                    self.log(job_id, "warning", "Job cancelled")
-            except Exception as error:  # noqa: BLE001
-                message = str(sanitize(str(error))) or "Operation failed"
-                failed = self.repository.mark_failed(job_id, message)
-                if failed:
-                    self.log(job_id, "error", message)
-                    emit_job_failed(failed)
-                    if registration.retryable and failed.retry_count < registration.max_retries:
-                        self._schedule_retry(failed, registration)
-            finally:
-                self._release_dependents(job_id)
+                        self.log(job_id, "warning", "Job cancelled")
+                except Exception as error:  # noqa: BLE001
+                    message = str(sanitize(str(error))) or "Operation failed"
+                    failed = self.repository.mark_failed(job_id, message)
+                    if failed:
+                        self.log(job_id, "error", message)
+                        emit_job_failed(failed)
+                        if registration.retryable and failed.retry_count < registration.max_retries:
+                            self._schedule_retry(failed, registration)
+                finally:
+                    self._release_dependents(job_id)
 
-        self.runner.submit(job_id, execute, job.priority)
+        self._submit_runner(job_id, execute, job.priority)
 
     def _schedule_retry(self, failed: Job, registration: HandlerRegistration) -> None:
         delay = min(60, 2 ** min(failed.retry_count, 6))
-        retry = self.create_job(job_type=failed.type, module=failed.module, created_by=failed.created_by,
-            metadata=failed.metadata, retryable=True, cancellable=registration.cancellable, parent_job_id=failed.id,
-            retry_count=failed.retry_count + 1, name=failed.name, description=failed.description, priority=failed.priority,
-            max_retries=failed.max_retries, timeout=failed.timeout, correlation_id=failed.correlation_id)
+        retry = self.create_job(
+            job_type=failed.type, module=failed.module, created_by=failed.created_by, metadata=failed.metadata,
+            retryable=True, cancellable=registration.cancellable, parent_job_id=failed.id, retry_count=failed.retry_count + 1,
+            name=failed.name, description=failed.description, priority=failed.priority, max_retries=failed.max_retries,
+            timeout=failed.timeout, correlation_id=failed.correlation_id,
+        )
         self.repository.update(retry.id, status=JobStatus.retrying, message=f"Retrying in {delay}s")
         self.log(retry.id, "warning", "Automatic retry scheduled", {"delay_seconds": delay})
         timer = threading.Timer(delay, lambda: self._dispatch(retry.id, registration))
@@ -229,7 +260,7 @@ class JobService:
         return self.repository.logs(job_id, limit=limit, offset=offset)
 
     def summary(self) -> JobSummary:
-        return JobSummary(**self.repository.summary(workers=self.runner.max_workers))
+        return JobSummary(**self.repository.summary(workers=int(getattr(self.runner, "max_workers", 1))))
 
     def cancel(self, job_id: str) -> Job | None:
         job = self.get(job_id)
@@ -237,7 +268,8 @@ class JobService:
             return job
         if not job.cancellable:
             raise ValueError("Job is not cancellable")
-        if self.runner.cancel_queued(job_id):
+        cancel_queued = getattr(self.runner, "cancel_queued", None)
+        if callable(cancel_queued) and cancel_queued(job_id):
             cancelled = self.repository.mark_cancelled(job_id, message="Cancelled before execution")
         else:
             cancelled = self.repository.request_cancel(job_id)
@@ -254,18 +286,22 @@ class JobService:
         registration = self._handlers.get(previous.type)
         if registration is None or not registration.retryable:
             raise ValueError("No retry-safe handler is registered for this job type")
-        retry = self.create_job(job_type=previous.type, module=previous.module, created_by=actor, metadata=previous.metadata,
+        retry = self.create_job(
+            job_type=previous.type, module=previous.module, created_by=actor, metadata=previous.metadata,
             retryable=True, cancellable=registration.cancellable, parent_job_id=previous.id,
             retry_count=previous.retry_count + 1, name=previous.name, description=previous.description,
             priority=previous.priority, max_retries=previous.max_retries, timeout=previous.timeout,
-            correlation_id=previous.correlation_id)
+            correlation_id=previous.correlation_id,
+        )
         self._dispatch(retry.id, registration)
         return self.get(retry.id) or retry
 
     def update_progress(self, job_id: str, progress: int | None, message: str = "", *, current_step: str = "") -> Job | None:
         if progress is not None:
             progress = min(max(int(progress), 0), 100)
-        return self.repository.update(job_id, progress=progress, message=str(sanitize(message))[:1000], current_step=str(sanitize(current_step))[:240])
+        return self.repository.update(
+            job_id, progress=progress, message=str(sanitize(message))[:1000], current_step=str(sanitize(current_step))[:240]
+        )
 
     def log(self, job_id: str, level: str, message: str, data: dict[str, Any] | None = None) -> None:
         safe_level = level.casefold() if level.casefold() in {"debug", "info", "warning", "error"} else "info"
@@ -275,7 +311,9 @@ class JobService:
         return self.repository.cleanup(time.time() - max(1, retention_days) * 86400)
 
     def shutdown(self) -> None:
-        self.runner.shutdown()
+        shutdown = getattr(self.runner, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
 
 
 _service: JobService | None = None
