@@ -67,7 +67,19 @@ def authenticate(username: str, password: str) -> None:
 
 
 def user_home(username: str) -> str:
-    return system_user(username).pw_dir
+    try:
+        return system_user(username).pw_dir
+    except HTTPException as error:
+        if error.status_code != 401:
+            raise
+        # LDAP identities deliberately cannot collide with local Linux users.
+        # Their application home is managed under the WebNAS data directory.
+        from .ldap_auth import ldap_home
+
+        home = ldap_home(username)
+        if home:
+            return home
+        raise
 
 
 def current_process_can_impersonate() -> bool:
