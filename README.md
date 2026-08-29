@@ -265,3 +265,7 @@ cd Algen-server-web-explorer-panel
 ---
 
 <div align="center">
+
+**WebNAS — one interface for managing your Linux server.**
+
+</div>
