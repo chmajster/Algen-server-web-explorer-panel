@@ -29,6 +29,7 @@ from .auth import authenticate
 from .config import get_config
 from .host_info import collect_host_info
 from .path_policy import resolve_user_path
+from .privileged_broker.runtime import broker_command, broker_required, filesystem_mkdir, update_service
 from .proxmox_guard import (
     assert_admin_group_allowed,
     assert_admin_user_allowed,
@@ -592,7 +593,11 @@ def _assert_manageable_group(groupname: str) -> str:
 
 
 def _run(args: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=60, check=False)
+    result = None
+    if broker_required():
+        result = broker_command(args, input_text=input_text, timeout=60, actor="settings-admin")
+    if result is None:
+        result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=60, check=False)
     if result.returncode != 0:
         raise HTTPException(400, result.stderr.strip() or "System command failed")
     return result
@@ -805,6 +810,13 @@ def _update_status() -> dict:
 
 
 def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: bool = False) -> dict:
+    if broker_required():
+        try:
+            result = update_service(update_config=update_config, npm_audit_fix=npm_audit_fix, actor=actor)
+        except RuntimeError as error:
+            raise HTTPException(503, str(error)) from error
+        _audit(actor, "download_update", f"unit={result['unit']} pid={result.get('pid') or 'pending'}")
+        return {"ok": True, "pid": result.get("pid"), "unit": result["unit"], "log": result.get("log", "")}
     settings_dir = _auto_update_path().parent
     installer = settings_dir / "update-install.sh"
     download = subprocess.run(
@@ -1721,7 +1733,11 @@ def admin_user_patch(username: str, payload: UserPatch, request: Request, user: 
     for group in payload.groups_remove:
         _run([_tool("gpasswd"), "--delete", username, _assert_manageable_group(group)])
     if payload.create_home:
-        Path(pwd.getpwnam(username).pw_dir).mkdir(parents=True, exist_ok=True)
+        home_path = Path(pwd.getpwnam(username).pw_dir)
+        if broker_required():
+            filesystem_mkdir(home_path, mode=0o750, owner=username, actor="settings-admin")
+        else:
+            home_path.mkdir(parents=True, exist_ok=True)
     if payload.force_password_change is True:
         _run([_tool("chage"), "-d", "0", username])
     elif payload.force_password_change is False:

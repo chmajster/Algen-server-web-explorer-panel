@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 from fastapi import HTTPException
 
+from ..privileged_broker.runtime import broker_required, systemd_action
 from ..proxmox_guard import safe_mode_active
 
 
@@ -55,7 +56,10 @@ def assert_app_allowed_on_host(app_id: str) -> None:
 def run_service(app_id: str, action: str) -> None:
     manifest = load_manifest(app_id)
     for service in manifest.get("systemd_services", []):
-        executable = shutil.which("systemctl") or "systemctl"
-        result = subprocess.run([executable, action, service], capture_output=True, text=True, timeout=600, check=False, shell=False)
+        if broker_required():
+            result = systemd_action(action, service, actor=f"app-{app_id}")
+        else:
+            executable = shutil.which("systemctl") or "systemctl"
+            result = subprocess.run([executable, action, service], capture_output=True, text=True, timeout=600, check=False, shell=False)
         if result.returncode != 0:
             raise HTTPException(400, result.stderr.strip() or result.stdout.strip() or f"systemctl {action} failed")

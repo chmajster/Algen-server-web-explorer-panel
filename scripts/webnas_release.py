@@ -12,6 +12,8 @@ import argparse
 import ipaddress
 import json
 import os
+import grp
+import pwd
 import re
 import shutil
 import socket
@@ -275,6 +277,36 @@ class Deployment:
         runtime.mkdir(parents=True, exist_ok=True)
         data_dir = config_value(self.config, "paths", "data_dir", "/var/lib/webnas")
         log_dir = config_value(self.config, "paths", "log_dir", "/var/log/webnas")
+        temp_dir = config_value(self.config, "paths", "temp_dir", "/var/lib/webnas/tmp")
+        try:
+            grp.getgrnam(self.service_user)
+        except KeyError:
+            command("groupadd", "--system", self.service_user)
+        try:
+            pwd.getpwnam(self.service_user)
+        except KeyError:
+            command("useradd", "--system", "--gid", self.service_user, "--home-dir", data_dir, "--shell", "/usr/sbin/nologin", self.service_user)
+        for writable in (Path(data_dir), Path(log_dir), Path(temp_dir)):
+            writable.mkdir(parents=True, exist_ok=True)
+            command("chown", "-R", f"{self.service_user}:{self.service_user}", str(writable))
+        socket_unit = self.systemd_dir / "webnas-privileged.socket"
+        broker_unit = self.systemd_dir / "webnas-privileged.service"
+        atomic_write(socket_unit, "\n".join([
+            "[Unit]", "Description=WebNAS privileged operation broker socket", "",
+            "[Socket]", "ListenStream=/run/webnas/privileged.sock", "SocketUser=root", f"SocketGroup={self.service_user}",
+            "SocketMode=0660", "DirectoryMode=0750", "RemoveOnStop=true", "",
+            "[Install]", "WantedBy=sockets.target", "",
+        ]))
+        atomic_write(broker_unit, "\n".join([
+            "[Unit]", "Description=WebNAS privileged operation broker", "Requires=webnas-privileged.socket",
+            "After=webnas-privileged.socket", "", "[Service]", "Type=simple", "User=root", "Group=root",
+            f"Environment=PYTHONPATH={self.release / 'backend'}", f"Environment=WEBNAS_CONFIG={self.config}",
+            f"ExecStart={self.release / 'backend/.venv/bin/python'} -m app.privileged_broker.server",
+            "NoNewPrivileges=false", "PrivateTmp=true", "ProtectSystem=false", "ProtectHome=false",
+            "ProtectKernelTunables=true", "ProtectKernelModules=true", "ProtectControlGroups=true", "",
+        ]))
+        command("systemctl", "daemon-reload")
+        command("systemctl", "enable", "--now", "webnas-privileged.socket")
         for slot, port in SLOTS.items():
             env_path = runtime / f"backend-{slot}.env"
             unit = self.systemd_dir / self.unit_name(slot)
@@ -283,6 +315,8 @@ class Deployment:
                 f"Description=WebNAS backend ({slot})",
                 "After=network-online.target",
                 "Wants=network-online.target",
+                "Requires=webnas-privileged.socket",
+                "After=webnas-privileged.socket",
                 "StartLimitIntervalSec=120",
                 "StartLimitBurst=4",
                 "",
@@ -296,9 +330,10 @@ class Deployment:
                 "RestartSec=30",
                 "TimeoutStopSec=30",
                 "KillSignal=SIGTERM",
-                "User=root",
-                "Group=root",
-                "NoNewPrivileges=false",
+                f"User={self.service_user}",
+                f"Group={self.service_user}",
+                "Environment=WEBNAS_PRIVILEGED_BROKER=required",
+                "NoNewPrivileges=true",
                 "PrivateTmp=true",
                 # Module installation and updates legitimately write below /etc,
                 # /usr and /var through the host package manager.
@@ -307,7 +342,7 @@ class Deployment:
                 "ProtectKernelTunables=true",
                 "ProtectKernelModules=true",
                 "ProtectControlGroups=true",
-                "RestrictSUIDSGID=false",
+                "RestrictSUIDSGID=true",
                 "LockPersonality=true",
                 f"ReadWritePaths={data_dir} {log_dir} /home /mnt/webnas {self.root}",
                 "",

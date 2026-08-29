@@ -28,6 +28,7 @@ from .sqlite_utils import ClosingConnection
 from .settings import _is_admin
 from .identity.permissions import authorize
 from .update_coordination import operation_admission
+from .privileged_broker.runtime import broker_command, broker_required, filesystem_mkdir, mount_unit_action
 
 router = APIRouter(prefix="/api/mounts")
 
@@ -685,6 +686,10 @@ def redact_options(options: list[str]) -> list[str]:
 
 
 def run_command(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:
+    if broker_required():
+        result = broker_command(args, timeout=timeout, actor="network-mounts")
+        if result is not None:
+            return result
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False, shell=False)
 
 
@@ -772,6 +777,21 @@ def _systemctl(*args: str) -> subprocess.CompletedProcess[str] | None:
 def write_systemd_units(mount: dict) -> None:
     if not mount["persistent"]:
         return
+    if broker_required():
+        fs_type = {"smb": "cifs", "nfs": "nfs", "sshfs": "fuse.sshfs", "webdav": "davfs"}[mount["type"]]
+        result = mount_unit_action(
+            "apply",
+            mount_id=str(mount["id"]),
+            mount_point=str(mount["mount_point"]),
+            remote=str(mount["remote"]),
+            fs_type=fs_type,
+            options=",".join(mount_options(mount)),
+            automount=bool(mount["config"].get("automount")),
+            actor="network-mounts",
+        )
+        if result.returncode != 0:
+            raise HTTPException(400, result.stderr.strip() or "Could not install persistent mount unit")
+        return
     target = systemd_dir()
     target.mkdir(parents=True, exist_ok=True)
     units = generate_systemd_units(mount)
@@ -783,6 +803,16 @@ def write_systemd_units(mount: dict) -> None:
 
 
 def remove_systemd_units(mount: dict) -> None:
+    if broker_required():
+        result = mount_unit_action(
+            "remove",
+            mount_id=str(mount["id"]),
+            mount_point=str(mount["mount_point"]),
+            actor="network-mounts",
+        )
+        if result.returncode != 0:
+            raise HTTPException(400, result.stderr.strip() or "Could not remove persistent mount unit")
+        return
     target = systemd_dir()
     names = [*_unit_names(mount), f"webnas-mount-{mount['id']}.mount", f"webnas-mount-{mount['id']}.automount"]
     for name in names:
@@ -807,11 +837,13 @@ def mount_command(mount: dict) -> list[str]:
 
 def _prepare_mount_directory(mount: dict, allow_existing_data: bool = False) -> None:
     point = validate_mount_point(mount["mount_point"], allow_existing_data=allow_existing_data, name=mount["name"])
+    if broker_required():
+        filesystem_mkdir(MOUNT_BASE_DIR, mode=0o711, actor="network-mounts")
+        filesystem_mkdir(point, mode=0o750, actor="network-mounts")
+        return
     MOUNT_BASE_DIR.mkdir(parents=True, exist_ok=True, mode=0o711)
     if MOUNT_BASE_DIR.is_symlink():
         raise HTTPException(403, "Mount base directory cannot be a symlink")
-    # Users need traversal permission to reach a mount, while listings remain
-    # protected by the mounted filesystem and WebNAS path/ACL checks.
     os.chmod(MOUNT_BASE_DIR, 0o711)
     point.mkdir(mode=0o750, exist_ok=True)
 
