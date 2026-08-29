@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,8 +18,7 @@ class FakeRegistry:
         return self.diagnostics
 
 
-@pytest.mark.asyncio
-async def test_module_health_collector_fires_and_resolves_same_fingerprint(
+def test_module_health_collector_fires_and_resolves_same_fingerprint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -28,7 +28,7 @@ async def test_module_health_collector_fires_and_resolves_same_fingerprint(
         {"module_id": "proxmox-manager", "state": "broken", "message": "token=secret-value failed"},
     ])
 
-    assert await collect_module_health(registry) == 1  # type: ignore[arg-type]
+    assert asyncio.run(collect_module_health(registry)) == 1  # type: ignore[arg-type]
     active = manager.list_alerts(state="firing")
     assert len(active) == 1
     assert active[0]["source"] == "module.health"
@@ -36,7 +36,7 @@ async def test_module_health_collector_fires_and_resolves_same_fingerprint(
     assert "secret-value" not in str(active[0]["details"])
 
     registry.diagnostics = [{"module_id": "proxmox-manager", "state": "active", "message": "ok"}]
-    assert await collect_module_health(registry) == 1  # type: ignore[arg-type]
+    assert asyncio.run(collect_module_health(registry)) == 1  # type: ignore[arg-type]
     resolved = manager.list_alerts(state="resolved")
     assert len(resolved) == 1
     assert resolved[0]["id"] == active[0]["id"]
