@@ -12,8 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .alerts.collectors import collector_loop as alert_collector_loop
 from .alerts.router import router as alerts_router
 from .alerts.scheduler import start_scheduler as start_alert_scheduler
+from .appliance_backup import router as appliance_backup_router
 from .audit import configure_logging
 from .config import AppConfig, get_config
 from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
@@ -85,9 +87,18 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     register_operation_provider("mount", active_mount_jobs)
     register_operation_provider("upload", active_uploads)
     register_operation_provider("direct", active_transient_operations)
+
     promotion_task: asyncio.Task[None] | None = None
-    if os.environ.get("WEBNAS_CANDIDATE") != "1":
+    collector_task: asyncio.Task[None] | None = None
+
+    def start_runtime_side_effects() -> None:
+        nonlocal collector_task
         _start_schedulers()
+        if collector_task is None or collector_task.done():
+            collector_task = asyncio.create_task(alert_collector_loop(module_registry))
+
+    if os.environ.get("WEBNAS_CANDIDATE") != "1":
+        start_runtime_side_effects()
     else:
         slot = os.environ.get("WEBNAS_SLOT", "")
 
@@ -96,7 +107,7 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
             while True:
                 try:
                     if active_slot_file.read_text(encoding="utf-8").strip() == slot:
-                        _start_schedulers()
+                        start_runtime_side_effects()
                         return
                 except OSError:
                     pass
@@ -110,6 +121,8 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.ready = False
         if promotion_task and not promotion_task.done():
             promotion_task.cancel()
+        if collector_task and not collector_task.done():
+            collector_task.cancel()
         await module_registry.shutdown()
 
 
@@ -150,6 +163,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.include_router(_registry_router(module_registry))
     app.include_router(update_detail_policy_router)
     app.include_router(power_control_router)
+    app.include_router(appliance_backup_router, include_in_schema=False)
     app.include_router(alerts_router)
     if mount_frontend and FRONTEND_DIST.exists():
         app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
