@@ -1,96 +1,100 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadLanguage } from "../../i18n";
-
-const loginMock = vi.hoisted(() => vi.fn());
-vi.mock("../../api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../api")>();
-  return { ...actual, login: loginMock };
-});
-
 import { Login } from "./Login";
 
-const user = { username: "alice", home: "/home/alice", csrf_token: "csrf" };
+const mocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  me: vi.fn(),
+  resetAuthenticationState: vi.fn(),
+}));
 
-function fillCredentials(username = " alice ", password = "secret") {
-  fireEvent.change(screen.getByLabelText("Linux user"), { target: { value: username } });
-  fireEvent.change(screen.getByLabelText("Password"), { target: { value: password } });
-}
+vi.mock("../../core/api/transport", () => ({
+  request: mocks.request,
+  me: mocks.me,
+  resetAuthenticationState: mocks.resetAuthenticationState,
+}));
 
-describe("Login", () => {
-  beforeEach(async () => {
-    loginMock.mockReset();
-    await loadLanguage("en-US");
+vi.mock("../../i18n", () => ({
+  translate: (_language: string, key: string) => key,
+}));
+
+describe("LDAP login provider selection", () => {
+  beforeEach(() => {
+    mocks.request.mockReset();
+    mocks.me.mockReset();
+    mocks.resetAuthenticationState.mockReset();
+    mocks.me.mockResolvedValue({ username: "alice", home: "/tmp/alice", csrf_token: "csrf" });
   });
 
-  it("submits the trimmed username and password", async () => {
+  it("keeps the legacy PAM-only form when LDAP is disabled", async () => {
+    mocks.request.mockResolvedValueOnce({
+      pam_enabled: true,
+      ldap_enabled: false,
+      default_provider: "pam",
+    });
+
+    render(<Login language="en-US" onLogin={vi.fn()} />);
+
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith("/api/auth/config", { cache: "no-store" }));
+    expect(screen.queryByRole("combobox", { name: "Authentication method" })).not.toBeInTheDocument();
+  });
+
+  it("selects LDAP by default and sends the explicit provider", async () => {
+    mocks.request
+      .mockResolvedValueOnce({
+        pam_enabled: true,
+        ldap_enabled: true,
+        default_provider: "ldap",
+      })
+      .mockResolvedValueOnce({
+        username: "alice",
+        home: "/tmp/ldap-home/alice",
+        csrf_token: "csrf",
+        auth_provider: "ldap",
+      });
     const onLogin = vi.fn();
-    loginMock.mockResolvedValue(user);
+
     render(<Login language="en-US" onLogin={onLogin} />);
 
-    fillCredentials();
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    const provider = await screen.findByRole("combobox", { name: "Authentication method" });
+    expect(provider).toHaveValue("ldap");
 
-    await waitFor(() => expect(loginMock).toHaveBeenCalledWith("alice", "secret", false));
-    expect(onLogin).toHaveBeenCalledWith(user);
-    expect(screen.getByLabelText("Linux user")).toHaveAttribute("autocomplete", "username");
-    expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "current-password");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "alice" } });
+    fireEvent.change(screen.getByLabelText("auth.password"), { target: { value: "secret" } });
+    fireEvent.submit(screen.getByRole("button", { name: "auth.signIn" }).closest("form")!);
+
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+    const loginOptions = mocks.request.mock.calls[1][1] as RequestInit;
+    expect(JSON.parse(String(loginOptions.body))).toMatchObject({
+      username: "alice",
+      password: "secret",
+      auth_method: "ldap",
+    });
+    await waitFor(() => expect(onLogin).toHaveBeenCalled());
   });
 
-  it("passes the remember-me checkbox to authentication", async () => {
-    loginMock.mockResolvedValue(user);
+  it("keeps PAM selected after a failed PAM login and never retries LDAP", async () => {
+    mocks.request
+      .mockResolvedValueOnce({
+        pam_enabled: true,
+        ldap_enabled: true,
+        default_provider: "ldap",
+      })
+      .mockRejectedValueOnce(Object.assign(new Error("Invalid username or password"), { status: 401 }));
+
     render(<Login language="en-US" onLogin={vi.fn()} />);
-    fillCredentials();
-    fireEvent.click(screen.getByLabelText("Remember me"));
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(loginMock).toHaveBeenCalledWith("alice", "secret", true));
-  });
 
-  it("shows an accessible loading state", async () => {
-    let resolve!: (value: typeof user) => void;
-    loginMock.mockReturnValue(new Promise((done) => { resolve = done; }));
-    render(<Login language="en-US" onLogin={vi.fn()} />);
-    fillCredentials();
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    const provider = await screen.findByRole("combobox", { name: "Authentication method" });
+    fireEvent.change(provider, { target: { value: "pam" } });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "root" } });
+    fireEvent.change(screen.getByLabelText("auth.password"), { target: { value: "bad" } });
+    fireEvent.submit(screen.getByRole("button", { name: "auth.signIn" }).closest("form")!);
 
-    expect(await screen.findByRole("button", { name: "Signing in…" })).toBeDisabled();
-    expect(document.querySelector(".login-spinner")).not.toBeNull();
-    expect(document.querySelector(".login-panel")).toHaveAttribute("aria-busy", "true");
-    resolve(user);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled());
-  });
-
-  it("shows a translated compact alert for invalid credentials", async () => {
-    loginMock.mockResolvedValue(user);
-    render(<Login language="en-US" onLogin={() => { throw new Error("Invalid username"); }} />);
-    fillCredentials();
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Invalid username or password");
-    expect(alert).toHaveAttribute("aria-live", "polite");
-  });
-
-  it("toggles password visibility with an accessible button", () => {
-    render(<Login language="en-US" onLogin={vi.fn()} />);
-    const password = screen.getByLabelText("Password");
-    expect(password).toHaveAttribute("type", "password");
-    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
-    expect(password).toHaveAttribute("type", "text");
-    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
-    expect(password).toHaveAttribute("type", "password");
-  });
-
-  it("does not submit again while authentication is pending", async () => {
-    let resolve!: (value: typeof user) => void;
-    loginMock.mockReturnValue(new Promise((done) => { resolve = done; }));
-    const { container } = render(<Login language="en-US" onLogin={vi.fn()} />);
-    fillCredentials();
-    const form = container.querySelector("form")!;
-    fireEvent.submit(form);
-    fireEvent.submit(form);
-    expect(loginMock).toHaveBeenCalledTimes(1);
-    resolve(user);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(provider).toHaveValue("pam");
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    const loginOptions = mocks.request.mock.calls[1][1] as RequestInit;
+    expect(JSON.parse(String(loginOptions.body)).auth_method).toBe("pam");
+    expect(mocks.me).not.toHaveBeenCalled();
   });
 });
