@@ -30,10 +30,52 @@ jobs:
           new = '''# These path expressions occur several times in the generated update runner.\npolicy_path = ROOT / "backend/app/privileged_broker/extended_policy.py"\npolicy_text = policy_path.read_text(encoding="utf-8")\npolicy_text = policy_text.replace("subprocess.list2cmdline([str(log_path)])", "shlex.quote(str(log_path))")\npolicy_text = policy_text.replace("subprocess.list2cmdline([str(progress)])", "shlex.quote(str(progress))")\n'''
           if text.count(old) != 1:
               raise SystemExit('unexpected transformer quoting block')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          text = text.replace(old, new, 1)
+          start = text.index('# Network mounts:')
+          end = text.index('# SMART/NVMe', start)
+          text = text[:start] + '# Network mounts are patched from the current source contract by the workflow.\n\n' + text[end:]
+          path.write_text(text, encoding='utf-8')
           PY
       - name: Apply controlled transformations
         run: python scripts/apply_privilege_migration_once.py
+      - name: Apply current network mount boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('backend/app/network_mounts.py')
+          text = path.read_text(encoding='utf-8')
+          marker = 'from .update_coordination import operation_admission\n'
+          addition = 'from .privileged_broker.runtime import broker_command, broker_required, filesystem_mkdir, mount_unit_action\n'
+          if addition not in text:
+              if text.count(marker) != 1:
+                  raise SystemExit('network mount import marker changed')
+              text = text.replace(marker, marker + addition, 1)
+
+          old_run = '''def run_command(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:\n    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False, shell=False)\n'''
+          new_run = '''def run_command(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:\n    if broker_required():\n        result = broker_command(args, timeout=timeout, actor="network-mounts")\n        if result is not None:\n            return result\n    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False, shell=False)\n'''
+          if text.count(old_run) != 1:
+              raise SystemExit('network mount run_command changed')
+          text = text.replace(old_run, new_run, 1)
+
+          start = text.index('def write_systemd_units(mount: dict) -> None:\n')
+          end = text.index('\ndef remove_systemd_units(mount: dict) -> None:\n', start)
+          legacy_write = text[start:end]
+          broker_write = '''def write_systemd_units(mount: dict) -> None:\n    if not mount["persistent"]:\n        return\n    if broker_required():\n        fs_type = {"smb": "cifs", "nfs": "nfs", "sshfs": "fuse.sshfs", "webdav": "davfs"}[mount["type"]]\n        result = mount_unit_action(\n            "apply",\n            mount_id=str(mount["id"]),\n            mount_point=str(mount["mount_point"]),\n            remote=str(mount["remote"]),\n            fs_type=fs_type,\n            options=",".join(mount_options(mount)),\n            automount=bool(mount["config"].get("automount")),\n            actor="network-mounts",\n        )\n        if result.returncode != 0:\n            raise HTTPException(400, result.stderr.strip() or "Could not install persistent mount unit")\n        return\n''' + legacy_write.split('\n', 3)[3]
+          text = text[:start] + broker_write + text[end:]
+
+          start = text.index('def remove_systemd_units(mount: dict) -> None:\n')
+          end = text.index('\ndef command_preview(mount: dict, action: str) -> list[str]:\n', start)
+          legacy_remove = text[start:end]
+          broker_remove = '''def remove_systemd_units(mount: dict) -> None:\n    if broker_required():\n        result = mount_unit_action(\n            "remove",\n            mount_id=str(mount["id"]),\n            mount_point=str(mount["mount_point"]),\n            actor="network-mounts",\n        )\n        if result.returncode != 0:\n            raise HTTPException(400, result.stderr.strip() or "Could not remove persistent mount unit")\n        return\n''' + legacy_remove.split('\n', 1)[1]
+          text = text[:start] + broker_remove + text[end:]
+
+          start = text.index('def _prepare_mount_directory(mount: dict, allow_existing_data: bool = False) -> None:\n')
+          end = text.index('\ndef _verify_mount_result(', start)
+          old_prepare = text[start:end]
+          new_prepare = '''def _prepare_mount_directory(mount: dict, allow_existing_data: bool = False) -> None:\n    point = validate_mount_point(mount["mount_point"], allow_existing_data=allow_existing_data, name=mount["name"])\n    if broker_required():\n        filesystem_mkdir(MOUNT_BASE_DIR, mode=0o711, actor="network-mounts")\n        filesystem_mkdir(point, mode=0o750, actor="network-mounts")\n        return\n    MOUNT_BASE_DIR.mkdir(parents=True, exist_ok=True, mode=0o711)\n    if MOUNT_BASE_DIR.is_symlink():\n        raise HTTPException(403, "Mount base directory cannot be a symlink")\n    os.chmod(MOUNT_BASE_DIR, 0o711)\n    point.mkdir(mode=0o750, exist_ok=True)\n\n'''
+          text = text[:start] + new_prepare + text[end:]
+          path.write_text(text, encoding='utf-8')
+          PY
       - name: Harden generated service boundaries
         run: |
           python - <<'PY'
