@@ -5,8 +5,8 @@ type Dictionary = Record<string, string>;
 type LocaleModule = { default?: Dictionary } & Dictionary;
 
 const localeLoaders: Record<Language, () => Promise<LocaleModule>> = {
-  "pl-PL": () => import("./locales/pl-PL.json") as Promise<LocaleModule>,
-  "en-US": () => import("./locales/en-US.json") as Promise<LocaleModule>,
+  "pl-PL": () => import("./locales/pl-PL.json") as unknown as Promise<LocaleModule>,
+  "en-US": () => import("./locales/en-US.json") as unknown as Promise<LocaleModule>,
 };
 
 const dockerActionOverrides: Record<Language, Record<string, string>> = {
