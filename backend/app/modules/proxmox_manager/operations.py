@@ -15,7 +15,7 @@ from .models import (
     ProxmoxMigrationInput,
     ProxmoxSnapshotCreateInput,
 )
-from .service import PROVIDER, ProxmoxApiError, ProxmoxManagerService
+from .service import PROVIDER, ProxmoxManagerService
 from .tasks import register_task
 
 
@@ -132,7 +132,7 @@ def delete_snapshot(
     connection, resource, client, host = _context(manager, connection_id, vmid)
     _require_name_confirmation(resource, confirm, confirmation_text)
     snapshot_name = urllib.parse.quote(snapshot, safe="")
-    task_value = client.request("DELETE", f"{_base(resource)}/snapshot/{snapshot_name}")
+    task_value = client.delete(f"{_base(resource)}/snapshot/{snapshot_name}")
     return {"snapshot": snapshot, **_task_result(manager, connection, resource, task_value, action="snapshot.delete", actor=actor, host=host)}
 
 

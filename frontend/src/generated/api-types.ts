@@ -7720,6 +7720,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/proxmox-manager/cluster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cluster */
+        get: operations["cluster_api_modules_proxmox_manager_cluster_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/proxmox-manager/connections": {
         parameters: {
             query?: never;
@@ -7790,6 +7807,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Create */
+        post: operations["vm_create_api_modules_proxmox_manager_connections__connection_id__vms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Virtual Machine Details */
+        get: operations["virtual_machine_details_api_modules_proxmox_manager_connections__connection_id__vms__vmid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vm Backups */
+        get: operations["vm_backups_api_modules_proxmox_manager_connections__connection_id__vms__vmid__backups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Clone */
+        post: operations["vm_clone_api_modules_proxmox_manager_connections__connection_id__vms__vmid__clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/disks/resize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Vm Disk Resize */
+        put: operations["vm_disk_resize_api_modules_proxmox_manager_connections__connection_id__vms__vmid__disks_resize_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/hardware": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Vm Hardware Update */
+        put: operations["vm_hardware_update_api_modules_proxmox_manager_connections__connection_id__vms__vmid__hardware_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/hardware/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Hardware Plan */
+        post: operations["vm_hardware_plan_api_modules_proxmox_manager_connections__connection_id__vms__vmid__hardware_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/migration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Migration */
+        post: operations["vm_migration_api_modules_proxmox_manager_connections__connection_id__vms__vmid__migration_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/migration/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Migration Validate */
+        post: operations["vm_migration_validate_api_modules_proxmox_manager_connections__connection_id__vms__vmid__migration_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/power": {
         parameters: {
             query?: never;
@@ -7807,6 +7977,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vm Snapshots */
+        get: operations["vm_snapshots_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots_get"];
+        put?: never;
+        /** Vm Snapshot Create */
+        post: operations["vm_snapshot_create_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/snapshots/{snapshot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Vm Snapshot Delete */
+        delete: operations["vm_snapshot_delete_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots__snapshot__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/snapshots/{snapshot}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Snapshot Rollback */
+        post: operations["vm_snapshot_rollback_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots__snapshot__rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/proxmox-manager/dashboard": {
         parameters: {
             query?: never;
@@ -7816,6 +8038,142 @@ export interface paths {
         };
         /** Dashboard */
         get: operations["dashboard_api_modules_proxmox_manager_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Nodes */
+        get: operations["nodes_api_modules_proxmox_manager_nodes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/nodes/{node}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Node Detail */
+        get: operations["node_detail_api_modules_proxmox_manager_nodes__node__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/nodes/{node}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Node Status */
+        get: operations["node_status_api_modules_proxmox_manager_nodes__node__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Storage */
+        get: operations["storage_api_modules_proxmox_manager_storage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tasks */
+        get: operations["tasks_api_modules_proxmox_manager_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/tasks/{upid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Task Details */
+        get: operations["task_details_api_modules_proxmox_manager_tasks__upid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/tasks/{upid}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Task Logs */
+        get: operations["task_logs_api_modules_proxmox_manager_tasks__upid__log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vm Templates */
+        get: operations["vm_templates_api_modules_proxmox_manager_templates_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11860,6 +12218,38 @@ export interface components {
             /** Snapshot Id */
             snapshot_id: string;
         };
+        /** ProxmoxCloneInput */
+        ProxmoxCloneInput: {
+            /**
+             * Full
+             * @default true
+             */
+            full: boolean;
+            /** Name */
+            name: string;
+            /** New Vmid */
+            new_vmid: number;
+            /**
+             * Pool
+             * @default
+             */
+            pool: string;
+            /**
+             * Sync To Host Registry
+             * @default true
+             */
+            sync_to_host_registry: boolean;
+            /**
+             * Target Node
+             * @default
+             */
+            target_node: string;
+            /**
+             * Target Storage
+             * @default
+             */
+            target_storage: string;
+        };
         /** ProxmoxConnectionInput */
         ProxmoxConnectionInput: {
             /**
@@ -11904,6 +12294,11 @@ export interface components {
              */
             project: string;
             /**
+             * Sync Interval Seconds
+             * @default 300
+             */
+            sync_interval_seconds: number;
+            /**
              * Sync Lxc
              * @default true
              */
@@ -11926,6 +12321,85 @@ export interface components {
              */
             verify_tls: boolean;
         };
+        /** ProxmoxCreateVmInput */
+        ProxmoxCreateVmInput: {
+            /**
+             * Bridge
+             * @default vmbr0
+             */
+            bridge: string;
+            /**
+             * Cloud Init User
+             * @default
+             */
+            cloud_init_user: string;
+            /**
+             * Cores
+             * @default 2
+             */
+            cores: number;
+            /**
+             * Disk Size Gb
+             * @default 32
+             */
+            disk_size_gb: number;
+            /**
+             * Dns
+             * @default
+             */
+            dns: string;
+            /**
+             * Gateway
+             * @default
+             */
+            gateway: string;
+            /**
+             * Ipv4 Address
+             * @default
+             */
+            ipv4_address: string;
+            /**
+             * Ipv4 Mode
+             * @default dhcp
+             * @enum {string}
+             */
+            ipv4_mode: "dhcp" | "static";
+            /**
+             * Memory Mb
+             * @default 2048
+             */
+            memory_mb: number;
+            /** Name */
+            name: string;
+            /** Node */
+            node: string;
+            /**
+             * Sockets
+             * @default 1
+             */
+            sockets: number;
+            /**
+             * Ssh Public Key
+             * @default
+             */
+            ssh_public_key: string;
+            /**
+             * Start After Create
+             * @default false
+             */
+            start_after_create: boolean;
+            /** Storage */
+            storage: string;
+            /**
+             * Sync To Host Registry
+             * @default true
+             */
+            sync_to_host_registry: boolean;
+            /** Vlan */
+            vlan?: number | null;
+            /** Vmid */
+            vmid: number;
+        };
         /** ProxmoxDeleteInput */
         ProxmoxDeleteInput: {
             /**
@@ -11938,6 +12412,92 @@ export interface components {
              * @default
              */
             confirmation_text: string;
+        };
+        /** ProxmoxDestructiveInput */
+        ProxmoxDestructiveInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+        };
+        /** ProxmoxDiskResizeInput */
+        ProxmoxDiskResizeInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            /** Disk */
+            disk: string;
+            /** New Size Gb */
+            new_size_gb: number;
+        };
+        /** ProxmoxHardwareUpdateInput */
+        ProxmoxHardwareUpdateInput: {
+            /** Balloon Mb */
+            balloon_mb?: number | null;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            /** Cores */
+            cores?: number | null;
+            /** Memory Mb */
+            memory_mb?: number | null;
+            /** Sockets */
+            sockets?: number | null;
+        };
+        /** ProxmoxMigrationInput */
+        ProxmoxMigrationInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            /**
+             * Migration Network
+             * @default
+             */
+            migration_network: string;
+            /**
+             * Online
+             * @default true
+             */
+            online: boolean;
+            /** Target Node */
+            target_node: string;
+            /**
+             * Target Storage
+             * @default
+             */
+            target_storage: string;
+            /**
+             * With Local Disks
+             * @default true
+             */
+            with_local_disks: boolean;
         };
         /** ProxmoxPowerInput */
         ProxmoxPowerInput: {
@@ -11956,6 +12516,21 @@ export interface components {
              * @default
              */
             confirmation_text: string;
+        };
+        /** ProxmoxSnapshotCreateInput */
+        ProxmoxSnapshotCreateInput: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Include Ram
+             * @default false
+             */
+            include_ram: boolean;
+            /** Name */
+            name: string;
         };
         /** ProxmoxSyncInput */
         ProxmoxSyncInput: {
@@ -30921,6 +31496,37 @@ export interface operations {
             };
         };
     };
+    cluster_api_modules_proxmox_manager_cluster_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     connections_api_modules_proxmox_manager_connections_get: {
         parameters: {
             query?: never;
@@ -31110,6 +31716,321 @@ export interface operations {
             };
         };
     };
+    vm_create_api_modules_proxmox_manager_connections__connection_id__vms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxCreateVmInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    virtual_machine_details_api_modules_proxmox_manager_connections__connection_id__vms__vmid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_backups_api_modules_proxmox_manager_connections__connection_id__vms__vmid__backups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_clone_api_modules_proxmox_manager_connections__connection_id__vms__vmid__clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxCloneInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_disk_resize_api_modules_proxmox_manager_connections__connection_id__vms__vmid__disks_resize_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxDiskResizeInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_hardware_update_api_modules_proxmox_manager_connections__connection_id__vms__vmid__hardware_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxHardwareUpdateInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_hardware_plan_api_modules_proxmox_manager_connections__connection_id__vms__vmid__hardware_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxHardwareUpdateInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_migration_api_modules_proxmox_manager_connections__connection_id__vms__vmid__migration_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxMigrationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_migration_validate_api_modules_proxmox_manager_connections__connection_id__vms__vmid__migration_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxMigrationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     vm_power_api_modules_proxmox_manager_connections__connection_id__vms__vmid__power_post: {
         parameters: {
             query?: never;
@@ -31123,6 +32044,148 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProxmoxPowerInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_snapshots_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_snapshot_create_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxSnapshotCreateInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_snapshot_delete_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots__snapshot__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+                snapshot: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxDestructiveInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_snapshot_rollback_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots__snapshot__rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+                snapshot: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxDestructiveInput"];
             };
         };
         responses: {
@@ -31162,6 +32225,266 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    nodes_api_modules_proxmox_manager_nodes_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    node_detail_api_modules_proxmox_manager_nodes__node__get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    node_status_api_modules_proxmox_manager_nodes__node__status_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storage_api_modules_proxmox_manager_storage_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tasks_api_modules_proxmox_manager_tasks_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                active_only?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_details_api_modules_proxmox_manager_tasks__upid__get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                upid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_logs_api_modules_proxmox_manager_tasks__upid__log_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                start?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                upid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_templates_api_modules_proxmox_manager_templates_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import Any, NoReturn
 
 from fastapi import APIRouter, Depends, Query
@@ -128,14 +127,14 @@ def _resolve_node_connection(node: str, connection_id: str) -> str:
     if not matches:
         raise KeyError("Proxmox node not found")
     if len(matches) > 1:
-        api_error(409, "PROXMOX_NODE_AMBIGUOUS", "Node name exists in more than one Proxmox connection; provide connection_id")
+        raise ValueError("Node name exists in more than one Proxmox connection; provide connection_id")
     return matches[0]
 
 
 def _run_sync(connection_id: str, payload: ProxmoxSyncInput, actor: str) -> dict[str, Any]:
     lock = connection_lock(connection_id)
     if not lock.acquire(blocking=False):
-        api_error(409, "PROXMOX_SYNC_IN_PROGRESS", "A synchronization for this Proxmox connection is already running")
+        raise ValueError("A synchronization for this Proxmox connection is already running")
     started = mark_sync_started(service(), connection_id)
     try:
         result = service().sync(

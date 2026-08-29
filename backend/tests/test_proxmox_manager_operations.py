@@ -9,7 +9,6 @@ import pytest
 from app.modules.proxmox_manager.inventory import cluster_health, list_nodes, list_storage
 from app.modules.proxmox_manager.models import (
     ProxmoxConnectionInput,
-    ProxmoxDestructiveInput,
     ProxmoxDiskResizeInput,
     ProxmoxMigrationInput,
     ProxmoxSnapshotCreateInput,
