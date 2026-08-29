@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from ...identity.permissions import Permission, require_permission
 from ...security import SessionUser
+from .details import details_service
 from .service import service
 
 
@@ -27,6 +28,15 @@ def devices(user: SessionUser = Depends(require_permission(Permission.MODULES_VI
 def filesystems(user: SessionUser = Depends(require_permission(Permission.MODULES_VIEW))):
     del user
     return {"filesystems": service().filesystems(), "read_only": True}
+
+
+@router.get("/details")
+def details(user: SessionUser = Depends(require_permission(Permission.MODULES_VIEW))):
+    del user
+    inventory = service()
+    roots = inventory.block_devices()
+    mounted = inventory.filesystems()
+    return details_service().snapshot(devices=roots, filesystems=mounted)
 
 
 @router.get("/diagnostics")
