@@ -58,6 +58,9 @@ Main project goals:
 | **Activity Center** | History of sign-ins, administrative changes, file operations and module jobs |
 | **USB** | Automatic detection and mounting of supported USB storage devices |
 | **Hosts Manager** | Central host inventory, SSH connections, repositories and power profiles |
+| **Secrets Manager** | Authoritative WAC2-encrypted secret storage, module sharing, usage audit, encrypted backup/restore and compatibility migration from legacy Credentials |
+| **Fail2Ban Manager** | Jail/service state, bans/unbans, managed overrides, validation/rollback, bounded logs and security events |
+| **Webhook Manager** | Event subscriptions, delivery history, retry/backoff, HMAC signing and Secrets Manager-backed authentication with SSRF protection |
 | **Automation** | Ansible Automation Controller, schedules and Cron Manager |
 | **DHCP** | Kea DHCPv4 / ISC DHCP subnets, pools, reservations, leases, diagnostics and transactional configuration |
 
@@ -73,6 +76,9 @@ Available and supported modules include:
 - Linux Updates
 - DATA Communication & Segmentation Tool - DCST
 - Proxmox Manager
+- Secrets Manager
+- Fail2Ban Manager
+- Webhook Manager
 - Nginx
 - Squid Proxy
 - Syncthing
@@ -160,6 +166,7 @@ FastAPI
    ├── Docker
    ├── Network management
    ├── Package Center
+   ├── Secrets Manager / encrypted consumer contracts
    └── WebNAS modules
 ```
 
@@ -188,6 +195,9 @@ The project includes:
 - CSRF protection for state-changing operations,
 - path and operation validation,
 - centralized bounded secret redaction for logs, exceptions and deployment errors,
+- WAC2/ChaCha20-Poly1305 encrypted secret storage with a master key outside SQLite and metadata-only browser APIs,
+- consumer-scoped secret sharing and audited backend secret access,
+- webhook target validation with blocked loopback/link-local/metadata ranges, DNS-address pinning, no automatic redirects and separate critical permission for private networks,
 - user and administrator activity auditing,
 - controlled high-risk operations,
 - automatic rollback for selected network changes,
@@ -210,6 +220,9 @@ Detailed documentation is available in separate files:
 | [docs/testing.md](docs/testing.md) | Unit, integration, trusted system and Playwright E2E testing |
 | [docs/deployment.md](docs/deployment.md) | CI/CD, trusted runner, production Environment, blue/green health checks and rollback |
 | [HOSTS_MANAGER.md](HOSTS_MANAGER.md) | Hosts Manager |
+| [SECRETS_MANAGER.md](SECRETS_MANAGER.md) | Secrets Manager, credential migration, encryption, sharing, backup/restore and rotation model |
+| [FAIL2BAN_MANAGER.md](FAIL2BAN_MANAGER.md) | Fail2Ban status, jail configuration, bans, logs and safety model |
+| [WEBHOOK_MANAGER.md](WEBHOOK_MANAGER.md) | Webhook subscriptions, retries, authentication/HMAC and SSRF controls |
 | [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md) | Ansible Automation Controller |
 | [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
 | [CRON_MANAGER.md](CRON_MANAGER.md) | Cron Manager |
