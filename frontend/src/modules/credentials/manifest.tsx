@@ -3,13 +3,18 @@ import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 import { CredentialsApp } from "./CredentialsApp";
 import "./credentials.css";
 
+/**
+ * Compatibility-only surface for restored pre-Secrets-Manager window state.
+ * New navigation uses the dedicated Secrets Manager module.
+ */
 const credentialsManifest: FrontendModuleManifest = {
   id: "credentials",
-  labelKey: "module.section.credentials",
+  labelKey: "Credentials (deprecated)",
   icon: <KeyRound />,
   category: "infrastructure",
-  permission: "hosts-manager.credentials.view",
+  permissionAny: ["secrets-manager.view", "hosts-manager.credentials.view"],
   dependencies: ["hosts"],
+  hidden: true,
   minWidth: 900,
   minHeight: 580,
   render: (context) => (
@@ -17,7 +22,7 @@ const credentialsManifest: FrontendModuleManifest = {
       permissions={context.profile.permissions}
       t={(key) =>
         key === "hosts.credentials.title"
-          ? context.t("module.section.credentials")
+          ? "Secrets Manager"
           : context.t(key)
       }
       toast={context.toast}

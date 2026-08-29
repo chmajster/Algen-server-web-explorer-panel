@@ -1,0 +1,14 @@
+id: webhook-manager
+name: Webhook Manager
+version: 1.0.0
+category: automation
+icon: webhook
+permissions: [webhook-manager.view, webhook-manager.manage, webhook-manager.test, webhook-manager.deliveries.view, webhook-manager.configure]
+routers: [app.modules.webhook_manager.router:router]
+dependencies: [secrets-manager]
+capabilities: [webhooks, event-subscriptions, hmac, retries, deliveries]
+actions: [create, update, delete, enable, disable, test]
+jobs: [webhook-delivery]
+startup: app.modules.webhook_manager.service:startup
+shutdown: app.modules.webhook_manager.service:shutdown
+menu: [{id: webhook-manager, label: webhook-manager.name, icon: webhook, permission: webhook-manager.view}]

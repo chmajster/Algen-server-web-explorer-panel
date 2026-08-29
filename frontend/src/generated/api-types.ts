@@ -5937,6 +5937,194 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/fail2ban-manager/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard */
+        get: operations["dashboard_api_modules_fail2ban_manager_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jails */
+        get: operations["jails_api_modules_fail2ban_manager_jails_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jail */
+        get: operations["jail_api_modules_fail2ban_manager_jails__jail__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/actions/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Action Plan */
+        get: operations["action_plan_api_modules_fail2ban_manager_jails__jail__actions_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/ban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ban */
+        post: operations["ban_api_modules_fail2ban_manager_jails__jail__ban_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jail Config */
+        get: operations["jail_config_api_modules_fail2ban_manager_jails__jail__config_get"];
+        /** Save Jail Config */
+        put: operations["save_jail_config_api_modules_fail2ban_manager_jails__jail__config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Jail Enabled */
+        put: operations["set_jail_enabled_api_modules_fail2ban_manager_jails__jail__enabled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/unban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unban */
+        post: operations["unban_api_modules_fail2ban_manager_jails__jail__unban_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Logs */
+        get: operations["logs_api_modules_fail2ban_manager_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reload Fail2Ban */
+        post: operations["reload_fail2ban_api_modules_fail2ban_manager_reload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restart Fail2Ban */
+        post: operations["restart_fail2ban_api_modules_fail2ban_manager_restart_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/hosts-manager/agent/heartbeat": {
         parameters: {
             query?: never;
@@ -8335,6 +8523,301 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/secrets-manager/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit */
+        get: operations["audit_api_modules_secrets_manager_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backup */
+        post: operations["backup_api_modules_secrets_manager_backup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore */
+        post: operations["restore_api_modules_secrets_manager_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/rotate-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate Key */
+        post: operations["rotate_key_api_modules_secrets_manager_rotate_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Secrets */
+        get: operations["secrets_api_modules_secrets_manager_secrets_get"];
+        put?: never;
+        /** Create Secret */
+        post: operations["create_secret_api_modules_secrets_manager_secrets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/secrets/{secret_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Secret */
+        get: operations["secret_api_modules_secrets_manager_secrets__secret_id__get"];
+        /** Update Secret */
+        put: operations["update_secret_api_modules_secrets_manager_secrets__secret_id__put"];
+        post?: never;
+        /** Delete Secret */
+        delete: operations["delete_secret_api_modules_secrets_manager_secrets__secret_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/share-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Share Targets */
+        get: operations["share_targets_api_modules_secrets_manager_share_targets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_modules_secrets_manager_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Types */
+        get: operations["types_api_modules_secrets_manager_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard */
+        get: operations["dashboard_api_modules_webhook_manager_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deliveries */
+        get: operations["deliveries_api_modules_webhook_manager_deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Events */
+        get: operations["events_api_modules_webhook_manager_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/secret-choices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Secret Choices */
+        get: operations["secret_choices_api_modules_webhook_manager_secret_choices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Webhooks */
+        get: operations["webhooks_api_modules_webhook_manager_webhooks_get"];
+        put?: never;
+        /** Create Webhook */
+        post: operations["create_webhook_api_modules_webhook_manager_webhooks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/webhooks/{webhook_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Webhook */
+        get: operations["webhook_api_modules_webhook_manager_webhooks__webhook_id__get"];
+        /** Update Webhook */
+        put: operations["update_webhook_api_modules_webhook_manager_webhooks__webhook_id__put"];
+        post?: never;
+        /** Delete Webhook */
+        delete: operations["delete_webhook_api_modules_webhook_manager_webhooks__webhook_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/webhooks/{webhook_id}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Enabled */
+        put: operations["set_enabled_api_modules_webhook_manager_webhooks__webhook_id__enabled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/webhooks/{webhook_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Webhook */
+        post: operations["test_webhook_api_modules_webhook_manager_webhooks__webhook_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/{module_id}": {
         parameters: {
             query?: never;
@@ -9468,6 +9951,16 @@ export interface components {
              * @default false
              */
             remove_data: boolean;
+        };
+        /** BanInput */
+        BanInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Ip */
+            ip: string;
         };
         /** Body_import_container_filesystem_api_modules_docker_containers_import_post */
         Body_import_container_filesystem_api_modules_docker_containers_import_post: {
@@ -11101,6 +11594,61 @@ export interface components {
              */
             format: string;
         };
+        /** JailConfigInput */
+        JailConfigInput: {
+            /**
+             * Action
+             * @default
+             */
+            action: string;
+            /**
+             * Backend
+             * @default
+             */
+            backend: string;
+            /**
+             * Bantime
+             * @default
+             */
+            bantime: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Filter
+             * @default
+             */
+            filter: string;
+            /**
+             * Findtime
+             * @default
+             */
+            findtime: string;
+            /** Maxretry */
+            maxretry?: number | null;
+            /**
+             * Port
+             * @default
+             */
+            port: string;
+        };
+        /** JailToggleInput */
+        JailToggleInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Enabled */
+            enabled: boolean;
+        };
         /** Job */
         Job: {
             /**
@@ -11177,6 +11725,11 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "queued" | "running" | "success" | "failed" | "cancel_requested" | "cancelled" | "retrying" | "waiting";
+        /** KeyRotationInput */
+        KeyRotationInput: {
+            /** Confirmation */
+            confirmation: string;
+        };
         /** LaunchInput */
         LaunchInput: {
             /** Check Mode */
@@ -13090,6 +13643,53 @@ export interface components {
          * @enum {string}
          */
         ScheduleKind: "once" | "hourly" | "daily" | "weekly" | "monthly" | "cron";
+        /** SecretDeleteInput */
+        SecretDeleteInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** SecretInput */
+        SecretInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Environment Id */
+            environment_id?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Passphrase
+             * @default
+             */
+            passphrase: string;
+            /**
+             * Secret
+             * @default
+             */
+            secret: string;
+            /** Shared With */
+            shared_with?: string[];
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "username_password" | "ssh_password" | "ssh_private_key" | "become_password" | "api_token" | "generic_secret" | "proxmox_api" | "redfish" | "ipmi" | "git_private_key" | "wol";
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+        };
         /** ServiceAction */
         ServiceAction: {
             /**
@@ -13097,6 +13697,14 @@ export interface components {
              * @default false
              */
             confirm_restart: boolean;
+        };
+        /** ServiceActionInput */
+        ServiceActionInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** ServiceInput */
         ServiceInput: {
@@ -13766,6 +14374,73 @@ export interface components {
             };
             /** Name */
             name: string;
+        };
+        /** WebhookDeleteInput */
+        WebhookDeleteInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** WebhookInput */
+        WebhookInput: {
+            /**
+             * Allow Private Networks
+             * @default false
+             */
+            allow_private_networks: boolean;
+            /**
+             * Auth Header Name
+             * @default X-API-Key
+             */
+            auth_header_name: string;
+            /**
+             * Auth Type
+             * @default none
+             * @enum {string}
+             */
+            auth_type: "none" | "bearer" | "basic" | "api_key_header" | "secret_header";
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Events */
+            events?: string[];
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /**
+             * Max Attempts
+             * @default 3
+             */
+            max_attempts: number;
+            /**
+             * Method
+             * @default POST
+             * @enum {string}
+             */
+            method: "POST" | "PUT" | "PATCH";
+            /** Name */
+            name: string;
+            /** Secret Id */
+            secret_id?: string | null;
+            /** Signing Secret Id */
+            signing_secret_id?: string | null;
+            /**
+             * Timeout Seconds
+             * @default 10
+             */
+            timeout_seconds: number;
+            /** Url */
+            url: string;
         };
         /** ConfirmationInput */
         app__modules__ansible_controller__models__ConfirmationInput: {
@@ -14540,6 +15215,13 @@ export interface components {
              * @default false
              */
             remove_data: boolean;
+        };
+        /** RestoreInput */
+        app__modules__secrets_manager__models__RestoreInput: {
+            /** Confirmation */
+            confirmation: string;
+            /** Payload */
+            payload: string;
         };
     };
     responses: never;
@@ -27337,6 +28019,383 @@ export interface operations {
             };
         };
     };
+    dashboard_api_modules_fail2ban_manager_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    jails_api_modules_fail2ban_manager_jails_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    jail_api_modules_fail2ban_manager_jails__jail__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    action_plan_api_modules_fail2ban_manager_jails__jail__actions_plan_get: {
+        parameters: {
+            query: {
+                action: "ban" | "unban";
+                ip: string;
+            };
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ban_api_modules_fail2ban_manager_jails__jail__ban_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BanInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jail_config_api_modules_fail2ban_manager_jails__jail__config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_jail_config_api_modules_fail2ban_manager_jails__jail__config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JailConfigInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_jail_enabled_api_modules_fail2ban_manager_jails__jail__enabled_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JailToggleInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unban_api_modules_fail2ban_manager_jails__jail__unban_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BanInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logs_api_modules_fail2ban_manager_logs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                query?: string;
+                jail?: string;
+                ip?: string;
+                action?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_fail2ban_api_modules_fail2ban_manager_reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceActionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restart_fail2ban_api_modules_fail2ban_manager_restart_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceActionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     agent_heartbeat_api_modules_hosts_manager_agent_heartbeat_post: {
         parameters: {
             query?: never;
@@ -32727,6 +33786,649 @@ export interface operations {
                 "application/json": components["schemas"]["SambaUserRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_api_modules_secrets_manager_audit_get: {
+        parameters: {
+            query?: {
+                secret_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backup_api_modules_secrets_manager_backup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    restore_api_modules_secrets_manager_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__modules__secrets_manager__models__RestoreInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_key_api_modules_secrets_manager_rotate_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyRotationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    secrets_api_modules_secrets_manager_secrets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_secret_api_modules_secrets_manager_secrets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    secret_api_modules_secrets_manager_secrets__secret_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_secret_api_modules_secrets_manager_secrets__secret_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_secret_api_modules_secrets_manager_secrets__secret_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretDeleteInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    share_targets_api_modules_secrets_manager_share_targets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    status_api_modules_secrets_manager_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    types_api_modules_secrets_manager_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    dashboard_api_modules_webhook_manager_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    deliveries_api_modules_webhook_manager_deliveries_get: {
+        parameters: {
+            query?: {
+                webhook_id?: string;
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    events_api_modules_webhook_manager_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    secret_choices_api_modules_webhook_manager_secret_choices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    webhooks_api_modules_webhook_manager_webhooks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_webhook_api_modules_webhook_manager_webhooks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    webhook_api_modules_webhook_manager_webhooks__webhook_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_webhook_api_modules_webhook_manager_webhooks__webhook_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_webhook_api_modules_webhook_manager_webhooks__webhook_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookDeleteInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_enabled_api_modules_webhook_manager_webhooks__webhook_id__enabled_put: {
+        parameters: {
+            query: {
+                enabled: boolean;
+            };
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_webhook_api_modules_webhook_manager_webhooks__webhook_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
