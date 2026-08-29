@@ -14,23 +14,23 @@ from pydantic import ValidationError
 
 from app.core.redaction import redact_text
 
-from .extended_policy import dispatch
-from .protocol import BrokerRequest, BrokerResponse, MAX_FRAME_BYTES, encode_frame
-
+from .extended_policy import dispatch as standard_dispatch
+from .infrastructure_policy import dispatch_infrastructure
+from .protocol import BrokerRequest, BrokerResponse, MAX_FRAME_BYTES, Operation, encode_frame
 
 logger = logging.getLogger("webnas.privileged_broker")
 DEFAULT_SOCKET = Path("/run/webnas/privileged.sock")
 DEFAULT_ALLOWED_USER = "webnas"
 _MAX_WORKERS = 16
 _workers = threading.BoundedSemaphore(_MAX_WORKERS)
+_INFRASTRUCTURE_OPERATIONS = {Operation.NTP, Operation.ROUTING, Operation.SESSION}
 
 
 def peer_credentials(connection: socket.socket) -> tuple[int, int, int]:
     if not hasattr(socket, "SO_PEERCRED"):
         raise RuntimeError("SO_PEERCRED is required by the privileged broker")
     raw = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-    pid, uid, gid = struct.unpack("3i", raw)
-    return pid, uid, gid
+    return struct.unpack("3i", raw)
 
 
 def allowed_peer_uid(username: str = DEFAULT_ALLOWED_USER) -> int:
@@ -92,20 +92,12 @@ def handle_connection(connection: socket.socket, *, expected_uid: int) -> None:
             return
         logger.info(
             "privileged_broker_request request_id=%s actor=%s operation=%s peer_pid=%s peer_uid=%s",
-            request.request_id,
-            request.actor,
-            request.operation.value,
-            pid,
-            uid,
+            request.request_id, request.actor, request.operation.value, pid, uid,
         )
-        response = dispatch(request)
+        response = dispatch_infrastructure(request) if request.operation in _INFRASTRUCTURE_OPERATIONS else standard_dispatch(request)
         logger.info(
             "privileged_broker_result request_id=%s operation=%s ok=%s exit_code=%s error_code=%s",
-            request.request_id,
-            request.operation.value,
-            response.ok,
-            response.exit_code,
-            response.error_code or "",
+            request.request_id, request.operation.value, response.ok, response.exit_code, response.error_code or "",
         )
         connection.sendall(encode_frame(response))
     except (OSError, ValueError, RuntimeError) as error:

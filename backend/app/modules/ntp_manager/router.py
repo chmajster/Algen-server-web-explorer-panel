@@ -42,13 +42,13 @@ def add_source(payload: NtpSourceInput, user: SessionUser = Depends(mutating_use
     if not payload.confirm: api_error(422, "CONFIRMATION_REQUIRED", "NTP configuration changes require confirmation")
     current = _controlled(_managed_sources)
     if payload.server not in {item.server for item in current}: current.append(payload)
-    result = _controlled(lambda: service().save_sources(current)); _activity(user.username, "ntp_source_add", payload.server); return result
+    result = _controlled(lambda: service().save_sources(current, actor=user.username)); _activity(user.username, "ntp_source_add", payload.server); return result
 @router.delete("/sources/{server}")
 def delete_source(server: str, confirm: bool = False, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
     if not confirm: api_error(422, "CONFIRMATION_REQUIRED", "NTP configuration changes require confirmation")
     current = [item for item in _controlled(_managed_sources) if item.server != server]
-    result = _controlled(lambda: service().save_sources(current)); _activity(user.username, "ntp_source_remove", server); return result
+    result = _controlled(lambda: service().save_sources(current, actor=user.username)); _activity(user.username, "ntp_source_remove", server); return result
 @router.post("/sources/test")
 def test_source(payload: NtpSourceInput, user: SessionUser = Depends(current_user)):
     authorize(user, "ntp.view"); return _controlled(lambda: service().test_server(payload.server))
@@ -59,4 +59,4 @@ def resync(user: SessionUser = Depends(mutating_user)):
 def service_action(payload: ServiceActionInput, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
     if not payload.confirm: api_error(422, "CONFIRMATION_REQUIRED", "NTP service changes require confirmation")
-    result = _controlled(lambda: service().service_action(payload.action)); _activity(user.username, f"ntp_service_{payload.action}"); return result
+    result = _controlled(lambda: service().service_action(payload.action, actor=user.username)); _activity(user.username, f"ntp_service_{payload.action}"); return result

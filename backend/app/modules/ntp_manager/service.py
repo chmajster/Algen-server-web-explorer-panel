@@ -13,6 +13,9 @@ from typing import Any
 from ...config import get_config
 from ...jobs.models import JobPriority
 from ...jobs.service import JobContext, service as jobs
+from ...privileged_broker.client import BrokerClient
+from ...privileged_broker.protocol import Operation
+from ...privileged_broker.runtime import broker_required
 from .models import NtpBackend, NtpSourceInput
 
 _BEGIN = "# BEGIN WEBNAS NTP"
@@ -28,7 +31,8 @@ class NtpService:
     def _run(self, args: list[str], *, timeout: int = 15) -> subprocess.CompletedProcess[str]:
         return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False, shell=False)
 
-    def _which(self, name: str) -> str | None:
+    @staticmethod
+    def _which(name: str) -> str | None:
         return shutil.which(name)
 
     def _systemctl(self, *args: str, timeout: int = 20) -> subprocess.CompletedProcess[str]:
@@ -36,6 +40,12 @@ class NtpService:
         if not binary:
             raise NtpUnavailable("systemctl is unavailable")
         return self._run([binary, *args], timeout=timeout)
+
+    def _mutating_service(self, action: str, unit: str, *, actor: str) -> subprocess.CompletedProcess[str]:
+        if broker_required():
+            response = BrokerClient().request(Operation.NTP, {"action": "service", "service_action": action, "unit": unit}, actor=actor)
+            return subprocess.CompletedProcess(["systemctl", action, unit], response.exit_code, response.stdout, response.stderr)
+        return self._systemctl(action, unit, timeout=45)
 
     def _unit_exists(self, unit: str) -> bool:
         try:
@@ -85,6 +95,42 @@ class NtpService:
         return candidates[0]
 
     @staticmethod
+    def _config_target(path: Path) -> str:
+        mapping = {
+            "/etc/chrony/chrony.conf": "chrony_debian",
+            "/etc/chrony.conf": "chrony_rhel",
+            "/etc/systemd/timesyncd.conf": "timesyncd",
+            "/etc/ntp.conf": "ntpd",
+        }
+        try:
+            return mapping[str(path.resolve(strict=False))]
+        except KeyError as error:
+            raise NtpUnavailable("NTP configuration path is not allowlisted") from error
+
+    def _write_config(self, path: Path, content: str, *, actor: str) -> None:
+        if broker_required():
+            BrokerClient().require(
+                Operation.NTP,
+                {"action": "write_config", "target": self._config_target(path), "content": content},
+                actor=actor,
+            )
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.webnas-", dir=path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(temp_name, 0o644)
+            os.replace(temp_name, path)
+        finally:
+            try:
+                os.unlink(temp_name)
+            except FileNotFoundError:
+                pass
+
+    @staticmethod
     def _kv(text: str) -> dict[str, str]:
         result: dict[str, str] = {}
         for line in text.splitlines():
@@ -104,11 +150,9 @@ class NtpService:
             result = self._run([timedatectl, "show", "--property=Timezone,NTPSynchronized,NTP,TimeUSec"], timeout=8)
             timedate = self._kv(result.stdout)
         data: dict[str, Any] = {
-            "backend": backend.value,
-            "available": backend != NtpBackend.none,
+            "backend": backend.value, "available": backend != NtpBackend.none,
             "synchronized": timedate.get("ntpsynchronized", "no").casefold() == "yes",
-            "timezone": timedate.get("timezone", ""),
-            "system_time": time.time(),
+            "timezone": timedate.get("timezone", ""), "system_time": time.time(),
             "source": "", "offset": "", "stratum": None, "reachability": "", "jitter": "",
             "service": "", "service_state": "unknown", "enabled": False,
         }
@@ -122,35 +166,35 @@ class NtpService:
                 data["enabled"] = enabled.returncode == 0
         if backend == NtpBackend.chrony:
             chronyc = self._which("chronyc")
-            assert chronyc
-            result = self._run([chronyc, "tracking"], timeout=10)
-            values = self._kv(result.stdout)
-            data.update({
-                "source": values.get("reference id", ""),
-                "stratum": int(values["stratum"]) if values.get("stratum", "").isdigit() else None,
-                "offset": values.get("last offset", values.get("system time", "")),
-                "jitter": values.get("root dispersion", ""),
-                "leap_status": values.get("leap status", ""),
-            })
+            if chronyc:
+                values = self._kv(self._run([chronyc, "tracking"], timeout=10).stdout)
+                data.update({
+                    "source": values.get("reference id", ""),
+                    "stratum": int(values["stratum"]) if values.get("stratum", "").isdigit() else None,
+                    "offset": values.get("last offset", values.get("system time", "")),
+                    "jitter": values.get("root dispersion", ""),
+                    "leap_status": values.get("leap status", ""),
+                })
         return data
 
     def sources(self) -> list[dict[str, Any]]:
         backend = self.detect_backend()
+        if backend == NtpBackend.none:
+            return []
         if backend == NtpBackend.chrony and self._which("chronyc"):
             result = self._run([self._which("chronyc") or "chronyc", "-n", "sources"], timeout=10)
             items: list[dict[str, Any]] = []
             for line in result.stdout.splitlines():
                 match = re.match(r"^([\^=][*+\-?x~])\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)$", line.strip())
-                if not match:
-                    continue
-                marker, server, stratum, poll, reach, rest = match.groups()
-                items.append({"server": server, "selected": marker[1] == "*", "state": marker[1], "stratum": int(stratum), "poll": int(poll), "reach": int(reach), "details": rest})
+                if match:
+                    marker, server, stratum, poll, reach, rest = match.groups()
+                    items.append({"server": server, "selected": marker[1] == "*", "state": marker[1], "stratum": int(stratum), "poll": int(poll), "reach": int(reach), "details": rest})
             return items
         path = self._config_path(backend)
         if not path.exists():
             return []
         text = path.read_text(encoding="utf-8", errors="replace")
-        items = []
+        items: list[dict[str, Any]] = []
         if backend == NtpBackend.timesyncd:
             for line in text.splitlines():
                 stripped = line.strip()
@@ -178,6 +222,12 @@ class NtpService:
             return []
         block = text.split(_BEGIN, 1)[1].split(_END, 1)[0]
         result: list[NtpSourceInput] = []
+        if "[Time]" in block:
+            for line in block.splitlines():
+                if line.strip().startswith("NTP="):
+                    for server in line.split("=", 1)[1].split():
+                        result.append(NtpSourceInput(server=server, enabled=True))
+            return result
         for line in block.splitlines():
             stripped = line.strip()
             enabled = not stripped.startswith("#")
@@ -193,15 +243,11 @@ class NtpService:
             active = " ".join(item.server for item in sources if item.enabled)
             block = f"{_BEGIN}\n[Time]\nNTP={active}\n{_END}"
         else:
-            rows = []
-            for item in sources:
-                prefix = "" if item.enabled else "# "
-                prefer = " prefer" if item.prefer else ""
-                rows.append(f"{prefix}server {item.server} iburst{prefer}")
+            rows = [f"{'' if item.enabled else '# '}server {item.server} iburst{' prefer' if item.prefer else ''}" for item in sources]
             block = "\n".join([_BEGIN, *rows, _END])
         return "\n\n".join(part for part in (before, block, after.rstrip()) if part) + "\n"
 
-    def save_sources(self, sources: list[NtpSourceInput]) -> dict[str, Any]:
+    def save_sources(self, sources: list[NtpSourceInput], *, actor: str) -> dict[str, Any]:
         backend = self.detect_backend()
         if backend == NtpBackend.none:
             raise NtpUnavailable("No supported NTP backend is installed")
@@ -212,37 +258,33 @@ class NtpService:
         data_dir.mkdir(parents=True, exist_ok=True)
         backup = data_dir / f"{path.name}.{int(time.time())}.bak"
         backup.write_text(original, encoding="utf-8")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.webnas-", dir=path.parent)
+        backup.chmod(0o600)
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                stream.write(candidate)
-                stream.flush(); os.fsync(stream.fileno())
-            os.replace(temp_name, path)
+            self._write_config(path, candidate, actor=actor)
             unit = self._service_name(backend)
             if unit:
-                result = self._systemctl("restart", unit, timeout=45)
+                result = self._mutating_service("restart", unit, actor=actor)
                 if result.returncode != 0:
                     raise RuntimeError((result.stderr or result.stdout or "NTP restart failed")[:500])
         except Exception:
-            if backup.exists():
-                path.write_text(original, encoding="utf-8")
+            self._write_config(path, original, actor=actor)
             raise
         return {"backend": backend.value, "path": str(path), "backup": str(backup), "sources": len(sources)}
 
-    def resync(self, context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any]:
+    def resync(self, context: JobContext, metadata: dict[str, Any]) -> dict[str, Any]:
         backend = self.detect_backend()
+        actor = str(metadata.get("actor") or "webnas")
         context.set_progress(20, "Detected NTP backend", current_step="detect")
-        if backend == NtpBackend.chrony:
+        unit = self._service_name(backend)
+        if broker_required():
+            response = BrokerClient().request(Operation.NTP, {"action": "resync", "backend": backend.value, "unit": unit}, actor=actor)
+            result = subprocess.CompletedProcess(["ntp-resync"], response.exit_code, response.stdout, response.stderr)
+        elif backend == NtpBackend.chrony:
             binary = self._which("chronyc")
             if not binary:
                 raise NtpUnavailable("chronyc is unavailable")
             result = self._run([binary, "makestep"], timeout=30)
-        elif backend == NtpBackend.timesyncd:
-            unit = self._service_name(backend)
-            result = self._systemctl("restart", unit, timeout=30)
-        elif backend == NtpBackend.ntpd:
-            unit = self._service_name(backend)
+        elif backend in {NtpBackend.timesyncd, NtpBackend.ntpd}:
             result = self._systemctl("restart", unit, timeout=30)
         else:
             raise NtpUnavailable("No supported NTP backend is installed")
@@ -252,18 +294,21 @@ class NtpService:
         return self.status()
 
     def enqueue_resync(self, actor: str):
-        return jobs().submit_callable(job_type="ntp.resync", module="ntp-manager", created_by=actor, handler=self.resync,
-            retryable=True, cancellable=False, priority=JobPriority.high, max_retries=1, timeout=60,
-            name="NTP resync", description="Force time synchronization and verify state", dedup_key="ntp.resync", total_steps=2)
+        return jobs().submit_callable(
+            job_type="ntp.resync", module="ntp-manager", created_by=actor, handler=self.resync,
+            metadata={"actor": actor}, retryable=True, cancellable=False, priority=JobPriority.high, max_retries=1,
+            timeout=60, name="NTP resync", description="Force time synchronization and verify state",
+            dedup_key="ntp.resync", total_steps=2,
+        )
 
-    def service_action(self, action: str) -> dict[str, Any]:
+    def service_action(self, action: str, *, actor: str) -> dict[str, Any]:
         if action not in {"start", "stop", "restart", "reload", "enable", "disable"}:
             raise ValueError("unsupported service action")
         backend = self.detect_backend()
         unit = self._service_name(backend)
         if not unit:
             raise NtpUnavailable("NTP service is unavailable")
-        result = self._systemctl(action, unit, timeout=45)
+        result = self._mutating_service(action, unit, actor=actor)
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout or "NTP service action failed")[:500])
         return self.status()
