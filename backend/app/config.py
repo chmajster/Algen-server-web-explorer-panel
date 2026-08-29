@@ -10,9 +10,10 @@ from pydantic import BaseModel, Field
 
 
 class ServerConfig(BaseModel):
-    # The NAS panel intentionally listens on the configured LAN interfaces;
-    # production exposure is controlled by firewall/TLS configuration.
-    host: str = "0.0.0.0"  # nosec B104
+    # Direct development starts are loopback-only by default. Installed WebNAS
+    # releases are published through the nginx gateway configured by the
+    # installer/release helper.
+    host: str = "127.0.0.1"
     port: int = 5000
     use_https: bool = False
     tls_cert: str | None = None
@@ -44,6 +45,11 @@ class SecurityConfig(BaseModel):
     system_uid_threshold: int = 1000
     session_secret: str = "change-this-secret"
     cookie_secure: bool = False
+    # None means a configuration created before the explicit transport policy
+    # existed. Legacy installations remain upgrade-compatible but emit a
+    # warning when they continue to expose plaintext HTTP. New installer
+    # configurations set this to false and enable TLS.
+    allow_insecure_http: bool | None = None
 
 
 class FileTasksConfig(BaseModel):
@@ -123,10 +129,7 @@ class AppConfig(BaseModel):
     systemd_allowed_services: list[str] = Field(default_factory=list)
 
 
-DEFAULT_CONFIG_PATHS = (
-    Path("/etc/webnas/config.yaml"),
-    Path(__file__).resolve().parents[2] / "config.example.yaml",
-)
+DEFAULT_CONFIG_PATHS = (Path("/etc/webnas/config.yaml"),)
 
 
 def load_config(path: str | None = None) -> AppConfig:
