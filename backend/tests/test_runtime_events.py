@@ -1,5 +1,6 @@
 import asyncio
 
+from app import runtime_events
 from app.runtime_events import RuntimeEventBroker
 
 
@@ -33,3 +34,20 @@ def test_runtime_event_broker_bounds_slow_subscribers():
         broker.unsubscribe(queue)
 
     asyncio.run(scenario())
+
+
+def test_tree_fingerprint_detects_nested_transaction_updates(tmp_path):
+    transactions = tmp_path / "network-management" / "transactions"
+    transactions.mkdir(parents=True)
+    transaction = transactions / "active.json"
+    transaction.write_text('{"status":"pending"}', encoding="utf-8")
+
+    initial = runtime_events._tree_fingerprint(transactions)
+    transaction.write_text('{"status":"confirmed","revision":2}', encoding="utf-8")
+    updated = runtime_events._tree_fingerprint(transactions)
+
+    assert updated != initial
+
+
+def test_tree_fingerprint_handles_missing_directory(tmp_path):
+    assert runtime_events._tree_fingerprint(tmp_path / "missing") == (0, 0, 0)
