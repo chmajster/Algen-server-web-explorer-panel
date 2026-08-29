@@ -1,0 +1,12 @@
+id: gitops-config-manager
+name: GitOps Config Manager
+version: 1.0.0
+category: automation
+icon: git-branch
+permissions: [gitops.view, gitops.manage, gitops.commit, gitops.pull, gitops.push, gitops.rollback]
+routers: [app.modules.gitops_manager.router:router]
+dependencies: [identity, package-center]
+capabilities: [status, diff, history, commit, fetch, pull, push, restore, revert, secret-scan]
+system_capabilities: [git]
+actions: [configure, commit, fetch, pull, push, restore, revert]
+menu: [{id: gitops-config-manager, label: GitOps Config Manager, icon: git-branch, permission: gitops.view}]

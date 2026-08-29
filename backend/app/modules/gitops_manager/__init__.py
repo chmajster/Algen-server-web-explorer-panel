@@ -1,0 +1,1 @@
+"""GitOps Config Manager module."""
