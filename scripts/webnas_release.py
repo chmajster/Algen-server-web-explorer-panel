@@ -23,6 +23,14 @@ from pathlib import Path
 from typing import Any
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+BACKEND_ROOT = REPOSITORY_ROOT / "backend"
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from app.core.redaction import redact_text  # noqa: E402
+
+
 SLOTS = {"blue": 15101, "green": 15102}
 ACTIVE_STATES = {"preparing", "running"}
 
@@ -115,8 +123,7 @@ class Deployment:
         step["message"] = message
         step["started_at"] = step.get("started_at") or now
         step["finished_at"] = now if status in {"success", "failed", "skipped"} else None
-        safe_error = re.sub(r"(?i)(authorization|cookie|token|password|secret|api[_-]?key)(\s*[:=]\s*|\s+)\S+", r"\1\2***", error or "")
-        step["error"] = safe_error[-4000:] if status == "failed" else None
+        step["error"] = redact_text(error or "", limit=4000) if status == "failed" else None
         value.update({"phase": step_id, "message": message, "updated_at": now})
         if status == "failed":
             value.update({"state": "failed", "failed_phase": step_id, "finished_at": now})
@@ -152,7 +159,8 @@ class Deployment:
             check=False,
         )
         if result.returncode:
-            raise RuntimeError(f"Candidate import/config validation failed: {result.stderr.strip()[-1000:]}")
+            safe_stderr = redact_text(result.stderr.strip(), limit=1000)
+            raise RuntimeError(f"Candidate import/config validation failed: {safe_stderr}")
         self.validate_runtime_paths()
 
     def validate_runtime_paths(self) -> None:
@@ -242,7 +250,7 @@ class Deployment:
                     if response.status == 200 and json.loads(response.read()).get("status") == "ok":
                         return
             except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError) as error:
-                last_error = str(error)
+                last_error = redact_text(error, limit=1000)
             time.sleep(0.25)
         raise RuntimeError(f"Candidate health check failed on port {port}: {last_error}")
 
@@ -250,6 +258,18 @@ class Deployment:
         use_https = config_value(self.config, "server", "use_https", "false").lower() == "true"
         tls_cert = config_value(self.config, "server", "tls_cert")
         tls_key = config_value(self.config, "server", "tls_key")
+        insecure_policy = config_value(self.config, "security", "allow_insecure_http", "legacy").lower()
+        if not use_https and insecure_policy == "false":
+            raise RuntimeError(
+                "Refusing public plaintext HTTP because security.allow_insecure_http=false; "
+                "enable TLS or explicitly opt in only for an isolated lab"
+            )
+        if not use_https and insecure_policy not in {"true", "false"}:
+            print(
+                "WebNAS security warning: legacy configuration still publishes plaintext HTTP. "
+                "Enable TLS or set security.allow_insecure_http=true explicitly only for an isolated lab.",
+                file=sys.stderr,
+            )
         listen = f"listen {self.public_port}{' ssl' if use_https else ''};"
         tls = ""
         if use_https:
@@ -289,7 +309,7 @@ class Deployment:
                 os.replace(previous, self.nginx_config)
             else:
                 self.nginx_config.unlink(missing_ok=True)
-            raise RuntimeError(f"nginx candidate configuration is invalid: {validation.stderr.strip()}")
+            raise RuntimeError(f"nginx candidate configuration is invalid: {redact_text(validation.stderr.strip(), limit=4000)}")
         previous.unlink(missing_ok=True)
         result = command("systemctl", "reload", "nginx", check=False)
         if result.returncode:
@@ -312,7 +332,7 @@ class Deployment:
                     if response.status == 200:
                         return
             except (OSError, urllib.error.URLError) as error:
-                last_error = str(error)
+                last_error = redact_text(error, limit=1000)
             time.sleep(0.25)
         raise RuntimeError(f"Public health check failed after handover: {last_error}")
 
@@ -352,7 +372,7 @@ class Deployment:
                         if attempt == 0:
                             time.sleep(0.1)
                             continue
-                        print(f"WebNAS release cleanup warning: could not remove {path.name}: {error}", file=sys.stderr)
+                        print(f"WebNAS release cleanup warning: could not remove {path.name}: {redact_text(error, limit=1000)}", file=sys.stderr)
 
     def deploy(self) -> None:
         self.update_step("switch_version", "running", "Walidacja i przełączanie na nową wersję.")
@@ -433,13 +453,14 @@ def main() -> int:
     try:
         deployment.deploy()
     except Exception as error:  # noqa: BLE001 - updater must emit one durable failure reason.
+        safe_error = redact_text(error, limit=4000)
         try:
             value = json.loads(deployment.update_request.read_text(encoding="utf-8"))
             phase = str(value.get("phase") or "switch_version") if isinstance(value, dict) else "switch_version"
-            deployment.update_step(phase, "failed", "Aktualizacja wdrożenia nie powiodła się.", str(error)[-4000:])
+            deployment.update_step(phase, "failed", "Aktualizacja wdrożenia nie powiodła się.", safe_error)
         except (OSError, json.JSONDecodeError):
             pass
-        print(f"WebNAS release activation failed: {error}", file=sys.stderr)
+        print(f"WebNAS release activation failed: {safe_error}", file=sys.stderr)
         return 1
     print(f"Activated WebNAS {deployment.new_slot} release {deployment.release}")
     return 0
