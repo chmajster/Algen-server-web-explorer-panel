@@ -1,0 +1,41 @@
+name: Apply privilege migration once
+
+on:
+  push:
+    branches:
+      - security/complete-privileged-broker-migration
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'chore: run one-time privilege migration transform'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: security/complete-privileged-broker-migration
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Apply controlled transformations
+        run: python scripts/apply_privilege_migration_once.py
+      - name: Validate Python syntax
+        run: |
+          python -m compileall -q backend/app scripts/webnas_release.py
+          grep -q 'User=webnas' packaging/webnas.service
+          grep -q 'NoNewPrivileges=true' packaging/webnas.service
+          grep -q 'WEBNAS_PRIVILEGED_BROKER=required' packaging/webnas.service
+      - name: Commit transformed sources
+        run: |
+          rm scripts/apply_privilege_migration_once.py
+          rm .github/workflows/apply-privilege-migration-once.yml
+          git config user.name 'ChatGPT Codex Connector'
+          git config user.email 'noreply@openai.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'security: migrate host administration behind privileged broker'
+          git push origin HEAD:security/complete-privileged-broker-migration
