@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from app.modules.fail2ban_manager.models import JailConfigInput
 from app.modules.fail2ban_manager.service import Fail2BanCommandError, Fail2BanService
@@ -51,7 +52,7 @@ def test_managed_config_is_atomic_validated_and_reloaded(tmp_path: Path):
         maxretry=4,
         findtime="10m",
         bantime="1h",
-        action="%(action_)s",
+        action="action_",
         confirm=True,
     )
 
@@ -68,13 +69,12 @@ def test_managed_config_is_atomic_validated_and_reloaded(tmp_path: Path):
 
 def test_invalid_config_value_is_rejected_without_writing(tmp_path: Path):
     service = Fail2BanService(jail_dir=tmp_path)
-    payload = JailConfigInput(
-        enabled=True,
-        filter="sshd\n[evil]",
-        confirm=True,
-    )
-    with pytest.raises(ValueError):
-        service.save_config("sshd", payload)
+    with pytest.raises(ValidationError):
+        JailConfigInput(
+            enabled=True,
+            filter="sshd\n[evil]",
+            confirm=True,
+        )
     assert not (tmp_path / "webnas-sshd.local").exists()
 
 
