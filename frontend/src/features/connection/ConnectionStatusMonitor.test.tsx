@@ -10,6 +10,49 @@ import {
 const t = (key: string) => key;
 const language = "pl-PL";
 
+class FakeWebSocket {
+  readyState = 0;
+  onopen: WebSocket["onopen"] = null;
+  onmessage: WebSocket["onmessage"] = null;
+  onclose: WebSocket["onclose"] = null;
+  onerror: WebSocket["onerror"] = null;
+  sent: string[] = [];
+
+  constructor(readonly url: string) {}
+
+  open() {
+    this.readyState = 1;
+    this.onopen?.call(this as unknown as WebSocket, new Event("open"));
+  }
+
+  heartbeat(payload: Record<string, unknown> = {}) {
+    this.onmessage?.call(this as unknown as WebSocket, new MessageEvent("message", {
+      data: JSON.stringify({ type: "heartbeat", status: "ok", service: "webnas", ...payload }),
+    }));
+  }
+
+  send(data: string) {
+    if (this.readyState !== 1) throw new DOMException("socket is not open", "InvalidStateError");
+    this.sent.push(data);
+  }
+
+  close() {
+    if (this.readyState === 3) return;
+    this.readyState = 3;
+    this.onclose?.call(this as unknown as WebSocket, new Event("close") as CloseEvent);
+  }
+}
+
+function socketFactory() {
+  const sockets: FakeWebSocket[] = [];
+  const factory = vi.fn((url: string) => {
+    const socket = new FakeWebSocket(url);
+    sockets.push(socket);
+    return socket as unknown as WebSocket;
+  });
+  return { sockets, factory };
+}
+
 async function settle() {
   await act(async () => {
     await Promise.resolve();
@@ -169,6 +212,98 @@ describe("ConnectionStatusMonitor", () => {
     await settle();
 
     expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the WebSocket heartbeat as the primary connection signal", async () => {
+    const { sockets, factory } = socketFactory();
+    render(<ConnectionStatusMonitor
+      webSocketFactory={factory}
+      webSocketUrl="ws://webnas/api/health/ws"
+      t={t}
+      language={language}
+    />);
+    await settle();
+
+    expect(factory).toHaveBeenCalledWith("ws://webnas/api/health/ws");
+    act(() => {
+      sockets[0].open();
+      sockets[0].heartbeat();
+    });
+
+    expect(sockets[0].sent).toContain("ping");
+    expect(screen.queryByText("connection.lost")).not.toBeInTheDocument();
+  });
+
+  it("reports loss immediately when an established WebSocket closes and reconnects", async () => {
+    const { sockets, factory } = socketFactory();
+    render(<ConnectionStatusMonitor
+      webSocketFactory={factory}
+      webSocketUrl="ws://webnas/api/health/ws"
+      reconnectDelayMs={1000}
+      t={t}
+      language={language}
+    />);
+    await settle();
+    act(() => {
+      sockets[0].open();
+      sockets[0].heartbeat();
+      sockets[0].close();
+    });
+
+    expect(screen.getByRole("alert")).toHaveClass("offline");
+    expect(screen.getByText("connection.lost")).toBeInTheDocument();
+
+    await advance(1000);
+    expect(factory).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the heartbeat watchdog when a WebSocket stays open but stops responding", async () => {
+    const { sockets, factory } = socketFactory();
+    render(<ConnectionStatusMonitor
+      webSocketFactory={factory}
+      webSocketUrl="ws://webnas/api/health/ws"
+      heartbeatTimeoutMs={6000}
+      t={t}
+      language={language}
+    />);
+    await settle();
+    act(() => {
+      sockets[0].open();
+      sockets[0].heartbeat();
+    });
+
+    await advance(6000);
+
+    expect(screen.getByRole("alert")).toHaveClass("offline");
+    expect(screen.getByText("connection.lost")).toBeInTheDocument();
+  });
+
+  it("reports recovery when a reconnected WebSocket receives a heartbeat", async () => {
+    const restored = vi.fn();
+    const { sockets, factory } = socketFactory();
+    render(<ConnectionStatusMonitor
+      webSocketFactory={factory}
+      webSocketUrl="ws://webnas/api/health/ws"
+      reconnectDelayMs={1000}
+      onRestored={restored}
+      t={t}
+      language={language}
+    />);
+    await settle();
+    act(() => {
+      sockets[0].open();
+      sockets[0].heartbeat();
+      sockets[0].close();
+    });
+    await advance(1000);
+    act(() => {
+      sockets[1].open();
+      sockets[1].heartbeat();
+    });
+
+    expect(screen.getByRole("status")).toHaveClass("restored");
+    expect(screen.getByText("connection.restored")).toBeInTheDocument();
+    expect(restored).toHaveBeenCalledWith(1);
   });
 
   it("refreshes only the active application view after recovery", () => {
