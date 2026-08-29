@@ -183,7 +183,7 @@ class LoginRateLimiter:
         now = time.time()
         with self._lock:
             window = self._window(key, now)
-            if len(window) >= cfg.security.rate_limit_login_per_minuteute:
+            if len(window) >= cfg.security.rate_limit_login_per_minute:
                 raise HTTPException(HTTPStatus.TOO_MANY_REQUESTS, "Too many login attempts")
 
     def record_failure(self, key: str) -> None:
