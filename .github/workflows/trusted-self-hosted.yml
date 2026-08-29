@@ -50,6 +50,11 @@ jobs:
           ref: ${{ env.TARGET_SHA }}
           persist-credentials: false
 
+      - name: Set up Node.js for installer validation
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
       - name: Verify tested main revision
         shell: bash
         run: |
@@ -167,6 +172,11 @@ jobs:
         with:
           ref: ${{ env.TARGET_SHA }}
           persist-credentials: false
+
+      - name: Set up Node.js for frontend artifact validation
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
 
       - name: Verify deployment provenance
         shell: bash
