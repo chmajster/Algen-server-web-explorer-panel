@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
+import pytest
+
+import app.privileged_broker.extended_policy as extended_policy
 from app.privileged_broker.extended_policy import dispatch
 from app.privileged_broker.policy import CommandResult
 from app.privileged_broker.protocol import BrokerRequest, Operation
@@ -84,6 +87,30 @@ def test_package_policy_rejects_apt_hook_execution() -> None:
     assert response.ok is False
     assert response.error_code == "POLICY_DENIED"
     assert executed == []
+
+
+def test_package_path_config_failure_uses_only_fixed_roots(monkeypatch) -> None:
+    def broken_config():
+        raise RuntimeError("invalid config")
+
+    monkeypatch.setattr(extended_policy, "get_config", broken_config)
+
+    safe = extended_policy._package_path("/var/lib/webnas/package-center-runtime/item")
+    assert safe == "/var/lib/webnas/package-center-runtime/item"
+    with pytest.raises(extended_policy.base.PolicyError):
+        extended_policy._package_path("/etc/passwd")
+
+
+def test_mount_credential_config_failure_uses_only_fixed_data_root(monkeypatch) -> None:
+    def broken_config():
+        raise RuntimeError("invalid config")
+
+    monkeypatch.setattr(extended_policy, "get_config", broken_config)
+
+    safe = extended_policy._mount_option("credentials=/var/lib/webnas/network-mounts/cred")
+    assert safe == "credentials=/var/lib/webnas/network-mounts/cred"
+    with pytest.raises(extended_policy.base.PolicyError):
+        extended_policy._mount_option("credentials=/etc/shadow")
 
 
 def test_mount_policy_rejects_target_outside_webnas_roots() -> None:
