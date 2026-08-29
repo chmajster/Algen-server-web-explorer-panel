@@ -35,6 +35,7 @@ from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
 from .settings import start_auto_update_scheduler
+from .startup_bootstrap import router as startup_bootstrap_router
 from .tasks import task_store
 from .update_coordination import active_transient_operations, register_operation_provider
 from .update_detail_policy import router as update_detail_policy_router
@@ -170,6 +171,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.middleware("http")(frontend_cache_policy)
     module_registry.install_routers(app)
     app.include_router(_registry_router(module_registry))
+    app.include_router(startup_bootstrap_router)
     app.include_router(runtime_events_router)
     app.include_router(update_detail_policy_router)
     app.include_router(power_control_router)
