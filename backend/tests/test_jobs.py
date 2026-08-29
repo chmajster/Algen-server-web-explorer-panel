@@ -44,6 +44,19 @@ def test_running_job_is_failed_during_recovery(tmp_path):
     assert "restarted" in recovered.error.lower()
 
 
+def test_queued_job_is_failed_during_recovery_instead_of_staying_stuck(tmp_path):
+    repository = JobRepository(tmp_path / "jobs.sqlite3")
+    job = repository.create(job_type="demo", module="tests", created_by="alice", retryable=True)
+
+    assert JobRepository(repository.path).recover_interrupted() == 1
+
+    recovered = repository.get(job.id)
+    assert recovered and recovered.status == JobStatus.failed
+    assert recovered.retryable is True
+    assert "before queued operation started" in recovered.error.lower()
+    assert recovered.message == "Interrupted before execution"
+
+
 def test_job_service_executes_handler_and_sanitizes_payload(tmp_path):
     service = JobService(JobRepository(tmp_path / "jobs.sqlite3"), runner=InlineRunner())
     service.register_handler("demo", lambda context, metadata: {"token": "abc", "value": metadata["value"]}, retryable=True)
