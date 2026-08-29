@@ -13,6 +13,7 @@ capabilities:
   - storage-health
   - smart-health
   - filesystem-capacity
+  - storage-dashboard
   - encrypted-storage-inventory
   - device-mapper-inventory
   - lvm-inventory
