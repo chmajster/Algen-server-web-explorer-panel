@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import threading
 import time
 import urllib.request
@@ -144,6 +145,121 @@ def test_runtime_paths_are_writable_before_candidate_activation(tmp_path: Path):
     assert data.is_dir()
     assert logs.is_dir()
     assert not list(data.glob(".webnas-write-check-*"))
+
+
+def test_new_transport_policy_refuses_public_plaintext_http(tmp_path: Path):
+    target = deployment(tmp_path)
+    target.config.write_text(
+        "server:\n  use_https: false\nsecurity:\n  allow_insecure_http: false\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="Refusing public plaintext HTTP"):
+        target.nginx(target.new_port)
+
+
+def test_explicit_lab_transport_policy_allows_plaintext_http(tmp_path: Path):
+    target = deployment(tmp_path)
+    target.config.write_text(
+        "server:\n  use_https: false\nsecurity:\n  allow_insecure_http: true\n",
+        encoding="utf-8",
+    )
+
+    nginx = target.nginx(target.new_port)
+
+    assert "listen 5000;" in nginx
+    assert "listen 5000 ssl;" not in nginx
+
+
+def test_tls_gateway_requires_and_uses_configured_certificate(tmp_path: Path):
+    target = deployment(tmp_path)
+    cert = tmp_path / "webnas.crt"
+    key = tmp_path / "webnas.key"
+    cert.write_text("certificate", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+    target.config.write_text(
+        f"server:\n  use_https: true\n  tls_cert: {cert}\n  tls_key: {key}\nsecurity:\n  allow_insecure_http: false\n",
+        encoding="utf-8",
+    )
+
+    nginx = target.nginx(target.new_port)
+
+    assert "listen 5000 ssl;" in nginx
+    assert f"ssl_certificate {cert};" in nginx
+    assert f"ssl_certificate_key {key};" in nginx
+
+
+def test_tls_certificate_is_bootstrapped_atomically(monkeypatch, tmp_path: Path):
+    target = deployment(tmp_path)
+    cert = tmp_path / "tls" / "webnas.crt"
+    key = tmp_path / "tls" / "webnas.key"
+    target.config.write_text(
+        f"server:\n  use_https: true\n  tls_cert: {cert}\n  tls_key: {key}\nsecurity:\n  allow_insecure_http: false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_module.shutil, "which", lambda name: "/usr/bin/openssl" if name == "openssl" else None)
+
+    def fake_command(*args, **kwargs):
+        keyout = Path(args[args.index("-keyout") + 1])
+        certout = Path(args[args.index("-out") + 1])
+        keyout.write_text("private-key", encoding="utf-8")
+        certout.write_text("certificate", encoding="utf-8")
+        return completed()
+
+    monkeypatch.setattr(release_module, "command", fake_command)
+
+    target.ensure_tls_certificate()
+
+    assert cert.read_text(encoding="utf-8") == "certificate"
+    assert key.read_text(encoding="utf-8") == "private-key"
+    assert os.stat(cert).st_mode & 0o777 == 0o644
+    assert os.stat(key).st_mode & 0o777 == 0o600
+
+
+def test_tls_bootstrap_reports_missing_openssl(monkeypatch, tmp_path: Path):
+    target = deployment(tmp_path)
+    cert = tmp_path / "tls" / "webnas.crt"
+    key = tmp_path / "tls" / "webnas.key"
+    target.config.write_text(
+        f"server:\n  use_https: true\n  tls_cert: {cert}\n  tls_key: {key}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_module.shutil, "which", lambda _name: None)
+
+    with pytest.raises(RuntimeError, match="openssl"):
+        target.ensure_tls_certificate()
+
+
+def test_release_update_errors_use_shared_redaction(tmp_path: Path):
+    target = deployment(tmp_path)
+    target.update_request.write_text(
+        json.dumps(
+            {
+                "state": "running",
+                "steps": [
+                    {
+                        "id": "switch_version",
+                        "status": "pending",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    target.update_step(
+        "switch_version",
+        "failed",
+        "failed",
+        "password=deploy-secret Authorization: Bearer bearer-secret",
+    )
+
+    payload = json.loads(target.update_request.read_text(encoding="utf-8"))
+    error = payload["steps"][0]["error"]
+    assert "deploy-secret" not in error
+    assert "bearer-secret" not in error
+    assert "password=[REDACTED]" in error
+    assert "Authorization: [REDACTED]" in error
 
 
 def test_handover_stops_stale_inactive_slot_without_deployment_state(monkeypatch, tmp_path: Path):

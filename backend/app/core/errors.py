@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 import secrets
 import sqlite3
+import traceback
 from dataclasses import dataclass, field as dataclass_field
 from typing import Any
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+
+from .redaction import redact, redact_text
 
 
 logger = logging.getLogger(__name__)
@@ -23,7 +26,16 @@ class DomainError(Exception):
 
 
 def error_payload(error: DomainError) -> dict[str, Any]:
-    return {"data": None, "meta": {}, "error": {"code": error.code, "message": error.message, "field": error.field, "details": error.details}}
+    return {
+        "data": None,
+        "meta": {},
+        "error": {
+            "code": error.code,
+            "message": redact_text(error.message, limit=4096),
+            "field": error.field,
+            "details": redact(error.details),
+        },
+    }
 
 
 async def domain_error_handler(_request: Request, error: Exception) -> JSONResponse:
@@ -94,13 +106,17 @@ def _integrity_error_response(endpoint: str, error: sqlite3.IntegrityError, requ
 async def unhandled_error_handler(request: Request, error: Exception) -> JSONResponse:
     request_id = secrets.token_hex(8)
     endpoint = request.url.path
+    safe_traceback = redact_text(
+        "".join(traceback.format_exception(type(error), error, error.__traceback__)),
+        limit=64 * 1024,
+    )
     logger.error(
-        "Unhandled WebNAS backend error request_id=%s method=%s path=%s error_type=%s",
+        "Unhandled WebNAS backend error request_id=%s method=%s path=%s error_type=%s traceback=%s",
         request_id,
         request.method,
         endpoint,
         type(error).__name__,
-        exc_info=(type(error), error, error.__traceback__),
+        safe_traceback,
     )
 
     if isinstance(error, sqlite3.IntegrityError):

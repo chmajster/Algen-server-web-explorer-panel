@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sqlite3
 
 from starlette.requests import Request
@@ -26,8 +27,9 @@ def _request(path: str = "/api/modules/hosts-manager/credentials") -> Request:
     return Request(scope)
 
 
-def test_unhandled_backend_error_returns_safe_diagnostics_without_exception_message():
-    response = asyncio.run(unhandled_error_handler(_request(), RuntimeError("password=super-secret")))
+def test_unhandled_backend_error_returns_safe_diagnostics_without_exception_message(caplog):
+    with caplog.at_level(logging.ERROR, logger="app.core.errors"):
+        response = asyncio.run(unhandled_error_handler(_request(), RuntimeError("password=super-secret")))
     payload = json.loads(response.body)
     detail = payload["detail"]
 
@@ -43,6 +45,8 @@ def test_unhandled_backend_error_returns_safe_diagnostics_without_exception_mess
     serialized = json.dumps(payload)
     assert "super-secret" not in serialized
     assert "must-not-be-copied" not in serialized
+    assert "super-secret" not in caplog.text
+    assert "password=[REDACTED]" in caplog.text
 
 
 def test_duplicate_credential_name_returns_actionable_conflict_without_raw_sqlite_message():

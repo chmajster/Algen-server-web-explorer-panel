@@ -10,8 +10,8 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from ..config import get_config
+from ..core.redaction import redact_text
 from ..identity.permissions import Permission
-from ..modules.ansible_controller.security import redact_text
 from .models import MAX_MESSAGE, LogEntry
 
 CLASSIC_LOGS: dict[str, tuple[str, str, Permission]] = {

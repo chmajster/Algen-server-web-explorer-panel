@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from ..modules.ansible_controller.security import redact, redact_text
+from ..core.redaction import redact, redact_text
 from .models import (
     LOG_PRIORITIES,
     MAX_FIELD_VALUE,

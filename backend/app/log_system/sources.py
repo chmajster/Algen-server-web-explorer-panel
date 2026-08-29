@@ -10,8 +10,8 @@ from typing import Protocol
 from fastapi import HTTPException
 
 from ..activity import ActivityStatus, repository as activity_repository
+from ..core.redaction import redact_text
 from ..identity.permissions import Permission, has_permission
-from ..modules.ansible_controller.security import redact_text
 from ..security import SessionUser
 from .execution import run_bounded
 from .files import available_files, file_entries

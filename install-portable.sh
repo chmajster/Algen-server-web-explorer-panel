@@ -4,7 +4,7 @@ set -Eeuo pipefail
 REPO_URL="https://github.com/chmajster/Algen-server-web-explorer-panel"
 ARCHIVE_URL="${REPO_URL}/archive/refs/heads/main.tar.gz"
 PORT="5000"
-BIND_HOST="0.0.0.0"
+BIND_HOST="127.0.0.1"
 KEEP_WORKDIR="no"
 LAUNCH_DIR="$(pwd -P)"
 WORK_DIR="${LAUNCH_DIR}/portable-run"
@@ -23,13 +23,16 @@ data live in ./portable-run/ relative to the directory where the installer was
 started. The directory is removed when the process exits unless --keep-workdir
 is used. System packages are never installed or changed by portable mode.
 
+Portable mode intentionally uses plaintext HTTP. It binds to loopback by
+default. Use --bind-host 0.0.0.0 only in an isolated trusted network.
+
 Usage:
   sudo ./install.sh --portable [options]
   ./install-portable.sh [options]
 
 Options:
   -p, --port PORT          Application port (default: 5000)
-  --bind-host ADDRESS      Listen address (default: 0.0.0.0)
+  --bind-host ADDRESS      Listen address (default: 127.0.0.1)
   --keep-workdir           Keep ./portable-run/ after exit
   -y, --yes                Accepted for installer compatibility; portable mode
                            is already non-interactive
@@ -231,6 +234,7 @@ paths:
 security:
   session_secret: "${secret}"
   cookie_secure: false
+  allow_insecure_http: true
 EOF_CONFIG
   chmod 0600 "$PORTABLE_CONFIG"
   ok "Portable configuration created at ${PORTABLE_CONFIG}; /etc/webnas is not used"
@@ -268,6 +272,9 @@ run_portable() {
 
   if [[ "${EUID}" -ne 0 ]]; then
     warn "Running without root privileges; system-management features may be unavailable"
+  fi
+  if [[ "$BIND_HOST" == "0.0.0.0" || "$BIND_HOST" == "::" ]]; then
+    warn "Portable WebNAS is exposed over plaintext HTTP on all interfaces"
   fi
 
   info "Starting portable WebNAS"
