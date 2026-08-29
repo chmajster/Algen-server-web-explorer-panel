@@ -1,29 +1,76 @@
 from __future__ import annotations
 
+import itertools
 import os
-from concurrent.futures import Future, ThreadPoolExecutor
-from threading import Lock
+import queue
+import threading
+from concurrent.futures import Future
 from typing import Callable
+
+from .models import JobPriority
+
+_PRIORITY = {
+    JobPriority.critical: 0,
+    JobPriority.high: 10,
+    JobPriority.normal: 20,
+    JobPriority.low: 30,
+}
 
 
 class JobRunner:
+    """Small in-process priority executor used by all WebNAS module jobs."""
+
     def __init__(self, max_workers: int | None = None) -> None:
         configured = max_workers if max_workers is not None else int(os.environ.get("WEBNAS_JOB_WORKERS", "4"))
         self.max_workers = min(max(configured, 1), 16)
-        self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="webnas-job")
+        self._queue: queue.PriorityQueue[tuple[int, int, str, Callable[[], None], Future[None]]] = queue.PriorityQueue()
         self._futures: dict[str, Future[None]] = {}
-        self._lock = Lock()
+        self._lock = threading.Lock()
+        self._counter = itertools.count()
+        self._shutdown = threading.Event()
+        self._threads = [
+            threading.Thread(target=self._worker, name=f"webnas-job-{index + 1}", daemon=True)
+            for index in range(self.max_workers)
+        ]
+        for thread in self._threads:
+            thread.start()
 
-    def submit(self, job_id: str, target: Callable[[], None]) -> Future[None]:
-        future = self._executor.submit(target)
+    def submit(self, job_id: str, target: Callable[[], None], priority: JobPriority = JobPriority.normal) -> Future[None]:
+        future: Future[None] = Future()
         with self._lock:
             self._futures[job_id] = future
-        future.add_done_callback(lambda _future: self._forget(job_id))
+        self._queue.put((_PRIORITY[priority], next(self._counter), job_id, target, future))
         return future
 
-    def _forget(self, job_id: str) -> None:
+    def cancel_queued(self, job_id: str) -> bool:
         with self._lock:
-            self._futures.pop(job_id, None)
+            future = self._futures.get(job_id)
+        return bool(future and future.cancel())
+
+    def _worker(self) -> None:
+        while not self._shutdown.is_set():
+            try:
+                _priority, _sequence, job_id, target, future = self._queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            try:
+                if future.set_running_or_notify_cancel():
+                    try:
+                        target()
+                    except BaseException as error:  # noqa: BLE001
+                        future.set_exception(error)
+                    else:
+                        future.set_result(None)
+            finally:
+                with self._lock:
+                    self._futures.pop(job_id, None)
+                self._queue.task_done()
 
     def shutdown(self) -> None:
-        self._executor.shutdown(wait=False, cancel_futures=False)
+        self._shutdown.set()
+        with self._lock:
+            futures = list(self._futures.values())
+        for future in futures:
+            future.cancel()
+        for thread in self._threads:
+            thread.join(timeout=1)
