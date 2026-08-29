@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from ..alerts.integrations import job_failed as emit_job_failed
+from ..alerts.integrations import job_succeeded as emit_job_succeeded
 from ..audit import logger
 from ..config import get_config
 from .models import TERMINAL_STATUSES, Job, JobPage, JobStatus
@@ -169,6 +171,7 @@ class JobService:
                 finished = self.repository.mark_success(job_id, result=sanitize(result))
                 if finished:
                     logger.info("job_succeeded job_id=%s job_type=%s module=%s", finished.id, finished.type, finished.module)
+                    emit_job_succeeded(finished)
             except InterruptedError as error:
                 finished = self.repository.mark_cancelled(job_id, message=str(error) or "Cancelled")
                 if finished:
@@ -178,6 +181,7 @@ class JobService:
                 failed = self.repository.mark_failed(job_id, message)
                 if failed:
                     logger.error("job_failed job_id=%s job_type=%s module=%s error=%s", failed.id, failed.type, failed.module, message)
+                    emit_job_failed(failed)
 
         self.runner.submit(job_id, execute)
 
