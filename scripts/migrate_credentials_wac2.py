@@ -20,16 +20,37 @@ DEFAULT_DATABASE = Path("/var/lib/webnas/hosts-manager/hosts.sqlite3")
 DEFAULT_KEY = Path("/var/lib/webnas/secrets/hosts-manager.key")
 
 
-def _backup_database(connection: sqlite3.Connection, database: Path) -> Path:
+def _backup_database(database: Path) -> Path:
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     backup = database.with_name(f"{database.name}.pre-wac2-{stamp}.bak")
+    source = sqlite3.connect(database, timeout=30)
     target = sqlite3.connect(backup)
     try:
-        connection.backup(target)
+        source.backup(target)
     finally:
+        source.close()
         target.close()
     os.chmod(backup, 0o600)
     return backup
+
+
+def _pending_migrations(
+    connection: sqlite3.Connection,
+    cipher: CredentialCipher,
+) -> tuple[int, list[tuple[str, str]]]:
+    rows = connection.execute(
+        "SELECT id,encrypted_secret FROM credentials "
+        "WHERE active=1 AND encrypted_secret IS NOT NULL AND encrypted_secret<>'' "
+        "ORDER BY id"
+    ).fetchall()
+    pending: list[tuple[str, str]] = []
+    for row in rows:
+        credential_id = str(row["id"])
+        envelope = str(row["encrypted_secret"])
+        if not cipher.needs_migration(envelope):
+            continue
+        pending.append((cipher.migrate(envelope, associated_data=credential_id), credential_id))
+    return len(rows), pending
 
 
 def migrate(database: Path, key_path: Path, *, apply: bool) -> tuple[int, int, Path | None]:
@@ -39,42 +60,33 @@ def migrate(database: Path, key_path: Path, *, apply: bool) -> tuple[int, int, P
         raise FileNotFoundError(f"credential master key does not exist: {key_path}")
 
     cipher = CredentialCipher(key_path)
+    if not apply:
+        connection = sqlite3.connect(database, timeout=30)
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("PRAGMA busy_timeout=30000")
+            inspected, pending = _pending_migrations(connection, cipher)
+            return inspected, len(pending), None
+        finally:
+            connection.close()
+
+    # The apply path is intended for a stopped WebNAS service. Create the
+    # recovery copy before taking a write transaction; sqlite3.Connection.backup
+    # can wait indefinitely when invoked from the same connection after
+    # BEGIN IMMEDIATE.
+    backup = _backup_database(database)
     connection = sqlite3.connect(database, timeout=30)
     connection.row_factory = sqlite3.Row
-    backup: Path | None = None
-    migrated = 0
-    inspected = 0
     try:
         connection.execute("PRAGMA busy_timeout=30000")
         connection.execute("BEGIN IMMEDIATE")
-        rows = connection.execute(
-            "SELECT id,encrypted_secret FROM credentials "
-            "WHERE active=1 AND encrypted_secret IS NOT NULL AND encrypted_secret<>'' "
-            "ORDER BY id"
-        ).fetchall()
-        inspected = len(rows)
-        pending: list[tuple[str, str]] = []
-        for row in rows:
-            credential_id = str(row["id"])
-            envelope = str(row["encrypted_secret"])
-            if not cipher.needs_migration(envelope):
-                continue
-            migrated_envelope = cipher.migrate(envelope, associated_data=credential_id)
-            pending.append((migrated_envelope, credential_id))
-
-        migrated = len(pending)
-        if not apply:
-            connection.rollback()
-            return inspected, migrated, None
-
-        if pending:
-            backup = _backup_database(connection, database)
-            connection.executemany(
-                "UPDATE credentials SET encrypted_secret=?,updated_at=? WHERE id=?",
-                [(envelope, time.time(), credential_id) for envelope, credential_id in pending],
-            )
+        inspected, pending = _pending_migrations(connection, cipher)
+        connection.executemany(
+            "UPDATE credentials SET encrypted_secret=?,updated_at=? WHERE id=?",
+            [(envelope, time.time(), credential_id) for envelope, credential_id in pending],
+        )
         connection.commit()
-        return inspected, migrated, backup
+        return inspected, len(pending), backup
     except Exception:
         connection.rollback()
         raise
@@ -91,7 +103,7 @@ def main() -> int:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="perform the migration; without this flag the command is read-only",
+        help="perform the migration; stop WebNAS first; without this flag the command is read-only",
     )
     args = parser.parse_args()
 
