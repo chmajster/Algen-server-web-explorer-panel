@@ -371,6 +371,8 @@ def _block_device_name(device: str | None) -> str:
 
 
 def top_processes(limit: int | None = DEFAULT_PROCESS_LIMIT) -> list[dict]:
+    if limit is not None and limit <= 0:
+        return []
     if not shutil.which("ps"):
         return []
     try:
@@ -409,7 +411,7 @@ def build_alerts(volumes: list[dict], ram: dict, temperature: float | None, serv
     return alerts
 
 
-def collect_dashboard(username: str, *, is_admin: bool, process_limit: int | None = DEFAULT_PROCESS_LIMIT) -> dict:
+def collect_dashboard(username: str, *, is_admin: bool, process_limit: int | None = 0) -> dict:
     memory = memory_stats()
     sample = realtime_sample()
     allowed = allowed_root_usage(username)
@@ -441,5 +443,5 @@ def collect_dashboard(username: str, *, is_admin: bool, process_limit: int | Non
             if alert["code"] == "disk_usage" else f"{alert['code']}:{alert['target']}"
             for alert in alerts
         ],
-        "processes": top_processes(process_limit) if is_admin else [],
+        "processes": top_processes(process_limit) if is_admin and (process_limit is None or process_limit > 0) else [],
     }
