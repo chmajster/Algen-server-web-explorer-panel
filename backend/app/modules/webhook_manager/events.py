@@ -5,14 +5,10 @@ import threading
 from collections.abc import Callable
 
 EVENT_NAME = re.compile(r"^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$")
+
+# Only events with publishers wired in this change are advertised by default.
+# Additional modules can register real event types dynamically at runtime.
 _DEFAULT_EVENTS = {
-    "host.created",
-    "host.updated",
-    "host.deleted",
-    "host.online",
-    "host.offline",
-    "operation.completed",
-    "operation.failed",
     "fail2ban.ip_banned",
     "fail2ban.ip_unbanned",
     "fail2ban.jail_changed",
@@ -20,7 +16,6 @@ _DEFAULT_EVENTS = {
     "secret.created",
     "secret.updated",
     "secret.deleted",
-    "backup.completed",
 }
 _events = set(_DEFAULT_EVENTS)
 _listeners: list[Callable[[str], None]] = []
