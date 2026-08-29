@@ -10,6 +10,7 @@ def test_redact_text_removes_common_secret_forms():
         [
             "password=correct-horse-battery-staple",
             "Authorization: Bearer abc.def.ghi",
+            "Bearer standalone-token",
             "api_key = key-123456",
             "database_url=postgresql://alice:db-password@example.test/app",
             private_key,
@@ -21,14 +22,16 @@ def test_redact_text_removes_common_secret_forms():
     for secret in (
         "correct-horse-battery-staple",
         "abc.def.ghi",
+        "standalone-token",
         "key-123456",
         "db-password",
         "very-secret-key",
     ):
         assert secret not in safe
     assert "password=[REDACTED]" in safe
+    assert "Authorization: [REDACTED]" in safe
     assert "Bearer [REDACTED]" in safe
-    assert "postgresql://alice:[REDACTED]@example.test/app" in safe
+    assert "database_url=[REDACTED]" in safe
     assert "[REDACTED PRIVATE KEY]" in safe
 
 
