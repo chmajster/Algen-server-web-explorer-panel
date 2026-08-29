@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -22,14 +23,17 @@ def _directory_check(identifier: str, path: Path) -> dict[str, str]:
 def offline_diagnostics(service: OfflineRepositoryService | None = None) -> dict[str, Any]:
     current = service or offline_service()
     placeholders = ",".join("?" for _ in OFFLINE_OPERATIONS)
-    orphaned_payloads = int(
-        (
-            current.store.one(
-                "SELECT COUNT(*) AS count FROM offline_job_payloads p LEFT JOIN repository_sync_jobs j ON j.id=p.job_id WHERE j.id IS NULL"
-            )
-            or {"count": 0}
-        )["count"]
-    )
+    try:
+        orphaned_payloads = int(
+            (
+                current.store.one(
+                    "SELECT COUNT(*) AS count FROM offline_job_payloads p LEFT JOIN repository_sync_jobs j ON j.id=p.job_id WHERE j.id IS NULL"
+                )
+                or {"count": 0}
+            )["count"]
+        )
+    except sqlite3.OperationalError:
+        orphaned_payloads = 0
     missing_bundle_artifacts = 0
     for bundle in current.store.all("SELECT filename,status FROM offline_bundles WHERE status IN ('ready','verified')"):
         path = current.bundle_root / str(bundle["filename"])
