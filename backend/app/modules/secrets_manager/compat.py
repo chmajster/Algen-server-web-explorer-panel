@@ -45,10 +45,10 @@ def install_hosts_credential_compatibility() -> bool:
     def delete_credential(self: Any, credential_id: str) -> bool:
         return service().delete_credential(credential_id)
 
-    host_registry_class.credentials = credentials
-    host_registry_class.save_credential = save_credential
-    host_registry_class.verified_credential = verified_credential
-    host_registry_class.delete_credential = delete_credential
+    setattr(host_registry_class, "credentials", credentials)
+    setattr(host_registry_class, "save_credential", save_credential)
+    setattr(host_registry_class, "verified_credential", verified_credential)
+    setattr(host_registry_class, "delete_credential", delete_credential)
     _installed = True
     return True
 
