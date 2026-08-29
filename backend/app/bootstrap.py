@@ -30,6 +30,7 @@ from .modules.proxmox_manager.scheduler import start_scheduler as start_proxmox_
 from .network_mounts import active_mount_jobs
 from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
+from .performance import performance_timing
 from .platform_api import frontend_cache_policy
 from .power_control import router as power_control_router
 from .resource_sampler import resource_sampler, resource_sampler_loop
@@ -178,6 +179,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.middleware("http")(frontend_cache_policy)
+    app.middleware("http")(performance_timing)
     module_registry.install_routers(app)
     app.include_router(_registry_router(module_registry))
     app.include_router(runtime_events_router)
