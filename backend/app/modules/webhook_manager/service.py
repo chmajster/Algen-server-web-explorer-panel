@@ -498,6 +498,7 @@ class WebhookManagerService:
                 transport = raw_socket
                 if scheme == "https":
                     context = ssl.create_default_context()
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2
                     transport = context.wrap_socket(raw_socket, server_hostname=hostname)
                 transport.settimeout(timeout)
                 transport.sendall(request_bytes)
