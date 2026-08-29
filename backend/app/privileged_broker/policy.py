@@ -218,12 +218,13 @@ def _account(payload: dict[str, Any], runner: Runner) -> CommandResult:
 
 def _ownership(payload: dict[str, Any], runner: Runner) -> CommandResult:
     action = _text(payload, "action", limit=16)
-    roots = [Path("/home"), Path("/mnt/webnas")]
+    fixed_roots = [Path("/home"), Path("/mnt/webnas")]
+    roots = list(fixed_roots)
     try:
         cfg = get_config()
         roots.extend([Path(cfg.paths.data_dir), Path(cfg.paths.log_dir)])
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - an unavailable config must fail closed to fixed roots.
+        roots = fixed_roots
     path = _safe_absolute_path(_text(payload, "path", limit=4096), roots=roots)
     if action == "mkdir":
         mode = payload.get("mode", 0o750)
