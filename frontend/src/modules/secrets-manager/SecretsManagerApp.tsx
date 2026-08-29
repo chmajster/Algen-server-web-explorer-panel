@@ -1,10 +1,16 @@
 import { KeyRound, Plus, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ToastFn } from "../../app/types";
 import { confirmDialog } from "../../components/DialogService";
 import { Modal } from "../../components/Modal";
-import type { ToastFn } from "../../app/types";
-import { secretsManagerClient, type SecretAuditItem, type SecretInput, type SecretItem, type SecretType } from "./api/client";
 import "../infrastructure-managers.css";
+import {
+  secretsManagerClient,
+  type SecretAuditItem,
+  type SecretInput,
+  type SecretItem,
+  type SecretType,
+} from "./api/client";
 
 const TYPES: SecretType[] = [
   "username_password", "ssh_password", "ssh_private_key", "become_password", "api_token",
@@ -29,6 +35,8 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
     search: pl ? "Szukaj" : "Search",
     allTypes: pl ? "Wszystkie typy" : "All types",
     allModules: pl ? "Wszystkie moduły" : "All modules",
+    allEnvironments: pl ? "Wszystkie środowiska" : "All environments",
+    environment: pl ? "Środowisko" : "Environment",
     name: pl ? "Nazwa" : "Name",
     type: pl ? "Typ" : "Type",
     account: pl ? "Konto" : "Account",
@@ -61,6 +69,7 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [moduleFilter, setModuleFilter] = useState("");
+  const [environmentFilter, setEnvironmentFilter] = useState("");
   const [editing, setEditing] = useState<SecretItem | null>(null);
   const [form, setForm] = useState<SecretInput>(emptyInput);
   const [open, setOpen] = useState(false);
@@ -91,14 +100,20 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
 
   useEffect(() => { void refresh(true); }, [refresh]);
 
+  const environments = useMemo(
+    () => [...new Set(items.map((item) => item.environment_id).filter((value): value is string => Boolean(value)))].sort(),
+    [items],
+  );
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return items.filter((item) => {
       if (typeFilter && item.type !== typeFilter) return false;
       if (moduleFilter && !item.shared_with.includes(moduleFilter)) return false;
-      return !needle || [item.name, item.type, item.username, item.description].some((value) => value.toLowerCase().includes(needle));
+      if (environmentFilter && item.environment_id !== environmentFilter) return false;
+      return !needle || [item.name, item.type, item.username, item.description, item.environment_id || ""].some((value) => value.toLowerCase().includes(needle));
     });
-  }, [items, moduleFilter, query, typeFilter]);
+  }, [environmentFilter, items, moduleFilter, query, typeFilter]);
 
   function showEditor(item?: SecretItem) {
     setEditing(item || null);
@@ -127,6 +142,7 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
       setItems((current) => [...current.filter((item) => item.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name)));
       setOpen(false);
       setEditing(null);
+      await refresh();
     } catch (error) {
       toast(error instanceof Error ? error.message : "Secrets Manager error", "error", "admin", "secrets-manager");
     } finally {
@@ -138,7 +154,7 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
     if (!(await confirmDialog(text.deleteConfirm, (key) => key))) return;
     try {
       await secretsManagerClient.remove(item.id);
-      setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+      await refresh();
     } catch (error) {
       toast(error instanceof Error ? error.message : "Secrets Manager error", "error", "admin", "secrets-manager");
     }
@@ -171,24 +187,26 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
         <label className="infra-search"><Search /><input type="search" value={query} placeholder={text.search} onChange={(event) => setQuery(event.target.value)} /></label>
         <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="">{text.allTypes}</option>{TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select>
         <select value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}><option value="">{text.allModules}</option>{targets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select>
+        <select value={environmentFilter} onChange={(event) => setEnvironmentFilter(event.target.value)}><option value="">{text.allEnvironments}</option>{environments.map((environment) => <option key={environment} value={environment}>{environment}</option>)}</select>
         <span className="infra-count">{filtered.length} / {items.length}</span>
       </div>
 
       <div className="infra-table-wrap">
         <table className="infra-table">
-          <thead><tr><th>{text.name}</th><th>{text.type}</th><th>{text.account}</th><th>{text.shared}</th><th>{text.configured}</th><th>{text.usage}</th><th>{text.actions}</th></tr></thead>
+          <thead><tr><th>{text.name}</th><th>{text.type}</th><th>{text.account}</th><th>{text.environment}</th><th>{text.shared}</th><th>{text.configured}</th><th>{text.usage}</th><th>{text.actions}</th></tr></thead>
           <tbody>
             {!loading && filtered.map((item) => <tr key={item.id}>
               <td><strong>{item.name}</strong>{item.description && <small>{item.description}</small>}</td>
               <td><code>{item.type}</code></td>
               <td>{item.username || "—"}</td>
+              <td>{item.environment_id || "—"}</td>
               <td><div className="infra-chips">{item.shared_with.slice(0, 4).map((module) => <span key={module}>{module}</span>)}{item.shared_with.length > 4 && <span>+{item.shared_with.length - 4}</span>}</div></td>
               <td><span className={item.secret_configured ? "status-ok" : "status-muted"}>{item.secret_configured ? text.yes : text.no}</span></td>
-              <td>{item.usage_count}</td>
+              <td><strong>{item.usage_count}</strong>{item.usage.slice(0, 3).map((usage, index) => <small key={`${usage.module}-${usage.resource}-${usage.resource_id || index}`}>{usage.module}: {usage.name || usage.resource}{usage.role ? ` (${usage.role})` : ""}{usage.count > 1 ? ` ×${usage.count}` : ""}</small>)}</td>
               <td><div className="infra-row-actions">{canAudit && <button type="button" onClick={() => void showAudit(item)}>{text.audit}</button>}{canManage && <><button type="button" onClick={() => showEditor(item)}>{text.edit}</button><button className="button-danger" type="button" onClick={() => void remove(item)}>{text.remove}</button></>}</div></td>
             </tr>)}
-            {!loading && filtered.length === 0 && <tr><td colSpan={7} className="infra-empty">{text.empty}</td></tr>}
-            {loading && <tr><td colSpan={7} className="infra-empty">…</td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan={8} className="infra-empty">{text.empty}</td></tr>}
+            {loading && <tr><td colSpan={8} className="infra-empty">…</td></tr>}
           </tbody>
         </table>
       </div>
@@ -198,6 +216,7 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
           <label>{text.name}<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
           <label>{text.type}<select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value as SecretType })}>{TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
           <label>{text.username}<input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
+          <label>{text.environment}<input value={form.environment_id || ""} onChange={(event) => setForm({ ...form, environment_id: event.target.value.trim() || null })} list="secret-environments" /><datalist id="secret-environments">{environments.map((environment) => <option key={environment} value={environment} />)}</datalist></label>
           <label className="infra-form-wide">{text.description}<textarea rows={2} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
           {form.type !== "wol" && <label className="infra-form-wide">{text.secret}<textarea rows={form.type.includes("key") ? 6 : 2} required={!editing} value={form.secret} onChange={(event) => setForm({ ...form, secret: event.target.value })} /><small>{text.secretHint}</small></label>}
           {(form.type === "ssh_private_key" || form.type === "git_private_key") && <label className="infra-form-wide">{text.passphrase}<input type="password" value={form.passphrase} onChange={(event) => setForm({ ...form, passphrase: event.target.value })} /></label>}
