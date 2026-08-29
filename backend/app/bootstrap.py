@@ -148,7 +148,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.include_router(_registry_router(module_registry))
     app.include_router(update_detail_policy_router)
     app.include_router(power_control_router)
-    app.include_router(appliance_backup_router)
+    app.include_router(appliance_backup_router, include_in_schema=False)
     if mount_frontend and FRONTEND_DIST.exists():
         app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
     return app
