@@ -4,6 +4,7 @@ import { lazyView } from "../../app/registry/rendering";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 import type { SettingsCategory } from "../../features/settings/SettingsApp";
 import type { PolicySubject } from "../../features/admin/IdentityApp";
+import { HttpsSettingsControl } from "../../features/settings/HttpsSettingsControl";
 
 const SettingsApp = lazy(() => import("../../features/settings/SettingsApp").then((loaded) => ({ default: loaded.SettingsAppView })));
 const UpdateDetailsPolicyControl = lazy(() => import("../../features/settings/UpdateDetailsPolicyControl").then((loaded) => ({ default: loaded.UpdateDetailsPolicyControl })));
@@ -20,6 +21,7 @@ export default {
     const initialSection = category(context.item.initialPath);
     return lazyView(<>
       <SettingsApp settings={context.profile} initialSection={initialSection} initialPolicySubject={policySubject(context.item.moduleId)} deepLink={context.item.deepLink} t={context.t} toast={context.toast} onSettingsChange={context.onSettingsChange} onOpenApp={context.openApp} onDeepLinkClose={context.clearDeepLink} onSectionChange={context.setInitialPath} />
+      <HttpsSettingsControl active={initialSection === "administration"} locale={context.profile.language} toast={context.toast} />
       <UpdateDetailsPolicyControl active={initialSection === "policies"} t={context.t} toast={context.toast} />
     </>, context.t("status.loading"));
   },
