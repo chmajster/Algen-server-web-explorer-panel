@@ -197,6 +197,15 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ needs.trusted-integration.outputs.ci_run_id }}
 
+      - name: Download tested Python wheelhouse
+        uses: actions/download-artifact@v7
+        with:
+          name: python-wheelhouse
+          path: .trusted-artifacts/python-wheelhouse
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.trusted-integration.outputs.ci_run_id }}
+
       - name: Verify tested frontend artifact provenance
         shell: bash
         run: |
@@ -212,6 +221,23 @@ jobs:
           printf 'Verified frontend artifact from CI run %s with manifest SHA-256 %s\n' \
             "${{ needs.trusted-integration.outputs.ci_run_id }}" "${manifest_sha}" >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Verify tested Python wheelhouse provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="${GITHUB_WORKSPACE}/.trusted-artifacts/python-wheelhouse"
+          test -f "${artifact}/.webnas-source-sha"
+          test -f "${artifact}/.webnas-wheelhouse.sha256"
+          test "$(tr -d '\r\n' < "${artifact}/.webnas-source-sha")" = "${TARGET_SHA}"
+          (
+            cd "${artifact}"
+            sha256sum --check .webnas-wheelhouse.sha256
+          )
+          manifest_sha="$(sha256sum "${artifact}/.webnas-wheelhouse.sha256" | awk '{print $1}')"
+          printf 'PYTHON_WHEELHOUSE_MANIFEST_SHA256=%s\n' "${manifest_sha}" >> "${GITHUB_ENV}"
+          printf 'Verified Python wheelhouse from CI run %s with manifest SHA-256 %s\n' \
+            "${{ needs.trusted-integration.outputs.ci_run_id }}" "${manifest_sha}" >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Deploy candidate through existing blue-green release mechanism
         shell: bash
         env:
@@ -224,11 +250,13 @@ jobs:
             ./scripts/deploy_from_checkout.sh \
             "${GITHUB_WORKSPACE}" \
             "${TARGET_SHA}" \
-            "${GITHUB_WORKSPACE}/.trusted-artifacts/frontend-dist"
+            "${GITHUB_WORKSPACE}/.trusted-artifacts/frontend-dist" \
+            "${GITHUB_WORKSPACE}/.trusted-artifacts/python-wheelhouse"
 
       - name: Record deployed revision
         run: |
-          printf 'Deployed trusted main revision %s using hosted CI run %s and frontend manifest %s\n' \
+          printf 'Deployed trusted main revision %s using hosted CI run %s, frontend manifest %s and Python wheelhouse manifest %s\n' \
             "${TARGET_SHA}" \
             "${{ needs.trusted-integration.outputs.ci_run_id }}" \
-            "${FRONTEND_ARTIFACT_MANIFEST_SHA256}" >> "${GITHUB_STEP_SUMMARY}"
+            "${FRONTEND_ARTIFACT_MANIFEST_SHA256}" \
+            "${PYTHON_WHEELHOUSE_MANIFEST_SHA256}" >> "${GITHUB_STEP_SUMMARY}"

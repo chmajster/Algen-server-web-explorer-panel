@@ -4,7 +4,7 @@
 
 Production promotion is intentionally separate from pull-request execution:
 
-`PR -> hosted CI/CodeQL/dependency review -> merge main -> trusted integration -> download exact hosted-CI frontend artifact -> GitHub Environment production approval -> blue/green deploy -> post-deploy smoke -> rollback on failure`.
+`PR -> hosted CI/CodeQL/dependency review -> merge main -> trusted integration -> download exact hosted-CI frontend + Python wheelhouse artifacts -> GitHub Environment production approval -> blue/green deploy -> post-deploy smoke -> rollback on failure`.
 
 Pull requests never execute the production deployment job.
 
@@ -13,6 +13,8 @@ Pull requests never execute the production deployment job.
 `.github/workflows/ci.yml` validates version consistency, backend quality, backend unit/integration/security tests, frontend lint/type/test/build/OpenAPI/audit checks, Playwright E2E and shell syntax. CodeQL is maintained in a dedicated workflow.
 
 The frontend job verifies `frontend/dist`, writes its SHA-256 asset manifest and stamps `.webnas-source-sha` with the exact `GITHUB_SHA` before uploading the immutable `frontend-dist` Actions artifact. Hidden integrity/provenance files are included in the artifact.
+
+Backend quality also builds `python-wheelhouse` for the exact CI revision. The wheelhouse contains resolved runtime wheels, `.webnas-source-sha` and `.webnas-wheelhouse.sha256`. CI proves the artifact can install `backend/requirements.txt` into a clean virtualenv using `pip --no-index --find-links`, so deployment does not depend on package-index availability or newly resolved dependency bytes. Because this stage reads the canonical runtime requirements on every run, runtime dependency additions and upgrades are included in the same provenance/checksum gate before promotion.
 
 Release tags run `.github/workflows/release.yml`, rebuild and test the tagged main revision and publish backend/frontend artifacts, checksums and SBOM files.
 
@@ -24,15 +26,15 @@ The production job uses a runner with `self-hosted`, `linux` and `deploy` labels
 
 The workflow checks out the exact target revision, disables persisted Git credentials and verifies that the revision is reachable from `main` before deployment. Automatic promotion through `workflow_run` can proceed only after the `Automated tests` workflow succeeds. A manual `workflow_dispatch` with `deploy=true` resolves the successful hosted `Automated tests` run for the exact `TARGET_SHA` and refuses deployment if no successful push-to-`main` run exists. Manual trusted checks with `deploy=false` do not require this deployment gate.
 
-The resolved CI run id is passed to the production job. Production downloads `frontend-dist` from that exact run using read-only Actions permission, verifies `.webnas-source-sha == TARGET_SHA`, validates the existing `.webnas-assets.json` manifest and records its SHA-256 in the deployment summary. A frontend artifact from another commit cannot be promoted.
+The resolved CI run id is passed to the production job. Production downloads both `frontend-dist` and `python-wheelhouse` from that exact run using read-only Actions permission. It requires `.webnas-source-sha == TARGET_SHA` for both artifacts, validates the frontend asset manifest, runs `sha256sum --check` over the wheelhouse and records both manifest digests in the deployment summary. An artifact produced for another commit cannot be promoted.
 
 ## Existing blue/green mechanism
 
-`scripts/deploy_from_checkout.sh` stages the approved checkout as `/opt/webnas/releases/github-<sha>`, requires the tested frontend artifact for the same SHA, copies it into the release without running `npm ci` or `npm run build`, creates the isolated Python virtualenv and then delegates activation to the existing `scripts/webnas_release.py` mechanism.
+`scripts/deploy_from_checkout.sh` stages the approved checkout as `/opt/webnas/releases/github-<sha>`, requires tested frontend and Python wheelhouse artifacts for the same SHA, copies the frontend into the release without running `npm ci` or `npm run build`, creates the isolated Python virtualenv and installs runtime dependencies exclusively from the verified wheelhouse with `pip --no-index --find-links`. It then delegates activation to the existing `scripts/webnas_release.py` mechanism.
 
-The deployment script revalidates the frontend integrity manifest before activation. It records the hosted artifact manifest digest in `.webnas-frontend-manifest-sha256`. During handover WebNAS may add immutable hashed assets from the previous release so already-open browser sessions can finish lazy chunk requests; the active `index.html` and every file tracked by the hosted-CI manifest remain byte-for-byte verified.
+The deployment script revalidates the frontend integrity manifest and Python wheel checksums before activation. It records the hosted artifact manifest digests in `.webnas-frontend-manifest-sha256` and `.webnas-python-wheelhouse-manifest-sha256`. During handover WebNAS may add immutable hashed assets from the previous release so already-open browser sessions can finish lazy chunk requests; the active `index.html` and every file tracked by the hosted-CI manifest remain byte-for-byte verified.
 
-Python runtime dependencies are still installed into the isolated release virtualenv on the deployment host. Moving those dependencies to a tested wheelhouse/deployment bundle is a separate supply-chain hardening step; the frontend build is no longer recreated on production.
+The production runner no longer executes an npm build or resolves/downloads Python runtime dependencies from PyPI. The only release-local construction is the virtualenv itself; application source is the exact tested Git revision and installed dependency wheels are the exact hosted-CI artifact bytes.
 
 `webnas_release.py` owns:
 
@@ -75,4 +77,4 @@ The workflow exits failed after a rollback so GitHub records that the attempted 
 
 ## Concurrency and secrets
 
-Production deployment uses a single concurrency group with cancellation disabled. Deployment has an explicit timeout. No secret value is echoed; the workflow uses environment variables only for non-secret paths/user configuration, while repository credentials are not persisted into the checkout. The trusted workflow has read-only `actions` permission to resolve and download the successful hosted-CI artifact for the exact approved revision.
+Production deployment uses a single concurrency group with cancellation disabled. Deployment has an explicit timeout. No secret value is echoed; the workflow uses environment variables only for non-secret paths/user configuration, while repository credentials are not persisted into the checkout. The trusted workflow has read-only `actions` permission to resolve and download the successful hosted-CI artifacts for the exact approved revision.

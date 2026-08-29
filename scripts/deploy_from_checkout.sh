@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SOURCE_DIR="${1:?source checkout path is required}"
 SOURCE_SHA="${2:?source commit SHA is required}"
 FRONTEND_DIST="${3:?tested frontend artifact directory is required}"
+PYTHON_WHEELHOUSE="${4:?tested Python wheelhouse artifact directory is required}"
 WEBNAS_ROOT="${WEBNAS_ROOT:-/opt/webnas}"
 WEBNAS_CONFIG="${WEBNAS_CONFIG:-/etc/webnas/config.yaml}"
 SERVICE_USER="${WEBNAS_SERVICE_USER:-webnas}"
@@ -21,6 +22,19 @@ ARTIFACT_SOURCE_SHA="$(tr -d '\r\n' < "${FRONTEND_DIST}/.webnas-source-sha")"
   echo "Refusing frontend artifact from ${ARTIFACT_SOURCE_SHA:-unknown}; expected ${SOURCE_SHA}" >&2
   exit 1
 }
+
+[[ -d "${PYTHON_WHEELHOUSE}" ]] || { echo "Tested Python wheelhouse artifact is missing" >&2; exit 1; }
+[[ -f "${PYTHON_WHEELHOUSE}/.webnas-source-sha" ]] || { echo "Python wheelhouse is missing source provenance" >&2; exit 1; }
+[[ -f "${PYTHON_WHEELHOUSE}/.webnas-wheelhouse.sha256" ]] || { echo "Python wheelhouse is missing its checksum manifest" >&2; exit 1; }
+WHEELHOUSE_SOURCE_SHA="$(tr -d '\r\n' < "${PYTHON_WHEELHOUSE}/.webnas-source-sha")"
+[[ "${WHEELHOUSE_SOURCE_SHA}" == "${SOURCE_SHA}" ]] || {
+  echo "Refusing Python wheelhouse from ${WHEELHOUSE_SOURCE_SHA:-unknown}; expected ${SOURCE_SHA}" >&2
+  exit 1
+}
+(
+  cd "${PYTHON_WHEELHOUSE}"
+  sha256sum --check .webnas-wheelhouse.sha256
+)
 
 PUBLIC_PORT="$(awk '
   /^server:[[:space:]]*$/ { section=1; next }
@@ -48,9 +62,15 @@ install -d -m 0755 "${RELEASE_DIR}/frontend/dist"
 rsync -a --delete "${FRONTEND_DIST}/" "${RELEASE_DIR}/frontend/dist/"
 FRONTEND_MANIFEST_SHA256="$(sha256sum "${RELEASE_DIR}/frontend/dist/.webnas-assets.json" | awk '{print $1}')"
 printf '%s\n' "${FRONTEND_MANIFEST_SHA256}" > "${RELEASE_DIR}/.webnas-frontend-manifest-sha256"
+WHEELHOUSE_MANIFEST_SHA256="$(sha256sum "${PYTHON_WHEELHOUSE}/.webnas-wheelhouse.sha256" | awk '{print $1}')"
+printf '%s\n' "${WHEELHOUSE_MANIFEST_SHA256}" > "${RELEASE_DIR}/.webnas-python-wheelhouse-manifest-sha256"
 
 python3.14 -m venv "${RELEASE_DIR}/backend/.venv"
-"${RELEASE_DIR}/backend/.venv/bin/pip" install --disable-pip-version-check -r "${RELEASE_DIR}/backend/requirements.txt"
+"${RELEASE_DIR}/backend/.venv/bin/pip" install \
+  --disable-pip-version-check \
+  --no-index \
+  --find-links "${PYTHON_WHEELHOUSE}" \
+  -r "${RELEASE_DIR}/backend/requirements.txt"
 "${RELEASE_DIR}/backend/.venv/bin/python" "${RELEASE_DIR}/scripts/verify_frontend_build.py" "${RELEASE_DIR}/frontend/dist"
 
 if [[ -d "${WEBNAS_ROOT}/current/frontend/dist/assets" ]]; then
@@ -90,4 +110,4 @@ if ! smoke; then
   exit 1
 fi
 
-echo "Production deployment healthy at ${SOURCE_SHA}; tested frontend manifest ${FRONTEND_MANIFEST_SHA256}"
+echo "Production deployment healthy at ${SOURCE_SHA}; tested frontend manifest ${FRONTEND_MANIFEST_SHA256}; tested Python wheelhouse manifest ${WHEELHOUSE_MANIFEST_SHA256}"

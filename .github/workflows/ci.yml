@@ -68,6 +68,36 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 7
+      - name: Build deployment wheelhouse
+        run: |
+          set -euo pipefail
+          rm -rf deployment-wheelhouse
+          mkdir -p deployment-wheelhouse
+          python -m pip wheel --wheel-dir deployment-wheelhouse -r backend/requirements.txt
+          printf '%s\n' "${GITHUB_SHA}" > deployment-wheelhouse/.webnas-source-sha
+          (
+            cd deployment-wheelhouse
+            find . -maxdepth 1 -type f -name '*.whl' -print0 \
+              | sort -z \
+              | xargs -0 sha256sum
+          ) > deployment-wheelhouse/.webnas-wheelhouse.sha256
+      - name: Verify wheelhouse installs without package index access
+        run: |
+          set -euo pipefail
+          python -m venv .wheelhouse-verify
+          .wheelhouse-verify/bin/pip install \
+            --disable-pip-version-check \
+            --no-index \
+            --find-links deployment-wheelhouse \
+            -r backend/requirements.txt
+      - name: Upload deployment wheelhouse
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-wheelhouse
+          path: deployment-wheelhouse/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
 
   backend-tests:
     name: Backend unit tests
