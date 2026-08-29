@@ -1,0 +1,13 @@
+[Unit]
+Description=WebNAS privileged operation broker socket
+
+[Socket]
+ListenStream=/run/webnas/privileged.sock
+SocketUser=root
+SocketGroup=webnas
+SocketMode=0660
+DirectoryMode=0750
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target
