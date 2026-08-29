@@ -127,6 +127,8 @@ def list_nodes(manager: ProxmoxManagerService, connection_id: str = "") -> dict[
             status, status_error = _safe_get(client, f"nodes/{encoded}/status")
             status = status if isinstance(status, dict) else {}
             rootfs = status.get("rootfs") if isinstance(status.get("rootfs"), dict) else {}
+            cpuinfo = status.get("cpuinfo") if isinstance(status.get("cpuinfo"), dict) else {}
+            memory = status.get("memory") if isinstance(status.get("memory"), dict) else {}
             values.append(
                 {
                     "connection_id": connection["id"],
@@ -135,9 +137,9 @@ def list_nodes(manager: ProxmoxManagerService, connection_id: str = "") -> dict[
                     "status": str(raw.get("status") or status.get("status") or "unknown"),
                     "uptime": int(status.get("uptime") or raw.get("uptime") or 0),
                     "cpu": float(status.get("cpu") or raw.get("cpu") or 0),
-                    "maxcpu": int(status.get("cpuinfo", {}).get("cpus") or raw.get("maxcpu") or 0) if isinstance(status.get("cpuinfo"), dict) else int(raw.get("maxcpu") or 0),
-                    "mem": int(status.get("memory", {}).get("used") or raw.get("mem") or 0) if isinstance(status.get("memory"), dict) else int(raw.get("mem") or 0),
-                    "maxmem": int(status.get("memory", {}).get("total") or raw.get("maxmem") or 0) if isinstance(status.get("memory"), dict) else int(raw.get("maxmem") or 0),
+                    "maxcpu": int(cpuinfo.get("cpus") or raw.get("maxcpu") or 0),
+                    "mem": int(memory.get("used") or raw.get("mem") or 0),
+                    "maxmem": int(memory.get("total") or raw.get("maxmem") or 0),
                     "storage_used": int(rootfs.get("used") or raw.get("disk") or 0),
                     "storage_total": int(rootfs.get("total") or raw.get("maxdisk") or 0),
                     "kernel": str(status.get("kversion") or ""),
