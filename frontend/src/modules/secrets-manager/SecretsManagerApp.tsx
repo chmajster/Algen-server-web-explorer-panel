@@ -72,7 +72,8 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
   const canAudit = permissions.includes("secrets-manager.audit.view");
 
   const refresh = useCallback(async (initial = false) => {
-    initial ? setLoading(true) : setRefreshing(true);
+    if (initial) setLoading(true);
+    else setRefreshing(true);
     try {
       const [secrets, shareTargets, status] = await Promise.all([
         secretsManagerClient.secrets(), secretsManagerClient.shareTargets(), secretsManagerClient.status(),
