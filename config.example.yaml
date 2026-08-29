@@ -1,17 +1,19 @@
 server:
   host: "0.0.0.0"
   port: 5000
-  use_https: false
-  tls_cert: null
-  tls_key: null
+  # Standard installations terminate TLS at the stable nginx gateway. The
+  # installer creates the private self-signed certificate below on first install
+  # unless the administrator replaces these paths with an existing certificate.
+  use_https: true
+  tls_cert: "/etc/webnas/tls/webnas.crt"
+  tls_key: "/etc/webnas/tls/webnas.key"
 
 auth:
   provider: "pam"
   pam_service: "webnas"
   session_cookie_name: "webnas_session"
   # Browser-only sessions expire after this server-side limit. Remembered
-  # sessions use a persistent cookie and can be revoked on logout. Enable
-  # security.cookie_secure whenever the panel is served over HTTPS.
+  # sessions use a persistent cookie and can be revoked on logout.
   session_lifetime_hours: 12
   remember_me_lifetime_days: 30
 
@@ -32,7 +34,11 @@ security:
   allow_chown: false
   system_uid_threshold: 1000
   session_secret: "change-this-secret-during-install"
-  cookie_secure: false
+  cookie_secure: true
+  # Set this to true only when intentionally exposing the PAM-authenticated
+  # panel over plaintext HTTP in an isolated lab. Existing pre-policy configs
+  # without this key remain upgrade-compatible but are treated as legacy.
+  allow_insecure_http: false
 
 file_tasks:
   max_parallel: 2
