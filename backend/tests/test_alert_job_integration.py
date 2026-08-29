@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import time
 from pathlib import Path
 
@@ -11,6 +12,9 @@ from app.jobs.models import JobStatus
 from app.jobs.repository import JobRepository
 from app.jobs.runner import JobRunner
 from app.jobs.service import JobContext, JobService
+
+
+alert_service_module = importlib.import_module("app.alerts.service")
 
 
 def _wait(service: JobService, job_id: str) -> JobStatus:
@@ -53,7 +57,7 @@ def test_real_job_failure_deduplicates_notifies_and_success_resolves(
     )
     monkeypatch.setattr("app.alerts.integrations.service", lambda: alerts)
     delivered: list[dict] = []
-    monkeypatch.setattr("app.alerts.service.deliver", lambda _sink, alert: delivered.append(alert))
+    monkeypatch.setattr(alert_service_module, "deliver", lambda _sink, alert: delivered.append(alert))
 
     runner = JobRunner(max_workers=1)
     jobs = JobService(JobRepository(tmp_path / "jobs.sqlite3"), runner)
