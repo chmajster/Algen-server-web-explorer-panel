@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .appliance_backup import router as appliance_backup_router
 from .audit import configure_logging
 from .config import AppConfig, get_config
 from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
@@ -147,6 +148,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.include_router(_registry_router(module_registry))
     app.include_router(update_detail_policy_router)
     app.include_router(power_control_router)
+    app.include_router(appliance_backup_router, include_in_schema=False)
     if mount_frontend and FRONTEND_DIST.exists():
         app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
     return app
