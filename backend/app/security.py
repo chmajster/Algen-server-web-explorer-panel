@@ -96,6 +96,12 @@ class SessionStore:
         while len(self._cache) > self._cache_max_entries:
             self._cache.popitem(last=False)
 
+    def invalidate(self, token: str) -> None:
+        """Drop one cached token after an out-of-band change to its persisted session."""
+        token_hash = self._hash(token)
+        with self._lock:
+            self._cache.pop(token_hash, None)
+
     def create(self, token: str, username: str, csrf_token: str, *, persistent: bool, expires_at: float) -> None:
         now = time.time()
         token_hash = self._hash(token)
@@ -177,7 +183,7 @@ class LoginRateLimiter:
         now = time.time()
         with self._lock:
             window = self._window(key, now)
-            if len(window) >= cfg.security.rate_limit_login_per_minute:
+            if len(window) >= cfg.security.rate_limit_login_per_minuteute:
                 raise HTTPException(HTTPStatus.TOO_MANY_REQUESTS, "Too many login attempts")
 
     def record_failure(self, key: str) -> None:
