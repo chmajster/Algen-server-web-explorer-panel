@@ -155,7 +155,10 @@ def test_alert_thresholds():
 def test_top_processes_is_bounded_by_default_and_supports_explicit_full_list(monkeypatch):
     output = "\n".join(f"{pid} user proc{pid} 1.0 2.0 4 S" for pid in range(1, 61))
     monkeypatch.setattr(resource_dashboard.shutil, "which", lambda command: "/usr/bin/ps" if command == "ps" else None)
-    run = lambda *args, **kwargs: SimpleNamespace(stdout=output)
+
+    def run(*args, **kwargs):
+        return SimpleNamespace(stdout=output)
+
     monkeypatch.setattr(resource_dashboard.subprocess, "run", run)
 
     assert resource_dashboard.top_processes(0) == []
