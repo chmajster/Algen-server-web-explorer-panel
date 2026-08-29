@@ -14,7 +14,7 @@ Pull requests never execute the production deployment job.
 
 The frontend job verifies `frontend/dist`, writes its SHA-256 asset manifest and stamps `.webnas-source-sha` with the exact `GITHUB_SHA` before uploading the immutable `frontend-dist` Actions artifact. Hidden integrity/provenance files are included in the artifact.
 
-Backend quality also builds `python-wheelhouse` for the exact CI revision. The wheelhouse contains resolved runtime wheels, `.webnas-source-sha` and `.webnas-wheelhouse.sha256`. CI proves the artifact can install `backend/requirements.txt` into a clean virtualenv using `pip --no-index --find-links`, so deployment does not depend on package-index availability or newly resolved dependency bytes.
+Backend quality also builds `python-wheelhouse` for the exact CI revision. The wheelhouse contains resolved runtime wheels, `.webnas-source-sha` and `.webnas-wheelhouse.sha256`. CI proves the artifact can install `backend/requirements.txt` into a clean virtualenv using `pip --no-index --find-links`, so deployment does not depend on package-index availability or newly resolved dependency bytes. Because this stage reads the canonical runtime requirements on every run, runtime dependency additions and upgrades are included in the same provenance/checksum gate before promotion.
 
 Release tags run `.github/workflows/release.yml`, rebuild and test the tagged main revision and publish backend/frontend artifacts, checksums and SBOM files.
 
