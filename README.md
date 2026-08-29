@@ -102,6 +102,7 @@ Containerized applications can also be deployed through **Containers Manager**, 
 - Python **3.14**
 - Node.js + npm
 - `rsync`
+- `openssl` for the first-install TLS certificate when no certificate is supplied
 - supported package manager: `apt`, `dnf` or `yum`
 
 WebNAS is designed for systems including Debian, Ubuntu, Raspberry Pi OS, Fedora and RHEL-based distributions.
@@ -112,13 +113,17 @@ WebNAS is designed for systems including Debian, Ubuntu, Raspberry Pi OS, Fedora
 curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
 ```
 
+New standard installations publish WebNAS through the stable nginx gateway with HTTPS enabled. When no certificate exists at the configured paths, the release helper creates a private self-signed certificate before the gateway is activated.
+
 After installation, WebNAS is available by default at:
 
 ```text
-http://SERVER_IP:5000
+https://SERVER_IP:5000
 ```
 
-Sign in using a local Linux account.
+A browser will warn about the generated self-signed certificate until it is trusted or replaced with a certificate issued by your local/public CA. Sign in using a local Linux account only after verifying the expected certificate/network endpoint.
+
+Plaintext HTTP on a non-loopback interface requires the explicit `security.allow_insecure_http: true` opt-in and is intended only for isolated lab environments. Portable mode remains HTTP but binds to `127.0.0.1` by default.
 
 ### Custom Port
 
@@ -134,7 +139,7 @@ Run the installer again:
 curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
 ```
 
-The installer detects an existing WebNAS installation and performs the supported update procedure.
+The installer detects an existing WebNAS installation and performs the supported update procedure. Existing pre-policy HTTP configurations are preserved during normal updates for compatibility and emit a security warning instead of being silently rewritten; regenerate/update the configuration when you are ready to move that installation to TLS.
 
 Full installation documentation: [INSTALL.md](INSTALL.md)
 
@@ -177,10 +182,12 @@ WebNAS uses local Linux accounts as the primary identity source.
 The project includes:
 
 - PAM authentication,
+- HTTPS-first standard installation with an explicit plaintext-HTTP opt-in,
+- HttpOnly/SameSite session cookies and Secure cookies on the standard TLS configuration,
 - granular RBAC permissions,
 - CSRF protection for state-changing operations,
 - path and operation validation,
-- secret redaction in logs,
+- centralized bounded secret redaction for logs, exceptions and deployment errors,
 - user and administrator activity auditing,
 - controlled high-risk operations,
 - automatic rollback for selected network changes,
@@ -258,7 +265,3 @@ cd Algen-server-web-explorer-panel
 ---
 
 <div align="center">
-
-**WebNAS — one interface for managing your Linux server.**
-
-</div>
