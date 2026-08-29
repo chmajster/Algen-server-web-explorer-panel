@@ -1,7 +1,12 @@
 import { AlertTriangle, Database, HardDrive, RefreshCw, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { storageManagerClient, type StorageDevice, type StorageSnapshot } from "../../modules/storage-manager/api/client";
+import {
+  storageManagerClient,
+  type StorageDetails,
+  type StorageDevice,
+  type StorageSnapshot,
+} from "../../modules/storage-manager/api/client";
 import { StorageAdvancedPanel } from "./StorageAdvancedPanel";
 import "./storage-manager.css";
 
@@ -10,7 +15,7 @@ type Props = {
   locale?: string;
 };
 
-type Tab = "overview" | "devices" | "filesystems" | "health" | "advanced";
+type Tab = "overview" | "devices" | "filesystems" | "health" | "lvm" | "pools" | "mounts" | "io" | "advanced";
 
 const bytes = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return "0 B";
@@ -27,27 +32,38 @@ const flattenDevices = (devices: StorageDevice[], depth = 0): Array<{ item: Stor
 export function StorageManagerApp({ locale = "en" }: Props) {
   const polish = locale.toLowerCase().startsWith("pl");
   const [snapshot, setSnapshot] = useState<StorageSnapshot | null>(null);
+  const [details, setDetails] = useState<StorageDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [detailsError, setDetailsError] = useState("");
   const [tab, setTab] = useState<Tab>("overview");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    try {
-      setSnapshot(await storageManagerClient.summary());
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoading(false);
+    setDetailsError("");
+    const [summaryResult, detailsResult] = await Promise.allSettled([
+      storageManagerClient.summary(),
+      storageManagerClient.details(),
+    ]);
+    if (summaryResult.status === "fulfilled") {
+      setSnapshot(summaryResult.value);
+    } else {
+      setError(summaryResult.reason instanceof Error ? summaryResult.reason.message : String(summaryResult.reason));
     }
+    if (detailsResult.status === "fulfilled") {
+      setDetails(detailsResult.value);
+    } else {
+      setDetailsError(detailsResult.reason instanceof Error ? detailsResult.reason.message : String(detailsResult.reason));
+    }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const devices = useMemo(() => flattenDevices(snapshot?.devices ?? []), [snapshot?.devices]);
+  const devices = useMemo(() => flattenDevices(details?.devices ?? snapshot?.devices ?? []), [details?.devices, snapshot?.devices]);
   const physicalDisks = devices.filter(({ item }) => item.type === "disk").length;
   const protectedCount = devices.filter(({ item }) => item.protected).length;
   const unhealthy = snapshot?.issues.length ?? 0;
@@ -57,6 +73,10 @@ export function StorageManagerApp({ locale = "en" }: Props) {
     { id: "devices", label: polish ? "Urządzenia" : "Devices" },
     { id: "filesystems", label: polish ? "Systemy plików" : "Filesystems" },
     { id: "health", label: polish ? "Stan" : "Health" },
+    { id: "lvm", label: "LVM" },
+    { id: "pools", label: "RAID / Pools" },
+    { id: "mounts", label: "Mounts" },
+    { id: "io", label: "I/O" },
     { id: "advanced", label: polish ? "Zaawansowane" : "Advanced" },
   ];
 
@@ -68,8 +88,8 @@ export function StorageManagerApp({ locale = "en" }: Props) {
           <h1><HardDrive size={23} /> Storage Manager</h1>
           <p>
             {polish
-              ? "Bezpieczny, tylko do odczytu, widok dysków, systemów plików, RAID, LVM, swap i kondycji nośników."
-              : "Safe read-only inventory of disks, filesystems, RAID, LVM, swap and device health."}
+              ? "Kompletne centrum diagnostyki lokalnego storage Linux: dyski, filesystemy, SMART, LVM, RAID, ZFS, Btrfs, mounty i I/O."
+              : "Complete local Linux storage diagnostics: disks, filesystems, SMART, LVM, RAID, ZFS, Btrfs, mounts and I/O."}
           </p>
         </div>
         <div className="storage-manager__actions">
@@ -97,10 +117,19 @@ export function StorageManagerApp({ locale = "en" }: Props) {
         <div className="storage-manager__content">
           <section className="storage-manager__metrics">
             <article><span>{polish ? "Stan" : "State"}</span><strong className={`state-${snapshot.state}`}>{snapshot.state}</strong></article>
-            <article><span>{polish ? "Dyski fizyczne" : "Physical disks"}</span><strong>{physicalDisks}</strong></article>
+            <article><span>{polish ? "Dyski fizyczne" : "Physical disks"}</span><strong>{details?.dashboard.physical_disks ?? physicalDisks}</strong><small>{details ? bytes(details.dashboard.total_physical_capacity) : ""}</small></article>
             <article><span>{polish ? "Systemy plików" : "Filesystems"}</span><strong>{snapshot.filesystems.length}</strong></article>
             <article><span>{polish ? "Problemy" : "Issues"}</span><strong>{unhealthy}</strong></article>
           </section>
+
+          {details ? (
+            <section className="storage-manager__metrics storage-manager__metrics--extended">
+              <article><span>LVM PV / VG / LV</span><strong>{details.dashboard.lvm_pv} / {details.dashboard.lvm_vg} / {details.dashboard.lvm_lv}</strong></article>
+              <article><span>RAID / ZFS / Btrfs</span><strong>{details.dashboard.raid_arrays} / {details.dashboard.zfs_pools} / {details.dashboard.btrfs_filesystems}</strong></article>
+              <article><span>{polish ? "Dyski z ostrzeżeniami" : "Unhealthy devices"}</span><strong>{details.dashboard.unhealthy_devices}</strong></article>
+              <article><span>{polish ? "Mało wolnego miejsca" : "Low-space filesystems"}</span><strong>{details.dashboard.low_space_filesystems}</strong></article>
+            </section>
+          ) : detailsError ? <div className="storage-manager__error"><AlertTriangle size={18} /> {detailsError}</div> : null}
 
           <section className="storage-manager__panel">
             <div className="storage-manager__panel-title">
@@ -131,8 +160,8 @@ export function StorageManagerApp({ locale = "en" }: Props) {
         <section className="storage-manager__panel storage-manager__table-panel">
           <div className="storage-manager__panel-title"><div><h2>{polish ? "Topologia blokowa" : "Block topology"}</h2><p>{polish ? `${protectedCount} elementów oznaczono jako chronione.` : `${protectedCount} entries are marked protected.`}</p></div></div>
           <div className="storage-manager__table-wrap">
-            <table><thead><tr><th>{polish ? "Urządzenie" : "Device"}</th><th>{polish ? "Typ" : "Type"}</th><th>{polish ? "Model" : "Model"}</th><th>{polish ? "Rozmiar" : "Size"}</th><th>{polish ? "FS / montowanie" : "FS / mount"}</th><th>{polish ? "Ochrona" : "Protection"}</th></tr></thead>
-              <tbody>{devices.map(({ item, depth }) => <tr key={item.path}><td><div className="storage-manager__device" style={{ paddingLeft: `${depth * 18}px` }}><HardDrive size={15} /><code>{item.path}</code></div></td><td>{item.type || "—"}</td><td>{item.model || item.label || "—"}</td><td>{bytes(item.size)}</td><td>{item.filesystem || "—"}<small>{item.mountpoints.join(", ") || ""}</small></td><td>{item.protected ? <span className="storage-manager__badge protected"><ShieldCheck size={13} /> {polish ? "chronione" : "protected"}</span> : <span className="storage-manager__badge">{polish ? "dane" : "data"}</span>}</td></tr>)}</tbody>
+            <table><thead><tr><th>{polish ? "Urządzenie" : "Device"}</th><th>{polish ? "Typ / nośnik" : "Type / media"}</th><th>{polish ? "Model" : "Model"}</th><th>{polish ? "Rozmiar" : "Size"}</th><th>{polish ? "FS / montowanie" : "FS / mount"}</th><th>UUID / PARTUUID</th><th>{polish ? "Flagi" : "Flags"}</th></tr></thead>
+              <tbody>{devices.map(({ item, depth }) => <tr key={item.path}><td><div className="storage-manager__device" style={{ paddingLeft: `${depth * 18}px` }}><HardDrive size={15} /><code>{item.path}</code></div></td><td>{item.type || "—"}<small>{item.media_type && item.media_type !== "unknown" ? item.media_type : item.transport || ""}</small></td><td>{item.model || item.label || "—"}<small>{item.serial}</small></td><td>{bytes(item.size)}</td><td>{item.filesystem || "—"}<small>{item.mountpoints.join(", ") || ""}</small></td><td><code>{item.uuid || "—"}</code><small>{item.partuuid || ""}</small></td><td>{item.protected ? <span className="storage-manager__badge protected"><ShieldCheck size={13} /> {polish ? "chronione" : "protected"}</span> : null}{item.encrypted ? <span className="storage-manager__badge">LUKS</span> : null}{item.device_mapper ? <span className="storage-manager__badge">dm</span> : null}{item.removable || item.hotplug ? <span className="storage-manager__badge">hotplug</span> : null}</td></tr>)}</tbody>
             </table>
           </div>
         </section>
@@ -153,9 +182,9 @@ export function StorageManagerApp({ locale = "en" }: Props) {
       {snapshot && tab === "health" ? (
         <div className="storage-manager__content">
           <section className="storage-manager__panel storage-manager__table-panel">
-            <div className="storage-manager__panel-title"><div><h2>SMART / NVMe</h2><p>{polish ? "Kondycja fizycznych nośników." : "Physical device health."}</p></div></div>
-            <div className="storage-manager__table-wrap"><table><thead><tr><th>{polish ? "Dysk" : "Disk"}</th><th>{polish ? "Dostawca" : "Provider"}</th><th>{polish ? "Stan" : "State"}</th><th>{polish ? "Temperatura" : "Temperature"}</th><th>{polish ? "Zużycie" : "Wear"}</th><th>{polish ? "Błędy medium" : "Media errors"}</th></tr></thead><tbody>
-              {snapshot.device_health.map((item) => <tr key={item.device}><td><code>{item.device}</code><small>{item.model || item.serial || ""}</small></td><td>{item.provider}</td><td><span className={`storage-manager__badge state-${item.state}`}>{item.state}</span></td><td>{item.temperature_c == null ? "—" : `${item.temperature_c} °C`}</td><td>{item.percentage_used == null ? "—" : `${item.percentage_used}%`}</td><td>{item.media_errors ?? "—"}</td></tr>)}
+            <div className="storage-manager__panel-title"><div><h2>SMART / NVMe</h2><p>{polish ? "Kondycja fizycznych nośników i symptomy pogarszającego się stanu." : "Physical device health and degradation indicators."}</p></div></div>
+            <div className="storage-manager__table-wrap"><table><thead><tr><th>{polish ? "Dysk" : "Disk"}</th><th>{polish ? "Stan" : "State"}</th><th>{polish ? "Temperatura" : "Temperature"}</th><th>{polish ? "Zużycie" : "Wear"}</th><th>Realloc / Pending / UNC</th><th>{polish ? "Błędy medium" : "Media errors"}</th><th>{polish ? "Niebezpieczne wyłączenia" : "Unsafe shutdowns"}</th><th>{polish ? "Ostrzeżenia" : "Warnings"}</th></tr></thead><tbody>
+              {(details?.device_health ?? snapshot.device_health).map((item) => <tr key={item.device}><td><code>{item.device}</code><small>{item.model || item.serial || item.provider}</small></td><td><span className={`storage-manager__badge ${item.state === "warning" ? "state-degraded" : `state-${item.state}`}`}>{item.state}</span></td><td>{item.temperature_c == null ? "—" : `${item.temperature_c} °C`}</td><td>{item.percentage_used == null ? "—" : `${item.percentage_used}%`}</td><td>{item.reallocated_sectors ?? "—"} / {item.pending_sectors ?? "—"} / {item.uncorrectable_sectors ?? "—"}</td><td>{item.media_errors ?? "—"}</td><td>{item.unsafe_shutdowns ?? "—"}</td><td><small>{item.warnings?.join(", ") || "—"}</small></td></tr>)}
             </tbody></table></div>
           </section>
 
@@ -167,7 +196,11 @@ export function StorageManagerApp({ locale = "en" }: Props) {
         </div>
       ) : null}
 
-      {tab === "advanced" ? <StorageAdvancedPanel locale={locale} /> : null}
+      {tab === "lvm" ? <StorageAdvancedPanel locale={locale} details={details} loading={loading} error={detailsError} section="lvm" /> : null}
+      {tab === "pools" ? <StorageAdvancedPanel locale={locale} details={details} loading={loading} error={detailsError} section="pools" /> : null}
+      {tab === "mounts" ? <StorageAdvancedPanel locale={locale} details={details} loading={loading} error={detailsError} section="mounts" /> : null}
+      {tab === "io" ? <StorageAdvancedPanel locale={locale} details={details} loading={loading} error={detailsError} section="io" /> : null}
+      {tab === "advanced" ? <StorageAdvancedPanel locale={locale} details={details} loading={loading} error={detailsError} section="advanced" /> : null}
     </div>
   );
 }

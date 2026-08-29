@@ -1,6 +1,6 @@
 id: storage-manager
 name: Storage Manager
-version: 1.1.0
+version: 1.2.0
 category: infrastructure
 icon: hard-drive
 permissions:
@@ -13,7 +13,14 @@ capabilities:
   - storage-health
   - smart-health
   - filesystem-capacity
+  - encrypted-storage-inventory
+  - device-mapper-inventory
   - lvm-inventory
+  - mdraid-health
+  - zfs-health
+  - zfs-datasets
+  - btrfs-health
+  - btrfs-profiles
   - swap-inventory
   - mount-persistence
   - disk-io-counters
