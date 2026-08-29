@@ -186,7 +186,7 @@ describe("MonitorApp", () => {
     expect(within(rows[1]).getByText("10")).toBeInTheDocument();
   });
 
-  it("pauses polling while hidden and prevents overlapping requests", async () => {
+  it("pauses fallback polling while hidden and prevents overlapping requests", async () => {
     vi.useFakeTimers();
     resources.mockResolvedValueOnce(fixture);
     render(<MonitorApp t={t} />);
@@ -195,7 +195,7 @@ describe("MonitorApp", () => {
 
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
     fireEvent(document, new Event("visibilitychange"));
-    await act(async () => { vi.advanceTimersByTime(4000); });
+    await act(async () => { vi.advanceTimersByTime(10000); });
     expect(resources).toHaveBeenCalledTimes(1);
 
     let resolveRequest: ((value: ResourceDashboard) => void) | undefined;
@@ -229,13 +229,13 @@ describe("MonitorApp", () => {
     expect(resources).toHaveBeenCalledTimes(1);
   });
 
-  it("polls at the default two-second interval", async () => {
+  it("uses a five-second minimum interval for fallback polling", async () => {
     vi.useFakeTimers();
     render(<MonitorApp t={t} />);
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(resources).toHaveBeenCalledTimes(1);
 
-    await act(async () => { vi.advanceTimersByTime(1999); });
+    await act(async () => { vi.advanceTimersByTime(4999); });
     expect(resources).toHaveBeenCalledTimes(1);
     await act(async () => { vi.advanceTimersByTime(1); await Promise.resolve(); await Promise.resolve(); });
 

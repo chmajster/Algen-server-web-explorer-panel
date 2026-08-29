@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import __version__
+from . import settings as settings_api
 from .alerts.collectors import collector_loop as alert_collector_loop
 from .alerts.router import router as alerts_router
 from .alerts.scheduler import start_scheduler as start_alert_scheduler
@@ -29,12 +30,13 @@ from .modules.proxmox_manager.scheduler import start_scheduler as start_proxmox_
 from .network_mounts import active_mount_jobs
 from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
+from .performance import performance_timing
 from .platform_api import frontend_cache_policy
 from .power_control import router as power_control_router
+from .resource_sampler import resource_sampler, resource_sampler_loop
 from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
-from .settings import start_auto_update_scheduler
 from .tasks import task_store
 from .update_coordination import active_transient_operations, register_operation_provider
 from .update_detail_policy import router as update_detail_policy_router
@@ -58,7 +60,7 @@ def build_module_registry(root: Path = BUILTIN_MODULES) -> ModuleRegistry:
 
 
 def _start_schedulers() -> None:
-    start_auto_update_scheduler()
+    settings_api.start_auto_update_scheduler()
     start_alert_scheduler()
     start_ansible_scheduler()
     start_os_repositories_scheduler()
@@ -94,14 +96,17 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     promotion_task: asyncio.Task[None] | None = None
     collector_task: asyncio.Task[None] | None = None
     runtime_event_task: asyncio.Task[None] | None = None
+    resource_sampler_task: asyncio.Task[None] | None = None
 
     def start_runtime_side_effects() -> None:
-        nonlocal collector_task, runtime_event_task
+        nonlocal collector_task, runtime_event_task, resource_sampler_task
         _start_schedulers()
         if collector_task is None or collector_task.done():
             collector_task = asyncio.create_task(alert_collector_loop(module_registry))
         if runtime_event_task is None or runtime_event_task.done():
             runtime_event_task = asyncio.create_task(watch_update_progress())
+        if resource_sampler_task is None or resource_sampler_task.done():
+            resource_sampler_task = asyncio.create_task(resource_sampler_loop())
 
     if os.environ.get("WEBNAS_CANDIDATE") != "1":
         start_runtime_side_effects()
@@ -131,6 +136,8 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
             collector_task.cancel()
         if runtime_event_task and not runtime_event_task.done():
             runtime_event_task.cancel()
+        if resource_sampler_task and not resource_sampler_task.done():
+            resource_sampler_task.cancel()
         await module_registry.shutdown()
 
 
@@ -158,6 +165,10 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     application_settings = settings or get_config()
     module_registry = registry or build_module_registry()
     container = ApplicationContainer(application_settings, module_registry)
+    # settings.system_resources resolves this module global at request time.
+    # Inject the shared sampler at the composition root without changing the
+    # public API or the settings router's authorization dependency.
+    settings_api.collect_dashboard = resource_sampler.dashboard
     app = FastAPI(title="WebNAS", version=__version__, lifespan=application_lifespan)
     app.state.ready = False
     app.state.settings = application_settings
@@ -168,6 +179,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.middleware("http")(frontend_cache_policy)
+    app.middleware("http")(performance_timing)
     module_registry.install_routers(app)
     app.include_router(_registry_router(module_registry))
     app.include_router(runtime_events_router)

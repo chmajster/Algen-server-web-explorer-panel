@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type ProcessMetric, type ResourceDashboard } from "../../api";
 import type { Translate } from "../../app/types";
+import { runtimeConnectionState, subscribeRuntimeConnection, subscribeRuntimeEvent, type RuntimeConnectionState } from "../../core/realtime/runtimeEvents";
 import { pageIsVisible, subscribePageVisibility } from "../../core/runtime/pageVisibility";
 import { Tabs } from "../../components/ui/layout";
 import "../../styles/resource-monitor.css";
@@ -30,9 +31,11 @@ export function MonitorApp({ t }: { t: Translate }) {
   const [visible, setVisible] = useState(pageIsVisible);
   const [intervalMs, setIntervalMs] = useState(2000);
   const [activeTab, setActiveTab] = useState<MonitorTab>("overview");
+  const [runtimeState, setRuntimeState] = useState<RuntimeConnectionState>(() => runtimeConnectionState());
   const inFlight = useRef(false);
   const processInFlight = useRef(false);
   const mounted = useRef(true);
+  const lastRuntimeRefresh = useRef(0);
 
   const refresh = useCallback(async () => {
     if (inFlight.current) return;
@@ -93,6 +96,8 @@ export function MonitorApp({ t }: { t: Translate }) {
 
   useRefreshOnConnectionRestored(() => { void refresh(); });
 
+  useEffect(() => subscribeRuntimeConnection(() => setRuntimeState(runtimeConnectionState())), []);
+
   useEffect(() => {
     mounted.current = true;
     void refresh();
@@ -105,10 +110,22 @@ export function MonitorApp({ t }: { t: Translate }) {
   }), [automatic, refresh]);
 
   useEffect(() => {
-    if (!automatic || !visible) return;
-    const timer = window.setInterval(() => { void refresh(); }, intervalMs);
+    const onSample = () => {
+      if (!automatic || !pageIsVisible()) return;
+      const now = Date.now();
+      if (now - lastRuntimeRefresh.current < Math.max(250, intervalMs - 100)) return;
+      lastRuntimeRefresh.current = now;
+      void refresh();
+    };
+    return subscribeRuntimeEvent("resource.sample.updated", onSample);
+  }, [automatic, intervalMs, refresh]);
+
+  useEffect(() => {
+    if (!automatic || !visible || runtimeState !== "fallback") return;
+    const fallbackInterval = Math.max(intervalMs, 5000);
+    const timer = window.setInterval(() => { void refresh(); }, fallbackInterval);
     return () => window.clearInterval(timer);
-  }, [automatic, intervalMs, refresh, visible]);
+  }, [automatic, intervalMs, refresh, runtimeState, visible]);
 
   useEffect(() => {
     if (activeTab !== "processes" || data?.scope !== "admin") return;

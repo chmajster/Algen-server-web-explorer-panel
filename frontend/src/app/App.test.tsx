@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadLanguage } from "../i18n";
 
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   updateProgress: vi.fn(),
   updatePublicProgress: vi.fn(),
   updateCompletion: vi.fn(),
+  loadLanguageWithFallback: vi.fn(),
 }));
 
 vi.mock("../api", async (importOriginal) => {
@@ -31,8 +33,16 @@ vi.mock("../api", async (importOriginal) => {
   };
 });
 
-vi.mock("./Desktop", () => ({ Desktop: () => <div data-testid="desktop">Desktop</div> }));
-vi.mock("../features/connection/ConnectionStatusMonitor", () => ({ ConnectionStatusMonitor: () => null }));
+vi.mock("../i18n", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../i18n")>();
+  return {
+    ...actual,
+    loadLanguageWithFallback: mocks.loadLanguageWithFallback,
+  };
+});
+
+vi.mock("./Desktop", () => ({ Desktop: ({ language }: { language: string }) => <div data-testid="desktop">{language}</div> }));
+vi.mock("../features/connection/ConnectionStatusMonitor", () => ({ ConnectionStatusMonitor: ({ onRestored }: { onRestored: () => void }) => <button data-testid="connection-restored" onClick={onRestored}>restored</button> }));
 vi.mock("../features/transfers/useUploadManager", () => ({
   useUploadManager: () => ({ tasks: [], controls: {} }),
 }));
@@ -51,16 +61,19 @@ const profile = {
 const idleUpdate = { state: "idle", running: false, pid: null, exit_code: null, started_at: null, finished_at: null, log: "", lines: [] };
 
 describe("authentication initialization", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     Object.values(mocks).forEach((mock) => mock.mockReset());
     window.history.replaceState({}, "", "/");
     sessionStorage.removeItem("webnas_completed_update_reload");
+    localStorage.removeItem("webnas_language");
     mocks.settingsMe.mockResolvedValue(profile);
     mocks.tasks.mockResolvedValue([]);
     mocks.allTasks.mockResolvedValue([]);
     mocks.updateProgress.mockResolvedValue(idleUpdate);
     mocks.updatePublicProgress.mockResolvedValue(idleUpdate);
     mocks.updateCompletion.mockResolvedValue({ notice: null });
+    mocks.loadLanguageWithFallback.mockImplementation(async (language) => language);
+    await loadLanguage("pl-PL");
   });
 
   it("passes the selected remember-me option to authentication", async () => {
@@ -122,6 +135,34 @@ describe("authentication initialization", () => {
     expect(container.querySelector(".boot-screen")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Zaloguj się" })).toBeNull();
     expect(screen.queryByTestId("desktop")).toBeNull();
+  });
+
+  it("ignores a stale locale load that resolves after a newer activation", async () => {
+    let resolvePolish: ((value: "pl-PL") => void) | undefined;
+    let resolveEnglish: ((value: "en-US") => void) | undefined;
+    mocks.me.mockResolvedValue(user);
+    mocks.settingsMe
+      .mockResolvedValueOnce(profile)
+      .mockResolvedValueOnce({ ...profile, language: "en-US" });
+    mocks.loadLanguageWithFallback.mockImplementation((language) => new Promise((resolve) => {
+      if (language === "pl-PL") resolvePolish = resolve;
+      else resolveEnglish = resolve;
+    }));
+
+    render(<App />);
+    expect(await screen.findByTestId("desktop")).toHaveTextContent("en-US");
+    await waitFor(() => expect(mocks.loadLanguageWithFallback).toHaveBeenCalledWith("pl-PL"));
+
+    fireEvent.click(screen.getByTestId("connection-restored"));
+    await waitFor(() => expect(mocks.loadLanguageWithFallback).toHaveBeenCalledWith("en-US"));
+    resolveEnglish?.("en-US");
+    await waitFor(() => expect(screen.getByTestId("desktop")).toHaveTextContent("en-US"));
+    expect(localStorage.getItem("webnas_language")).toBe("en-US");
+
+    resolvePolish?.("pl-PL");
+    await Promise.resolve();
+    expect(screen.getByTestId("desktop")).toHaveTextContent("en-US");
+    expect(localStorage.getItem("webnas_language")).toBe("en-US");
   });
 
   it("reloads once after a successful system update", async () => {
