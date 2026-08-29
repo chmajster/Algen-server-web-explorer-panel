@@ -1,7 +1,7 @@
 import { HardDrive } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, logout, me, onAuthenticationInvalidated, type SettingsMe, type SettingsPatch, type Task, type UpdateCompletionNotice, type UpdateProgress, type UserPreferences } from "../api";
-import { detectLanguage, type Language, translate } from "../i18n";
+import { detectLanguage, loadLanguageWithFallback, type Language, translate } from "../i18n";
 import { pageIsVisible, subscribePageVisibility } from "../core/runtime/pageVisibility";
 import { runtimeConnectionState, subscribeRuntimeConnection, subscribeRuntimeEvent, type RuntimeConnectionState } from "../core/realtime/runtimeEvents";
 import type { Theme, Toast, User } from "./types";
@@ -134,6 +134,13 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
     setAuthStatus("anonymous");
   }, []);
 
+  const activateLanguage = useCallback((requested: Language, persist = true) => {
+    void loadLanguageWithFallback(requested).then((loaded) => {
+      setLanguage(loaded);
+      if (persist) localStorage.setItem("webnas_language", loaded);
+    }).catch(() => undefined);
+  }, []);
+
   useEffect(() => subscribeRuntimeConnection(() => setRuntimeState(runtimeConnectionState())), []);
 
   useEffect(() => {
@@ -155,11 +162,10 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
     api.settingsMe().then((data) => {
       profileRef.current = data;
       setProfile(data);
-      setLanguage(data.language);
-      localStorage.setItem("webnas_language", data.language);
+      activateLanguage(data.language);
       setTheme(data.theme);
     }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
-  }, [t, toast, user]);
+  }, [activateLanguage, t, toast, user]);
 
   const refreshTasks = useCallback(() => {
     if (!user || !profile || !pageIsVisible()) return;
@@ -217,13 +223,12 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
     void api.settingsMe().then((data) => {
       profileRef.current = data;
       setProfile(data);
-      setLanguage(data.language);
-      localStorage.setItem("webnas_language", data.language);
+      activateLanguage(data.language);
       setTheme(data.theme);
     }).catch(() => undefined);
     refreshTasks();
     void refreshUpdateProgress(profile.permissions.includes("updates.view"));
-  }, [clearAuthenticatedUi, profile, refreshTasks, refreshUpdateProgress, user]);
+  }, [activateLanguage, clearAuthenticatedUi, profile, refreshTasks, refreshUpdateProgress, user]);
   useEffect(() => {
     if (!user || !profile) {
       setUpdateChecked(false);
@@ -285,7 +290,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
     const optimistic = { ...currentProfile, ...patch };
     profileRef.current = optimistic;
     setProfile(optimistic);
-    if (patch.language) setLanguage(patch.language);
+    if (patch.language) activateLanguage(patch.language, false);
     if (patch.theme) setTheme(patch.theme);
     try {
       const request = settingsSaveQueue.current.then(() => api.updateSettings(patch));
@@ -298,7 +303,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
         profileRef.current = next;
         return next;
       });
-      if (patch.language && settingRevisions.current.language === revision) { setLanguage(saved.language); localStorage.setItem("webnas_language", saved.language); }
+      if (patch.language && settingRevisions.current.language === revision) activateLanguage(saved.language);
       if (patch.theme && settingRevisions.current.theme === revision) { setTheme(saved.theme); localStorage.setItem("webnas_theme", saved.theme); }
     } catch (error) {
       setProfile((current) => {
@@ -310,7 +315,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
         profileRef.current = reverted;
         return reverted;
       });
-      if (patch.language && settingRevisions.current.language === revision) setLanguage(previous.language);
+      if (patch.language && settingRevisions.current.language === revision) activateLanguage(previous.language);
       if (patch.theme && settingRevisions.current.theme === revision) setTheme(previous.theme);
       throw error;
     }
