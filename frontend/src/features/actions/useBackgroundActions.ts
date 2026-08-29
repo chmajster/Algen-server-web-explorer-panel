@@ -190,7 +190,13 @@ export function useBackgroundActions({
     const refreshWhenVisible = () => { if (pageIsVisible()) void refresh(); };
     refreshWhenVisible();
     const unsubscribeVisibility = subscribePageVisibility((visible) => { if (visible) void refresh(); });
-    const unsubscribeEvents = ["job.updated", "module.updated", "update.progress"].map((eventType) => subscribeRuntimeEvent(eventType, refreshWhenVisible));
+    const unsubscribeEvents = [
+      "job.updated",
+      "module.updated",
+      "mount.updated",
+      "network.transaction.updated",
+      "update.progress",
+    ].map((eventType) => subscribeRuntimeEvent(eventType, refreshWhenVisible));
     return () => {
       mounted.current = false;
       unsubscribeVisibility();
