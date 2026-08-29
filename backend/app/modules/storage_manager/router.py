@@ -7,7 +7,7 @@ from ...security import SessionUser
 from .service import service
 
 
-router = APIRouter(prefix="/api/storage", tags=["storage-manager"])
+router = APIRouter(prefix="/api/storage", tags=["storage-manager"], include_in_schema=False)
 
 
 @router.get("/summary")
