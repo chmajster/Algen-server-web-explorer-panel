@@ -87,7 +87,7 @@ export function useConnectionMonitor({
     const startElapsedTimer = () => {
       clearElapsedTimer();
       elapsedTimer = window.setInterval(() => {
-        if (!active || phase !== "offline" || outageStartedAt === null) return;
+        if (document.hidden || !active || phase !== "offline" || outageStartedAt === null) return;
         setState({
           phase: "offline",
           elapsedSeconds: Math.floor((Date.now() - outageStartedAt) / 1000),
@@ -183,7 +183,7 @@ export function useConnectionMonitor({
     };
 
     void runCheck();
-    const pollTimer = window.setInterval(() => void runCheck(), intervalMs);
+    const pollTimer = window.setInterval(checkWhenActive, intervalMs);
     document.addEventListener("visibilitychange", checkWhenActive);
     window.addEventListener("focus", checkWhenActive);
 

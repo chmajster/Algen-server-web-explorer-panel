@@ -59,11 +59,18 @@ export function usePackageCenter(t: Translate, { canManageSources = true }: { ca
   useEffect(() => {
     if (!activeIds) return;
 
+    const poll = () => { if (!document.hidden) void refresh(true); };
     if (typeof EventSource === "undefined") {
-      const fallback = window.setInterval(() => void refresh(true), 2500);
+      const fallback = window.setInterval(poll, 2500);
       return () => window.clearInterval(fallback);
     }
 
+    let fallback: number | null = null;
+    const startFallback = () => {
+      if (fallback !== null) return;
+      poll();
+      fallback = window.setInterval(poll, 2500);
+    };
     const events = activeIds.split("|").map((id) => {
       const source = new EventSource(`/api/apps/jobs/${encodeURIComponent(id)}/events`);
       source.onmessage = (event) => {
@@ -74,11 +81,16 @@ export function usePackageCenter(t: Translate, { canManageSources = true }: { ca
           void refresh(true);
         }
       };
-      source.onerror = () => source.close();
+      source.onerror = () => {
+        source.close();
+        startFallback();
+      };
       return source;
     });
-    const fallback = window.setInterval(() => void refresh(true), 2500);
-    return () => { events.forEach((source) => source.close()); window.clearInterval(fallback); };
+    return () => {
+      events.forEach((source) => source.close());
+      if (fallback !== null) window.clearInterval(fallback);
+    };
   }, [activeIds, refresh, refreshModule]);
 
   const visibleModules = useMemo(() => modules.filter((item) => {

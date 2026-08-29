@@ -80,6 +80,29 @@ def test_store_keeps_only_a_hash_of_the_bearer_token(session_store):
     assert stored_hash != token
 
 
+def test_session_store_reuses_recent_database_resolution(monkeypatch, tmp_path):
+    store = security.SessionStore(tmp_path / "sessions.sqlite3", "test-session-secret", cache_ttl_seconds=60)
+    store.create("token", "alice", "csrf", persistent=False, expires_at=time.time() + 60)
+    store._cache.clear()
+    original_connect = store._connect
+    connect_count = 0
+
+    def counted_connect():
+        nonlocal connect_count
+        connect_count += 1
+        return original_connect()
+
+    monkeypatch.setattr(store, "_connect", counted_connect)
+
+    first = store.resolve("token")
+    second = store.resolve("token")
+
+    assert first == second
+    assert first is not None
+    assert first.username == "alice"
+    assert connect_count == 1
+
+
 def test_logout_revokes_the_current_token(session_store):
     login_response = Response()
     security.create_session(login_response, "alice", remember_me=True)

@@ -149,11 +149,16 @@ export function useBackgroundActions({
 
   useEffect(() => {
     mounted.current = true;
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), pollInterval);
+    const pollWhenVisible = () => {
+      if (!document.hidden) void refresh();
+    };
+    pollWhenVisible();
+    const timer = window.setInterval(pollWhenVisible, pollInterval);
+    document.addEventListener("visibilitychange", pollWhenVisible);
     return () => {
       mounted.current = false;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", pollWhenVisible);
     };
   }, [pollInterval, refresh]);
 

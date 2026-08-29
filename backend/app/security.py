@@ -19,6 +19,9 @@ from .config import get_config
 from .sqlite_utils import ClosingConnection
 
 
+SESSION_CACHE_TTL_SECONDS = 2.0
+
+
 @dataclass(frozen=True)
 class SessionUser:
     username: str
@@ -34,11 +37,13 @@ class StoredSession:
 
 
 class SessionStore:
-    """Persistent, revocable sessions without storing bearer tokens at rest."""
+    """Persistent, revocable sessions with a short hash-keyed in-memory read cache."""
 
-    def __init__(self, path: Path, token_pepper: str = "") -> None:
+    def __init__(self, path: Path, token_pepper: str = "", *, cache_ttl_seconds: float = SESSION_CACHE_TTL_SECONDS) -> None:
         self.path = path
         self._token_pepper = token_pepper.encode("utf-8")
+        self._cache_ttl_seconds = max(0.0, float(cache_ttl_seconds))
+        self._cache: dict[str, tuple[StoredSession, float]] = {}
         self._lock = threading.RLock()
         self._initialize()
 
@@ -74,37 +79,63 @@ class SessionStore:
     def _hash(self, token: str) -> str:
         return hmac.new(self._token_pepper, token.encode("utf-8"), hashlib.sha256).hexdigest()
 
+    def _cache_session(self, token_hash: str, session: StoredSession) -> None:
+        if self._cache_ttl_seconds <= 0:
+            return
+        self._cache[token_hash] = (session, time.monotonic() + self._cache_ttl_seconds)
+
     def create(self, token: str, username: str, csrf_token: str, *, persistent: bool, expires_at: float) -> None:
         now = time.time()
+        token_hash = self._hash(token)
+        session = StoredSession(username=username, csrf_token=csrf_token, persistent=persistent, expires_at=expires_at)
         with self._lock, self._connect() as connection:
             connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (now,))
             connection.execute(
                 "INSERT INTO auth_sessions(token_hash,username,csrf_token,persistent,created_at,expires_at) VALUES (?,?,?,?,?,?)",
-                (self._hash(token), username, csrf_token, int(persistent), now, expires_at),
+                (token_hash, username, csrf_token, int(persistent), now, expires_at),
             )
+            self._cache_session(token_hash, session)
 
     def resolve(self, token: str) -> StoredSession | None:
         token_hash = self._hash(token)
-        with self._lock, self._connect() as connection:
-            row = connection.execute(
-                "SELECT username,csrf_token,persistent,expires_at FROM auth_sessions WHERE token_hash=?",
-                (token_hash,),
-            ).fetchone()
-            if row and float(row["expires_at"]) <= time.time():
-                connection.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+        now = time.time()
+        with self._lock:
+            cached = self._cache.get(token_hash)
+            if cached is not None:
+                session, cache_deadline = cached
+                if session.expires_at <= now:
+                    self._cache.pop(token_hash, None)
+                    with self._connect() as connection:
+                        connection.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+                    return None
+                if cache_deadline > time.monotonic():
+                    return session
+                self._cache.pop(token_hash, None)
+
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT username,csrf_token,persistent,expires_at FROM auth_sessions WHERE token_hash=?",
+                    (token_hash,),
+                ).fetchone()
+                if row and float(row["expires_at"]) <= now:
+                    connection.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+                    return None
+            if not row:
                 return None
-        if not row:
-            return None
-        return StoredSession(
-            username=str(row["username"]),
-            csrf_token=str(row["csrf_token"]),
-            persistent=bool(row["persistent"]),
-            expires_at=float(row["expires_at"]),
-        )
+            session = StoredSession(
+                username=str(row["username"]),
+                csrf_token=str(row["csrf_token"]),
+                persistent=bool(row["persistent"]),
+                expires_at=float(row["expires_at"]),
+            )
+            self._cache_session(token_hash, session)
+            return session
 
     def revoke(self, token: str) -> None:
+        token_hash = self._hash(token)
         with self._lock, self._connect() as connection:
-            connection.execute("DELETE FROM auth_sessions WHERE token_hash=?", (self._hash(token),))
+            self._cache.pop(token_hash, None)
+            connection.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
 
 
 class LoginRateLimiter:

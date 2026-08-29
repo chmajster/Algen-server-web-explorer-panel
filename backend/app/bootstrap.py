@@ -10,6 +10,7 @@ from typing import AsyncIterator
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from . import __version__
 from .alerts.collectors import collector_loop as alert_collector_loop
@@ -158,6 +159,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.add_exception_handler(DomainError, domain_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)
     app.add_middleware(CORSMiddleware, allow_origins=[], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     app.middleware("http")(frontend_cache_policy)
     module_registry.install_routers(app)
     app.include_router(_registry_router(module_registry))

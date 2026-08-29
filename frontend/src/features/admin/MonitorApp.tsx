@@ -1,7 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type ResourceDashboard } from "../../api";
+import { api, type ProcessMetric, type ResourceDashboard } from "../../api";
 import type { Translate } from "../../app/types";
 import { Tabs } from "../../components/ui/layout";
 import "../../styles/resource-monitor.css";
@@ -20,6 +20,7 @@ function serviceState(service: string | null): "up" | "down" | "unknown" {
 
 export function MonitorApp({ t }: { t: Translate }) {
   const [data, setData] = useState<ResourceDashboard | null>(null);
+  const [processes, setProcesses] = useState<ProcessMetric[] | null>(null);
   const [history, setHistory] = useState<History>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -29,6 +30,7 @@ export function MonitorApp({ t }: { t: Translate }) {
   const [intervalMs, setIntervalMs] = useState(2000);
   const [activeTab, setActiveTab] = useState<MonitorTab>("overview");
   const inFlight = useRef(false);
+  const processInFlight = useRef(false);
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
@@ -40,21 +42,11 @@ export function MonitorApp({ t }: { t: Translate }) {
     }
 
     try {
-      const next = await api.resources();
-      let dashboard = next;
-
-      if (next.scope === "admin") {
-        try {
-          const processes = await api.resourceProcesses();
-          dashboard = { ...next, processes };
-        } catch (reason) {
-          if (mounted.current) setError(reason instanceof Error ? reason.message : t("error.generic"));
-        }
-      }
-
+      const dashboard = await api.resources();
       if (!mounted.current) return;
 
       setData(dashboard);
+      if (dashboard.scope !== "admin") setProcesses(null);
       setLastUpdate(new Date(dashboard.timestamp * 1000));
       setHistory((current) => {
         let updated = pushSample(current, "cpu", dashboard.cpu_percent);
@@ -85,6 +77,19 @@ export function MonitorApp({ t }: { t: Translate }) {
     }
   }, [t]);
 
+  const refreshProcesses = useCallback(async () => {
+    if (processInFlight.current) return;
+    processInFlight.current = true;
+    try {
+      const next = await api.resourceProcesses();
+      if (mounted.current) setProcesses(next);
+    } catch (reason) {
+      if (mounted.current) setError(reason instanceof Error ? reason.message : t("error.generic"));
+    } finally {
+      processInFlight.current = false;
+    }
+  }, [t]);
+
   useRefreshOnConnectionRestored(() => { void refresh(); });
 
   useEffect(() => {
@@ -108,6 +113,14 @@ export function MonitorApp({ t }: { t: Translate }) {
     const timer = window.setInterval(() => { void refresh(); }, intervalMs);
     return () => window.clearInterval(timer);
   }, [automatic, intervalMs, refresh, visible]);
+
+  useEffect(() => {
+    if (activeTab !== "processes" || data?.scope !== "admin") return;
+    void refreshProcesses();
+    if (!automatic || !visible) return;
+    const timer = window.setInterval(() => { void refreshProcesses(); }, Math.max(intervalMs, 3000));
+    return () => window.clearInterval(timer);
+  }, [activeTab, automatic, data?.scope, intervalMs, refreshProcesses, visible]);
 
   useEffect(() => {
     if (data?.scope !== "admin" && (activeTab === "processes" || activeTab === "mounts")) setActiveTab("overview");
@@ -160,7 +173,7 @@ export function MonitorApp({ t }: { t: Translate }) {
         {activeTab === "memory" && <MemoryPanel data={data} history={history} t={t} />}
         {activeTab === "network" && <NetworkPanel networks={data.network_interfaces} history={history} t={t} />}
         {activeTab === "storage" && <StoragePanel storage={storage} diskIo={data.disk_io} history={history} t={t} />}
-        {activeTab === "processes" && data.scope === "admin" && <ProcessesPanel processes={data.processes} t={t} />}
+        {activeTab === "processes" && data.scope === "admin" && <ProcessesPanel processes={processes ?? data.processes} t={t} />}
         {activeTab === "mounts" && data.scope === "admin" && <AllMountsPanel mountpoints={data.mountpoints} t={t} />}
       </div>
     </>}
