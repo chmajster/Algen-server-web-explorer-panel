@@ -75,8 +75,7 @@ def _atomic_write(path: Path, content: str, mode: int) -> None:
 def write_transport_settings(settings: TransportSettings, cfg: AppConfig | None = None) -> Path:
     selected = cfg or get_config()
     path = transport_state_path(selected)
-    _atomic_write(path, settings.model_dump_json(indent=2) + "
-", 0o600)
+    _atomic_write(path, settings.model_dump_json(indent=2) + "\n", 0o600)
     return path
 
 
@@ -93,9 +92,7 @@ def render_nginx_transport(settings: TransportSettings, public_port: int) -> str
                 f"ssl_certificate_key {settings.tls_key};",
             ]
         )
-    return "
-".join(lines) + "
-"
+    return "\n".join(lines) + "\n"
 
 
 def write_transport_include(settings: TransportSettings, public_port: int, cfg: AppConfig | None = None) -> Path:
