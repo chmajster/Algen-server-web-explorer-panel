@@ -3,10 +3,10 @@ import { api, type ProxmoxSnapshot, type ProxmoxTask, type ProxmoxVm, type Proxm
 import type { ToastFn, Translate } from "../../../app/types";
 import { Modal } from "../../../components/Modal";
 import { bytes, duration, percent } from "./utils";
-import { CloneDialog, ConfirmVmDialog, HardwareDialog, MigrationDialog, SnapshotDialog } from "./dialogs/OperationDialogs";
+import { CloneDialog, ConfirmVmDialog, DiskResizeDialog, HardwareDialog, MigrationDialog, SnapshotDialog } from "./dialogs/OperationDialogs";
 
 type DetailTab = "overview" | "hardware" | "network" | "snapshots" | "tasks" | "host-registry";
-type DialogState = "snapshot" | "clone" | "migration" | "hardware" | { action: "delete-snapshot" | "rollback-snapshot"; snapshot: string } | null;
+type DialogState = "snapshot" | "clone" | "migration" | "hardware" | "disk-resize" | { action: "delete-snapshot" | "rollback-snapshot"; snapshot: string } | null;
 
 export function VmDetails({ vm, canManage, t, toast, onClose, onChanged }: { vm: ProxmoxVm; canManage: boolean; t: Translate; toast: ToastFn; onClose: () => void; onChanged: () => Promise<void> }) {
   const [tab, setTab] = useState<DetailTab>("overview");
@@ -69,7 +69,7 @@ export function VmDetails({ vm, canManage, t, toast, onClose, onChanged }: { vm:
       {!details ? <div className="loading-state">{t("common.loading")}</div> : <>
         <div className="module-section-toolbar">
           <div className="module-row-actions">{tabs.map((item) => <button type="button" className={tab === item.id ? "button-primary" : ""} key={item.id} onClick={() => setTab(item.id)}>{item.label}</button>)}</div>
-          {canManage && <div className="module-row-actions"><button type="button" onClick={() => setDialog("snapshot")}>Snapshot</button><button type="button" onClick={() => setDialog("clone")}>Clone</button><button type="button" onClick={() => setDialog("migration")}>Migrate</button><button type="button" onClick={() => setDialog("hardware")}>Edit hardware</button></div>}
+          {canManage && <div className="module-row-actions"><button type="button" onClick={() => setDialog("snapshot")}>Snapshot</button><button type="button" onClick={() => setDialog("clone")}>Clone</button><button type="button" onClick={() => setDialog("migration")}>Migrate</button><button type="button" onClick={() => setDialog("hardware")}>Edit hardware</button>{vm.type === "qemu" && details.hardware.disks.length > 0 && <button type="button" onClick={() => setDialog("disk-resize")}>Resize disk</button>}</div>}
         </div>
         {tab === "overview" && <section className="module-info"><dl>
           <dt>Status</dt><dd><span className={`status-badge ${details.status === "running" ? "ok" : "neutral"}`}>{details.status}</span></dd>
@@ -84,7 +84,7 @@ export function VmDetails({ vm, canManage, t, toast, onClose, onChanged }: { vm:
         {tab === "hardware" && <section className="module-info"><dl>
           <dt>Cores</dt><dd>{details.hardware.cores}</dd><dt>Sockets</dt><dd>{details.hardware.sockets}</dd><dt>CPU type</dt><dd>{details.hardware.cpu_type || "—"}</dd>
           <dt>RAM</dt><dd>{details.hardware.memory_mb} MiB</dd><dt>Balloon</dt><dd>{details.hardware.balloon_mb} MiB</dd><dt>Machine</dt><dd>{details.hardware.machine || "—"}</dd><dt>BIOS</dt><dd>{details.hardware.bios || "—"}</dd>
-        </dl><h4>Disks</h4><div className="module-table-wrap"><table className="module-table"><thead><tr><th>Device</th><th>Storage</th><th>Size</th><th>Cache</th><th>Discard</th><th>IO thread</th></tr></thead><tbody>{details.hardware.disks.map((disk) => <tr key={disk.device}><td>{disk.device}</td><td>{disk.storage || "—"}</td><td>{disk.size || "—"}</td><td>{disk.cache || "—"}</td><td>{disk.discard || "—"}</td><td>{disk.iothread || "—"}</td></tr>)}</tbody></table></div></section>}
+        </dl><header className="module-section-toolbar"><h4>Disks</h4>{canManage && vm.type === "qemu" && details.hardware.disks.length > 0 && <button type="button" onClick={() => setDialog("disk-resize")}>Resize disk</button>}</header><div className="module-table-wrap"><table className="module-table"><thead><tr><th>Device</th><th>Storage</th><th>Size</th><th>Cache</th><th>Discard</th><th>IO thread</th></tr></thead><tbody>{details.hardware.disks.map((disk) => <tr key={disk.device}><td>{disk.device}</td><td>{disk.storage || "—"}</td><td>{disk.size || "—"}</td><td>{disk.cache || "—"}</td><td>{disk.discard || "—"}</td><td>{disk.iothread || "—"}</td></tr>)}</tbody></table></div></section>}
         {tab === "network" && <section className="module-info"><h4>Configured adapters</h4><div className="module-table-wrap"><table className="module-table"><thead><tr><th>Device</th><th>Model</th><th>MAC</th><th>Bridge</th><th>VLAN</th></tr></thead><tbody>{details.hardware.network_adapters.map((nic) => <tr key={nic.device}><td>{nic.device}</td><td>{nic.model || "—"}</td><td>{nic.mac || "—"}</td><td>{nic.bridge || "—"}</td><td>{nic.vlan || "—"}</td></tr>)}</tbody></table></div><h4>Guest network</h4><pre>{JSON.stringify(details.guest_network, null, 2)}</pre></section>}
         {tab === "snapshots" && <section className="module-info"><header className="module-section-toolbar"><h4>Snapshots</h4>{canManage && <button type="button" onClick={() => setDialog("snapshot")}>Create snapshot</button>}</header><div className="module-table-wrap"><table className="module-table"><thead><tr><th>Name</th><th>Created</th><th>Description</th><th>RAM</th><th>Actions</th></tr></thead><tbody>{snapshots.filter((item) => !item.current).map((item) => <tr key={item.name}><td><strong>{item.name}</strong></td><td>{item.date ? new Date(item.date * 1000).toLocaleString() : "—"}</td><td>{item.description || "—"}</td><td>{item.vmstate ? "yes" : "no"}</td><td><div className="module-row-actions">{canManage && <><button type="button" onClick={() => setDialog({ action: "rollback-snapshot", snapshot: item.name })}>Rollback</button><button className="danger" type="button" onClick={() => setDialog({ action: "delete-snapshot", snapshot: item.name })}>Delete</button></>}</div></td></tr>)}</tbody></table>{!snapshots.filter((item) => !item.current).length && <div className="empty-state"><strong>No snapshots.</strong></div>}</div></section>}
         {tab === "tasks" && <section className="module-info"><div className="module-table-wrap"><table className="module-table"><thead><tr><th>Action</th><th>Status</th><th>Progress</th><th>Exit status</th><th>UPID</th></tr></thead><tbody>{tasks.map((item) => <tr key={item.upid}><td>{item.action}</td><td>{item.status}</td><td>{item.progress}%</td><td>{item.exitstatus || "—"}</td><td><code>{item.upid}</code></td></tr>)}</tbody></table>{!tasks.length && <div className="empty-state"><strong>No tasks for this VM.</strong></div>}</div></section>}
@@ -95,6 +95,7 @@ export function VmDetails({ vm, canManage, t, toast, onClose, onChanged }: { vm:
     {dialog === "clone" && <CloneDialog vm={vm} t={t} toast={toast} onClose={() => setDialog(null)} onDone={changed} />}
     {dialog === "migration" && <MigrationDialog vm={vm} t={t} toast={toast} onClose={() => setDialog(null)} onDone={changed} />}
     {dialog === "hardware" && details && <HardwareDialog vm={vm} details={details} t={t} toast={toast} onClose={() => setDialog(null)} onDone={changed} />}
+    {dialog === "disk-resize" && details && <DiskResizeDialog vm={vm} details={details} t={t} toast={toast} onClose={() => setDialog(null)} onDone={changed} />}
     {typeof dialog === "object" && dialog && <ConfirmVmDialog title={dialog.action === "delete-snapshot" ? "Delete snapshot" : "Rollback snapshot"} vm={vm} busy={busy} t={t} onClose={() => setDialog(null)} onConfirm={() => void destructiveSnapshot(dialog.action, dialog.snapshot)} />}
   </>;
 }
