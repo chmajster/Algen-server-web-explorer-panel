@@ -55,6 +55,12 @@ if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
 
 export function setApiBaseUrl(baseUrl: string) { apiBaseUrl = baseUrl.replace(/\/+$/, ""); }
 export function apiAt(baseUrl: string, path: string) { return baseUrl ? `${baseUrl.replace(/\/+$/, "")}${path}` : path; }
+export function healthWebSocketUrl() {
+  const pageUrl = typeof window !== "undefined" ? window.location.href : "http://localhost/";
+  const target = new URL(apiAt(apiBaseUrl, "/api/health/ws"), pageUrl);
+  target.protocol = target.protocol === "https:" ? "wss:" : "ws:";
+  return target.toString();
+}
 
 function clearAuthenticationState(expectedGeneration?: number, notify = true) {
   if (expectedGeneration !== undefined && expectedGeneration !== sessionGeneration) return;
