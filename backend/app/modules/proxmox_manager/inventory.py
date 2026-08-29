@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import urllib.parse
-from typing import Any
+from typing import Any, cast
 
 from ..hosts_manager.public import provider_hosts as shared_provider_hosts
 from .service import PROVIDER, ProxmoxApiError, ProxmoxManagerService
@@ -27,6 +27,10 @@ def _safe_get(client: Any, path: str) -> tuple[Any, str]:
         return client.get(path), ""
     except (ProxmoxApiError, KeyError, ValueError) as error:
         return None, str(error)[:1000]
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 
 
 def _host_map(manager: ProxmoxManagerService, connection_id: str = "") -> dict[tuple[str, str], dict[str, Any]]:
@@ -124,11 +128,11 @@ def list_nodes(manager: ProxmoxManagerService, connection_id: str = "") -> dict[
                 continue
             node_name = str(raw["node"])
             encoded = urllib.parse.quote(node_name, safe="")
-            status, status_error = _safe_get(client, f"nodes/{encoded}/status")
-            status = status if isinstance(status, dict) else {}
-            rootfs = status.get("rootfs") if isinstance(status.get("rootfs"), dict) else {}
-            cpuinfo = status.get("cpuinfo") if isinstance(status.get("cpuinfo"), dict) else {}
-            memory = status.get("memory") if isinstance(status.get("memory"), dict) else {}
+            status_raw, status_error = _safe_get(client, f"nodes/{encoded}/status")
+            status = _as_dict(status_raw)
+            rootfs = _as_dict(status.get("rootfs"))
+            cpuinfo = _as_dict(status.get("cpuinfo"))
+            memory = _as_dict(status.get("memory"))
             values.append(
                 {
                     "connection_id": connection["id"],
