@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 
+import app.modules.webhook_manager.service as webhook_module
+from app.modules.webhook_manager.events import event_types
 from app.modules.webhook_manager.models import WebhookInput
 from app.modules.webhook_manager.service import WebhookManagerService, WebhookValidationError
-import app.modules.webhook_manager.service as webhook_module
 
 
 def _payload(**overrides) -> WebhookInput:
@@ -64,6 +65,77 @@ def test_ssrf_rejects_hostname_if_any_resolution_is_blocked(monkeypatch: pytest.
 
     with pytest.raises(WebhookValidationError, match="blocked address"):
         service.validate_url("https://hooks.example.invalid/path", allow_private=False)
+
+
+def test_transport_connects_to_validated_ip_and_does_not_follow_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    service = WebhookManagerService(tmp_path / "webhooks.sqlite3")
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 80)),
+        ],
+    )
+    validation = service.validate_url(
+        "http://hooks.example.invalid/path?kind=test",
+        allow_private=False,
+    )
+    calls: list[tuple[tuple[str, int], float | None]] = []
+
+    class FakeSocket:
+        def __init__(self) -> None:
+            self.sent = b""
+
+        def settimeout(self, timeout: float) -> None:
+            assert timeout == 5
+
+        def sendall(self, data: bytes) -> None:
+            self.sent += data
+
+        def close(self) -> None:
+            return None
+
+    fake_socket = FakeSocket()
+
+    def create_connection(address, timeout=None):
+        calls.append((address, timeout))
+        return fake_socket
+
+    class FakeResponse:
+        status = 302
+
+        def __init__(self, transport) -> None:
+            assert transport is fake_socket
+
+        def begin(self) -> None:
+            return None
+
+        def read(self, amount: int) -> bytes:
+            assert amount == 2048
+            return b"redirect refused"
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(socket, "create_connection", create_connection)
+    monkeypatch.setattr(webhook_module.http.client, "HTTPResponse", FakeResponse)
+
+    status, preview = service._pinned_request(
+        validation=validation,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+        body=b"{}",
+        timeout=5,
+    )
+
+    assert calls == [(('8.8.8.8', 80), 5)]
+    assert b"POST /path?kind=test HTTP/1.1" in fake_socket.sent
+    assert b"Host: hooks.example.invalid" in fake_socket.sent
+    assert status == 302
+    assert preview == "redirect refused"
 
 
 def test_auth_and_hmac_use_secrets_manager_without_persisting_plaintext(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -134,6 +206,32 @@ def test_event_subscription_enqueues_redacted_nonblocking_work(tmp_path: Path):
     assert queued_event_id == event_id
     assert event_type == "fail2ban.ip_banned"
     assert "must-not-leak" not in json.dumps(payload)
+
+
+def test_retry_reloads_webhook_and_stops_when_disabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    service = WebhookManagerService(tmp_path / "webhooks.sqlite3")
+    saved = service.save(_payload(max_attempts=3), "admin")
+    attempts: list[int] = []
+
+    def failed_once(webhook, event_id, event_type, payload, attempt):
+        attempts.append(attempt)
+        service.set_enabled(saved["id"], False, "admin")
+        return {"id": "delivery-1", "status": "failed"}
+
+    monkeypatch.setattr(service, "_deliver_once", failed_once)
+    monkeypatch.setattr(service._stop, "wait", lambda timeout: False)
+
+    service._deliver_with_retries(saved["id"], "event-id", "fail2ban.ip_banned", {})
+    assert attempts == [1]
+
+
+def test_only_wired_events_are_advertised_by_default():
+    current = set(event_types())
+    assert "fail2ban.ip_banned" in current
+    assert "secret.created" in current
+    assert "host.created" not in current
+    assert "operation.completed" not in current
+    assert "backup.completed" not in current
 
 
 def test_unknown_event_is_rejected(tmp_path: Path):
