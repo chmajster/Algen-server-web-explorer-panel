@@ -8562,6 +8562,24 @@ export interface paths {
         patch: operations["settings_patch_api_settings_me_patch"];
         trace?: never;
     };
+    "/api/settings/transport": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Transport Settings */
+        get: operations["get_transport_settings_api_settings_transport_get"];
+        /** Save Transport Settings */
+        put: operations["save_transport_settings_api_settings_transport_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/wallpapers": {
         parameters: {
             query?: never;
@@ -12953,6 +12971,24 @@ export interface components {
         TransactionRequest: {
             /** Transaction Id */
             transaction_id: string;
+        };
+        /** TransportSettings */
+        TransportSettings: {
+            /**
+             * Tls Cert
+             * @default
+             */
+            tls_cert: string;
+            /**
+             * Tls Key
+             * @default
+             */
+            tls_key: string;
+            /**
+             * Use Https
+             * @default false
+             */
+            use_https: boolean;
         };
         /** UpdateAction */
         UpdateAction: {
@@ -32675,6 +32711,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_transport_settings_api_settings_transport_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_transport_settings_api_settings_transport_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransportSettings"];
             };
         };
         responses: {
