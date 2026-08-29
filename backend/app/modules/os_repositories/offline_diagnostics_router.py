@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from ...identity.permissions import require_permission
 from ...package_center.models import api_error
 from ...package_center.service import repository as package_repository
 from ...security import SessionUser
@@ -15,9 +16,6 @@ router = APIRouter(prefix="/api/modules/os-repositories/offline", tags=["os-repo
 def ready() -> None:
     if "os-repositories" not in package_repository().installed():
         api_error(404, "MODULE_NOT_INSTALLED", "Repozytoria systemowe module is not installed")
-
-
-from ...identity.permissions import require_permission  # noqa: E402
 
 
 @router.get("/diagnostics")
