@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .alerts.router import router as alerts_router
+from .alerts.scheduler import start_scheduler as start_alert_scheduler
 from .audit import configure_logging
 from .config import AppConfig, get_config
 from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
@@ -52,6 +54,7 @@ def build_module_registry(root: Path = BUILTIN_MODULES) -> ModuleRegistry:
 
 def _start_schedulers() -> None:
     start_auto_update_scheduler()
+    start_alert_scheduler()
     start_ansible_scheduler()
     start_os_repositories_scheduler()
     start_proxmox_scheduler()
@@ -147,6 +150,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.include_router(_registry_router(module_registry))
     app.include_router(update_detail_policy_router)
     app.include_router(power_control_router)
+    app.include_router(alerts_router)
     if mount_frontend and FRONTEND_DIST.exists():
         app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
     return app
