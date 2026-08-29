@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from app.modules.os_repositories.jobs import RepositoryJobManager
 from app.modules.os_repositories.models import RepositoryInput, SnapshotInput
 from app.modules.os_repositories.offline_models import OfflineBundleType, OfflineExportInput, OfflineSettingsInput, OfflineTargetInput
 from app.modules.os_repositories.offline_service import OfflineRepositoryService
@@ -78,6 +79,18 @@ def test_offline_schema_targets_and_air_gap_settings(services):
     settings = offline.save_settings(OfflineSettingsInput(air_gapped_mode=True), "admin")
     assert settings["air_gapped_mode"] is True
     assert offline.dashboard()["air_gapped_mode"] is True
+
+
+def test_air_gapped_mode_blocks_repository_sync(services):
+    base, offline = services
+    repository = base.save_repository(repository_payload(), "admin")
+    offline.save_settings(OfflineSettingsInput(air_gapped_mode=True), "admin")
+    manager = RepositoryJobManager(base)
+    try:
+        with pytest.raises(ValueError, match="Air-Gapped Mode"):
+            manager.enqueue_sync(repository["id"], "admin")
+    finally:
+        manager.pool.shutdown(wait=False, cancel_futures=True)
 
 
 def test_dependency_closure_resolves_recursive_dependencies(services, monkeypatch):
