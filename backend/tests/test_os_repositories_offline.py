@@ -3,12 +3,14 @@ from __future__ import annotations
 import io
 import shutil
 import tarfile
+import time
 from pathlib import Path
 
 import pytest
 
 from app.modules.os_repositories.jobs import RepositoryJobManager
 from app.modules.os_repositories.models import RepositoryInput, SnapshotInput
+from app.modules.os_repositories.offline_jobs import OfflineRepositoryJobManager
 from app.modules.os_repositories.offline_models import OfflineBundleType, OfflineExportInput, OfflineSettingsInput, OfflineTargetInput
 from app.modules.os_repositories.offline_service import OfflineRepositoryService
 from app.modules.os_repositories.service import RepositoryService
@@ -58,6 +60,16 @@ def upload_package(
     }
     monkeypatch.setattr(base, "_inspect_package", lambda _path, _expected: metadata)
     return base.upload_package(repository_id, filename, io.BytesIO(b"!<arch>\n" + f"{name}-{version}".encode()), "admin")
+
+
+def wait_for_job(manager: OfflineRepositoryJobManager, job_id: str) -> dict:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        job = manager.job(job_id)
+        if job and job["status"] in {"completed", "failed", "cancelled"}:
+            return job
+        time.sleep(0.02)
+    raise AssertionError("offline job did not finish")
 
 
 def test_offline_schema_targets_and_air_gap_settings(services):
@@ -141,6 +153,33 @@ def test_full_bundle_round_trip_verification(services, monkeypatch):
     assert verification["safe_to_import"] is True
     assert verification["files_total"] == verification["files_verified"]
     assert verification["packages_total"] == 2
+
+
+def test_durable_export_job_uses_shared_repository_job_store(services, monkeypatch):
+    base, offline = services
+    repository = base.save_repository(repository_payload(), "admin")
+    upload_package(base, monkeypatch, repository["id"], filename="demo.deb", name="demo")
+    snapshot = base.create_snapshot(repository["id"], SnapshotInput(name="durable-export"), "admin")
+    manager = OfflineRepositoryJobManager(offline)
+    try:
+        queued = manager.enqueue_export(
+            OfflineExportInput(
+                repository_id=repository["id"],
+                snapshot_id=snapshot["id"],
+                architecture="amd64",
+                bundle_type=OfflineBundleType.full,
+                sign_manifest=False,
+                confirm=True,
+            ),
+            "admin",
+        )
+        finished = wait_for_job(manager, queued["id"])
+        assert finished["status"] == "completed", finished.get("error")
+        assert finished["operation"] == "offline_export"
+        assert offline.bundles()["total"] == 1
+        assert RepositoryJobManager(base).job(finished["id"]) is None
+    finally:
+        manager.pool.shutdown(wait=False, cancel_futures=True)
 
 
 def test_safe_extract_rejects_tar_traversal(services, tmp_path: Path):
