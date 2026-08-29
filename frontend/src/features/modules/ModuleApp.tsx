@@ -20,6 +20,8 @@ const ApmidApp = lazy(() => import("./apmid/ApmidApp").then((loaded) => ({ defau
 const OsRepositoriesApp = lazy(() => import("./os-repositories/OsRepositoriesApp").then((loaded) => ({ default: loaded.OsRepositoriesApp })));
 const CronManagerApp = lazy(() => import("./cron/CronManagerApp").then((loaded) => ({ default: loaded.CronManagerApp })));
 const DhcpManagerApp = lazy(() => import("./dhcp/DhcpManagerApp").then((loaded) => ({ default: loaded.DhcpManagerApp })));
+const MODULE_HEALTHY_REFRESH_INTERVAL = 60_000;
+const MODULE_FALLBACK_REFRESH_INTERVAL = 45_000;
 
 const emptyStatus: ModuleStatus = { installed: false, update_available: false, service_state: "unknown", service_enabled: false, services: {}, health: "unknown", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} };
 
@@ -44,7 +46,11 @@ function GenericModuleApp({ moduleId, t, toast }: { moduleId: string; t: Transla
   useRefreshOnConnectionRestored(() => { void refresh(); });
   useEffect(() => subscribeRuntimeConnection(() => setRuntimeState(runtimeConnectionState())), []);
   useEffect(() => { void refresh(); return subscribeRuntimeEvent("module.updated", () => { if (pageIsVisible()) void refresh(); }); }, [refresh]);
-  useEffect(() => { if (runtimeState !== "fallback") return; const timer = window.setInterval(() => { if (pageIsVisible()) void refresh(); }, 45_000); return () => window.clearInterval(timer); }, [refresh, runtimeState]);
+  useEffect(() => {
+    const interval = runtimeState === "fallback" ? MODULE_FALLBACK_REFRESH_INTERVAL : MODULE_HEALTHY_REFRESH_INTERVAL;
+    const timer = window.setInterval(() => { if (pageIsVisible()) void refresh(); }, interval);
+    return () => window.clearInterval(timer);
+  }, [refresh, runtimeState]);
   useEffect(() => { if (section === "diagnostics") void api.moduleDiagnostics(moduleId).then((data) => setDiagnostics(data.diagnostics)); if (section === "backups") void api.moduleBackups(moduleId).then(setBackups); }, [moduleId, section]);
   function trackJob(next: ModuleJob) { setJob(next); setLiveJob(next); }
   async function submit(values: Record<string, string>) { if (!dialog) return; if (dialog.type === "service") trackJob((await api.moduleService(moduleId, dialog.action)).job); else if (dialog.type === "diagnostics") trackJob((await api.runModuleDiagnostics(moduleId)).job); else if (dialog.type === "backup") { await api.createModuleBackup(moduleId, values.description); setBackups(await api.moduleBackups(moduleId)); } else if (dialog.type === "restore") trackJob((await api.restoreModuleBackup(moduleId, dialog.backup.id)).job); else if (dialog.type === "delete") { await api.deleteModuleBackup(moduleId, dialog.backup.id); setBackups(await api.moduleBackups(moduleId)); } toast(t("admin.actionCompleted"), "ok", "admin"); }
