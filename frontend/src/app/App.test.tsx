@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadLanguage } from "../i18n";
 
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
@@ -51,7 +52,7 @@ const profile = {
 const idleUpdate = { state: "idle", running: false, pid: null, exit_code: null, started_at: null, finished_at: null, log: "", lines: [] };
 
 describe("authentication initialization", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     Object.values(mocks).forEach((mock) => mock.mockReset());
     window.history.replaceState({}, "", "/");
     sessionStorage.removeItem("webnas_completed_update_reload");
@@ -61,6 +62,7 @@ describe("authentication initialization", () => {
     mocks.updateProgress.mockResolvedValue(idleUpdate);
     mocks.updatePublicProgress.mockResolvedValue(idleUpdate);
     mocks.updateCompletion.mockResolvedValue({ notice: null });
+    await loadLanguage("pl-PL");
   });
 
   it("passes the selected remember-me option to authentication", async () => {
