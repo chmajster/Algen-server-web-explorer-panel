@@ -32,7 +32,7 @@ def test_batch_enrichment_preserves_host_contract_and_redacts_secrets(tmp_path: 
         ),
         "admin",
     )
-    group = store.save_group(GroupInput(name="Batch group"), "admin")
+    group = store.save_group(GroupInput(name="Batch_group"), "admin")
     host = store.save_host(
         HostInput(
             name="batch-node",
@@ -83,7 +83,7 @@ def test_batch_enrichment_preserves_host_contract_and_redacts_secrets(tmp_path: 
     single = store.host(host["id"])
 
     assert single is not None
-    assert listed["groups"] == [{"id": group["id"], "name": "Batch group"}]
+    assert listed["groups"] == [{"id": group["id"], "name": "Batch_group"}]
     assert listed["group_ids"] == [group["id"]]
     assert listed["facts"]["distribution"] == "Debian"
     assert listed["agent_status"] == "offline"
