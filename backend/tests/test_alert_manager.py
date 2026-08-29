@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+import importlib
 from pathlib import Path
 
 import pytest
@@ -8,6 +8,9 @@ import pytest
 from app.alerts.delivery import DeliveryError
 from app.alerts.models import AlertEvent, AlertSeverity, RuleInput, SinkInput, SinkType
 from app.alerts.service import AlertService
+
+
+alert_service_module = importlib.import_module("app.alerts.service")
 
 
 def _service(tmp_path: Path) -> AlertService:
@@ -80,7 +83,11 @@ def test_failed_event_is_deduplicated_and_cooldown_suppresses_repeat_delivery(
     assert "hunter2" not in second[0]["details"]["error"]
 
     delivered: list[tuple[dict, dict]] = []
-    monkeypatch.setattr("app.alerts.service.deliver", lambda configured_sink, alert: delivered.append((configured_sink, alert)))
+    monkeypatch.setattr(
+        alert_service_module,
+        "deliver",
+        lambda configured_sink, alert: delivered.append((configured_sink, alert)),
+    )
     result = manager.process_due_deliveries()
     assert result == {"processed": 1, "succeeded": 1, "retry": 0, "failed": 0}
     assert len(delivered) == 1
@@ -137,7 +144,7 @@ def test_delivery_retry_is_durable_bounded_and_error_text_is_redacted(
     def failing_delivery(_sink: dict, _alert: dict) -> None:
         raise DeliveryError("password=never-store-this")
 
-    monkeypatch.setattr("app.alerts.service.deliver", failing_delivery)
+    monkeypatch.setattr(alert_service_module, "deliver", failing_delivery)
     for attempt in range(5):
         result = manager.process_due_deliveries()
         assert result["processed"] == 1
@@ -160,7 +167,7 @@ def test_resolve_queues_state_change_notification(tmp_path: Path, monkeypatch: p
     sink = _sink(manager)
     _attach_job_rule(manager, sink["id"])
     manager.fire(AlertEvent(source="job.failed", key="x:y", title="Failed"))
-    monkeypatch.setattr("app.alerts.service.deliver", lambda _sink, _alert: None)
+    monkeypatch.setattr(alert_service_module, "deliver", lambda _sink, _alert: None)
     assert manager.process_due_deliveries()["succeeded"] == 1
 
     resolved = manager.resolve("job.failed", "x:y", "system")
