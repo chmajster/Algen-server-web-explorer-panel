@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import hmac
 import json
 import socket
@@ -8,10 +9,11 @@ from pathlib import Path
 
 import pytest
 
-import app.modules.webhook_manager.service as webhook_module
 from app.modules.webhook_manager.events import event_types
 from app.modules.webhook_manager.models import WebhookInput
 from app.modules.webhook_manager.service import WebhookManagerService, WebhookValidationError
+
+webhook_module = importlib.import_module("app.modules.webhook_manager.service")
 
 
 def _payload(**overrides) -> WebhookInput:

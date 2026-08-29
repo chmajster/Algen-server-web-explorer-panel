@@ -17,7 +17,7 @@ import urllib.parse
 from functools import lru_cache
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, Literal
 
 from ...config import get_config
 from ...core.events import bus
@@ -33,11 +33,12 @@ class ClosingConnection(sqlite3.Connection):
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> bool | None:  # type: ignore[override]
+    ) -> Literal[False]:
         try:
-            return super().__exit__(exc_type, exc_val, exc_tb)
+            super().__exit__(exc_type, exc_val, exc_tb)
         finally:
             self.close()
+        return False
 
 
 def _id() -> str:

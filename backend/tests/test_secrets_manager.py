@@ -143,8 +143,9 @@ def test_migrates_legacy_credentials_preserving_id_and_reencrypting(monkeypatch:
             "SELECT encrypted_secret FROM secrets WHERE id=?",
             (credential_id,),
         ).fetchone()[0])
-    assert migrated_envelope.startswith("WAC2:")
     assert migrated_envelope != old_envelope
+    decoded = json.loads(service.cipher.decrypt(migrated_envelope, associated_data=credential_id))
+    assert decoded == {"secret": "correct horse", "passphrase": "key pass"}
 
     legacy = sqlite3.connect(hosts_db)
     try:

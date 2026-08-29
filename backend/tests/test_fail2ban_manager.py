@@ -96,8 +96,7 @@ def test_failed_validation_restores_previous_managed_config(tmp_path: Path):
         service.save_config("sshd", payload)
 
     assert path.read_text(encoding="utf-8") == "[sshd]\nenabled = false\n"
-    assert calls[0] == ("-t",)
-    assert calls[-1] == ("reload",)
+    assert calls == [("-t",)]
 
 
 def test_log_filters_validate_ip_and_action(tmp_path: Path):
