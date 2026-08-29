@@ -14,7 +14,7 @@ By default a backup contains:
 
 The authentication session database `sessions.sqlite3` is deliberately excluded. Restoring server sessions after a migration or host replacement would preserve browser bearer state across recovery boundaries and is not required for service recovery.
 
-Repository worktrees, caches, temporary directories and previous appliance backup archives are excluded.
+Repository worktrees, caches, temporary directories and previous appliance backup archives are excluded. Symbolic-link sources are also excluded so a backup cannot cross the configured data-root boundary through a link.
 
 ## Create
 
@@ -44,6 +44,8 @@ python3.14 scripts/webnas_backup.py restore /secure-transfer/webnas-....webnas-b
 Validation rejects:
 
 - absolute, parent-traversal or undeclared archive members;
+- duplicate ZIP member names or duplicate manifest resource entries;
+- symbolic-link archive paths/restore targets and source files outside the data-root model;
 - individual members or archives beyond bounded uncompressed-size limits;
 - SHA-256 mismatches;
 - malformed manifests or unsupported format versions;
