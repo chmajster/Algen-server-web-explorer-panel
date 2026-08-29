@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from ..activity import ActivityCategory, record_activity
 from ..identity.permissions import authorize, has_permission
+from ..modules.infrastructure_permissions import register_infrastructure_permissions
 from ..security import SessionUser, get_session_user, require_csrf
 from .models import Job, JobPage, JobStatus, JobSummary
 from .service import service
 
+register_infrastructure_permissions()
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 

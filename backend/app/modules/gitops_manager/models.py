@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -20,12 +21,15 @@ class RepositoryInput(BaseModel):
     @classmethod
     def remote_url(cls, value: str) -> str:
         value = value.strip()
-        if not value:
+        if not value: return value
+        if value.startswith("git@"):
+            if ":" not in value[4:]: raise ValueError("invalid SSH Git remote")
             return value
-        if "@" in value.split("://", 1)[-1].split("/", 1)[0]:
-            raise ValueError("credentials in Git remote URLs are not allowed; use Secrets Manager/SSH agent")
-        if not (value.startswith("https://") or value.startswith("ssh://") or value.startswith("git@")):
+        if not (value.startswith("https://") or value.startswith("ssh://")):
             raise ValueError("only HTTPS or SSH Git remotes are allowed")
+        parsed = urlsplit(value)
+        if parsed.password:
+            raise ValueError("credentials in Git remote URLs are not allowed; use Secrets Manager/SSH agent")
         return value
 
 
@@ -33,13 +37,9 @@ class CommitInput(BaseModel):
     message: str = Field(min_length=1, max_length=500)
     push: bool = False
     confirm: bool = False
-
-
 class RefInput(BaseModel):
     ref: str = Field(min_length=1, max_length=128)
     confirm: bool = False
-
-
 class FileRestoreInput(BaseModel):
     path: str = Field(min_length=1, max_length=512)
     ref: str = Field(default="HEAD", min_length=1, max_length=128)
