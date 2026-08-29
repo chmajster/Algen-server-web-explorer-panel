@@ -2,6 +2,7 @@ import { AlertTriangle, Database, HardDrive, RefreshCw, ShieldCheck } from "luci
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { storageManagerClient, type StorageDevice, type StorageSnapshot } from "../../modules/storage-manager/api/client";
+import { StorageAdvancedPanel } from "./StorageAdvancedPanel";
 import "./storage-manager.css";
 
 
@@ -9,7 +10,7 @@ type Props = {
   locale?: string;
 };
 
-type Tab = "overview" | "devices" | "filesystems" | "health";
+type Tab = "overview" | "devices" | "filesystems" | "health" | "advanced";
 
 const bytes = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return "0 B";
@@ -56,6 +57,7 @@ export function StorageManagerApp({ locale = "en" }: Props) {
     { id: "devices", label: polish ? "Urządzenia" : "Devices" },
     { id: "filesystems", label: polish ? "Systemy plików" : "Filesystems" },
     { id: "health", label: polish ? "Stan" : "Health" },
+    { id: "advanced", label: polish ? "Zaawansowane" : "Advanced" },
   ];
 
   return (
@@ -66,8 +68,8 @@ export function StorageManagerApp({ locale = "en" }: Props) {
           <h1><HardDrive size={23} /> Storage Manager</h1>
           <p>
             {polish
-              ? "Bezpieczny, tylko do odczytu, widok dysków, systemów plików, RAID i kondycji nośników."
-              : "Safe read-only inventory of disks, filesystems, RAID and device health."}
+              ? "Bezpieczny, tylko do odczytu, widok dysków, systemów plików, RAID, LVM, swap i kondycji nośników."
+              : "Safe read-only inventory of disks, filesystems, RAID, LVM, swap and device health."}
           </p>
         </div>
         <div className="storage-manager__actions">
@@ -164,6 +166,8 @@ export function StorageManagerApp({ locale = "en" }: Props) {
           </section>
         </div>
       ) : null}
+
+      {tab === "advanced" ? <StorageAdvancedPanel locale={locale} /> : null}
     </div>
   );
 }
