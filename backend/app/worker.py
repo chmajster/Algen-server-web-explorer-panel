@@ -302,17 +302,35 @@ def write_text_file(path: Path, content: str, expected_mtime_ns: int | None, max
     return {"ok": True, "encoding": "utf-8", "size": len(encoded), "mtime_ns": updated.st_mtime_ns}
 
 
+def _decode_request(args: argparse.Namespace) -> tuple[str, str, dict[str, Any]]:
+    if args.user == "-" and args.op == "-" and args.payload == "-":
+        encoded_request = sys.stdin.read()
+        request = json.loads(base64.b64decode(encoded_request).decode("utf-8"))
+        if not isinstance(request, dict):
+            raise WorkerError("operation_failed")
+        username = request.get("user")
+        op = request.get("op")
+        payload = request.get("payload")
+        if not isinstance(username, str) or not username or not isinstance(op, str) or not isinstance(payload, dict):
+            raise WorkerError("operation_failed")
+        return username, op, payload
+
+    encoded_payload = sys.stdin.read() if args.payload == "-" else args.payload
+    payload = json.loads(base64.b64decode(encoded_payload).decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise WorkerError("operation_failed")
+    return args.user, args.op, payload
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--user", required=True)
     parser.add_argument("--op", required=True)
     parser.add_argument("--payload", required=True)
     args = parser.parse_args()
-    encoded_payload = sys.stdin.read() if args.payload == "-" else args.payload
-    payload = json.loads(base64.b64decode(encoded_payload).decode("utf-8"))
-    drop_privileges(args.user)
+    username, op, payload = _decode_request(args)
+    drop_privileges(username)
 
-    op = args.op
     if op == "list":
         print(json.dumps(list_directory(payload)))
     elif op == "stat":
