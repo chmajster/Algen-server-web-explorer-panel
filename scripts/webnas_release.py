@@ -9,10 +9,12 @@ keeps the previous release available for rollback.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 import ssl
 import subprocess
 import sys
@@ -62,6 +64,36 @@ def config_value(config: Path, section: str, key: str, default: str = "") -> str
             value = match.group(2).split(" #", 1)[0].strip().strip("\"'")
             return "" if value in {"null", "None", "~"} else value
     return default
+
+
+def tls_identity() -> tuple[str, str]:
+    """Return a conservative CN and SAN list for a locally generated certificate."""
+
+    names = {"localhost"}
+    for candidate in (socket.gethostname(), socket.getfqdn()):
+        candidate = candidate.strip().rstrip(".")
+        if candidate and re.fullmatch(r"[A-Za-z0-9.-]{1,253}", candidate):
+            names.add(candidate)
+
+    addresses = {"127.0.0.1", "::1"}
+    for name in tuple(names):
+        try:
+            resolved = socket.getaddrinfo(name, None)
+        except OSError:
+            continue
+        for item in resolved:
+            raw = str(item[4][0]).split("%", 1)[0]
+            try:
+                address = ipaddress.ip_address(raw)
+            except ValueError:
+                continue
+            if not address.is_unspecified and not address.is_multicast:
+                addresses.add(str(address))
+
+    ordered_names = sorted(names, key=lambda value: (value == "localhost", len(value), value))
+    common_name = ordered_names[0] if ordered_names else "localhost"
+    sans = [*(f"DNS:{name}" for name in sorted(names)), *(f"IP:{address}" for address in sorted(addresses))]
+    return common_name, ",".join(sans)
 
 
 class Deployment:
@@ -179,6 +211,61 @@ class Deployment:
                 probe.unlink()
             except OSError as error:
                 raise RuntimeError(f"Configured {label} path is not writable: {path}: {error}") from error
+
+    def ensure_tls_certificate(self) -> None:
+        if config_value(self.config, "server", "use_https", "false").lower() != "true":
+            return
+        raw_cert = config_value(self.config, "server", "tls_cert")
+        raw_key = config_value(self.config, "server", "tls_key")
+        if not raw_cert or not raw_key:
+            raise RuntimeError("TLS is enabled but server.tls_cert or server.tls_key is not configured")
+        cert = Path(raw_cert)
+        key = Path(raw_key)
+        if cert.is_file() and key.is_file() and cert.stat().st_size > 0 and key.stat().st_size > 0:
+            return
+        executable = shutil.which("openssl")
+        if not executable:
+            raise RuntimeError("TLS certificate is missing and the openssl command is unavailable")
+        cert.parent.mkdir(parents=True, exist_ok=True)
+        key.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(cert.parent, 0o750)
+        if key.parent != cert.parent:
+            os.chmod(key.parent, 0o750)
+        temporary_cert = cert.with_name(f".{cert.name}.{os.getpid()}.tmp")
+        temporary_key = key.with_name(f".{key.name}.{os.getpid()}.tmp")
+        common_name, sans = tls_identity()
+        result = command(
+            executable,
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:3072",
+            "-sha256",
+            "-nodes",
+            "-days",
+            "825",
+            "-subj",
+            f"/CN={common_name}",
+            "-addext",
+            f"subjectAltName={sans}",
+            "-addext",
+            "keyUsage=digitalSignature,keyEncipherment",
+            "-addext",
+            "extendedKeyUsage=serverAuth",
+            "-keyout",
+            str(temporary_key),
+            "-out",
+            str(temporary_cert),
+            check=False,
+        )
+        if result.returncode:
+            temporary_cert.unlink(missing_ok=True)
+            temporary_key.unlink(missing_ok=True)
+            raise RuntimeError(f"Could not generate the WebNAS TLS certificate: {redact_text(result.stderr, limit=2000)}")
+        os.chmod(temporary_key, 0o600)
+        os.chmod(temporary_cert, 0o644)
+        os.replace(temporary_key, key)
+        os.replace(temporary_cert, cert)
 
     def unit_name(self, slot: str) -> str:
         return f"webnas-backend-{slot}.service"
@@ -378,6 +465,7 @@ class Deployment:
         self.update_step("switch_version", "running", "Walidacja i przełączanie na nową wersję.")
         self.update_phase("verifying", "Sprawdzanie wersji kandydującej.")
         self.validate_files()
+        self.ensure_tls_certificate()
         self.write_units()
         self.write_slot_environment()
         command("systemctl", "restart", self.unit_name(self.new_slot))
