@@ -155,8 +155,13 @@ def test_alert_thresholds():
 def test_top_processes_is_bounded_by_default_and_supports_explicit_full_list(monkeypatch):
     output = "\n".join(f"{pid} user proc{pid} 1.0 2.0 4 S" for pid in range(1, 61))
     monkeypatch.setattr(resource_dashboard.shutil, "which", lambda command: "/usr/bin/ps" if command == "ps" else None)
-    monkeypatch.setattr(resource_dashboard.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=output))
 
+    def run(*args, **kwargs):
+        return SimpleNamespace(stdout=output)
+
+    monkeypatch.setattr(resource_dashboard.subprocess, "run", run)
+
+    assert resource_dashboard.top_processes(0) == []
     assert len(resource_dashboard.top_processes()) == resource_dashboard.DEFAULT_PROCESS_LIMIT
     assert len(resource_dashboard.top_processes(25)) == 25
     assert len(resource_dashboard.top_processes(None)) == 60
@@ -188,7 +193,7 @@ def test_collect_dashboard_hides_admin_only_and_unrelated_disk_data(monkeypatch)
     assert payload["allowed_roots"][0]["read_bytes_per_sec"] == 30.0
 
 
-def test_collect_dashboard_exposes_bounded_admin_metrics(monkeypatch):
+def test_collect_dashboard_omits_process_scan_until_explicitly_requested(monkeypatch):
     process_limits = []
     monkeypatch.setattr(resource_dashboard, "memory_stats", lambda: {"ram": _metric(40), "swap": _metric(0)})
     monkeypatch.setattr(resource_dashboard, "realtime_sample", _sample)
@@ -203,10 +208,12 @@ def test_collect_dashboard_exposes_bounded_admin_metrics(monkeypatch):
     monkeypatch.setattr(resource_dashboard, "webnas_service_status", lambda: "active")
     monkeypatch.setattr(resource_dashboard, "top_processes", lambda limit: process_limits.append(limit) or [{"pid": 1}])
 
-    payload = resource_dashboard.collect_dashboard("root", is_admin=True)
+    base_payload = resource_dashboard.collect_dashboard("root", is_admin=True)
+    detailed_payload = resource_dashboard.collect_dashboard("root", is_admin=True, process_limit=resource_dashboard.DEFAULT_PROCESS_LIMIT)
 
-    assert payload["scope"] == "admin"
-    assert payload["mountpoints"]
-    assert payload["processes"] == [{"pid": 1}]
+    assert base_payload["scope"] == "admin"
+    assert base_payload["mountpoints"]
+    assert base_payload["processes"] == []
+    assert detailed_payload["processes"] == [{"pid": 1}]
     assert process_limits == [resource_dashboard.DEFAULT_PROCESS_LIMIT]
-    assert {item["device"] for item in payload["disk_io"]} == {"sda", "sdb"}
+    assert {item["device"] for item in base_payload["disk_io"]} == {"sda", "sdb"}

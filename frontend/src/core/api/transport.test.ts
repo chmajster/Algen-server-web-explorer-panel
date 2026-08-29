@@ -46,6 +46,32 @@ describe("shared API transport", () => {
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: "include" });
   });
 
+  it("deduplicates concurrent GET requests for the same resource", async () => {
+    let resolveResponse: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn().mockImplementation(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = request<{ ok: boolean }>("/api/shared");
+    const second = request<{ ok: boolean }>("/api/shared");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveResponse?.(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    await expect(Promise.all([first, second])).resolves.toEqual([{ ok: true }, { ok: true }]);
+  });
+
+  it("does not deduplicate mutating requests", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ ok: true, csrf_token: "csrf" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+    await Promise.all([
+      request("/api/example", { method: "POST", body: "{}" }),
+      request("/api/example", { method: "POST", body: "{}" }),
+    ]);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/example")).toHaveLength(2);
+  });
+
   it("throws ApiError for failed responses", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("failed", { status: 500, statusText: "Failure" })));
     await expect(request("/api/example")).rejects.toBeInstanceOf(ApiError);

@@ -95,6 +95,7 @@ def create_test_app(root: Path):
             connection.commit()
         finally:
             connection.close()
+        store.invalidate(token)
         return {"ok": True}
 
     return app

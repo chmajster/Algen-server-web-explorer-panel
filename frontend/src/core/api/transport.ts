@@ -18,6 +18,7 @@ export class ApiError extends Error {
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const authenticationInvalidatedListeners = new Set<AuthenticationInvalidatedListener>();
+const inFlightGets = new Map<string, Promise<unknown>>();
 const CSRF_ERROR_COPY: Record<ErrorLanguage, {
   title: string;
   genericReason: string;
@@ -53,7 +54,10 @@ let apiBaseUrl = "";
 
 if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
 
-export function setApiBaseUrl(baseUrl: string) { apiBaseUrl = baseUrl.replace(/\/+$/, ""); }
+export function setApiBaseUrl(baseUrl: string) {
+  apiBaseUrl = baseUrl.replace(/\/+$/, "");
+  inFlightGets.clear();
+}
 export function apiAt(baseUrl: string, path: string) { return baseUrl ? `${baseUrl.replace(/\/+$/, "")}${path}` : path; }
 export function healthWebSocketUrl() {
   const pageUrl = typeof window !== "undefined" ? window.location.href : "http://localhost/";
@@ -67,6 +71,7 @@ function clearAuthenticationState(expectedGeneration?: number, notify = true) {
   sessionGeneration += 1;
   csrfToken = "";
   sessionSync = null;
+  inFlightGets.clear();
   if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
   if (notify) authenticationInvalidatedListeners.forEach((listener) => listener());
 }
@@ -179,7 +184,7 @@ async function send<T>(url: string, options: RequestInit, token = ""): Promise<T
 
 function synchronizeSession(force = false): Promise<AuthSession> {
   if (sessionSync) return sessionSync;
-  if (force) { sessionGeneration += 1; csrfToken = ""; }
+  if (force) { sessionGeneration += 1; csrfToken = ""; inFlightGets.clear(); }
   const generation = sessionGeneration;
   const pending = send<AuthSession>("/api/auth/me", { method: "GET", cache: "no-store" })
     .then((data) => {
@@ -202,8 +207,7 @@ function isInvalidCsrfError(error: unknown): error is ApiError {
     && (error.code === "INVALID_CSRF_TOKEN" || error.message === "Invalid CSRF token");
 }
 
-export async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const method = (options.method || "GET").toUpperCase();
+async function executeRequest<T>(url: string, options: RequestInit, method: string): Promise<T> {
   const requiresCsrf = MUTATING_METHODS.has(method) && url !== "/api/auth/login";
   if (requiresCsrf && !csrfToken) await synchronizeSession();
   const generation = sessionGeneration;
@@ -215,6 +219,24 @@ export async function request<T>(url: string, options: RequestInit = {}): Promis
     await synchronizeSession(true);
     return send<T>(url, options, csrfToken);
   }
+}
+
+function getDedupeKey(url: string, options: RequestInit, method: string) {
+  if (method !== "GET" || options.body !== undefined || options.signal || options.headers) return null;
+  return `${sessionGeneration}:${apiBaseUrl}:${url}`;
+}
+
+export function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+  const key = getDedupeKey(url, options, method);
+  if (!key) return executeRequest<T>(url, options, method);
+  const existing = inFlightGets.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const pending = executeRequest<T>(url, options, method).finally(() => {
+    if (inFlightGets.get(key) === pending) inFlightGets.delete(key);
+  });
+  inFlightGets.set(key, pending);
+  return pending;
 }
 
 export async function health(signal?: AbortSignal): Promise<HealthStatus> {

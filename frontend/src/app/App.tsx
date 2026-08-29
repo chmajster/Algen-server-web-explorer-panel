@@ -2,6 +2,8 @@ import { HardDrive } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, logout, me, onAuthenticationInvalidated, type SettingsMe, type SettingsPatch, type Task, type UpdateCompletionNotice, type UpdateProgress, type UserPreferences } from "../api";
 import { detectLanguage, type Language, translate } from "../i18n";
+import { pageIsVisible, subscribePageVisibility } from "../core/runtime/pageVisibility";
+import { runtimeConnectionState, subscribeRuntimeConnection, subscribeRuntimeEvent, type RuntimeConnectionState } from "../core/realtime/runtimeEvents";
 import type { Theme, Toast, User } from "./types";
 import { Desktop } from "./Desktop";
 import { ConnectionStatusMonitor } from "../features/connection/ConnectionStatusMonitor";
@@ -11,7 +13,89 @@ import { Login } from "../features/auth/Login";
 import { DialogInfrastructure } from "../components/DialogService";
 
 const COMPLETED_UPDATE_RELOAD_KEY = "webnas_completed_update_reload";
+const FALLBACK_POLL_INTERVAL = 1500;
 const reloadWindow = () => window.location.reload();
+
+function sameStringArray(current: string[], next: string[]) {
+  return current.length === next.length && current.every((value, index) => value === next[index]);
+}
+
+function sameTask(current: Task, next: Task) {
+  return current.id === next.id
+    && current.username === next.username
+    && current.type === next.type
+    && current.op === next.op
+    && current.status === next.status
+    && current.priority === next.priority
+    && current.created_at === next.created_at
+    && sameStringArray(current.source_paths, next.source_paths)
+    && current.destination_path === next.destination_path
+    && current.started_at === next.started_at
+    && current.finished_at === next.finished_at
+    && current.paused_at === next.paused_at
+    && current.bytes_transferred === next.bytes_transferred
+    && current.total_bytes === next.total_bytes
+    && current.progress_percent === next.progress_percent
+    && current.progress === next.progress
+    && current.speed_bps === next.speed_bps
+    && current.speed_human === next.speed_human
+    && current.average_speed_bps === next.average_speed_bps
+    && current.average_speed_human === next.average_speed_human
+    && current.eta_seconds === next.eta_seconds
+    && current.eta_human === next.eta_human
+    && current.current_file === next.current_file
+    && current.files_done === next.files_done
+    && current.files_total === next.files_total
+    && current.rsync_exit_code === next.rsync_exit_code
+    && current.error_message === next.error_message
+    && current.retry_count === next.retry_count
+    && sameStringArray(current.errors, next.errors)
+    && sameStringArray(current.log_tail, next.log_tail)
+    && sameStringArray(current.stderr_tail, next.stderr_tail)
+    && sameStringArray(current.command_preview, next.command_preview);
+}
+
+function sameTasks(current: Task[], next: Task[]) {
+  return current.length === next.length && current.every((task, index) => sameTask(task, next[index]));
+}
+
+function updateStepSignature(value: UpdateProgress | null) {
+  return (value?.steps || []).map((step) => `${step.id}:${step.status}:${step.message}:${step.finished_at ?? ""}`).join("|");
+}
+
+function blockerSignature(value: UpdateProgress | null) {
+  return (value?.blockers || []).map((blocker) => `${blocker.id}:${blocker.status}:${blocker.progress ?? ""}`).join("|");
+}
+
+function sameUpdateProgress(current: UpdateProgress | null, next: UpdateProgress | null) {
+  if (current === next) return true;
+  if (!current || !next) return false;
+  if (current.updated_at != null && next.updated_at != null && current.updated_at === next.updated_at && current.id === next.id) return true;
+  return current.id === next.id
+    && current.state === next.state
+    && current.phase === next.phase
+    && current.failed_phase === next.failed_phase
+    && current.running === next.running
+    && current.progress === next.progress
+    && current.pid === next.pid
+    && current.unit === next.unit
+    && current.exit_code === next.exit_code
+    && current.requested_at === next.requested_at
+    && current.started_at === next.started_at
+    && current.finished_at === next.finished_at
+    && current.previous_version === next.previous_version
+    && current.target_version === next.target_version
+    && current.current_version === next.current_version
+    && current.commit_revision === next.commit_revision
+    && current.message === next.message
+    && current.trigger === next.trigger
+    && current.active_count === next.active_count
+    && current.log === next.log
+    && current.lines.length === next.lines.length
+    && current.lines[current.lines.length - 1] === next.lines[next.lines.length - 1]
+    && updateStepSignature(current) === updateStepSignature(next)
+    && blockerSignature(current) === blockerSignature(next);
+}
 
 export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } = {}) {
   const [authStatus, setAuthStatus] = useState<"checking" | "authenticated" | "anonymous">("checking");
@@ -26,6 +110,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   const [updateConnectionError, setUpdateConnectionError] = useState(false);
   const [dismissedFailureId, setDismissedFailureId] = useState("");
   const [completionNotice, setCompletionNotice] = useState<UpdateCompletionNotice | null>(null);
+  const [runtimeState, setRuntimeState] = useState<RuntimeConnectionState>(() => runtimeConnectionState());
   const profileRef = useRef<SettingsMe | null>(null);
   const settingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const settingsRevision = useRef(0);
@@ -46,6 +131,9 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
     setTasks([]);
     setAuthStatus("anonymous");
   }, []);
+
+  useEffect(() => subscribeRuntimeConnection(() => setRuntimeState(runtimeConnectionState())), []);
+
   useEffect(() => {
     let active = true;
     const unsubscribe = onAuthenticationInvalidated(() => {
@@ -70,25 +158,35 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
       setTheme(data.theme);
     }).catch((error) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
   }, [t, toast, user]);
+
+  const refreshTasks = useCallback(() => {
+    if (!user || !profile || !pageIsVisible()) return;
+    void (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks())
+      .then((next) => setTasks((current) => sameTasks(current, next) ? current : next))
+      .catch(() => undefined);
+  }, [profile, user]);
+
   useEffect(() => {
     if (!user || !profile) return;
-    const refresh = () => {
-      if (document.hidden) return;
-      void (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 1500);
-    const onVisibility = () => { if (!document.hidden) refresh(); };
-    document.addEventListener("visibilitychange", onVisibility);
+    refreshTasks();
+    const unsubscribeEvent = subscribeRuntimeEvent("task.updated", refreshTasks);
+    const unsubscribeVisibility = subscribePageVisibility((visible) => { if (visible) refreshTasks(); });
     return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisibility);
+      unsubscribeEvent();
+      unsubscribeVisibility();
     };
-  }, [profile, user]);
+  }, [profile, refreshTasks, user]);
+
+  useEffect(() => {
+    if (!user || !profile || runtimeState !== "fallback") return;
+    const timer = window.setInterval(refreshTasks, FALLBACK_POLL_INTERVAL);
+    return () => window.clearInterval(timer);
+  }, [profile, refreshTasks, runtimeState, user]);
+
   const refreshUpdateProgress = useCallback(async (detailed = true) => {
     try {
       const value = await (detailed ? api.updateProgress() : api.updatePublicProgress());
-      setUpdateProgress(value);
+      setUpdateProgress((current) => sameUpdateProgress(current, value) ? current : value);
       setUpdateConnectionError(false);
       return value;
     } catch (error) {
@@ -121,9 +219,9 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
       localStorage.setItem("webnas_language", data.language);
       setTheme(data.theme);
     }).catch(() => undefined);
-    void (profile.permissions.includes("transfers.view_all") ? api.allTasks() : api.tasks()).then(setTasks).catch(() => undefined);
+    refreshTasks();
     void refreshUpdateProgress(profile.permissions.includes("updates.view"));
-  }, [clearAuthenticatedUi, profile, refreshUpdateProgress, user]);
+  }, [clearAuthenticatedUi, profile, refreshTasks, refreshUpdateProgress, user]);
   useEffect(() => {
     if (!user || !profile) {
       setUpdateChecked(false);
@@ -131,19 +229,23 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
       return;
     }
     const detailed = profile.permissions.includes("updates.view");
-    const poll = () => { if (!document.hidden) void refreshUpdateProgress(detailed); };
-    void refreshUpdateProgress(detailed);
-    const timer = window.setInterval(poll, 1500);
-    const refresh = () => void refreshUpdateProgress(detailed);
-    const onVisibility = () => { if (!document.hidden) poll(); };
+    const refresh = () => { if (pageIsVisible()) void refreshUpdateProgress(detailed); };
+    refresh();
+    const unsubscribeEvent = subscribeRuntimeEvent("update.progress", refresh);
+    const unsubscribeVisibility = subscribePageVisibility((visible) => { if (visible) refresh(); });
     window.addEventListener("webnas:update-status", refresh);
-    document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      window.clearInterval(timer);
+      unsubscribeEvent();
+      unsubscribeVisibility();
       window.removeEventListener("webnas:update-status", refresh);
-      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [profile, refreshUpdateProgress, user]);
+  useEffect(() => {
+    if (!user || !profile || runtimeState !== "fallback") return;
+    const detailed = profile.permissions.includes("updates.view");
+    const timer = window.setInterval(() => { if (pageIsVisible()) void refreshUpdateProgress(detailed); }, FALLBACK_POLL_INTERVAL);
+    return () => window.clearInterval(timer);
+  }, [profile, refreshUpdateProgress, runtimeState, user]);
   useEffect(() => {
     if (!updateProgress) return;
     const active = ["waiting", "preparing", "running"].includes(updateProgress.state);

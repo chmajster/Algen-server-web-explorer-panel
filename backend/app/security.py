@@ -7,7 +7,7 @@ import secrets
 import sqlite3
 import threading
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass
 from functools import lru_cache
 from http import HTTPStatus
@@ -21,6 +21,7 @@ from .transport import cookie_secure as transport_cookie_secure
 
 
 SESSION_CACHE_TTL_SECONDS = 2.0
+SESSION_CACHE_MAX_ENTRIES = 512
 
 
 @dataclass(frozen=True)
@@ -38,13 +39,21 @@ class StoredSession:
 
 
 class SessionStore:
-    """Persistent, revocable sessions with a short hash-keyed in-memory read cache."""
+    """Persistent, revocable sessions with a short, bounded, hash-keyed read cache."""
 
-    def __init__(self, path: Path, token_pepper: str = "", *, cache_ttl_seconds: float = SESSION_CACHE_TTL_SECONDS) -> None:
+    def __init__(
+        self,
+        path: Path,
+        token_pepper: str = "",
+        *,
+        cache_ttl_seconds: float = SESSION_CACHE_TTL_SECONDS,
+        cache_max_entries: int = SESSION_CACHE_MAX_ENTRIES,
+    ) -> None:
         self.path = path
         self._token_pepper = token_pepper.encode("utf-8")
         self._cache_ttl_seconds = max(0.0, float(cache_ttl_seconds))
-        self._cache: dict[str, tuple[StoredSession, float]] = {}
+        self._cache_max_entries = max(0, int(cache_max_entries))
+        self._cache: OrderedDict[str, tuple[StoredSession, float]] = OrderedDict()
         self._lock = threading.RLock()
         self._initialize()
 
@@ -81,9 +90,18 @@ class SessionStore:
         return hmac.new(self._token_pepper, token.encode("utf-8"), hashlib.sha256).hexdigest()
 
     def _cache_session(self, token_hash: str, session: StoredSession) -> None:
-        if self._cache_ttl_seconds <= 0:
+        if self._cache_ttl_seconds <= 0 or self._cache_max_entries <= 0:
             return
+        self._cache.pop(token_hash, None)
         self._cache[token_hash] = (session, time.monotonic() + self._cache_ttl_seconds)
+        while len(self._cache) > self._cache_max_entries:
+            self._cache.popitem(last=False)
+
+    def invalidate(self, token: str) -> None:
+        """Drop one cached token after an out-of-band change to its persisted session."""
+        token_hash = self._hash(token)
+        with self._lock:
+            self._cache.pop(token_hash, None)
 
     def create(self, token: str, username: str, csrf_token: str, *, persistent: bool, expires_at: float) -> None:
         now = time.time()
@@ -110,6 +128,7 @@ class SessionStore:
                         connection.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
                     return None
                 if cache_deadline > time.monotonic():
+                    self._cache.move_to_end(token_hash)
                     return session
                 self._cache.pop(token_hash, None)
 
@@ -137,6 +156,14 @@ class SessionStore:
         with self._lock, self._connect() as connection:
             self._cache.pop(token_hash, None)
             connection.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+
+    def revoke_user(self, username: str) -> int:
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute("DELETE FROM auth_sessions WHERE username=?", (username,))
+            stale = [token_hash for token_hash, (session, _) in self._cache.items() if session.username == username]
+            for token_hash in stale:
+                self._cache.pop(token_hash, None)
+            return max(0, int(cursor.rowcount))
 
 
 class LoginRateLimiter:
@@ -181,6 +208,10 @@ def _store(path: str, token_pepper: str) -> SessionStore:
 def _session_store() -> SessionStore:
     cfg = get_config()
     return _store(str(Path(cfg.paths.data_dir) / "sessions.sqlite3"), cfg.security.session_secret)
+
+
+def invalidate_user_sessions(username: str) -> int:
+    return _session_store().revoke_user(username)
 
 
 def create_session(response: Response, username: str, *, remember_me: bool = False) -> str:

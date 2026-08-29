@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type AppJob, type Task } from "../../api";
+import { resetRuntimeEventsForTests } from "../../core/realtime/runtimeEvents";
 import { settingsFixture } from "../../test/settings";
 import { useBackgroundActions } from "./useBackgroundActions";
 
@@ -24,6 +25,7 @@ vi.mock("../../api", async (importOriginal) => {
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
   readonly url: string;
+  onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   onerror: (() => void) | null = null;
   close = vi.fn();
@@ -92,8 +94,15 @@ function Harness({ permissions, tasks = [], pollInterval = 1000 }: { permissions
   return <output>{actions.map((action) => `${action.key}:${action.status}:${action.progress ?? ""}`).join(",")}</output>;
 }
 
+function runtimeSource() {
+  const source = FakeEventSource.instances.find((item) => item.url === "/api/events");
+  if (!source) throw new Error("Shared runtime EventSource was not created");
+  return source;
+}
+
 describe("useBackgroundActions", () => {
   beforeEach(() => {
+    resetRuntimeEventsForTests();
     FakeEventSource.instances = [];
     vi.clearAllMocks();
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -116,6 +125,7 @@ describe("useBackgroundActions", () => {
   });
 
   afterEach(() => {
+    resetRuntimeEventsForTests();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -130,59 +140,57 @@ describe("useBackgroundActions", () => {
     expect(api.hostsManagerOperations).not.toHaveBeenCalled();
   });
 
-  it("subscribes to active durable jobs and cleans SSE plus polling on unmount", async () => {
+  it("refreshes durable jobs through the shared runtime stream and cleans it on unmount", async () => {
+    const completed = { ...packageJob, status: "completed" as const, progress: 100, finished_at: Date.now() / 1000 };
     const view = render(<Harness permissions={["modules.view"]} />);
 
     expect(await screen.findByText("module:job-1:running:20")).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(FakeEventSource.instances[0].url).toContain("/api/apps/jobs/job-1/events");
+    await waitFor(() => expect(FakeEventSource.instances.some((item) => item.url === "/api/events")).toBe(true));
+    const source = runtimeSource();
+    act(() => source.onopen?.());
+    vi.mocked(api.appJobs).mockResolvedValue([completed]);
     act(() => {
-      FakeEventSource.instances[0].onmessage?.(
-        new MessageEvent("message", {
-          data: JSON.stringify({ ...packageJob, status: "completed", progress: 100, finished_at: Date.now() / 1000 }),
-        }),
-      );
+      source.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "module.updated", revision: 1, data: {} }),
+      }));
     });
-    expect(await screen.findByText("module:job-1:completed:100")).toBeInTheDocument();
-    expect(FakeEventSource.instances[0].close).toHaveBeenCalled();
 
-    const callsBeforeUnmount = vi.mocked(api.appJobs).mock.calls.length;
+    expect(await screen.findByText("module:job-1:completed:100")).toBeInTheDocument();
     view.unmount();
-    expect(FakeEventSource.instances[0].close).toHaveBeenCalled();
-    await new Promise((resolve) => window.setTimeout(resolve, 45));
-    expect(api.appJobs).toHaveBeenCalledTimes(callsBeforeUnmount);
+    expect(source.close).toHaveBeenCalled();
   });
 
-  it("does not let a stale polling response overwrite a newer SSE update", async () => {
-    let resolveStale: ((jobs: AppJob[]) => void) | undefined;
-    const completed = { ...packageJob, status: "completed" as const, progress: 100, finished_at: Date.now() / 1000 };
-    vi.mocked(api.appJobs)
-      .mockReset()
-      .mockResolvedValueOnce([packageJob])
-      .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve; }))
-      .mockResolvedValue([completed]);
+  it("uses interval polling only while the shared runtime stream is in fallback", async () => {
     const view = render(<Harness permissions={["modules.view"]} pollInterval={20} />);
 
     expect(await screen.findByText("module:job-1:running:20")).toBeInTheDocument();
-    await waitFor(() => expect(api.appJobs).toHaveBeenCalledTimes(2));
-    act(() => {
-      FakeEventSource.instances[0].onmessage?.(
-        new MessageEvent("message", { data: JSON.stringify(completed) }),
-      );
-    });
-    await act(async () => resolveStale?.([packageJob]));
+    await waitFor(() => expect(api.appJobs).toHaveBeenCalledTimes(1));
+    const source = runtimeSource();
+    act(() => source.onopen?.());
+    await new Promise((resolve) => window.setTimeout(resolve, 45));
+    expect(api.appJobs).toHaveBeenCalledTimes(1);
 
-    expect(screen.getByText("module:job-1:completed:100")).toBeInTheDocument();
+    act(() => source.onerror?.());
+    await waitFor(() => expect(vi.mocked(api.appJobs).mock.calls.length).toBeGreaterThanOrEqual(2));
     view.unmount();
   });
 
-  it("expires an active action that a successful backend refresh no longer returns", async () => {
+  it("expires an active action that an event-driven backend refresh no longer returns", async () => {
     vi.useFakeTimers();
     vi.mocked(api.appJobs).mockReset().mockResolvedValueOnce([packageJob]).mockResolvedValue([]);
-    render(<Harness permissions={["modules.view"]} pollInterval={1000} />);
+    render(<Harness permissions={["modules.view"]} />);
 
     await act(async () => vi.advanceTimersByTimeAsync(0));
     expect(screen.getByText("module:job-1:running:20")).toBeInTheDocument();
+    const source = runtimeSource();
+    act(() => source.onopen?.());
+    act(() => {
+      source.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "module.updated", revision: 1, data: {} }),
+      }));
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    expect(api.appJobs).toHaveBeenCalledTimes(2);
 
     await act(async () => vi.advanceTimersByTimeAsync(17_000));
     expect(document.querySelector("output")).toBeEmptyDOMElement();

@@ -103,6 +103,48 @@ def test_session_store_reuses_recent_database_resolution(monkeypatch, tmp_path):
     assert connect_count == 1
 
 
+def test_session_cache_is_bounded_and_evicts_oldest_entry(tmp_path):
+    store = security.SessionStore(
+        tmp_path / "sessions.sqlite3",
+        "test-session-secret",
+        cache_ttl_seconds=60,
+        cache_max_entries=2,
+    )
+    for index in range(3):
+        store.create(f"token-{index}", "alice", f"csrf-{index}", persistent=False, expires_at=time.time() + 60)
+
+    assert len(store._cache) == 2
+    assert store._hash("token-0") not in store._cache
+    assert store._hash("token-1") in store._cache
+    assert store._hash("token-2") in store._cache
+
+
+def test_explicit_cache_invalidation_observes_persisted_session_changes(tmp_path):
+    store = security.SessionStore(tmp_path / "sessions.sqlite3", "test-session-secret", cache_ttl_seconds=60)
+    store.create("token", "alice", "csrf", persistent=False, expires_at=time.time() + 60)
+    assert store.resolve("token") is not None
+
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("UPDATE auth_sessions SET expires_at=0 WHERE token_hash=?", (store._hash("token"),))
+        connection.commit()
+
+    store.invalidate("token")
+    assert store.resolve("token") is None
+
+
+def test_revoke_user_invalidates_database_and_cached_sessions(tmp_path):
+    store = security.SessionStore(tmp_path / "sessions.sqlite3", "test-session-secret", cache_ttl_seconds=60)
+    store.create("alice-1", "alice", "csrf-1", persistent=False, expires_at=time.time() + 60)
+    store.create("alice-2", "alice", "csrf-2", persistent=True, expires_at=time.time() + 60)
+    store.create("bob-1", "bob", "csrf-3", persistent=False, expires_at=time.time() + 60)
+
+    assert store.revoke_user("alice") == 2
+    assert store.resolve("alice-1") is None
+    assert store.resolve("alice-2") is None
+    assert store.resolve("bob-1") is not None
+    assert all(session.username != "alice" for session, _ in store._cache.values())
+
+
 def test_logout_revokes_the_current_token(session_store):
     login_response = Response()
     security.create_session(login_response, "alice", remember_me=True)

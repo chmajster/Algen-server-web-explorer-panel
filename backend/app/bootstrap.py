@@ -31,6 +31,8 @@ from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
 from .platform_api import frontend_cache_policy
 from .power_control import router as power_control_router
+from .runtime_events import router as runtime_events_router
+from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
 from .settings import start_auto_update_scheduler
 from .tasks import task_store
@@ -91,12 +93,15 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     promotion_task: asyncio.Task[None] | None = None
     collector_task: asyncio.Task[None] | None = None
+    runtime_event_task: asyncio.Task[None] | None = None
 
     def start_runtime_side_effects() -> None:
-        nonlocal collector_task
+        nonlocal collector_task, runtime_event_task
         _start_schedulers()
         if collector_task is None or collector_task.done():
             collector_task = asyncio.create_task(alert_collector_loop(module_registry))
+        if runtime_event_task is None or runtime_event_task.done():
+            runtime_event_task = asyncio.create_task(watch_update_progress())
 
     if os.environ.get("WEBNAS_CANDIDATE") != "1":
         start_runtime_side_effects()
@@ -124,6 +129,8 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
             promotion_task.cancel()
         if collector_task and not collector_task.done():
             collector_task.cancel()
+        if runtime_event_task and not runtime_event_task.done():
+            runtime_event_task.cancel()
         await module_registry.shutdown()
 
 
@@ -163,6 +170,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.middleware("http")(frontend_cache_policy)
     module_registry.install_routers(app)
     app.include_router(_registry_router(module_registry))
+    app.include_router(runtime_events_router)
     app.include_router(update_detail_policy_router)
     app.include_router(power_control_router)
     app.include_router(appliance_backup_router, include_in_schema=False)

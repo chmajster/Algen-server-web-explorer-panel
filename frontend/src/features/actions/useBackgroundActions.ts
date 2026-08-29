@@ -12,6 +12,8 @@ import {
   type UpdateProgress,
 } from "../../api";
 import type { Translate } from "../../app/types";
+import { runtimeConnectionState, subscribeRuntimeConnection, subscribeRuntimeEvent, type RuntimeConnectionState } from "../../core/realtime/runtimeEvents";
+import { pageIsVisible, subscribePageVisibility } from "../../core/runtime/pageVisibility";
 import {
   dedupeAndSortActions,
   normalizeAnsibleExecution,
@@ -55,6 +57,39 @@ function replaceById<T extends { id: string }>(items: T[], next: T) {
   return [next, ...items.filter((item) => item.id !== next.id)];
 }
 
+function sameTarget(current: BackgroundAction["target"], next: BackgroundAction["target"]) {
+  return current.app === next.app
+    && current.moduleId === next.moduleId
+    && current.initialPath === next.initialPath
+    && current.entityId === next.entityId
+    && current.jobId === next.jobId
+    && current.section === next.section
+    && current.detailType === next.detailType;
+}
+
+function sameAction(current: BackgroundAction, next: BackgroundAction) {
+  return current.key === next.key
+    && current.id === next.id
+    && current.relatedJobId === next.relatedJobId
+    && current.source === next.source
+    && current.title === next.title
+    && current.subtitle === next.subtitle
+    && current.status === next.status
+    && current.progress === next.progress
+    && current.currentStep === next.currentStep
+    && current.error === next.error
+    && current.createdAt === next.createdAt
+    && current.updatedAt === next.updatedAt
+    && current.finishedAt === next.finishedAt
+    && current.cancellable === next.cancellable
+    && current.retryable === next.retryable
+    && sameTarget(current.target, next.target);
+}
+
+function sameActions(current: BackgroundAction[], next: BackgroundAction[]) {
+  return current.length === next.length && current.every((action, index) => sameAction(action, next[index]));
+}
+
 function isAllowedAction(action: BackgroundAction, permissions: ReadonlySet<string>) {
   if (action.target.detailType === "transfer") {
     return permissions.has("transfers.view_own") || permissions.has("transfers.view_all");
@@ -85,6 +120,7 @@ export function useBackgroundActions({
   const [sources, setSources] = useState<Sources>(emptySources);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [rememberedActions, setRememberedActions] = useState<BackgroundAction[]>([]);
+  const [runtimeState, setRuntimeState] = useState<RuntimeConnectionState>(() => runtimeConnectionState());
   const mounted = useRef(true);
   const lastSeen = useRef(new Map<string, number>());
   const refreshSequence = useRef(0);
@@ -147,41 +183,32 @@ export function useBackgroundActions({
     return tracked;
   }, [can]);
 
+  useEffect(() => subscribeRuntimeConnection(() => setRuntimeState(runtimeConnectionState())), []);
+
   useEffect(() => {
     mounted.current = true;
-    const pollWhenVisible = () => {
-      if (!document.hidden) void refresh();
-    };
-    pollWhenVisible();
-    const timer = window.setInterval(pollWhenVisible, pollInterval);
-    document.addEventListener("visibilitychange", pollWhenVisible);
+    const refreshWhenVisible = () => { if (pageIsVisible()) void refresh(); };
+    refreshWhenVisible();
+    const unsubscribeVisibility = subscribePageVisibility((visible) => { if (visible) void refresh(); });
+    const unsubscribeEvents = [
+      "job.updated",
+      "module.updated",
+      "mount.updated",
+      "network.transaction.updated",
+      "update.progress",
+    ].map((eventType) => subscribeRuntimeEvent(eventType, refreshWhenVisible));
     return () => {
       mounted.current = false;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", pollWhenVisible);
+      unsubscribeVisibility();
+      unsubscribeEvents.forEach((unsubscribe) => unsubscribe());
     };
-  }, [pollInterval, refresh]);
+  }, [refresh]);
 
-  const activeAppJobIds = sources.appJobs.filter((job) => ["queued", "running", "waiting_for_confirmation"].includes(job.status)).map((job) => job.id).sort().join("|");
   useEffect(() => {
-    if (!activeAppJobIds || typeof EventSource === "undefined") return;
-    const eventSources = activeAppJobIds.split("|").map((id) => {
-      const source = new EventSource(`/api/apps/jobs/${encodeURIComponent(id)}/events`, { withCredentials: true });
-      source.onmessage = (event) => {
-        try {
-          const job = JSON.parse(event.data) as AppJob;
-          streamRevisions.current.appJobs += 1;
-          setSources((current) => ({ ...current, appJobs: replaceById(current.appJobs, job) }));
-          if (["completed", "failed", "cancelled"].includes(job.status)) source.close();
-        } catch {
-          source.close();
-        }
-      };
-      source.onerror = () => source.close();
-      return source;
-    });
-    return () => eventSources.forEach((source) => source.close());
-  }, [activeAppJobIds]);
+    if (runtimeState !== "fallback") return;
+    const timer = window.setInterval(() => { if (pageIsVisible()) void refresh(); }, pollInterval);
+    return () => window.clearInterval(timer);
+  }, [pollInterval, refresh, runtimeState]);
 
   const activeAnsibleIds = sources.ansibleJobs.filter((job) => ["queued", "running"].includes(job.status)).map((job) => job.id).sort().join("|");
   useEffect(() => {
@@ -241,16 +268,16 @@ export function useBackgroundActions({
     ]),
     [moduleNames, sources, t, tasks],
   );
+  const currentActionKeys = useMemo(() => new Set(currentActions.map((action) => action.key)), [currentActions]);
 
   useEffect(() => {
     const now = Date.now();
-    const currentKeys = new Set(currentActions.map((action) => action.key));
     currentActions.forEach((action) => lastSeen.current.set(action.key, now));
     setRememberedActions((previous) => {
       const remembered = new Map(previous.map((action) => [action.key, action]));
       currentActions.forEach((action) => remembered.set(action.key, action));
       for (const [key, action] of remembered) {
-        if (isActiveAction(action) && !currentKeys.has(key) && now - (lastSeen.current.get(key) || action.createdAt) > MISSING_ACTIVE_RETENTION) {
+        if (isActiveAction(action) && !currentActionKeys.has(key) && now - (lastSeen.current.get(key) || action.createdAt) > MISSING_ACTIVE_RETENTION) {
           remembered.delete(key);
           lastSeen.current.delete(key);
           continue;
@@ -263,9 +290,44 @@ export function useBackgroundActions({
         }
       }
       const next = dedupeAndSortActions([...remembered.values()]);
-      return JSON.stringify(next) === JSON.stringify(previous) ? previous : next;
+      return sameActions(next, previous) ? previous : next;
     });
-  }, [currentActions]);
+  }, [currentActionKeys, currentActions]);
+
+  useEffect(() => {
+    const now = Date.now();
+    let deadline = Number.POSITIVE_INFINITY;
+    for (const action of rememberedActions) {
+      if (isActiveAction(action)) {
+        if (!currentActionKeys.has(action.key)) {
+          deadline = Math.min(deadline, (lastSeen.current.get(action.key) || action.createdAt) + MISSING_ACTIVE_RETENTION);
+        }
+        continue;
+      }
+      const terminalAt = action.finishedAt || action.updatedAt || action.createdAt;
+      deadline = Math.min(deadline, terminalAt + (action.status === "failed" ? FAILED_RETENTION : COMPLETED_RETENTION));
+    }
+    if (!Number.isFinite(deadline)) return;
+    const timer = window.setTimeout(() => {
+      const pruneAt = Date.now();
+      setRememberedActions((previous) => {
+        const next = previous.filter((action) => {
+          if (isActiveAction(action)) {
+            if (currentActionKeys.has(action.key)) return true;
+            return pruneAt - (lastSeen.current.get(action.key) || action.createdAt) <= MISSING_ACTIVE_RETENTION;
+          }
+          const terminalAt = action.finishedAt || action.updatedAt || action.createdAt;
+          const retention = action.status === "failed" ? FAILED_RETENTION : COMPLETED_RETENTION;
+          return pruneAt - terminalAt <= retention;
+        });
+        if (next.length === previous.length) return previous;
+        const nextKeys = new Set(next.map((action) => action.key));
+        previous.forEach((action) => { if (!nextKeys.has(action.key)) lastSeen.current.delete(action.key); });
+        return next;
+      });
+    }, Math.max(0, deadline - now + 1));
+    return () => window.clearTimeout(timer);
+  }, [currentActionKeys, rememberedActions]);
 
   const permissionSet = useMemo(() => new Set(permissions), [permissions]);
   const actions = useMemo(
