@@ -1,153 +1,285 @@
 # Proxmox Manager
 
-Proxmox Manager integrates Proxmox VE with the existing WebNAS/Algen host-management architecture without creating a second inventory database.
+Proxmox Manager integrates Proxmox VE with the existing WebNAS/Algen host-management architecture without creating a second VM/LXC inventory database.
 
-## Architecture
+## Architecture and ownership
 
 ```mermaid
 flowchart LR
-    PVE[Proxmox VE API] --> PM[Proxmox Manager]
+    PVE[Proxmox VE REST API] --> PM[Proxmox Manager]
     PM --> HR[Hosts Manager / Host Registry]
-    HR --> HM[Hosts Manager UI]
     HR --> AC[Ansible Automation Controller]
-    HR --> CAP[Shared host capabilities]
-    CAP --> PM
-    AC -->|same host_id| VM[Managed VM / CT]
-    PM -->|power API| PVE
+    PM --> OPS[Operations / Activity Log]
+    PM --> TASKS[UPID Task Registry]
+    TASKS --> PVE
 ```
 
-The canonical machine object is always a Hosts Manager host.
-
-Proxmox Manager stores only Proxmox connection configuration in `/var/lib/webnas/proxmox-manager/proxmox.sqlite3`. It does not store a separate persistent VM inventory. Every synchronized Proxmox VM or LXC container is created or updated through the public `HostRegistryService` contract.
-
-## Shared identity
+Host Registry is the canonical inventory. Proxmox Manager stores connection configuration, synchronization runtime state and non-secret UPID task metadata only.
 
 A Proxmox resource is identified by:
 
 - `algen_provider = proxmox`
 - `algen_provider_instance_id = <Proxmox connection ID>`
 - `algen_provider_resource_id = <VMID>`
+- VMID
 
-The pair `<connection ID, VMID>` is stable even when a VM is migrated to another Proxmox node. Synchronization therefore updates the existing `host_id` instead of creating a duplicate host.
+`<connection ID, VMID>` remains stable when a VM migrates between nodes. A migration updates `proxmox_node` on the existing Host Registry record; it does not create a new `host_id`.
 
-Provider metadata is stored in the host `variables` field:
+User-owned Host Registry data is preserved during synchronization, including credentials, groups, approval, user tags, SSH configuration, environment and location.
 
-- `proxmox_vmid`
-- `proxmox_node`
-- `proxmox_resource_type` (`qemu` or `lxc`)
-- `proxmox_name`
-- `proxmox_status`
-- `proxmox_present`
+## Credentials and TLS
 
-User-owned host fields such as SSH credential, groups, approval status and manually adjusted host name remain attached to the same central host record.
+Proxmox Manager never stores a Proxmox token or password in its SQLite database. Connections contain only `credential_id`, pointing to the central Hosts Manager credential/secrets system.
 
-## Credentials
+Supported authentication:
 
-The **Add Proxmox connection** dialog supports two authentication modes:
+- `proxmox_api`: username `user@realm!tokenid` plus API token secret.
+- `username_password`: server-side Proxmox ticket authentication plus CSRF token.
 
-1. **Saved Hosts Manager credential** — select an existing credential shared with `proxmox-manager`.
-2. **Login + password** — enter a Proxmox `user@realm` login such as `root@pam` and its password directly in the connection dialog.
+The connection dialog can select an existing shared credential or create a central `username_password` credential. The password is sent to the credential store and is not copied into Proxmox Manager.
 
-When Login + password is selected, the UI creates a `username_password` credential in Hosts Manager, shares it only with `proxmox-manager`, and then saves the Proxmox connection using only the resulting `credential_id`. The password is never copied into the Proxmox Manager database. If connection creation fails before the connection is saved, the newly created credential is removed again.
+TLS verification is enabled by default. A private CA can be supplied as PEM. Disabling TLS verification is supported per connection for controlled lab use. Error messages are sanitized and do not include credential secrets.
 
-API-token authentication remains supported through a saved Hosts Manager credential:
+All Proxmox operations use the REST API. The module does not use SSH, `pvesh`, user-built shell commands or arbitrary user-supplied API paths.
 
-- type: `proxmox_api`
-- username: `user@realm!tokenid`, for example `automation@pve!algen`
-- secret: Proxmox API token secret
+## Dashboard
 
-For username/password credentials, Proxmox Manager exchanges the stored password server-side for a Proxmox authentication ticket and CSRF token. For API tokens it uses the `PVEAPIToken` authorization header. Secrets are decrypted by the controlled Hosts Manager credential API only when a Proxmox request is made.
+The Overview page aggregates live and runtime information:
 
-TLS verification is enabled by default. A custom CA certificate can be configured for a private Proxmox CA. Disabling TLS verification is available per connection but should be limited to isolated lab environments.
+- configured and active connections
+- nodes and online nodes
+- QEMU VM and LXC counts
+- running/stopped counts
+- templates
+- CPU, RAM and storage utilization
+- cluster quorum and HA resource count
+- Proxmox API errors
+- last and next automatic synchronization
+- active and failed UPID tasks
+- number of VMs linked to Host Registry
 
-## Synchronization
+## Nodes
 
-`POST /api/modules/proxmox-manager/connections/{connection_id}/sync`
+`GET /api/modules/proxmox-manager/nodes`
 
-Synchronization performs the following steps:
+The node list shows status, uptime, CPU utilization, RAM, root storage, kernel, Proxmox version, load average and VM/LXC counts.
 
-1. Reads current VM/CT resources from the Proxmox cluster API.
-2. Resolves a guest address using QEMU Guest Agent or LXC interface data when possible.
-3. Matches an existing host by `<connection ID, VMID>`.
-4. Creates or updates the canonical Hosts Manager record.
-5. Preserves the same `host_id` used by Hosts Manager and Ansible Automation Controller.
-6. Marks resources missing from Proxmox as inactive and sets `proxmox_present=false` instead of deleting their history.
+Node details use safe fixed REST paths for:
 
-A newly discovered host is not automatically approved. This keeps Ansible remote execution behind the existing Hosts Manager approval boundary.
+- status
+- network interfaces
+- DNS
+- subscription
+- APT repositories
+- services
 
-If a guest does not expose a usable IP address, synchronization falls back to a valid DNS-style VM name. If neither an address nor a usable name is available, the VM is reported as skipped rather than creating an invalid central host.
+Some sections depend on the Proxmox version and token permissions. A failure of an optional section is returned as a section-specific error instead of making the entire node view fail.
 
-## Proxmox metadata tags
+## VM / LXC inventory and details
 
-When `sync_proxmox_tags` is enabled for a Proxmox connection, every discovered VM/CT receives managed Proxmox tags during synchronization. The default managed set contains:
+`GET /api/modules/proxmox-manager/vms` remains a live Proxmox view joined to Host Registry by stable provider identity. It is not persisted as a second inventory.
 
-- `algen`
-- `project-<project>` from the connection project
-- `env-<environment>` from the canonical Host Registry host
-- `location-<location>` from the canonical Host Registry host
-- `type-vm` or `type-lxc`
-- normalized custom Host Registry tags
+The frontend supports search, sorting and filters by node, VM/LXC type, status and tag. It displays connection, VMID, node, IP/Host Registry address, uptime, CPU, RAM, disk, tags and Host Registry state.
 
-Generated values are normalized to lowercase Proxmox-safe tags. Proxmox stores multiple tags as a semicolon-separated value. The module reads the current guest configuration before updating it, preserves tags that were added manually in Proxmox, and records only its own managed tag set in `proxmox_managed_tags`. On later syncs it can therefore replace stale managed metadata without deleting unrelated administrator tags.
+`GET /api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}` returns a detailed view containing:
 
-Tag synchronization is best-effort. If the API token lacks permission to modify guest options or the Proxmox Datacenter tag policy rejects a tag, normal Host Registry synchronization still succeeds and the per-VM tag error is returned in the sync result. Proxmox requires suitable guest configuration permissions (normally `VM.Config.Options`), and Datacenter → Options → User Tag Access can further restrict which tags may be set.
+- current runtime status
+- OS/guest information when available
+- QEMU Guest Agent availability
+- configured CPU, sockets, RAM, balloon, machine and BIOS
+- disks, storage, size, cache, discard and IO thread flags
+- network adapters, MAC, bridge, VLAN and model
+- Host Registry `host_id`, address, approval and user tags
 
-## Ansible integration
+## Snapshots
 
-Ansible Automation Controller already consumes Hosts Manager host records and keeps their central IDs. No Proxmox-specific Ansible inventory table is required.
+Supported operations:
 
-After synchronization:
+- list snapshots
+- create snapshot with optional description
+- include QEMU VM state/RAM when requested
+- delete snapshot
+- rollback snapshot
+
+Delete and rollback require the exact VM name as confirmation. Every write returns or registers a Proxmox UPID when the API operation is asynchronous.
+
+## Clone
+
+VM/LXC cloning uses the Proxmox REST API and supports:
+
+- source VM/template
+- full or linked clone when accepted by Proxmox for the source/storage combination
+- new VMID and name
+- target node
+- target storage
+- pool
+- optional Host Registry synchronization after the UPID completes successfully
+
+Templates are discovered live through the Proxmox API and are not duplicated in local storage.
+
+## Migration
+
+Migration is a two-stage operation:
+
+1. Validate destination node/storage and basic compatibility.
+2. Execute only after exact VM-name confirmation.
+
+QEMU migration supports online/offline mode, local disks, target storage and `migration_network` where supported by the Proxmox API. LXC online migration is intentionally rejected by this implementation; use offline migration.
+
+Host identity remains `<connection ID, VMID>`, so a successful migration followed by synchronization updates the existing Host Registry host rather than creating a duplicate.
+
+## Hardware changes
+
+The hardware editor exposes a plan before applying changes:
 
 ```text
-Proxmox VMID 101
-        │
-        ▼
-Hosts Manager host_id = 4f...
-        │
-        ├── Hosts Manager actions
-        ├── Ansible inventory / playbooks
-        └── Proxmox power capabilities
+Current value -> New value
 ```
 
-Ansible capabilities remain subject to the existing host `active` and `approved` checks and SSH trust/credential requirements.
+Supported writes:
 
-## Power operations
+- cores
+- sockets
+- RAM
+- balloon
+- QEMU disk growth
 
-Proxmox Manager supports:
+Disk resize only permits growth. Shrink or equal-size requests are rejected before calling Proxmox. Hardware apply and disk growth require exact VM-name confirmation.
 
-- start
-- graceful shutdown
-- reboot
-- immediate stop
+## Storage, cluster and backups
 
-The same operations are also registered as Hosts Manager `HostCapabilityProvider` actions for Proxmox-backed hosts. This means the action can be launched from either Proxmox Manager or the shared Hosts Manager host context and still targets the same canonical host.
+Storage view is read-only except when a selected storage is passed to clone/migration/create operations. It shows node, storage type, state, total/used/free space, utilization, shared/local scope and content types.
 
-Shutdown, reboot and immediate stop require explicit confirmation using the exact VM/host name.
+Cluster view is monitoring-only. It shows cluster name, quorum, node availability, votes, HA resources and HA groups. Cluster creation/removal is deliberately not exposed.
 
-## API
+Backup visibility is read-only. The module enumerates backup-capable storage through the REST API and shows backup volume, VMID, timestamp, size, storage and node when a backup can be unambiguously matched to the VM.
+
+## UPID Task Manager
+
+Proxmox returning a UPID is treated as the start of an asynchronous operation, not as completion.
+
+The local task registry stores only operational metadata:
+
+- connection ID
+- UPID
+- action
+- VMID
+- node owning the UPID
+- resource type
+- actor
+- Host Registry host ID
+- Operations record ID
+- status and exit status
+- progress
+- start/end/update timestamps
+- sanitized error
+- post-task Host Registry sync flags
+
+Statuses are `Queued`, `Running`, `Completed` and `Failed`.
+
+The frontend polls active tasks without reloading the whole page. The node embedded in the UPID is authoritative for task polling, which is important for clone/migration jobs where the destination node can differ from the task-owning source node.
+
+Task APIs:
+
+- `GET /api/modules/proxmox-manager/tasks`
+- `GET /api/modules/proxmox-manager/tasks/{upid}`
+- `GET /api/modules/proxmox-manager/tasks/{upid}/log`
+
+Clone, create and migration can request a Host Registry refresh after successful task completion. Migration therefore preserves the same `host_id` while updating the node metadata.
+
+## Automatic synchronization
+
+Each connection supports:
+
+- `auto_sync`
+- `sync_interval_seconds` from 60 to 86400
+- last sync timestamp
+- last sync start
+- next sync timestamp
+- last duration
+- last result
+- last error
+- consecutive failure count
+- backoff deadline
+
+The scheduler performs full Host Registry inventory synchronization when a connection is due. A per-connection lock prevents two synchronizations of the same connection from running concurrently. A failure in one cluster is isolated and does not stop other connections. Consecutive failures use capped exponential backoff.
+
+The existing Proxmox metadata tag synchronization remains enabled independently and can run even when full automatic inventory synchronization is disabled.
+
+## Create VM
+
+The Create VM wizard creates a QEMU VM through the REST API with:
+
+- VMID and name
+- node
+- CPU cores and sockets
+- RAM
+- storage and disk size
+- bridge and optional VLAN
+- DHCP or static IPv4
+- gateway and DNS
+- cloud-init user
+- SSH public key
+
+There is no cloud-init plaintext password field. Use an SSH public key and/or the central credential/secrets workflow after Host Registry enrollment.
+
+The direct create flow creates a cloud-init-capable QEMU VM and tracks its UPID. Existing templates use the Clone action, because clone is asynchronous and subsequent configuration must not be applied before the clone task completes. `start_after_create` is currently rejected rather than pretending the VM has started before the asynchronous create UPID completes; start the VM after the task reaches `Completed`.
+
+## RBAC and destructive operations
+
+The module reuses existing Hosts Manager permissions instead of creating a competing authorization model:
+
+- read inventory/health: `hosts-manager.hosts.view` / `hosts-manager.view`
+- connection configuration: `hosts-manager.configure`
+- create/clone/migrate/snapshot/hardware/sync: `hosts-manager.hosts.manage`
+- power: existing `hosts-manager.power.*` permissions
+- central credential creation: `hosts-manager.credentials.manage`
+
+Destructive operations require additional exact-name confirmation. Host Registry approval remains authoritative for shared host capabilities and downstream Ansible execution.
+
+## Activity and Operations integration
+
+Activity Log records connection changes, sync, create VM, clone, migrate, snapshot create/delete/rollback, hardware update, disk resize and power operations. Details contain resource identifiers and UPID state, never secrets.
+
+Asynchronous operations are also registered in the existing Operations system and linked to the local UPID task record by `operation_id`.
+
+## API reference
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| GET | `/api/modules/proxmox-manager/dashboard` | Summary |
-| GET | `/api/modules/proxmox-manager/connections` | List Proxmox connections |
-| POST | `/api/modules/proxmox-manager/connections` | Add connection |
-| PUT | `/api/modules/proxmox-manager/connections/{id}` | Update connection |
-| DELETE | `/api/modules/proxmox-manager/connections/{id}` | Disable connection |
-| POST | `/api/modules/proxmox-manager/connections/{id}/test` | Test API connection |
-| POST | `/api/modules/proxmox-manager/connections/{id}/sync` | Synchronize VM/CT resources to Host Registry |
-| GET | `/api/modules/proxmox-manager/vms` | Live VM/CT list joined with shared `host_id` |
-| POST | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/power` | Power action |
+| GET | `/api/modules/proxmox-manager/dashboard` | Aggregate health/dashboard |
+| GET/POST | `/api/modules/proxmox-manager/connections` | List/create connections |
+| PUT/DELETE | `/api/modules/proxmox-manager/connections/{id}` | Update/disable connection |
+| POST | `/api/modules/proxmox-manager/connections/{id}/test` | Test connection |
+| POST | `/api/modules/proxmox-manager/connections/{id}/sync` | Full Host Registry sync |
+| GET | `/api/modules/proxmox-manager/vms` | Live VM/LXC list |
+| GET | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}` | VM/LXC detail |
+| POST | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/power` | Power operation |
+| GET | `/api/modules/proxmox-manager/nodes` | Nodes |
+| GET | `/api/modules/proxmox-manager/nodes/{node}` | Node details |
+| GET | `/api/modules/proxmox-manager/nodes/{node}/status` | Node status |
+| GET | `/api/modules/proxmox-manager/storage` | Storage visibility |
+| GET | `/api/modules/proxmox-manager/cluster` | Cluster/HA health |
+| GET | `/api/modules/proxmox-manager/templates` | Live templates |
+| GET | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/backups` | Backup visibility |
+| GET/POST | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/snapshots` | List/create snapshots |
+| DELETE | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/snapshots/{snapshot}` | Delete snapshot |
+| POST | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/snapshots/{snapshot}/rollback` | Roll back snapshot |
+| POST | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/clone` | Clone VM/LXC |
+| POST | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/migration/validate` | Validate migration |
+| POST | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/migration` | Execute migration |
+| POST | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/hardware/plan` | Preview hardware delta |
+| PUT | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/hardware` | Apply hardware delta |
+| PUT | `/api/modules/proxmox-manager/connections/{id}/vms/{vmid}/disks/resize` | Grow QEMU disk |
+| POST | `/api/modules/proxmox-manager/connections/{id}/vms` | Create QEMU VM |
+| GET | `/api/modules/proxmox-manager/tasks` | Task list |
+| GET | `/api/modules/proxmox-manager/tasks/{upid}` | Task status |
+| GET | `/api/modules/proxmox-manager/tasks/{upid}/log` | Task log |
 
-## Data ownership
+## Proxmox permissions
 
-| Data | Owner |
-| --- | --- |
-| Proxmox endpoint/TLS settings | Proxmox Manager |
-| Proxmox token/password secret | Hosts Manager Credentials |
-| VMID/node/provider metadata | Shared host `variables` |
-| Host name/address/SSH user/groups/environment | Hosts Manager Host Registry |
-| SSH credentials and trust | Hosts Manager |
-| Ansible inventory and execution selection | Derived from Host Registry |
-| Proxmox power actions | Proxmox Manager capability provider |
+Exact privileges depend on which functions are enabled. A read-only monitoring token needs permission to read cluster/node/VM/storage/config/task state. Write features additionally need the corresponding Proxmox VM privileges for power, configuration, snapshots, clone, migration and allocation/storage operations. Tag synchronization normally requires `VM.Config.Options`. Use the narrowest Proxmox role that covers the selected features and scope it to the required cluster paths/resources.
 
-This ownership model prevents the three modules from drifting into separate, conflicting inventories.
+## Local database migration
+
+The migration is additive and backward compatible. Existing `connections` rows remain valid. New runtime columns receive defaults, and a new `proxmox_tasks` table stores UPID metadata. No VM/LXC inventory table and no secret-bearing columns are introduced.
