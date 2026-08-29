@@ -4,7 +4,12 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
-from app.modules.storage_manager.service import CommandResult, StorageInventoryService, _safe_device_path
+from app.modules.storage_manager.router import router
+from app.modules.storage_manager.service import (
+    CommandResult,
+    StorageInventoryService,
+    _safe_device_path,
+)
 
 
 LSBLK_FIXTURE = {
@@ -110,7 +115,9 @@ def test_nvme_probe_uses_fixed_binary_and_kernel_discovered_device_only() -> Non
     assert nvme["provider"] == "nvme"
     assert nvme["state"] == "ok"
     assert nvme["temperature_c"] == 38.0
-    assert ["/usr/bin/nvme", "smart-log", "-o", "json", "/dev/nvme1n1"] in [argv for argv, _timeout in calls]
+    assert ["/usr/bin/nvme", "smart-log", "-o", "json", "/dev/nvme1n1"] in [
+        argv for argv, _timeout in calls
+    ]
     assert all(";" not in argument for argv, _timeout in calls for argument in argv)
 
 
@@ -136,7 +143,10 @@ def test_snapshot_surfaces_failed_device_array_pool_btrfs_and_low_space() -> Non
         def block_devices(self) -> list[dict[str, Any]]:
             return [{"path": "/dev/sdz", "type": "disk", "children": []}]
 
-        def device_health(self, devices: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        def device_health(
+            self,
+            devices: list[dict[str, Any]] | None = None,
+        ) -> list[dict[str, Any]]:
             return [{"device": "/dev/sdz", "state": "failed"}]
 
         def filesystems(self) -> list[dict[str, Any]]:
@@ -161,8 +171,17 @@ def test_snapshot_surfaces_failed_device_array_pool_btrfs_and_low_space() -> Non
         def zfs_pools(self) -> list[dict[str, Any]]:
             return [{"name": "tank", "health": "DEGRADED", "state": "degraded"}]
 
-        def btrfs_filesystems(self, filesystems: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
-            return [{"mount_point": "/srv/btrfs", "state": "degraded", "available": True}]
+        def btrfs_filesystems(
+            self,
+            filesystems: list[dict[str, Any]] | None = None,
+        ) -> list[dict[str, Any]]:
+            return [
+                {
+                    "mount_point": "/srv/btrfs",
+                    "state": "degraded",
+                    "available": True,
+                }
+            ]
 
         def tool_available(self, name: str) -> bool:
             return name in {"lsblk", "smartctl"}
@@ -198,3 +217,29 @@ def test_filesystem_inventory_filters_network_and_pseudo_mounts(tmp_path: Path) 
     assert result[0]["mount_point"] == str(data)
     assert result[0]["filesystem"] == "ext4"
     assert result[0]["total"] > 0
+
+
+def test_storage_router_is_get_only() -> None:
+    for route in router.routes:
+        methods = set(getattr(route, "methods", set()) or set())
+        assert not (methods & {"POST", "PUT", "PATCH", "DELETE"})
+
+
+def test_unknown_tool_is_rejected_before_resolution_or_execution() -> None:
+    resolved: list[str] = []
+    executed: list[list[str]] = []
+
+    def resolver(name: str) -> str | None:
+        resolved.append(name)
+        return f"/usr/bin/{name}"
+
+    def runner(argv: Sequence[str], timeout: float) -> CommandResult:
+        del timeout
+        executed.append(list(argv))
+        return CommandResult(0, "", "")
+
+    manager = StorageInventoryService(runner=runner, tool_resolver=resolver)
+
+    assert manager._run("sh", ["-c", "id"]) is None
+    assert resolved == []
+    assert executed == []
