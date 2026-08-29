@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
 import urllib.parse
 from typing import Any
 
+from ...activity import ActivityCategory, ActivityStatus, record_activity
 from ...package_center.service import repository as package_repository
 from ..hosts_manager.public import provider_hosts as shared_provider_hosts
+from .runtime import (
+    connection_lock,
+    ensure_runtime_schema,
+    mark_sync_finished,
+    mark_sync_started,
+    sync_due,
+)
 from .service import PROVIDER, ProxmoxApiError, ProxmoxManagerService, service
 
 
@@ -31,6 +40,22 @@ def _tag_context(connection: dict[str, Any], host: dict[str, Any] | None) -> dic
 
 def _resource_identity(connection_id: str, resource: dict[str, Any]) -> tuple[str, str]:
     return connection_id, str(resource["vmid"])
+
+
+def _safe_error(error: Exception) -> str:
+    return str(error)[:1000] if isinstance(error, ProxmoxApiError) else type(error).__name__
+
+
+def _record_sync_activity(connection_id: str, details: dict[str, Any], *, failed: bool = False) -> None:
+    record_activity(
+        ActivityCategory.module,
+        "proxmox_auto_sync",
+        "proxmox-scheduler",
+        target=connection_id,
+        details=details,
+        status=ActivityStatus.failure if failed else ActivityStatus.success,
+        source="proxmox-manager",
+    )
 
 
 def sync_connection_tags(
@@ -74,7 +99,7 @@ def sync_connection_tags(
                 {
                     "vmid": resource.get("vmid"),
                     "name": resource.get("name"),
-                    "error": str(error)[:500],
+                    "error": _safe_error(error),
                 }
             )
 
@@ -86,18 +111,75 @@ def sync_connection_tags(
     }
 
 
+def _auto_sync_connection(manager: ProxmoxManagerService, connection: dict[str, Any]) -> bool:
+    if not sync_due(connection):
+        return False
+    connection_id = str(connection["id"])
+    lock = connection_lock(connection_id)
+    if not lock.acquire(blocking=False):
+        logger.info("proxmox_auto_sync_skipped_locked connection=%s", connection_id)
+        return False
+    started = mark_sync_started(manager, connection_id)
+    try:
+        result = manager.sync(
+            connection_id,
+            "proxmox-scheduler",
+            resolve_addresses=True,
+            disable_missing=True,
+        )
+        summary = {
+            "created": int(result["created"]),
+            "updated": int(result["updated"]),
+            "disabled": int(result["disabled"]),
+            "tagged": int(result["tagged"]),
+            "skipped": len(result["skipped"]),
+            "tag_errors": len(result["tag_errors"]),
+        }
+        mark_sync_finished(
+            manager,
+            connection_id,
+            started_at=started,
+            success=True,
+            result=json.dumps(summary, separators=(",", ":")),
+        )
+        _record_sync_activity(connection_id, summary)
+        return True
+    except Exception as error:  # noqa: BLE001 - one failed cluster must never stop other connections
+        safe_error = _safe_error(error)
+        mark_sync_finished(
+            manager,
+            connection_id,
+            started_at=started,
+            success=False,
+            result="failed",
+            error=safe_error,
+        )
+        _record_sync_activity(connection_id, {"error": safe_error}, failed=True)
+        logger.exception("proxmox_auto_sync_failed connection=%s", connection_id)
+        return False
+    finally:
+        lock.release()
+
+
 def scheduler_tick() -> int:
     if "proxmox-manager" not in package_repository().installed():
         return 0
 
     manager = service()
-    updated = 0
+    ensure_runtime_schema(manager)
+    updated_tags = 0
     for connection in manager.connections(active_only=True):
+        # Full inventory synchronization is controlled per connection by auto_sync
+        # and its interval/backoff state. A lock prevents overlapping syncs.
+        _auto_sync_connection(manager, connection)
+
+        # Keep the existing tag-only synchronization. It intentionally runs even
+        # when inventory sync is disabled and can update VMs without a guest IP.
         if not connection.get("sync_proxmox_tags", True):
             continue
         try:
             result = sync_connection_tags(manager, connection)
-            updated += int(result["updated"])
+            updated_tags += int(result["updated"])
             if result["errors"]:
                 logger.warning(
                     "proxmox_auto_tag_completed_with_errors connection=%s errors=%s",
@@ -106,7 +188,7 @@ def scheduler_tick() -> int:
                 )
         except (KeyError, ValueError, ProxmoxApiError):
             logger.exception("proxmox_auto_tag_failed connection=%s", connection.get("id"))
-    return updated
+    return updated_tags
 
 
 def _loop() -> None:
@@ -114,7 +196,7 @@ def _loop() -> None:
         try:
             scheduler_tick()
         except Exception:  # noqa: BLE001 - scheduler must survive one failed cycle
-            logger.exception("proxmox_auto_tag_scheduler_tick_failed")
+            logger.exception("proxmox_scheduler_tick_failed")
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
@@ -124,4 +206,4 @@ def start_scheduler() -> None:
         if _started:
             return
         _started = True
-        threading.Thread(target=_loop, daemon=True, name="proxmox-auto-tag-scheduler").start()
+        threading.Thread(target=_loop, daemon=True, name="proxmox-scheduler").start()

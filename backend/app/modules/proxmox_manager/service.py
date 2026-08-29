@@ -282,6 +282,9 @@ class ProxmoxApiClient:
     def put(self, path: str, data: dict[str, Any] | None = None) -> Any:
         return self.request("PUT", path, data)
 
+    def delete(self, path: str, data: dict[str, Any] | None = None) -> Any:
+        return self.request("DELETE", path, data)
+
 
 class ProxmoxManagerService:
     """Proxmox connection registry and synchronization bridge to Hosts Manager."""

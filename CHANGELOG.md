@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.1.28 — 2026-08-30
+
+- Expanded Proxmox Manager with live node/storage/cluster/VM detail views, central UPID task tracking, snapshots, cloning, migration, hardware and disk growth operations, full locked/backoff inventory auto-sync, a split responsive frontend, create-VM workflow, Host Registry identity preservation, audit integration, tests, and updated documentation without persisting Proxmox secrets or a duplicate VM/LXC inventory.
+
 ## v0.1.24 — 2026-08-29
 
 - Added real browser-to-FastAPI E2E coverage and hardened appliance backup/restore validation and recovery workflows.
