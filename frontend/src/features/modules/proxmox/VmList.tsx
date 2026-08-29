@@ -4,6 +4,7 @@ import { api, type ProxmoxConnection, type ProxmoxVm } from "../../../api";
 import type { ToastFn, Translate } from "../../../app/types";
 import { Modal } from "../../../components/Modal";
 import { CreateVmDialog } from "./dialogs/CreateVmDialog";
+import { ProxmoxTemplates } from "./Templates";
 import { VmDetails } from "./VmDetails";
 import { bytes, duration, percent } from "./utils";
 
@@ -89,6 +90,7 @@ export function ProxmoxVmList({ vms, connections, permissions, t, toast, onChang
         </tr>;
       })}</tbody></table>{!filtered.length && <div className="empty-state"><strong>No virtual machines match the current filters.</strong></div>}</div>
     </section>
+    <ProxmoxTemplates canManage={canManage} refreshKey={vms.length} t={t} toast={toast} onChanged={onChanged} />
     {selected && <VmDetails vm={selected} canManage={canManage} t={t} toast={toast} onClose={() => setSelected(null)} onChanged={onChanged} />}
     {powerDialog && <PowerDialog vm={powerDialog.vm} action={powerDialog.action} busy={busyVm === `${powerDialog.vm.connection_id}:${powerDialog.vm.vmid}`} t={t} onClose={() => setPowerDialog(null)} onConfirm={(text) => void power(powerDialog.vm, powerDialog.action, text)} />}
     {createOpen && <CreateVmDialog connections={connections} t={t} toast={toast} onClose={() => setCreateOpen(false)} onDone={onChanged} />}
