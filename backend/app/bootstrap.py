@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import __version__
+from . import settings as settings_api
 from .alerts.collectors import collector_loop as alert_collector_loop
 from .alerts.router import router as alerts_router
 from .alerts.scheduler import start_scheduler as start_alert_scheduler
@@ -31,11 +32,10 @@ from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
 from .platform_api import frontend_cache_policy
 from .power_control import router as power_control_router
-from .resource_sampler import resource_sampler_loop
+from .resource_sampler import resource_sampler, resource_sampler_loop
 from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
-from .settings import start_auto_update_scheduler
 from .tasks import task_store
 from .update_coordination import active_transient_operations, register_operation_provider
 from .update_detail_policy import router as update_detail_policy_router
@@ -59,7 +59,7 @@ def build_module_registry(root: Path = BUILTIN_MODULES) -> ModuleRegistry:
 
 
 def _start_schedulers() -> None:
-    start_auto_update_scheduler()
+    settings_api.start_auto_update_scheduler()
     start_alert_scheduler()
     start_ansible_scheduler()
     start_os_repositories_scheduler()
@@ -164,6 +164,10 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     application_settings = settings or get_config()
     module_registry = registry or build_module_registry()
     container = ApplicationContainer(application_settings, module_registry)
+    # settings.system_resources resolves this module global at request time.
+    # Inject the shared sampler at the composition root without changing the
+    # public API or the settings router's authorization dependency.
+    settings_api.collect_dashboard = resource_sampler.dashboard
     app = FastAPI(title="WebNAS", version=__version__, lifespan=application_lifespan)
     app.state.ready = False
     app.state.settings = application_settings
