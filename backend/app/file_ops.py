@@ -80,13 +80,11 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
                 assert_write_allowed(payload[key])
     if not current_process_can_impersonate():
         raise HTTPException(503, "File operations require the service to run as root for per-user impersonation")
-    cmd = [sys.executable, "-m", "app.worker", "--user", username, "--op", op, "--payload", _encode(payload)]
-    # Editor content is sent through stdin so file data is never exposed in the
-    # worker process command line. Other small metadata payloads keep the
-    # backwards-compatible argument transport.
-    stdin_payload = _encode(payload) if op == "write_text" else None
-    if stdin_payload is not None:
-        cmd[-1] = "-"
+    # Keep all user-controlled operation data out of argv. The worker accepts a
+    # bounded base64/JSON payload from stdin, while operation and username stay
+    # separate argv tokens and shell execution remains disabled.
+    cmd = [sys.executable, "-m", "app.worker", "--user", username, "--op", op, "--payload", "-"]
+    stdin_payload = _encode(payload)
     # Keep the short-lived process boundary for per-user UID/GID dropping.
     # The existing privileged broker is a multi-threaded root process; calling
     # setuid/setgid from one broker thread would alter credentials process-wide
