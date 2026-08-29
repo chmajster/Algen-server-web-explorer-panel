@@ -20,14 +20,73 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
+      - name: Fix deterministic transformer assumptions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply_privilege_migration_once.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''replace_once(\n    "backend/app/privileged_broker/extended_policy.py",\n    "subprocess.list2cmdline([str(log_path)])",\n    "shlex.quote(str(log_path))",\n)\n# The same path expression occurs more than once after the first exact replacement.\npolicy_path = ROOT / "backend/app/privileged_broker/extended_policy.py"\npolicy_text = policy_path.read_text(encoding="utf-8").replace("subprocess.list2cmdline([str(progress)])", "shlex.quote(str(progress))")\n'''
+          new = '''# These path expressions occur several times in the generated update runner.\npolicy_path = ROOT / "backend/app/privileged_broker/extended_policy.py"\npolicy_text = policy_path.read_text(encoding="utf-8")\npolicy_text = policy_text.replace("subprocess.list2cmdline([str(log_path)])", "shlex.quote(str(log_path))")\npolicy_text = policy_text.replace("subprocess.list2cmdline([str(progress)])", "shlex.quote(str(progress))")\n'''
+          if text.count(old) != 1:
+              raise SystemExit('unexpected transformer quoting block')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Apply controlled transformations
         run: python scripts/apply_privilege_migration_once.py
-      - name: Validate Python syntax
+      - name: Harden generated service boundaries
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          release = Path('scripts/webnas_release.py')
+          text = release.read_text(encoding='utf-8')
+          text = text.replace(
+              '                "Wants=network-online.target",\n                "StartLimitIntervalSec=120",',
+              '                "Wants=network-online.target",\n                "Requires=webnas-privileged.socket",\n                "After=webnas-privileged.socket",\n                "StartLimitIntervalSec=120",',
+              1,
+          )
+          text = text.replace(
+              '                "Environment=WEBNAS_PRIVILEGED_BROKER=required",\n                "Requires=webnas-privileged.socket",\n                "After=webnas-privileged.socket",\n                "NoNewPrivileges=true",',
+              '                "Environment=WEBNAS_PRIVILEGED_BROKER=required",\n                "NoNewPrivileges=true",',
+              1,
+          )
+          text = text.replace(
+              'for writable in (Path(data_dir), Path(log_dir), Path(temp_dir), runtime, self.root):',
+              'for writable in (Path(data_dir), Path(log_dir), Path(temp_dir)):',
+              1,
+          )
+          release.write_text(text, encoding='utf-8')
+
+          unit = Path('packaging/webnas.service')
+          service = unit.read_text(encoding='utf-8')
+          if 'Requires=webnas-privileged.socket' not in service.split('[Service]', 1)[0]:
+              service = service.replace(
+                  'Wants=network-online.target\n',
+                  'Wants=network-online.target\nRequires=webnas-privileged.socket\nAfter=webnas-privileged.socket\n',
+                  1,
+              )
+          service = service.replace(
+              'Environment=WEBNAS_PRIVILEGED_BROKER=required\nRequires=webnas-privileged.socket\nAfter=webnas-privileged.socket\n',
+              'Environment=WEBNAS_PRIVILEGED_BROKER=required\n',
+              1,
+          )
+          unit.write_text(service, encoding='utf-8')
+          PY
+      - name: Validate Python syntax and privilege invariants
         run: |
           python -m compileall -q backend/app scripts/webnas_release.py
           grep -q 'User=webnas' packaging/webnas.service
           grep -q 'NoNewPrivileges=true' packaging/webnas.service
           grep -q 'WEBNAS_PRIVILEGED_BROKER=required' packaging/webnas.service
+          python - <<'PY'
+          from pathlib import Path
+          release = Path('scripts/webnas_release.py').read_text(encoding='utf-8')
+          legacy = Path('packaging/webnas.service').read_text(encoding='utf-8')
+          assert 'for writable in (Path(data_dir), Path(log_dir), Path(temp_dir), runtime, self.root):' not in release
+          assert 'Requires=webnas-privileged.socket' in legacy.split('[Service]', 1)[0]
+          assert 'Requires=webnas-privileged.socket' not in legacy.split('[Service]', 1)[1]
+          PY
       - name: Commit transformed sources
         run: |
           rm scripts/apply_privilege_migration_once.py
