@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import sqlite3
 from pathlib import Path
@@ -9,8 +10,9 @@ import pytest
 
 from app.modules.ansible_controller.public_security import CredentialCipher
 from app.modules.secrets_manager.models import SecretInput
-from app.modules.secrets_manager import service as secrets_module
 from app.modules.secrets_manager.service import SecretsManagerService
+
+secrets_module = importlib.import_module("app.modules.secrets_manager.service")
 
 
 def _legacy_database(path: Path, *, credential_id: str, envelope: str) -> None:
