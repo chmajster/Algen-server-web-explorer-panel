@@ -13,6 +13,15 @@ export type SecretType =
   | "git_private_key"
   | "wol";
 
+export type SecretUsage = {
+  module: string;
+  resource: string;
+  resource_id?: string;
+  name?: string;
+  role?: string;
+  count: number;
+};
+
 export type SecretItem = {
   id: string;
   name: string;
@@ -27,6 +36,7 @@ export type SecretItem = {
   created_at: number;
   updated_at: number;
   usage_count: number;
+  usage: SecretUsage[];
 };
 
 export type SecretInput = {
