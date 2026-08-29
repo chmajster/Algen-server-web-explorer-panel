@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, errorFromResponse, request, resetAuthenticationState } from "./transport";
+import { ApiError, errorFromResponse, me, request, resetAuthenticationState } from "./transport";
 
 afterEach(() => { vi.unstubAllGlobals(); resetAuthenticationState(); });
 
@@ -57,6 +57,90 @@ describe("shared API transport", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     resolveResponse?.(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
     await expect(Promise.all([first, second])).resolves.toEqual([{ ok: true }, { ok: true }]);
+  });
+
+  it("serves startup settings, tasks and update state from one bootstrap request", async () => {
+    const profile = { username: "test", permissions: ["transfers.view_own"], language: "pl-PL" };
+    const tasks = [{ id: "task-1" }];
+    const updateProgress = { state: "idle", running: false };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      user: { username: "test", home: "/home/test", csrf_token: "csrf" },
+      profile,
+      tasks,
+      task_scope: "own",
+      update_progress: updateProgress,
+      update_detailed: false,
+      update_completion: null,
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(me()).resolves.toEqual({ username: "test", home: "/home/test", csrf_token: "csrf" });
+    await expect(request("/api/settings/me")).resolves.toEqual(profile);
+    await expect(request("/api/files/tasks")).resolves.toEqual(tasks);
+    await expect(request("/api/system/update-status")).resolves.toEqual(updateProgress);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/bootstrap");
+  });
+
+  it("keeps update completion off the bootstrap critical path", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/bootstrap") return Promise.resolve(new Response(JSON.stringify({
+        user: { username: "test", home: "/home/test", csrf_token: "csrf" },
+        profile: { username: "test", permissions: ["updates.view"] },
+        tasks: [],
+        task_scope: "none",
+        update_progress: { state: "idle" },
+        update_detailed: true,
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+      if (url === "/api/admin/system/updates/completion") return Promise.resolve(new Response(JSON.stringify({ notice: null }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await me();
+    await expect(request("/api/admin/system/updates/completion")).resolves.toEqual({ notice: null });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/bootstrap", "/api/admin/system/updates/completion"]);
+  });
+
+  it("does not fall back after a bootstrap request is superseded", async () => {
+    let resolveBootstrap: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/bootstrap") return new Promise<Response>((resolve) => { resolveBootstrap = resolve; });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = me();
+    resetAuthenticationState();
+    resolveBootstrap?.(new Response(JSON.stringify({
+      user: { username: "old", home: "/home/old", csrf_token: "old-csrf" },
+      profile: { username: "old", permissions: [] },
+      tasks: [],
+      task_scope: "none",
+      update_progress: { state: "idle" },
+      update_detailed: false,
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    await expect(pending).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/bootstrap"]);
+  });
+
+  it("falls back to the legacy session endpoint when bootstrap is unavailable", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/bootstrap") return Promise.resolve(new Response("missing", { status: 404, statusText: "Not Found" }));
+      if (url === "/api/auth/me") return Promise.resolve(new Response(JSON.stringify({ username: "test", home: "/home/test", csrf_token: "csrf" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(me()).resolves.toEqual({ username: "test", home: "/home/test", csrf_token: "csrf" });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/bootstrap", "/api/auth/me"]);
   });
 
   it("does not deduplicate mutating requests", async () => {
