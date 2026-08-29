@@ -6,6 +6,12 @@ _installed = False
 _originals: dict[str, Any] = {}
 
 
+def _host_registry_class() -> type:
+    from ..hosts_manager.public import registry as hosts_registry
+
+    return type(hosts_registry())
+
+
 def install_hosts_credential_compatibility() -> bool:
     """Redirect the legacy Hosts Manager credential surface to Secrets Manager.
 
@@ -17,15 +23,15 @@ def install_hosts_credential_compatibility() -> bool:
     if _installed:
         return True
 
-    from ..hosts_manager.service import HostRegistryService
     from .service import service
 
     secrets_service = service()
     if secrets_service.migration_error:
         return False
+    host_registry_class = _host_registry_class()
 
     for name in ("credentials", "save_credential", "verified_credential", "delete_credential"):
-        _originals.setdefault(name, getattr(HostRegistryService, name))
+        _originals.setdefault(name, getattr(host_registry_class, name))
 
     def credentials(self: Any) -> list[dict[str, Any]]:
         return service().credentials()
@@ -39,10 +45,10 @@ def install_hosts_credential_compatibility() -> bool:
     def delete_credential(self: Any, credential_id: str) -> bool:
         return service().delete_credential(credential_id)
 
-    HostRegistryService.credentials = credentials  # type: ignore[method-assign]
-    HostRegistryService.save_credential = save_credential  # type: ignore[method-assign]
-    HostRegistryService.verified_credential = verified_credential  # type: ignore[method-assign]
-    HostRegistryService.delete_credential = delete_credential  # type: ignore[method-assign]
+    host_registry_class.credentials = credentials
+    host_registry_class.save_credential = save_credential
+    host_registry_class.verified_credential = verified_credential
+    host_registry_class.delete_credential = delete_credential
     _installed = True
     return True
 
@@ -51,10 +57,9 @@ def uninstall_hosts_credential_compatibility() -> None:
     global _installed
     if not _installed:
         return
-    from ..hosts_manager.service import HostRegistryService
-
+    host_registry_class = _host_registry_class()
     for name, method in _originals.items():
-        setattr(HostRegistryService, name, method)
+        setattr(host_registry_class, name, method)
     _installed = False
 
 
