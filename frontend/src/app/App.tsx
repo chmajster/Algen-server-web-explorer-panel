@@ -117,6 +117,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   const settingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const settingsRevision = useRef(0);
   const settingRevisions = useRef<Partial<Record<keyof UserPreferences, number>>>({});
+  const languageActivationRevision = useRef(0);
   const uploads = useUploadManager();
   const mergedTasks = useMemo(() => [...tasks, ...uploads.tasks], [tasks, uploads.tasks]);
   const t = useCallback((key: string) => translate(language, key), [language]);
@@ -135,7 +136,9 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   }, []);
 
   const activateLanguage = useCallback((requested: Language, persist = true) => {
+    const activationRevision = ++languageActivationRevision.current;
     void loadLanguageWithFallback(requested).then((loaded) => {
+      if (activationRevision !== languageActivationRevision.current) return;
       setLanguage(loaded);
       if (persist) localStorage.setItem("webnas_language", loaded);
     }).catch(() => undefined);
