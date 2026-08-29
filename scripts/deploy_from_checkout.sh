@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 SOURCE_DIR="${1:?source checkout path is required}"
 SOURCE_SHA="${2:?source commit SHA is required}"
+FRONTEND_DIST="${3:?tested frontend artifact directory is required}"
 WEBNAS_ROOT="${WEBNAS_ROOT:-/opt/webnas}"
 WEBNAS_CONFIG="${WEBNAS_CONFIG:-/etc/webnas/config.yaml}"
 SERVICE_USER="${WEBNAS_SERVICE_USER:-webnas}"
@@ -12,6 +13,14 @@ STATE_FILE="${WEBNAS_STATE_FILE:-/var/lib/webnas/settings/deployment.json}"
 [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid source revision" >&2; exit 1; }
 [[ -f "${SOURCE_DIR}/backend/app/main.py" && -f "${SOURCE_DIR}/frontend/package-lock.json" ]] || { echo "Invalid WebNAS checkout" >&2; exit 1; }
 [[ -f "${WEBNAS_CONFIG}" ]] || { echo "Missing production config: ${WEBNAS_CONFIG}" >&2; exit 1; }
+[[ -f "${FRONTEND_DIST}/index.html" ]] || { echo "Tested frontend artifact is missing index.html" >&2; exit 1; }
+[[ -f "${FRONTEND_DIST}/.webnas-assets.json" ]] || { echo "Tested frontend artifact is missing its integrity manifest" >&2; exit 1; }
+[[ -f "${FRONTEND_DIST}/.webnas-source-sha" ]] || { echo "Tested frontend artifact is missing source provenance" >&2; exit 1; }
+ARTIFACT_SOURCE_SHA="$(tr -d '\r\n' < "${FRONTEND_DIST}/.webnas-source-sha")"
+[[ "${ARTIFACT_SOURCE_SHA}" == "${SOURCE_SHA}" ]] || {
+  echo "Refusing frontend artifact from ${ARTIFACT_SOURCE_SHA:-unknown}; expected ${SOURCE_SHA}" >&2
+  exit 1
+}
 
 PUBLIC_PORT="$(awk '
   /^server:[[:space:]]*$/ { section=1; next }
@@ -35,13 +44,13 @@ rsync -a --delete \
   "${SOURCE_DIR}/" "${RELEASE_DIR}/"
 printf '%s\n' "${SOURCE_SHA}" > "${RELEASE_DIR}/.webnas-revision"
 
+install -d -m 0755 "${RELEASE_DIR}/frontend/dist"
+rsync -a --delete "${FRONTEND_DIST}/" "${RELEASE_DIR}/frontend/dist/"
+FRONTEND_MANIFEST_SHA256="$(sha256sum "${RELEASE_DIR}/frontend/dist/.webnas-assets.json" | awk '{print $1}')"
+printf '%s\n' "${FRONTEND_MANIFEST_SHA256}" > "${RELEASE_DIR}/.webnas-frontend-manifest-sha256"
+
 python3.14 -m venv "${RELEASE_DIR}/backend/.venv"
 "${RELEASE_DIR}/backend/.venv/bin/pip" install --disable-pip-version-check -r "${RELEASE_DIR}/backend/requirements.txt"
-(
-  cd "${RELEASE_DIR}/frontend"
-  npm ci
-  npm run build
-)
 "${RELEASE_DIR}/backend/.venv/bin/python" "${RELEASE_DIR}/scripts/verify_frontend_build.py" "${RELEASE_DIR}/frontend/dist"
 
 if [[ -d "${WEBNAS_ROOT}/current/frontend/dist/assets" ]]; then
@@ -81,4 +90,4 @@ if ! smoke; then
   exit 1
 fi
 
-echo "Production deployment healthy at ${SOURCE_SHA}"
+echo "Production deployment healthy at ${SOURCE_SHA}; tested frontend manifest ${FRONTEND_MANIFEST_SHA256}"
