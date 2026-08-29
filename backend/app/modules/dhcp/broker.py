@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from ...privileged_broker.runtime import broker_required, managed_file_write, systemd_action
+from .models import DhcpBackend
 from .service import DhcpService
 from .system import DhcpSystem
 
@@ -16,7 +17,7 @@ _MANAGED_TARGETS = {
 
 
 class BrokerDhcpSystem(DhcpSystem):
-    def service_action(self, backend, action: str) -> subprocess.CompletedProcess[str]:
+    def service_action(self, backend: DhcpBackend, action: str) -> subprocess.CompletedProcess[str]:
         if not broker_required():
             return super().service_action(backend, action)
         if action not in {"start", "stop", "restart", "reload", "enable", "disable"}:
