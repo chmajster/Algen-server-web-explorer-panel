@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import os
 import socket
 import threading
 import time
+from pathlib import Path
 
 import uvicorn
 
-from .config import get_config
+from .config import AppConfig, get_config
 from .main import app
 
 
@@ -53,6 +55,52 @@ def _runtime_watchdog_timeout() -> float | None:
     except ValueError:
         timeout = 60.0
     return max(15.0, timeout)
+
+
+def _loopback_host(host: str) -> bool:
+    normalized = host.strip().strip("[]").casefold()
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_transport(cfg: AppConfig, host: str, *, behind_gateway: bool) -> None:
+    """Reject newly configured public plaintext HTTP while preserving legacy upgrades."""
+
+    if behind_gateway:
+        # Installed blue/green backends intentionally speak HTTP only on
+        # 127.0.0.1. The release helper owns the public TLS policy.
+        return
+
+    if cfg.server.use_https:
+        cert = Path(cfg.server.tls_cert or "")
+        key = Path(cfg.server.tls_key or "")
+        if not cfg.server.tls_cert or not cfg.server.tls_key or not cert.is_file() or not key.is_file():
+            raise RuntimeError("TLS is enabled but server.tls_cert or server.tls_key is unavailable")
+        return
+
+    if _loopback_host(host):
+        return
+
+    policy = cfg.security.allow_insecure_http
+    if policy is False:
+        raise RuntimeError(
+            "Refusing to expose PAM-authenticated WebNAS over plaintext HTTP. "
+            "Enable TLS or set security.allow_insecure_http=true explicitly for an isolated lab."
+        )
+    if policy is None:
+        warning = (
+            "WebNAS security warning: legacy configuration exposes plaintext HTTP on a non-loopback interface. "
+            "Enable TLS or explicitly set security.allow_insecure_http=true only for an isolated lab.\n"
+        )
+        try:
+            os.write(2, warning.encode("utf-8"))
+        except OSError:
+            pass
+        _systemd_notify("STATUS=WebNAS running with legacy insecure HTTP configuration")
 
 
 class RuntimeWatchdog:
@@ -151,6 +199,7 @@ def main() -> None:
     host = os.environ.get("WEBNAS_BIND_HOST", cfg.server.host)
     port = int(os.environ.get("WEBNAS_BIND_PORT", cfg.server.port))
     behind_gateway = "WEBNAS_BIND_PORT" in os.environ
+    _validate_transport(cfg, host, behind_gateway=behind_gateway)
     if cfg.server.use_https and not behind_gateway:
         config = uvicorn.Config(
             app,
