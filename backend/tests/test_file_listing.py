@@ -150,8 +150,10 @@ def test_systemd_profile_keeps_allowed_home_directories_writable():
     assert "ProtectHome=false" in packaged_service
     assert "ProtectHome=false" in release_manager
     assert "webnas_release.py" in installer
-    assert "RestrictSUIDSGID=false" in packaged_service
-    assert "RestrictSUIDSGID=false" in release_manager
+    # Package installation is broker-owned now, so the HTTP process must not
+    # be able to create new SUID/SGID files itself.
+    assert "RestrictSUIDSGID=true" in packaged_service
+    assert "RestrictSUIDSGID=true" in release_manager
 
 
 def test_child_directory_has_parent_within_allowed_root(monkeypatch, tmp_path):

@@ -13,7 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
-from typing import Any, Sequence
+from typing import Any
 
 from app.config import get_config
 from app.core.redaction import redact_text

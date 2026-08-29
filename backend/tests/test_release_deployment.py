@@ -26,7 +26,19 @@ def deployment(tmp_path: Path, *, active: bool = True):
     release = root / "releases" / "new"
     release.mkdir(parents=True)
     config = tmp_path / "config.yaml"
-    config.write_text("server:\n  port: 5000\n  use_https: false\n", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    log_dir = tmp_path / "log"
+    temp_dir = tmp_path / "tmp"
+    config.write_text(
+        "server:\n"
+        "  port: 5000\n"
+        "  use_https: false\n"
+        "paths:\n"
+        f"  data_dir: {data_dir}\n"
+        f"  log_dir: {log_dir}\n"
+        f"  temp_dir: {temp_dir}\n",
+        encoding="utf-8",
+    )
     state = tmp_path / "deployment.json"
     old_release = root / "releases" / "old"
     old_release.mkdir()
