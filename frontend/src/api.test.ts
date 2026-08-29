@@ -10,6 +10,14 @@ const failure = (status: number, detail: string) => ({
 });
 const userSession = (csrfToken = "csrf") => ({ username: "alice", home: "/home/alice", csrf_token: csrfToken });
 const session = (csrfToken = "csrf") => ok(userSession(csrfToken));
+const bootstrap = (csrfToken = "csrf") => ok({
+  user: userSession(csrfToken),
+  profile: { username: "alice", home: "/home/alice", permissions: [] },
+  tasks: [],
+  task_scope: "none",
+  update_progress: { state: "idle" },
+  update_detailed: false,
+});
 
 describe("API errors and session synchronization", () => {
   beforeEach(() => resetAuthenticationState());
@@ -129,7 +137,7 @@ describe("API errors and session synchronization", () => {
 
   it("sends remember-me only in login and never persists the CSRF token", async () => {
     localStorage.setItem("webnas_csrf", "expired");
-    const fetchMock = vi.fn().mockResolvedValue(session());
+    const fetchMock = vi.fn().mockResolvedValueOnce(session()).mockResolvedValueOnce(bootstrap());
     vi.stubGlobal("fetch", fetchMock);
     await login("alice", "secret", true);
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/login", expect.objectContaining({
@@ -163,7 +171,7 @@ describe("API errors and session synchronization", () => {
 
   it("refreshes a stale token and retries an invalid-CSRF mutation exactly once", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(session("stale"))
+      .mockResolvedValueOnce(bootstrap("stale"))
       .mockResolvedValueOnce(failure(403, "Invalid CSRF token"))
       .mockResolvedValueOnce(session("fresh"))
       .mockResolvedValueOnce(ok({ ok: true }));
@@ -171,14 +179,14 @@ describe("API errors and session synchronization", () => {
     await me();
     await expect(api.mkdir("/home/alice/new")).resolves.toEqual({ ok: true });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "/api/auth/me", "/api/files/mkdir", "/api/auth/me", "/api/files/mkdir",
+      "/api/bootstrap", "/api/files/mkdir", "/api/auth/me", "/api/files/mkdir",
     ]);
     const headers = (fetchMock.mock.calls[3][1] as RequestInit).headers as Headers;
     expect(headers.get("x-csrf-token")).toBe("fresh");
   });
 
   it("does not retry an unrelated forbidden response", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(session()).mockResolvedValueOnce(failure(403, "Permission denied"));
+    const fetchMock = vi.fn().mockResolvedValueOnce(bootstrap()).mockResolvedValueOnce(failure(403, "Permission denied"));
     vi.stubGlobal("fetch", fetchMock);
     await me();
     await expect(api.mkdir("/root/blocked")).rejects.toMatchObject({ status: 403, message: "Permission denied" });
@@ -187,7 +195,7 @@ describe("API errors and session synchronization", () => {
 
   it("never retries an invalid-CSRF response more than once", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(session("stale"))
+      .mockResolvedValueOnce(bootstrap("stale"))
       .mockResolvedValueOnce(failure(403, "Invalid CSRF token"))
       .mockResolvedValueOnce(session("fresh"))
       .mockResolvedValueOnce(failure(403, "Invalid CSRF token"));
@@ -212,34 +220,41 @@ describe("API errors and session synchronization", () => {
   });
 
   it("shares one session check across concurrent callers such as React StrictMode", async () => {
-    let resolveSession!: (value: ReturnType<typeof session>) => void;
-    const pendingSession = new Promise<ReturnType<typeof session>>((resolve) => { resolveSession = resolve; });
-    const fetchMock = vi.fn().mockReturnValue(pendingSession);
+    let resolveBootstrap!: (value: ReturnType<typeof bootstrap>) => void;
+    const pendingBootstrap = new Promise<ReturnType<typeof bootstrap>>((resolve) => { resolveBootstrap = resolve; });
+    const fetchMock = vi.fn().mockReturnValue(pendingBootstrap);
     vi.stubGlobal("fetch", fetchMock);
 
     const first = me();
     const second = me();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    resolveSession(session("shared"));
+    resolveBootstrap(bootstrap("shared"));
 
     await expect(Promise.all([first, second])).resolves.toEqual([userSession("shared"), userSession("shared")]);
   });
 
   it("prevents an older session response from replacing a newer login token", async () => {
-    let resolveOldSession!: (value: ReturnType<typeof session>) => void;
-    const oldSession = new Promise<ReturnType<typeof session>>((resolve) => { resolveOldSession = resolve; });
+    let resolveOldBootstrap!: (value: ReturnType<typeof bootstrap>) => void;
+    const oldBootstrap = new Promise<ReturnType<typeof bootstrap>>((resolve) => { resolveOldBootstrap = resolve; });
+    let bootstrapCalls = 0;
     const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
-      if (url === "/api/auth/me") return oldSession;
+      if (url === "/api/bootstrap") {
+        bootstrapCalls += 1;
+        return bootstrapCalls === 1 ? oldBootstrap : Promise.resolve(bootstrap("login-token"));
+      }
       if (url === "/api/auth/login") return Promise.resolve(session("login-token"));
-      return Promise.resolve(ok({ ok: true }));
+      if (url === "/api/files/mkdir") return Promise.resolve(ok({ ok: true }));
+      throw new Error(`Unexpected request: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
     const oldMe = me();
+    const oldMeResult = expect(oldMe).rejects.toMatchObject({ status: 409 });
     await login("alice", "secret");
-    resolveOldSession(session("old-token"));
-    await expect(oldMe).rejects.toMatchObject({ status: 409 });
+    resolveOldBootstrap(bootstrap("old-token"));
+    await oldMeResult;
     await api.mkdir("/home/alice/new");
-    const headers = (fetchMock.mock.calls[2][1] as RequestInit).headers as Headers;
+    const mkdirCall = fetchMock.mock.calls.find(([url]) => url === "/api/files/mkdir");
+    const headers = (mkdirCall?.[1] as RequestInit).headers as Headers;
     expect(headers.get("x-csrf-token")).toBe("login-token");
   });
 
@@ -247,13 +262,13 @@ describe("API errors and session synchronization", () => {
     const invalidated = vi.fn();
     const unsubscribe = onAuthenticationInvalidated(invalidated);
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(session("active"))
+      .mockResolvedValueOnce(bootstrap("active"))
       .mockResolvedValueOnce(failure(401, "Invalid or expired session"))
       .mockResolvedValueOnce(session("renewed"))
       .mockResolvedValueOnce(ok({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     await me();
-    await expect(api.settingsMe()).rejects.toMatchObject({ status: 401 });
+    await expect(api.hostInfo()).rejects.toMatchObject({ status: 401 });
     await api.mkdir("/home/alice/new");
     expect(invalidated).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[2][0]).toBe("/api/auth/me");
@@ -262,7 +277,7 @@ describe("API errors and session synchronization", () => {
 
   it("logs out with the current token and clears it afterwards", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(session("logout-token"))
+      .mockResolvedValueOnce(bootstrap("logout-token"))
       .mockResolvedValueOnce(ok({ ok: true }))
       .mockResolvedValueOnce(failure(401, "Authentication required"));
     vi.stubGlobal("fetch", fetchMock);

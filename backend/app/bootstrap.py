@@ -20,6 +20,7 @@ from .alerts.scheduler import start_scheduler as start_alert_scheduler
 from .appliance_backup import router as appliance_backup_router
 from .audit import configure_logging
 from .config import AppConfig, get_config
+from .core.cache import SLOW_CACHE_TTL_SECONDS, TTLCache
 from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
 from .core.modules import ModuleRegistry
 from .jobs.models import JobStatus
@@ -37,6 +38,7 @@ from .resource_sampler import resource_sampler, resource_sampler_loop
 from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
+from .startup_bootstrap import router as startup_bootstrap_router
 from .tasks import task_store
 from .update_coordination import active_transient_operations, register_operation_provider
 from .update_detail_policy import router as update_detail_policy_router
@@ -143,14 +145,17 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def _registry_router(registry: ModuleRegistry) -> APIRouter:
     router = APIRouter(prefix="/api/v1/modules", tags=["module-registry"])
+    catalog_cache: TTLCache[list[dict]] = TTLCache(SLOW_CACHE_TTL_SECONDS)
 
     @router.get("")
     def module_catalog(_user: SessionUser = Depends(get_session_user)):
-        return success_payload(registry.public_catalog(), total=len(registry.manifests))
+        catalog = catalog_cache.get_or_load(registry.public_catalog)
+        return success_payload(catalog, total=len(registry.manifests))
 
     @router.get("/health")
     async def module_health(_user: SessionUser = Depends(get_session_user)):
         diagnostics = await registry.health()
+        catalog_cache.invalidate()
         return success_payload({
             "status": "ok" if all(item["state"] in {"active", "disabled"} for item in diagnostics) else "degraded",
             "modules": diagnostics,
@@ -182,6 +187,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.middleware("http")(performance_timing)
     module_registry.install_routers(app)
     app.include_router(_registry_router(module_registry))
+    app.include_router(startup_bootstrap_router)
     app.include_router(runtime_events_router)
     app.include_router(update_detail_policy_router)
     app.include_router(power_control_router)

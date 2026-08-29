@@ -6,6 +6,14 @@ export type HealthStatus = {
 };
 
 type AuthSession = { username: string; home: string; csrf_token: string };
+type BootstrapResponse = {
+  user: AuthSession;
+  profile: unknown;
+  tasks: unknown;
+  task_scope: "all" | "own" | "none";
+  update_progress: unknown;
+  update_detailed: boolean;
+};
 type AuthenticationInvalidatedListener = () => void;
 type ErrorLanguage = "pl-PL" | "en-US";
 
@@ -19,6 +27,7 @@ export class ApiError extends Error {
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const authenticationInvalidatedListeners = new Set<AuthenticationInvalidatedListener>();
 const inFlightGets = new Map<string, Promise<unknown>>();
+const seededGets = new Map<string, unknown>();
 const CSRF_ERROR_COPY: Record<ErrorLanguage, {
   title: string;
   genericReason: string;
@@ -50,13 +59,19 @@ const CSRF_ERROR_COPY: Record<ErrorLanguage, {
 let csrfToken = "";
 let sessionGeneration = 0;
 let sessionSync: Promise<AuthSession> | null = null;
+let bootstrapSync: Promise<AuthSession> | null = null;
 let apiBaseUrl = "";
 
 if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
 
+function clearReadCaches() {
+  inFlightGets.clear();
+  seededGets.clear();
+}
+
 export function setApiBaseUrl(baseUrl: string) {
   apiBaseUrl = baseUrl.replace(/\/+$/, "");
-  inFlightGets.clear();
+  clearReadCaches();
 }
 export function apiAt(baseUrl: string, path: string) { return baseUrl ? `${baseUrl.replace(/\/+$/, "")}${path}` : path; }
 export function healthWebSocketUrl() {
@@ -71,7 +86,8 @@ function clearAuthenticationState(expectedGeneration?: number, notify = true) {
   sessionGeneration += 1;
   csrfToken = "";
   sessionSync = null;
-  inFlightGets.clear();
+  bootstrapSync = null;
+  clearReadCaches();
   if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
   if (notify) authenticationInvalidatedListeners.forEach((listener) => listener());
 }
@@ -182,9 +198,33 @@ async function send<T>(url: string, options: RequestInit, token = ""): Promise<T
   return response.json() as Promise<T>;
 }
 
+function isBootstrapResponse(value: unknown): value is BootstrapResponse {
+  if (!value || typeof value !== "object") return false;
+  const data = value as Partial<BootstrapResponse>;
+  const user = data.user as Partial<AuthSession> | undefined;
+  return Boolean(
+    user
+    && typeof user.username === "string"
+    && typeof user.home === "string"
+    && typeof user.csrf_token === "string"
+    && (data.task_scope === "all" || data.task_scope === "own" || data.task_scope === "none")
+    && typeof data.update_detailed === "boolean",
+  );
+}
+
+function seedBootstrap(data: BootstrapResponse) {
+  seededGets.set("/api/settings/me", data.profile);
+  if (data.task_scope === "all") seededGets.set("/api/admin/transfers", data.tasks);
+  else if (data.task_scope === "own") seededGets.set("/api/files/tasks", data.tasks);
+  seededGets.set(
+    data.update_detailed ? "/api/admin/system/updates/progress" : "/api/system/update-status",
+    data.update_progress,
+  );
+}
+
 function synchronizeSession(force = false): Promise<AuthSession> {
   if (sessionSync) return sessionSync;
-  if (force) { sessionGeneration += 1; csrfToken = ""; inFlightGets.clear(); }
+  if (force) { sessionGeneration += 1; csrfToken = ""; clearReadCaches(); }
   const generation = sessionGeneration;
   const pending = send<AuthSession>("/api/auth/me", { method: "GET", cache: "no-store" })
     .then((data) => {
@@ -198,6 +238,33 @@ function synchronizeSession(force = false): Promise<AuthSession> {
     })
     .finally(() => { if (sessionSync === pending) sessionSync = null; });
   sessionSync = pending;
+  return pending;
+}
+
+function bootstrapSession(): Promise<AuthSession> {
+  if (bootstrapSync) return bootstrapSync;
+  const generation = sessionGeneration;
+  const pending = send<unknown>("/api/bootstrap", { method: "GET", cache: "no-store" })
+    .then((value) => {
+      if (generation !== sessionGeneration) throw new ApiError("Session bootstrap was superseded", 409);
+      if (!isBootstrapResponse(value)) return synchronizeSession();
+      csrfToken = value.user.csrf_token;
+      seedBootstrap(value);
+      return value.user;
+    })
+    .catch((error: unknown) => {
+      if (generation !== sessionGeneration) {
+        if (error instanceof ApiError && error.status === 409) throw error;
+        throw new ApiError("Session bootstrap was superseded", 409);
+      }
+      if (error instanceof ApiError && error.status === 401) {
+        clearAuthenticationState(generation);
+        throw error;
+      }
+      return synchronizeSession();
+    })
+    .finally(() => { if (bootstrapSync === pending) bootstrapSync = null; });
+  bootstrapSync = pending;
   return pending;
 }
 
@@ -229,6 +296,11 @@ function getDedupeKey(url: string, options: RequestInit, method: string) {
 export function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const method = (options.method || "GET").toUpperCase();
   const key = getDedupeKey(url, options, method);
+  if (key && seededGets.has(url)) {
+    const seeded = seededGets.get(url) as T;
+    seededGets.delete(url);
+    return Promise.resolve(seeded);
+  }
   if (!key) return executeRequest<T>(url, options, method);
   const existing = inFlightGets.get(key) as Promise<T> | undefined;
   if (existing) return existing;
@@ -260,8 +332,14 @@ export async function login(username: string, password: string, rememberMe = fal
   const data = await send<AuthSession>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password, remember_me: rememberMe }) });
   if (generation !== sessionGeneration) throw new ApiError("Login was superseded", 409);
   csrfToken = data.csrf_token;
-  return data;
+  try {
+    return await bootstrapSession();
+  } catch (error) {
+    if (generation !== sessionGeneration) throw new ApiError("Login was superseded", 409);
+    if (error instanceof ApiError && error.status === 401) throw error;
+    return data;
+  }
 }
 
-export function me() { return synchronizeSession(); }
+export function me() { return bootstrapSession(); }
 export function logout() { return request("/api/auth/logout", { method: "POST", body: "{}" }).finally(() => clearAuthenticationState()); }
