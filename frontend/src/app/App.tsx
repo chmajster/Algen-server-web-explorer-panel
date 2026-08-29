@@ -92,7 +92,7 @@ function sameUpdateProgress(current: UpdateProgress | null, next: UpdateProgress
     && current.active_count === next.active_count
     && current.log === next.log
     && current.lines.length === next.lines.length
-    && current.lines.at(-1) === next.lines.at(-1)
+    && current.lines[current.lines.length - 1] === next.lines[next.lines.length - 1]
     && updateStepSignature(current) === updateStepSignature(next)
     && blockerSignature(current) === blockerSignature(next);
 }
