@@ -23,7 +23,7 @@ from typing import Any
 from ...config import get_config
 from ...core.events import bus
 from ..ansible_controller.public_security import redact, redact_text
-from ..secrets_manager.service import service as secrets_service
+from ..secrets_manager.public import secret_metadata, verified_secret
 from .events import event_types, on_event_registered, register_event_type
 from .models import WebhookInput
 
@@ -50,16 +50,16 @@ class WebhookValidationError(ValueError):
 
 class WebhookManagerService:
     def __init__(self, path: Path | None = None) -> None:
-        root = Path(get_config().paths.data_dir).resolve(strict=False) / "webhook-manager"
+        root = (path.parent if path else Path(get_config().paths.data_dir) / "webhook-manager").resolve(strict=False)
         root.mkdir(parents=True, exist_ok=True)
         os.chmod(root, 0o700)
         self.path = path or root / "webhooks.sqlite3"
         self._lock = threading.RLock()
-        self._queue: queue.Queue[tuple[str, str, str, dict[str, Any]] | None] = queue.Queue(maxsize=10000)
+        self._queue: queue.Queue[tuple[str, str, str, dict[str, Any]] | None] = queue.Queue(maxsize=10_000)
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
         self._unsubscribers: dict[str, Any] = {}
-        self._event_listener_unsubscribe = None
+        self._event_listener_unsubscribe: Any = None
         self._initialize()
 
     def connect(self) -> sqlite3.Connection:
@@ -123,8 +123,7 @@ class WebhookManagerService:
     @staticmethod
     def _decode_json(value: Any, fallback: Any) -> Any:
         try:
-            parsed = json.loads(str(value or ""))
-            return parsed
+            return json.loads(str(value or ""))
         except (TypeError, ValueError, json.JSONDecodeError):
             return fallback
 
@@ -165,9 +164,7 @@ class WebhookManagerService:
         ip = ipaddress.ip_address(address)
         if ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
             return False
-        if ip.is_private and not allow_private:
-            return False
-        return True
+        return allow_private or not ip.is_private
 
     def validate_url(self, url: str, *, allow_private: bool) -> dict[str, Any]:
         try:
@@ -189,11 +186,10 @@ class WebhookManagerService:
             port = parsed.port or (443 if parsed.scheme == "https" else 80)
         except ValueError as error:
             raise WebhookValidationError("invalid webhook port") from error
-        if port < 1 or port > 65535:
+        if not 1 <= port <= 65535:
             raise WebhookValidationError("invalid webhook port")
         try:
-            direct = ipaddress.ip_address(host)
-            addresses = {str(direct)}
+            addresses = {str(ipaddress.ip_address(host))}
         except ValueError:
             try:
                 addresses = {
@@ -204,24 +200,21 @@ class WebhookManagerService:
                 raise WebhookValidationError("webhook hostname could not be resolved") from error
         if not addresses:
             raise WebhookValidationError("webhook hostname resolved to no addresses")
-        blocked = sorted(address for address in addresses if not self._address_allowed(address, allow_private=allow_private))
-        if blocked:
+        if any(not self._address_allowed(address, allow_private=allow_private) for address in addresses):
             raise WebhookValidationError("webhook target resolves to a blocked address range")
         return {"scheme": parsed.scheme, "hostname": host, "port": port, "resolved_addresses": sorted(addresses)}
 
     @staticmethod
-    def _validate_events(events: list[str]) -> list[str]:
-        available = set(event_types())
-        unknown = [event for event in events if event not in available]
+    def _validate_events(events: list[str]) -> None:
+        unknown = sorted(set(events) - set(event_types()))
         if unknown:
             raise WebhookValidationError(f"unknown webhook event: {unknown[0]}")
-        return events
 
     @staticmethod
     def _validate_secret_reference(secret_id: str | None) -> None:
         if not secret_id:
             return
-        item = secrets_service().secret(secret_id)
+        item = secret_metadata(secret_id)
         if not item:
             raise WebhookValidationError("selected secret does not exist")
         if "webhook-manager" not in item.get("shared_with", []):
@@ -272,8 +265,7 @@ class WebhookManagerService:
 
     def delete(self, webhook_id: str) -> bool:
         with self.connect() as connection:
-            cursor = connection.execute("DELETE FROM webhooks WHERE id=?", (webhook_id,))
-            return cursor.rowcount > 0
+            return connection.execute("DELETE FROM webhooks WHERE id=?", (webhook_id,)).rowcount > 0
 
     def set_enabled(self, webhook_id: str, enabled: bool, actor: str) -> dict[str, Any]:
         with self.connect() as connection:
@@ -305,8 +297,7 @@ class WebhookManagerService:
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(max(1, min(int(limit), 1000)))
         with self.connect() as connection:
-            rows = connection.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+            return [dict(row) for row in connection.execute(query, params).fetchall()]
 
     def dashboard(self) -> dict[str, Any]:
         since = time.time() - 86400
@@ -344,29 +335,30 @@ class WebhookManagerService:
             "X-WebNAS-Delivery": event_id,
             "X-WebNAS-Timestamp": str(timestamp),
         })
-        auth_type = str(webhook.get("auth_type") or "none")
-        secret_id = webhook.get("secret_id")
-        if auth_type != "none":
-            credential = secrets_service().verified_secret(
-                str(secret_id), module_id="webhook-manager", purpose=f"webhook-auth:{webhook['id']}"
+        if webhook.get("auth_type") != "none":
+            credential = verified_secret(
+                str(webhook.get("secret_id")), module_id="webhook-manager", purpose=f"webhook-auth:{webhook['id']}"
             )
-            value = credential["secret"]
+            auth_type = str(webhook["auth_type"])
             if auth_type == "bearer":
-                headers["Authorization"] = f"Bearer {value}"
+                headers["Authorization"] = f"Bearer {credential['secret']}"
             elif auth_type == "basic":
-                token = base64.b64encode(f"{credential['username']}:{value}".encode()).decode("ascii")
+                token = base64.b64encode(f"{credential['username']}:{credential['secret']}".encode()).decode("ascii")
                 headers["Authorization"] = f"Basic {token}"
             elif auth_type in {"api_key_header", "secret_header"}:
-                headers[str(webhook.get("auth_header_name") or "X-API-Key")] = value
+                headers[str(webhook.get("auth_header_name") or "X-API-Key")] = credential["secret"]
             else:
                 raise WebhookValidationError("unsupported webhook authentication type")
-        signing_secret_id = webhook.get("signing_secret_id")
-        if signing_secret_id:
-            signing = secrets_service().verified_secret(
-                str(signing_secret_id), module_id="webhook-manager", purpose=f"webhook-signing:{webhook['id']}"
+        if webhook.get("signing_secret_id"):
+            signing = verified_secret(
+                str(webhook["signing_secret_id"]), module_id="webhook-manager", purpose=f"webhook-signing:{webhook['id']}"
             )
-            signature = hmac.new(signing["secret"].encode("utf-8"), str(timestamp).encode("ascii") + b"." + body, hashlib.sha256).hexdigest()
-            headers["X-WebNAS-Signature"] = f"sha256={signature}"
+            digest = hmac.new(
+                signing["secret"].encode("utf-8"),
+                str(timestamp).encode("ascii") + b"." + body,
+                hashlib.sha256,
+            ).hexdigest()
+            headers["X-WebNAS-Signature"] = f"sha256={digest}"
         return headers
 
     def _record_delivery(
@@ -410,6 +402,8 @@ class WebhookManagerService:
         }
 
     def _deliver_once(self, webhook: dict[str, Any], event_id: str, event_type: str, payload: dict[str, Any], attempt: int) -> dict[str, Any]:
+        # Resolve and validate immediately before every attempt. This rejects
+        # rebinding to blocked ranges between retries and prevents stale trust.
         self.validate_url(str(webhook["url"]), allow_private=bool(webhook.get("allow_private_networks")))
         timestamp = int(time.time())
         body = self._canonical_payload(event_id, event_type, timestamp, payload)
@@ -419,9 +413,14 @@ class WebhookManagerService:
         status_code: int | None = None
         preview = ""
         error_category = ""
+        success = False
         try:
             context = ssl.create_default_context() if str(webhook["url"]).startswith("https://") else None
-            with urllib.request.urlopen(request, timeout=float(webhook["timeout_seconds"]), context=context) as response:  # noqa: S310 - URL passed strict SSRF validation immediately above
+            with urllib.request.urlopen(  # noqa: S310 - strict scheme/address validation occurs immediately above
+                request,
+                timeout=float(webhook["timeout_seconds"]),
+                context=context,
+            ) as response:
                 status_code = int(response.status)
                 preview = response.read(2048).decode("utf-8", errors="replace")
                 success = 200 <= status_code < 300
@@ -429,14 +428,11 @@ class WebhookManagerService:
             status_code = int(error.code)
             try:
                 preview = error.read(2048).decode("utf-8", errors="replace")
-            except Exception:
+            except (OSError, ValueError):
                 preview = ""
-            success = False
             error_category = "http_error"
         except (urllib.error.URLError, TimeoutError, OSError) as error:
-            success = False
             error_category = type(error).__name__
-        duration = (time.monotonic() - started) * 1000
         return self._record_delivery(
             delivery_id=_id(),
             webhook_id=str(webhook["id"]),
@@ -445,7 +441,7 @@ class WebhookManagerService:
             attempt=attempt,
             status="success" if success else "failed",
             http_status=status_code,
-            duration_ms=duration,
+            duration_ms=(time.monotonic() - started) * 1000,
             error_category=error_category,
             response_preview=preview,
         )
@@ -454,11 +450,10 @@ class WebhookManagerService:
         webhook = self.webhook(webhook_id)
         if not webhook or not webhook["enabled"]:
             return
-        attempts = int(webhook["max_attempts"])
-        for attempt in range(1, attempts + 1):
+        for attempt in range(1, int(webhook["max_attempts"]) + 1):
             try:
                 result = self._deliver_once(webhook, event_id, event_type, payload, attempt)
-            except Exception as error:  # never expose request headers or secret material
+            except Exception as error:  # noqa: BLE001 - delivery failure must not kill the worker
                 result = self._record_delivery(
                     delivery_id=_id(), webhook_id=webhook_id, event_id=event_id, event_type=event_type,
                     attempt=attempt, status="failed", http_status=None, duration_ms=0,
@@ -466,12 +461,9 @@ class WebhookManagerService:
                 )
             if result["status"] == "success":
                 return
-            if attempt < attempts:
+            if attempt < int(webhook["max_attempts"]):
                 with self.connect() as connection:
-                    connection.execute(
-                        "UPDATE deliveries SET status='retry' WHERE id=?",
-                        (result["id"],),
-                    )
+                    connection.execute("UPDATE deliveries SET status='retry' WHERE id=?", (result["id"],))
                 if self._stop.wait(min(2 ** (attempt - 1), 30)):
                     return
 
@@ -495,19 +487,20 @@ class WebhookManagerService:
         webhook = self.webhook(webhook_id)
         if not webhook:
             raise KeyError("webhook not found")
-        event_id = _id()
         return self._deliver_once(
             webhook,
-            event_id,
+            _id(),
             "webhook.test",
             {"message": "WebNAS webhook test", "webhook_id": webhook_id},
             1,
         )
 
     def _subscribe_event(self, event: str) -> None:
-        if event in self._unsubscribers:
-            return
-        self._unsubscribers[event] = bus.subscribe(event, lambda payload, event_name=event: self.enqueue_event(event_name, payload))
+        if event not in self._unsubscribers:
+            self._unsubscribers[event] = bus.subscribe(
+                event,
+                lambda payload, event_name=event: self.enqueue_event(event_name, payload),
+            )
 
     def _worker_loop(self) -> None:
         while not self._stop.is_set():
@@ -541,9 +534,8 @@ class WebhookManagerService:
             self._queue.put_nowait(None)
         except queue.Full:
             pass
-        worker = self._worker
-        if worker and worker.is_alive():
-            worker.join(timeout=3)
+        if self._worker and self._worker.is_alive():
+            self._worker.join(timeout=3)
         for unsubscribe in tuple(self._unsubscribers.values()):
             unsubscribe()
         self._unsubscribers.clear()
