@@ -21,7 +21,12 @@ SCHEMA_VERSION = 1
 
 
 class ClosingConnection(sqlite3.Connection):
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool | None:  # type: ignore[override]
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:  # type: ignore[override]
         try:
             return super().__exit__(exc_type, exc_val, exc_tb)
         finally:
@@ -58,6 +63,7 @@ class SecretsManagerService:
         key_path: Path | None = None,
         hosts_path: Path | None = None,
         hosts_key_path: Path | None = None,
+        webhooks_path: Path | None = None,
     ) -> None:
         data_root = Path(get_config().paths.data_dir).resolve(strict=False)
         self.root = (path.parent if path else data_root / "secrets-manager").resolve(strict=False)
@@ -70,6 +76,7 @@ class SecretsManagerService:
         self.key_path = key_path or data_root / "secrets" / "secrets-manager.key"
         self.hosts_path = hosts_path or data_root / "hosts-manager" / "hosts.sqlite3"
         self.hosts_key_path = hosts_key_path or data_root / "secrets" / "hosts-manager.key"
+        self.webhooks_path = webhooks_path or data_root / "webhook-manager" / "webhooks.sqlite3"
         self.cipher = CredentialCipher(self.key_path)
         self._lock = threading.RLock()
         self.migration_error = ""
@@ -212,13 +219,14 @@ class SecretsManagerService:
                     if not isinstance(decoded, dict):
                         raise ValueError(f"invalid credential payload for {secret_id}")
                     new_envelope = self.cipher.encrypt(
-                        _json({
-                            "secret": str(decoded.get("secret", "")),
-                            "passphrase": str(decoded.get("passphrase", "")),
-                        }),
+                        _json(
+                            {
+                                "secret": str(decoded.get("secret", "")),
+                                "passphrase": str(decoded.get("passphrase", "")),
+                            }
+                        ),
                         associated_data=secret_id,
                     )
-                    # Authenticate the new envelope before it is committed.
                     self.cipher.decrypt(new_envelope, associated_data=secret_id)
                 else:
                     new_envelope = ""
@@ -266,39 +274,102 @@ class SecretsManagerService:
         elif isinstance(payload, dict):
             value = dict(payload)
         else:
-            value = {name: getattr(payload, name) for name in (
-                "name", "type", "username", "secret", "passphrase", "description", "environment_id", "shared_with"
-            ) if hasattr(payload, name)}
+            value = {
+                name: getattr(payload, name)
+                for name in (
+                    "name",
+                    "type",
+                    "username",
+                    "secret",
+                    "passphrase",
+                    "description",
+                    "environment_id",
+                    "shared_with",
+                )
+                if hasattr(payload, name)
+            }
         kind = value.get("type")
         value["type"] = str(getattr(kind, "value", kind or "generic_secret"))
         return value
 
-    def _usage_counts(self) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        if not self.hosts_path.exists():
-            return counts
-        connection = sqlite3.connect(self.hosts_path, timeout=5)
-        try:
-            for table, column, predicate in (
-                ("hosts", "credential_id", "active=1"),
-                ("repositories", "credential_id", "active=1"),
-                ("power_profiles", "credential_id", "active=1"),
-                ("environments", "default_credential_id", "active=1"),
-            ):
-                try:
-                    rows = connection.execute(
-                        f"SELECT {column},COUNT(*) FROM {table} WHERE {column} IS NOT NULL AND {predicate} GROUP BY {column}"  # noqa: S608 - table/column are fixed constants
-                    ).fetchall()
-                except sqlite3.Error:
-                    continue
-                for secret_id, amount in rows:
-                    counts[str(secret_id)] = counts.get(str(secret_id), 0) + int(amount)
-        finally:
-            connection.close()
-        return counts
+    def _usage_details(self) -> dict[str, list[dict[str, Any]]]:
+        details: dict[str, list[dict[str, Any]]] = {}
 
-    def _metadata(self, row: sqlite3.Row | dict[str, Any], usage_count: int = 0) -> dict[str, Any]:
+        if self.hosts_path.exists():
+            connection = sqlite3.connect(self.hosts_path, timeout=5)
+            try:
+                for table, column, predicate in (
+                    ("hosts", "credential_id", "active=1"),
+                    ("repositories", "credential_id", "active=1"),
+                    ("power_profiles", "credential_id", "active=1"),
+                    ("environments", "default_credential_id", "active=1"),
+                ):
+                    try:
+                        rows = connection.execute(
+                            f"SELECT {column},COUNT(*) FROM {table} "
+                            f"WHERE {column} IS NOT NULL AND {predicate} GROUP BY {column}"  # noqa: S608 - fixed constants
+                        ).fetchall()
+                    except sqlite3.Error:
+                        continue
+                    for secret_id, amount in rows:
+                        key = str(secret_id)
+                        details.setdefault(key, []).append(
+                            {
+                                "module": "hosts-manager",
+                                "resource": table,
+                                "count": int(amount),
+                            }
+                        )
+            finally:
+                connection.close()
+
+        if self.webhooks_path.exists():
+            connection = sqlite3.connect(self.webhooks_path, timeout=5)
+            connection.row_factory = sqlite3.Row
+            try:
+                exists = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhooks'"
+                ).fetchone()
+                if exists:
+                    rows = connection.execute(
+                        "SELECT id,name,secret_id,signing_secret_id FROM webhooks"
+                    ).fetchall()
+                    for row in rows:
+                        for column, role in (
+                            ("secret_id", "authentication"),
+                            ("signing_secret_id", "signing"),
+                        ):
+                            secret_id = row[column]
+                            if not secret_id:
+                                continue
+                            details.setdefault(str(secret_id), []).append(
+                                {
+                                    "module": "webhook-manager",
+                                    "resource": "webhook",
+                                    "resource_id": str(row["id"]),
+                                    "name": str(row["name"]),
+                                    "role": role,
+                                    "count": 1,
+                                }
+                            )
+            finally:
+                connection.close()
+        return details
+
+    def _usage_counts(self) -> dict[str, int]:
+        return {
+            secret_id: sum(int(item.get("count", 1)) for item in items)
+            for secret_id, items in self._usage_details().items()
+        }
+
+    def _metadata(
+        self,
+        row: sqlite3.Row | dict[str, Any],
+        usage: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         item = dict(row)
+        usage_items = list(usage or [])
+        usage_count = sum(int(entry.get("count", 1)) for entry in usage_items)
         return {
             "id": str(item["id"]),
             "name": str(item["name"]),
@@ -313,6 +384,7 @@ class SecretsManagerService:
             "created_at": float(item.get("created_at") or 0),
             "updated_at": float(item.get("updated_at") or 0),
             "usage_count": usage_count,
+            "usage": usage_items,
             "host_count": usage_count,
         }
 
@@ -327,22 +399,23 @@ class SecretsManagerService:
             return False
 
     def secrets(self, *, include_inactive: bool = False) -> list[dict[str, Any]]:
-        usage = self._usage_counts()
+        usage = self._usage_details()
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT * FROM secrets " + ("" if include_inactive else "WHERE active=1 ") + "ORDER BY name COLLATE NOCASE,id"
+                "SELECT * FROM secrets "
+                + ("" if include_inactive else "WHERE active=1 ")
+                + "ORDER BY name COLLATE NOCASE,id"
             ).fetchall()
-        return [self._metadata(row, usage.get(str(row["id"]), 0)) for row in rows]
+        return [self._metadata(row, usage.get(str(row["id"]), [])) for row in rows]
 
-    # Compatibility name expected by Hosts Manager callers.
     def credentials(self) -> list[dict[str, Any]]:
         return self.secrets()
 
     def secret(self, secret_id: str) -> dict[str, Any] | None:
-        usage = self._usage_counts()
+        usage = self._usage_details()
         with self.connect() as connection:
             row = connection.execute("SELECT * FROM secrets WHERE id=? AND active=1", (secret_id,)).fetchone()
-        return self._metadata(row, usage.get(secret_id, 0)) if row else None
+        return self._metadata(row, usage.get(secret_id, [])) if row else None
 
     def _audit(
         self,
@@ -356,12 +429,25 @@ class SecretsManagerService:
     ) -> None:
         safe_details = dict(details or {})
         for key in list(safe_details):
-            if any(token in key.lower() for token in ("secret", "password", "token", "key", "passphrase", "authorization")):
+            if any(
+                token in key.lower()
+                for token in ("secret", "password", "token", "key", "passphrase", "authorization")
+            ):
                 safe_details[key] = "[REDACTED]"
         with self.connect() as connection:
             connection.execute(
-                "INSERT INTO secret_audit(id,secret_id,action,consumer_module,purpose,actor,details_json,created_at) VALUES(?,?,?,?,?,?,?,?)",
-                (_stable_id(), secret_id, action, consumer_module, purpose, actor, _json(safe_details), time.time()),
+                "INSERT INTO secret_audit(id,secret_id,action,consumer_module,purpose,actor,details_json,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    _stable_id(),
+                    secret_id,
+                    action,
+                    consumer_module,
+                    purpose,
+                    actor,
+                    _json(safe_details),
+                    time.time(),
+                ),
             )
 
     def audit(self, *, secret_id: str = "", limit: int = 250) -> list[dict[str, Any]]:
@@ -373,7 +459,9 @@ class SecretsManagerService:
                     (secret_id, limit),
                 ).fetchall()
             else:
-                rows = connection.execute("SELECT * FROM secret_audit ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+                rows = connection.execute(
+                    "SELECT * FROM secret_audit ORDER BY created_at DESC LIMIT ?", (limit,)
+                ).fetchall()
         result: list[dict[str, Any]] = []
         for row in rows:
             item = dict(row)
@@ -405,9 +493,17 @@ class SecretsManagerService:
                 ) VALUES(?,?,?,?,?,'',1,?,?,?,?,?,?)
                 """,
                 (
-                    metadata["id"], metadata["name"], metadata["type"], metadata.get("username", ""),
-                    metadata.get("description", ""), metadata.get("environment_id"),
-                    _json(metadata.get("shared_with", [])), now, now, actor, actor,
+                    metadata["id"],
+                    metadata["name"],
+                    metadata["type"],
+                    metadata.get("username", ""),
+                    metadata.get("description", ""),
+                    metadata.get("environment_id"),
+                    _json(metadata.get("shared_with", [])),
+                    now,
+                    now,
+                    actor,
+                    actor,
                 ),
             )
             connection.execute(
@@ -417,8 +513,15 @@ class SecretsManagerService:
                 WHERE id=? AND encrypted_secret=''
                 """,
                 (
-                    metadata["name"], metadata["type"], metadata.get("username", ""), metadata.get("description", ""),
-                    metadata.get("environment_id"), _json(metadata.get("shared_with", [])), now, actor, metadata["id"],
+                    metadata["name"],
+                    metadata["type"],
+                    metadata.get("username", ""),
+                    metadata.get("description", ""),
+                    metadata.get("environment_id"),
+                    _json(metadata.get("shared_with", [])),
+                    now,
+                    actor,
+                    metadata["id"],
                 ),
             )
             connection.commit()
@@ -470,8 +573,18 @@ class SecretsManagerService:
                         updated_at=excluded.updated_at,updated_by=excluded.updated_by
                     """,
                     (
-                        item_id, name, kind, username, description, envelope, environment_id,
-                        _json(shares), created_at, now, created_by, actor,
+                        item_id,
+                        name,
+                        kind,
+                        username,
+                        description,
+                        envelope,
+                        environment_id,
+                        _json(shares),
+                        created_at,
+                        now,
+                        created_by,
+                        actor,
                     ),
                 )
             except sqlite3.IntegrityError as error:
@@ -481,29 +594,40 @@ class SecretsManagerService:
             raise RuntimeError("saved secret is unavailable")
         self._sync_reference_shadow(item, actor=actor)
         self._audit(item_id, "updated" if old else "created", actor=actor)
-        bus.publish("secret.updated" if old else "secret.created", {
-            "secret_id": item_id,
-            "name": item["name"],
-            "type": item["type"],
-            "actor": actor,
-        })
+        bus.publish(
+            "secret.updated" if old else "secret.created",
+            {
+                "secret_id": item_id,
+                "name": item["name"],
+                "type": item["type"],
+                "actor": actor,
+            },
+        )
         return item
 
-    # Compatibility name expected by Hosts Manager callers.
-    def save_credential(self, payload: Any, actor: str, credential_id: str | None = None) -> dict[str, Any]:
+    def save_credential(
+        self,
+        payload: Any,
+        actor: str,
+        credential_id: str | None = None,
+    ) -> dict[str, Any]:
         return self.save(payload, actor, credential_id)
 
     def verified_secret(self, secret_id: str, *, module_id: str, purpose: str) -> dict[str, str]:
         if not module_id or not purpose:
             raise PermissionError("a controlled backend secret context is required")
         with self.connect() as connection:
-            row = connection.execute("SELECT * FROM secrets WHERE id=? AND active=1", (secret_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM secrets WHERE id=? AND active=1", (secret_id,)
+            ).fetchone()
         if not row or not row["encrypted_secret"]:
             raise KeyError("secret not found")
         shares = _decode_list(row["shared_with_json"])
         if module_id not in shares:
             raise PermissionError(f"secret is not shared with {module_id}")
-        decoded = json.loads(self.cipher.decrypt(str(row["encrypted_secret"]), associated_data=secret_id))
+        decoded = json.loads(
+            self.cipher.decrypt(str(row["encrypted_secret"]), associated_data=secret_id)
+        )
         if not isinstance(decoded, dict):
             raise ValueError("invalid encrypted secret payload")
         self._audit(secret_id, "used", consumer_module=module_id, purpose=purpose)
@@ -515,24 +639,37 @@ class SecretsManagerService:
             "passphrase": str(decoded.get("passphrase", "")),
         }
 
-    # Compatibility name expected by Hosts Manager callers.
-    def verified_credential(self, credential_id: str, *, module_id: str, purpose: str) -> dict[str, str]:
+    def verified_credential(
+        self,
+        credential_id: str,
+        *,
+        module_id: str,
+        purpose: str,
+    ) -> dict[str, str]:
         return self.verified_secret(credential_id, module_id=module_id, purpose=purpose)
 
     def delete(self, secret_id: str, actor: str) -> bool:
-        usage = self._usage_counts().get(secret_id, 0)
+        usage = self._usage_details().get(secret_id, [])
         if usage:
             raise ValueError("secret is still referenced by infrastructure resources")
         item = self.secret(secret_id)
         if not item:
             return False
+        deleted_name = f"{item['name']}#deleted-{secret_id}"
         with self.connect() as connection:
             connection.execute(
-                "UPDATE secrets SET active=0,updated_at=?,updated_by=? WHERE id=?",
-                (time.time(), actor, secret_id),
+                """
+                UPDATE secrets
+                SET active=0,name=?,encrypted_secret='',shared_with_json='[]',updated_at=?,updated_by=?
+                WHERE id=?
+                """,
+                (deleted_name, time.time(), actor, secret_id),
             )
         self._audit(secret_id, "deleted", actor=actor)
-        bus.publish("secret.deleted", {"secret_id": secret_id, "name": item["name"], "actor": actor})
+        bus.publish(
+            "secret.deleted",
+            {"secret_id": secret_id, "name": item["name"], "actor": actor},
+        )
         return True
 
     def delete_credential(self, credential_id: str, actor: str = "compatibility") -> bool:
@@ -548,11 +685,18 @@ class SecretsManagerService:
             "secrets": rows,
         }
         envelope = self.cipher.export_encrypted(payload)
-        return {"format": payload["format"], "created_at": payload["created_at"], "payload": envelope, "count": len(rows)}
+        return {
+            "format": payload["format"],
+            "created_at": payload["created_at"],
+            "payload": envelope,
+            "count": len(rows),
+        }
 
     def restore_encrypted_backup(self, envelope: str, actor: str) -> dict[str, Any]:
         payload = self.cipher.import_encrypted(envelope)
-        if payload.get("format") != "webnas-secrets-manager-backup-v1" or not isinstance(payload.get("secrets"), list):
+        if payload.get("format") != "webnas-secrets-manager-backup-v1" or not isinstance(
+            payload.get("secrets"), list
+        ):
             raise ValueError("unsupported Secrets Manager backup")
         safety = self.root / f"pre-restore-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}.sqlite3"
         source = sqlite3.connect(self.path, timeout=15)
@@ -574,23 +718,35 @@ class SecretsManagerService:
                 secret_id = str(item.get("id") or "")
                 encrypted = str(item.get("encrypted_secret") or "")
                 if encrypted:
-                    # Verify every envelope before committing the restore.
                     self.cipher.decrypt(encrypted, associated_data=secret_id)
                 connection.execute(
                     """
-                    INSERT INTO secrets(id,name,type,username,description,encrypted_secret,active,environment_id,
-                        shared_with_json,created_at,updated_at,created_by,updated_by)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    INSERT INTO secrets(
+                        id,name,type,username,description,encrypted_secret,active,environment_id,
+                        shared_with_json,created_at,updated_at,created_by,updated_by
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
-                        secret_id, str(item.get("name") or secret_id), str(item.get("type") or "generic_secret"),
-                        str(item.get("username") or ""), str(item.get("description") or ""), encrypted,
-                        int(item.get("active", 1)), item.get("environment_id"), str(item.get("shared_with_json") or "[]"),
-                        float(item.get("created_at") or time.time()), float(item.get("updated_at") or time.time()),
-                        str(item.get("created_by") or actor), actor,
+                        secret_id,
+                        str(item.get("name") or secret_id),
+                        str(item.get("type") or "generic_secret"),
+                        str(item.get("username") or ""),
+                        str(item.get("description") or ""),
+                        encrypted,
+                        int(item.get("active", 1)),
+                        item.get("environment_id"),
+                        str(item.get("shared_with_json") or "[]"),
+                        float(item.get("created_at") or time.time()),
+                        float(item.get("updated_at") or time.time()),
+                        str(item.get("created_by") or actor),
+                        actor,
                     ),
                 )
-        return {"ok": True, "restored": len(payload["secrets"]), "safety_backup": str(safety)}
+        return {
+            "ok": True,
+            "restored": len(payload["secrets"]),
+            "safety_backup": str(safety),
+        }
 
     def rotation_plan(self) -> dict[str, Any]:
         return {
@@ -609,7 +765,10 @@ class SecretsManagerService:
     def status(self) -> dict[str, Any]:
         with self.connect() as connection:
             total = int(connection.execute("SELECT COUNT(*) FROM secrets WHERE active=1").fetchone()[0])
-            migrations = [dict(row) for row in connection.execute("SELECT * FROM migrations ORDER BY migrated_at")]
+            migrations = [
+                dict(row)
+                for row in connection.execute("SELECT * FROM migrations ORDER BY migrated_at")
+            ]
         return {
             "status": "degraded" if self.migration_error else "ok",
             "authoritative": not bool(self.migration_error),
