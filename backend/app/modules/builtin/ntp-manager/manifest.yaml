@@ -1,0 +1,12 @@
+id: ntp-manager
+name: NTP Manager
+version: 1.0.0
+category: network
+icon: clock
+permissions: [ntp.view, ntp.manage, ntp.resync]
+routers: [app.modules.ntp_manager.router:router]
+dependencies: [identity, package-center]
+capabilities: [status, sources, chrony, systemd-timesyncd, ntpd, resync, backup, rollback]
+system_capabilities: [timedatectl, systemctl]
+actions: [configure, resync, restart]
+menu: [{id: ntp-manager, label: NTP Manager, icon: clock, permission: ntp.view}]
