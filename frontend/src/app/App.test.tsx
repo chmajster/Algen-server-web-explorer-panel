@@ -182,7 +182,7 @@ describe("authentication initialization", () => {
 
     await waitFor(() => expect(reloadPage).toHaveBeenCalledOnce());
     expect(window.location.pathname).toBe("/");
-    expect(sessionStorage.getItem(COMPLETED_UPDATE_RELOAD_KEY)).toBe("update-success-1");
+    expect(sessionStorage.getItem("webnas_completed_update_reload")).toBe("update-success-1");
 
     rerender(<App reloadPage={reloadPage} />);
     expect(reloadPage).toHaveBeenCalledOnce();
