@@ -58,7 +58,7 @@ Install the browser once after `npm ci`:
 npx playwright install chromium
 ```
 
-Run locally:
+Run the controlled browser-side mock suite locally:
 
 ```bash
 npm run test:e2e
@@ -70,7 +70,15 @@ CI uses:
 npm run test:e2e:ci
 ```
 
-The checked-in E2E suite uses a controlled browser-side mock API. It never points destructive File Manager, DCST or Package Center operations at production services. Critical flows cover authentication/session behavior, Desktop windows, File Manager administrative actions, DCST object/service workflows and Package Center installation flow.
+The checked-in mock E2E suite never points destructive File Manager, DCST or Package Center operations at production services. Critical flows cover authentication/session behavior, Desktop windows, File Manager administrative actions, DCST object/service workflows and Package Center installation flow.
+
+A second Playwright profile exercises the actual browser -> Vite proxy -> FastAPI -> SQLite path:
+
+```bash
+npm run test:e2e:real
+```
+
+`playwright.real.config.ts` starts `backend/tests/e2e_real_server.py` with a temporary configuration and data directory. The test server replaces only PAM authentication and permission resolution inside that isolated test process; production application modules and routes remain unchanged. The real-stack suite verifies rejected and successful login, persistent cookie-backed session resolution, CSRF enforcement, logout, session expiry, request validation and Hosts Manager create/list/update/delete operations against the real backend repository. It is run for pull requests and `main` by `.github/workflows/real-e2e.yml`.
 
 ## Security checks
 
