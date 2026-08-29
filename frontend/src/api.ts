@@ -1,5 +1,6 @@
 /** Typed API facade composed from independently owned module clients. */
 import { platformClient } from "./core/api/platformClient";
+import { alertsClient } from "./modules/alerts/api/client";
 import { apmidClient } from "./modules/apmid/api/client";
 import { filesClient } from "./modules/files/api/client";
 import { transfersClient } from "./modules/transfers/api/client";
@@ -26,6 +27,8 @@ import { dhcpClient } from "./modules/dhcp/api/client";
 
 export * from "./core/api/contracts";
 export { ApiError, login, logout, me, onAuthenticationInvalidated, resetAuthenticationState, setApiBaseUrl } from "./core/api/transport";
+export { alertsClient } from "./modules/alerts/api/client";
+export type { AlertDashboard, AlertItem, AlertRule, AlertRuleInput, AlertSeverity, AlertSink, AlertSinkInput, AlertSinkType, AlertState } from "./modules/alerts/api/client";
 export { downloadUrl } from "./modules/files/api/client";
 export { apmidClient } from "./modules/apmid/api/client";
 export { filesClient } from "./modules/files/api/client";
@@ -55,6 +58,7 @@ export type { DhcpBackup, DhcpConfiguration, DhcpDiagnostic, DhcpInterface, Dhcp
 
 export const api = {
   ...platformClient,
+  ...alertsClient,
   ...apmidClient,
   ...filesClient,
   ...transfersClient,
