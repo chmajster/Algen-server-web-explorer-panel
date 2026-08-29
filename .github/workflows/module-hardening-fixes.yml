@@ -1,0 +1,209 @@
+name: Apply PR hardening fixes
+
+on:
+  push:
+    branches:
+      - feature/firewall-security-network-tools
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/firewall-security-network-tools
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          python -m pip install -r backend/requirements-dev.txt
+          cd frontend
+          npm ci
+      - name: Apply hardening and CI fixes
+        shell: bash
+        run: |
+          git fetch origin main --depth=1
+          git checkout origin/main -- backend/app/privileged_broker/server.py
+          python - <<'PY'
+          from pathlib import Path
+
+          def edit(path: str, old: str, new: str, count: int = 1) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"anchor missing: {path}: {old[:120]!r}")
+              target.write_text(text.replace(old, new, count), encoding="utf-8")
+
+          # Keep the broker server diff minimal: only route the new typed operation through firewall_policy.
+          edit("backend/app/privileged_broker/server.py", "from .extended_policy import dispatch", "from .firewall_policy import dispatch")
+
+          # Allow the existing typed systemd broker operation to control the two firewall services.
+          edit(
+              "backend/app/privileged_broker/policy.py",
+              '    "kea-dhcp4-server.service", "kea-dhcp4.service", "isc-dhcp-server.service", "dhcpd.service",\n',
+              '    "kea-dhcp4-server.service", "kea-dhcp4.service", "isc-dhcp-server.service", "dhcpd.service",\n    "firewalld.service", "nftables.service",\n',
+          )
+
+          # Network diagnostics are POST requests that can initiate outbound traffic: require CSRF as well as auth/RBAC.
+          path = Path("backend/app/modules/network_tools/router.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace("from ...rbac import current_user", "from ...rbac import current_user, mutating_user")
+          for name in ("ping", "traceroute", "dns", "reverse_dns", "port_test", "http_test", "route_lookup"):
+              marker = f"def {name}("
+              start = text.index(marker)
+              end = text.index("):", start) + 2
+              signature = text[start:end]
+              if "Depends(current_user)" not in signature:
+                  raise SystemExit(f"dependency anchor missing for {name}")
+              text = text[:start] + signature.replace("Depends(current_user)", "Depends(mutating_user)") + text[end:]
+          path.write_text(text, encoding="utf-8")
+
+          # Fix mypy's literal narrowing by validating normalized dictionaries through Pydantic.
+          path = Path("backend/app/modules/firewall_manager/service.py")
+          text = path.read_text(encoding="utf-8")
+          old = '            previous_input = FirewallRuleInput(action=previous.action if previous.action in {"allow", "drop", "reject"} else "drop", direction=previous.direction if previous.direction in {"in", "out"} else "in", protocol=previous.protocol if previous.protocol in {"any", "tcp", "udp"} else "any", port=previous.port, source=previous.source, destination=previous.destination, interface=previous.interface, comment=previous.comment, family=previous.family if previous.family in {"any", "ipv4", "ipv6"} else "any")\n'
+          new = '            previous_input = self._input_from_rule(previous)\n'
+          if old not in text:
+              raise SystemExit("edit rollback constructor anchor missing")
+          text = text.replace(old, new, 1)
+          old = '                    self.add_rule(FirewallRuleInput(action=item.action if item.action in {"allow", "drop", "reject"} else "drop", direction=item.direction if item.direction in {"in", "out"} else "in", protocol=item.protocol if item.protocol in {"any", "tcp", "udp"} else "any", port=item.port, source=item.source, destination=item.destination, interface=item.interface, comment=item.comment, family=item.family if item.family in {"any", "ipv4", "ipv6"} else "any"))\n'
+          new = '                    self.add_rule(self._input_from_rule(item))\n'
+          if old not in text:
+              raise SystemExit("restore rollback constructor anchor missing")
+          text = text.replace(old, new, 1)
+          anchor = '    def edit_rule(self, rule_id: str, replacement: FirewallRuleInput) -> dict[str, Any]:\n'
+          helper = '''    @staticmethod\n    def _input_from_rule(rule: FirewallRule) -> FirewallRuleInput:\n        return FirewallRuleInput.model_validate(\n            {\n                "action": rule.action if rule.action in {"allow", "drop", "reject"} else "drop",\n                "direction": rule.direction if rule.direction in {"in", "out"} else "in",\n                "protocol": rule.protocol if rule.protocol in {"any", "tcp", "udp"} else "any",\n                "port": rule.port,\n                "source": rule.source,\n                "destination": rule.destination,\n                "interface": rule.interface,\n                "comment": rule.comment,\n                "family": rule.family if rule.family in {"any", "ipv4", "ipv6"} else "any",\n            }\n        )\n\n'''
+          if anchor not in text:
+              raise SystemExit("firewall helper anchor missing")
+          text = text.replace(anchor, helper + anchor, 1)
+
+          # Implement normalized import. Raw firewall scripts/config paths are never accepted.
+          insert_anchor = '    def create_backup(self, description: str = "") -> dict[str, Any]:\n'
+          import_method = '''    def import_configuration(self, configuration: dict[str, Any]) -> dict[str, Any]:\n        if set(configuration) - {"schema", "created_at", "backend", "active", "rules", "id", "description"}:\n            raise FirewallError("firewall import contains unsupported fields")\n        if configuration.get("schema") != 1 or not isinstance(configuration.get("rules"), list):\n            raise FirewallError("firewall import schema is invalid")\n        raw_rules = configuration["rules"]\n        if len(raw_rules) > 2000:\n            raise FirewallError("firewall import exceeds the 2000-rule limit")\n        try:\n            candidate = [FirewallRuleInput.model_validate(item) for item in raw_rules]\n        except ValueError as error:\n            raise FirewallError("firewall import contains an invalid rule") from error\n        active = configuration.get("active")\n        if active is not None and not isinstance(active, bool):\n            raise FirewallError("firewall import active state must be boolean")\n\n        backend = self.system.detect()[0]\n        current = self.rules(backend=backend)\n        # Add candidate rules before removing the snapshot to avoid a transient empty allow policy.\n        # UFW deletions run in reverse so original numeric IDs remain stable after new rules are appended.\n        for item in candidate:\n            self.add_rule(item)\n        removable = [item for item in current if backend != FirewallBackend.nftables or item.editable]\n        for item in reversed(removable):\n            self.delete_rule(item.id)\n        if active is not None and bool(self.status().get("active")) != active:\n            self.set_enabled(active)\n        return {"backend": backend.value, "imported_rules": len(candidate), "active": self.status().get("active")}\n\n'''
+          if insert_anchor not in text:
+              raise SystemExit("firewall import insertion anchor missing")
+          text = text.replace(insert_anchor, import_method + insert_anchor, 1)
+          text = text.replace('if operation in {"disable", "enable", "restore"}:', 'if operation in {"disable", "enable", "restore", "import"}:')
+          path.write_text(text, encoding="utf-8")
+
+          # Router import endpoint, exact confirmation and standard job rollback wrapper.
+          path = Path("backend/app/modules/firewall_manager/router.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "from .models import FirewallActionRequest, FirewallBackupRequest, FirewallMutationRequest, FirewallRuleInput",
+              "from .models import FirewallActionRequest, FirewallBackupRequest, FirewallImportRequest, FirewallMutationRequest, FirewallRuleInput",
+          )
+          text = text.replace("def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any]:", "def execute(context: JobContext, metadata: dict[str, Any]) -> dict[str, Any] | None:\n        _ = metadata")
+          anchor = '@router.get("/backups")\ndef backups(user: SessionUser = Depends(current_user)):\n'
+          endpoint = '''@router.post("/import")\ndef import_config(payload: FirewallImportRequest, request: Request, user: SessionUser = Depends(mutating_user)):\n    _allow(user, FIREWALL_RESTORE)\n    _reauth(user, payload.pam_password, payload.confirmation, "firewall:import")\n    _safe("import", request=request, acknowledge=payload.acknowledge_lockout)\n    configuration = payload.configuration\n    return _job(user.username, "import", lambda _context: service().import_configuration(configuration))\n\n\n'''
+          if anchor not in text:
+              raise SystemExit("firewall import endpoint anchor missing")
+          text = text.replace(anchor, endpoint + anchor, 1)
+          path.write_text(text, encoding="utf-8")
+
+          # Security scan JobHandler must match the named Protocol signature exactly.
+          path = Path("backend/app/modules/security_center/router.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace("from __future__ import annotations\n", "from __future__ import annotations\n\nfrom typing import Any\n")
+          text = text.replace("def execute(context: JobContext, _metadata: dict) -> dict:", "def execute(context: JobContext, metadata: dict[str, Any]) -> dict[str, Any] | None:\n        _ = metadata")
+          path.write_text(text, encoding="utf-8")
+
+          # Re-open a previously resolved finding if the condition is detected again; acknowledgement may persist.
+          path = Path("backend/app/modules/security_center/service.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              '            if configured in {FindingStatus.acknowledged.value, FindingStatus.resolved.value}:\n                item.status = FindingStatus(configured)\n',
+              '            if configured == FindingStatus.acknowledged.value:\n                item.status = FindingStatus.acknowledged\n',
+          )
+          path.write_text(text, encoding="utf-8")
+
+          # Network typing, PTR support and redirect credential hardening.
+          path = Path("backend/app/modules/network_tools/service.py")
+          text = path.read_text(encoding="utf-8")
+          if "import ipaddress\n" not in text:
+              text = text.replace("from __future__ import annotations\n\n", "from __future__ import annotations\n\nimport ipaddress\n")
+          text = text.replace(
+              '        args += [payload.hostname, payload.record_type]\n',
+              '        try:\n            ptr_address = str(ipaddress.ip_address(payload.hostname)) if payload.record_type == "PTR" else None\n        except ValueError:\n            ptr_address = None\n        args += ["-x", ptr_address] if ptr_address else [payload.hostname, payload.record_type]\n',
+              1,
+          )
+          text = text.replace("addresses = list(dict.fromkeys(item[4][0] for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)))[:16]", "addresses = list(dict.fromkeys(str(item[4][0]) for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)))[:16]")
+          text = text.replace("certificate = wrapped.getpeercert()", "certificate = wrapped.getpeercert() or {}")
+          text = text.replace('if parsed.scheme not in {"http", "https"} or not parsed.hostname:', 'if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:')
+          path.write_text(text, encoding="utf-8")
+
+          # Frontend type fixes and normalized firewall import control.
+          for filename in ("frontend/src/modules/firewall-manager/FirewallManagerApp.tsx", "frontend/src/modules/security-center/SecurityCenterApp.tsx"):
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8").replace(', "success")', ', "ok")')
+              path.write_text(text, encoding="utf-8")
+          path = Path("frontend/src/modules/network-tools/NetworkToolsApp.tsx")
+          path.write_text(path.read_text(encoding="utf-8").replace(", type DiagnosticResult", ""), encoding="utf-8")
+
+          path = Path("frontend/src/modules/firewall-manager/api/client.ts")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              '  restore: (id: string, auth: Auth) => request(`/api/modules/firewall-manager/backups/${encodeURIComponent(id)}/restore`, json("POST", auth)),\n',
+              '  restore: (id: string, auth: Auth) => request(`/api/modules/firewall-manager/backups/${encodeURIComponent(id)}/restore`, json("POST", auth)),\n  importConfig: (configuration: unknown, auth: Auth) => request("/api/modules/firewall-manager/import", json("POST", { configuration, ...auth })),\n',
+          )
+          path.write_text(text, encoding="utf-8")
+
+          path = Path("frontend/src/modules/firewall-manager/FirewallManagerApp.tsx")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace('  const [rule, setRule] = useState<RuleInput>(EMPTY_RULE);\n', '  const [rule, setRule] = useState<RuleInput>(EMPTY_RULE);\n  const [importText, setImportText] = useState("");\n')
+          text = text.replace(
+              '  const ruleColumns = useMemo<DataTableColumn<FirewallRule>[]>(() => [\n',
+              '  async function importConfiguration() {\n    let configuration: unknown;\n    try { configuration = JSON.parse(importText); } catch { toast("Import must be valid JSON", "error"); return; }\n    await mutate(() => firewallClient.importConfig(configuration, auth("firewall:import")));\n    setImportText("");\n  }\n\n  const ruleColumns = useMemo<DataTableColumn<FirewallRule>[]>(() => [\n',
+          )
+          old = '<DataTable rows={backups} getRowId={(row) => row.id} columns={[{ key: "id", header: "ID", render: (row) => row.id }, { key: "backend", header: "Backend", render: (row) => row.backend }, { key: "rules", header: "Rules", render: (row) => row.rules }, { key: "date", header: "Created", render: (row) => new Date(row.created_at * 1000).toLocaleString() }]} actions={can("firewall.restore") ? (row) => <button onClick={() => void mutate(() => firewallClient.restore(row.id, auth("firewall:restore")))}>Restore</button> : undefined} />'
+          new = '<DataTable rows={backups} getRowId={(row) => row.id} columns={[{ key: "id", header: "ID", render: (row) => row.id }, { key: "backend", header: "Backend", render: (row) => row.backend }, { key: "rules", header: "Rules", render: (row) => row.rules }, { key: "date", header: "Created", render: (row) => new Date(row.created_at * 1000).toLocaleString() }]} actions={can("firewall.restore") ? (row) => <button onClick={() => void mutate(() => firewallClient.restore(row.id, auth("firewall:restore")))}>Restore</button> : undefined} />{can("firewall.restore") && <div className="security-import"><h4>Import normalized configuration</h4><textarea aria-label="Firewall import JSON" rows={7} value={importText} onChange={(event) => setImportText(event.target.value)} placeholder=\'{"schema":1,"active":true,"rules":[]}\' /><button disabled={!importText.trim()} onClick={() => void importConfiguration()}>Import JSON</button></div>}'
+          if old not in text:
+              raise SystemExit("firewall backups UI anchor missing")
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+
+          css = Path("frontend/src/modules/security-tools.css")
+          css.write_text(css.read_text(encoding="utf-8") + '\n.security-import{display:grid;gap:8px;margin-top:18px}.security-import textarea{width:100%;box-sizing:border-box;border:1px solid var(--border-subtle,#303641);border-radius:8px;background:var(--surface-sunken,#0d1015);color:inherit;padding:10px;font:inherit;resize:vertical}\n', encoding="utf-8")
+
+          # Document the import endpoint and strengthened POST/CSRF behavior.
+          edit("FIREWALL_MANAGER.md", "- `GET /api/modules/firewall-manager/export`\n", "- `GET /api/modules/firewall-manager/export`\n- `POST /api/modules/firewall-manager/import`\n")
+          edit("NETWORK_TOOLS.md", "Hostnames, IPv4/IPv6 addresses, DNS servers, ports, record types and URLs are validated by typed Pydantic models before execution.", "Hostnames, IPv4/IPv6 addresses, DNS servers, ports, record types and URLs are validated by typed Pydantic models before execution. Outbound POST diagnostics also pass the shared CSRF dependency in addition to session authentication and RBAC.")
+          PY
+      - name: Normalize and regenerate API contract
+        run: |
+          python -m ruff check --fix backend/app/modules/firewall_manager backend/app/modules/security_center backend/app/modules/network_tools backend/app/privileged_broker/firewall_policy.py backend/app/privileged_broker/policy.py backend/app/privileged_broker/server.py backend/tests/test_firewall_manager.py backend/tests/test_security_center.py backend/tests/test_network_tools.py
+          cd frontend
+          npm run api:generate
+      - name: Validate backend and frontend
+        run: |
+          python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py
+          python -m mypy
+          python -m pytest -q backend/tests/test_firewall_manager.py backend/tests/test_security_center.py backend/tests/test_network_tools.py
+          cd frontend
+          npm run lint
+          npm run typecheck
+          npm run api:check
+          npm run test -- --run src/modules/firewall-manager/FirewallManagerApp.test.tsx src/modules/security-center/SecurityCenterApp.test.tsx src/modules/network-tools/NetworkToolsApp.test.tsx
+          npm run build
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/module-hardening-fixes.yml
+          git add -A
+          git commit -m "fix: harden security and network modules"
+          git push origin HEAD:feature/firewall-security-network-tools
