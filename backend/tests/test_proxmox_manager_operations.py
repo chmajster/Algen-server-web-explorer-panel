@@ -78,6 +78,10 @@ class FakeClient:
         self.puts.append((path, data))
         return "UPID:pve01:00000002:task"
 
+    def delete(self, path: str, data: dict[str, Any] | None = None) -> str:
+        self.requests.append(("DELETE", path, data))
+        return "UPID:pve01:00000003:task"
+
     def request(self, method: str, path: str, data: dict[str, Any] | None = None) -> str:
         self.requests.append((method, path, data))
         return "UPID:pve01:00000003:task"
