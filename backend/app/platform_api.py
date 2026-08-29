@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from .update_coordination import read_update_request
@@ -89,6 +89,15 @@ def _deployment_metadata() -> dict[str, object | None]:
     return {"deployment_phase": deployment_phase, "update_id": update_id}
 
 
+def _connection_heartbeat() -> dict[str, object | None]:
+    return {
+        "type": "heartbeat",
+        "status": "ok",
+        "service": "webnas",
+        **_deployment_metadata(),
+    }
+
+
 @router.get("/api/health/live")
 def liveness():
     """Process-level health only; external providers never affect liveness."""
@@ -111,6 +120,21 @@ def health():
     """Backward-compatible health endpoint retained for existing installers."""
 
     return {"status": "ok", "service": "webnas", **_deployment_metadata()}
+
+
+@router.websocket("/api/health/ws")
+async def health_websocket(websocket: WebSocket) -> None:
+    """Keep a lightweight duplex heartbeat open for frontend connection monitoring."""
+
+    await websocket.accept()
+    try:
+        await websocket.send_json(_connection_heartbeat())
+        while True:
+            message = await websocket.receive_text()
+            if message == "ping":
+                await websocket.send_json(_connection_heartbeat())
+    except WebSocketDisconnect:
+        return
 
 
 @router.get("/update-status", include_in_schema=False)
