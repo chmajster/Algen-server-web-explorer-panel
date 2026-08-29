@@ -50,5 +50,5 @@ export const webhookManagerClient = {
     Object.entries(params).forEach(([key, value]) => value !== undefined && value !== "" && query.set(key, String(value)));
     return request<{ items: DeliveryItem[] }>(`/api/modules/webhook-manager/deliveries?${query}`);
   },
-  secrets: () => request<SecretItem[]>("/api/modules/secrets-manager/secrets"),
+  secrets: () => request<SecretItem[]>("/api/modules/webhook-manager/secret-choices"),
 } as const;
