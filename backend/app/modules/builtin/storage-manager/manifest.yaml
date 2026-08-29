@@ -1,0 +1,21 @@
+id: storage-manager
+name: Storage Manager
+version: 1.0.0
+category: infrastructure
+icon: hard-drive
+permissions:
+  - modules.view
+  - modules.diagnostics
+routers:
+  - app.modules.storage_manager.router:router
+capabilities:
+  - storage-inventory
+  - storage-health
+  - smart-health
+  - filesystem-capacity
+health_check: app.modules.storage_manager.health:health_check
+menu:
+  - id: storage-manager
+    label: Storage Manager
+    icon: hard-drive
+    permission: modules.view
