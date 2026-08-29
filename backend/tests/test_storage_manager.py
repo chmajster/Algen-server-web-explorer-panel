@@ -105,7 +105,9 @@ def test_nvme_probe_uses_fixed_binary_and_kernel_discovered_device_only() -> Non
             return CommandResult(0, json.dumps({"smart_status": {"passed": True}}), "")
         raise AssertionError(f"unexpected command: {argv}")
 
-    resolver = lambda name: f"/usr/bin/{name}" if name in {"lsblk", "nvme", "smartctl"} else None
+    def resolver(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in {"lsblk", "nvme", "smartctl"} else None
+
     manager = StorageInventoryService(runner=runner, tool_resolver=resolver)
 
     health = manager.device_health(manager.block_devices())
