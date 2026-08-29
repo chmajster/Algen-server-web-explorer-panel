@@ -238,6 +238,22 @@ def test_tls_certificate_is_bootstrapped_atomically(monkeypatch, tmp_path: Path)
     assert os.stat(key).st_mode & 0o777 == 0o600
 
 
+def test_http_transport_does_not_require_openssl(monkeypatch, tmp_path: Path):
+    target = deployment(tmp_path)
+    cert = tmp_path / "tls" / "webnas.crt"
+    key = tmp_path / "tls" / "webnas.key"
+    target.config.write_text(
+        f"server:\n  use_https: false\n  tls_cert: {cert}\n  tls_key: {key}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_module.shutil, "which", lambda _name: None)
+
+    target.ensure_tls_certificate()
+
+    assert not cert.exists()
+    assert not key.exists()
+
+
 def test_tls_bootstrap_reports_missing_openssl(monkeypatch, tmp_path: Path):
     target = deployment(tmp_path)
     cert = tmp_path / "tls" / "webnas.crt"

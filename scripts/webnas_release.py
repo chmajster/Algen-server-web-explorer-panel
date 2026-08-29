@@ -250,6 +250,8 @@ class Deployment:
 
     def ensure_tls_certificate(self) -> None:
         transport = self.transport_settings()
+        if not transport.use_https:
+            return
         raw_cert = transport.tls_cert
         raw_key = transport.tls_key
         if not raw_cert or not raw_key:
