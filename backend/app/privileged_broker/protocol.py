@@ -21,6 +21,12 @@ class Operation(StrEnum):
     POWER = "power"
     UPDATE_SERVICE = "update_service"
     PACKAGE = "package"
+    MODULE_HOOK = "module_hook"
+    SAMBA_ACCOUNT = "samba_account"
+    MOUNT = "mount"
+    MOUNT_UNIT = "mount_unit"
+    QUOTA = "quota"
+    STORAGE_PROBE = "storage_probe"
 
 
 class BrokerRequest(BaseModel):
