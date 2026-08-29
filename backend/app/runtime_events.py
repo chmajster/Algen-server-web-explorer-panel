@@ -110,19 +110,32 @@ async def stream_runtime_events(_user: SessionUser = Depends(get_session_user)) 
     )
 
 
-async def watch_update_progress() -> None:
-    """Convert the external updater's atomic progress-file changes into one shared event stream."""
-
-    path = Path(get_config().paths.data_dir) / "settings" / "update_progress.json"
-    previous: tuple[int, int] | None = None
-    while True:
+def _fingerprint(paths: tuple[Path, ...]) -> tuple[tuple[int, int] | None, ...]:
+    values: list[tuple[int, int] | None] = []
+    for path in paths:
         try:
             stat = path.stat()
-            current = (stat.st_mtime_ns, stat.st_size)
+            values.append((stat.st_mtime_ns, stat.st_size))
         except OSError:
-            current = None
-        if current != previous:
-            if previous is not None or current is not None:
-                publish_runtime_event("update.progress")
-            previous = current
+            values.append(None)
+    return tuple(values)
+
+
+async def watch_update_progress() -> None:
+    """Translate mutable runtime files into one shared browser invalidation stream."""
+
+    data_dir = Path(get_config().paths.data_dir)
+    watched: dict[str, tuple[Path, ...]] = {
+        "update.progress": (data_dir / "settings" / "update_progress.json",),
+        "task.updated": (data_dir / "transfers.sqlite3", data_dir / "transfers.sqlite3-wal"),
+        "job.updated": (data_dir / "jobs.sqlite3", data_dir / "jobs.sqlite3-wal"),
+        "module.updated": (data_dir / "package-center.sqlite3", data_dir / "package-center.sqlite3-wal"),
+    }
+    previous = {event_type: _fingerprint(paths) for event_type, paths in watched.items()}
+    while True:
+        for event_type, paths in watched.items():
+            current = _fingerprint(paths)
+            if current != previous[event_type]:
+                previous[event_type] = current
+                publish_runtime_event(event_type)
         await asyncio.sleep(0.5)
