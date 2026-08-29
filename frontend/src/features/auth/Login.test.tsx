@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadLanguage } from "../../i18n";
 
 const loginMock = vi.hoisted(() => vi.fn());
 vi.mock("../../api", async (importOriginal) => {
@@ -17,7 +18,10 @@ function fillCredentials(username = " alice ", password = "secret") {
 }
 
 describe("Login", () => {
-  beforeEach(() => loginMock.mockReset());
+  beforeEach(async () => {
+    loginMock.mockReset();
+    await loadLanguage("en-US");
+  });
 
   it("submits the trimmed username and password", async () => {
     const onLogin = vi.fn();
