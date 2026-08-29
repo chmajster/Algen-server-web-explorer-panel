@@ -1,4 +1,4 @@
-import { FlaskConical, Plus, RefreshCw, Search, Send, Webhook } from "lucide-react";
+import { FlaskConical, Plus, RefreshCw, Search, Webhook } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { confirmDialog } from "../../components/DialogService";
 import { Modal } from "../../components/Modal";
