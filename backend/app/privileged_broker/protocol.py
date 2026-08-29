@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION: Literal[1] = 1
 MAX_FRAME_BYTES = 1024 * 1024
 REQUEST_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 ACTOR_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,128}$")
