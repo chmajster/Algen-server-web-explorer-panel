@@ -1,0 +1,69 @@
+name: Fix PR112 CI once
+
+on:
+  push:
+    branches:
+      - security/complete-privileged-broker-migration
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: security/complete-privileged-broker-migration
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Apply deterministic fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          policy = Path('backend/app/privileged_broker/extended_policy.py')
+          text = policy.read_text(encoding='utf-8')
+          old = 'from typing import Any, Sequence\n'
+          if text.count(old) != 1:
+              raise SystemExit('unexpected typing import')
+          policy.write_text(text.replace(old, 'from typing import Any\n', 1), encoding='utf-8')
+
+          listing = Path('backend/tests/test_file_listing.py')
+          text = listing.read_text(encoding='utf-8')
+          old_block = '''    assert "RestrictSUIDSGID=false" in packaged_service\n    assert "RestrictSUIDSGID=false" in release_manager\n'''
+          new_block = '''    # Package installation is broker-owned now, so the HTTP process must not\n    # be able to create new SUID/SGID files itself.\n    assert "RestrictSUIDSGID=true" in packaged_service\n    assert "RestrictSUIDSGID=true" in release_manager\n'''
+          if text.count(old_block) != 1:
+              raise SystemExit('unexpected SUID assertions')
+          listing.write_text(text.replace(old_block, new_block, 1), encoding='utf-8')
+
+          release_tests = Path('backend/tests/test_release_deployment.py')
+          text = release_tests.read_text(encoding='utf-8')
+          old_config = '    config.write_text("server:\\n  port: 5000\\n  use_https: false\\n", encoding="utf-8")\n'
+          new_config = '''    data_dir = tmp_path / "data"\n    log_dir = tmp_path / "log"\n    temp_dir = tmp_path / "tmp"\n    config.write_text(\n        "server:\\n"\n        "  port: 5000\\n"\n        "  use_https: false\\n"\n        "paths:\\n"\n        f"  data_dir: {data_dir}\\n"\n        f"  log_dir: {log_dir}\\n"\n        f"  temp_dir: {temp_dir}\\n",\n        encoding="utf-8",\n    )\n'''
+          if text.count(old_config) != 1:
+              raise SystemExit('unexpected release config fixture')
+          release_tests.write_text(text.replace(old_config, new_config, 1), encoding='utf-8')
+          PY
+      - name: Install backend test dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Verify fixes
+        run: |
+          python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py
+          python -m pytest -q \
+            backend/tests/test_file_listing.py::test_systemd_profile_keeps_allowed_home_directories_writable \
+            backend/tests/test_release_deployment.py::test_generated_and_legacy_services_retry_three_times_every_thirty_seconds \
+            backend/tests/test_release_deployment.py::test_generated_services_allow_package_manager_writes \
+            backend/tests/test_privileged_broker_final_boundary.py
+      - name: Commit fixes and remove helper workflow
+        run: |
+          rm .github/workflows/fix-pr112-ci-once.yml
+          git config user.name 'ChatGPT Codex Connector'
+          git config user.email 'noreply@openai.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(security): align privilege boundary tests and fixtures'
+          git push origin HEAD:security/complete-privileged-broker-migration
