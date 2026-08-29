@@ -66,6 +66,25 @@ def _legacy_database(path: Path, *, credential_id: str, envelope: str) -> None:
         connection.close()
 
 
+def _webhook_database(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE webhooks(
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                secret_id TEXT,
+                signing_secret_id TEXT
+            )
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def _service_paths(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     data = tmp_path / "data"
     return (
@@ -222,3 +241,97 @@ def test_secret_create_update_audit_and_metadata_only(monkeypatch: pytest.Monkey
     assert "created" in actions
     assert "updated" in actions
     assert "used" in actions
+
+
+def test_webhook_reference_blocks_delete_and_is_reported(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    _patch_config(monkeypatch, tmp_path)
+    new_db, new_key, hosts_db, hosts_key = _service_paths(tmp_path)
+    hosts_db.parent.mkdir(parents=True, exist_ok=True)
+    sqlite3.connect(hosts_db).close()
+    webhooks_db = tmp_path / "data" / "webhook-manager" / "webhooks.sqlite3"
+    _webhook_database(webhooks_db)
+    service = SecretsManagerService(
+        path=new_db,
+        key_path=new_key,
+        hosts_path=hosts_db,
+        hosts_key_path=hosts_key,
+        webhooks_path=webhooks_db,
+    )
+    created = service.save(
+        SecretInput(
+            name="delivery-token",
+            type="api_token",
+            secret="token-value",
+            shared_with=["webhook-manager"],
+            confirm=True,
+        ),
+        "admin",
+    )
+
+    connection = sqlite3.connect(webhooks_db)
+    try:
+        connection.execute(
+            "INSERT INTO webhooks(id,name,secret_id,signing_secret_id) VALUES(?,?,?,NULL)",
+            ("hook-1", "operations", created["id"]),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    metadata = service.secret(created["id"])
+    assert metadata is not None
+    assert metadata["usage_count"] == 1
+    assert metadata["usage"][0]["module"] == "webhook-manager"
+    assert metadata["usage"][0]["name"] == "operations"
+    with pytest.raises(ValueError, match="still referenced"):
+        service.delete(created["id"], "admin")
+
+
+def test_delete_erases_envelope_and_releases_name(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    _patch_config(monkeypatch, tmp_path)
+    new_db, new_key, hosts_db, hosts_key = _service_paths(tmp_path)
+    hosts_db.parent.mkdir(parents=True, exist_ok=True)
+    sqlite3.connect(hosts_db).close()
+    webhooks_db = tmp_path / "data" / "webhook-manager" / "webhooks.sqlite3"
+    _webhook_database(webhooks_db)
+    service = SecretsManagerService(
+        path=new_db,
+        key_path=new_key,
+        hosts_path=hosts_db,
+        hosts_key_path=hosts_key,
+        webhooks_path=webhooks_db,
+    )
+    created = service.save(
+        SecretInput(
+            name="reusable-name",
+            type="generic_secret",
+            secret="must-be-erased",
+            shared_with=[],
+            confirm=True,
+        ),
+        "admin",
+    )
+
+    assert service.delete(created["id"], "admin") is True
+    with service.connect() as connection:
+        row = connection.execute(
+            "SELECT name,encrypted_secret,active,shared_with_json FROM secrets WHERE id=?",
+            (created["id"],),
+        ).fetchone()
+    assert row is not None
+    assert row["encrypted_secret"] == ""
+    assert row["active"] == 0
+    assert row["shared_with_json"] == "[]"
+    assert row["name"] != "reusable-name"
+
+    replacement = service.save(
+        SecretInput(
+            name="reusable-name",
+            type="generic_secret",
+            secret="replacement",
+            shared_with=[],
+            confirm=True,
+        ),
+        "admin",
+    )
+    assert replacement["id"] != created["id"]
