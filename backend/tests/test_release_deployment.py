@@ -146,6 +146,80 @@ def test_runtime_paths_are_writable_before_candidate_activation(tmp_path: Path):
     assert not list(data.glob(".webnas-write-check-*"))
 
 
+def test_new_transport_policy_refuses_public_plaintext_http(tmp_path: Path):
+    target = deployment(tmp_path)
+    target.config.write_text(
+        "server:\n  use_https: false\nsecurity:\n  allow_insecure_http: false\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="Refusing public plaintext HTTP"):
+        target.nginx(target.new_port)
+
+
+def test_explicit_lab_transport_policy_allows_plaintext_http(tmp_path: Path):
+    target = deployment(tmp_path)
+    target.config.write_text(
+        "server:\n  use_https: false\nsecurity:\n  allow_insecure_http: true\n",
+        encoding="utf-8",
+    )
+
+    nginx = target.nginx(target.new_port)
+
+    assert "listen 5000;" in nginx
+    assert "listen 5000 ssl;" not in nginx
+
+
+def test_tls_gateway_requires_and_uses_configured_certificate(tmp_path: Path):
+    target = deployment(tmp_path)
+    cert = tmp_path / "webnas.crt"
+    key = tmp_path / "webnas.key"
+    cert.write_text("certificate", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+    target.config.write_text(
+        f"server:\n  use_https: true\n  tls_cert: {cert}\n  tls_key: {key}\nsecurity:\n  allow_insecure_http: false\n",
+        encoding="utf-8",
+    )
+
+    nginx = target.nginx(target.new_port)
+
+    assert "listen 5000 ssl;" in nginx
+    assert f"ssl_certificate {cert};" in nginx
+    assert f"ssl_certificate_key {key};" in nginx
+
+
+def test_release_update_errors_use_shared_redaction(tmp_path: Path):
+    target = deployment(tmp_path)
+    target.update_request.write_text(
+        json.dumps(
+            {
+                "state": "running",
+                "steps": [
+                    {
+                        "id": "switch_version",
+                        "status": "pending",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    target.update_step(
+        "switch_version",
+        "failed",
+        "failed",
+        "password=deploy-secret Authorization: Bearer bearer-secret",
+    )
+
+    payload = json.loads(target.update_request.read_text(encoding="utf-8"))
+    error = payload["steps"][0]["error"]
+    assert "deploy-secret" not in error
+    assert "bearer-secret" not in error
+    assert "password=[REDACTED]" in error
+    assert "Bearer [REDACTED]" in error
+
+
 def test_handover_stops_stale_inactive_slot_without_deployment_state(monkeypatch, tmp_path: Path):
     target = deployment(tmp_path, active=False)
     stopped: list[str] = []
