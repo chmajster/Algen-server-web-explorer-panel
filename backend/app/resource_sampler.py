@@ -18,6 +18,7 @@ FAST_INTERVAL_SECONDS = 1.0
 MEDIUM_INTERVAL_SECONDS = 7.5
 SLOW_INTERVAL_SECONDS = 45.0
 MAX_USER_SLOW_CACHE = 64
+USER_SLOW_LOCK_STRIPES = 16
 
 
 class ResourceSampler:
@@ -50,6 +51,7 @@ class ResourceSampler:
         self._last_slow = 0.0
         self._fast_sample_count = 0
         self._user_slow: OrderedDict[str, tuple[float, list[dict[str, Any]]]] = OrderedDict()
+        self._user_slow_locks = tuple(threading.Lock() for _ in range(USER_SLOW_LOCK_STRIPES))
 
     @property
     def fast_sample_count(self) -> int:
@@ -93,8 +95,6 @@ class ResourceSampler:
         }
 
     def refresh_due(self, *, now: float | None = None, force: bool = False) -> bool:
-        """Refresh due tiers and return True when a FAST sample was collected."""
-
         monotonic_now = time.monotonic() if now is None else now
         with self._refresh_lock:
             with self._state_lock:
@@ -123,20 +123,40 @@ class ResourceSampler:
                     self._last_slow = monotonic_now
             return fast is not None
 
-    def _allowed_roots(self, username: str, *, now: float) -> list[dict[str, Any]]:
+    def _cached_allowed_roots(self, username: str, *, now: float) -> list[dict[str, Any]] | None:
         with self._state_lock:
             cached = self._user_slow.get(username)
             if cached and now - cached[0] < self.slow_interval:
                 self._user_slow.move_to_end(username)
                 return copy.deepcopy(cached[1])
+        return None
 
-        value = metrics.allowed_root_usage(username)
-        with self._state_lock:
-            self._user_slow[username] = (now, copy.deepcopy(value))
-            self._user_slow.move_to_end(username)
-            while len(self._user_slow) > self.user_cache_limit:
-                self._user_slow.popitem(last=False)
-        return value
+    def _user_slow_lock(self, username: str) -> threading.Lock:
+        return self._user_slow_locks[hash(username) % len(self._user_slow_locks)]
+
+    def _allowed_roots(self, username: str, *, now: float) -> list[dict[str, Any]]:
+        cached = self._cached_allowed_roots(username, now=now)
+        if cached is not None:
+            return cached
+
+        # Serialize cache misses for the same user (and a bounded set of hash
+        # collisions), then re-check because another request may have filled
+        # the cache while this request was waiting. Keeping a fixed number of
+        # locks avoids an unbounded per-username lock registry.
+        with self._user_slow_lock(username):
+            probe_now = time.monotonic()
+            cached = self._cached_allowed_roots(username, now=probe_now)
+            if cached is not None:
+                return cached
+
+            value = metrics.allowed_root_usage(username)
+            collected_at = time.monotonic()
+            with self._state_lock:
+                self._user_slow[username] = (collected_at, copy.deepcopy(value))
+                self._user_slow.move_to_end(username)
+                while len(self._user_slow) > self.user_cache_limit:
+                    self._user_slow.popitem(last=False)
+            return value
 
     def invalidate_user(self, username: str | None = None) -> None:
         with self._state_lock:
@@ -146,9 +166,6 @@ class ResourceSampler:
                 self._user_slow.pop(username, None)
 
     def dashboard(self, username: str, *, is_admin: bool, process_limit: int | None = 0) -> dict[str, Any]:
-        # The background loop is the normal producer. This fallback also makes
-        # startup/tests safe and is serialized, so concurrent callers cannot
-        # trigger duplicate full samples.
         self.refresh_due()
         with self._state_lock:
             static = copy.deepcopy(self._state["static"])
@@ -208,8 +225,6 @@ resource_sampler = ResourceSampler()
 
 
 async def resource_sampler_loop() -> None:
-    """Lifespan task that samples once and fans out lightweight invalidations."""
-
     while True:
         refreshed = await asyncio.to_thread(resource_sampler.refresh_due)
         if refreshed:
