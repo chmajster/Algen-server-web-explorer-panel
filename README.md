@@ -49,7 +49,11 @@ Main project goals:
 | **File Manager** | Browse files, upload, edit, copy and move with `rsync`, monitor transfer progress |
 | **Desktop UI** | Application windows, taskbar, Start menu, shortcuts, themes, wallpapers and per-user personalization |
 | **Users & Groups** | Manage local Linux users, groups, roles and granular permissions |
-| **Networking** | Interfaces, VLANs, bridges, bonds, DNS, routing, diagnostics and controlled network changes |
+| **Networking** | Interfaces, VLANs, bridges, bonds, DNS, transactional IPv4/IPv6 routing, policy routing, diagnostics and controlled network changes |
+| **NTP** | Chrony, systemd-timesyncd and optional ntpd status, managed sources, offset/stratum visibility and controlled resync |
+| **Login History** | SSH/local authentication history, active sessions, backend filtering and brute-force/password-spray correlation |
+| **GitOps** | Allowlisted WebNAS configuration export, diff/history, commit/fetch/pull/push, restore/revert and secret scanning |
+| **Job Queue** | Central priority queue, progress/logs, retries, cancellation, dependencies, timeout, retention and restart recovery |
 | **Network Resources** | SMB/CIFS, NFS, SSHFS and WebDAV integrated with File Manager |
 | **DCST** | Logical `APMID.ENV` segmentation, reusable Ports/IPSets/Services, Proxmox Firewall reconciliation, block/unblock, drift detection and firewall diagnostics |
 | **Containers** | Docker Engine, images, containers, Compose, networks, volumes, registries, backups and diagnostics |
@@ -79,6 +83,11 @@ Available and supported modules include:
 - Secrets Manager
 - Fail2Ban Manager
 - Webhook Manager
+- NTP Manager
+- Routing Manager
+- Login History
+- GitOps Config Manager
+- Job Queue Manager
 - Nginx
 - Squid Proxy
 - Syncthing
@@ -164,9 +173,11 @@ FastAPI
    ├── File operations / rsync
    ├── systemd
    ├── Docker
-   ├── Network management
+   ├── Network management / safe routing transactions
+   ├── central Job Queue
    ├── Package Center
    ├── Secrets Manager / encrypted consumer contracts
+   ├── privileged broker / allowlisted root operations
    └── WebNAS modules
 ```
 
@@ -198,6 +209,7 @@ The project includes:
 - WAC2/ChaCha20-Poly1305 encrypted secret storage with a master key outside SQLite and metadata-only browser APIs,
 - consumer-scoped secret sharing and audited backend secret access,
 - webhook target validation with blocked loopback/link-local/metadata ranges, DNS-address pinning, no automatic redirects and separate critical permission for private networks,
+- privileged NTP/routing/session operations behind the fixed WebNAS broker allowlist,
 - user and administrator activity auditing,
 - controlled high-risk operations,
 - automatic rollback for selected network changes,
@@ -223,6 +235,11 @@ Detailed documentation is available in separate files:
 | [SECRETS_MANAGER.md](SECRETS_MANAGER.md) | Secrets Manager, credential migration, encryption, sharing, backup/restore and rotation model |
 | [FAIL2BAN_MANAGER.md](FAIL2BAN_MANAGER.md) | Fail2Ban status, jail configuration, bans, logs and safety model |
 | [WEBHOOK_MANAGER.md](WEBHOOK_MANAGER.md) | Webhook subscriptions, retries, authentication/HMAC and SSRF controls |
+| [JOB_QUEUE_MANAGER.md](JOB_QUEUE_MANAGER.md) | Central WebNAS job queue, priorities, progress, retry, cancellation, dependencies and recovery |
+| [NTP_MANAGER.md](NTP_MANAGER.md) | NTP backends, managed sources, resync and privilege model |
+| [ROUTING_MANAGER.md](ROUTING_MANAGER.md) | IPv4/IPv6 routing, policy rules, diagnostics and transactional rollback |
+| [LOGIN_HISTORY.md](LOGIN_HISTORY.md) | Authentication history, active sessions and security correlation |
+| [GITOPS_CONFIG_MANAGER.md](GITOPS_CONFIG_MANAGER.md) | Allowlisted GitOps configuration, secret scanning, history and synchronization |
 | [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md) | Ansible Automation Controller |
 | [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
 | [CRON_MANAGER.md](CRON_MANAGER.md) | Cron Manager |
