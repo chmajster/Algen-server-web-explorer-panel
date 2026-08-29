@@ -10,7 +10,7 @@ from .models import AlertActionInput, AlertSeverity, AlertState, RuleInput, Sink
 from .service import service
 
 
-router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+router = APIRouter(prefix="/api/alerts", tags=["alerts"], include_in_schema=False)
 
 
 def _audit(actor: str, action: str, target: str, details: dict | None = None, *, failed: bool = False) -> None:
