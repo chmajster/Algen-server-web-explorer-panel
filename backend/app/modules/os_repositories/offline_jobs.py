@@ -77,7 +77,7 @@ class OfflineRepositoryJobManager:
         item = self.store.one("SELECT payload_json FROM offline_job_payloads WHERE job_id=?", (job_id,))
         if not item:
             raise RuntimeError("offline job payload is missing")
-        value = json.loads(str(item["payload_json"]))
+        value = item.get("payload")
         if not isinstance(value, dict):
             raise RuntimeError("offline job payload is invalid")
         return value
