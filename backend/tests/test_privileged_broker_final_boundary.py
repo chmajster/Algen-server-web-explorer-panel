@@ -29,6 +29,7 @@ def test_normal_web_service_is_unprivileged_and_requires_broker() -> None:
     assert "Group=webnas" in service_section
     assert "Environment=WEBNAS_PRIVILEGED_BROKER=required" in service_section
     assert "NoNewPrivileges=true" in service_section
+    assert "RestrictSUIDSGID=true" in service_section
     assert "User=root" not in service_section
 
 
@@ -38,6 +39,7 @@ def test_blue_green_backend_is_unprivileged_but_broker_remains_root() -> None:
     assert 'f"Group={self.service_user}"' in release
     assert '"Environment=WEBNAS_PRIVILEGED_BROKER=required"' in release
     assert '"NoNewPrivileges=true"' in release
+    assert '"RestrictSUIDSGID=true"' in release
     assert '"Requires=webnas-privileged.socket"' in release
     assert '"User=root", "Group=root"' in release  # dedicated broker only
     assert "runtime, self.root" not in release
