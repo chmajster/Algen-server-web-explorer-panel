@@ -25,7 +25,7 @@ Standard installer options:
 
 Portable options:
   -p, --port PORT          Application port (default: 5000)
-  --bind-host ADDRESS      Listen address (default: 0.0.0.0)
+  --bind-host ADDRESS      Listen address (default: 127.0.0.1)
   --keep-workdir           Keep the temporary runtime directory after exit
   -h, --help               Show help for the selected mode
 
