@@ -3,9 +3,9 @@ name: OS Repositories
 category: system
 icon: package
 permissions: [modules.view]
-routers: [app.modules.os_repositories.router:router, app.modules.os_repositories.offline_router:router]
+routers: [app.modules.os_repositories.router:router, app.modules.os_repositories.offline_router:router, app.modules.os_repositories.offline_diagnostics_router:router]
 dependencies: [hosts-manager]
-capabilities: [repositories, mirrors, synchronization, jobs, offline-bundles, air-gap]
+capabilities: [repositories, mirrors, synchronization, jobs, offline-bundles, air-gap, offline-diagnostics]
 actions: [sync, build, promote, rollback, cancel, retry, offline-export, offline-import, offline-verify]
-jobs: [repository-sync, package-build]
+jobs: [repository-sync, package-build, offline-export, offline-verify, offline-import]
 system_capabilities: [apt, rpm]
