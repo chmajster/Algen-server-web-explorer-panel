@@ -12,9 +12,23 @@ from ...package_center.models import api_error
 from ...package_center.service import repository as package_repository
 from ...security import SessionUser
 from .offline_jobs import offline_job_manager
-from .offline_models import BundlePinInput, OfflineExportInput, OfflineImportInput, OfflineSettingsInput, OfflineTargetInput
+from .offline_models import BundlePinInput, OfflineBundleType, OfflineExportInput, OfflineImportInput, OfflineSettingsInput, OfflineTargetInput
+from .offline_permissions import (
+    OFFLINE_AIRGAP_MANAGE,
+    OFFLINE_CONFIGURE,
+    OFFLINE_DELETE,
+    OFFLINE_DELTA,
+    OFFLINE_EXPORT,
+    OFFLINE_FREEZE,
+    OFFLINE_IMPORT,
+    OFFLINE_TARGETS_MANAGE,
+    OFFLINE_VERIFY,
+    OFFLINE_VIEW,
+    register_offline_repository_permissions,
+)
 from .offline_service import offline_service
 
+register_offline_repository_permissions()
 router = APIRouter(prefix="/api/modules/os-repositories/offline", tags=["os-repositories-offline"])
 
 
@@ -35,37 +49,40 @@ def controlled(operation):
 
 
 @router.get("/dashboard")
-def dashboard(user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def dashboard(user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     return offline_service().dashboard()
 
 
 @router.get("/settings")
-def settings(user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def settings(user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     return offline_service().settings()
 
 
 @router.put("/settings")
-def save_settings(payload: OfflineSettingsInput, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_CONFIGURE))):
+def save_settings(payload: OfflineSettingsInput, user: SessionUser = Depends(require_permission(OFFLINE_CONFIGURE))):
     ready()
+    current = offline_service().settings()
+    if bool(current.get("air_gapped_mode")) != payload.air_gapped_mode:
+        authorize(user, OFFLINE_AIRGAP_MANAGE)
     return controlled(lambda: offline_service().save_settings(payload, user.username))
 
 
 @router.get("/targets")
-def targets(user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def targets(user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     return offline_service().targets()
 
 
 @router.post("/targets")
-def create_target(payload: OfflineTargetInput, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_MANAGE))):
+def create_target(payload: OfflineTargetInput, user: SessionUser = Depends(require_permission(OFFLINE_TARGETS_MANAGE))):
     ready()
     return controlled(lambda: offline_service().save_target(payload, user.username))
 
 
 @router.get("/targets/{target_id}")
-def target(target_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def target(target_id: str, user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     item = offline_service().target(target_id)
     if not item:
@@ -74,28 +91,30 @@ def target(target_id: str, user: SessionUser = Depends(require_permission(Permis
 
 
 @router.put("/targets/{target_id}")
-def update_target(target_id: str, payload: OfflineTargetInput, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_MANAGE))):
+def update_target(target_id: str, payload: OfflineTargetInput, user: SessionUser = Depends(require_permission(OFFLINE_TARGETS_MANAGE))):
     ready()
     return controlled(lambda: offline_service().save_target(payload, user.username, target_id))
 
 
 @router.delete("/targets/{target_id}")
-def delete_target(target_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_MANAGE))):
+def delete_target(target_id: str, user: SessionUser = Depends(require_permission(OFFLINE_TARGETS_MANAGE))):
     ready()
     return {"ok": controlled(lambda: offline_service().delete_target(target_id, user.username))}
 
 
 @router.post("/exports/plan")
-def export_plan(payload: OfflineExportInput, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def export_plan(payload: OfflineExportInput, user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     return controlled(lambda: offline_service().plan_export(payload))
 
 
 @router.post("/exports")
-def create_export(payload: OfflineExportInput, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_SNAPSHOTS_MANAGE))):
+def create_export(payload: OfflineExportInput, user: SessionUser = Depends(require_permission(OFFLINE_EXPORT))):
     ready()
     if not payload.confirm:
         api_error(422, "CONFIRMATION_REQUIRED", "Offline bundle export requires confirmation")
+    if payload.bundle_type == OfflineBundleType.delta:
+        authorize(user, OFFLINE_DELTA)
     return controlled(lambda: offline_job_manager().enqueue_export(payload, user.username))
 
 
@@ -103,14 +122,14 @@ def create_export(payload: OfflineExportInput, user: SessionUser = Depends(requi
 def bundles(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False)),
+    user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False)),
 ):
     ready()
     return offline_service().bundles(page, page_size)
 
 
 @router.get("/bundles/{bundle_id}")
-def bundle(bundle_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def bundle(bundle_id: str, user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     item = offline_service().bundle(bundle_id)
     if not item:
@@ -119,7 +138,7 @@ def bundle(bundle_id: str, user: SessionUser = Depends(require_permission(Permis
 
 
 @router.get("/bundles/{bundle_id}/download")
-def download_bundle(bundle_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def download_bundle(bundle_id: str, user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     path = controlled(lambda: offline_service().bundle_path(bundle_id))
     assert isinstance(path, Path)
@@ -127,7 +146,7 @@ def download_bundle(bundle_id: str, user: SessionUser = Depends(require_permissi
 
 
 @router.put("/bundles/{bundle_id}/pin")
-def pin_bundle(bundle_id: str, payload: BundlePinInput, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_MANAGE))):
+def pin_bundle(bundle_id: str, payload: BundlePinInput, user: SessionUser = Depends(require_permission(OFFLINE_CONFIGURE))):
     ready()
     return controlled(lambda: offline_service().pin_bundle(bundle_id, payload, user.username))
 
@@ -136,20 +155,24 @@ def pin_bundle(bundle_id: str, payload: BundlePinInput, user: SessionUser = Depe
 def delete_bundle(
     bundle_id: str,
     force: bool = Query(False),
-    user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_PACKAGES_DELETE)),
+    confirmation_text: str = Query("", max_length=32),
+    user: SessionUser = Depends(require_permission(OFFLINE_DELETE)),
 ):
     ready()
+    item = offline_service().bundle(bundle_id)
+    if item and item.get("pinned") and (not force or confirmation_text != "DELETE"):
+        api_error(422, "CONFIRMATION_REQUIRED", "Deleting a pinned bundle requires force=true and typing DELETE")
     return {"ok": controlled(lambda: offline_service().delete_bundle(bundle_id, user.username, force=force))}
 
 
 @router.get("/imports/staged")
-def staged_bundles(user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def staged_bundles(user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     return {"items": offline_service().discover_staged()}
 
 
 @router.post("/imports/upload")
-async def upload_bundle(file: UploadFile = File(...), user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_PACKAGES_UPLOAD))):
+async def upload_bundle(file: UploadFile = File(...), user: SessionUser = Depends(require_permission(OFFLINE_IMPORT))):
     ready()
     try:
         return controlled(lambda: offline_service().stage_upload(Path(file.filename or "bundle.tar.gz").name, file.file))
@@ -158,7 +181,7 @@ async def upload_bundle(file: UploadFile = File(...), user: SessionUser = Depend
 
 
 @router.get("/imports/{staged_id}/inspect")
-def inspect_bundle(staged_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def inspect_bundle(staged_id: str, user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     return controlled(lambda: offline_service().inspect_staged(staged_id))
 
@@ -167,14 +190,14 @@ def inspect_bundle(staged_id: str, user: SessionUser = Depends(require_permissio
 def verify_bundle(
     staged_id: str,
     repository_id: str = Query(..., min_length=32, max_length=32),
-    user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW)),
+    user: SessionUser = Depends(require_permission(OFFLINE_VERIFY)),
 ):
     ready()
     return controlled(lambda: offline_job_manager().enqueue_verify(staged_id, repository_id, user.username))
 
 
 @router.post("/imports/{staged_id}")
-def import_bundle(staged_id: str, payload: OfflineImportInput, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_PACKAGES_UPLOAD))):
+def import_bundle(staged_id: str, payload: OfflineImportInput, user: SessionUser = Depends(require_permission(OFFLINE_IMPORT))):
     ready()
     if not payload.confirm:
         api_error(422, "CONFIRMATION_REQUIRED", "Offline bundle import requires confirmation")
@@ -188,20 +211,21 @@ def delta_plan(
     base_snapshot_id: str = Query(..., min_length=32, max_length=32),
     target_snapshot_id: str = Query(..., min_length=32, max_length=32),
     architecture: str = Query(..., min_length=1, max_length=32),
-    user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False)),
+    user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False)),
 ):
     ready()
+    authorize(user, OFFLINE_DELTA)
     return controlled(lambda: offline_service().delta_plan(base_snapshot_id, target_snapshot_id, architecture))
 
 
 @router.post("/snapshots/{snapshot_id}/freeze")
-def freeze_snapshot(snapshot_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_SNAPSHOTS_MANAGE))):
+def freeze_snapshot(snapshot_id: str, user: SessionUser = Depends(require_permission(OFFLINE_FREEZE))):
     ready()
     return controlled(lambda: offline_service().freeze_snapshot(snapshot_id, user.username))
 
 
 @router.get("/storage")
-def storage(user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def storage(user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     return offline_service().storage()
 
@@ -211,14 +235,14 @@ def offline_jobs(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     status: str = Query("", pattern=r"^(|queued|running|completed|failed|cancelled)$"),
-    user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False)),
+    user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False)),
 ):
     ready()
     return offline_job_manager().jobs(page, page_size, status)
 
 
 @router.get("/jobs/{job_id}")
-def offline_job(job_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+def offline_job(job_id: str, user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
     item = offline_job_manager().job(job_id)
     if not item:
@@ -227,7 +251,7 @@ def offline_job(job_id: str, user: SessionUser = Depends(require_permission(Perm
 
 
 @router.get("/jobs/{job_id}/events")
-async def offline_job_events(job_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_VIEW, mutating=False))):
+async def offline_job_events(job_id: str, user: SessionUser = Depends(require_permission(OFFLINE_VIEW, mutating=False))):
     ready()
 
     async def events():
@@ -249,12 +273,12 @@ async def offline_job_events(job_id: str, user: SessionUser = Depends(require_pe
 
 
 @router.post("/jobs/{job_id}/cancel")
-def cancel_offline_job(job_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_JOBS_CANCEL))):
+def cancel_offline_job(job_id: str, user: SessionUser = Depends(require_permission(OFFLINE_CONFIGURE))):
     ready()
     return controlled(lambda: offline_job_manager().cancel(job_id, user.username))
 
 
 @router.post("/jobs/{job_id}/retry")
-def retry_offline_job(job_id: str, user: SessionUser = Depends(require_permission(Permission.OS_REPOSITORIES_SNAPSHOTS_MANAGE))):
+def retry_offline_job(job_id: str, user: SessionUser = Depends(require_permission(OFFLINE_CONFIGURE))):
     ready()
     return controlled(lambda: offline_job_manager().retry(job_id, user.username))
