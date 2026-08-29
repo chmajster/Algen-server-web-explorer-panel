@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added **Firewall Manager** for local UFW/firewalld/nftables administration with typed rules, open-port correlation, PAM/RBAC/CSRF/audit enforcement, lockout warnings, automatic backups and verified rollback.
+- Added **Security Center** with a 0-100 Security Score, actionable findings, job-based scans and aggregation of firewall, SSH, updates, network exposure, HTTPS, users, permissions and failed-login signals.
+- Added **Network Tools** with safe ping/traceroute/DNS/reverse-DNS/TCP/HTTP/route diagnostics plus route, neighbor, interface, listening-port, connection and DNS-configuration views, including bounded concurrency, rate limiting, timeouts and output limits.
+
 ## v0.1.24 — 2026-08-29
 
 - Added real browser-to-FastAPI E2E coverage and hardened appliance backup/restore validation and recovery workflows.

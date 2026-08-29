@@ -60,6 +60,9 @@ Main project goals:
 | **Hosts Manager** | Central host inventory, SSH connections, repositories and power profiles |
 | **Automation** | Ansible Automation Controller, schedules and Cron Manager |
 | **DHCP** | Kea DHCPv4 / ISC DHCP subnets, pools, reservations, leases, diagnostics and transactional configuration |
+| **Firewall Manager** | Local UFW/firewalld/nftables status, rules, open ports, safe changes, backups and rollback |
+| **Security Center** | Security Score, findings, SSH/authentication, updates, exposure, TLS, users and audit signals |
+| **Network Tools** | Safe ping, traceroute, DNS, TCP/HTTP tests, route lookup, neighbors, interfaces and connections |
 
 ## Modules
 
@@ -82,6 +85,9 @@ Available and supported modules include:
 - central APT/RPM repositories
 - Cron Manager
 - DHCP Manager (Kea DHCPv4 / ISC DHCP)
+- Firewall Manager
+- Security Center
+- Network Tools
 
 Containerized applications can also be deployed through **Containers Manager**, including:
 
@@ -214,6 +220,9 @@ Detailed documentation is available in separate files:
 | [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
 | [CRON_MANAGER.md](CRON_MANAGER.md) | Cron Manager |
 | [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases and safe configuration lifecycle |
+| [FIREWALL_MANAGER.md](FIREWALL_MANAGER.md) | Local host firewall management, safety transaction, API and RBAC |
+| [SECURITY_CENTER.md](SECURITY_CENTER.md) | Security Score, findings, scan architecture and data sources |
+| [NETWORK_TOOLS.md](NETWORK_TOOLS.md) | Safe diagnostic tools, validation, limits and API |
 | [DCST.md](DCST.md) | DCST architecture, Proxmox Firewall integration, Services, Ports, IPSets, TAGS, drift detection and troubleshooting |
 | [PACKAGE_CENTER.md](PACKAGE_CENTER.md) | Package Center |
 | [MODULES.md](MODULES.md) | Module architecture |

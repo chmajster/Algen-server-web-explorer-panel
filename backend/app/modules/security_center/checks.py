@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import pwd
 import re
 import shutil

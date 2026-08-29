@@ -89,8 +89,13 @@ def _validate_nft(args: list[str]) -> None:
     if args[:4] in (["add", "chain", "inet", "webnas"], ["add", "rule", "inet", "webnas"]):
         if len(args) < 5 or args[4] not in {"input", "output"}:
             raise base.PolicyError("nftables changes are limited to WebNAS input/output chains")
-        if any(not _SAFE_TOKEN.fullmatch(item) and not _INTERFACE.fullmatch(item) for item in args[5:]):
-            raise base.PolicyError("invalid nftables token")
+        for index, item in enumerate(args[5:], start=5):
+            if index > 0 and args[index - 1] == "comment":
+                if len(item) > 120 or any(ord(character) < 32 for character in item):
+                    raise base.PolicyError("invalid nftables comment")
+                continue
+            if not _SAFE_TOKEN.fullmatch(item) and not _INTERFACE.fullmatch(item):
+                raise base.PolicyError("invalid nftables token")
         return
     if len(args) == 7 and args[:4] == ["delete", "rule", "inet", "webnas"] and args[4] in {"input", "output"} and args[5] == "handle" and args[6].isdigit():
         return

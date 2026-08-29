@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import ipaddress
 import json
@@ -13,7 +12,6 @@ from typing import Any
 
 from ...activity import ActivityCategory, ActivityStatus, record_activity
 from ...config import get_config
-from ...network_diagnostics import network_overview
 from .models import FirewallBackend, FirewallRule, FirewallRuleInput
 from .system import FirewallSystem
 
@@ -342,7 +340,7 @@ class FirewallService:
                 target = self._find(rule_id)
             except FirewallError:
                 target = None
-        if operation in {"disable", "enable"}:
+        if operation in {"disable", "enable", "restore"}:
             warnings.append("Changing the global firewall state can interrupt administrative access")
         if target is not None:
             if self._rule_hits_port(target, 22):

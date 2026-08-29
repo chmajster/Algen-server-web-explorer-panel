@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
 import json
 import shutil
 import socket
@@ -9,7 +8,6 @@ import subprocess
 import threading
 import time
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
