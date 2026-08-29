@@ -8,7 +8,7 @@ import re
 import socket
 import subprocess
 import secrets
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Callable
 from urllib.parse import urlsplit
 
@@ -74,7 +74,7 @@ def validate_mirror_url(url: str, *, allow_private_network: bool, allow_private_
     return sorted(set(addresses))
 
 
-def managed_path(root: Path, value: str | Path) -> Path:
+def managed_path(root: Path, value: str | PurePath) -> Path:
     target = (root / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
     base = root.resolve()
     if target != base and base not in target.parents:
