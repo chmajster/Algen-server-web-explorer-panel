@@ -12,9 +12,33 @@ import "./styles/ui-feature-consistency.css";
 import "./styles/ui-specialized-consistency.css";
 import "./styles/ui-review-fixes.css";
 
-async function bootstrap() {
+function renderBootstrapError(error: unknown) {
+  console.error("WebNAS bootstrap failed", error);
+  const root = document.getElementById("root");
+  if (!root) return;
+  const container = document.createElement("div");
+  container.className = "boot-screen";
+  container.setAttribute("role", "alert");
+
+  const message = document.createElement("span");
+  message.textContent = "WebNAS could not load language resources.";
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "Retry";
+  retry.addEventListener("click", () => window.location.reload());
+
+  container.append(message, retry);
+  root.replaceChildren(container);
+}
+
+export async function bootstrap() {
   const preferredLanguage = detectLanguage(localStorage.getItem("webnas_language"));
-  await loadLanguageWithFallback(preferredLanguage);
+  try {
+    await loadLanguageWithFallback(preferredLanguage);
+  } catch (error) {
+    renderBootstrapError(error);
+    return;
+  }
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />
