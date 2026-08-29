@@ -127,7 +127,7 @@ export function SecretsManagerApp({ permissions, language, toast }: Props) {
       environment_id: item.environment_id,
       shared_with: [...item.shared_with],
       confirm: true,
-    } : { ...emptyInput(), shared_with: targets.map((target) => target.id) });
+    } : emptyInput());
     setOpen(true);
   }
 

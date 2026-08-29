@@ -106,7 +106,9 @@ def test_log_filters_validate_ip_and_action(tmp_path: Path):
         "journalctl",
         output=(
             "2026-08-29T10:00:00+00:00 fail2ban.actions [sshd] Ban 192.0.2.10\n"
-            "2026-08-29T10:01:00+00:00 fail2ban.actions [nginx] Unban 198.51.100.20\n"
+            "2026-08-29T10:01:00+00:00 fail2ban.actions [sshd] Unban 192.0.2.10\n"
+            "2026-08-29T10:02:00+00:00 fail2ban.actions [sshd] Ban 192.0.2.100\n"
+            "2026-08-29T10:03:00+00:00 fail2ban.actions [sshd-extra] Ban 192.0.2.10\n"
         ),
     )
 

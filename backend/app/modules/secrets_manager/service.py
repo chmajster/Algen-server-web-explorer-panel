@@ -475,57 +475,90 @@ class SecretsManagerService:
 
         Existing migrated rows are never overwritten, preserving the rollback
         artifact byte-for-byte. New rows contain no encrypted secret material.
+        If a preserved legacy row owns the same display name, the FK shadow uses
+        an internal collision-safe name because the public metadata comes from
+        Secrets Manager.
         """
         if not self.hosts_path.exists():
             return
         connection = sqlite3.connect(self.hosts_path, timeout=10)
+        connection.row_factory = sqlite3.Row
         try:
             exists = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='credentials'"
             ).fetchone()
             if not exists:
                 return
+            item_id = str(metadata["id"])
+            existing = connection.execute(
+                "SELECT id,encrypted_secret FROM credentials WHERE id=?",
+                (item_id,),
+            ).fetchone()
+            if existing and str(existing["encrypted_secret"] or ""):
+                return
+
+            preferred_name = str(metadata["name"])
+            collision = connection.execute(
+                "SELECT id FROM credentials WHERE name=? AND id<>?",
+                (preferred_name, item_id),
+            ).fetchone()
+            shadow_name = preferred_name
+            if collision:
+                shadow_name = f"{preferred_name}#shadow-{item_id}"
+                second_collision = connection.execute(
+                    "SELECT id FROM credentials WHERE name=? AND id<>?",
+                    (shadow_name, item_id),
+                ).fetchone()
+                if second_collision:
+                    shadow_name = f"shadow-{item_id}"
+
             now = time.time()
-            connection.execute(
-                """
-                INSERT OR IGNORE INTO credentials(
-                    id,name,type,username,description,encrypted_secret,active,environment_id,
-                    shared_with_json,created_at,updated_at,created_by,updated_by
-                ) VALUES(?,?,?,?,?,'',1,?,?,?,?,?,?)
-                """,
-                (
-                    metadata["id"],
-                    metadata["name"],
-                    metadata["type"],
-                    metadata.get("username", ""),
-                    metadata.get("description", ""),
-                    metadata.get("environment_id"),
-                    _json(metadata.get("shared_with", [])),
-                    now,
-                    now,
-                    actor,
-                    actor,
-                ),
-            )
-            connection.execute(
-                """
-                UPDATE credentials SET name=?,type=?,username=?,description=?,environment_id=?,shared_with_json=?,
-                    active=1,updated_at=?,updated_by=?
-                WHERE id=? AND encrypted_secret=''
-                """,
-                (
-                    metadata["name"],
-                    metadata["type"],
-                    metadata.get("username", ""),
-                    metadata.get("description", ""),
-                    metadata.get("environment_id"),
-                    _json(metadata.get("shared_with", [])),
-                    now,
-                    actor,
-                    metadata["id"],
-                ),
-            )
+            if existing:
+                connection.execute(
+                    """
+                    UPDATE credentials SET name=?,type=?,username=?,description=?,environment_id=?,shared_with_json=?,
+                        active=1,updated_at=?,updated_by=?
+                    WHERE id=? AND encrypted_secret=''
+                    """,
+                    (
+                        shadow_name,
+                        metadata["type"],
+                        metadata.get("username", ""),
+                        metadata.get("description", ""),
+                        metadata.get("environment_id"),
+                        _json(metadata.get("shared_with", [])),
+                        now,
+                        actor,
+                        item_id,
+                    ),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO credentials(
+                        id,name,type,username,description,encrypted_secret,active,environment_id,
+                        shared_with_json,created_at,updated_at,created_by,updated_by
+                    ) VALUES(?,?,?,?,?,'',1,?,?,?,?,?,?)
+                    """,
+                    (
+                        item_id,
+                        shadow_name,
+                        metadata["type"],
+                        metadata.get("username", ""),
+                        metadata.get("description", ""),
+                        metadata.get("environment_id"),
+                        _json(metadata.get("shared_with", [])),
+                        now,
+                        now,
+                        actor,
+                        actor,
+                    ),
+                )
             connection.commit()
+            if not connection.execute(
+                "SELECT 1 FROM credentials WHERE id=?", (item_id,)
+            ).fetchone():
+                raise RuntimeError("legacy credential reference shadow was not created")
         finally:
             connection.close()
 

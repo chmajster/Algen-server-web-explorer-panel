@@ -288,6 +288,63 @@ def test_webhook_reference_blocks_delete_and_is_reported(monkeypatch: pytest.Mon
         service.delete(created["id"], "admin")
 
 
+
+def test_reused_name_creates_new_legacy_fk_shadow_when_old_shadow_keeps_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    _patch_config(monkeypatch, tmp_path)
+    new_db, new_key, hosts_db, hosts_key = _service_paths(tmp_path)
+    old_cipher = CredentialCipher(hosts_key)
+    old_envelope = old_cipher.encrypt(
+        json.dumps({"secret": "legacy-value", "passphrase": ""}),
+        associated_data="legacy-id",
+    )
+    _legacy_database(hosts_db, credential_id="legacy-id", envelope=old_envelope)
+    webhooks_db = tmp_path / "data" / "webhook-manager" / "webhooks.sqlite3"
+    _webhook_database(webhooks_db)
+    service = SecretsManagerService(
+        path=new_db,
+        key_path=new_key,
+        hosts_path=hosts_db,
+        hosts_key_path=hosts_key,
+        webhooks_path=webhooks_db,
+    )
+
+    first = service.save(
+        SecretInput(
+            name="reused-name",
+            type="generic_secret",
+            secret="first",
+            shared_with=[],
+            confirm=True,
+        ),
+        "admin",
+    )
+    assert service.delete(first["id"], "admin") is True
+    replacement = service.save(
+        SecretInput(
+            name="reused-name",
+            type="generic_secret",
+            secret="second",
+            shared_with=[],
+            confirm=True,
+        ),
+        "admin",
+    )
+
+    legacy = sqlite3.connect(hosts_db)
+    try:
+        row = legacy.execute(
+            "SELECT name,encrypted_secret FROM credentials WHERE id=?",
+            (replacement["id"],),
+        ).fetchone()
+    finally:
+        legacy.close()
+    assert row is not None
+    assert row[0].startswith("reused-name#shadow-")
+    assert row[1] == ""
+
+
 def test_delete_erases_envelope_and_releases_name(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     _patch_config(monkeypatch, tmp_path)
     new_db, new_key, hosts_db, hosts_key = _service_paths(tmp_path)

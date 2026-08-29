@@ -308,11 +308,13 @@ class Fail2BanService:
             lower = line.lower()
             if query_lower and query_lower not in lower:
                 continue
-            if jail_lower and jail_lower not in lower:
+            if jail_lower and f"[{jail_lower}]" not in lower:
                 continue
-            if ip_value and ip_value not in line:
+            if ip_value and not re.search(
+                rf"(?<![0-9A-Fa-f:.]){re.escape(ip_value)}(?![0-9A-Fa-f:.])", line
+            ):
                 continue
-            if action_lower and action_lower not in lower:
+            if action_lower and not re.search(rf"\b{re.escape(action_lower)}\b", lower):
                 continue
             timestamp, _, message = line.partition(" ")
             result.append({"timestamp": timestamp[:40], "message": message[:4000]})
