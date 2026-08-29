@@ -26,9 +26,12 @@ SENSITIVE_MARKERS = (
     "vault",
 )
 TEXT_SECRET_RE = re.compile(
-    r"(?i)(password|passwd|passphrase|token|secret|authorization|cookie|"
+    r"(?i)(password|passwd|passphrase|token|secret|cookie|"
     r"connection[_ -]?string|database[_ -]?url|private[_ -]?key|api[_ -]?key|"
     r"access[_ -]?key|vault)(\s*[:=]\s*)([^\s,;]+)"
+)
+AUTHORIZATION_RE = re.compile(
+    r"(?i)(\bauthorization\s*[:=]\s*)(?:bearer\s+|basic\s+)?([^\s,;]+)"
 )
 BEARER_RE = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+")
 PRIVATE_KEY_RE = re.compile(
@@ -61,6 +64,7 @@ def redact_text(
             text = text.replace(secret, "[REDACTED]")
     text = PRIVATE_KEY_RE.sub("[REDACTED PRIVATE KEY]", text)
     text = URL_CREDENTIAL_RE.sub(r"\1[REDACTED]@", text)
+    text = AUTHORIZATION_RE.sub(r"\1[REDACTED]", text)
     text = BEARER_RE.sub(r"\1[REDACTED]", text)
     text = TEXT_SECRET_RE.sub(r"\1\2[REDACTED]", text)
     encoded = text.encode("utf-8", errors="replace")
