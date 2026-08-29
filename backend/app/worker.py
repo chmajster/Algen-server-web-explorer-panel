@@ -11,10 +11,16 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 
 MAX_TEXT_FILE_BYTES = 1024 * 1024
+DEFAULT_SEARCH_LIMIT = 250
+DEFAULT_SEARCH_MAX_ENTRIES = 100_000
+DEFAULT_SEARCH_TIMEOUT_SECONDS = 15.0
+FULL_METADATA_SORTS = {"size", "owner", "group", "permissions", "modified", "mtime"}
 
 
 class WorkerError(Exception):
@@ -65,6 +71,159 @@ def info(path: Path) -> dict:
         "is_symlink": is_symlink,
         "target": target or None,
     }
+
+
+def _light_entry(entry: os.DirEntry[str]) -> dict[str, Any]:
+    try:
+        # Follow symlinks here to preserve the previous Path.is_dir() semantics.
+        # On normal filesystems DirEntry can answer this from d_type without a stat.
+        is_dir = entry.is_dir(follow_symlinks=True)
+    except OSError:
+        is_dir = Path(entry.path).is_dir()
+    return {
+        "name": entry.name,
+        "path": entry.path,
+        "type": "folder" if is_dir else Path(entry.name).suffix.lower().lstrip(".") or "file",
+        "is_dir": is_dir,
+    }
+
+
+def _matches_filter(item: dict[str, Any], query: str | None) -> bool:
+    if not query:
+        return True
+    needle = query.lower()
+    name = str(item.get("name", ""))
+    return (
+        needle in name.lower()
+        or needle in str(item.get("type", "")).lower()
+        or needle in Path(name).suffix.lower().lstrip(".")
+    )
+
+
+def _sort_value(item: dict[str, Any], sort_field: str) -> tuple[int, float, str]:
+    if sort_field in {"modified", "mtime"}:
+        return (0, float(item.get("mtime") or item.get("modified") or 0), "")
+    value = item.get(sort_field) or ""
+    if isinstance(value, str):
+        return (1, 0, value.lower())
+    if isinstance(value, (int, float)):
+        return (0, float(value), "")
+    return (1, 0, str(value))
+
+
+def _sort_items(items: list[dict[str, Any]], sort_field: str | None, direction: str, folders_first: bool) -> None:
+    reverse = direction == "desc"
+    if sort_field:
+        items.sort(key=lambda item: _sort_value(item, sort_field), reverse=reverse)
+    else:
+        # The legacy worker returned a deterministic folder/name ordering even
+        # when the API did not request an explicit sort field.
+        items.sort(key=lambda item: (not bool(item.get("is_dir")), str(item.get("name", "")).lower()))
+    if folders_first:
+        items.sort(key=lambda item: not bool(item.get("is_dir")))
+
+
+def list_directory(payload: dict[str, Any]) -> dict[str, Any]:
+    path = Path(payload["path"])
+    paginate = bool(payload.get("paginate", False))
+
+    if not paginate:
+        with os.scandir(path) as scan:
+            items = [info(Path(entry.path)) for entry in scan]
+        items.sort(key=lambda item: (not bool(item.get("is_dir")), str(item.get("name", "")).lower()))
+        return {"items": items, "directory": info(path)}
+
+    sort_field = payload.get("sort")
+    direction = str(payload.get("direction", "asc"))
+    folders_first = bool(payload.get("folders_first", True))
+    show_hidden = bool(payload.get("show_hidden", False))
+    filter_text = payload.get("filter")
+    page = max(1, int(payload.get("page", 1)))
+    page_size = min(max(1, int(payload.get("page_size", 20))), 200)
+
+    light_items: list[dict[str, Any]] = []
+    with os.scandir(path) as scan:
+        for entry in scan:
+            if not show_hidden and entry.name.startswith("."):
+                continue
+            item = _light_entry(entry)
+            if _matches_filter(item, filter_text):
+                light_items.append(item)
+
+    if sort_field in FULL_METADATA_SORTS:
+        # Correct sorting by metadata requires metadata for every candidate.
+        items = [info(Path(item["path"])) for item in light_items]
+        _sort_items(items, str(sort_field), direction, folders_first)
+        total_items = len(items)
+        total_pages = max(1, (total_items + page_size - 1) // page_size)
+        page = min(page, total_pages)
+        start = (page - 1) * page_size
+        page_items = items[start : start + page_size]
+        metadata_items = total_items
+    else:
+        # Name/type sorting can be completed using DirEntry data. Only the
+        # selected page is expanded into full owner/group/permission metadata.
+        _sort_items(light_items, str(sort_field) if sort_field else None, direction, folders_first)
+        total_items = len(light_items)
+        total_pages = max(1, (total_items + page_size - 1) // page_size)
+        page = min(page, total_pages)
+        start = (page - 1) * page_size
+        selected = light_items[start : start + page_size]
+        page_items = [info(Path(item["path"])) for item in selected]
+        metadata_items = len(page_items)
+
+    return {
+        "items": page_items,
+        "directory": info(path),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_items": total_items,
+            "total_pages": total_pages,
+            # Internal diagnostic used by regression tests/benchmarks; it is
+            # not exposed by the public File Manager API.
+            "metadata_items": metadata_items,
+        },
+    }
+
+
+def search_directory(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    root = Path(payload["path"])
+    query = str(payload["query"]).lower()
+    limit = min(max(1, int(payload.get("limit", DEFAULT_SEARCH_LIMIT))), DEFAULT_SEARCH_LIMIT)
+    max_entries = min(max(1, int(payload.get("max_entries", DEFAULT_SEARCH_MAX_ENTRIES))), 1_000_000)
+    timeout_seconds = min(max(0.1, float(payload.get("timeout_seconds", DEFAULT_SEARCH_TIMEOUT_SECONDS))), 60.0)
+    deadline = time.monotonic() + timeout_seconds
+    results: list[dict[str, Any]] = []
+    stack = [root]
+    scanned = 0
+
+    while stack and len(results) < limit and scanned < max_entries:
+        if time.monotonic() >= deadline:
+            break
+        directory = stack.pop()
+        try:
+            with os.scandir(directory) as scan:
+                for entry in scan:
+                    scanned += 1
+                    if scanned > max_entries or time.monotonic() >= deadline:
+                        break
+                    path = Path(entry.path)
+                    if query in entry.name.lower():
+                        try:
+                            results.append(info(path))
+                        except OSError:
+                            continue
+                        if len(results) >= limit:
+                            break
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(path)
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return results
 
 
 def copy_any(src: Path, dst: Path) -> None:
@@ -155,11 +314,7 @@ def main() -> None:
 
     op = args.op
     if op == "list":
-        path = Path(payload["path"])
-        print(json.dumps({
-            "items": [info(child) for child in sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))],
-            "directory": info(path),
-        }))
+        print(json.dumps(list_directory(payload)))
     elif op == "stat":
         print(json.dumps(info(Path(payload["path"]))))
     elif op == "mkdir":
@@ -223,15 +378,7 @@ def main() -> None:
     elif op == "write_text":
         print(json.dumps(write_text_file(Path(payload["path"]), payload["content"], payload.get("expected_mtime_ns"))))
     elif op == "search":
-        root = Path(payload["path"])
-        query = payload["query"].lower()
-        results = []
-        for item in root.rglob("*"):
-            if query in item.name.lower():
-                results.append(info(item))
-                if len(results) >= 250:
-                    break
-        print(json.dumps(results))
+        print(json.dumps(search_directory(payload)))
     else:
         raise SystemExit(f"Unsupported operation: {op}")
 
