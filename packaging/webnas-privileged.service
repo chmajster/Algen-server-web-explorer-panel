@@ -1,0 +1,34 @@
+[Unit]
+Description=WebNAS privileged operation broker
+Requires=webnas-privileged.socket
+After=webnas-privileged.socket
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/webnas/current/backend
+Environment=PYTHONPATH=/opt/webnas/current/backend
+Environment=WEBNAS_CONFIG=/etc/webnas/config.yaml
+Environment=WEBNAS_BROKER_ALLOWED_USER=webnas
+ExecStart=/opt/webnas/current/backend/.venv/bin/python -m app.privileged_broker.server
+Restart=on-failure
+RestartSec=2
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+# The helper intentionally performs a narrow set of host mutations. Do not move
+# these permissions back into the HTTP process; policy.py is the security boundary.
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=false
+RestrictSUIDSGID=false
+
+[Install]
+WantedBy=multi-user.target
