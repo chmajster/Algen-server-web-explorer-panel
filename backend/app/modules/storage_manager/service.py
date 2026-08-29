@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -290,7 +291,7 @@ class StorageInventoryService:
                 continue
             seen.add(point)
             try:
-                stats = Path(point).statvfs()
+                stats = os.statvfs(point)
             except OSError:
                 continue
             block_size = stats.f_frsize or stats.f_bsize
