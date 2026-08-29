@@ -171,7 +171,7 @@ describe("useBackgroundActions", () => {
     expect(api.appJobs).toHaveBeenCalledTimes(1);
 
     act(() => source.onerror?.());
-    await waitFor(() => expect(api.appJobs.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(vi.mocked(api.appJobs).mock.calls.length).toBeGreaterThanOrEqual(2));
     view.unmount();
   });
 
