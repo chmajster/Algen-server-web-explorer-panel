@@ -32,7 +32,7 @@ def _current_user(request: Request) -> SessionUser:
     return user
 
 
-def _active_backend_port() -> int:
+def _require_standard_gateway() -> None:
     cfg = get_config()
     path = Path(cfg.paths.data_dir) / "settings" / "deployment.json"
     try:
@@ -42,30 +42,6 @@ def _active_backend_port() -> int:
         port = 0
     if port < 1 or port > 65535:
         raise HTTPException(409, "HTTPS settings require the standard nginx blue/green installation")
-    return port
-
-
-def _nginx_base_config(backend_port: int) -> str:
-    cfg = get_config()
-    include_path = transport_include_path(cfg)
-    return f"""server {{
-    include {include_path};
-    client_max_body_size 0;
-    location / {{
-        proxy_pass http://127.0.0.1:{backend_port};
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_buffering off;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }}
-}}
-"""
 
 
 def _reload_nginx(actor: str) -> subprocess.CompletedProcess[str]:
@@ -98,15 +74,16 @@ def get_transport_settings(user: SessionUser = Depends(_current_user)):
 @router.put("/api/settings/transport")
 def save_transport_settings(payload: TransportSettings, request: Request, user: SessionUser = Depends(_current_user)):
     authorize(user, "system.restart")
+    _require_standard_gateway()
     cfg = get_config()
-    backend_port = _active_backend_port()
     state_path = transport_state_path(cfg)
     include_path = transport_include_path(cfg)
     previous_state = state_path.read_bytes() if state_path.exists() else None
     previous_include = include_path.read_bytes() if include_path.exists() else None
 
     try:
-        # Validate before replacing any durable files.
+        # Validate before replacing any durable files. nginx performs the final
+        # certificate/key readability validation during its configuration reload.
         render_nginx_transport(payload, cfg.server.port)
         write_transport_settings(payload, cfg)
         write_transport_include(payload, cfg.server.port, cfg)
