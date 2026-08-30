@@ -9,7 +9,8 @@ import pytest
 from fastapi import HTTPException, Response
 from starlette.requests import Request
 
-from app import auth, auth_api
+from app import auth, auth_api, ldap_settings, security
+from app.identity.repository import IdentityRepository
 from app.ldap_authentication import connection as ldap_connection
 from app.ldap_authentication.models import (
     LdapAccessPolicyInput,
@@ -194,6 +195,34 @@ def test_access_policy_deny_has_priority(tmp_path: Path):
     assert denied is False
 
 
+def test_ldap_derived_rbac_is_removed_when_group_mapping_no_longer_matches(monkeypatch, tmp_path: Path):
+    policies = IdentityRepository(tmp_path / "identity.sqlite3", legacy_path=tmp_path / "missing-rbac.json")
+    monkeypatch.setattr(ldap_service, "identity_repository", lambda: policies)
+    applied = ldap_service._apply_rbac(
+        "alice",
+        [{"group_dn": "cn=WebNAS-Admins,dc=example,dc=test", "role": "admin", "allow": [], "deny": [], "priority": 10}],
+    )
+    assert applied["role"] == "admin"
+    stored = policies.user_policy("alice")
+    assert stored is not None
+    assert stored.updated_by == "ldap-group-mapping"
+
+    cleared = ldap_service._apply_rbac("alice", [])
+    assert cleared["role"] == "user"
+    assert policies.user_policy("alice") is None
+
+
+def test_manual_rbac_is_not_deleted_when_ldap_has_no_mapping(monkeypatch, tmp_path: Path):
+    policies = IdentityRepository(tmp_path / "identity.sqlite3", legacy_path=tmp_path / "missing-rbac.json")
+    from app.identity.models import UserPolicy
+
+    policies.save_user_policy(UserPolicy(username="alice", role="operator"), "admin")
+    monkeypatch.setattr(ldap_service, "identity_repository", lambda: policies)
+    result = ldap_service._apply_rbac("alice", [])
+    assert result["role"] == "operator"
+    assert policies.user_policy("alice") is not None
+
+
 def test_identity_is_keyed_by_immutable_id_and_survives_rename(monkeypatch, tmp_path: Path):
     repo = LdapAuthenticationRepository(tmp_path / "ldap-auth.sqlite3")
     fake_identity_repo = SimpleNamespace(
@@ -228,6 +257,38 @@ def test_session_store_keeps_provider_and_identity_id(tmp_path: Path):
     assert session.identity_id == "uuid-1"
     assert store.revoke_identity("ldap", "uuid-1") == 1
     assert store.resolve("token") is None
+
+
+def test_shared_session_dependency_revalidates_ldap_policy(monkeypatch, tmp_path: Path):
+    store = SessionStore(tmp_path / "sessions.sqlite3", "pepper", cache_ttl_seconds=0)
+    store.create(
+        "token", "alice", "csrf", persistent=False,
+        expires_at=time.time() + 60, auth_provider="ldap", identity_id="uuid-1",
+    )
+    monkeypatch.setattr(security, "_session_store", lambda: store)
+    monkeypatch.setattr(security, "get_config", lambda: SimpleNamespace(auth=SimpleNamespace(session_cookie_name="webnas_session")))
+    monkeypatch.setattr("app.ldap_authentication.validate_ldap_session", lambda identity_id, username: False)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/files",
+            "headers": [(b"cookie", b"webnas_session=token")],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "query_string": b"",
+        }
+    )
+    with pytest.raises(HTTPException) as error:
+        security.get_session_user(request)
+    assert error.value.status_code == 401
+    assert store.resolve("token") is None
+
+
+def test_preflight_rejects_degraded_result_with_error_step():
+    assert ldap_settings._diagnostics_ok({"overall": "degraded", "steps": [{"name": "dns", "status": "ok"}, {"name": "base_dn", "status": "error"}]}) is False
+    assert ldap_settings._diagnostics_ok({"overall": "degraded", "steps": [{"name": "certificate", "status": "warning"}, {"name": "bind", "status": "ok"}]}) is True
 
 
 def test_pam_missing_webnas_service_fails_closed(monkeypatch):
