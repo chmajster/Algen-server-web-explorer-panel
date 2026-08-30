@@ -150,6 +150,16 @@ describe("UpdateStatusPage", () => {
     const retry = vi.fn();
     const returnToPanel = vi.fn();
     const returnToLogin = vi.fn();
+    const originalClipboard = navigator.clipboard;
+    const originalExecCommand = document.execCommand;
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    const execCommand = vi.fn(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>('textarea[aria-hidden="true"]');
+      expect(textarea?.value).toBe("Aktualizacja nie powiodła się.\nBłąd instalatora bez danych wrażliwych");
+      return true;
+    });
+    Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+
     render(<UpdateStatusPage
       value={progress({
         state: "failed",
@@ -172,12 +182,18 @@ describe("UpdateStatusPage", () => {
     expect(screen.getByText("Błąd instalatora bez danych wrażliwych")).toBeInTheDocument();
     expect(screen.getByText("updateStatus.phase.installing")).toBeInTheDocument();
     expect(screen.getByText("updateStatus.reconnecting")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "updateStatus.copyError" }));
     fireEvent.click(screen.getByRole("button", { name: "action.retry" }));
     fireEvent.click(screen.getByRole("button", { name: "updateStatus.returnToLogin" }));
     fireEvent.click(screen.getByRole("button", { name: "updateStatus.returnToPanel" }));
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(document.querySelector('textarea[aria-hidden="true"]')).toBeNull();
     expect(retry).toHaveBeenCalledOnce();
     expect(returnToLogin).toHaveBeenCalledOnce();
     expect(returnToPanel).toHaveBeenCalledOnce();
+
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: originalClipboard });
+    Object.defineProperty(document, "execCommand", { configurable: true, value: originalExecCommand });
   });
 
   it("shows the version transition in the one-time completion dialog", () => {
