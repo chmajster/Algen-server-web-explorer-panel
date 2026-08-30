@@ -48,4 +48,4 @@ Firewall Manager normalizes common UFW/firewalld/nftables rules. Arbitrary pre-e
 
 ## Troubleshooting
 
-If no backend is detected, install/enable one supported firewall through Module Center and refresh status. If a mutation fails, inspect the corresponding global WebNAS job and Activity Center event; the automatic pre-change backup ID is retained in the job result. A rollback failure is reported explicitly and never hidden.
+If no backend is detected, install/enable one supported firewall through Module Center and refresh status. If a mutation fails, inspect the corresponding global WebNAS job and Activity Center event; the automatic pre-change backup ID is retained in the job result. A rollback failure is reported explicitly and never hidden; if restoring the previous rules also fails, the operation returns a dedicated rollback failure instead of suppressing the secondary error.
