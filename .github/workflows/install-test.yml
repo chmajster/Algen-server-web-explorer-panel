@@ -64,7 +64,7 @@ jobs:
           require_check "frontend index exists" test -f /opt/webnas/current/frontend/dist/index.html
           require_check "configuration exists" test -f /etc/webnas/config.yaml
           require_check "dedicated PAM service exists" test -f /etc/pam.d/webnas
-          if grep -Eq '^([[:space:]]*@include[[:space:]]+common-auth|[[:space:]]*auth[[:space:]]+include[[:space:]]+system-auth)' /etc/pam.d/webnas; then
+          if grep -Eq '^[[:space:]]*(@include[[:space:]]+common-auth|auth[[:space:]]+include[[:space:]]+(common-auth|system-auth))[[:space:]]*$' /etc/pam.d/webnas; then
             echo "[OK] PAM service includes the distribution authentication policy"
           else
             echo "[FAIL] PAM service does not include the expected distribution authentication policy" >&2
