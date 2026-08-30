@@ -4,7 +4,7 @@ import { WebhookManagerApp } from "./WebhookManagerApp";
 
 const manifest: FrontendModuleManifest = {
   id: "webhook-manager",
-  labelKey: "Webhook Manager",
+  labelKey: "module.webhookManager",
   icon: <Webhook />,
   category: "automation",
   permission: "webhook-manager.view",
