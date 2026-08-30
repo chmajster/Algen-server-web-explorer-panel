@@ -46,7 +46,8 @@ describe("authentication mode selection", () => {
     render(<Login language="en-US" onLogin={vi.fn()} />);
 
     await waitFor(() => expect(mocks.request).toHaveBeenCalledWith("/api/auth/config", { cache: "no-store" }));
-    expect(screen.queryByRole("combobox", { name: "Account source" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Sign-in method" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("WebNAS user")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "admin" } });
     fireEvent.change(screen.getByLabelText("auth.password"), { target: { value: "local-secret" } });
@@ -61,7 +62,7 @@ describe("authentication mode selection", () => {
     });
   });
 
-  it("keeps the PAM-only form in system mode when LDAP is disabled", async () => {
+  it("keeps the PAM-only form compact when LDAP is disabled", async () => {
     mocks.request.mockResolvedValueOnce({
       mode: "system",
       local_enabled: false,
@@ -74,10 +75,11 @@ describe("authentication mode selection", () => {
     render(<Login language="en-US" onLogin={vi.fn()} />);
 
     await waitFor(() => expect(mocks.request).toHaveBeenCalledWith("/api/auth/config", { cache: "no-store" }));
-    expect(screen.queryByRole("combobox", { name: "Account source" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Sign-in method" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("auth.linuxUser")).toBeInTheDocument();
   });
 
-  it("selects LDAP by default in system mode and exposes localUser as the PAM-backed alternative", async () => {
+  it("shows a visible LDAP/PAM selector and uses LDAP by default", async () => {
     mocks.request
       .mockResolvedValueOnce({
         mode: "system",
@@ -97,10 +99,12 @@ describe("authentication mode selection", () => {
 
     render(<Login language="en-US" onLogin={onLogin} />);
 
-    const provider = await screen.findByRole("combobox", { name: "Account source" });
-    expect(provider).toHaveValue("ldap");
-    expect(screen.getByRole("option", { name: "LDAP" })).toHaveAttribute("value", "ldap");
-    expect(screen.getByRole("option", { name: "localUser" })).toHaveAttribute("value", "pam");
+    await screen.findByRole("radiogroup", { name: "Sign-in method" });
+    const ldap = screen.getByRole("radio", { name: "LDAP" });
+    const pam = screen.getByRole("radio", { name: "Linux (PAM)" });
+    expect(ldap).toBeChecked();
+    expect(pam).not.toBeChecked();
+    expect(screen.getByLabelText("LDAP user")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "alice" } });
     fireEvent.change(screen.getByLabelText("auth.password"), { target: { value: "secret" } });
@@ -116,7 +120,7 @@ describe("authentication mode selection", () => {
     await waitFor(() => expect(onLogin).toHaveBeenCalled());
   });
 
-  it("keeps localUser selected after a failed PAM-backed login and never retries LDAP", async () => {
+  it("keeps Linux PAM selected after a failed PAM login and never retries LDAP", async () => {
     mocks.request
       .mockResolvedValueOnce({
         mode: "system",
@@ -130,14 +134,18 @@ describe("authentication mode selection", () => {
 
     render(<Login language="en-US" onLogin={vi.fn()} />);
 
-    const provider = await screen.findByRole("combobox", { name: "Account source" });
-    fireEvent.change(provider, { target: { value: "pam" } });
+    await screen.findByRole("radiogroup", { name: "Sign-in method" });
+    const pam = screen.getByRole("radio", { name: "Linux (PAM)" });
+    fireEvent.click(pam);
+    expect(pam).toBeChecked();
+    expect(screen.getByLabelText("auth.linuxUser")).toBeInTheDocument();
+
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "root" } });
     fireEvent.change(screen.getByLabelText("auth.password"), { target: { value: "bad" } });
     fireEvent.submit(screen.getByRole("button", { name: "auth.signIn" }).closest("form")!);
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-    expect(provider).toHaveValue("pam");
+    expect(pam).toBeChecked();
     expect(mocks.request).toHaveBeenCalledTimes(2);
     const loginOptions = mocks.request.mock.calls[1][1] as RequestInit;
     expect(JSON.parse(String(loginOptions.body)).auth_method).toBe("pam");
