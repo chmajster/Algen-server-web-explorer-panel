@@ -7,9 +7,11 @@ import pytest
 from fastapi import HTTPException, Response
 from starlette.requests import Request
 
-from app import auth_api, ldap_auth
+from app import auth, auth_api, ldap_auth
+from app.identity import service as identity_service_module
 from app.ldap_auth import (
     LdapInvalidCredentials,
+    LdapServiceUnavailable,
     LdapSettings,
     LdapSettingsInput,
     authenticate_ldap,
@@ -41,30 +43,65 @@ def ldap_settings(**overrides) -> LdapSettings:
 
 
 class FakeConnection:
-    def __init__(self, response=None):
+    def __init__(self, response=None, *, search_result: bool = True):
         self.response = response or []
+        self.search_result = search_result
         self.searches = []
         self.unbound = False
 
     def search(self, **kwargs):
         self.searches.append(kwargs)
-        return True
+        return self.search_result
 
     def unbind(self):
         self.unbound = True
 
 
 class FakeSettingsRepository:
-    def __init__(self, settings: LdapSettings):
+    def __init__(self, settings: LdapSettings, identities=None):
         self.settings = settings
+        self.identities = identities or {}
         self.remembered = []
 
     def get(self):
         return self.settings
 
-    def remember_identity(self, username, dn, *, display_name="", email=""):
-        self.remembered.append((username, dn, display_name, email))
-        return f"/tmp/ldap-home/{username}"
+    def identity(self, username):
+        return self.identities.get(username.casefold())
+
+    def remember_identity(self, username, dn, *, home, display_name="", email=""):
+        self.remembered.append((username, dn, home, display_name, email))
+        self.identities[username.casefold()] = {
+            "username": username,
+            "dn": dn,
+            "home": home,
+            "display_name": display_name,
+            "email": email,
+        }
+        return home
+
+    def home(self, username):
+        identity = self.identity(username)
+        return str(identity["home"]) if identity else None
+
+
+class FakeSecretsService:
+    def __init__(self):
+        self.secret_id = "ldap-secret"
+        self.secret = ""
+        self.deleted = False
+
+    def save(self, payload, actor, secret_id=None):
+        if payload.secret:
+            self.secret = payload.secret
+        return {"id": secret_id or self.secret_id}
+
+    def delete(self, secret_id, actor):
+        self.deleted = True
+        self.secret = ""
+
+    def verified_secret(self, secret_id, *, module_id, purpose):
+        return {"secret": self.secret}
 
 
 def request_from(ip: str = "127.0.0.1") -> Request:
@@ -111,17 +148,22 @@ def test_search_filter_escapes_rfc4515_metacharacters(username, escaped):
     assert ldap_user_search_filter("(uid={username})", username) == f"(uid={escaped})"
 
 
-@pytest.mark.parametrize("entries", [[], [
-    {"type": "searchResEntry", "dn": "uid=alice,dc=example,dc=com", "attributes": {"uid": "alice"}},
-    {"type": "searchResEntry", "dn": "uid=alice2,dc=example,dc=com", "attributes": {"uid": "alice"}},
-]])
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [],
+        [
+            {"type": "searchResEntry", "dn": "uid=alice,dc=example,dc=com", "attributes": {"uid": "alice"}},
+            {"type": "searchResEntry", "dn": "uid=alice2,dc=example,dc=com", "attributes": {"uid": "alice"}},
+        ],
+    ],
+)
 def test_ldap_login_requires_exactly_one_search_result(monkeypatch, entries):
     repo = FakeSettingsRepository(ldap_settings())
     service = FakeConnection(entries)
     monkeypatch.setattr(ldap_auth, "settings_repository", lambda: repo)
     monkeypatch.setattr(ldap_auth, "_bind_password", lambda settings, purpose: "bind-secret")
     monkeypatch.setattr(ldap_auth, "_connection", lambda *args, **kwargs: service)
-    monkeypatch.setattr(ldap_auth, "_assert_identity_namespace_available", lambda username: None)
 
     with pytest.raises(LdapInvalidCredentials):
         authenticate_ldap("alice", "correct-user-password")
@@ -130,7 +172,23 @@ def test_ldap_login_requires_exactly_one_search_result(monkeypatch, entries):
     assert repo.remembered == []
 
 
-def test_ldap_login_binds_the_exact_user_and_jit_provisions_identity(monkeypatch):
+def test_ldap_login_rejects_entry_whose_username_attribute_does_not_match(monkeypatch):
+    entry = {
+        "type": "searchResEntry",
+        "dn": "uid=bob,ou=people,dc=example,dc=com",
+        "attributes": {"uid": "bob"},
+    }
+    repo = FakeSettingsRepository(ldap_settings())
+    service = FakeConnection([entry])
+    monkeypatch.setattr(ldap_auth, "settings_repository", lambda: repo)
+    monkeypatch.setattr(ldap_auth, "_bind_password", lambda settings, purpose: "bind-secret")
+    monkeypatch.setattr(ldap_auth, "_connection", lambda *args, **kwargs: service)
+
+    with pytest.raises(LdapInvalidCredentials):
+        authenticate_ldap("alice", "correct-user-password")
+
+
+def test_ldap_login_binds_exact_user_and_uses_nss_posix_home(monkeypatch):
     entry = {
         "type": "searchResEntry",
         "dn": "uid=alice,ou=people,dc=example,dc=com",
@@ -153,6 +211,11 @@ def test_ldap_login_binds_the_exact_user_and_jit_provisions_identity(monkeypatch
     monkeypatch.setattr(ldap_auth, "_bind_password", lambda settings, purpose: "bind-secret")
     monkeypatch.setattr(ldap_auth, "_connection", connection)
     monkeypatch.setattr(ldap_auth, "_assert_identity_namespace_available", lambda username: None)
+    monkeypatch.setattr(
+        ldap_auth,
+        "_posix_identity",
+        lambda username: SimpleNamespace(pw_name=username, pw_uid=12000, pw_gid=12000, pw_dir="/home/alice"),
+    )
 
     identity = authenticate_ldap("alice", "correct-user-password")
 
@@ -161,23 +224,43 @@ def test_ldap_login_binds_the_exact_user_and_jit_provisions_identity(monkeypatch
         ("uid=alice,ou=people,dc=example,dc=com", "correct-user-password"),
     ]
     assert identity.provider == "ldap"
-    assert identity.home == "/tmp/ldap-home/alice"
+    assert identity.home == "/home/alice"
     assert repo.remembered == [
-        ("alice", "uid=alice,ou=people,dc=example,dc=com", "Alice Example", "alice@example.com")
+        ("alice", "uid=alice,ou=people,dc=example,dc=com", "/home/alice", "Alice Example", "alice@example.com")
     ]
 
 
-def test_ldap_identity_cannot_collide_with_local_linux_user(monkeypatch):
-    monkeypatch.setattr(ldap_auth.pwd, "getpwnam", lambda username: SimpleNamespace(pw_name=username))
+def test_ldap_identity_requires_nss_posix_mapping(monkeypatch):
+    def missing_user(username):
+        raise KeyError(username)
+
+    monkeypatch.setattr(ldap_auth.pwd, "getpwnam", missing_user)
+    with pytest.raises(LdapServiceUnavailable) as error:
+        ldap_auth._posix_identity("alice")
+    assert error.value.stage == "identity"
+    assert error.value.code == "LDAP_POSIX_IDENTITY_UNAVAILABLE"
+
+
+def test_ldap_identity_rejects_unsafe_uid(monkeypatch):
+    monkeypatch.setattr(
+        ldap_auth.pwd,
+        "getpwnam",
+        lambda username: SimpleNamespace(pw_name=username, pw_uid=0, pw_gid=0, pw_dir="/root"),
+    )
+    with pytest.raises(LdapServiceUnavailable) as error:
+        ldap_auth._posix_identity("root")
+    assert error.value.code == "LDAP_POSIX_IDENTITY_UNSAFE"
+
+
+def test_ldap_identity_cannot_collide_with_local_passwd_user(monkeypatch):
+    monkeypatch.setattr(auth, "is_local_passwd_user", lambda username: True)
     with pytest.raises(LdapInvalidCredentials):
         ldap_auth._assert_identity_namespace_available("admin")
 
 
-def test_ldap_identity_cannot_inherit_existing_local_rbac_policy(monkeypatch):
-    def missing_local_user(username):
-        raise KeyError(username)
-
-    monkeypatch.setattr(ldap_auth.pwd, "getpwnam", missing_local_user)
+def test_first_ldap_login_cannot_inherit_existing_local_rbac_policy(monkeypatch):
+    monkeypatch.setattr(auth, "is_local_passwd_user", lambda username: False)
+    monkeypatch.setattr(ldap_auth, "is_ldap_identity", lambda username: False)
     monkeypatch.setattr(
         ldap_auth,
         "identity_repository",
@@ -185,6 +268,68 @@ def test_ldap_identity_cannot_inherit_existing_local_rbac_policy(monkeypatch):
     )
     with pytest.raises(LdapInvalidCredentials):
         ldap_auth._assert_identity_namespace_available("admin")
+
+
+def test_known_ldap_identity_can_keep_explicit_rbac_policy(monkeypatch):
+    monkeypatch.setattr(auth, "is_local_passwd_user", lambda username: False)
+    monkeypatch.setattr(ldap_auth, "is_ldap_identity", lambda username: True)
+    monkeypatch.setattr(
+        ldap_auth,
+        "identity_repository",
+        lambda: SimpleNamespace(user_policy=lambda username: {"role": "Operator"}),
+    )
+    ldap_auth._assert_identity_namespace_available("alice")
+
+
+def test_ldap_identity_never_inherits_linux_admin_from_sudo_or_wheel(monkeypatch):
+    monkeypatch.setattr(ldap_auth, "is_ldap_identity", lambda username: True)
+    monkeypatch.setattr(identity_service_module.linux_accounts, "is_linux_admin", lambda username: True)
+    assert identity_service_module._provider_safe_linux_admin("alice") is False
+
+
+def test_regular_pam_identity_keeps_linux_admin_semantics(monkeypatch):
+    monkeypatch.setattr(ldap_auth, "is_ldap_identity", lambda username: False)
+    monkeypatch.setattr(identity_service_module.linux_accounts, "is_linux_admin", lambda username: True)
+    assert identity_service_module._provider_safe_linux_admin("root") is True
+
+
+def test_local_passwd_detection_does_not_treat_nss_only_user_as_pam(tmp_path: Path):
+    passwd = tmp_path / "passwd"
+    passwd.write_text(
+        "root:x:0:0:root:/root:/bin/bash\nlocal:x:1000:1000:Local:/home/local:/bin/bash\n",
+        encoding="utf-8",
+    )
+    assert auth.is_local_passwd_user("local", passwd) is True
+    assert auth.is_local_passwd_user("ldap-user", passwd) is False
+
+
+def test_bind_password_is_preserved_when_settings_update_omits_secret(monkeypatch, tmp_path: Path):
+    fake_secrets = FakeSecretsService()
+    monkeypatch.setattr(ldap_auth, "secrets_service", lambda: fake_secrets)
+    repo = ldap_auth.LdapSettingsRepository(tmp_path / "ldap.sqlite3")
+    initial = LdapSettingsInput(
+        enabled=True,
+        server="ldap.example.com",
+        port=389,
+        security_mode="starttls",
+        verify_tls=True,
+        base_dn="dc=example,dc=com",
+        user_search_base="ou=people,dc=example,dc=com",
+        user_search_filter="(uid={username})",
+        username_attribute="uid",
+        bind_dn="cn=webnas,ou=services,dc=example,dc=com",
+        bind_password="top-secret",
+    )
+    saved = repo.save(initial, "admin")
+    assert saved.bind_password_configured is True
+    assert fake_secrets.secret == "top-secret"
+    assert "bind_password" not in saved.public_dict()
+    assert "bind_secret_id" not in saved.public_dict()
+
+    updated = repo.save(initial.model_copy(update={"bind_password": "", "connect_timeout": 7.0}), "admin")
+    assert updated.connect_timeout == 7.0
+    assert updated.bind_password_configured is True
+    assert fake_secrets.secret == "top-secret"
 
 
 def test_provider_defaults_follow_ldap_enabled(monkeypatch):
