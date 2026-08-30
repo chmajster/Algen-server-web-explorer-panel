@@ -1,11 +1,12 @@
 {
   "name": "webnas-frontend",
   "private": true,
-  "version": "0.1.31",
+  "version": "0.1.32",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "postbuild": "node -e \"console.log('[INFO] Frontend bundle build completed successfully.')\"",
     "build:analyze": "npm run build && node scripts/analyze-bundle.mjs",
     "bundle:report": "node scripts/analyze-bundle.mjs",
     "bundle:check": "node scripts/analyze-bundle.mjs --check",

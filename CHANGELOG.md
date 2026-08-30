@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.1.32 — 2026-08-31
+
+- Expanded Proxmox Manager with advanced cluster, capacity, placement, storage, backup, replication, HA, migration, network, SDN, cloud-init, policy and orphan-management workflows, plus the matching frontend and operational documentation.
+- Refined authentication UX with explicit PAM/LDAP provider selection and strengthened LDAP attribute normalization and connection handling.
+- Hardened installer update/reinstall flows and their CI coverage, including full-reinstall/menu scenarios and correct preservation of installer exit statuses.
+- Improved frontend build observability with context-neutral build completion output, explicit bundle-validation stages and JavaScript asset progress reporting.
+
+
 ## v0.1.31 — 2026-08-30
 
 - Separated LDAP Authentication in Settings from the independently installable LDAP Manager, including independent configuration databases and Secrets Manager credentials.
