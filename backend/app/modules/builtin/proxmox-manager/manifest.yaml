@@ -3,9 +3,14 @@ name: Proxmox Manager
 category: infrastructure
 icon: boxes
 permissions: [modules.view]
-routers: [app.modules.proxmox_manager.router:router]
+routers: [app.modules.proxmox_manager.router:router, app.modules.proxmox_manager.advanced_router:router]
 dependencies: [hosts-manager]
-capabilities: [proxmox-vms, host-provider, power]
-actions: [test, sync, start, stop, shutdown, reboot]
+capabilities:
+  [proxmox-vms, host-provider, power, cluster-health, placement-advisor, capacity-planner,
+  storage-balancer, backup-analyzer, pbs-manager, replication-manager, ha-manager,
+  migration-planner, network-planner, sdn-manager, cloud-init-profiles, vm-policy-manager,
+  orphan-detector, snapshot-retention, guest-agent-audit, template-lifecycle, iso-lifecycle,
+  vm-drift, bulk-operations]
+actions: [test, sync, start, stop, shutdown, reboot, snapshot-retention-apply, bulk-operation]
 jobs: []
 menu: [{id: proxmox, label: proxmox.name, icon: boxes, permission: modules.view}]
