@@ -153,9 +153,8 @@ def create_local_user(
     payload: LocalUserCreate,
     user: SessionUser = Depends(admin_write),
 ):
-    store = local_repository()
     try:
-        created = store.create_user(
+        created = local_repository().create_user(
             payload.username,
             payload.password,
             role=payload.role,
