@@ -10,6 +10,7 @@ import pytest
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 LAUNCHER = REPOSITORY / "install.sh"
+PORTABLE = REPOSITORY / "install-portable.sh"
 
 
 def _bash() -> str:
@@ -63,3 +64,18 @@ def test_launcher_skips_authentication_summary_for_non_runtime_actions():
 
     for action in ("backup-config", "remove", "remove-app", "remove-all", "abort"):
         assert action in function
+
+
+def test_portable_mode_explicitly_uses_system_pam_authentication():
+    content = PORTABLE.read_text(encoding="utf-8")
+
+    assert "Portable authentication mode set to System/PAM" in content
+    assert "VALUES(1,'system',0,'portable-installer')" in content
+    assert "auth:\n  provider: pam" in content
+    assert "portable mode does not provision Local POSIX companions" in content
+
+
+def test_portable_mode_does_not_expose_unused_local_bootstrap_secret():
+    content = PORTABLE.read_text(encoding="utf-8")
+
+    assert 'rm -f -- "${WORK_DIR}/runtime/data/initial-local-admin.txt"' in content
