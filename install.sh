@@ -248,7 +248,7 @@ finalize_standard_reinstall() {
   done
   shopt -u dotglob nullglob
 
-  printf '[OK] Cleanup completed: all stale application files removed; config, data, and logs preserved.\n'
+  printf '[OK] Clean reinstall finalized: all stale application files removed; config, data, and logs preserved.\n'
 }
 
 standard_config_port() {
@@ -344,7 +344,7 @@ if [[ "$MODE" == "portable" ]]; then
   run_target "install-portable.sh" "${FORWARD_ARGS[@]}"
 else
   reinstall_backups_before="$(standard_reinstall_backup_snapshot)"
-  run_target "install-standard.sh" "${FORWARD_ARGS[@]}"
+  run_target "install-standard-menu.sh" "${FORWARD_ARGS[@]}"
   if standard_reinstall_happened "$reinstall_backups_before"; then
     finalize_standard_reinstall
   fi
