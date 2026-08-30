@@ -321,7 +321,6 @@ run_portable() {
   BACKEND_PID="$!"
 
   health_check
-  rm -f -- "${WORK_DIR}/runtime/data/initial-local-admin.txt"
   printf '\n[OK] WebNAS portable is running at http://%s:%s\n' "$display_host" "$PORT"
   printf '[INFO] Authentication mode: System/PAM (portable mode does not provision Local POSIX companions).\n'
   printf '[INFO] Runtime directory: %s\n' "$WORK_DIR"
