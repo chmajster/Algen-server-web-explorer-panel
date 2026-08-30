@@ -11,7 +11,7 @@ beforeEach(() => {
 });
 
 test("renders security score", async () => {
-  render(<SecurityCenterApp permissions={["security.view"]} toast={vi.fn()} />);
+  render(<SecurityCenterApp permissions={["security.view"]} language="en-US" toast={vi.fn()} />);
   expect(await screen.findByText("Security Center")).toBeInTheDocument();
   expect(await screen.findByText("92/100")).toBeInTheDocument();
 });
