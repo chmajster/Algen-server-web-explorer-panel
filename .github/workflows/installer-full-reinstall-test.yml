@@ -77,12 +77,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          printf '7\nFULL-REINSTALL\n' | script --quiet --return --command \
+          printf '7\n' | script --quiet --return --command \
             "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-full-reinstall.log 2>&1
 
           tr -d '\r' < /tmp/webnas-full-reinstall.log > /tmp/webnas-full-reinstall.clean
           grep -F "7) Full Reinstall application (remove all data)" /tmp/webnas-full-reinstall.clean
+          grep -F "Full Reinstall starts automatically. Press Ctrl+C to cancel." /tmp/webnas-full-reinstall.clean
+          grep -F "Starting in 5..." /tmp/webnas-full-reinstall.clean
+          grep -F "Starting in 4..." /tmp/webnas-full-reinstall.clean
+          grep -F "Starting in 3..." /tmp/webnas-full-reinstall.clean
+          grep -F "Starting in 2..." /tmp/webnas-full-reinstall.clean
+          grep -F "Starting in 1..." /tmp/webnas-full-reinstall.clean
           grep -F "Full reinstall: removing existing WebNAS installation and all data" /tmp/webnas-full-reinstall.clean
           grep -F "Full reinstall: installing a fresh WebNAS instance" /tmp/webnas-full-reinstall.clean
           grep -F "Full reinstall completed: application, config, data, and logs were recreated from a clean state" /tmp/webnas-full-reinstall.clean
