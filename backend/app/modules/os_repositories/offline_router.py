@@ -174,7 +174,7 @@ def download_bundle(bundle_id: str, user: SessionUser = Depends(require_permissi
     ready()
     path = controlled(lambda: offline_service().bundle_path(bundle_id))
     assert isinstance(path, Path)
-    return FileResponse(path, filename=path.name, media_type="application/gzip")
+    return FileResponse(path, filename=path.name, media_type="application/zstd" if path.name.endswith((".zst", ".tzst")) else "application/gzip")
 
 
 @router.put("/bundles/{bundle_id}/pin")
@@ -207,7 +207,7 @@ def staged_bundles(user: SessionUser = Depends(require_permission(OFFLINE_VIEW, 
 async def upload_bundle(file: UploadFile = File(...), user: SessionUser = Depends(require_permission(OFFLINE_IMPORT))):
     ready()
     try:
-        return controlled(lambda: offline_service().stage_upload(Path(file.filename or "bundle.tar.gz").name, file.file))
+        return controlled(lambda: offline_service().stage_upload(Path(file.filename or "bundle.tar.zst").name, file.file))
     finally:
         await file.close()
 

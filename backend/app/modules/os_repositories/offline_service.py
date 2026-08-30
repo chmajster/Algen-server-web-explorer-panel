@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gzip
 import hashlib
 import json
 import os
@@ -31,7 +30,7 @@ BUNDLE_FORMAT_VERSION = 1
 MAX_ARCHIVE_FILES = 200_000
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 512 * 1024**3
-ALLOWED_ARCHIVE_SUFFIXES = (".tar.gz", ".tgz")
+ALLOWED_ARCHIVE_SUFFIXES = (".tar.zst", ".tzst", ".tar.gz", ".tgz")
 DEPENDENCY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+_.-]*")
 DEPENDENCY_VERSION = re.compile(r"\((>=|<=|=|>>|<<|>|<)\s*([^)]+)\)|\s(>=|<=|=|>|<)\s*([^\s,|]+)")
 
@@ -542,15 +541,11 @@ class OfflineRepositoryService:
     def _create_archive(self, root: Path, destination: Path) -> None:
         temporary = destination.with_name(f".{destination.name}-{object_id()}.tmp")
         try:
-            with temporary.open("wb") as raw:
-                with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
-                    with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
-                        directories = sorted((path for path in root.rglob("*") if path.is_dir()), key=lambda p: p.relative_to(root).as_posix())
-                        files = sorted((path for path in root.rglob("*") if path.is_file()), key=lambda p: p.relative_to(root).as_posix())
-                        for path in [*directories, *files]:
-                            self._tar_add(archive, root, path)
-                raw.flush()
-                os.fsync(raw.fileno())
+            with tarfile.open(temporary, mode="w:zst", format=tarfile.PAX_FORMAT) as archive:
+                directories = sorted((path for path in root.rglob("*") if path.is_dir()), key=lambda p: p.relative_to(root).as_posix())
+                files = sorted((path for path in root.rglob("*") if path.is_file()), key=lambda p: p.relative_to(root).as_posix())
+                for path in [*directories, *files]:
+                    self._tar_add(archive, root, path)
             os.replace(temporary, destination)
             os.chmod(destination, 0o600)
         finally:
@@ -623,7 +618,7 @@ class OfflineRepositoryService:
             removed = []
 
         bundle_id = object_id()
-        filename = f"webnas-offline-{repository['distribution']}-{repository['distribution_version']}-{payload.architecture}-{bundle_id[:8]}.tar.gz"
+        filename = f"webnas-offline-{repository['distribution']}-{repository['distribution_version']}-{payload.architecture}-{bundle_id[:8]}.tar.zst"
         destination = managed_path(self.bundle_root, filename)
         now = time.time()
         self.store.execute(
@@ -686,7 +681,7 @@ class OfflineRepositoryService:
                 "target_packages": target_documents,
                 "removed_packages": removed,
                 "created_at": now,
-                "compression": "gzip",
+                "compression": "zstd",
                 "metadata_version": 1,
                 "signing_fingerprint": "",
                 "files": self._file_manifest(work),
@@ -811,7 +806,7 @@ class OfflineRepositoryService:
     def stage_upload(self, filename: str, stream: BinaryIO) -> dict[str, Any]:
         safe_name = Path(filename).name
         if not safe_name.endswith(ALLOWED_ARCHIVE_SUFFIXES):
-            raise ValueError("offline bundle must be a .tar.gz or .tgz archive")
+            raise ValueError("offline bundle must be a .tar.zst, .tzst, .tar.gz or .tgz archive")
         limit = int(self.base.settings()["upload_limit_mb"]) * 1024 * 1024
         stored_name = f"{object_id()}-{safe_name}"
         destination = managed_path(self.staging_root, stored_name)
