@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Mapping
 from typing import Any
 
 from ldap3 import BASE, LEVEL, MODIFY_DELETE, MODIFY_REPLACE, SUBTREE
@@ -33,7 +34,7 @@ def _json_value(value: Any) -> Any:
 
 def _entry(item: dict[str, Any]) -> dict[str, Any]:
     raw_attributes = item.get("attributes")
-    attributes: dict[str, Any] = raw_attributes if isinstance(raw_attributes, dict) else {}
+    attributes: Mapping[str, Any] = raw_attributes if isinstance(raw_attributes, Mapping) else {}
     return {
         "dn": str(item.get("dn") or ""),
         "attributes": {str(key): _json_value(value) for key, value in attributes.items()},

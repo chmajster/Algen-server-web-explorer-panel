@@ -1,3 +1,4 @@
+from collections import UserDict
 from pathlib import Path
 
 import pytest
@@ -159,3 +160,16 @@ def test_export_csv_follows_all_paging_cookies(monkeypatch):
     exported = manager.export_csv("connection", "users")
     assert "uid=a" in exported
     assert "uid=b" in exported
+
+def test_provider_entry_accepts_mapping_backed_attributes():
+    from app.modules.ldap_manager.providers import base as provider_base
+
+    member_dn = "uid=bob,ou=People,dc=example,dc=test"
+    normalized = provider_base._entry(
+        {
+            "dn": "cn=Integration-Team,ou=Groups,dc=example,dc=test",
+            "attributes": UserDict({"member": [member_dn], "cn": ["Integration-Team"]}),
+        }
+    )
+    assert normalized["attributes"]["member"] == [member_dn]
+
