@@ -1,0 +1,255 @@
+name: Auth finalize helper
+
+on:
+  push:
+    branches:
+      - feat/ldap-authentication
+    paths:
+      - .github/workflows/auth-finalize-helper.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ldap-authentication
+          fetch-depth: 0
+      - name: Apply final auth and installer updates
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"expected text not found in {path}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # Local auth: installer owns the initial account creation. Normal user
+          # passwords still require 12+ chars; only bootstrap_admin may hash the
+          # installer-supplied short default on an empty database.
+          p = Path("backend/app/local_auth.py")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace("from .modules.secrets_manager.models import SecretInput\n", "")
+          text = text.replace("from .modules.secrets_manager.service import service as secrets_service\n", "")
+          text = text.replace('LOCAL_BOOTSTRAP_SECRET_PREFIX = "__webnas_initial_local_admin__"\nLOCAL_BOOTSTRAP_SECRET_MODULE = "authentication-bootstrap"\n', "")
+          old_hash = '''def hash_password(password: str) -> str:\n    if len(password) < 12 or len(password) > 1024 or "\\x00" in password:\n        raise ValueError("Local account password must contain between 12 and 1024 characters")\n    salt = secrets.token_bytes(16)\n    digest = hashlib.scrypt(\n        password.encode("utf-8"),\n        salt=salt,\n        n=SCRYPT_N,\n        r=SCRYPT_R,\n        p=SCRYPT_P,\n        dklen=SCRYPT_DKLEN,\n    )\n    return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${_b64(salt)}${_b64(digest)}"\n'''
+          new_hash = '''def _hash_password_unchecked(password: str) -> str:\n    if not password or len(password) > 1024 or "\\x00" in password:\n        raise ValueError("Local account password must contain between 1 and 1024 characters")\n    salt = secrets.token_bytes(16)\n    digest = hashlib.scrypt(\n        password.encode("utf-8"),\n        salt=salt,\n        n=SCRYPT_N,\n        r=SCRYPT_R,\n        p=SCRYPT_P,\n        dklen=SCRYPT_DKLEN,\n    )\n    return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${_b64(salt)}${_b64(digest)}"\n\n\ndef hash_password(password: str) -> str:\n    if len(password) < 12 or len(password) > 1024 or "\\x00" in password:\n        raise ValueError("Local account password must contain between 12 and 1024 characters")\n    return _hash_password_unchecked(password)\n'''
+          if old_hash not in text:
+              raise SystemExit("hash_password block not found")
+          text = text.replace(old_hash, new_hash, 1)
+          text = text.replace('''        self._initialize()\n        if self.auth_mode() == "local":\n            self._ensure_initial_admin()\n''', '''        self._initialize()\n''', 1)
+          text = text.replace('''                    auth_mode TEXT NOT NULL DEFAULT 'local',\n                    bootstrap_secret_id TEXT NOT NULL DEFAULT '',\n                    updated_at REAL NOT NULL DEFAULT 0,\n''', '''                    auth_mode TEXT NOT NULL DEFAULT 'local',\n                    updated_at REAL NOT NULL DEFAULT 0,\n''', 1)
+          text = re.sub(
+              r'''\n            columns = \{str\(row\[1\]\) for row in connection\.execute\("PRAGMA table_info\(local_auth_settings\)"\)\.fetchall\(\)\}\n            if "bootstrap_secret_id" not in columns:\n                connection\.execute\("ALTER TABLE local_auth_settings ADD COLUMN bootstrap_secret_id TEXT NOT NULL DEFAULT ''"\)''',
+              "",
+              text,
+              count=1,
+          )
+          text, count = re.subn(
+              r'''\n    def _bootstrap_secret_id\(self\) -> str:.*?\n    @staticmethod\n    def _key''',
+              '''\n    @staticmethod\n    def _key''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("bootstrap secret methods block not found")
+          text = text.replace('''        display_name: str = "",\n    ) -> dict[str, Any]:\n''', '''        display_name: str = "",\n        _allow_short_password: bool = False,\n    ) -> dict[str, Any]:\n''', 1)
+          text = text.replace('''        password_hash = hash_password(password)\n''', '''        password_hash = _hash_password_unchecked(password) if _allow_short_password else hash_password(password)\n''', 1)
+          old_bootstrap = '''    def bootstrap_admin(self, username: str = "admin", password: str | None = None) -> tuple[dict[str, Any] | None, str]:\n        with self._lock:\n            if self.count() > 0:\n                return None, ""\n            generated = password or secrets.token_urlsafe(24)\n            user = self.create_user(username, generated, role="admin", display_name="WebNAS Administrator")\n            return user, generated\n'''
+          new_bootstrap = '''    def bootstrap_admin(self, username: str, password: str) -> tuple[dict[str, Any] | None, str]:\n        with self._lock:\n            if self.count() > 0:\n                return None, ""\n            username = validate_local_username(username)\n            if not password or len(password) > 1024 or "\\x00" in password:\n                raise ValueError("Bootstrap password must contain between 1 and 1024 characters")\n            user = self.create_user(\n                username,\n                password,\n                role="admin",\n                display_name="WebNAS Administrator",\n                _allow_short_password=True,\n            )\n            return user, password\n'''
+          if old_bootstrap not in text:
+              raise SystemExit("bootstrap_admin block not found")
+          text = text.replace(old_bootstrap, new_bootstrap, 1)
+          text = text.replace('''        self._consume_bootstrap_secret(username)\n        return user\n''', '''        return user\n''', 1)
+          text = text.replace('''        if password is not None:\n            self._consume_bootstrap_secret(username)\n        user = self.user(username)\n''', '''        user = self.user(username)\n''', 1)
+          text = text.replace('''def consume_initial_admin_credentials() -> dict[str, str] | None:\n    return repository().consume_bootstrap_credential()\n''', '''def bootstrap_initial_admin(username: str, password: str) -> tuple[dict[str, Any] | None, str]:\n    return repository().bootstrap_admin(username, password)\n''', 1)
+          p.write_text(text, encoding="utf-8")
+
+          # Repurpose the helper: it now creates the first local admin using
+          # installer-supplied credentials instead of consuming a random secret.
+          Path("scripts/consume_local_bootstrap.py").write_text('''#!/usr/bin/env python3\nfrom __future__ import annotations\n\nimport argparse\n\nfrom app.local_auth import bootstrap_initial_admin\n\n\ndef main() -> int:\n    parser = argparse.ArgumentParser()\n    parser.add_argument("username")\n    parser.add_argument("password")\n    args = parser.parse_args()\n    user, password = bootstrap_initial_admin(args.username, args.password)\n    if user is None:\n        print("Local user database already initialized; existing accounts preserved.")\n        return 0\n    print("Default local administrator created:")\n    print(f"Username: {user['username']}")\n    print(f"Password: {password}")\n    print("IMPORTANT: change this default password immediately after the first login.")\n    return 0\n\n\nif __name__ == "__main__":\n    raise SystemExit(main())\n''', encoding="utf-8")
+
+          # Standard installer seeds chris:1 after the release health check.
+          p = Path("install-standard.sh")
+          text = p.read_text(encoding="utf-8")
+          old = '''print_initial_local_admin() {\n  section "Authentication"\n  local scheme=""\n  local helper="${INSTALL_DIR}/current/scripts/consume_local_bootstrap.py"\n  local python="${INSTALL_DIR}/current/backend/.venv/bin/python"\n  local curl_options=(--fail --silent --show-error --max-time 5)\n  scheme="$(effective_transport_scheme)"\n  [[ "$scheme" != "https" ]] || curl_options+=(--insecure)\n  curl "${curl_options[@]}" "${scheme}://127.0.0.1:${PORT}/api/auth/config" >/dev/null \\\n    || fail "Could not initialize the authentication subsystem"\n  [[ -x "$python" && -f "$helper" ]] || fail "Local administrator bootstrap helper is unavailable"\n  if command -v runuser >/dev/null 2>&1; then\n    runuser -u "$SERVICE_USER" -- env \\\n      WEBNAS_CONFIG="$CONFIG_FILE" \\\n      PYTHONPATH="${INSTALL_DIR}/current/backend" \\\n      "$python" "$helper"\n  else\n    fail "runuser is required to retrieve the one-time local administrator credential safely"\n  fi\n  info "Default authentication mode: Local database. PAM and optional LDAP can be enabled later in Settings -> Administration -> Authentication."\n}\n'''
+          new = '''print_initial_local_admin() {\n  section "Authentication"\n  local helper="${INSTALL_DIR}/current/scripts/consume_local_bootstrap.py"\n  local python="${INSTALL_DIR}/current/backend/.venv/bin/python"\n  [[ -x "$python" && -f "$helper" ]] || fail "Local administrator bootstrap helper is unavailable"\n  if command -v runuser >/dev/null 2>&1; then\n    runuser -u "$SERVICE_USER" -- env \\\n      WEBNAS_CONFIG="$CONFIG_FILE" \\\n      PYTHONPATH="${INSTALL_DIR}/current/backend" \\\n      "$python" "$helper" "chris" "1"\n  else\n    fail "runuser is required to initialize the Local database administrator"\n  fi\n  info "Default authentication mode: Local database. Default account: chris / password: 1. Change it immediately after the first login."\n  info "PAM and optional LDAP can be enabled later in Settings -> Administration -> Authentication."\n}\n'''
+          if old not in text:
+              raise SystemExit("install-standard auth function not found")
+          p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # Launcher help/summary.
+          p = Path("install.sh")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace('''Fresh standard installations use the WebNAS Local database authentication mode\nby default. The initial administrator password is generated randomly and shown\nonce by the standard installer; it is never written to a plaintext credential\nfile. PAM and optional LDAP are available later through Settings ->\nAdministration -> Authentication. Standard installer options such as\n''', '''Fresh standard installations use the WebNAS Local database authentication mode\nby default and create the administrator account chris with password 1. Change\nthis default password immediately after the first login. PAM and optional LDAP\nare available later through Settings -> Administration -> Authentication.\nStandard installer options such as\n''', 1)
+          text = text.replace('''    printf '[INFO] A newly generated administrator password is printed once by the standard installer and is not retained in plaintext.\\n'\n''', '''    printf '[INFO] Fresh installations create the local administrator chris with default password 1; change it immediately after the first login.\\n'\n''', 1)
+          p.write_text(text, encoding="utf-8")
+
+          # Backend tests for the new bootstrap contract.
+          p = Path("backend/tests/test_local_auth.py")
+          text = p.read_text(encoding="utf-8")
+          text = re.sub(r'''class FakeSecretsService:.*?\n\ndef config''', '''def config''', text, count=1, flags=re.S)
+          old_repo = '''def repo(monkeypatch, tmp_path: Path) -> tuple[local_auth.LocalAuthRepository, FakeSecretsService]:\n    fake_secrets = FakeSecretsService()\n    monkeypatch.setattr(local_auth, "get_config", lambda: config(tmp_path))\n    monkeypatch.setattr(local_auth, "secrets_service", lambda: fake_secrets)\n'''
+          new_repo = '''def repo(monkeypatch, tmp_path: Path) -> local_auth.LocalAuthRepository:\n    monkeypatch.setattr(local_auth, "get_config", lambda: config(tmp_path))\n'''
+          if old_repo not in text:
+              raise SystemExit("test_local_auth repo helper not found")
+          text = text.replace(old_repo, new_repo, 1)
+          text = text.replace('''    return local_auth.LocalAuthRepository(tmp_path / "local-auth.sqlite3"), fake_secrets\n''', '''    return local_auth.LocalAuthRepository(tmp_path / "local-auth.sqlite3")\n''', 1)
+          text = re.sub(
+              r'''def test_local_database_is_default_and_bootstraps_random_admin\(monkeypatch, tmp_path\):.*?\n\ndef test_wrong_local_password_is_rejected''',
+              '''def test_local_database_is_default_and_installer_bootstrap_creates_chris(monkeypatch, tmp_path):\n    store = repo(monkeypatch, tmp_path)\n    assert store.auth_mode() == "local"\n    assert store.count() == 0\n\n    user, password = store.bootstrap_admin("chris", "1")\n\n    assert user is not None\n    assert user["username"] == "chris"\n    assert user["role"] == "admin"\n    assert user["enabled"] is True\n    assert user["posix_mapped"] is True\n    assert password == "1"\n    private = store._private_user("chris")\n    assert private is not None\n    password_hash = str(private["password_hash"])\n    assert password_hash.startswith("scrypt$")\n    assert password_hash != "1"\n    assert local_auth.verify_password("1", password_hash)\n\n\ndef test_bootstrap_admin_only_works_on_empty_database(monkeypatch, tmp_path):\n    store = repo(monkeypatch, tmp_path)\n    first, _ = store.bootstrap_admin("chris", "1")\n    second, password = store.bootstrap_admin("other", "1")\n    assert first is not None\n    assert second is None\n    assert password == ""\n\n\ndef test_wrong_local_password_is_rejected''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          text = text.replace('''    store, _ = repo(monkeypatch, tmp_path)\n''', '''    store = repo(monkeypatch, tmp_path)\n''')
+          text = text.replace('''    with pytest.raises(local_auth.LocalInvalidCredentials):\n        store.authenticate("admin", "definitely-wrong-password")\n''', '''    store.bootstrap_admin("chris", "1")\n    with pytest.raises(local_auth.LocalInvalidCredentials):\n        store.authenticate("chris", "definitely-wrong-password")\n''', 1)
+          text = text.replace('''    with pytest.raises(local_auth.LocalInvalidCredentials):\n        store.authenticate("missing", "definitely-wrong-password")\n''', '''    with pytest.raises(local_auth.LocalInvalidCredentials):\n        store.authenticate("missing", "definitely-wrong-password")\n''', 1)
+          text = text.replace('''def test_last_enabled_local_admin_cannot_be_removed_or_downgraded(monkeypatch, tmp_path):\n    store = repo(monkeypatch, tmp_path)\n    with pytest.raises(ValueError):\n        store.update_user("admin", role="user")\n    with pytest.raises(ValueError):\n        store.update_user("admin", enabled=False)\n    with pytest.raises(ValueError):\n        store.delete_user("admin")\n\n    store.create_user("second-admin", "another correct battery password", role="admin")\n    updated = store.update_user("admin", role="user")\n''', '''def test_last_enabled_local_admin_cannot_be_removed_or_downgraded(monkeypatch, tmp_path):\n    store = repo(monkeypatch, tmp_path)\n    store.bootstrap_admin("chris", "1")\n    with pytest.raises(ValueError):\n        store.update_user("chris", role="user")\n    with pytest.raises(ValueError):\n        store.update_user("chris", enabled=False)\n    with pytest.raises(ValueError):\n        store.delete_user("chris")\n\n    store.create_user("second-admin", "another correct battery password", role="admin")\n    updated = store.update_user("chris", role="user")\n''', 1)
+          text = text.replace('''def test_switch_to_local_requires_enabled_local_admin(monkeypatch, tmp_path):\n    store = repo(monkeypatch, tmp_path)\n    store.set_auth_mode("system", "admin")\n''', '''def test_switch_to_local_requires_enabled_local_admin(monkeypatch, tmp_path):\n    store = repo(monkeypatch, tmp_path)\n    store.bootstrap_admin("chris", "1")\n    store.set_auth_mode("system", "chris")\n''', 1)
+          text = re.sub(
+              r'''def test_system_mode_does_not_create_local_bootstrap_admin\(monkeypatch, tmp_path\):.*?\n\ndef test_local_login_requires_posix_mapping_after_valid_password''',
+              '''def test_system_mode_does_not_create_local_bootstrap_admin(monkeypatch, tmp_path):\n    monkeypatch.setattr(local_auth, "get_config", lambda: config(tmp_path))\n    path = tmp_path / "local-auth.sqlite3"\n    seed = local_auth.LocalAuthRepository(path)\n    seed.set_auth_mode("system", "test")\n\n    store = local_auth.LocalAuthRepository(path)\n\n    assert store.auth_mode() == "system"\n    assert store.count() == 0\n\n\ndef test_local_login_requires_posix_mapping_after_valid_password''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          text = re.sub(
+              r'''def test_local_login_requires_posix_mapping_after_valid_password\(monkeypatch, tmp_path\):.*?\n\ndef test_local_profile_uses_database_role_not_linux_admin''',
+              '''def test_local_login_requires_posix_mapping_after_valid_password(monkeypatch, tmp_path):\n    store = repo(monkeypatch, tmp_path)\n    store.bootstrap_admin("chris", "1")\n    monkeypatch.setattr(local_auth, "_ensure_posix_mapping", lambda username: None)\n    with pytest.raises(local_auth.LocalAuthConfigurationError):\n        store.authenticate("chris", "1")\n\n\ndef test_local_profile_uses_database_role_not_linux_admin''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          p.write_text(text, encoding="utf-8")
+
+          p = Path("backend/tests/test_installer_authentication_bootstrap.py")
+          text = p.read_text(encoding="utf-8")
+          text = re.sub(
+              r'''def test_launcher_documents_local_database_as_standard_default\(\):.*?\n\ndef test_launcher_preserves_standard_installer_failure_status''',
+              '''def test_launcher_documents_local_database_as_standard_default():\n    content = LAUNCHER.read_text(encoding="utf-8")\n\n    assert "Local database authentication mode" in content\n    assert "administrator account chris with password 1" in content\n    assert "Change" in content and "password immediately" in content\n    assert "PAM and optional LDAP" in content\n\n\ndef test_standard_installer_creates_default_chris_account():\n    standard = STANDARD.read_text(encoding="utf-8")\n    helper = BOOTSTRAP_HELPER.read_text(encoding="utf-8")\n\n    assert '"$python" "$helper" "chris" "1"' in standard\n    assert 'bootstrap_initial_admin' in helper\n    assert "Default local administrator created:" in helper\n    assert "change this default password immediately" in helper\n\n\ndef test_default_password_is_only_an_installer_bootstrap_exception():\n    local_auth_source = LOCAL_AUTH.read_text(encoding="utf-8")\n    assert "_allow_short_password" in local_auth_source\n    assert "Local account password must contain between 12 and 1024 characters" in local_auth_source\n    assert "bootstrap_admin" in local_auth_source\n\n\ndef test_launcher_preserves_standard_installer_failure_status''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          text = text.replace('''def test_portable_mode_never_creates_local_bootstrap_credentials():\n    portable = PORTABLE.read_text(encoding="utf-8")\n    local_auth = LOCAL_AUTH.read_text(encoding="utf-8")\n\n    assert "initial-local-admin.txt" not in portable\n    assert 'if self.auth_mode() == "local":' in local_auth\n''', '''def test_portable_mode_never_creates_local_bootstrap_credentials():\n    portable = PORTABLE.read_text(encoding="utf-8")\n    assert '"chris" "1"' not in portable\n    assert "Portable authentication mode set to System/PAM" in portable\n''', 1)
+          p.write_text(text, encoding="utf-8")
+
+          # Keep legacy PAM-focused real and mocked E2E tests explicitly in
+          # system mode; Local-default behavior is covered by Login/unit tests.
+          p = Path("frontend/e2e/mockApi.ts")
+          text = p.read_text(encoding="utf-8")
+          needle = '''    if (path === "/api/auth/me") return state.authenticated ? respond(route, { username: "e2e", home: "/home/e2e", csrf_token: "csrf" }) : respond(route, { detail: "Not authenticated" }, 401);\n'''
+          replacement = '''    if (path === "/api/auth/config") return respond(route, { mode: "system", local_enabled: false, pam_enabled: true, ldap_enabled: false, available_providers: ["pam"], default_provider: "pam" });\n''' + needle
+          if needle not in text:
+              raise SystemExit("mockApi auth/me route not found")
+          p.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+
+          p = Path("backend/tests/e2e_real_server.py")
+          text = p.read_text(encoding="utf-8")
+          needle = '''    from app import auth_api\n    from app import security as session_security\n'''
+          replacement = '''    from app import auth_api\n    from app import local_auth\n    from app import security as session_security\n'''
+          if needle not in text:
+              raise SystemExit("real e2e imports not found")
+          text = text.replace(needle, replacement, 1)
+          needle = '''    session_security._store.cache_clear()\n    username = getpass.getuser()\n'''
+          replacement = '''    session_security._store.cache_clear()\n    local_auth.repository.cache_clear()\n    local_auth.repository().set_auth_mode("system", "real-e2e")\n    username = getpass.getuser()\n'''
+          if needle not in text:
+              raise SystemExit("real e2e initialization not found")
+          p.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+
+          # App-level Login tests now mock the transport used by Login itself.
+          p = Path("frontend/src/app/App.test.tsx")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace('''  loadLanguageWithFallback: vi.fn(),\n}));\n''', '''  loadLanguageWithFallback: vi.fn(),\n  authRequest: vi.fn(),\n  authMe: vi.fn(),\n  resetAuthenticationState: vi.fn(),\n}));\n''', 1)
+          insert_after = '''vi.mock("../i18n", async (importOriginal) => {\n  const actual = await importOriginal<typeof import("../i18n")>();\n  return {\n    ...actual,\n    loadLanguageWithFallback: mocks.loadLanguageWithFallback,\n  };\n});\n'''
+          transport_mock = '''\nvi.mock("../core/api/transport", async (importOriginal) => {\n  const actual = await importOriginal<typeof import("../core/api/transport")>();\n  return {\n    ...actual,\n    request: mocks.authRequest,\n    me: mocks.authMe,\n    resetAuthenticationState: mocks.resetAuthenticationState,\n  };\n});\n'''
+          if insert_after not in text:
+              raise SystemExit("App.test i18n mock not found")
+          text = text.replace(insert_after, insert_after + transport_mock, 1)
+          before = '''    mocks.loadLanguageWithFallback.mockImplementation(async (language) => language);\n    await loadLanguage("pl-PL");\n'''
+          after = '''    mocks.loadLanguageWithFallback.mockImplementation(async (language) => language);\n    mocks.authRequest.mockResolvedValue({\n      mode: "system",\n      local_enabled: false,\n      pam_enabled: true,\n      ldap_enabled: false,\n      available_providers: ["pam"],\n      default_provider: "pam",\n    });\n    mocks.authMe.mockResolvedValue(user);\n    await loadLanguage("pl-PL");\n'''
+          if before not in text:
+              raise SystemExit("App.test beforeEach anchor not found")
+          text = text.replace(before, after, 1)
+          first_test = re.compile(r'''  it\("passes the selected remember-me option to authentication", async \(\) => \{.*?\n  \}\);''', re.S)
+          first_new = '''  it("passes the selected remember-me option to authentication", async () => {\n    const onLogin = vi.fn();\n    mocks.authRequest\n      .mockResolvedValueOnce({ mode: "system", local_enabled: false, pam_enabled: true, ldap_enabled: false, available_providers: ["pam"], default_provider: "pam" })\n      .mockResolvedValueOnce({ username: "alice", home: "/home/alice", csrf_token: "csrf", auth_provider: "pam" });\n    render(<Login language="pl-PL" onLogin={onLogin} />);\n\n    const username = await screen.findByLabelText("Użytkownik Linux");\n    fireEvent.change(username, { target: { value: " alice " } });\n    fireEvent.change(screen.getByLabelText("Hasło"), { target: { value: "secret" } });\n    fireEvent.click(screen.getByLabelText("Zapamiętaj mnie"));\n    fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));\n\n    await waitFor(() => expect(mocks.authRequest).toHaveBeenCalledTimes(2));\n    const loginOptions = mocks.authRequest.mock.calls[1][1] as RequestInit;\n    expect(JSON.parse(String(loginOptions.body))).toMatchObject({\n      username: "alice", password: "secret", remember_me: true, auth_method: "pam",\n    });\n    await waitFor(() => expect(onLogin).toHaveBeenCalledWith(expect.objectContaining({ username: "alice" })));\n  });'''
+          text, count = first_test.subn(first_new, text, count=1)
+          if count != 1:
+              raise SystemExit("App.test remember test not found")
+          second_test = re.compile(r'''  it\("adds error space only after authentication fails", async \(\) => \{.*?\n  \}\);''', re.S)
+          second_new = '''  it("adds error space only after authentication fails", async () => {\n    mocks.authRequest\n      .mockResolvedValueOnce({ mode: "system", local_enabled: false, pam_enabled: true, ldap_enabled: false, available_providers: ["pam"], default_provider: "pam" })\n      .mockRejectedValueOnce(Object.assign(new Error("Unauthorized"), { status: 401 }));\n    const { container } = render(<Login language="pl-PL" onLogin={vi.fn()} />);\n\n    expect(container.querySelector(".login-error")).toBeNull();\n    const username = await screen.findByLabelText("Użytkownik Linux");\n    fireEvent.change(username, { target: { value: "alice" } });\n    fireEvent.change(screen.getByLabelText("Hasło"), { target: { value: "wrong" } });\n    fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));\n\n    expect(await screen.findByRole("alert")).toHaveTextContent("Nieprawidłowa nazwa użytkownika lub hasło");\n  });'''
+          text, count = second_test.subn(second_new, text, count=1)
+          if count != 1:
+              raise SystemExit("App.test error test not found")
+          p.write_text(text, encoding="utf-8")
+
+          # Documentation: explicit requested default credential.
+          p = Path("AUTHENTICATION.md")
+          text = p.read_text(encoding="utf-8")
+          text, count = re.subn(
+              r'''### Initial administrator\n\n.*?\n### Local user management''',
+              '''### Initial administrator\n\nA fresh standard installation creates this Local database administrator:\n\n```text\nusername: chris\npassword: 1\nrole: admin\n```\n\nThe password is stored in `local-auth.sqlite3` only as a salted `scrypt` hash; plaintext `1` is not stored in SQLite. The installer supplies this short bootstrap password through a dedicated first-user path that is available only while the Local database is empty. Normal local-user creation and password changes still require 12–1024 characters.\n\nThe installer prints the default account and warns that the password must be changed immediately after the first login. Updates and reinstalls preserve an already initialized Local user database instead of recreating or resetting `chris`.\n\n### Local user management''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("AUTHENTICATION initial admin section not found")
+          text = text.replace('''- the initial recoverable bootstrap copy is encrypted by Secrets Manager and deleted immediately after installer retrieval or the first successful admin login;\n- no plaintext bootstrap credential file is created;\n''', '''- the fresh-install bootstrap account is `chris` with default password `1`; SQLite stores only its salted `scrypt` hash;\n- the short password is accepted only by the empty-database installer bootstrap path; normal password APIs retain the 12-character minimum;\n''')
+          p.write_text(text, encoding="utf-8")
+
+          p = Path("README.md")
+          text = p.read_text(encoding="utf-8")
+          text, count = re.subn(
+              r'''### First login\n\n.*?\nStandard installations also create or reuse''',
+              '''### First login\n\nThe default authentication mode is **Local database**. A fresh standard installation creates the local administrator:\n\n```text\nUsername: chris\nPassword: 1\nRole: admin\n```\n\nChange the default password immediately after the first login. The Local database stores only a salted `scrypt` hash, not plaintext `1`. The short default is accepted only by the empty-database installer bootstrap path; normal local-user passwords still require at least 12 characters. Existing initialized databases are preserved during update/reinstall and are not reset to `chris:1`.\n\nStandard installations also create or reuse''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("README first login section not found")
+          text = text.replace('''- a random initial local administrator password delivered once by the standard installer, with its temporary recoverable copy encrypted in Secrets Manager and deleted after retrieval,\n''', '''- a fresh-install `chris` administrator with default password `1`, stored only as a salted `scrypt` hash and required to be changed after first login,\n''')
+          p.write_text(text, encoding="utf-8")
+
+          p = Path("IDENTITY.md")
+          text = p.read_text(encoding="utf-8")
+          text = re.sub(
+              r'''## Initial local administrator\n\n.*?\n## Safety and Proxmox''',
+              '''## Initial local administrator\n\nA fresh standard installation bootstraps `chris` as the first Local database administrator with default password `1`. The SQLite user record contains only the salted `scrypt` hash. The installer-only bootstrap path accepts the short initial value only while the database is empty; normal account password rules continue to require 12–1024 characters. Existing user databases are preserved on update/reinstall.\n\nChange the default password immediately after the first login.\n\n## Safety and Proxmox''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          text = re.sub(
+              r'''### Local mode\n\nRetrieve the initial credential.*?\n### System mode''',
+              '''### Local mode\n\nFresh standard installations use `chris` / `1`. Change this password immediately after first login. If another local administrator exists, it can reset `chris` or another account through Settings. The last-admin protection prevents ordinary UI actions from removing all local administrators.\n\n### System mode''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          p.write_text(text, encoding="utf-8")
+
+          p = Path("CHANGELOG.d/auth-local-ldap.md")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace('''- Add an application-owned local user database as the default WebNAS authentication mode, with salted scrypt password hashes, a random one-time bootstrap administrator credential delivered by the standard installer, local user/role management, and locked POSIX execution mappings. The temporary recoverable bootstrap copy is encrypted in Secrets Manager and deleted after retrieval; no plaintext password file is created.\n''', '''- Add an application-owned local user database as the default WebNAS authentication mode, with salted scrypt password hashes, local user/role management, and locked POSIX execution mappings. Fresh standard installations create `chris` as the initial administrator with default password `1`; SQLite stores only the salted hash, the short value is accepted only by the empty-database installer bootstrap path, and the installer instructs the administrator to change it immediately.\n''')
+          p.write_text(text, encoding="utf-8")
+
+          # PR description was updated separately; ensure helper removes itself.
+          PY
+          git rm .github/workflows/auth-finalize-helper.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(installer): seed default local admin"
+          git push origin HEAD:feat/ldap-authentication
