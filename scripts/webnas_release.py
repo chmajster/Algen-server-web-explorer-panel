@@ -405,6 +405,8 @@ class Deployment:
                 f"Environment=WEBNAS_BIND_PORT={port}",
                 "Environment=WEBNAS_BIND_HOST=127.0.0.1",
                 "ExecStart=/bin/sh -c 'cd \"$WEBNAS_RELEASE/backend\" && exec \"$WEBNAS_RELEASE/backend/.venv/bin/python\" -m app.run'",
+                f"StandardOutput=append:{log_dir}/webnas-backend-{slot}.log",
+                f"StandardError=append:{log_dir}/webnas-backend-{slot}.log",
                 "Restart=on-failure",
                 "RestartSec=30",
                 "TimeoutStopSec=30",

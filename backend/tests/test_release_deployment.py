@@ -86,6 +86,20 @@ def test_generated_and_legacy_services_retry_three_times_every_thirty_seconds(mo
         assert "StartLimitBurst=4" in unit
 
 
+def test_generated_services_append_stdout_and_stderr_to_slot_log(monkeypatch, tmp_path: Path):
+    target = deployment(tmp_path)
+    monkeypatch.setattr(release_module, "command", lambda *args, **kwargs: completed())
+
+    target.write_units()
+
+    log_dir = tmp_path / "log"
+    for slot in release_module.SLOTS:
+        unit = (target.systemd_dir / target.unit_name(slot)).read_text(encoding="utf-8")
+        expected = log_dir / f"webnas-backend-{slot}.log"
+        assert f"StandardOutput=append:{expected}" in unit
+        assert f"StandardError=append:{expected}" in unit
+
+
 def test_generated_services_allow_package_manager_writes(monkeypatch, tmp_path: Path):
     target = deployment(tmp_path)
     monkeypatch.setattr(release_module, "command", lambda *args, **kwargs: completed())
