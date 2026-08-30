@@ -1,0 +1,120 @@
+name: Installation smoke test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: Install WebNAS on clean Ubuntu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      WEBNAS_TEST_PORT: "5099"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Verify runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          command -v sudo
+          command -v systemctl
+          sudo systemctl is-system-running >/dev/null 2>&1 || true
+
+      - name: Run full installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo ./install.sh \
+            --yes \
+            --port "${WEBNAS_TEST_PORT}"
+
+      - name: Verify installed files and release provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -L /opt/webnas/current
+          test -x /opt/webnas/current/backend/.venv/bin/python
+          test -f /opt/webnas/current/frontend/dist/index.html
+          test -f /etc/webnas/config.yaml
+          test -f /var/lib/webnas/settings/deployment.json
+          test -f /opt/webnas/current/.webnas-revision
+          installed_sha="$(sudo cat /opt/webnas/current/.webnas-revision)"
+          test "${installed_sha}" = "${GITHUB_SHA}"
+
+      - name: Verify services and HTTP health
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo systemctl is-active --quiet nginx
+          active_backends="$(sudo systemctl is-active webnas-backend-blue.service webnas-backend-green.service 2>/dev/null | grep -c '^active$' || true)"
+          test "${active_backends}" -eq 1
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --retry 10 \
+            --retry-delay 2 \
+            --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+          auth_config="$(curl --fail --silent --show-error "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/auth/config")"
+          python3 - "${auth_config}" <<'PY'
+          import json
+          import sys
+
+          payload = json.loads(sys.argv[1])
+          assert payload.get("mode") in {"local", "system"}, payload
+          PY
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          echo "=== WebNAS filesystem ==="
+          sudo find /opt/webnas -maxdepth 3 \( -type f -o -type l \) 2>/dev/null | sort | head -n 300
+          echo "=== systemd status ==="
+          sudo systemctl status nginx webnas webnas-backend-blue webnas-backend-green --no-pager -l
+          echo "=== WebNAS journals ==="
+          sudo journalctl -u nginx -u webnas -u webnas-backend-blue -u webnas-backend-green -n 250 --no-pager
+          echo "=== Listening sockets ==="
+          sudo ss -ltnp
+          echo "=== Installer configuration ==="
+          sudo cat /etc/webnas/config.yaml 2>/dev/null || true
+          echo "=== Deployment state ==="
+          sudo cat /var/lib/webnas/settings/deployment.json 2>/dev/null || true
+
+      - name: Uninstall test installation
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ -x /opt/webnas/uninstall.sh ]]; then
+            printf 'REMOVE WEBNAS\n' | sudo /opt/webnas/uninstall.sh --yes --remove-data
+          else
+            sudo systemctl disable --now webnas.service webnas-backend-blue.service webnas-backend-green.service 2>/dev/null || true
+            sudo rm -f /etc/systemd/system/webnas.service \
+              /etc/systemd/system/webnas-backend-blue.service \
+              /etc/systemd/system/webnas-backend-green.service \
+              /etc/nginx/conf.d/webnas.conf
+            sudo systemctl daemon-reload || true
+            sudo systemctl reload nginx 2>/dev/null || true
+            sudo rm -rf /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas
+          fi
