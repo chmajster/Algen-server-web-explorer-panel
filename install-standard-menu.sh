@@ -94,6 +94,75 @@ read_menu_choice() {
   printf '1'
 }
 
+configured_application_port() {
+  local config_file="/etc/webnas/config.yaml"
+  local configured=""
+
+  if [[ -r "$config_file" ]]; then
+    configured="$(awk '
+      /^server:[[:space:]]*$/ { in_server=1; next }
+      in_server && /^[^[:space:]]/ { exit }
+      in_server && /^[[:space:]]+port:[[:space:]]*/ {
+        sub(/^[[:space:]]+port:[[:space:]]*/, "")
+        sub(/[[:space:]#].*$/, "")
+        gsub(/"/, "")
+        gsub(/\047/, "")
+        print
+        exit
+      }
+    ' "$config_file" 2>/dev/null || true)"
+  fi
+
+  if [[ "$configured" =~ ^[0-9]+$ ]] && (( configured >= 1 && configured <= 65535 )); then
+    printf '%s' "$configured"
+  else
+    printf '%s' "5000"
+  fi
+}
+
+application_transport_scheme() {
+  local config_file="/etc/webnas/config.yaml"
+  local transport_file="/var/lib/webnas/settings/transport.json"
+
+  if [[ -r "$transport_file" ]] && grep -Eq '"use_https"[[:space:]]*:[[:space:]]*true' "$transport_file"; then
+    printf '%s' "https"
+    return
+  fi
+  if [[ -r "$config_file" ]] && grep -Eq '^[[:space:]]*use_https:[[:space:]]*true[[:space:]]*$' "$config_file"; then
+    printf '%s' "https"
+  else
+    printf '%s' "http"
+  fi
+}
+
+wait_for_application_health() {
+  local port=""
+  local scheme=""
+  local attempt=""
+  local -a curl_options=(--fail --silent --max-time 2)
+
+  command -v curl >/dev/null 2>&1 || {
+    printf '[ERROR] Cannot verify WebNAS readiness after restart: curl is unavailable.\n' >&2
+    return 1
+  }
+
+  port="$(configured_application_port)"
+  scheme="$(application_transport_scheme)"
+  [[ "$scheme" != "https" ]] || curl_options+=(--insecure)
+
+  printf '[INFO] Waiting for WebNAS health endpoint on %s://127.0.0.1:%s ...\n' "$scheme" "$port"
+  for attempt in {1..20}; do
+    if curl "${curl_options[@]}" "${scheme}://127.0.0.1:${port}/api/health" >/dev/null 2>&1; then
+      printf '[OK] WebNAS health check passed after restart.\n'
+      return 0
+    fi
+    sleep 1
+  done
+
+  printf '[ERROR] WebNAS service is active, but /api/health did not become ready within 20 seconds.\n' >&2
+  return 1
+}
+
 restart_application() {
   local unit=""
   local -a active_units=()
@@ -135,6 +204,7 @@ restart_application() {
     fi
   done
 
+  wait_for_application_health
   printf '[OK] WebNAS application restarted: %s\n' "${active_units[*]}"
 }
 
