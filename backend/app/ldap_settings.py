@@ -53,6 +53,12 @@ def _audit(user: SessionUser, action: str, *, status: ActivityStatus = ActivityS
     )
 
 
+def _diagnostics_ok(result: dict) -> bool:
+    """Accept warnings but never activate a configuration with an error step."""
+    steps = result.get("steps") or []
+    return bool(steps) and not any(str(step.get("status") or "").casefold() == "error" for step in steps if isinstance(step, dict))
+
+
 @router.get("")
 def get_ldap_settings(user: SessionUser = Depends(admin_read)):
     _ = user
@@ -72,8 +78,8 @@ def save_ldap_settings(payload: LdapAuthenticationSettingsInput, user: SessionUs
             if policy.get("mode") == "mapped_groups" and not store.mappings():
                 raise ValueError("At least one LDAP group mapping is required by the current access policy")
             result = diagnostics("")
-            if result.get("overall") == "unhealthy":
-                _audit(user, "ldap.authentication.preflight", status=ActivityStatus.failure, details={"overall": "unhealthy"})
+            if not _diagnostics_ok(result):
+                _audit(user, "ldap.authentication.preflight", status=ActivityStatus.failure, details={"overall": result.get("overall")})
                 raise ValueError("LDAP Authentication preflight failed; configuration was saved disabled")
             saved = store.set_enabled(True, user.username)
         else:
@@ -158,14 +164,14 @@ def save_access_policy(payload: LdapAccessPolicyInput, user: SessionUser = Depen
 @router.post("/diagnostics")
 def run_diagnostics(payload: LdapDiagnosticsRequest, user: SessionUser = Depends(admin_write)):
     result = diagnostics(payload.username.strip())
-    _audit(user, "ldap.authentication.diagnostics", status=ActivityStatus.success if result.get("overall") == "healthy" else ActivityStatus.failure, details={"overall": result.get("overall"), "server": result.get("server")})
+    _audit(user, "ldap.authentication.diagnostics", status=ActivityStatus.success if _diagnostics_ok(result) else ActivityStatus.failure, details={"overall": result.get("overall"), "server": result.get("server")})
     return result
 
 
 @router.post("/test")
 def test_saved_ldap_settings(user: SessionUser = Depends(admin_write)):
     result = diagnostics("")
-    ok = result.get("overall") != "unhealthy"
+    ok = _diagnostics_ok(result)
     _audit(user, "ldap.connection.tested", status=ActivityStatus.success if ok else ActivityStatus.failure, details={"overall": result.get("overall"), "server": result.get("server")})
     if not ok:
         raise HTTPException(
