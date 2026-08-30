@@ -4,11 +4,23 @@ import { me, request, resetAuthenticationState } from "../../core/api/transport"
 import { translate, type Language } from "../../i18n";
 import type { User } from "../../app/types";
 
-type AuthProvider = "pam" | "ldap";
+type AuthProvider = "local" | "pam" | "ldap";
 type AuthConfig = {
+  mode: "local" | "system";
+  local_enabled: boolean;
   pam_enabled: boolean;
   ldap_enabled: boolean;
+  available_providers: AuthProvider[];
   default_provider: AuthProvider;
+};
+
+const defaultAuthConfig: AuthConfig = {
+  mode: "local",
+  local_enabled: true,
+  pam_enabled: false,
+  ldap_enabled: false,
+  available_providers: ["local"],
+  default_provider: "local",
 };
 
 function authenticationError(reason: unknown, t: (key: string) => string) {
@@ -23,20 +35,16 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [provider, setProvider] = useState<AuthProvider>("pam");
-  const [authConfig, setAuthConfig] = useState<AuthConfig>({
-    pam_enabled: true,
-    ldap_enabled: false,
-    default_provider: "pam",
-  });
+  const [provider, setProvider] = useState<AuthProvider>("local");
+  const [authConfig, setAuthConfig] = useState<AuthConfig>(defaultAuthConfig);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const submitting = useRef(false);
   const t = (key: string) => translate(language, key);
   const providerLabel = language === "pl-PL" ? "Metoda logowania" : "Authentication method";
-  const usernameLabel = authConfig.ldap_enabled
-    ? (language === "pl-PL" ? "Nazwa użytkownika" : "Username")
-    : t("auth.linuxUser");
+  const usernameLabel = authConfig.mode === "system" && !authConfig.ldap_enabled
+    ? t("auth.linuxUser")
+    : (language === "pl-PL" ? "Nazwa użytkownika" : "Username");
 
   useEffect(() => {
     let live = true;
@@ -44,12 +52,12 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
       .then((value) => {
         if (!live) return;
         setAuthConfig(value);
-        setProvider(value.ldap_enabled ? "ldap" : "pam");
+        setProvider(value.default_provider);
       })
       .catch(() => {
         if (!live) return;
-        setAuthConfig({ pam_enabled: true, ldap_enabled: false, default_provider: "pam" });
-        setProvider("pam");
+        setAuthConfig(defaultAuthConfig);
+        setProvider("local");
       });
     return () => { live = false; };
   }, []);
@@ -86,11 +94,13 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
     }
   }
 
+  const showSystemProviderSelector = authConfig.mode === "system" && authConfig.ldap_enabled;
+
   return <main className="login-screen">
     <form className="login-panel" onSubmit={submit} aria-busy={loading}>
       <header className="login-brand"><span className="login-brand-icon"><HardDrive aria-hidden="true" /></span><div><h1>WebNAS</h1><p>{t("auth.subtitle")}</p></div></header>
       <div className="login-fields">
-        {authConfig.ldap_enabled && <label className="login-field"><span>{providerLabel}</span><select aria-label={providerLabel} value={provider} onChange={(event) => setProvider(event.target.value as AuthProvider)}><option value="ldap">LDAP</option><option value="pam">PAM</option></select></label>}
+        {showSystemProviderSelector && <label className="login-field"><span>{providerLabel}</span><select aria-label={providerLabel} value={provider} onChange={(event) => setProvider(event.target.value as AuthProvider)}><option value="ldap">LDAP</option><option value="pam">PAM</option></select></label>}
         <label className="login-field"><span>{usernameLabel}</span><span className="login-input"><UserRound aria-hidden="true" /><input autoFocus required autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" value={username} aria-invalid={Boolean(error)} aria-describedby={error ? "login-error" : undefined} onChange={(event) => setUsername(event.target.value)} /></span></label>
         <label className="login-field"><span>{t("auth.password")}</span><span className="login-input"><LockKeyhole aria-hidden="true" /><input required type={passwordVisible ? "text" : "password"} autoComplete="current-password" value={password} aria-invalid={Boolean(error)} aria-describedby={error ? "login-error" : undefined} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="login-password-toggle" aria-label={t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")} aria-pressed={passwordVisible} onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}</button></span></label>
       </div>
