@@ -13,5 +13,5 @@ beforeEach(() => {
 test("renders firewall dashboard", async () => {
   render(<FirewallManagerApp permissions={["firewall.view"]} toast={vi.fn()} />);
   expect(await screen.findByText("Firewall Manager")).toBeInTheDocument();
-  expect(await screen.findByText("ufw")).toBeInTheDocument();
+  expect((await screen.findAllByText("ufw")).length).toBeGreaterThan(0);
 });
