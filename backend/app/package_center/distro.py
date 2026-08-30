@@ -51,6 +51,11 @@ def compatibility_issue(manifest: ModuleManifest, distro: DistributionInfo) -> s
         return f"Distribution '{distro.id}' is not supported by module '{manifest.id}'"
     if distro.architecture not in manifest.supported_architectures:
         return f"Architecture '{distro.architecture}' is not supported by module '{manifest.id}'"
+    # Package-less modules are repository-owned WebNAS features. Their lifecycle
+    # only toggles Module Center state and must not require a host package manager
+    # or a synthetic installation strategy.
+    if manifest.package_less:
+        return None
     if distro.package_manager is None:
         return "No supported package manager was detected on this system"
     installation = installation_for(manifest, distro)
