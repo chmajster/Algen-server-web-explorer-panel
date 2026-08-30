@@ -91,7 +91,6 @@ class FakeSecretsService:
     def __init__(self):
         self.secret_id = "ldap-secret"
         self.secret = ""
-        self.deleted = False
 
     def save(self, payload, actor, secret_id=None):
         if payload.secret:
@@ -99,7 +98,6 @@ class FakeSecretsService:
         return {"id": secret_id or self.secret_id}
 
     def delete(self, secret_id, actor):
-        self.deleted = True
         self.secret = ""
 
     def verified_secret(self, secret_id, *, module_id, purpose):
@@ -260,7 +258,7 @@ def test_ldap_identity_cannot_collide_with_local_passwd_user(monkeypatch):
         ldap_auth._assert_identity_namespace_available("admin")
 
 
-def test_first_ldap_login_cannot_inherit_existing_local_rbac_policy(monkeypatch):
+def test_first_ldap_login_cannot_inherit_existing_system_rbac_policy(monkeypatch):
     monkeypatch.setattr(auth, "is_local_passwd_user", lambda username: False)
     monkeypatch.setattr(ldap_auth, "is_ldap_identity", lambda username: False)
     monkeypatch.setattr(
@@ -283,16 +281,10 @@ def test_known_ldap_identity_can_keep_explicit_rbac_policy(monkeypatch):
     ldap_auth._assert_identity_namespace_available("alice")
 
 
-def test_ldap_identity_never_inherits_linux_admin_from_sudo_or_wheel(monkeypatch):
+def test_ldap_identity_never_inherits_linux_admin(monkeypatch):
     monkeypatch.setattr(ldap_auth, "is_ldap_identity", lambda username: True)
     monkeypatch.setattr(identity_service_module.linux_accounts, "is_linux_admin", lambda username: True)
     assert identity_service_module._provider_safe_linux_admin("alice") is False
-
-
-def test_regular_pam_identity_keeps_linux_admin_semantics(monkeypatch):
-    monkeypatch.setattr(ldap_auth, "is_ldap_identity", lambda username: False)
-    monkeypatch.setattr(identity_service_module.linux_accounts, "is_linux_admin", lambda username: True)
-    assert identity_service_module._provider_safe_linux_admin("root") is True
 
 
 def test_local_passwd_detection_does_not_treat_nss_only_user_as_pam(tmp_path: Path):
@@ -334,13 +326,26 @@ def test_bind_password_is_preserved_when_settings_update_omits_secret(monkeypatc
     assert fake_secrets.secret == "top-secret"
 
 
-def test_provider_defaults_follow_ldap_enabled(monkeypatch):
+def test_local_mode_is_default_provider_and_rejects_system_providers(monkeypatch):
+    monkeypatch.setattr(auth_api, "auth_mode", lambda: "local")
+    monkeypatch.setattr(auth_api, "ldap_enabled", lambda: True)
+    assert auth_api._selected_provider(None) == "local"
+    assert auth_api._selected_provider("local") == "local"
+    for provider in ("pam", "ldap"):
+        with pytest.raises(HTTPException) as error:
+            auth_api._selected_provider(provider)
+        assert error.value.status_code == 400
+
+
+def test_system_mode_provider_defaults_follow_ldap_enabled(monkeypatch):
+    monkeypatch.setattr(auth_api, "auth_mode", lambda: "system")
     monkeypatch.setattr(auth_api, "ldap_enabled", lambda: False)
     assert auth_api._selected_provider(None) == "pam"
     assert auth_api._selected_provider("pam") == "pam"
-    with pytest.raises(HTTPException) as error:
+    with pytest.raises(HTTPException):
+        auth_api._selected_provider("local")
+    with pytest.raises(HTTPException):
         auth_api._selected_provider("ldap")
-    assert error.value.status_code == 400
 
     monkeypatch.setattr(auth_api, "ldap_enabled", lambda: True)
     assert auth_api._selected_provider(None) == "ldap"
@@ -348,11 +353,14 @@ def test_provider_defaults_follow_ldap_enabled(monkeypatch):
     assert auth_api._selected_provider("pam") == "pam"
 
 
-def test_failed_ldap_login_never_calls_pam(monkeypatch):
+def test_failed_ldap_login_never_calls_pam_or_local(monkeypatch):
     pam_calls = []
+    local_calls = []
+    monkeypatch.setattr(auth_api, "auth_mode", lambda: "system")
     monkeypatch.setattr(auth_api, "ldap_enabled", lambda: True)
     monkeypatch.setattr(auth_api, "authenticate_ldap", lambda username, password: (_ for _ in ()).throw(LdapInvalidCredentials()))
     monkeypatch.setattr(auth_api, "_pam_identity", lambda username, password: pam_calls.append(username))
+    monkeypatch.setattr(auth_api, "_local_identity", lambda username, password: local_calls.append(username))
     monkeypatch.setattr(auth_api, "record_activity", lambda *args, **kwargs: None)
     monkeypatch.setattr(auth_api.rate_limiter, "check", lambda key: None)
     monkeypatch.setattr(auth_api.rate_limiter, "record_failure", lambda key: None)
@@ -365,12 +373,16 @@ def test_failed_ldap_login_never_calls_pam(monkeypatch):
         )
     assert error.value.status_code == 401
     assert pam_calls == []
+    assert local_calls == []
 
 
-def test_failed_pam_login_never_calls_ldap(monkeypatch):
+def test_failed_pam_login_never_calls_ldap_or_local(monkeypatch):
     ldap_calls = []
+    local_calls = []
+    monkeypatch.setattr(auth_api, "auth_mode", lambda: "system")
     monkeypatch.setattr(auth_api, "ldap_enabled", lambda: True)
     monkeypatch.setattr(auth_api, "authenticate_ldap", lambda username, password: ldap_calls.append(username))
+    monkeypatch.setattr(auth_api, "_local_identity", lambda username, password: local_calls.append(username))
 
     def fail_pam(username, password):
         raise HTTPException(401, "Invalid username or password")
@@ -388,29 +400,21 @@ def test_failed_pam_login_never_calls_ldap(monkeypatch):
         )
     assert error.value.status_code == 401
     assert ldap_calls == []
+    assert local_calls == []
 
 
-def test_session_store_persists_authentication_provider(tmp_path: Path):
+def test_session_store_persists_all_authentication_providers(tmp_path: Path):
     store = SessionStore(tmp_path / "sessions.sqlite3", "pepper")
-    store.create(
-        "ldap-token",
-        "alice",
-        "csrf",
-        persistent=False,
-        expires_at=9999999999,
-        auth_provider="ldap",
-    )
-    ldap_session = store.resolve("ldap-token")
-    assert ldap_session is not None
-    assert ldap_session.auth_provider == "ldap"
-
-    store.create(
-        "pam-token",
-        "root",
-        "csrf2",
-        persistent=False,
-        expires_at=9999999999,
-    )
-    pam_session = store.resolve("pam-token")
-    assert pam_session is not None
-    assert pam_session.auth_provider == "pam"
+    for provider, username in (("local", "admin"), ("ldap", "alice"), ("pam", "root")):
+        token = f"{provider}-token"
+        store.create(
+            token,
+            username,
+            "csrf",
+            persistent=False,
+            expires_at=9999999999,
+            auth_provider=provider,
+        )
+        session = store.resolve(token)
+        assert session is not None
+        assert session.auth_provider == provider
