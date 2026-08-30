@@ -561,14 +561,17 @@ class FirewallService:
                 restored += 1
             if bool(payload.get("active")) != bool(self.status().get("active")):
                 self.set_enabled(bool(payload.get("active")))
-        except Exception:
+        except Exception as error:
+            rollback_failed = False
             for item in current:
                 if backend == FirewallBackend.nftables and not item.editable:
                     continue
                 try:
                     self.add_rule(self._input_from_rule(item))
                 except Exception:
-                    pass
+                    rollback_failed = True
+            if rollback_failed:
+                raise FirewallError("firewall backup restore failed and rollback could not be completed") from error
             raise
         return {"backup_id": backup_id, "restored_rules": restored, "backend": backend.value}
 
