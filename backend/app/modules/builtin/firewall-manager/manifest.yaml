@@ -1,0 +1,10 @@
+id: firewall-manager
+name: Firewall Manager
+version: 1.0.0
+category: security
+icon: shield
+permissions: [firewall.view, firewall.rules.create, firewall.rules.edit, firewall.rules.delete, firewall.enable, firewall.disable, firewall.reload, firewall.backup, firewall.restore]
+routers: [app.modules.firewall_manager.router:router]
+dependencies: [identity, package-center, activity]
+capabilities: [status, rules, listening-ports, backups, import-export, jobs]
+menu: [{id: firewall-manager, label: Firewall Manager, icon: shield, permission: firewall.view}]

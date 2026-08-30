@@ -1,0 +1,10 @@
+id: network-tools
+name: Network Tools
+version: 1.0.0
+category: network
+icon: network
+permissions: [network_tools.view, network_tools.ping, network_tools.traceroute, network_tools.dns, network_tools.port_test, network_tools.http_test, network_tools.routes, network_tools.connections]
+routers: [app.modules.network_tools.router:router]
+dependencies: [identity, activity]
+capabilities: [ping, traceroute, dns, reverse-dns, tcp-port-test, http-test, route-lookup, routes, neighbors, interfaces, listening-ports, connections, dns-configuration]
+menu: [{id: network-tools, label: Network Tools, icon: network, permission: network_tools.view}]

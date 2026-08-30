@@ -1,0 +1,51 @@
+id: network-tools
+name: Network Tools
+description: Safe typed network diagnostics without exposing a web terminal.
+long_description: Ping, traceroute, DNS, reverse DNS, TCP and HTTP tests plus read-only route, neighbor, interface, listening-port, active-connection and DNS configuration views. Inputs are validated and commands use fixed argv arrays with timeouts and output limits.
+category: network
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: network
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages:
+  apt: [iproute2, iputils-ping, traceroute, dnsutils]
+  dnf: [iproute, iputils, traceroute, bind-utils]
+  yum: [iproute, iputils, traceroute, bind-utils]
+installations:
+  apt: {type: system_package, packages: [iproute2, iputils-ping, traceroute, dnsutils]}
+  dnf: {type: system_package, packages: [iproute, iputils, traceroute, bind-utils]}
+  yum: {type: system_package, packages: [iproute, iputils, traceroute, bind-utils]}
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: false
+  reload: false
+  logs: false
+  diagnostics: true
+  backups: false
+  import_export: false
+  healthcheck: false
+  resources: [routes, connections, listening-ports, interfaces, neighbors, dns]
+  actions: [ping, traceroute, dns, reverse_dns, port_test, http_test, route_lookup]
+ports: []
+dependencies: []
+conflicts: []
+permissions: [network_tools.view, network_tools.ping, network_tools.traceroute, network_tools.dns, network_tools.port_test, network_tools.http_test, network_tools.routes, network_tools.connections]
+config_paths: [/etc/resolv.conf]
+data_paths: []
+backup_paths: []
+proxmox_safe: true
+requires_reboot: false
+requires_root: false
+configurable: false
+removable: true
+package_less: false
+ui: {hidden: false}
+changelog:
+  - Initial safe network diagnostic suite integrated with the existing Networking data collectors.

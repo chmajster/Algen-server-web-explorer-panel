@@ -140,3 +140,17 @@ test("Package Center loads catalog and executes mocked install and uninstall", a
   await uninstallConfirm.click();
   await expect.poll(() => state.calls.some((call) => call === "POST /api/apps/samba/uninstall")).toBeTruthy();
 });
+
+
+test("Firewall Manager, Security Center and Network Tools load as native desktop modules", async ({ page }) => {
+  await installMockApi(page);
+  await page.goto("/");
+  await openDesktopApp(page, "Firewall Manager");
+  await expect(page.getByRole("navigation", { name: "Firewall sections" })).toBeVisible();
+  await openDesktopApp(page, "Security Center");
+  await expect(page.getByText("92/100")).toBeVisible();
+  await openDesktopApp(page, "Network Tools");
+  const networkWindow = page.locator('.desktop-window.active[aria-label="Network Tools"]');
+  await networkWindow.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(networkWindow.getByText(/3 packets transmitted/)).toBeVisible();
+});

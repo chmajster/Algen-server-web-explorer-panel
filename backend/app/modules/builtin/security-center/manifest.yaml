@@ -1,0 +1,10 @@
+id: security-center
+name: Security Center
+version: 1.0.0
+category: security
+icon: shield-check
+permissions: [security.view, security.scan, security.findings.manage]
+routers: [app.modules.security_center.router:router]
+dependencies: [identity, package-center, activity, firewall-manager]
+capabilities: [security-score, findings, authentication, network-exposure, updates, tls, users, audit, security-checks, jobs]
+menu: [{id: security-center, label: Security Center, icon: shield-check, permission: security.view}]
