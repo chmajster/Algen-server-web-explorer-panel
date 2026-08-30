@@ -42,7 +42,8 @@ def _validate_javascript(scripts: list[Path]) -> None:
     if not node:
         raise ValueError("Node.js is required to validate the generated frontend JavaScript")
 
-    for script in scripts:
+    total = len(scripts)
+    for position, script in enumerate(scripts, start=1):
         result = subprocess.run(
             [node, "--check", str(script)],
             capture_output=True,
@@ -54,6 +55,8 @@ def _validate_javascript(scripts: list[Path]) -> None:
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).strip()[-2000:]
             raise ValueError(f"Frontend JavaScript is truncated or invalid: {script}: {detail}")
+        if position == 1 or position % 25 == 0 or position == total:
+            print(f"[INFO] JavaScript syntax validation: {position}/{total} assets checked", flush=True)
 
 
 def _write_manifest(manifest_path: Path, payload: dict[str, object]) -> None:
@@ -150,9 +153,16 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("dist", type=Path)
     args = parser.parse_args()
-    referenced = verify(args.dist.resolve())
+    dist = args.dist.resolve()
+    print(f"[INFO] Validating frontend bundle: {dist}", flush=True)
     print(
-        "Verified frontend build: "
+        "[INFO] Checking index references, JavaScript syntax, required API contracts, "
+        "and SHA-256 integrity. This may take a moment.",
+        flush=True,
+    )
+    referenced = verify(dist)
+    print(
+        "[OK] Verified frontend build: "
         f"{len(referenced)} active assets, JavaScript syntax valid, SHA-256 manifest consistent"
     )
     return 0
