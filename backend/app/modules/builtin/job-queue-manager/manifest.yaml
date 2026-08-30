@@ -1,0 +1,11 @@
+id: job-queue-manager
+name: Job Queue Manager
+version: 1.0.0
+category: system
+icon: list-checks
+permissions: [jobs.view, jobs.manage, jobs.cancel, jobs.retry]
+routers: []
+dependencies: [package-center]
+capabilities: [queue, priorities, progress, logs, retry, cancel, timeout, dependencies, recovery, retention]
+actions: [view, cancel, retry, cleanup]
+menu: [{id: job-queue-manager, label: Job Queue Manager, icon: list-checks, permission: jobs.view}]

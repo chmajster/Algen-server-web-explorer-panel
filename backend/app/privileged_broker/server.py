@@ -14,8 +14,9 @@ from pydantic import ValidationError
 
 from app.core.redaction import redact_text
 
-from .protocol import BrokerRequest, BrokerResponse, MAX_FRAME_BYTES, encode_frame
-from .storage_policy import dispatch
+from .infrastructure_policy import dispatch_infrastructure
+from .protocol import BrokerRequest, BrokerResponse, MAX_FRAME_BYTES, Operation, encode_frame
+from .storage_policy import dispatch as standard_dispatch
 
 
 logger = logging.getLogger("webnas.privileged_broker")
@@ -23,6 +24,7 @@ DEFAULT_SOCKET = Path("/run/webnas/privileged.sock")
 DEFAULT_ALLOWED_USER = "webnas"
 _MAX_WORKERS = 16
 _workers = threading.BoundedSemaphore(_MAX_WORKERS)
+_INFRASTRUCTURE_OPERATIONS = {Operation.NTP, Operation.ROUTING, Operation.SESSION}
 
 
 def peer_credentials(connection: socket.socket) -> tuple[int, int, int]:
@@ -98,7 +100,11 @@ def handle_connection(connection: socket.socket, *, expected_uid: int) -> None:
             pid,
             uid,
         )
-        response = dispatch(request)
+        response = (
+            dispatch_infrastructure(request)
+            if request.operation in _INFRASTRUCTURE_OPERATIONS
+            else standard_dispatch(request)
+        )
         logger.info(
             "privileged_broker_result request_id=%s operation=%s ok=%s exit_code=%s error_code=%s",
             request.request_id,
