@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import os
 import pwd
 import re
@@ -174,7 +173,6 @@ class LdapSettingsRepository:
     def __init__(self, path: Path | None = None) -> None:
         root = Path(get_config().paths.data_dir).resolve(strict=False)
         self.path = path or root / "ldap-auth.sqlite3"
-        self.homes_root = root / "ldap-homes"
         self._lock = threading.RLock()
         self._initialize()
 
@@ -223,10 +221,8 @@ class LdapSettingsRepository:
                 );
                 """
             )
-        self.homes_root.mkdir(parents=True, exist_ok=True)
         try:
             os.chmod(self.path, 0o600)
-            os.chmod(self.homes_root, 0o700)
         except OSError:
             pass
 
@@ -280,6 +276,9 @@ class LdapSettingsRepository:
             )
             secret_id = str(secret["id"])
         elif secret_id:
+            # Secrets Manager preserves the existing encrypted value when an
+            # update omits ``secret``. This lets the UI save other LDAP fields
+            # without ever round-tripping the bind password through the browser.
             secrets_service().save(
                 SecretInput(
                     name=LDAP_BIND_SECRET_NAME,
@@ -343,16 +342,10 @@ class LdapSettingsRepository:
         username: str,
         dn: str,
         *,
+        home: str,
         display_name: str = "",
         email: str = "",
     ) -> str:
-        digest = hashlib.sha256(username.casefold().encode("utf-8")).hexdigest()[:24]
-        home = self.homes_root / digest
-        home.mkdir(parents=True, exist_ok=True)
-        try:
-            os.chmod(home, 0o700)
-        except OSError:
-            pass
         now = time.time()
         with self._lock, self.connect() as connection:
             connection.execute(
@@ -365,9 +358,9 @@ class LdapSettingsRepository:
                     display_name=excluded.display_name,email=excluded.email,
                     home=excluded.home,last_login_at=excluded.last_login_at
                 """,
-                (self._key(username), username, dn, display_name, email, str(home), now, now),
+                (self._key(username), username, dn, display_name, email, home, now, now),
             )
-        return str(home)
+        return home
 
     def home(self, username: str) -> str | None:
         row = self.identity(username)
@@ -392,6 +385,13 @@ def ldap_home(username: str) -> str | None:
         return settings_repository().home(username)
     except Exception:
         return None
+
+
+def is_ldap_identity(username: str) -> bool:
+    try:
+        return settings_repository().identity(username) is not None
+    except Exception:
+        return False
 
 
 def _server_coordinates(settings: LdapSettings) -> tuple[str, int]:
@@ -467,17 +467,42 @@ def _attribute(entry: dict[str, Any], name: str) -> str:
 
 
 def _assert_identity_namespace_available(username: str) -> None:
-    try:
-        pwd.getpwnam(username)
-    except KeyError:
-        pass
-    else:
+    # ``pwd.getpwnam`` includes NSS identities, so it cannot distinguish a
+    # genuine local PAM account from an LDAP/SSSD account. Only /etc/passwd is
+    # authoritative for the local PAM namespace.
+    from .auth import is_local_passwd_user
+
+    if is_local_passwd_user(username):
         raise LdapInvalidCredentials("local identity collision")
 
-    # A deleted/local account may leave a WebNAS policy behind. Do not allow an
-    # external identity to inherit that policy merely by reusing its username.
-    if identity_repository().user_policy(username) is not None:
+    known_ldap_identity = is_ldap_identity(username)
+    # A policy that predates the first LDAP login belongs to the local/PAM
+    # namespace. Once the LDAP identity is known, administrators may explicitly
+    # assign WebNAS RBAC policy to it without preventing subsequent logins.
+    if identity_repository().user_policy(username) is not None and not known_ldap_identity:
         raise LdapInvalidCredentials("local RBAC identity collision")
+
+
+def _posix_identity(username: str) -> pwd.struct_passwd:
+    """Resolve an authenticated LDAP identity through NSS/SSSD/nslcd/winbind.
+
+    WebNAS filesystem operations impersonate the authenticated Unix UID/GID.
+    Therefore a directory identity must have a POSIX mapping before a session is
+    created; a synthetic application-only home would authenticate successfully
+    but fail later at the worker privilege boundary.
+    """
+
+    try:
+        account = pwd.getpwnam(username)
+    except KeyError as error:
+        raise LdapServiceUnavailable("identity", "LDAP_POSIX_IDENTITY_UNAVAILABLE") from error
+    cfg = get_config()
+    if account.pw_uid == 0 or account.pw_uid < cfg.security.system_uid_threshold:
+        raise LdapServiceUnavailable("identity", "LDAP_POSIX_IDENTITY_UNSAFE")
+    home = str(account.pw_dir or "").strip()
+    if not home or not Path(home).is_absolute():
+        raise LdapServiceUnavailable("identity", "LDAP_POSIX_HOME_INVALID")
+    return account
 
 
 def ldap_user_search_filter(template: str, username: str) -> str:
@@ -509,6 +534,7 @@ def authenticate_ldap(username: str, password: str) -> AuthenticatedIdentity:
             service_connection = _connection(settings, user=settings.bind_dn, password=bind_password)
         except LDAPInvalidCredentialsResult as error:
             raise LdapServiceUnavailable("bind", "LDAP_BIND_FAILED") from error
+
         search_filter = ldap_user_search_filter(settings.user_search_filter, username)
         attributes = list(
             dict.fromkeys(
@@ -519,14 +545,15 @@ def authenticate_ldap(username: str, password: str) -> AuthenticatedIdentity:
                 ]
             )
         )
-        service_connection.search(
+        if not service_connection.search(
             search_base=settings.user_search_base,
             search_filter=search_filter,
             search_scope=SUBTREE,
             attributes=[item for item in attributes if item],
             size_limit=2,
             time_limit=max(1, int(settings.operation_timeout)),
-        )
+        ):
+            raise LdapServiceUnavailable("search", "LDAP_SEARCH_FAILED")
         entries = [
             item
             for item in service_connection.response
@@ -538,17 +565,23 @@ def authenticate_ldap(username: str, password: str) -> AuthenticatedIdentity:
         dn = str(entry.get("dn") or "")
         if not dn:
             raise LdapInvalidCredentials("LDAP identity has no DN")
+        returned_username = _attribute(entry, settings.username_attribute)
+        if not returned_username or returned_username.casefold() != username.casefold():
+            raise LdapInvalidCredentials("LDAP identity does not match requested username")
 
         try:
             user_connection = _connection(settings, user=dn, password=password)
         except LDAPInvalidCredentialsResult as error:
             raise LdapInvalidCredentials("invalid credentials") from error
+
         _assert_identity_namespace_available(username)
+        account = _posix_identity(username)
         display_name = _attribute(entry, settings.display_name_attribute)
         email = _attribute(entry, settings.email_attribute)
         home = settings_repository().remember_identity(
             username,
             dn,
+            home=str(account.pw_dir),
             display_name=display_name,
             email=email,
         )
@@ -559,9 +592,7 @@ def authenticate_ldap(username: str, password: str) -> AuthenticatedIdentity:
             display_name=display_name,
             email=email,
         )
-    except LdapInvalidCredentials:
-        raise
-    except LdapConfigurationError:
+    except (LdapInvalidCredentials, LdapConfigurationError, LdapServiceUnavailable):
         raise
     except LDAPStartTLSError as error:
         logger.warning("ldap_authentication_failed stage=tls error=%s", type(error).__name__)
@@ -595,22 +626,28 @@ def test_ldap_connection() -> dict[str, Any]:
             connection = _connection(settings, user=settings.bind_dn, password=bind_password)
         except LDAPInvalidCredentialsResult as error:
             raise LdapServiceUnavailable("bind", "LDAP_BIND_FAILED") from error
+
         # A zero-result search is valid here: the purpose is to verify that the
         # configured search base/filter can be executed without exposing users.
         search_filter = ldap_user_search_filter(
             settings.user_search_filter,
             "__webnas_connection_test__",
         )
-        connection.search(
-            search_base=settings.user_search_base,
-            search_filter=search_filter,
-            search_scope=SUBTREE,
-            attributes=[settings.username_attribute],
-            size_limit=1,
-            time_limit=max(1, int(settings.operation_timeout)),
-        )
+        try:
+            searched = connection.search(
+                search_base=settings.user_search_base,
+                search_filter=search_filter,
+                search_scope=SUBTREE,
+                attributes=[settings.username_attribute],
+                size_limit=1,
+                time_limit=max(1, int(settings.operation_timeout)),
+            )
+        except LDAPException as error:
+            raise LdapServiceUnavailable("search", "LDAP_SEARCH_FAILED") from error
+        if not searched:
+            raise LdapServiceUnavailable("search", "LDAP_SEARCH_FAILED")
         return {"ok": True, "stage": "search"}
-    except LdapConfigurationError:
+    except (LdapConfigurationError, LdapServiceUnavailable):
         raise
     except LDAPStartTLSError as error:
         logger.warning("ldap_connection_test_failed stage=tls error=%s", type(error).__name__)
