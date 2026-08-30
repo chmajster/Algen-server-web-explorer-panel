@@ -1,0 +1,135 @@
+name: Installer full reinstall test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - install.sh
+      - install-standard.sh
+      - install-standard-menu.sh
+      - uninstall.sh
+      - .github/workflows/installer-full-reinstall-test.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - install.sh
+      - install-standard.sh
+      - install-standard-menu.sh
+      - uninstall.sh
+      - .github/workflows/installer-full-reinstall-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-full-reinstall-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-reinstall:
+    name: Verify option 7 removes all runtime data and reinstalls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      WEBNAS_TEST_PORT: "5199"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Verify runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v sudo
+          command -v systemctl
+          command -v script
+          sudo systemctl is-system-running >/dev/null 2>&1 || true
+          bash -n install.sh install-standard.sh install-standard-menu.sh uninstall.sh
+
+      - name: Install baseline WebNAS
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo ./install.sh --yes --port "${WEBNAS_TEST_PORT}"
+          test -L /opt/webnas/current
+          test -f /etc/webnas/config.yaml
+          test -d /var/lib/webnas
+          test -d /var/log/webnas
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+      - name: Seed data that full reinstall must remove
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'old-app\n' | sudo tee /opt/webnas/full-reinstall-old-app >/dev/null
+          printf 'old-config\n' | sudo tee /etc/webnas/full-reinstall-old-config >/dev/null
+          printf 'old-data\n' | sudo tee /var/lib/webnas/full-reinstall-old-data >/dev/null
+          printf 'old-log\n' | sudo tee /var/log/webnas/full-reinstall-old-log >/dev/null
+          old_release="$(readlink -f /opt/webnas/current)"
+          printf '%s\n' "${old_release}" > /tmp/webnas-old-release
+
+      - name: "Option 7: Full Reinstall removes all data and installs fresh"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          printf '7\nFULL-REINSTALL\n' | script --quiet --return --command \
+            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            /dev/null > /tmp/webnas-full-reinstall.log 2>&1
+
+          tr -d '\r' < /tmp/webnas-full-reinstall.log > /tmp/webnas-full-reinstall.clean
+          grep -F "7) Full Reinstall application (remove all data)" /tmp/webnas-full-reinstall.clean
+          grep -F "Full reinstall: removing existing WebNAS installation and all data" /tmp/webnas-full-reinstall.clean
+          grep -F "Full reinstall: installing a fresh WebNAS instance" /tmp/webnas-full-reinstall.clean
+          grep -F "Full reinstall completed: application, config, data, and logs were recreated from a clean state" /tmp/webnas-full-reinstall.clean
+
+          test -L /opt/webnas/current
+          test -f /etc/webnas/config.yaml
+          test -d /var/lib/webnas
+          test -d /var/log/webnas
+          test ! -e /opt/webnas/full-reinstall-old-app
+          test ! -e /etc/webnas/full-reinstall-old-config
+          test ! -e /var/lib/webnas/full-reinstall-old-data
+          test ! -e /var/log/webnas/full-reinstall-old-log
+
+          old_release="$(cat /tmp/webnas-old-release)"
+          new_release="$(readlink -f /opt/webnas/current)"
+          test "${new_release}" != "${old_release}"
+          test ! -e "${old_release}"
+
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          echo "=== full reinstall log ==="
+          tail -n 300 /tmp/webnas-full-reinstall.clean 2>/dev/null || true
+          tail -n 300 /tmp/webnas-full-reinstall.log 2>/dev/null || true
+          echo "=== filesystem ==="
+          sudo find /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas -maxdepth 3 -print 2>/dev/null | sort | head -n 500
+          echo "=== services ==="
+          sudo systemctl status nginx webnas webnas-backend-blue webnas-backend-green --no-pager -l 2>/dev/null || true
+          echo "=== journals ==="
+          sudo journalctl -u nginx -u webnas -u webnas-backend-blue -u webnas-backend-green -n 250 --no-pager 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          sudo systemctl disable --now webnas.service webnas-backend-blue.service webnas-backend-green.service 2>/dev/null || true
+          sudo rm -f /etc/systemd/system/webnas.service \
+            /etc/systemd/system/webnas-backend-blue.service \
+            /etc/systemd/system/webnas-backend-green.service \
+            /etc/nginx/conf.d/webnas.conf \
+            /etc/pam.d/webnas
+          sudo systemctl daemon-reload || true
+          sudo systemctl reload nginx 2>/dev/null || true
+          sudo rm -rf /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas /var/backups/webnas
