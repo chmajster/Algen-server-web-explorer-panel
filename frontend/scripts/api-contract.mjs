@@ -14,6 +14,7 @@ const cache = resolve(root, "node_modules/.cache/webnas-api-contract");
 const spec = resolve(cache, "openapi.json");
 const candidate = resolve(cache, "api-types.ts");
 const target = resolve(root, "src/generated/api-types.ts");
+const diagnostic = resolve(root, "reports/frontend-junit.xml");
 const python = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 const marker = "// AUTO-GENERATED. DO NOT EDIT.\n";
@@ -35,6 +36,8 @@ if (mode === "generate") {
 } else {
   const committed = existsSync(target) ? readFileSync(target, "utf8") : "";
   if (committed !== finalContent) {
+    mkdirSync(dirname(diagnostic), { recursive: true });
+    writeFileSync(diagnostic, finalContent, "utf8");
     console.error("OpenAPI TypeScript contract is stale. Run: npm run api:generate");
     rmSync(candidate, { force: true });
     process.exit(1);
