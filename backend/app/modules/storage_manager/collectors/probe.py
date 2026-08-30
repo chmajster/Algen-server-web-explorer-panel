@@ -6,16 +6,23 @@ import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from app.privileged_broker import storage_probe_rules
 from app.privileged_broker.client import BrokerError
 from app.privileged_broker.runtime import broker_required, storage_probe
-from app.privileged_broker.storage_probe_rules import ALLOWED_STORAGE_PROBE_TOOLS, storage_probe_args_allowed
 
 from ..service import CommandResult
 
 
 logger = logging.getLogger(__name__)
 SAFE_TOOL_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
+ALLOWED_STORAGE_PROBE_TOOLS = storage_probe_rules.ALLOWED_STORAGE_PROBE_TOOLS
 ALLOWED_DETAIL_TOOLS = set(ALLOWED_STORAGE_PROBE_TOOLS) - {"smartctl", "nvme"}
+LVS_ARGS = storage_probe_rules.LVS_ARGS
+PVS_ARGS = storage_probe_rules.PVS_ARGS
+SWAPON_ARGS = storage_probe_rules.SWAPON_ARGS
+VGS_ARGS = storage_probe_rules.VGS_ARGS
+ZFS_LIST_ARGS = storage_probe_rules.ZFS_LIST_ARGS
+ZPOOL_LIST_ARGS = storage_probe_rules.ZPOOL_LIST_ARGS
 
 
 Runner = Callable[[Sequence[str], float], CommandResult]
@@ -34,7 +41,7 @@ def _default_runner(argv: Sequence[str], timeout: float) -> CommandResult:
 
 
 def _safe_probe_args(name: str, args: Sequence[str]) -> bool:
-    return name in ALLOWED_DETAIL_TOOLS and storage_probe_args_allowed(name, args)
+    return name in ALLOWED_DETAIL_TOOLS and storage_probe_rules.storage_probe_args_allowed(name, args)
 
 
 class StorageReadOnlyProbe:
