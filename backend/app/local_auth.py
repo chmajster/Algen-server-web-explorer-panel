@@ -109,8 +109,10 @@ class LocalAuthRepository:
         root = Path(get_config().paths.data_dir).resolve(strict=False)
         self.path = path or root / "local-auth.sqlite3"
         self.homes_root = root / "local-homes"
+        self.bootstrap_path = self.path.parent / "initial-local-admin.txt"
         self._lock = threading.RLock()
         self._initialize()
+        self._ensure_initial_admin()
 
     def connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -153,6 +155,37 @@ class LocalAuthRepository:
         try:
             os.chmod(self.path, 0o600)
             os.chmod(self.homes_root, 0o700)
+        except OSError:
+            pass
+
+    def _ensure_initial_admin(self) -> None:
+        with self._lock:
+            if self.count() > 0:
+                return
+            password = secrets.token_urlsafe(24)
+            self.create_user(
+                "admin",
+                password,
+                role="admin",
+                display_name="WebNAS Administrator",
+            )
+            self.bootstrap_path.write_text(
+                "WebNAS initial local administrator\n"
+                "Username: admin\n"
+                f"Password: {password}\n"
+                "This file is removed after the first successful local login.\n",
+                encoding="utf-8",
+            )
+            try:
+                os.chmod(self.bootstrap_path, 0o600)
+            except OSError:
+                pass
+
+    def _consume_bootstrap_file(self, username: str) -> None:
+        if username.casefold() != "admin" or not self.bootstrap_path.exists():
+            return
+        try:
+            self.bootstrap_path.unlink()
         except OSError:
             pass
 
@@ -297,13 +330,9 @@ class LocalAuthRepository:
     def authenticate(self, username: str, password: str) -> dict[str, Any]:
         username = validate_local_username(username)
         row = self._private_user(username)
-        # Run one scrypt computation even for unknown users to make the timing
-        # difference much less useful for account enumeration.
         encoded = str(row["password_hash"]) if row else hash_password("webnas-invalid-password-placeholder")
         valid = bool(password) and verify_password(password, encoded)
-        if not row or not valid:
-            raise LocalInvalidCredentials("Invalid username or password")
-        if not bool(row["enabled"]):
+        if not row or not valid or not bool(row["enabled"]):
             raise LocalInvalidCredentials("Invalid username or password")
         with self.connect() as connection:
             connection.execute(
@@ -313,6 +342,7 @@ class LocalAuthRepository:
         user = self.user(username)
         if not user:
             raise LocalInvalidCredentials("Invalid username or password")
+        self._consume_bootstrap_file(username)
         return user
 
     def update_user(
@@ -346,6 +376,8 @@ class LocalAuthRepository:
                 f"UPDATE local_users SET {','.join(updates)} WHERE username_key=?",  # noqa: S608 - fixed column list
                 tuple(values),
             )
+        if password is not None:
+            self._consume_bootstrap_file(username)
         user = self.user(username)
         if not user:
             raise RuntimeError("Updated local user is unavailable")
@@ -370,8 +402,6 @@ def auth_mode() -> AuthMode:
     try:
         return repository().auth_mode()
     except Exception:
-        # Fail closed into the application-owned authentication database. This
-        # avoids unexpectedly enabling PAM/LDAP when the mode state is damaged.
         return "local"
 
 
