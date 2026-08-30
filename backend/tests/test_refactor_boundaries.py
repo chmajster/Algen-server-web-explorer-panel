@@ -37,8 +37,11 @@ def test_jobs_own_persistence_and_controlled_runner():
     repository = (BACKEND / "jobs" / "repository.py").read_text(encoding="utf-8")
     runner = (BACKEND / "jobs" / "runner.py").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS jobs" in repository
-    assert "ThreadPoolExecutor" in runner
-    assert "threading.Thread" not in runner
+    assert "PriorityQueue" in runner
+    assert "threading.Thread" in runner
+    assert "daemon=True" in runner
+    assert "min(max(configured, 1), 16)" in runner
+    assert "ThreadPoolExecutor" not in runner
 
 
 def test_package_center_executes_through_global_job_service():
