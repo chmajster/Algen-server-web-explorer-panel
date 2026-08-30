@@ -8,7 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 PROTOCOL_VERSION: Literal[1] = 1
-MAX_FRAME_BYTES = 1024 * 1024
+# File Manager text/preview responses can exceed 1 MiB after nested JSON
+# escaping. Keep the local Unix-socket protocol bounded while allowing the
+# worker's existing 1 MiB editor payload limit plus envelope overhead.
+MAX_FRAME_BYTES = 32 * 1024 * 1024
 REQUEST_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 ACTOR_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,128}$")
 
@@ -31,6 +34,7 @@ class Operation(StrEnum):
     NTP = "ntp"
     ROUTING = "routing"
     SESSION = "session"
+    FILE_WORKER = "file_worker"
     PAM_AUTH = "pam_auth"
 
 
