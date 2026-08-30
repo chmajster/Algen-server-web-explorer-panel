@@ -1,0 +1,12 @@
+id: login-history
+name: Login History
+version: 1.0.0
+category: security
+icon: history
+permissions: [login_history.view, login_history.sessions.terminate]
+routers: [app.modules.login_history.router:router]
+dependencies: [identity]
+capabilities: [ssh-logins, local-sessions, failed-logins, active-sessions, security-correlation, alerts]
+system_capabilities: [journalctl]
+actions: [view, terminate-session]
+menu: [{id: login-history, label: Login History, icon: history, permission: login_history.view}]

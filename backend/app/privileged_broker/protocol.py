@@ -28,6 +28,9 @@ class Operation(StrEnum):
     QUOTA = "quota"
     STORAGE_PROBE = "storage_probe"
     FIREWALL = "firewall"
+    NTP = "ntp"
+    ROUTING = "routing"
+    SESSION = "session"
 
 
 class BrokerRequest(BaseModel):

@@ -1,0 +1,12 @@
+id: routing-manager
+name: Routing Manager
+version: 1.0.0
+category: network
+icon: route
+permissions: [routing.view, routing.manage, routing.commit]
+routers: [app.modules.routing_manager.router:router]
+dependencies: [identity, package-center]
+capabilities: [ipv4, ipv6, static-routes, policy-routing, routing-tables, diagnostics, preview, automatic-rollback]
+system_capabilities: [ip]
+actions: [preview, add-route, edit-route, delete-route, add-rule, delete-rule, confirm, rollback]
+menu: [{id: routing-manager, label: Routing Manager, icon: route, permission: routing.view}]
