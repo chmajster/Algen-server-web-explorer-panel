@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   install:
-    name: Install WebNAS on clean Ubuntu
+    name: Install and upgrade WebNAS on clean Ubuntu
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -44,7 +44,7 @@ jobs:
             --yes \
             --port "${WEBNAS_TEST_PORT}"
 
-      - name: Verify installed files and release provenance
+      - name: Verify installed files, PAM and release provenance
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +52,9 @@ jobs:
           test -x /opt/webnas/current/backend/.venv/bin/python
           test -f /opt/webnas/current/frontend/dist/index.html
           test -f /etc/webnas/config.yaml
+          test -f /etc/pam.d/webnas
+          grep -Eq '^[[:space:]]*auth[[:space:]]+include[[:space:]]+(common-auth|system-auth)' /etc/pam.d/webnas
+          ! grep -Eq '^[[:space:]]*auth[[:space:]].*(login)' /etc/pam.d/webnas
           test -f /var/lib/webnas/settings/deployment.json
           test -f /opt/webnas/current/.webnas-revision
           installed_sha="$(sudo cat /opt/webnas/current/.webnas-revision)"
@@ -82,6 +85,62 @@ jobs:
           payload = json.loads(sys.argv[1])
           assert payload.get("mode") in {"local", "system"}, payload
           PY
+
+      - name: Seed legacy LDAP authentication database
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo systemctl stop webnas.service webnas-backend-blue.service webnas-backend-green.service 2>/dev/null || true
+          sudo rm -f /var/lib/webnas/ldap-auth.sqlite3
+          sudo python3 - <<'PY'
+          import sqlite3
+          path = "/var/lib/webnas/ldap-auth.sqlite3"
+          db = sqlite3.connect(path)
+          db.executescript("""
+          CREATE TABLE ldap_settings(
+              id INTEGER PRIMARY KEY, enabled INTEGER, server TEXT, port INTEGER,
+              security_mode TEXT, verify_tls INTEGER, connect_timeout REAL,
+              operation_timeout REAL, base_dn TEXT, user_search_base TEXT,
+              user_search_filter TEXT, username_attribute TEXT, bind_dn TEXT,
+              bind_secret_id TEXT, display_name_attribute TEXT, email_attribute TEXT
+          );
+          INSERT INTO ldap_settings VALUES(
+              1,0,'ldap-upgrade.example.test',389,'starttls',1,5,10,
+              'dc=example,dc=test','ou=People,dc=example,dc=test','(uid={username})',
+              'uid','cn=webnas-auth,dc=example,dc=test','','cn','mail'
+          );
+          """)
+          db.commit()
+          db.close()
+          PY
+          sudo chown webnas:webnas /var/lib/webnas/ldap-auth.sqlite3
+
+      - name: Run update over installed release
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo ./install.sh --yes --existing-action update --port "${WEBNAS_TEST_PORT}"
+
+      - name: Verify upgrade migration and health
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /etc/pam.d/webnas
+          sudo /opt/webnas/current/backend/.venv/bin/python - <<'PY'
+          import sqlite3
+          db = sqlite3.connect('/var/lib/webnas/ldap-auth.sqlite3')
+          db.row_factory = sqlite3.Row
+          settings = db.execute('SELECT * FROM ldap_auth_settings_v2 WHERE id=1').fetchone()
+          server = db.execute('SELECT host,port FROM ldap_auth_servers ORDER BY position LIMIT 1').fetchone()
+          assert settings is not None
+          assert settings['base_dn'] == 'dc=example,dc=test'
+          assert server is not None
+          assert server['host'] == 'ldap-upgrade.example.test'
+          assert not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ldap_manager_connections'").fetchone()
+          db.close()
+          PY
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
 
       - name: Collect diagnostics on failure
         if: failure()
