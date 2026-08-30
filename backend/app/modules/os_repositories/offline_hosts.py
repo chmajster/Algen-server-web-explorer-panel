@@ -16,9 +16,12 @@ class OfflineHostsIntegration:
 
     @staticmethod
     def _host_identity(host: dict[str, Any]) -> tuple[str, str, str]:
-        facts = host.get("facts") if isinstance(host.get("facts"), dict) else {}
-        report = host.get("latest_report") if isinstance(host.get("latest_report"), dict) else {}
-        basic = report.get("basic") if isinstance(report.get("basic"), dict) else {}
+        facts_value = host.get("facts")
+        facts: dict[str, Any] = facts_value if isinstance(facts_value, dict) else {}
+        report_value = host.get("latest_report")
+        report: dict[str, Any] = report_value if isinstance(report_value, dict) else {}
+        basic_value = report.get("basic")
+        basic: dict[str, Any] = basic_value if isinstance(basic_value, dict) else {}
         distribution = str(host.get("distribution") or basic.get("distribution") or facts.get("distribution") or "").strip().lower()
         version = str(host.get("system_version") or basic.get("system_version") or facts.get("distribution_version") or "").strip()
         architecture = str(basic.get("architecture") or facts.get("architecture") or host.get("architecture") or "").strip().lower()
