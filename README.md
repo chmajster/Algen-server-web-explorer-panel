@@ -132,19 +132,20 @@ A browser will warn about the generated self-signed certificate until it is trus
 
 ### First login
 
-The default authentication mode is **Local database**. On first initialization WebNAS creates a local application administrator named `admin` with a cryptographically random password. The password is not stored in plaintext in the user database. The one-time bootstrap credential is written with mode `0600` to:
+The default authentication mode is **Local database**. On first initialization WebNAS creates a local application administrator named `admin` with a cryptographically random password. The local user database stores only a salted `scrypt` hash.
+
+During installation the recoverable bootstrap copy is held only as an encrypted one-time secret in the existing Secrets Manager. After the release health check the standard installer prints the credentials once to its terminal and immediately deletes that temporary encrypted secret. WebNAS does not create a plaintext password file.
+
+Example output:
 
 ```text
-<paths.data_dir>/initial-local-admin.txt
+Initial local administrator credentials:
+Username: admin
+Password: <random-password>
+IMPORTANT: this password is displayed once and is not stored in plaintext.
 ```
 
-With the default data directory it can be read locally as root:
-
-```bash
-sudo cat /var/lib/webnas/initial-local-admin.txt
-```
-
-The bootstrap file is removed after the first successful local `admin` login or after that account's password is changed. Change the password immediately after the first login.
+Store the displayed password securely and change it immediately after the first login.
 
 Standard installations also create or reuse a locked, non-interactive POSIX mapping for local WebNAS users so filesystem operations can run under a dedicated Unix UID/GID. The application password is never written to `/etc/shadow`; the POSIX account uses `nologin` and a locked system password.
 
@@ -247,7 +248,7 @@ WebNAS uses an application-owned local user database by default and can alternat
 The project includes:
 
 - salted `scrypt` password hashing for local WebNAS users,
-- one-time random initial local administrator credentials protected by filesystem mode `0600`,
+- a random initial local administrator password delivered once by the standard installer, with its temporary recoverable copy encrypted in Secrets Manager and deleted after retrieval,
 - locked/non-interactive POSIX mappings for local application users in standard deployments,
 - PAM authentication restricted to local `/etc/passwd` accounts in system mode,
 - optional LDAP/StartTLS/LDAPS authentication with explicit provider selection and no automatic fallback,
@@ -291,7 +292,7 @@ Detailed documentation is available in separate files:
 | [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md) | Ansible Automation Controller |
 | [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
 | [CRON_MANAGER.md](CRON_MANAGER.md) | Cron Manager |
-| [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases and safe configuration lifecycle |
+| [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases, diagnostics and transactional configuration lifecycle |
 | [DCST.md](DCST.md) | DCST architecture, Proxmox Firewall integration, Services, Ports, IPSets, TAGS, drift detection and troubleshooting |
 | [PACKAGE_CENTER.md](PACKAGE_CENTER.md) | Package Center |
 | [MODULES.md](MODULES.md) | Module architecture |
