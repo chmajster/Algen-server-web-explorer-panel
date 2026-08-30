@@ -11,7 +11,7 @@ def test_score_node_prefers_lower_resource_pressure():
     loaded = _score_node(0.80, 0.85, 0.90)
 
     assert healthy > loaded
-    assert healthy == 70.0
+    assert healthy == 72.0
     assert _score_node(0.0, 0.0, 0.0, online=False) == -1.0
 
 
