@@ -181,6 +181,7 @@ describe("personalized desktop", () => {
 
   it("shows Cron Manager in Start after its module is installed", async () => {
     vi.spyOn(api, "cronAccess").mockResolvedValue({ installed: true, allowed: true, blocked_by_proxmox: false });
+    vi.spyOn(api, "modules").mockResolvedValue([{ id: "cron", manifest: { name: "Cron Manager" }, state: { installed: true, update_available: false }, jobs: [], module_status: { health: "healthy" } }] as unknown as ModuleSummary[]);
     const base = settingsFixture();
     renderDesktop({ permissions: [...base.permissions, "cron.view"] });
 
@@ -275,7 +276,7 @@ describe("personalized desktop", () => {
     const first = renderDesktop({ startup_windows: "none" });
     fireEvent.click(within(screen.getByLabelText("desktop.taskbar")).getByRole("button", { name: "app.monitor" }));
     expect(screen.getByRole("dialog", { name: "app.monitor" })).toBeInTheDocument();
-    expect(sessionStorage.getItem("webnas_windows_test_session")).toContain('"app":"monitor"');
+    expect(sessionStorage.getItem("webnas_windows_test_session")).toContain('\"app\":\"monitor\"');
 
     first.unmount();
     renderDesktop({ startup_windows: "none" });
