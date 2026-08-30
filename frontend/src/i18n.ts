@@ -20,6 +20,29 @@ const dockerActionOverrides: Record<Language, Record<string, string>> = {
   },
 };
 
+const moduleLabelOverrides: Record<Language, Record<string, string>> = {
+  "pl-PL": {
+    "module.fail2banManager": "Menedżer Fail2Ban",
+    "module.firewallManager": "Menedżer zapory",
+    "module.networkTools": "Narzędzia sieciowe",
+    "module.proxmoxManager": "Menedżer Proxmox",
+    "module.secretsManager": "Menedżer sekretów",
+    "module.securityCenter": "Centrum bezpieczeństwa",
+    "module.storageManager": "Menedżer pamięci masowej",
+    "module.webhookManager": "Menedżer webhooków",
+  },
+  "en-US": {
+    "module.fail2banManager": "Fail2Ban Manager",
+    "module.firewallManager": "Firewall Manager",
+    "module.networkTools": "Network Tools",
+    "module.proxmoxManager": "Proxmox Manager",
+    "module.secretsManager": "Secrets Manager",
+    "module.securityCenter": "Security Center",
+    "module.storageManager": "Storage Manager",
+    "module.webhookManager": "Webhook Manager",
+  },
+};
+
 const proxmoxManagerOverrides: Record<Language, Record<string, string>> = {
   "pl-PL": {
     "proxmox.health.connections": "Połączenia Proxmox",
@@ -260,6 +283,7 @@ export async function loadLanguage(language: Language): Promise<void> {
     dictionaries[language] = {
       ...asDictionary(module),
       ...dockerActionOverrides[language],
+      ...moduleLabelOverrides[language],
       ...proxmoxManagerOverrides[language],
     };
   }).finally(() => {
@@ -297,6 +321,7 @@ export function translate(language: Language, key: string) {
     || dictionaries["en-US"]?.[key]
     || dictionaries["pl-PL"]?.[key]
     || dockerActionOverrides[language][key]
+    || moduleLabelOverrides[language][key]
     || proxmoxManagerOverrides[language][key]
     || key;
 }
