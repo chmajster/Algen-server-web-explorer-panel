@@ -11,12 +11,10 @@ from starlette.requests import Request
 
 from app import auth, auth_api
 from app.ldap_authentication import connection as ldap_connection
-from app.ldap_authentication import repository as ldap_repository_factory
 from app.ldap_authentication.models import (
     LdapAccessPolicyInput,
     LdapAuthenticationSettingsInput,
     LdapGroupMappingInput,
-    LdapServerInput,
 )
 from app.ldap_authentication.repository import LdapAuthenticationRepository
 from app.ldap_authentication import service as ldap_service
@@ -43,7 +41,7 @@ class FakeSecretsService:
 def settings(**overrides) -> LdapAuthenticationSettingsInput:
     values = {
         "enabled": True,
-        "directory_type": "openldap",
+        "directory_type": "ldap",
         "servers": [
             {"id": "dc1", "host": "dc01.example.test", "port": 636, "priority": 10},
             {"id": "dc2", "host": "dc02.example.test", "port": 636, "priority": 20},
@@ -134,7 +132,7 @@ def test_auth_repository_never_returns_bind_password(monkeypatch, tmp_path: Path
     assert repo.settings(include_secret_id=True)["bind_secret_id"] == "auth-secret"
 
 
-def test_legacy_auth_settings_migrate_only_to_authentication(monkeypatch, tmp_path: Path):
+def test_legacy_auth_settings_migrate_only_to_authentication(tmp_path: Path):
     path = tmp_path / "ldap-auth.sqlite3"
     connection = sqlite3.connect(path)
     connection.executescript(
@@ -160,7 +158,10 @@ def test_legacy_auth_settings_migrate_only_to_authentication(monkeypatch, tmp_pa
     assert migrated["enabled"] is True
     assert migrated["servers"][0]["host"] == "ldap-old.example.test"
     assert migrated["bind_secret_id"] == "legacy-secret"
-    assert not any(table[0].startswith("ldap_manager") for table in sqlite3.connect(path).execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall())
+    check = sqlite3.connect(path)
+    tables = check.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    check.close()
+    assert not any(table[0].startswith("ldap_manager") for table in tables)
 
 
 def test_access_policy_deny_has_priority(tmp_path: Path):
@@ -232,7 +233,7 @@ def test_session_store_keeps_provider_and_identity_id(tmp_path: Path):
 def test_pam_missing_webnas_service_fails_closed(monkeypatch):
     monkeypatch.setattr(auth, "assert_login_allowed", lambda username: None)
     monkeypatch.setattr(auth, "get_config", lambda: SimpleNamespace(auth=SimpleNamespace(pam_service="webnas")))
-    monkeypatch.setattr(auth.WEBNAS_PAM_PATH, "is_file", lambda: False)
+    monkeypatch.setattr(auth, "WEBNAS_PAM_PATH", Path("/definitely/missing/webnas-pam-test"))
     with pytest.raises(HTTPException) as error:
         auth.authenticate("alice", "secret")
     assert error.value.status_code == 503
