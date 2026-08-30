@@ -1,0 +1,35 @@
+name: Diagnose PR 127 main sync
+
+on:
+  push:
+    branches:
+      - feature/infrastructure-managers
+    paths:
+      - .github/workflows/tmp-sync-pr127.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/infrastructure-managers
+          fetch-depth: 0
+      - name: Diagnose merge with main
+        shell: bash
+        run: |
+          set -uo pipefail
+          git fetch origin main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git merge --no-commit --no-ff origin/main; then
+            echo "MERGE_CLEAN"
+            git merge --abort || true
+            exit 0
+          fi
+          echo "MERGE_CONFLICTS"
+          git diff --name-only --diff-filter=U
+          exit 1
