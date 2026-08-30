@@ -226,6 +226,12 @@ class SessionStore:
                 self._cache.pop(token_hash, None)
             return max(0, int(cursor.rowcount))
 
+    def revoke_all(self) -> int:
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute("DELETE FROM auth_sessions")
+            self._cache.clear()
+            return max(0, int(cursor.rowcount))
+
 
 class LoginRateLimiter:
     """Thread-safe sliding-window limiter that tracks authentication failures only."""
@@ -277,6 +283,10 @@ def invalidate_user_sessions(username: str) -> int:
 
 def invalidate_provider_user_sessions(username: str, auth_provider: AuthProvider) -> int:
     return _session_store().revoke_user(username, auth_provider)
+
+
+def invalidate_all_sessions() -> int:
+    return _session_store().revoke_all()
 
 
 def create_session(
