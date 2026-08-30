@@ -114,6 +114,31 @@ def test_switch_to_local_requires_enabled_local_admin(monkeypatch, tmp_path):
         store.set_auth_mode("local", "system-admin")
 
 
+def test_active_auth_mode_is_frozen_until_startup_reload(monkeypatch, tmp_path):
+    store = repo(monkeypatch, tmp_path)
+    store.bootstrap_admin("chris", "1")
+    monkeypatch.setattr(local_auth, "repository", lambda: store)
+
+    assert local_auth.initialize_active_auth_mode() == "local"
+    assert local_auth.auth_mode() == "local"
+
+    store.set_auth_mode("system", "chris")
+
+    assert local_auth.configured_auth_mode() == "system"
+    assert local_auth.auth_mode() == "local"
+    assert local_auth.authenticate_local("chris", "1")["username"] == "chris"
+
+    assert local_auth.initialize_active_auth_mode() == "system"
+    assert local_auth.auth_mode() == "system"
+    assert local_auth.configured_auth_mode() == "system"
+
+    with pytest.raises(local_auth.LocalAuthConfigurationError):
+        local_auth.authenticate_local("chris", "1")
+
+    store.set_auth_mode("local", "chris")
+    local_auth.initialize_active_auth_mode()
+
+
 def test_system_mode_does_not_create_local_bootstrap_admin(monkeypatch, tmp_path):
     monkeypatch.setattr(local_auth, "get_config", lambda: config(tmp_path))
     path = tmp_path / "local-auth.sqlite3"

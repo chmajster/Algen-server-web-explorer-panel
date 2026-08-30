@@ -26,6 +26,7 @@ from .core.modules import ModuleRegistry
 from .jobs.models import JobStatus
 from .jobs.service import service as job_service
 from .ldap_authentication import repository as ldap_auth_repository
+from .local_auth import initialize_active_auth_mode
 from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
 from .modules.os_repositories.scheduler import start_scheduler as start_os_repositories_scheduler
 from .modules.proxmox_manager.scheduler import start_scheduler as start_proxmox_scheduler
@@ -74,6 +75,7 @@ def _start_schedulers() -> None:
 async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     module_registry: ModuleRegistry = app.state.modules
     app.state.ready = False
+    initialize_active_auth_mode()
     ldap_auth_repository().settings()
     global_jobs = job_service()
     await module_registry.startup()

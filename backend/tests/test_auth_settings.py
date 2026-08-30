@@ -11,8 +11,8 @@ from app.security import SessionUser
 
 
 class FakeStore:
-    def __init__(self):
-        self.mode = "local"
+    def __init__(self, mode: str = "local"):
+        self.mode = mode
         self.authenticated: list[tuple[str, str]] = []
         self.updated: list[tuple[str, str | None]] = []
 
@@ -44,11 +44,14 @@ def local_session() -> SessionUser:
     return SessionUser(username="admin", csrf_token="csrf", auth_provider="local")
 
 
-def test_authentication_mode_change_invalidates_all_sessions(monkeypatch):
-    store = FakeStore()
-    invalidations: list[bool] = []
+def system_session() -> SessionUser:
+    return SessionUser(username="root", csrf_token="csrf", auth_provider="pam")
+
+
+def test_local_to_system_is_saved_as_pending_without_session_invalidation(monkeypatch):
+    store = FakeStore("local")
     monkeypatch.setattr(auth_settings, "local_repository", lambda: store)
-    monkeypatch.setattr(auth_settings, "invalidate_all_sessions", lambda: invalidations.append(True) or 3)
+    monkeypatch.setattr(auth_settings, "auth_mode", lambda: "local")
     monkeypatch.setattr(auth_settings, "record_activity", lambda *args, **kwargs: None)
 
     result = auth_settings.set_authentication_settings(
@@ -57,23 +60,88 @@ def test_authentication_mode_change_invalidates_all_sessions(monkeypatch):
     )
 
     assert store.mode == "system"
-    assert invalidations == [True]
-    assert result["reauthentication_required"] is True
-    assert result["mode"] == "system"
+    assert result["mode"] == "local"
+    assert result["configured_mode"] == "system"
+    assert result["restart_required"] is True
+    assert result["reauthentication_required"] is False
+    assert not hasattr(auth_settings, "invalidate_all_sessions")
 
 
-def test_no_session_invalidation_when_mode_is_unchanged(monkeypatch):
-    store = FakeStore()
-    invalidations: list[bool] = []
+def test_admin_session_remains_usable_after_pending_mode_change(monkeypatch):
+    store = FakeStore("local")
+    session = local_session()
     monkeypatch.setattr(auth_settings, "local_repository", lambda: store)
-    monkeypatch.setattr(auth_settings, "invalidate_all_sessions", lambda: invalidations.append(True) or 0)
+    monkeypatch.setattr(auth_settings, "auth_mode", lambda: "local")
+    monkeypatch.setattr(auth_settings, "record_activity", lambda *args, **kwargs: None)
+    monkeypatch.setattr(auth_settings, "get_session_user", lambda request: session)
+    monkeypatch.setattr(auth_settings, "require_csrf", lambda request, user: None)
+    monkeypatch.setattr(auth_settings, "access_profile", lambda username: {"is_admin": True})
+
+    auth_settings.set_authentication_settings(
+        auth_settings.AuthenticationModeUpdate(mode="system"),
+        user=session,
+    )
+
+    assert auth_settings.admin_read(SimpleNamespace()) is session
+
+
+def test_pending_change_can_be_cancelled_before_restart(monkeypatch):
+    store = FakeStore("local")
+    monkeypatch.setattr(auth_settings, "local_repository", lambda: store)
+    monkeypatch.setattr(auth_settings, "auth_mode", lambda: "local")
+    monkeypatch.setattr(auth_settings, "record_activity", lambda *args, **kwargs: None)
+
+    pending = auth_settings.set_authentication_settings(
+        auth_settings.AuthenticationModeUpdate(mode="system"),
+        user=local_session(),
+    )
+    cancelled = auth_settings.set_authentication_settings(
+        auth_settings.AuthenticationModeUpdate(mode="local"),
+        user=local_session(),
+    )
+
+    assert pending["restart_required"] is True
+    assert cancelled["mode"] == "local"
+    assert cancelled["configured_mode"] == "local"
+    assert cancelled["restart_required"] is False
+    assert cancelled["reauthentication_required"] is False
+
+
+def test_system_to_local_is_pending_without_invalidating_current_session(monkeypatch):
+    store = FakeStore("system")
+    session = system_session()
+    monkeypatch.setattr(auth_settings, "local_repository", lambda: store)
+    monkeypatch.setattr(auth_settings, "auth_mode", lambda: "system")
+    monkeypatch.setattr(auth_settings, "record_activity", lambda *args, **kwargs: None)
+    monkeypatch.setattr(auth_settings, "get_session_user", lambda request: session)
+    monkeypatch.setattr(auth_settings, "require_csrf", lambda request, user: None)
+    monkeypatch.setattr(auth_settings, "access_profile", lambda username: {"is_admin": True})
+
+    result = auth_settings.set_authentication_settings(
+        auth_settings.AuthenticationModeUpdate(mode="local"),
+        user=session,
+    )
+
+    assert result["mode"] == "system"
+    assert result["configured_mode"] == "local"
+    assert result["restart_required"] is True
+    assert result["reauthentication_required"] is False
+    assert auth_settings.admin_read(SimpleNamespace()) is session
+
+
+def test_no_restart_required_when_configured_mode_matches_active_mode(monkeypatch):
+    store = FakeStore("local")
+    monkeypatch.setattr(auth_settings, "local_repository", lambda: store)
+    monkeypatch.setattr(auth_settings, "auth_mode", lambda: "local")
 
     result = auth_settings.set_authentication_settings(
         auth_settings.AuthenticationModeUpdate(mode="local"),
         user=local_session(),
     )
 
-    assert invalidations == []
+    assert result["mode"] == "local"
+    assert result["configured_mode"] == "local"
+    assert result["restart_required"] is False
     assert result["reauthentication_required"] is False
 
 
