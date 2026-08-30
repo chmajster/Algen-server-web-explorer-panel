@@ -5,6 +5,7 @@ import socket
 import ssl
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -62,7 +63,7 @@ def _attribute(entry: dict[str, Any], name: str) -> Any:
         return ""
     attributes = entry.get("attributes")
     value: Any = None
-    if isinstance(attributes, dict):
+    if isinstance(attributes, Mapping):
         value = attributes.get(name)
         if value is None:
             folded = name.casefold()
@@ -70,7 +71,7 @@ def _attribute(entry: dict[str, Any], name: str) -> Any:
     decoded_missing = value is None or (isinstance(value, (list, tuple, set)) and not value)
     if decoded_missing:
         raw_attributes = entry.get("raw_attributes")
-        if isinstance(raw_attributes, dict):
+        if isinstance(raw_attributes, Mapping):
             raw_value = raw_attributes.get(name)
             if raw_value is None:
                 folded = name.casefold()
