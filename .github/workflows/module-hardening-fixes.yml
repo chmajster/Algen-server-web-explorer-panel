@@ -18,15 +18,13 @@ jobs:
         with:
           ref: feature/firewall-security-network-tools
           fetch-depth: 0
-
-      - name: Synchronize with main and apply compatibility fixes
+      - name: Repair branch
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-
           if ! git merge -X theirs origin/main -m "merge: synchronize PR 121 with main"; then
             while IFS= read -r path; do
               [ -z "$path" ] && continue
@@ -35,146 +33,8 @@ jobs:
             git add -A
             git commit --no-edit
           fi
-
-          python - <<'PY'
-          from pathlib import Path
-
-          def replace(path: str, old: str, new: str) -> None:
-              p = Path(path)
-              if not p.exists():
-                  return
-              text = p.read_text(encoding="utf-8")
-              if old in text:
-                  p.write_text(text.replace(old, new), encoding="utf-8")
-
-          # Keep the broker server on the canonical extended policy boundary.
-          replace(
-              "backend/app/privileged_broker/server.py",
-              "from .firewall_policy import dispatch",
-              "from .extended_policy import dispatch",
-          )
-
-          # Firewall policy is a typed leaf policy. The extended policy delegates FIREWALL to it.
-          fp = Path("backend/app/privileged_broker/firewall_policy.py")
-          if fp.exists():
-              text = fp.read_text(encoding="utf-8")
-              text = text.replace("from .extended_policy import dispatch as extended_dispatch\n", "")
-              text = text.replace(
-                  "    if request.operation != Operation.FIREWALL:\n        return extended_dispatch(request, runner=runner)\n",
-                  "    if request.operation != Operation.FIREWALL:\n        return BrokerResponse(request_id=request.request_id, ok=False, exit_code=126, error_code=\"POLICY_DENIED\", stderr=\"unsupported firewall policy operation\")\n",
-              )
-              fp.write_text(text, encoding="utf-8")
-
-          ep = Path("backend/app/privileged_broker/extended_policy.py")
-          if ep.exists():
-              text = ep.read_text(encoding="utf-8")
-              marker = "def dispatch(request: BrokerRequest, *, runner: base.Runner | None = None) -> BrokerResponse:\n"
-              injection = (
-                  marker
-                  + "    if request.operation == Operation.FIREWALL:\n"
-                  + "        from .firewall_policy import dispatch as firewall_dispatch\n"
-                  + "        return firewall_dispatch(request, runner=runner)\n"
-              )
-              if marker in text and "request.operation == Operation.FIREWALL" not in text:
-                  text = text.replace(marker, injection, 1)
-              ep.write_text(text, encoding="utf-8")
-
-          # Cross-module dependencies must use package/public contracts.
-          for path in [
-              "backend/app/modules/network_tools/service.py",
-              "backend/app/modules/network_tools/router.py",
-              "backend/app/modules/security_center/checks.py",
-          ]:
-              p = Path(path)
-              if not p.exists():
-                  continue
-              text = p.read_text(encoding="utf-8")
-              text = text.replace("from ..firewall_manager.service import service as firewall_service", "from ..firewall_manager import service as firewall_service")
-              text = text.replace("from ...modules.providers.linux_updates import LinuxUpdatesProvider", "from ..providers import LinuxUpdatesProvider")
-              p.write_text(text, encoding="utf-8")
-
-          # POST diagnostics are mutating/active operations and require CSRF.
-          p = Path("backend/app/modules/network_tools/router.py")
-          if p.exists():
-              text = p.read_text(encoding="utf-8")
-              text = text.replace("from ...rbac import current_user\n", "from ...rbac import current_user, mutating_user\n")
-              for name in ("ping", "traceroute", "dns", "reverse_dns", "port_test", "http_test", "route_lookup"):
-                  marker = f"def {name}("
-                  if marker not in text:
-                      continue
-                  start = text.index(marker)
-                  end = text.index("):", start) + 2
-                  sig = text[start:end]
-                  text = text[:start] + sig.replace("Depends(current_user)", "Depends(mutating_user)") + text[end:]
-              p.write_text(text, encoding="utf-8")
-
-          # Firewall Literal typing and rollback reconstruction.
-          p = Path("backend/app/modules/firewall_manager/service.py")
-          if p.exists():
-              text = p.read_text(encoding="utf-8")
-              old1 = '            previous_input = FirewallRuleInput(action=previous.action if previous.action in {"allow", "drop", "reject"} else "drop", direction=previous.direction if previous.direction in {"in", "out"} else "in", protocol=previous.protocol if previous.protocol in {"any", "tcp", "udp"} else "any", port=previous.port, source=previous.source, destination=previous.destination, interface=previous.interface, comment=previous.comment, family=previous.family if previous.family in {"any", "ipv4", "ipv6"} else "any")\n'
-              old2 = '                    self.add_rule(FirewallRuleInput(action=item.action if item.action in {"allow", "drop", "reject"} else "drop", direction=item.direction if item.direction in {"in", "out"} else "in", protocol=item.protocol if item.protocol in {"any", "tcp", "udp"} else "any", port=item.port, source=item.source, destination=item.destination, interface=item.interface, comment=item.comment, family=item.family if item.family in {"any", "ipv4", "ipv6"} else "any"))\n'
-              helper_anchor = "    def edit_rule(self, rule_id: str, replacement: FirewallRuleInput) -> dict[str, Any]:\n"
-              helper = '''    @staticmethod
-    def _input_from_rule(rule: FirewallRule) -> FirewallRuleInput:
-        return FirewallRuleInput.model_validate(
-            {
-                "action": rule.action if rule.action in {"allow", "drop", "reject"} else "drop",
-                "direction": rule.direction if rule.direction in {"in", "out"} else "in",
-                "protocol": rule.protocol if rule.protocol in {"any", "tcp", "udp"} else "any",
-                "port": rule.port,
-                "source": rule.source,
-                "destination": rule.destination,
-                "interface": rule.interface,
-                "comment": rule.comment,
-                "family": rule.family if rule.family in {"any", "ipv4", "ipv6"} else "any",
-            }
-        )
-
-'''
-              if helper_anchor in text and "def _input_from_rule" not in text:
-                  text = text.replace(helper_anchor, helper + helper_anchor, 1)
-              text = text.replace(old1, "            previous_input = self._input_from_rule(previous)\n")
-              text = text.replace(old2, "                    self.add_rule(self._input_from_rule(item))\n")
-              text = text.replace('if operation in {"disable", "enable", "restore"}:', 'if operation in {"disable", "enable", "restore", "import"}:')
-              p.write_text(text, encoding="utf-8")
-
-          # Network typing fixes found by mypy.
-          p = Path("backend/app/modules/network_tools/service.py")
-          if p.exists():
-              text = p.read_text(encoding="utf-8")
-              text = text.replace("item[4][0] for item in socket.getaddrinfo", "str(item[4][0]) for item in socket.getaddrinfo")
-              text = text.replace("certificate = wrapped.getpeercert()", "certificate = wrapped.getpeercert() or {}")
-              p.write_text(text, encoding="utf-8")
-
-          # Job handlers must match JobHandler's optional-result contract.
-          for path in [
-              "backend/app/modules/firewall_manager/router.py",
-              "backend/app/modules/security_center/router.py",
-          ]:
-              p = Path(path)
-              if not p.exists():
-                  continue
-              text = p.read_text(encoding="utf-8")
-              if "from typing import Any" not in text:
-                  text = text.replace("from __future__ import annotations\n", "from __future__ import annotations\n\nfrom typing import Any\n")
-              text = text.replace("def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any]:", "def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any] | None:")
-              text = text.replace("def execute(context: JobContext, _metadata: dict) -> dict:", "def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any] | None:")
-              p.write_text(text, encoding="utf-8")
-
-          # Frontend toast API accepts ok|error.
-          for path in [
-              "frontend/src/modules/firewall-manager/FirewallManagerApp.tsx",
-              "frontend/src/modules/security-center/SecurityCenterApp.tsx",
-          ]:
-              p = Path(path)
-              if p.exists():
-                  p.write_text(p.read_text(encoding="utf-8").replace('"success"', '"ok"'), encoding="utf-8")
-
-          # Remove this one-shot workflow from the repaired branch.
-          Path(".github/workflows/module-hardening-fixes.yml").unlink(missing_ok=True)
-          PY
-
+          python .github/scripts/repair_pr121.py
+          rm -f .github/workflows/module-hardening-fixes.yml .github/scripts/repair_pr121.py
           git add -A
           if ! git diff --cached --quiet; then
             git commit -m "fix: synchronize and repair PR 121"
