@@ -351,8 +351,8 @@ def _file_mode_control(path: str, control_id: str, maximum_mode: int, severity: 
 
 def filesystem_controls() -> list[ComplianceControl]:
     return [
-        _mount_control("/tmp", "filesystem.tmp-options"),
-        _mount_control("/dev/shm", "filesystem.dev-shm-options"),
+        _mount_control("/tmp", "filesystem.tmp-options"),  # nosec B108 -- auditing this fixed mountpoint, not creating a temporary file
+        _mount_control("/dev/shm", "filesystem.dev-shm-options"),  # nosec B108 -- auditing this fixed mountpoint, not creating a temporary file
         _file_mode_control("/etc/passwd", "filesystem.passwd-mode", 0o644, ComplianceSeverity.high),
         _file_mode_control("/etc/shadow", "filesystem.shadow-mode", 0o640, ComplianceSeverity.critical),
     ]
