@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,7 +9,6 @@ from fastapi import HTTPException, Response
 from starlette.requests import Request
 
 from app import auth, auth_api, ldap_auth
-from app.identity import service as identity_service_module
 from app.ldap_auth import (
     LdapInvalidCredentials,
     LdapServiceUnavailable,
@@ -18,6 +18,8 @@ from app.ldap_auth import (
     ldap_user_search_filter,
 )
 from app.security import SessionStore
+
+identity_service_module = importlib.import_module("app.identity.service")
 
 
 def ldap_settings(**overrides) -> LdapSettings:
