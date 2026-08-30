@@ -69,14 +69,14 @@ read_menu_choice() {
   local answer=""
   local timeout="5"
 
-  printf 'Choose action (automatic update starts after 5 seconds):\n'
-  printf '  1) Update application (backup and keep config) [default]\n'
-  printf '  2) Reinstall application (clean app files; keep config, data, and logs)\n'
-  printf '  3) Backup configuration only\n'
-  printf '  4) Remove application (keep config, data, and logs)\n'
-  printf '  5) Remove application and all files\n'
-  printf '  6) Abort\n'
-  printf '  7) Full Reinstall application (remove all data)\n'
+  printf 'Choose action (automatic update starts after 5 seconds):\n' >&2
+  printf '  1) Update application (backup and keep config) [default]\n' >&2
+  printf '  2) Reinstall application (clean app files; keep config, data, and logs)\n' >&2
+  printf '  3) Backup configuration only\n' >&2
+  printf '  4) Remove application (keep config, data, and logs)\n' >&2
+  printf '  5) Remove application and all files\n' >&2
+  printf '  6) Abort\n' >&2
+  printf '  7) Full Reinstall application (remove all data)\n' >&2
 
   if IFS= read -r -t "$timeout" -p 'Select [1-7]: ' answer; then
     printf '%s' "${answer:-1}"
@@ -90,7 +90,7 @@ read_menu_choice() {
 confirm_full_reinstall() {
   local typed=""
   printf '\n[WARNING] Full Reinstall permanently removes application files, configuration, databases/data, and logs.\n' >&2
-  printf '[WARNING] Backups stored outside /opt/webnas, /etc/webnas, /var/lib/webnas and /var/log/webnas are not removed.\n' >&2
+  printf '[WARNING] Backups under /var/backups/webnas are retained.\n' >&2
   if ! IFS= read -r -p "Type 'FULL-REINSTALL' to continue: " typed; then
     printf '[ERROR] Full reinstall cancelled.\n' >&2
     return 1
@@ -101,30 +101,51 @@ confirm_full_reinstall() {
   fi
 }
 
+remove_all_with_standard_installer() {
+  local standard_script="$1"
+  local command_line=""
+  local command_args=(bash "$standard_script" "${FORWARD_ARGS[@]}" --existing-action remove-all)
+
+  command -v script >/dev/null 2>&1 || {
+    printf '[ERROR] Full reinstall requires the util-linux script command for the destructive removal stage.\n' >&2
+    return 1
+  }
+
+  printf -v command_line '%q ' "${command_args[@]}"
+  printf 'y\n' | script --quiet --return --command "$command_line" /dev/null
+}
+
 full_reinstall() {
   local standard_script="$1"
-  local uninstall_script=""
-  local uninstall_from_install="${INSTALL_DIR}/uninstall.sh"
   local fresh_args=("${FORWARD_ARGS[@]}")
 
   confirm_full_reinstall
 
   printf '\n==> Full reinstall: removing existing WebNAS installation and all data\n'
-  if [[ -x "$uninstall_from_install" || -f "$uninstall_from_install" ]]; then
-    uninstall_script="$uninstall_from_install"
-  else
-    uninstall_script="$(resolve_script uninstall.sh)"
-  fi
+  remove_all_with_standard_installer "$standard_script"
 
-  # uninstall.sh requires an explicit text confirmation even with --yes.
-  # Feed only that mandatory token; --remove-data performs the destructive
-  # config/data/log purge without a second interactive prompt.
-  printf 'REMOVE WEBNAS\n' | WEBNAS_INSTALL_DIR="$INSTALL_DIR" bash "$uninstall_script" --yes --remove-data --install-dir "$INSTALL_DIR"
-  cleanup_temp_script "$uninstall_script"
+  if [[ -e "$INSTALL_DIR" || -e /etc/webnas || -e /var/lib/webnas || -e /var/log/webnas ]]; then
+    printf '[ERROR] Full reinstall purge did not remove all application/config/data/log paths; fresh installation was not started.\n' >&2
+    return 1
+  fi
 
   printf '\n==> Full reinstall: installing a fresh WebNAS instance\n'
   fresh_args+=("--yes")
   run_standard "$standard_script" "${fresh_args[@]}"
+
+  [[ -L "${INSTALL_DIR}/current" ]] || {
+    printf '[ERROR] Full reinstall completed without an active release symlink.\n' >&2
+    return 1
+  }
+  [[ -f /etc/webnas/config.yaml ]] || {
+    printf '[ERROR] Full reinstall completed without a fresh configuration file.\n' >&2
+    return 1
+  }
+  [[ -d /var/lib/webnas && -d /var/log/webnas ]] || {
+    printf '[ERROR] Full reinstall completed without fresh data/log directories.\n' >&2
+    return 1
+  }
+
   printf '\n[OK] Full reinstall completed: application, config, data, and logs were recreated from a clean state.\n'
 }
 
