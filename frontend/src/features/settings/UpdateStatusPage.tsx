@@ -67,6 +67,45 @@ function safeBlockers(value: UpdateProgress): UpdateBlocker[] {
   return Array.isArray(value.blockers) ? value.blockers : [];
 }
 
+async function writeClipboardText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Clipboard API can be blocked on plain HTTP; fall back to a selection copy.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  const previouslyFocused = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.setAttribute("aria-hidden", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "0";
+  textarea.style.top = "0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+
+  try {
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+    previouslyFocused?.focus({ preventScroll: true });
+  }
+}
+
 export function UpdateStatusPage({
   value,
   connectionError,
@@ -349,11 +388,10 @@ export function UpdateStatusPage({
                   const errors = steps
                     .filter((step) => step.error)
                     .map((step) => `${step.id}: ${step.error}`);
-                  void navigator.clipboard?.writeText(
-                    [value.message, ...errors, ...lines]
-                      .filter(Boolean)
-                      .join("\n"),
-                  );
+                  const content = [value.message, ...errors, ...lines]
+                    .filter(Boolean)
+                    .join("\n");
+                  void writeClipboardText(content);
                 }}
               >
                 <Copy />
