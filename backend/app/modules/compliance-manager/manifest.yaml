@@ -1,0 +1,45 @@
+id: compliance-manager
+name: Compliance Manager
+description: Audit Linux host compliance against CIS-aligned Level 1 controls for SSH, sudo, filesystem, kernel, PAM and firewall policy.
+long_description: Compliance Manager performs a read-only CIS-aligned host assessment, calculates compliance scores by policy area, exposes evidence and remediation guidance, runs scans as WebNAS jobs and records scan activity without silently changing the host.
+category: security
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: clipboard-check
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages: {apt: [], dnf: [], yum: []}
+installations: {}
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: false
+  reload: false
+  logs: false
+  diagnostics: true
+  backups: false
+  import_export: false
+  healthcheck: false
+  resources: [controls, benchmarks, policies]
+  actions: [scan]
+ports: []
+dependencies: [firewall-manager]
+conflicts: []
+permissions: [compliance.view, compliance.scan]
+config_paths: [/etc/ssh/sshd_config, /etc/sudoers, /etc/sysctl.conf, /etc/login.defs]
+data_paths: []
+backup_paths: []
+proxmox_safe: true
+requires_reboot: false
+requires_root: false
+configurable: false
+removable: true
+package_less: true
+ui: {hidden: false}
+changelog:
+  - Initial CIS-aligned Level 1 compliance assessment for SSH, sudo, filesystem, kernel, PAM and firewall.

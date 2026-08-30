@@ -1,0 +1,10 @@
+id: compliance-manager
+name: Compliance Manager
+version: 1.0.0
+category: security
+icon: clipboard-check
+permissions: [compliance.view, compliance.scan]
+routers: [app.modules.compliance_manager.router:router]
+dependencies: [identity, package-center, activity, firewall-manager]
+capabilities: [compliance-score, cis-benchmark, policies, ssh, sudo, filesystem, kernel, pam, firewall, jobs]
+menu: [{id: compliance-manager, label: Compliance Manager, icon: clipboard-check, permission: compliance.view}]
