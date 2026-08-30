@@ -202,10 +202,49 @@ standard_reinstall_happened() {
   return 1
 }
 
+restart_standard_privileged_broker() {
+  command -v systemctl >/dev/null 2>&1 || {
+    printf '[ERROR] Cannot initialize WebNAS privileged broker: systemctl is unavailable.\n' >&2
+    return 1
+  }
+
+  if ! systemctl cat webnas-privileged.socket >/dev/null 2>&1 || ! systemctl cat webnas-privileged.service >/dev/null 2>&1; then
+    printf '[ERROR] WebNAS privileged broker units are missing.\n' >&2
+    return 1
+  fi
+
+  systemctl reset-failed webnas-privileged.service 2>/dev/null || true
+  if ! systemctl restart webnas-privileged.socket; then
+    printf '[ERROR] Could not restart webnas-privileged.socket.\n' >&2
+    systemctl status webnas-privileged.socket --no-pager -l >&2 2>/dev/null || true
+    return 1
+  fi
+  if ! systemctl restart webnas-privileged.service; then
+    printf '[ERROR] Could not restart webnas-privileged.service.\n' >&2
+    systemctl status webnas-privileged.service --no-pager -l >&2 2>/dev/null || true
+    journalctl -u webnas-privileged.service -n 60 --no-pager >&2 2>/dev/null || true
+    return 1
+  fi
+  if ! systemctl is-active --quiet webnas-privileged.service; then
+    printf '[ERROR] webnas-privileged.service is not active after restart.\n' >&2
+    systemctl status webnas-privileged.service --no-pager -l >&2 2>/dev/null || true
+    journalctl -u webnas-privileged.service -n 60 --no-pager >&2 2>/dev/null || true
+    return 1
+  fi
+
+  printf '[OK] WebNAS privileged broker is active.\n'
+}
+
 finalize_standard_reinstall() {
   local install_dir=""
   local requested_install_dir=""
   local active_release=""
+  local active_slot=""
+  local inactive_slot=""
+  local inactive_unit=""
+  local inactive_env=""
+  local active_env=""
+  local env_release=""
   local entry=""
   local release=""
   local entry_name=""
@@ -242,15 +281,38 @@ finalize_standard_reinstall() {
   printf '\n==> Cleaning previous application files\n'
   printf '[INFO] Replacement release is active; removing all stale WebNAS application files while preserving config, data, and logs.\n'
 
-  # The release helper rewrites the privileged broker unit to the new release,
-  # but an already-running broker keeps executing the old binary until it is
-  # restarted. Restart it before deleting any previous release tree.
-  if systemctl is-active --quiet webnas-privileged.service 2>/dev/null; then
-    if ! systemctl restart webnas-privileged.service; then
-      printf '[ERROR] Could not restart webnas-privileged.service on the active release; old application files were not removed.\n' >&2
-      return 1
-    fi
+  # A clean reinstall deliberately retains only the replacement release. Before
+  # deleting the previous tree, detach the inactive blue/green slot from its
+  # old EnvironmentFile. Otherwise a manual/systemd restart can enter an
+  # endless `cd: can't cd to .../backend` loop against a directory we removed.
+  if [[ -r /etc/webnas/runtime/active-slot ]]; then
+    active_slot="$(tr -d '[:space:]' < /etc/webnas/runtime/active-slot)"
   fi
+  if [[ "$active_slot" == "blue" || "$active_slot" == "green" ]]; then
+    inactive_slot="green"
+    [[ "$active_slot" == "green" ]] && inactive_slot="blue"
+    inactive_unit="webnas-backend-${inactive_slot}.service"
+    inactive_env="/etc/webnas/runtime/backend-${inactive_slot}.env"
+    active_env="/etc/webnas/runtime/backend-${active_slot}.env"
+
+    if [[ -r "$active_env" ]]; then
+      env_release="$(sed -n 's/^WEBNAS_RELEASE=//p' "$active_env" | head -n 1)"
+      if [[ -n "$env_release" && "$(readlink -f -- "$env_release" 2>/dev/null || true)" != "$active_release" ]]; then
+        printf '[ERROR] Refusing reinstall cleanup because active slot %s references a different release: %s\n' "$active_slot" "$env_release" >&2
+        return 1
+      fi
+    fi
+
+    systemctl stop "$inactive_unit" 2>/dev/null || true
+    systemctl disable "$inactive_unit" 2>/dev/null || true
+    systemctl reset-failed "$inactive_unit" 2>/dev/null || true
+    rm -f -- "$inactive_env"
+  fi
+
+  # The broker unit is rewritten to the replacement release by the release
+  # helper. Start it explicitly even when it was previously inactive; otherwise
+  # PAM requests fail with BROKER_UNAVAILABLE after a successful reinstall.
+  restart_standard_privileged_broker
 
   for release in "${install_dir}/releases"/*; do
     [[ -e "$release" ]] || continue
@@ -380,11 +442,11 @@ else
   if standard_reinstall_happened "$reinstall_backups_before"; then
     finalize_standard_reinstall
   fi
-  # Updates run through the long-lived privileged broker. The release helper
-  # rewrites its unit to the newly activated release, so restart an active
-  # broker after a successful install/update before reporting completion.
-  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet webnas-privileged.service 2>/dev/null; then
-    systemctl restart webnas-privileged.service
+  # Updates and fresh installs may replace the broker unit while the service is
+  # inactive. Start the new broker explicitly before reporting a healthy
+  # installation so PAM cannot degrade into BROKER_UNAVAILABLE on first login.
+  if standard_action_has_runtime; then
+    restart_standard_privileged_broker
   fi
   print_standard_authentication_summary
 fi
