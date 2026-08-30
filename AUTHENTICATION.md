@@ -1,116 +1,62 @@
-# Authentication modes
+# Authentication
+
+WebNAS authentication is intentionally separated from remote directory administration. Authentication establishes a WebNAS identity; the existing Identity/RBAC subsystem authorizes that identity.
+
+## Global modes
 
 WebNAS has two mutually exclusive global authentication modes.
 
-## 1. Local database — default
+### Local database
 
-`Local database` is the default mode. The login page accepts only users stored in WebNAS' application-owned `local-auth.sqlite3` database. PAM and LDAP are not offered while this mode is active.
+`Local database` is the default mode. Only application-owned local accounts are accepted. Their credentials are stored as salted password hashes in WebNAS and are not PAM or LDAP identities.
 
-Local-user records contain the username, enabled state, display name, WebNAS role, home metadata and timestamps. Passwords are stored only as salted `scrypt` hashes. Plaintext passwords are never written to the user database, application logs, audit events or browser-readable APIs.
+A fresh installation creates the configured bootstrap administrator and preserves existing local accounts during upgrades. Last-administrator protections prevent an administrator from accidentally removing the final usable local break-glass account.
 
-### Initial administrator
+### System authentication
 
-A fresh standard installation creates this Local database administrator:
-
-```text
-username: chris
-password: 1
-role: admin
-```
-
-The password is stored in `local-auth.sqlite3` only as a salted `scrypt` hash; plaintext `1` is not stored in SQLite. The installer supplies this short bootstrap password through a dedicated first-user path that is available only while the Local database is empty. Normal local-user creation and password changes still require 12–1024 characters.
-
-The installer prints the default account and warns that the password must be changed immediately after the first login. Updates and reinstalls preserve an already initialized Local user database instead of recreating or resetting `chris`.
-
-### Local user management
-
-Administrators can manage local accounts from **Settings → Administration → Authentication**:
-
-- create users;
-- assign `admin`, `operator`, `auditor` or `user` roles;
-- enable/disable accounts;
-- reset passwords;
-- delete accounts;
-- inspect whether a POSIX mapping is available.
-
-The last enabled local administrator cannot be disabled, downgraded or deleted. A signed-in local account cannot delete itself.
-
-Local users can change their own password through the standard account settings flow. The current password is verified against the local WebNAS hash before the new hash is written.
-
-### POSIX mapping
-
-WebNAS performs filesystem operations under a Unix UID/GID. A standard installation therefore creates or reuses a safe POSIX mapping for each local WebNAS user.
-
-When no suitable account already exists and the privileged broker is enabled, WebNAS creates a Linux companion account using a dedicated UID/GID, home directory, a `nologin` shell and a locked system password. The WebNAS password is never copied to `/etc/shadow`.
-
-The companion account is an execution identity, not an authentication source. In Local database mode authentication is performed only by WebNAS.
-
-If a safe POSIX mapping cannot be obtained after valid local credentials are supplied, WebNAS fails the login rather than creating a session that would later break the filesystem security boundary.
-
-Deleting a WebNAS local user does not automatically delete an existing POSIX identity because that operating-system account may predate WebNAS or be used by another service.
-
-## 2. PAM + LDAP system authentication
-
-`PAM + LDAP` is the alternative global mode. When enabled, Local database users are not accepted by the login API.
-
-PAM is always available in this mode. LDAP is independently configurable and disabled by default.
-
-### LDAP disabled
-
-The login screen is effectively the historical PAM form:
+System mode exposes PAM and, when configured, LDAP Authentication.
 
 ```text
-Username
-Password
-Log in
+System authentication
+  ├── PAM
+  └── LDAP Authentication (optional)
 ```
 
-No provider selector is displayed.
+The login API distinguishes `local`, `pam` and `ldap`. A selected provider is authoritative for that login attempt. There is no automatic LDAP → PAM, PAM → LDAP or system-provider → local fallback after a credential failure.
 
-### LDAP enabled
+When LDAP Authentication is enabled, the login screen exposes both LDAP and PAM so the user can explicitly choose a method. LDAP server failover occurs only among servers configured inside the LDAP provider.
 
-The login screen exposes:
+See [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md).
+
+## PAM
+
+PAM is a separate authentication provider. WebNAS uses the dedicated PAM service:
 
 ```text
-Authentication method
-[ LDAP ] [ PAM ]
-
-Username
-Password
-Log in
+/etc/pam.d/webnas
 ```
 
-LDAP is selected by default for every new visit to the login page. Users can manually select PAM without reloading the page.
+There is no fallback to `/etc/pam.d/login`. A missing WebNAS PAM policy is treated as a configuration/service error rather than silently changing authentication semantics.
 
-There is no automatic fallback:
+The standard installer creates `/etc/pam.d/webnas` from the distribution's supported PAM base policy (`common-*` on Debian/Ubuntu/SUSE-style systems or `system-auth` on RHEL-family systems where present).
 
-- LDAP failure never invokes PAM;
-- PAM failure never invokes LDAP;
-- the selected provider remains selected after an error.
+PAM passwords are passed only to PAM for the selected operation and are never stored by WebNAS.
 
-Both providers use the same session store, CSRF controls, central RBAC and login rate limiter.
+## LDAP Authentication
 
-See [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md) for directory configuration and security details.
+LDAP Authentication belongs only to **Settings → Authentication**. It performs LDAP bind/search login, establishes a stable WebNAS LDAP identity, maps LDAP groups into the existing WebNAS RBAC system, evaluates login access policy and creates an ordinary WebNAS session.
 
-## Switching modes
+It owns its own database and Secrets Manager service credential. It does not consume LDAP Manager connections or credentials.
 
-The authentication mode is changed from **Settings → Administration → Authentication**.
+## LDAP Manager is not authentication
 
-The modes are mutually exclusive:
+[LDAP Manager](LDAP_MANAGER.md) is an optional Module Center module for remote LDAP/Active Directory/FreeIPA administration: directory browsing, users, groups, OUs, schema, import/export, diagnostics and bulk operations.
 
-```text
-Local database
-OR
-PAM + optional LDAP
-```
-
-Switching modes invalidates all active WebNAS sessions. This is intentional: a session authenticated under one identity namespace cannot remain active after the application moves to another namespace.
-
-Switching back to Local database is rejected unless at least one enabled local administrator exists.
+Installing, disabling or removing LDAP Manager must not change whether LDAP users can log in to WebNAS. Likewise, configuring LDAP Authentication must not implicitly create an LDAP Manager connection.
 
 ## Public login configuration
 
-The login page obtains only nonsensitive authentication state from:
+The browser obtains nonsensitive provider availability from:
 
 ```text
 GET /api/auth/config
@@ -129,7 +75,7 @@ Local mode example:
 }
 ```
 
-System mode with LDAP example:
+System mode with LDAP enabled:
 
 ```json
 {
@@ -142,27 +88,11 @@ System mode with LDAP example:
 }
 ```
 
-This endpoint never returns password hashes, LDAP hosts, DNs, TLS configuration, Bind Passwords, session tokens or other secrets.
+The public endpoint never returns LDAP hosts, DNs, TLS configuration, password hashes, Bind Passwords, secret IDs or session tokens.
 
 ## Login API
 
-The existing login endpoint remains authoritative:
-
-```text
-POST /api/auth/login
-```
-
-The browser explicitly includes the selected provider:
-
-```json
-{
-  "username": "alice",
-  "password": "secret",
-  "auth_method": "local"
-}
-```
-
-or, in system mode:
+`POST /api/auth/login` accepts the selected provider explicitly:
 
 ```json
 {
@@ -172,49 +102,51 @@ or, in system mode:
 }
 ```
 
-The backend validates the global mode and provider availability. Supplying `pam`/`ldap` in Local mode, or `local` in System mode, is rejected rather than silently redirected to another provider.
+The backend validates the active global mode and provider availability. Invalid provider/mode combinations are rejected rather than redirected to another provider.
 
-When `auth_method` is omitted, the backend follows the current UI default:
+## Identity namespaces
 
-- Local mode → `local`;
-- System mode, LDAP disabled → `pam`;
-- System mode, LDAP enabled → `ldap`.
+Local, PAM and LDAP identities do not collapse into one namespace merely because their usernames match.
 
-## Session and rate-limit isolation
+Sessions store:
 
-Sessions record the actual `auth_provider` (`local`, `pam` or `ldap`) for auditing and identity handling. Old session database schemas are migrated with `pam` as the compatibility value for pre-feature sessions.
+```text
+username
+auth_provider
+identity_id
+```
 
-The brute-force limiter is keyed by source IP and username rather than provider. Switching between LDAP and PAM does not reset the failure budget.
+Local and PAM identities receive provider-qualified IDs. LDAP identities use a stable immutable directory identifier such as `objectGUID`, `entryUUID`, `ipaUniqueID` or a configured immutable-ID attribute.
+
+This provider context is also used for targeted session revocation and prevents an LDAP user from inheriting Linux/PAM administrator semantics merely through a matching username.
+
+## Sessions, CSRF and rate limiting
+
+All providers reuse the same hardened WebNAS session subsystem, HttpOnly/SameSite cookie policy, CSRF protection and login rate limiter. Switching authentication mode invalidates existing sessions so a session from one identity namespace cannot remain active after changing namespaces.
+
+LDAP access-policy/group changes can invalidate LDAP sessions independently. LDAP session validation refreshes directory group state according to the configured cache TTL.
+
+The brute-force limiter is keyed by source IP and username, not provider, so switching between LDAP and PAM does not reset the failure budget.
 
 ## Authorization
 
-Authentication and authorization remain separate.
+Authentication providers do not create independent authorization systems.
 
-- Local database, PAM and LDAP establish identity.
-- WebNAS RBAC decides what that identity can do.
-- Local users use their WebNAS database role.
-- PAM/Linux administrator compatibility applies only to the system identity namespace.
-- LDAP identities do not automatically inherit WebNAS Administrator from `sudo`, `wheel`, `Domain Admins` or another directory group.
+- Local database establishes a local WebNAS identity and its WebNAS role.
+- PAM establishes a Linux-backed system identity.
+- LDAP Authentication establishes an LDAP identity and can derive WebNAS RBAC assignments from LDAP groups.
+- WebNAS Identity/RBAC remains authoritative for permissions.
+- LDAP Manager endpoints use the same WebNAS RBAC engine with granular `ldap.*` permissions.
 
-Authentication mode changes do not create a second authorization subsystem.
+## Break-glass and lockout protection
 
-## Password handling
+Local database authentication remains the application-controlled break-glass path. Mode changes reuse existing administrator-continuity protections. LDAP Authentication performs preflight validation before activation and saves a failing candidate disabled rather than activating an obviously unusable configuration.
 
-### Local database
+## Password and secret handling
 
-- salted `scrypt` hashes;
-- random per-password salts;
-- minimum 12-character password at the API boundary;
-- constant-style dummy verification for unknown usernames;
-- plaintext exists only in process memory while credentials are being created, submitted or verified;
-- the fresh-install bootstrap account is `chris` with default password `1`; SQLite stores only its salted `scrypt` hash;
-- the short password is accepted only by the empty-database installer bootstrap path; normal password APIs retain the 12-character minimum;
-- password changes replace the hash and never expose it through an API.
-
-### PAM
-
-Passwords are passed only to the configured PAM authentication operation and are not stored by WebNAS.
-
-### LDAP
-
-User passwords are used only for the user-DN bind. The service Bind Password is stored in encrypted Secrets Manager storage. See [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md).
+- Local database passwords are stored only as salted hashes.
+- PAM passwords are transient and passed only to PAM.
+- LDAP user passwords are transient and used only for the selected user bind.
+- LDAP Authentication Bind Password is stored only by Secrets Manager.
+- LDAP Manager connection Bind Passwords are separate Secrets Manager entries.
+- Passwords and credentials are excluded from API responses, Activity/Audit details and exception text.
