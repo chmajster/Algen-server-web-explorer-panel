@@ -87,18 +87,13 @@ read_menu_choice() {
   printf '1'
 }
 
-confirm_full_reinstall() {
-  local typed=""
-  printf '\n[WARNING] Full Reinstall permanently removes application files, configuration, databases/data, and logs.\n' >&2
-  printf '[WARNING] Backups under /var/backups/webnas are retained.\n' >&2
-  if ! IFS= read -r -p "Type 'FULL-REINSTALL' to continue: " typed; then
-    printf '[ERROR] Full reinstall cancelled.\n' >&2
-    return 1
-  fi
-  if [[ "$typed" != "FULL-REINSTALL" ]]; then
-    printf '[ERROR] Full reinstall cancelled: confirmation text did not match.\n' >&2
-    return 1
-  fi
+full_reinstall_countdown() {
+  local seconds=""
+  printf '\nFull Reinstall starts automatically. Press Ctrl+C to cancel.\n' >&2
+  for seconds in 5 4 3 2 1; do
+    printf 'Starting in %s...\n' "$seconds" >&2
+    sleep 1
+  done
 }
 
 remove_all_with_standard_installer() {
@@ -119,7 +114,7 @@ full_reinstall() {
   local standard_script="$1"
   local fresh_args=("${FORWARD_ARGS[@]}")
 
-  confirm_full_reinstall
+  full_reinstall_countdown
 
   printf '\n==> Full reinstall: removing existing WebNAS installation and all data\n'
   remove_all_with_standard_installer "$standard_script"
