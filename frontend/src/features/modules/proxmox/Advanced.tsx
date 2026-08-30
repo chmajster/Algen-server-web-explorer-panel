@@ -219,11 +219,11 @@ function SnapshotRetentionApply({ connectionId, maxAgeDays, onChanged, toast }: 
   const apply = async () => {
     setRunning(true);
     try {
-      const result = await request<{ deleted: number; failed: number }>(`${REPORT_BASE}/snapshot-retention/apply`, {
+      const result = await request<{ accepted: number; failed: number }>(`${REPORT_BASE}/snapshot-retention/apply`, {
         method: "POST",
         body: JSON.stringify({ connection_id: connectionId, max_age_days: maxAgeDays, vmids: [], confirmation_text: confirmation }),
       });
-      toast(`Snapshot retention: deleted ${result.deleted}, failed ${result.failed}.`, result.failed ? "error" : "ok", "admin", "proxmox-manager");
+      toast(`Snapshot retention: ${result.accepted} queued/accepted, ${result.failed} failed.`, result.failed ? "error" : "ok", "admin", "proxmox-manager");
       setConfirmation("");
       await onChanged();
     } catch (error) {
@@ -235,7 +235,7 @@ function SnapshotRetentionApply({ connectionId, maxAgeDays, onChanged, toast }: 
 
   return <section className="module-panel danger-panel">
     <h3><Trash2 />Apply snapshot retention</h3>
-    <p>Deletes every non-current snapshot older than {maxAgeDays} days in the selected Proxmox connection.</p>
+    <p>Queues deletion of every non-current snapshot older than {maxAgeDays} days in the selected Proxmox connection.</p>
     <label>Type <code>{expected}</code> to confirm<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>
     <AsyncButton running={running} className="danger" disabled={confirmation !== expected} onClick={() => void apply()}><Trash2 />Delete old snapshots</AsyncButton>
   </section>;
@@ -256,7 +256,7 @@ function BulkForm({ connectionId, toast, onChanged }: { connectionId: string; to
   const run = async () => {
     setRunning(true);
     try {
-      const result = await request<{ ok: number; failed: number }>(`${REPORT_BASE}/bulk`, {
+      const result = await request<{ accepted: number; failed: number }>(`${REPORT_BASE}/bulk`, {
         method: "POST",
         body: JSON.stringify({
           connection_id: connectionId,
@@ -267,7 +267,7 @@ function BulkForm({ connectionId, toast, onChanged }: { connectionId: string; to
           confirmation_text: confirmation,
         }),
       });
-      toast(`Bulk ${action}: ${result.ok} succeeded, ${result.failed} failed.`, result.failed ? "error" : "ok", "admin", "proxmox-manager");
+      toast(`Bulk ${action}: ${result.accepted} queued/accepted, ${result.failed} failed.`, result.failed ? "error" : "ok", "admin", "proxmox-manager");
       await onChanged();
     } catch (error) {
       toast(error instanceof Error ? error.message : `Bulk ${action} failed.`, "error", "admin", "proxmox-manager");
