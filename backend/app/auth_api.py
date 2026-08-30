@@ -123,6 +123,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
     client = request.client.host if request.client else "unknown"
     key = f"{client}:{username}"
     provider: AuthMethod = "local" if auth_mode() == "local" else "pam"
+    identity: LocalAuthenticatedIdentity | AuthenticatedIdentity
     try:
         rate_limiter.check(key)
         provider = _selected_provider(payload.auth_method)
