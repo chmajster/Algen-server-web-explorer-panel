@@ -7,6 +7,7 @@ from app.core.redaction import redact_text
 
 from . import policy as base
 from .extended_policy import dispatch as extended_dispatch
+from .file_worker_policy import dispatch as file_worker_dispatch
 from .protocol import BrokerRequest, BrokerResponse, Operation
 from .storage_probe_rules import ALLOWED_STORAGE_PROBE_TOOLS, storage_probe_args_allowed
 
@@ -55,6 +56,8 @@ def _storage_probe(payload: dict[str, Any], runner: base.Runner) -> base.Command
 
 
 def dispatch(request: BrokerRequest, *, runner: base.Runner | None = None) -> BrokerResponse:
+    if request.operation == Operation.FILE_WORKER:
+        return file_worker_dispatch(request)
     if request.operation != Operation.STORAGE_PROBE:
         return extended_dispatch(request, runner=runner)
 
