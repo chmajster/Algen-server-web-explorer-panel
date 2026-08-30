@@ -8,7 +8,7 @@ const StorageManagerApp = lazy(() => import("../../features/storage/StorageManag
 
 export default {
   id: "storage-manager",
-  labelKey: "Storage Manager",
+  labelKey: "module.storageManager",
   icon: <HardDrive />,
   category: "infrastructure",
   permission: "modules.view",

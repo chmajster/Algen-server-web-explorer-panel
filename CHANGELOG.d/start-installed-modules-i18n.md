@@ -1,0 +1,5 @@
+- Start now hides Package Center applications until their matching backend module is confirmed installed.
+- Added explicit backend module mappings for Firewall Manager, Security Center, Network Tools and Proxmox Manager so uninstalling them removes them from Start.
+- Added Polish and English application labels for recent manager modules, including Fail2Ban, Firewall, Network Tools, Proxmox, Secrets, Security Center, Storage and Webhook Manager.
+- Added Polish UI translations for Firewall Manager, Security Center and Network Tools.
+- Added regression coverage for installed-module filtering and translated module labels.

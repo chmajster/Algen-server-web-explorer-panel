@@ -4,7 +4,7 @@ import { Fail2BanManagerApp } from "./Fail2BanManagerApp";
 
 const manifest: FrontendModuleManifest = {
   id: "fail2ban-manager",
-  labelKey: "Fail2Ban Manager",
+  labelKey: "module.fail2banManager",
   icon: <ShieldBan />,
   category: "security",
   permission: "fail2ban-manager.view",

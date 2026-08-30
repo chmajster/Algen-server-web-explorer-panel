@@ -181,6 +181,7 @@ describe("personalized desktop", () => {
 
   it("shows Cron Manager in Start after its module is installed", async () => {
     vi.spyOn(api, "cronAccess").mockResolvedValue({ installed: true, allowed: true, blocked_by_proxmox: false });
+    vi.spyOn(api, "modules").mockResolvedValue([{ id: "cron", manifest: { name: "Cron Manager" }, state: { installed: true, update_available: false }, jobs: [], module_status: { health: "healthy" } }] as unknown as ModuleSummary[]);
     const base = settingsFixture();
     renderDesktop({ permissions: [...base.permissions, "cron.view"] });
 
@@ -245,7 +246,7 @@ describe("personalized desktop", () => {
     await waitFor(() => expect(api.modules).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
     fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
-    expect(screen.getByRole("button", { name: "ansible.name" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "ansible.name" })).toBeInTheDocument();
   });
 
   it("does not restore an identity window after permission is removed", () => {

@@ -144,6 +144,17 @@ test("Package Center loads catalog and executes mocked install and uninstall", a
 
 test("Firewall Manager, Security Center and Network Tools load as native desktop modules", async ({ page }) => {
   await installMockApi(page);
+  await page.route("**/api/modules", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { id: "firewall-manager", state: { installed: true } },
+        { id: "security-center", state: { installed: true } },
+        { id: "network-tools", state: { installed: true } },
+      ]),
+    });
+  });
   await page.goto("/");
   await openDesktopApp(page, "Firewall Manager");
   await expect(page.getByRole("navigation", { name: "Firewall sections" })).toBeVisible();

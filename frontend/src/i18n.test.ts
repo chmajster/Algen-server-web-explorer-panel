@@ -9,5 +9,9 @@ describe("translations", () => {
     expect(Object.keys(pl).sort()).toEqual(Object.keys(en).sort());
     expect(translate("pl-PL", "app.fileManager")).toBe("Menedżer plików");
     expect(translate("en-US", "status.ready")).toBe("Ready");
+    expect(translate("pl-PL", "module.firewallManager")).toBe("Menedżer zapory");
+    expect(translate("pl-PL", "module.securityCenter")).toBe("Centrum bezpieczeństwa");
+    expect(translate("pl-PL", "module.networkTools")).toBe("Narzędzia sieciowe");
+    expect(translate("en-US", "module.storageManager")).toBe("Storage Manager");
   });
 });
