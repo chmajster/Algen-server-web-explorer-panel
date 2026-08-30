@@ -219,6 +219,9 @@ finalize_standard_reinstall() {
     return 1
   }
 
+  printf '\n==> Cleaning previous application files\n'
+  printf '[INFO] Replacement release is active; removing all stale WebNAS application files while preserving config, data, and logs.\n'
+
   # The release helper rewrites the privileged broker unit to the new release,
   # but an already-running broker keeps executing the old binary until it is
   # restarted. Restart it before deleting any previous release tree.
@@ -245,7 +248,7 @@ finalize_standard_reinstall() {
   done
   shopt -u dotglob nullglob
 
-  printf '[OK] Clean reinstall finalized: old application files removed; config, data, and logs preserved.\n'
+  printf '[OK] Cleanup completed: all stale application files removed; config, data, and logs preserved.\n'
 }
 
 standard_config_port() {
