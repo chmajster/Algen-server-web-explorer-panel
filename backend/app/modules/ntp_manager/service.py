@@ -214,20 +214,20 @@ class NtpService:
         if not path.exists():
             return []
         text = path.read_text(encoding="utf-8", errors="replace")
-        items: list[dict[str, Any]] = []
+        configured_items: list[dict[str, Any]] = []
         if backend == NtpBackend.timesyncd:
             for line in text.splitlines():
                 stripped = line.strip()
                 if stripped.startswith("NTP=") or stripped.startswith("FallbackNTP="):
                     key, values = stripped.split("=", 1)
                     for server in values.split():
-                        items.append({"server": server, "selected": False, "state": "configured", "kind": key})
+                        configured_items.append({"server": server, "selected": False, "state": "configured", "kind": key})
         else:
             for line in text.splitlines():
                 match = _SERVER_RE.match(line.strip().lstrip("#").strip())
                 if match:
-                    items.append({"server": match.group(1), "selected": False, "state": "configured", "enabled": not line.lstrip().startswith("#")})
-        return items
+                    configured_items.append({"server": match.group(1), "selected": False, "state": "configured", "enabled": not line.lstrip().startswith("#")})
+        return configured_items
 
     def test_server(self, server: str) -> dict[str, Any]:
         started = time.monotonic()

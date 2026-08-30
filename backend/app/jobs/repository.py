@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 import os
 import sqlite3
@@ -213,8 +214,8 @@ class JobRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> JobPage:
-        clauses: list[str] = []
-        params: list[Any] = []
+        clauses: builtins.list[str] = []
+        params: builtins.list[Any] = []
         for column, candidate in (("status", status.value if status else None), ("module", module), ("type", job_type), ("created_by", created_by)):
             if candidate is not None:
                 clauses.append(f"{column}=?")
@@ -270,7 +271,7 @@ class JobRepository:
             connection.execute(f"UPDATE jobs SET {columns} WHERE id=?", [*updates.values(), job_id])  # nosec B608
         return self.get(job_id)
 
-    def add_dependencies(self, job_id: str, dependencies: list[str]) -> None:
+    def add_dependencies(self, job_id: str, dependencies: builtins.list[str]) -> None:
         if not dependencies:
             return
         with self._lock, self._connect() as connection:
@@ -284,7 +285,7 @@ class JobRepository:
                 [(job_id, dependency) for dependency in dependencies],
             )
 
-    def dependency_states(self, job_id: str) -> list[JobStatus]:
+    def dependency_states(self, job_id: str) -> builtins.list[JobStatus]:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT j.status FROM job_dependencies d JOIN jobs j ON j.id=d.depends_on_job_id WHERE d.job_id=?",
@@ -292,7 +293,7 @@ class JobRepository:
             ).fetchall()
         return [JobStatus(str(row["status"])) for row in rows]
 
-    def dependents(self, job_id: str) -> list[str]:
+    def dependents(self, job_id: str) -> builtins.list[str]:
         with self._connect() as connection:
             rows = connection.execute("SELECT job_id FROM job_dependencies WHERE depends_on_job_id=?", (job_id,)).fetchall()
         return [str(row["job_id"]) for row in rows]
@@ -308,7 +309,7 @@ class JobRepository:
                 (job_id, job_id),
             )
 
-    def logs(self, job_id: str, *, limit: int = 250, offset: int = 0) -> list[JobLogEntry]:
+    def logs(self, job_id: str, *, limit: int = 250, offset: int = 0) -> builtins.list[JobLogEntry]:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM job_logs WHERE job_id=? ORDER BY id ASC LIMIT ? OFFSET ?",
