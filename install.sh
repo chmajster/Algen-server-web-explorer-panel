@@ -30,7 +30,9 @@ Portable options:
   -h, --help               Show help for the selected mode
 
 Fresh standard installations use the WebNAS Local database authentication mode
-by default. PAM and optional LDAP are available later through Settings ->
+by default. The initial administrator password is generated randomly and shown
+once by the standard installer; it is never written to a plaintext credential
+file. PAM and optional LDAP are available later through Settings ->
 Administration -> Authentication. Standard installer options such as
 --install-dir, --user and --existing-action remain available.
 EOF_USAGE
@@ -162,7 +164,6 @@ print_standard_authentication_summary() {
   local scheme=""
   local response_file=""
   local mode=""
-  local bootstrap_file="/var/lib/webnas/initial-local-admin.txt"
   local curl_options=(--fail --silent --show-error --max-time 5)
 
   standard_action_has_runtime || return 0
@@ -175,7 +176,7 @@ print_standard_authentication_summary() {
 
   if ! curl "${curl_options[@]}" "${scheme}://127.0.0.1:${port}/api/auth/config" -o "$response_file"; then
     rm -f -- "$response_file"
-    printf '[WARN] WebNAS is installed, but the authentication bootstrap status could not be read.\n' >&2
+    printf '[WARN] WebNAS is installed, but the authentication status could not be read.\n' >&2
     return 0
   fi
 
@@ -196,16 +197,10 @@ PY
   fi
   rm -f -- "$response_file"
 
-  printf '\n==> Authentication\n'
+  printf '\n==> Authentication summary\n'
   if [[ "$mode" == "local" ]]; then
     printf '[OK] Authentication mode: Local database (default)\n'
-    if [[ -r "$bootstrap_file" ]]; then
-      printf '\nInitial local administrator credentials:\n'
-      cat "$bootstrap_file"
-      printf '\n[WARN] Store the password securely. The bootstrap file is deleted after the first successful local login.\n'
-    else
-      printf '[INFO] Existing local users were preserved; no new bootstrap password was generated.\n'
-    fi
+    printf '[INFO] A newly generated administrator password is printed once by the standard installer and is not retained in plaintext.\n'
     printf '[INFO] PAM and optional LDAP can be enabled later in Settings -> Administration -> Authentication.\n'
   elif [[ "$mode" == "system" ]]; then
     printf '[OK] Authentication mode: System authentication (PAM + optional LDAP)\n'
