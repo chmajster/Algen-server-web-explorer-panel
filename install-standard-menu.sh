@@ -52,7 +52,13 @@ resolve_script() {
 
 cleanup_temp_script() {
   local path="$1"
-  [[ "$path" == /tmp/webnas-* ]] && rm -f -- "$path"
+  if [[ "$path" == /tmp/webnas-* ]]; then
+    rm -f -- "$path"
+  fi
+  # EXIT traps must never replace a successful installer status with the
+  # false status of a cleanup predicate. A real installer failure remains the
+  # shell's pending exit status even when this cleanup returns successfully.
+  return 0
 }
 
 run_standard() {
