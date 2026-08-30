@@ -15,15 +15,69 @@ from .permissions import ALL_PERMISSIONS, Permission, ROLE_PERMISSIONS
 from .repository import IdentityRepository, repository
 
 
-def _provider_safe_linux_admin(username: str) -> bool:
-    """Linux-admin elevation belongs only to the PAM/local identity namespace.
+def _local_database_profile(username: str) -> dict[str, Any] | None:
+    """Return the application-owned identity while local DB mode is active.
 
-    LDAP users may be exposed through NSS and may even be members of Unix
-    ``sudo``/``wheel`` groups. That must not implicitly make an LDAP-authenticated
-    identity a WebNAS administrator. A remembered LDAP identity stays in normal
-    WebNAS RBAC and can receive an explicit application role/policy instead.
+    Local database users are intentionally isolated from Linux/LDAP RBAC
+    assignments that happen to use the same username. File/transfer permissions
+    are suppressed when no safe POSIX mapping exists because the worker boundary
+    cannot impersonate an application-only account.
     """
 
+    try:
+        from ..local_auth import auth_mode, local_posix_mapping, local_user
+
+        if auth_mode() != "local":
+            return None
+        account = local_user(username)
+        if not account:
+            return None
+    except ImportError:
+        return None
+
+    try:
+        role = Role(str(account.get("role") or Role.user.value))
+    except ValueError:
+        role = Role.user
+    allowed = set(ROLE_PERMISSIONS[role])
+    denied: set[str] = set()
+    sources: dict[str, list[str]] = {
+        permission: [f"local-role:{role.value}"] for permission in allowed
+    }
+    if local_posix_mapping(username) is None:
+        denied = {
+            permission
+            for permission in allowed
+            if permission.startswith("files.") or permission.startswith("transfers.")
+        }
+        allowed -= denied
+        for permission in denied:
+            sources.setdefault(permission, []).append("deny:no-posix-mapping")
+    return {
+        "username": username,
+        "role": role.value,
+        "role_source": "local-database",
+        "linux_admin": False,
+        "is_admin": role == Role.admin and Permission.ACCESS_MANAGE_ROLES.value in allowed,
+        "permissions": sorted(allowed),
+        "effective_permissions": sorted(allowed),
+        "denied_permissions": sorted(denied),
+        "permission_sources": {
+            key: list(dict.fromkeys(value)) for key, value in sorted(sources.items())
+        },
+    }
+
+
+def _provider_safe_linux_admin(username: str) -> bool:
+    """Linux-admin elevation belongs only to the active system identity namespace."""
+
+    try:
+        from ..local_auth import auth_mode, local_user
+
+        if auth_mode() == "local" and local_user(username) is not None:
+            return False
+    except ImportError:
+        pass
     try:
         from ..ldap_auth import is_ldap_identity
 
@@ -40,6 +94,9 @@ class IdentityService:
         self._lock = threading.RLock()
 
     def _profile(self, username: str, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None, groups_override: tuple[str, set[str]] | None = None) -> dict[str, Any]:
+        local_profile = _local_database_profile(username)
+        if local_profile is not None:
+            return local_profile
         if _provider_safe_linux_admin(username):
             return {
                 "username": username, "role": Role.admin.value, "role_source": "linux-admin", "linux_admin": True, "is_admin": True,
