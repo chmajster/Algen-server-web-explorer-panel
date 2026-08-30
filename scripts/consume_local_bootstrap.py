@@ -11,14 +11,13 @@ def main() -> int:
     parser.add_argument("username")
     parser.add_argument("password")
     args = parser.parse_args()
-    user, password = bootstrap_initial_admin(args.username, args.password)
+    user, _ = bootstrap_initial_admin(args.username, args.password)
     if user is None:
         print("Local user database already initialized; existing accounts preserved.")
         return 0
     print("Default local administrator created:")
     print(f"Username: {user['username']}")
-    print(f"Password: {password}")
-    print("IMPORTANT: change this default password immediately after the first login.")
+    print("IMPORTANT: change the default installer password immediately after the first login.")
     return 0
 
 
