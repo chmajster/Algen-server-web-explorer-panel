@@ -43,6 +43,27 @@ class LocalAuthConfigurationError(LocalAuthenticationError):
     pass
 
 
+class AuthenticationModeRuntime:
+    """Process-local authentication mode loaded from persistent configuration at startup."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._mode: AuthMode | None = None
+
+    def load(self, mode: AuthMode) -> AuthMode:
+        value: AuthMode = "system" if mode == "system" else "local"
+        with self._lock:
+            self._mode = value
+        return value
+
+    def current(self) -> AuthMode | None:
+        with self._lock:
+            return self._mode
+
+
+_auth_mode_runtime = AuthenticationModeRuntime()
+
+
 def _b64(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
@@ -240,6 +261,7 @@ class LocalAuthRepository:
         return username.casefold()
 
     def auth_mode(self) -> AuthMode:
+        """Return the configured mode persisted in SQLite, not the active runtime mode."""
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT auth_mode FROM local_auth_settings WHERE id=1"
@@ -462,11 +484,27 @@ def repository() -> LocalAuthRepository:
     return LocalAuthRepository()
 
 
-def auth_mode() -> AuthMode:
+def configured_auth_mode() -> AuthMode:
+    """Return the persisted mode selected by the administrator."""
     try:
         return repository().auth_mode()
     except Exception:
         return "local"
+
+
+def initialize_active_auth_mode() -> AuthMode:
+    """Load the configured mode into process-local runtime state during application startup."""
+    return _auth_mode_runtime.load(configured_auth_mode())
+
+
+def auth_mode() -> AuthMode:
+    """Return the mode active for this WebNAS process without re-reading SQLite."""
+    active = _auth_mode_runtime.current()
+    if active is not None:
+        return active
+    # Keep direct module consumers and narrow unit tests safe if they execute
+    # outside FastAPI lifespan; the first read is frozen for the process.
+    return initialize_active_auth_mode()
 
 
 def local_user(username: str) -> dict[str, Any] | None:

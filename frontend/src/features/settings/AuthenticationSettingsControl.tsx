@@ -1,4 +1,4 @@
-import { Check, Edit3, KeyRound, LoaderCircle, Plus, Save, ShieldCheck, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { Check, Edit3, KeyRound, LoaderCircle, Plus, Save, ShieldCheck, Trash2, TriangleAlert, UserRound, UsersRound, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ToastFn } from "../../app/types";
@@ -10,6 +10,8 @@ type LocalRole = "admin" | "operator" | "auditor" | "user";
 
 type AuthSettings = {
   mode: AuthMode;
+  configured_mode: AuthMode;
+  restart_required: boolean;
   default_mode: "local";
   local_database_enabled: boolean;
   system_authentication_enabled: boolean;
@@ -73,6 +75,13 @@ export function AuthenticationSettingsControl({ active, locale, toast }: Props) 
     system: "PAM + LDAP",
     systemHint: "Konta systemowe PAM oraz katalog LDAP.",
     changing: "Zmiana trybu…",
+    restartTitle: "Restart wymagany",
+    restartMessage: "Metoda uwierzytelniania została zmieniona. Aby zastosować zmianę, wymagany jest restart aplikacji WebNAS.",
+    changedFrom: "Metoda uwierzytelniania została zmieniona z:",
+    changedTo: "na:",
+    restartInstruction: "Aby zastosować zmianę, uruchom ponownie aplikację WebNAS.",
+    activeNow: "Aktywne teraz",
+    pendingActivation: "zostanie aktywowane po restarcie",
     users: "Lokalni użytkownicy WebNAS",
     usersHint: "Konta awaryjne i lokalne zarządzane przez WebNAS. Brak mapowania POSIX blokuje operacje plikowe.",
     username: "Login",
@@ -103,7 +112,6 @@ export function AuthenticationSettingsControl({ active, locale, toast }: Props) 
     userSaved: "Użytkownik lokalny został zapisany.",
     userCreated: "Użytkownik lokalny został utworzony.",
     userDeleted: "Użytkownik lokalny został usunięty.",
-    reauth: "Tryb logowania został zmieniony. Wymagane jest ponowne logowanie.",
     empty: "Brak lokalnych użytkowników.",
   } : {
     title: "Authentication method",
@@ -113,6 +121,13 @@ export function AuthenticationSettingsControl({ active, locale, toast }: Props) 
     system: "PAM + LDAP",
     systemHint: "System PAM accounts and the LDAP directory.",
     changing: "Changing mode…",
+    restartTitle: "Restart required",
+    restartMessage: "Authentication method changed. Restart the WebNAS application to apply the change.",
+    changedFrom: "Authentication method changed from:",
+    changedTo: "to:",
+    restartInstruction: "Restart the WebNAS application to apply the change.",
+    activeNow: "Active now",
+    pendingActivation: "will be activated after restart",
     users: "Local WebNAS users",
     usersHint: "Emergency and local accounts managed by WebNAS. Without POSIX mapping, file operations are disabled.",
     username: "Username",
@@ -143,7 +158,6 @@ export function AuthenticationSettingsControl({ active, locale, toast }: Props) 
     userSaved: "Local user was saved.",
     userCreated: "Local user was created.",
     userDeleted: "Local user was deleted.",
-    reauth: "Authentication mode changed. Sign in again using the new mode.",
     empty: "No local users.",
   }, [pl]);
 
@@ -190,7 +204,7 @@ export function AuthenticationSettingsControl({ active, locale, toast }: Props) 
   }, [active]);
 
   async function changeMode(mode: AuthMode) {
-    if (!settings || mode === settings.mode) return;
+    if (!settings || mode === settings.configured_mode) return;
     setModeSaving(true);
     try {
       const result = await request<AuthSettings>("/api/settings/authentication", {
@@ -198,8 +212,7 @@ export function AuthenticationSettingsControl({ active, locale, toast }: Props) 
         body: JSON.stringify({ mode }),
       });
       setSettings(result);
-      toast(result.reauthentication_required ? copy.reauth : copy.saved, "ok", "admin");
-      if (result.reauthentication_required) window.setTimeout(() => window.location.reload(), 350);
+      toast(result.restart_required ? copy.restartMessage : copy.saved, "ok", "admin");
     } catch (error) {
       toast(error instanceof Error ? error.message : copy.loadError, "error", "admin");
     } finally {
@@ -295,6 +308,10 @@ export function AuthenticationSettingsControl({ active, locale, toast }: Props) 
     }
   }
 
+  function modeName(mode: AuthMode) {
+    return mode === "local" ? copy.local : copy.system;
+  }
+
   const editingUser = dialog?.mode === "edit" ? users.find((user) => user.username === dialog.username) || null : null;
 
   const dialogContent = dialog ? <div className="auth-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}>
@@ -344,16 +361,28 @@ export function AuthenticationSettingsControl({ active, locale, toast }: Props) 
           </div>
           {modeSaving && <span className="auth-inline-status"><LoaderCircle className="spin" size={15} /> {copy.changing}</span>}
         </div>
+        {settings?.restart_required && <div className="auth-restart-banner" role="status" data-testid="auth-restart-required">
+          <span className="auth-restart-banner__icon" aria-hidden="true"><TriangleAlert size={20} /></span>
+          <div className="auth-restart-banner__content">
+            <strong>{copy.restartTitle}</strong>
+            <p>{copy.restartMessage}</p>
+            <div className="auth-restart-banner__transition">
+              <span>{copy.changedFrom} <b>{modeName(settings.mode)}</b></span>
+              <span>{copy.changedTo} <b>{modeName(settings.configured_mode)}</b></span>
+            </div>
+            <p>{copy.restartInstruction}</p>
+          </div>
+        </div>}
         {loading && !settings ? <div className="auth-loading"><LoaderCircle className="spin" size={18} /></div> : settings && <div className="auth-mode-grid" role="radiogroup" aria-label={copy.title}>
-          <button type="button" role="radio" aria-checked={settings.mode === "local"} className={`auth-mode-card ${settings.mode === "local" ? "is-selected" : ""}`} disabled={modeSaving} onClick={() => void changeMode("local")}>
+          <button type="button" role="radio" aria-checked={settings.configured_mode === "local"} className={`auth-mode-card ${settings.configured_mode === "local" ? "is-selected" : ""}`} disabled={modeSaving} onClick={() => void changeMode("local")}>
             <span className="auth-mode-card__icon"><UserRound size={19} /></span>
-            <span className="auth-mode-card__content"><strong>{copy.local}</strong><small>{copy.localHint}</small></span>
-            <span className="auth-mode-card__check" aria-hidden="true">{settings.mode === "local" && <Check size={16} />}</span>
+            <span className="auth-mode-card__content"><strong>{copy.local}</strong><small>{copy.localHint}</small><span className="auth-mode-card__meta">{settings.mode === "local" && <em>{copy.activeNow}</em>}{settings.restart_required && settings.configured_mode === "local" && <em>{copy.pendingActivation}</em>}</span></span>
+            <span className="auth-mode-card__check" aria-hidden="true">{settings.configured_mode === "local" && <Check size={16} />}</span>
           </button>
-          <button type="button" role="radio" aria-checked={settings.mode === "system"} className={`auth-mode-card ${settings.mode === "system" ? "is-selected" : ""}`} disabled={modeSaving} onClick={() => void changeMode("system")}>
+          <button type="button" role="radio" aria-checked={settings.configured_mode === "system"} className={`auth-mode-card ${settings.configured_mode === "system" ? "is-selected" : ""}`} disabled={modeSaving} onClick={() => void changeMode("system")}>
             <span className="auth-mode-card__icon"><ShieldCheck size={19} /></span>
-            <span className="auth-mode-card__content"><strong>{copy.system}</strong><small>{copy.systemHint}</small></span>
-            <span className="auth-mode-card__check" aria-hidden="true">{settings.mode === "system" && <Check size={16} />}</span>
+            <span className="auth-mode-card__content"><strong>{copy.system}</strong><small>{copy.systemHint}</small><span className="auth-mode-card__meta">{settings.mode === "system" && <em>{copy.activeNow}</em>}{settings.restart_required && settings.configured_mode === "system" && <em>{copy.pendingActivation}</em>}</span></span>
+            <span className="auth-mode-card__check" aria-hidden="true">{settings.configured_mode === "system" && <Check size={16} />}</span>
           </button>
         </div>}
       </section>

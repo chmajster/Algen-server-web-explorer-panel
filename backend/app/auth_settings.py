@@ -8,11 +8,10 @@ from pydantic import BaseModel, Field
 
 from .activity import ActivityCategory, ActivityStatus, record_activity
 from .identity.service import access_profile
-from .local_auth import AuthMode, LocalInvalidCredentials, repository as local_repository
+from .local_auth import AuthMode, LocalInvalidCredentials, auth_mode, repository as local_repository
 from .security import (
     SessionUser,
     get_session_user,
-    invalidate_all_sessions,
     invalidate_provider_user_sessions,
     require_csrf,
 )
@@ -76,13 +75,16 @@ def local_write(request: Request) -> SessionUser:
 
 def _state() -> dict:
     store = local_repository()
-    mode = store.auth_mode()
+    active_mode = auth_mode()
+    configured_mode = store.auth_mode()
     users = store.users()
     return {
-        "mode": mode,
+        "mode": active_mode,
+        "configured_mode": configured_mode,
+        "restart_required": active_mode != configured_mode,
         "default_mode": "local",
-        "local_database_enabled": mode == "local",
-        "system_authentication_enabled": mode == "system",
+        "local_database_enabled": active_mode == "local",
+        "system_authentication_enabled": active_mode == "system",
         "local_user_count": len(users),
         "local_enabled_admin_count": store.enabled_admin_count(),
     }
@@ -99,23 +101,25 @@ def set_authentication_settings(
     user: SessionUser = Depends(admin_write),
 ):
     store = local_repository()
-    previous = store.auth_mode()
+    previous_configured_mode = store.auth_mode()
     try:
-        mode = store.set_auth_mode(payload.mode, user.username)
+        configured_mode = store.set_auth_mode(payload.mode, user.username)
     except ValueError as error:
         raise HTTPException(HTTPStatus.CONFLICT, str(error)) from error
-    changed = mode != previous
-    reauthentication_required = changed
-    if changed:
+    if configured_mode != previous_configured_mode:
         record_activity(
             ActivityCategory.administration,
             "auth.mode.changed",
             user.username,
-            details={"previous": previous, "current": mode},
+            details={
+                "active": auth_mode(),
+                "previous_configured": previous_configured_mode,
+                "configured": configured_mode,
+                "restart_required": auth_mode() != configured_mode,
+            },
             source="settings",
         )
-        invalidate_all_sessions()
-    return {**_state(), "reauthentication_required": reauthentication_required}
+    return {**_state(), "reauthentication_required": False}
 
 
 @router.post("/local-password")
