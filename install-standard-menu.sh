@@ -160,53 +160,123 @@ wait_for_application_health() {
     sleep 1
   done
 
-  printf '[ERROR] WebNAS service is active, but /api/health did not become ready within 20 seconds.\n' >&2
+  printf '[ERROR] WebNAS /api/health did not become ready within 20 seconds.\n' >&2
   return 1
+}
+
+print_service_diagnostics() {
+  local unit="$1"
+
+  printf '\n[DIAGNOSTICS] %s\n' "$unit" >&2
+  systemctl status "$unit" --no-pager -l >&2 2>/dev/null || true
+  journalctl -u "$unit" -n 60 --no-pager >&2 2>/dev/null || true
+}
+
+resolve_application_unit() {
+  local active_slot_file="/etc/webnas/runtime/active-slot"
+  local active_slot=""
+  local unit=""
+
+  # The persisted blue/green marker is authoritative even when the selected
+  # backend is currently failed or stuck in an auto-restart loop. Restricting
+  # discovery to `systemctl is-active` makes the Restart action unable to
+  # recover exactly the broken runtime it is meant to repair.
+  if [[ -r "$active_slot_file" ]]; then
+    active_slot="$(tr -d '[:space:]' < "$active_slot_file")"
+    if [[ "$active_slot" == "blue" || "$active_slot" == "green" ]]; then
+      unit="webnas-backend-${active_slot}.service"
+      if systemctl cat "$unit" >/dev/null 2>&1; then
+        printf '%s' "$unit"
+        return 0
+      fi
+    fi
+  fi
+
+  for unit in webnas-backend-blue.service webnas-backend-green.service webnas.service; do
+    if systemctl is-active --quiet "$unit" 2>/dev/null; then
+      printf '%s' "$unit"
+      return 0
+    fi
+  done
+
+  # Last-resort recovery for an installed service which is currently failed or
+  # activating but predates the active-slot marker.
+  for unit in webnas-backend-blue.service webnas-backend-green.service webnas.service; do
+    if systemctl cat "$unit" >/dev/null 2>&1; then
+      printf '%s' "$unit"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+restart_privileged_broker() {
+  systemctl reset-failed webnas-privileged.service 2>/dev/null || true
+
+  if ! systemctl restart webnas-privileged.socket; then
+    printf '[ERROR] WebNAS privileged broker socket could not be restarted.\n' >&2
+    print_service_diagnostics webnas-privileged.socket
+    return 1
+  fi
+
+  # Start the broker explicitly even when it was previously inactive. Waiting
+  # for a future privileged API call would leave PAM unavailable after a
+  # nominally successful application restart.
+  if ! systemctl restart webnas-privileged.service; then
+    printf '[ERROR] WebNAS privileged broker could not be restarted.\n' >&2
+    print_service_diagnostics webnas-privileged.service
+    return 1
+  fi
+
+  if ! systemctl is-active --quiet webnas-privileged.service; then
+    printf '[ERROR] WebNAS privileged broker is not active after restart.\n' >&2
+    print_service_diagnostics webnas-privileged.service
+    return 1
+  fi
+
+  printf '[OK] WebNAS privileged broker is active.\n'
 }
 
 restart_application() {
   local unit=""
-  local -a active_units=()
 
   command -v systemctl >/dev/null 2>&1 || {
     printf '[ERROR] Cannot restart WebNAS: systemctl is unavailable.\n' >&2
     return 1
   }
 
-  # Standard releases use one active blue/green backend. Keep the legacy unit
-  # as a fallback for installations created before blue/green deployment.
-  for unit in webnas-backend-blue.service webnas-backend-green.service webnas.service; do
-    if systemctl is-active --quiet "$unit" 2>/dev/null; then
-      active_units+=("$unit")
-    fi
-  done
-
-  if (( ${#active_units[@]} == 0 )); then
-    printf '[ERROR] Cannot restart WebNAS: no active application service was found.\n' >&2
+  unit="$(resolve_application_unit || true)"
+  if [[ -z "$unit" ]]; then
+    printf '[ERROR] Cannot restart WebNAS: no installed application service was found.\n' >&2
     return 1
   fi
 
   printf '\n==> Restarting WebNAS application\n'
+  printf '[INFO] Selected application service: %s\n' "$unit"
 
-  # The privileged broker is part of the application runtime. Restart it when
-  # already active; socket activation will start it later when currently idle.
-  if systemctl is-active --quiet webnas-privileged.service 2>/dev/null; then
-    systemctl restart webnas-privileged.service
+  restart_privileged_broker
+
+  systemctl reset-failed "$unit" 2>/dev/null || true
+  if ! systemctl restart "$unit"; then
+    printf '[ERROR] WebNAS service restart command failed: %s\n' "$unit" >&2
+    print_service_diagnostics "$unit"
+    return 1
   fi
 
-  for unit in "${active_units[@]}"; do
-    systemctl restart "$unit"
-  done
+  if ! wait_for_application_health; then
+    print_service_diagnostics "$unit"
+    print_service_diagnostics webnas-privileged.service
+    return 1
+  fi
 
-  for unit in "${active_units[@]}"; do
-    if ! systemctl is-active --quiet "$unit"; then
-      printf '[ERROR] WebNAS service did not become active after restart: %s\n' "$unit" >&2
-      return 1
-    fi
-  done
+  if ! systemctl is-active --quiet "$unit"; then
+    printf '[ERROR] WebNAS health endpoint responded, but service is not active: %s\n' "$unit" >&2
+    print_service_diagnostics "$unit"
+    return 1
+  fi
 
-  wait_for_application_health
-  printf '[OK] WebNAS application restarted: %s\n' "${active_units[*]}"
+  printf '[OK] WebNAS application restarted: %s\n' "$unit"
 }
 
 full_reinstall_countdown() {
