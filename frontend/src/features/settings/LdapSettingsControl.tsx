@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { KeyRound, LoaderCircle, PlugZap } from "lucide-react";
+import { Database, KeyRound, LoaderCircle, PlugZap, Search, Server, ShieldCheck } from "lucide-react";
 import type { ToastFn } from "../../app/types";
 import { request } from "../../core/api/transport";
 
 type SecurityMode = "ldap" | "starttls" | "ldaps";
+type LdapSection = "connection" | "directory" | "mapping";
 
 type LdapSettings = {
   enabled: boolean;
@@ -37,71 +38,99 @@ type Props = {
 
 const copy = {
   pl: {
-    title: "LDAP Authentication",
-    description: "Konfiguracja katalogu LDAP używanego w trybie PAM + LDAP. Po włączeniu LDAP ekran logowania pokazuje wybór źródła konta: LDAP albo localUser.",
+    title: "Logowanie LDAP",
+    description: "Zewnętrzny katalog użytkowników dla trybu PAM + LDAP. Konfiguracja LDAP jest niezależna od lokalnych kont WebNAS.",
     enabled: "Włącz logowanie LDAP",
-    enabledHint: "localUser korzysta z systemowego PAM. W trybie Local database konfiguracja LDAP może być zapisana, ale nie jest dostępna na ekranie logowania.",
+    enabledHint: "Po włączeniu LDAP pojawi się jako metoda logowania. PAM pozostaje dostępny jako alternatywa.",
+    enabledStatus: "LDAP aktywny",
+    disabledStatus: "LDAP wyłączony",
     connection: "Połączenie",
-    connectionHint: "Adres serwera, szyfrowanie TLS i limity czasu połączenia z katalogiem.",
-    directory: "Wyszukiwanie użytkowników",
-    directoryHint: "Zakres katalogu i filtr używany do odnalezienia konta podanego na ekranie logowania.",
-    mapping: "Bind i mapowanie atrybutów",
-    mappingHint: "Konto techniczne LDAP oraz atrybuty używane do pobrania danych użytkownika.",
+    connectionHint: "Adres serwera, transport TLS oraz limity czasu połączenia z katalogiem.",
+    directory: "Wyszukiwanie",
+    directoryHint: "Zakres katalogu i filtr używany do odnalezienia konta użytkownika.",
+    mapping: "Bind i atrybuty",
+    mappingHint: "Konto techniczne LDAP oraz mapowanie danych użytkownika.",
+    endpoint: "Endpoint",
+    transport: "Transport",
+    bindSecret: "Hasło Bind",
+    configured: "skonfigurowane",
+    notConfigured: "brak",
     server: "Serwer LDAP / URI",
+    serverHint: "Hostname albo URI ldap:// / ldaps://.",
     port: "Port",
     security: "Tryb bezpieczeństwa",
     verifyTls: "Weryfikuj certyfikat TLS",
+    verifyTlsHint: "Wyłączaj tylko dla kontrolowanych środowisk testowych.",
     connectTimeout: "Timeout połączenia (s)",
     operationTimeout: "Timeout operacji (s)",
     baseDn: "Base DN",
     searchBase: "User Search Base DN",
     searchFilter: "User Search Filter",
+    searchFilterHint: "Filtr musi zawierać dokładnie jeden znacznik {username}.",
     usernameAttribute: "Atrybut nazwy użytkownika",
     bindDn: "Bind DN",
     bindPassword: "Bind Password",
-    bindPasswordConfigured: "Sekret Bind Password jest skonfigurowany. Pozostaw pole puste, aby go zachować.",
+    bindPasswordConfigured: "Sekret jest już zapisany. Puste pole zachowa obecne hasło.",
     clearPassword: "Usuń zapisany Bind Password",
     displayName: "Atrybut display name",
     email: "Atrybut e-mail",
     save: "Zapisz LDAP",
     saving: "Zapisywanie…",
-    test: "Test LDAP Connection",
+    test: "Testuj połączenie",
     testing: "Testowanie…",
+    testSavedHint: "Test używa ostatnio zapisanej konfiguracji.",
+    dirtyTestHint: "Zapisz zmiany przed wykonaniem testu połączenia.",
+    incomplete: "Uzupełnij wymagane pola LDAP przed włączeniem logowania.",
+    loading: "Wczytywanie konfiguracji LDAP…",
     loadError: "Nie udało się odczytać ustawień LDAP.",
     saved: "Ustawienia LDAP zostały zapisane.",
     testOk: "Połączenie LDAP działa poprawnie.",
   },
   en: {
-    title: "LDAP Authentication",
-    description: "Configure the LDAP directory used by PAM + LDAP mode. When LDAP is enabled, the login page lets users choose the account source: LDAP or localUser.",
+    title: "LDAP authentication",
+    description: "External user directory for PAM + LDAP mode. LDAP configuration is independent from local WebNAS accounts.",
     enabled: "Enable LDAP authentication",
-    enabledHint: "localUser uses the system PAM provider. In Local database mode LDAP settings can be prepared, but LDAP is not available on the login page.",
+    enabledHint: "When enabled, LDAP appears as a sign-in method. PAM remains available as an alternative.",
+    enabledStatus: "LDAP enabled",
+    disabledStatus: "LDAP disabled",
     connection: "Connection",
-    connectionHint: "Directory endpoint, TLS transport and connection timeout settings.",
+    connectionHint: "Directory endpoint, TLS transport, and connection timeout settings.",
     directory: "User search",
-    directoryHint: "Directory scope and filter used to locate the account entered on the login page.",
-    mapping: "Bind and attribute mapping",
-    mappingHint: "LDAP service account and attributes used to load user information.",
+    directoryHint: "Directory scope and filter used to locate the user account.",
+    mapping: "Bind and attributes",
+    mappingHint: "LDAP service account and user attribute mapping.",
+    endpoint: "Endpoint",
+    transport: "Transport",
+    bindSecret: "Bind password",
+    configured: "configured",
+    notConfigured: "none",
     server: "LDAP server / URI",
+    serverHint: "Hostname or ldap:// / ldaps:// URI.",
     port: "Port",
     security: "Security mode",
     verifyTls: "Verify TLS certificate",
+    verifyTlsHint: "Disable only in controlled test environments.",
     connectTimeout: "Connection timeout (s)",
     operationTimeout: "Operation timeout (s)",
     baseDn: "Base DN",
     searchBase: "User Search Base DN",
     searchFilter: "User Search Filter",
+    searchFilterHint: "The filter must contain exactly one {username} placeholder.",
     usernameAttribute: "Username attribute",
     bindDn: "Bind DN",
     bindPassword: "Bind Password",
-    bindPasswordConfigured: "A Bind Password secret is configured. Leave this field empty to preserve it.",
+    bindPasswordConfigured: "A secret is already stored. Leave this field empty to keep it.",
     clearPassword: "Clear stored Bind Password",
     displayName: "Display name attribute",
     email: "Email attribute",
     save: "Save LDAP",
     saving: "Saving…",
-    test: "Test LDAP Connection",
+    test: "Test connection",
     testing: "Testing…",
+    testSavedHint: "The test uses the last saved configuration.",
+    dirtyTestHint: "Save changes before testing the connection.",
+    incomplete: "Complete the required LDAP fields before enabling authentication.",
+    loading: "Loading LDAP configuration…",
     loadError: "Could not load LDAP settings.",
     saved: "LDAP settings were saved.",
     testOk: "LDAP connection is healthy.",
@@ -112,10 +141,51 @@ function toDraft(value: LdapSettings): LdapDraft {
   return { ...value, bind_password: "", clear_bind_password: false };
 }
 
+function fingerprint(value: LdapSettings | LdapDraft): string {
+  return JSON.stringify({
+    enabled: value.enabled,
+    server: value.server,
+    port: value.port,
+    security_mode: value.security_mode,
+    verify_tls: value.verify_tls,
+    connect_timeout: value.connect_timeout,
+    operation_timeout: value.operation_timeout,
+    base_dn: value.base_dn,
+    user_search_base: value.user_search_base,
+    user_search_filter: value.user_search_filter,
+    username_attribute: value.username_attribute,
+    bind_dn: value.bind_dn,
+    bind_password_configured: value.bind_password_configured,
+    display_name_attribute: value.display_name_attribute,
+    email_attribute: value.email_attribute,
+  });
+}
+
+function configurationComplete(value: LdapSettings | LdapDraft): boolean {
+  return Boolean(
+    value.server.trim()
+      && value.base_dn.trim()
+      && value.user_search_base.trim()
+      && value.user_search_filter.trim()
+      && value.user_search_filter.includes("{username}")
+      && value.username_attribute.trim()
+      && value.bind_dn.trim()
+      && Number.isFinite(value.port)
+      && value.port >= 1
+      && value.port <= 65535
+      && Number.isFinite(value.connect_timeout)
+      && value.connect_timeout >= 0.5
+      && Number.isFinite(value.operation_timeout)
+      && value.operation_timeout >= 0.5
+  );
+}
+
 export function LdapSettingsControl({ active, locale, toast }: Props) {
   const anchorRef = useRef<HTMLSpanElement | null>(null);
   const [target, setTarget] = useState<Element | null>(null);
   const [draft, setDraft] = useState<LdapDraft | null>(null);
+  const [saved, setSaved] = useState<LdapSettings | null>(null);
+  const [section, setSection] = useState<LdapSection>("connection");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const text = locale.toLowerCase().startsWith("pl") ? copy.pl : copy.en;
@@ -134,8 +204,14 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
+    setDraft(null);
+    setSaved(null);
     void request<LdapSettings>("/api/settings/authentication/ldap")
-      .then((value) => { if (!cancelled) setDraft(toDraft(value)); })
+      .then((value) => {
+        if (cancelled) return;
+        setSaved(value);
+        setDraft(toDraft(value));
+      })
       .catch(() => { if (!cancelled) toast(text.loadError, "error", "admin"); });
     return () => { cancelled = true; };
   }, [active, text.loadError, toast]);
@@ -165,6 +241,7 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
           email_attribute: draft.email_attribute,
         }),
       });
+      setSaved(updated);
       setDraft(toDraft(updated));
       toast(text.saved, "ok", "admin");
     } catch (error) {
@@ -189,63 +266,138 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
     }
   }
 
+  function changeSecurityMode(mode: SecurityMode) {
+    if (!draft) return;
+    const currentPortIsDefault = draft.port === 389 || draft.port === 636;
+    setDraft({
+      ...draft,
+      security_mode: mode,
+      port: currentPortIsDefault ? (mode === "ldaps" ? 636 : 389) : draft.port,
+    });
+  }
+
   const field = (
     label: string,
     value: string | number,
     onChange: (value: string) => void,
-    options?: { type?: "text" | "number" | "password"; placeholder?: string },
-  ) => <div className="setting-row">
-    <div><strong>{label}</strong></div>
-    <div className="setting-control"><input type={options?.type || "text"} placeholder={options?.placeholder} value={value} onChange={(event) => onChange(event.target.value)} /></div>
-  </div>;
+    options?: {
+      type?: "text" | "number" | "password";
+      placeholder?: string;
+      hint?: string;
+      min?: number;
+      max?: number;
+      step?: number;
+      autoComplete?: string;
+    },
+  ) => <label style={{ display: "grid", gap: "0.3rem", minWidth: 0 }}>
+    <span style={{ display: "grid", gap: "0.1rem" }}>
+      <strong>{label}</strong>
+      {options?.hint && <small style={{ color: "var(--text-muted)", lineHeight: 1.3 }}>{options.hint}</small>}
+    </span>
+    <input
+      style={{ width: "100%", minWidth: 0 }}
+      type={options?.type || "text"}
+      placeholder={options?.placeholder}
+      value={value}
+      min={options?.min}
+      max={options?.max}
+      step={options?.step}
+      autoComplete={options?.autoComplete}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  </label>;
 
-  const card = active && target && draft ? createPortal(
+  const card = active && target ? createPortal(
     <div className="settings-card-stack" data-testid="ldap-settings-card">
-      <section className="settings-card">
-        <h3><KeyRound size={18} /> {text.title}</h3>
-        <p>{text.description}</p>
-        <div className="setting-row">
-          <div><strong>{text.enabled}</strong><small>{text.enabledHint}</small></div>
-          <div className="setting-control"><label className="settings-switch"><input type="checkbox" aria-label={text.enabled} checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked, clear_bind_password: false })} /><span aria-hidden="true" /></label></div>
-        </div>
-      </section>
+      {!draft || !saved ? <section className="settings-card" style={{ padding: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><LoaderCircle className="spin" size={18} />{text.loading}</div>
+      </section> : (() => {
+        const dirty = fingerprint(draft) !== fingerprint(saved) || Boolean(draft.bind_password) || draft.clear_bind_password;
+        const complete = configurationComplete(draft);
+        const savedComplete = configurationComplete(saved);
+        const transport = draft.security_mode === "ldaps" ? "LDAPS" : draft.security_mode === "starttls" ? "LDAP + StartTLS" : "LDAP";
+        const endpoint = draft.server.trim() ? `${draft.server.trim()}:${draft.port}` : "—";
+        const tabs = [
+          { id: "connection" as const, label: text.connection, icon: <Server size={15} /> },
+          { id: "directory" as const, label: text.directory, icon: <Search size={15} /> },
+          { id: "mapping" as const, label: text.mapping, icon: <Database size={15} /> },
+        ];
 
-      <section className="settings-card">
-        <h3>{text.connection}</h3>
-        <p>{text.connectionHint}</p>
-        {field(text.server, draft.server, (value) => setDraft({ ...draft, server: value }), { placeholder: "ldap.example.com" })}
-        {field(text.port, draft.port, (value) => setDraft({ ...draft, port: Number(value) }), { type: "number" })}
-        <div className="setting-row"><div><strong>{text.security}</strong></div><div className="setting-control"><select value={draft.security_mode} onChange={(event) => setDraft({ ...draft, security_mode: event.target.value as SecurityMode })}><option value="ldap">LDAP</option><option value="starttls">LDAP + StartTLS</option><option value="ldaps">LDAPS</option></select></div></div>
-        <div className="setting-row"><div><strong>{text.verifyTls}</strong></div><div className="setting-control"><label className="settings-switch"><input type="checkbox" aria-label={text.verifyTls} checked={draft.verify_tls} onChange={(event) => setDraft({ ...draft, verify_tls: event.target.checked })} /><span aria-hidden="true" /></label></div></div>
-        {field(text.connectTimeout, draft.connect_timeout, (value) => setDraft({ ...draft, connect_timeout: Number(value) }), { type: "number" })}
-        {field(text.operationTimeout, draft.operation_timeout, (value) => setDraft({ ...draft, operation_timeout: Number(value) }), { type: "number" })}
-      </section>
+        return <section className="settings-card" style={{ overflow: "hidden" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", padding: "0.9rem 1rem 0.75rem" }}>
+            <div style={{ minWidth: 0 }}>
+              <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.45rem" }}><KeyRound size={18} /> {text.title}</h3>
+              <p style={{ margin: "0.35rem 0 0", maxWidth: "60rem" }}>{text.description}</p>
+            </div>
+            <span style={{ flex: "0 0 auto", padding: "0.25rem 0.55rem", border: "1px solid var(--border-subtle)", borderRadius: "999px", background: draft.enabled ? "var(--surface-selected)" : "var(--surface-secondary)", color: draft.enabled ? "var(--accent)" : "var(--text-secondary)", fontWeight: 600 }}>
+              {draft.enabled ? text.enabledStatus : text.disabledStatus}
+            </span>
+          </div>
 
-      <section className="settings-card">
-        <h3>{text.directory}</h3>
-        <p>{text.directoryHint}</p>
-        {field(text.baseDn, draft.base_dn, (value) => setDraft({ ...draft, base_dn: value }), { placeholder: "dc=example,dc=com" })}
-        {field(text.searchBase, draft.user_search_base, (value) => setDraft({ ...draft, user_search_base: value }), { placeholder: "ou=people,dc=example,dc=com" })}
-        {field(text.searchFilter, draft.user_search_filter, (value) => setDraft({ ...draft, user_search_filter: value }), { placeholder: "(uid={username})" })}
-        {field(text.usernameAttribute, draft.username_attribute, (value) => setDraft({ ...draft, username_attribute: value }))}
-      </section>
+          <div className="setting-row" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+            <div><strong>{text.enabled}</strong><small>{text.enabledHint}</small></div>
+            <div className="setting-control"><label className="settings-switch"><input type="checkbox" aria-label={text.enabled} checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked, clear_bind_password: false })} /><span aria-hidden="true" /></label></div>
+          </div>
 
-      <section className="settings-card">
-        <h3>{text.mapping}</h3>
-        <p>{text.mappingHint}</p>
-        {field(text.bindDn, draft.bind_dn, (value) => setDraft({ ...draft, bind_dn: value }))}
-        <div className="setting-row">
-          <div><strong>{text.bindPassword}</strong>{draft.bind_password_configured && <small>{text.bindPasswordConfigured}</small>}</div>
-          <div className="setting-control"><input type="password" autoComplete="new-password" value={draft.bind_password} onChange={(event) => setDraft({ ...draft, bind_password: event.target.value, clear_bind_password: false })} /></div>
-        </div>
-        {draft.bind_password_configured && !draft.enabled && <div className="setting-row"><div><strong>{text.clearPassword}</strong></div><div className="setting-control"><label className="settings-switch"><input type="checkbox" aria-label={text.clearPassword} checked={draft.clear_bind_password} onChange={(event) => setDraft({ ...draft, clear_bind_password: event.target.checked, bind_password: "" })} /><span aria-hidden="true" /></label></div></div>}
-        {field(text.displayName, draft.display_name_attribute, (value) => setDraft({ ...draft, display_name_attribute: value }))}
-        {field(text.email, draft.email_attribute, (value) => setDraft({ ...draft, email_attribute: value }))}
-        <div className="settings-actions">
-          <button className="button-primary" type="button" disabled={saving || testing} onClick={() => void save()}>{saving && <LoaderCircle className="spin" size={16} />}{saving ? text.saving : text.save}</button>
-          <button type="button" disabled={saving || testing || !draft.bind_password_configured} onClick={() => void testConnection()}><PlugZap size={16} />{testing ? text.testing : text.test}</button>
-        </div>
-      </section>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))", gap: "0.5rem", padding: "0.65rem 1rem", borderTop: "1px solid var(--border-subtle)", background: "var(--surface-secondary)" }}>
+            <div style={{ minWidth: 0 }}><small style={{ display: "block", color: "var(--text-muted)" }}>{text.endpoint}</small><strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{endpoint}</strong></div>
+            <div><small style={{ display: "block", color: "var(--text-muted)" }}>{text.transport}</small><strong>{transport}</strong></div>
+            <div><small style={{ display: "block", color: "var(--text-muted)" }}>{text.bindSecret}</small><strong>{draft.bind_password_configured ? text.configured : text.notConfigured}</strong></div>
+          </div>
+
+          <div role="tablist" aria-label={text.title} style={{ display: "flex", gap: "0.25rem", overflowX: "auto", padding: "0.5rem 0.65rem", borderTop: "1px solid var(--border-subtle)", borderBottom: "1px solid var(--border-subtle)" }}>
+            {tabs.map((tab) => <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={section === tab.id}
+              onClick={() => setSection(tab.id)}
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", whiteSpace: "nowrap", borderColor: section === tab.id ? "var(--accent)" : "var(--border-subtle)", background: section === tab.id ? "var(--surface-selected)" : "var(--surface-elevated)", color: section === tab.id ? "var(--accent)" : "var(--text-primary)", fontWeight: section === tab.id ? 600 : 400 }}
+            >{tab.icon}{tab.label}</button>)}
+          </div>
+
+          <div role="tabpanel" style={{ padding: "0.85rem 1rem 1rem" }}>
+            <div style={{ marginBottom: "0.75rem" }}>
+              <strong>{section === "connection" ? text.connection : section === "directory" ? text.directory : text.mapping}</strong>
+              <p style={{ margin: "0.2rem 0 0", color: "var(--text-muted)" }}>{section === "connection" ? text.connectionHint : section === "directory" ? text.directoryHint : text.mappingHint}</p>
+            </div>
+
+            {section === "connection" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(15rem, 1fr))", gap: "0.8rem 1rem" }}>
+              {field(text.server, draft.server, (value) => setDraft({ ...draft, server: value }), { placeholder: "ldap.example.com", hint: text.serverHint })}
+              {field(text.port, draft.port, (value) => setDraft({ ...draft, port: Number(value) }), { type: "number", min: 1, max: 65535, step: 1 })}
+              <label style={{ display: "grid", gap: "0.3rem", minWidth: 0 }}><strong>{text.security}</strong><select style={{ width: "100%" }} value={draft.security_mode} onChange={(event) => changeSecurityMode(event.target.value as SecurityMode)}><option value="ldap">LDAP</option><option value="starttls">LDAP + StartTLS</option><option value="ldaps">LDAPS</option></select></label>
+              <div style={{ display: "grid", gap: "0.3rem", alignContent: "start" }}><span style={{ display: "grid", gap: "0.1rem" }}><strong>{text.verifyTls}</strong><small style={{ color: "var(--text-muted)", lineHeight: 1.3 }}>{text.verifyTlsHint}</small></span><div style={{ minHeight: "var(--control-height)", display: "flex", alignItems: "center" }}><label className="settings-switch"><input type="checkbox" aria-label={text.verifyTls} checked={draft.verify_tls} onChange={(event) => setDraft({ ...draft, verify_tls: event.target.checked })} /><span aria-hidden="true" /></label></div></div>
+              {field(text.connectTimeout, draft.connect_timeout, (value) => setDraft({ ...draft, connect_timeout: Number(value) }), { type: "number", min: 0.5, max: 60, step: 0.5 })}
+              {field(text.operationTimeout, draft.operation_timeout, (value) => setDraft({ ...draft, operation_timeout: Number(value) }), { type: "number", min: 0.5, max: 120, step: 0.5 })}
+            </div>}
+
+            {section === "directory" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(17rem, 1fr))", gap: "0.8rem 1rem" }}>
+              {field(text.baseDn, draft.base_dn, (value) => setDraft({ ...draft, base_dn: value }), { placeholder: "dc=example,dc=com" })}
+              {field(text.searchBase, draft.user_search_base, (value) => setDraft({ ...draft, user_search_base: value }), { placeholder: "ou=people,dc=example,dc=com" })}
+              {field(text.searchFilter, draft.user_search_filter, (value) => setDraft({ ...draft, user_search_filter: value }), { placeholder: "(uid={username})", hint: text.searchFilterHint })}
+              {field(text.usernameAttribute, draft.username_attribute, (value) => setDraft({ ...draft, username_attribute: value }), { placeholder: "uid" })}
+            </div>}
+
+            {section === "mapping" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(17rem, 1fr))", gap: "0.8rem 1rem" }}>
+              {field(text.bindDn, draft.bind_dn, (value) => setDraft({ ...draft, bind_dn: value }), { placeholder: "cn=webnas,ou=service,dc=example,dc=com" })}
+              {field(text.bindPassword, draft.bind_password, (value) => setDraft({ ...draft, bind_password: value, clear_bind_password: false }), { type: "password", autoComplete: "new-password", hint: draft.bind_password_configured ? text.bindPasswordConfigured : undefined })}
+              {field(text.displayName, draft.display_name_attribute, (value) => setDraft({ ...draft, display_name_attribute: value }), { placeholder: "displayName" })}
+              {field(text.email, draft.email_attribute, (value) => setDraft({ ...draft, email_attribute: value }), { placeholder: "mail" })}
+              {draft.bind_password_configured && !draft.enabled && <div style={{ display: "grid", gap: "0.3rem", alignContent: "start" }}><strong>{text.clearPassword}</strong><div style={{ minHeight: "var(--control-height)", display: "flex", alignItems: "center" }}><label className="settings-switch"><input type="checkbox" aria-label={text.clearPassword} checked={draft.clear_bind_password} onChange={(event) => setDraft({ ...draft, clear_bind_password: event.target.checked, bind_password: "" })} /><span aria-hidden="true" /></label></div></div>}
+            </div>}
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.65rem", padding: "0.65rem 1rem", borderTop: "1px solid var(--border-subtle)", background: "var(--surface-secondary)" }}>
+            <small style={{ color: draft.enabled && !complete ? "var(--warning)" : "var(--text-muted)" }}>
+              {draft.enabled && !complete ? text.incomplete : dirty ? text.dirtyTestHint : text.testSavedHint}
+            </small>
+            <div className="settings-actions" style={{ margin: 0 }}>
+              <button className="button-primary" type="button" disabled={saving || testing || !dirty || (draft.enabled && !complete)} onClick={() => void save()}>{saving && <LoaderCircle className="spin" size={16} />}{saving ? text.saving : text.save}</button>
+              <button type="button" disabled={saving || testing || dirty || !savedComplete} onClick={() => void testConnection()}><PlugZap size={16} />{testing ? text.testing : text.test}</button>
+            </div>
+          </div>
+        </section>;
+      })()}
     </div>,
     target,
   ) : null;
