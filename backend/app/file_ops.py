@@ -19,6 +19,8 @@ from fastapi.responses import FileResponse
 from .auth import current_process_can_impersonate
 from .config import get_config
 from .path_policy import allowed_roots, resolve_user_path
+from .privileged_broker.client import BrokerClient, BrokerError
+from .privileged_broker.protocol import Operation
 from .proxmox_guard import assert_path_allowed
 
 
@@ -70,6 +72,32 @@ def _worker_http_error(stderr: str) -> HTTPException:
     return HTTPException(status, {"code": code, "message": message})
 
 
+def _broker_http_error(error: BrokerError) -> HTTPException:
+    if error.error_code == "FILE_WORKER_FAILED":
+        return _worker_http_error(str(error))
+    if error.error_code == "BROKER_UNAVAILABLE":
+        return HTTPException(
+            503,
+            {
+                "code": "privileged_broker_unavailable",
+                "message": "Privileged file service is unavailable; check webnas-privileged.socket and webnas-privileged.service",
+            },
+        )
+    if error.error_code == "POLICY_DENIED":
+        return HTTPException(403, {"code": "file_operation_denied", "message": "File operation was denied by the privileged broker policy"})
+    return HTTPException(
+        500,
+        {
+            "code": "privileged_file_operation_failed",
+            "message": "Privileged file operation failed; check the WebNAS privileged broker logs",
+        },
+    )
+
+
+def _worker_timeout(op: str) -> float:
+    return 30.0 if op == "search" else 3600.0
+
+
 def run_user_op(username: str, op: str, payload: dict) -> object:
     for key in ("path", "src", "dst", "tmp"):
         if key in payload and key != "tmp":
@@ -78,23 +106,31 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
                 from .write_policy import assert_write_allowed
 
                 assert_write_allowed(payload[key])
-    if not current_process_can_impersonate():
-        raise HTTPException(503, "File operations require the service to run as root for per-user impersonation")
-    # The child process has a constant argv. Authenticated username, operation
-    # name and operation data are carried in one encoded stdin envelope instead
-    # of being exposed as command-line arguments.
-    cmd = [sys.executable, "-m", "app.worker", "--user", "-", "--op", "-", "--payload", "-"]
-    stdin_payload = _encode({"user": username, "op": op, "payload": payload})
-    # Keep the short-lived process boundary for per-user UID/GID dropping.
-    # The existing privileged broker is a multi-threaded root process; calling
-    # setuid/setgid from one broker thread would alter credentials process-wide
-    # and weaken isolation. Search is bounded separately so an inaccessible or
-    # extremely large tree cannot occupy a worker for an hour.
-    timeout = 30 if op == "search" else 3600
-    result = subprocess.run(cmd, input=stdin_payload, capture_output=True, text=True, timeout=timeout, check=False)
-    if result.returncode != 0:
-        raise _worker_http_error(result.stderr)
-    return json.loads(result.stdout or "{}")
+
+    timeout = _worker_timeout(op)
+    if current_process_can_impersonate():
+        # Root development/test runtimes can retain the short-lived worker
+        # boundary directly. Production keeps the HTTP service unprivileged and
+        # delegates this exact worker launch to the root broker below.
+        cmd = [sys.executable, "-m", "app.worker", "--user", "-", "--op", "-", "--payload", "-"]
+        stdin_payload = _encode({"user": username, "op": op, "payload": payload})
+        result = subprocess.run(cmd, input=stdin_payload, capture_output=True, text=True, timeout=timeout, check=False)
+        if result.returncode != 0:
+            raise _worker_http_error(result.stderr)
+        return json.loads(result.stdout or "{}")
+
+    try:
+        response = BrokerClient(timeout=timeout + 5.0).require(
+            Operation.FILE_WORKER,
+            {"username": username, "op": op, "payload": payload},
+            actor=username,
+        )
+    except BrokerError as error:
+        raise _broker_http_error(error) from error
+    try:
+        return json.loads(response.stdout or "{}")
+    except json.JSONDecodeError as error:
+        raise HTTPException(500, "Privileged file worker returned an invalid response") from error
 
 
 def _item_sort_value(item: dict, sort: str) -> tuple[int, float, str]:
@@ -260,8 +296,9 @@ async def save_upload(username: str, dest_dir: str, upload: UploadFile) -> dict:
                 raise HTTPException(413, "Upload is too large")
             handle.write(chunk)
     try:
-        pw = pwd.getpwnam(username)
-        os.chown(tmp, pw.pw_uid, pw.pw_gid)
+        if current_process_can_impersonate():
+            pw = pwd.getpwnam(username)
+            os.chown(tmp, pw.pw_uid, pw.pw_gid)
         os.chmod(tmp, 0o600)
         run_user_op(username, "import_upload", {"tmp": str(tmp), "dst": str(dest)})
         return {"ok": True, "path": str(dest), "size": size}
