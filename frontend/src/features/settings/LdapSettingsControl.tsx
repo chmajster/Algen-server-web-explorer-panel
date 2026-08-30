@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Database, KeyRound, LoaderCircle, PlugZap, Search, Server, ShieldCheck } from "lucide-react";
+import { Database, KeyRound, LoaderCircle, PlugZap, Search, Server } from "lucide-react";
 import type { ToastFn } from "../../app/types";
 import { request } from "../../core/api/transport";
 
