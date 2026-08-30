@@ -81,8 +81,7 @@ def create_policy(payload: PolicySourceRequest, user: SessionUser = Depends(muta
 def update_policy(policy_id: str, payload: PolicySourceRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, POLICY_MANAGE)
     try:
-        if repository()._existing_path(policy_id) is None:
-            raise PolicyNotFoundError(f"policy not found: {policy_id}")
+        repository().get(policy_id)
         record = repository().save(payload.source, payload.format, expected_id=policy_id)
     except PolicyRepositoryError as exc:
         _raise_repository_error(exc)
