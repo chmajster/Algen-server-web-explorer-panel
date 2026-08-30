@@ -31,6 +31,7 @@ class Operation(StrEnum):
     NTP = "ntp"
     ROUTING = "routing"
     SESSION = "session"
+    PAM_AUTH = "pam_auth"
 
 
 class BrokerRequest(BaseModel):
