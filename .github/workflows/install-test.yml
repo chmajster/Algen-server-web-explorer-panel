@@ -34,7 +34,7 @@ jobs:
           test "$(id -u)" -ne 0
           command -v sudo
           command -v systemctl
-          sudo systemctl is-system-running --wait >/dev/null 2>&1 || true
+          sudo systemctl is-system-running >/dev/null 2>&1 || true
 
       - name: Run full installer
         shell: bash
@@ -42,7 +42,6 @@ jobs:
           set -euo pipefail
           sudo ./install.sh \
             --yes \
-            --no-firewall \
             --port "${WEBNAS_TEST_PORT}"
 
       - name: Verify installed files and release provenance
@@ -90,7 +89,7 @@ jobs:
         run: |
           set +e
           echo "=== WebNAS filesystem ==="
-          sudo find /opt/webnas -maxdepth 3 -type f -o -type l 2>/dev/null | sort | head -n 300
+          sudo find /opt/webnas -maxdepth 3 \( -type f -o -type l \) 2>/dev/null | sort | head -n 300
           echo "=== systemd status ==="
           sudo systemctl status nginx webnas webnas-backend-blue webnas-backend-green --no-pager -l
           echo "=== WebNAS journals ==="
