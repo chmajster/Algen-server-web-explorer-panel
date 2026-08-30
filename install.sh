@@ -184,14 +184,21 @@ standard_reinstall_happened() {
 
 finalize_standard_reinstall() {
   local install_dir=""
+  local requested_install_dir=""
   local active_release=""
   local entry=""
   local release=""
   local entry_name=""
 
-  install_dir="$(standard_install_dir)"
-  if [[ "$install_dir" != /* || "$install_dir" == "/" || "$install_dir" == "/etc" || "$install_dir" == "/usr" || "$install_dir" == "/bin" || "$install_dir" == "/lib" ]]; then
-    printf '[ERROR] Refusing reinstall cleanup for unsafe installation directory: %s\n' "$install_dir" >&2
+  requested_install_dir="$(standard_install_dir)"
+  if [[ "$requested_install_dir" != /* || "$requested_install_dir" == "/" || "$requested_install_dir" == "/etc" || "$requested_install_dir" == "/usr" || "$requested_install_dir" == "/bin" || "$requested_install_dir" == "/lib" ]]; then
+    printf '[ERROR] Refusing reinstall cleanup for unsafe installation directory: %s\n' "$requested_install_dir" >&2
+    return 1
+  fi
+
+  install_dir="$(readlink -f -- "$requested_install_dir" 2>/dev/null || true)"
+  if [[ -z "$install_dir" || "$install_dir" == "/" || "$install_dir" == "/etc" || "$install_dir" == "/usr" || "$install_dir" == "/bin" || "$install_dir" == "/lib" ]]; then
+    printf '[ERROR] Refusing reinstall cleanup because the installation directory could not be safely canonicalized: %s\n' "$requested_install_dir" >&2
     return 1
   fi
   if [[ ! -L "${install_dir}/current" || ! -d "${install_dir}/releases" ]]; then
@@ -211,6 +218,16 @@ finalize_standard_reinstall() {
     printf '[ERROR] Active release does not exist after reinstall: %s\n' "$active_release" >&2
     return 1
   }
+
+  # The release helper rewrites the privileged broker unit to the new release,
+  # but an already-running broker keeps executing the old binary until it is
+  # restarted. Restart it before deleting any previous release tree.
+  if systemctl is-active --quiet webnas-privileged.service 2>/dev/null; then
+    if ! systemctl restart webnas-privileged.service; then
+      printf '[ERROR] Could not restart webnas-privileged.service on the active release; old application files were not removed.\n' >&2
+      return 1
+    fi
+  fi
 
   for release in "${install_dir}/releases"/*; do
     [[ -e "$release" ]] || continue
