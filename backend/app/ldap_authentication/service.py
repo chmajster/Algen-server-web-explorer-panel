@@ -67,13 +67,16 @@ def _attribute(entry: dict[str, Any], name: str) -> Any:
         if value is None:
             folded = name.casefold()
             value = next((candidate for key, candidate in attributes.items() if str(key).casefold() == folded), None)
-    if value is None:
+    decoded_missing = value is None or (isinstance(value, (list, tuple, set)) and not value)
+    if decoded_missing:
         raw_attributes = entry.get("raw_attributes")
         if isinstance(raw_attributes, dict):
-            value = raw_attributes.get(name)
-            if value is None:
+            raw_value = raw_attributes.get(name)
+            if raw_value is None:
                 folded = name.casefold()
-                value = next((candidate for key, candidate in raw_attributes.items() if str(key).casefold() == folded), None)
+                raw_value = next((candidate for key, candidate in raw_attributes.items() if str(key).casefold() == folded), None)
+            if raw_value is not None:
+                value = raw_value
     if isinstance(value, (list, tuple, set)) and len(value) == 1:
         return next(iter(value))
     return value
