@@ -56,6 +56,19 @@ export type OfflineRepositoryBundle = {
   created_at: number;
 };
 
+export type OfflineRepositoryDiagnostic = { id: string; status: string; message: string };
+
+export type OfflineHostGroupCompatibility = {
+  group_id: string;
+  group_name: string;
+  total_hosts: number;
+  compatible_hosts: number;
+  incompatible_hosts: number;
+  signatures: Array<{ signature: string; count: number }>;
+  compatible: Array<Record<string, unknown>>;
+  incompatible: Array<Record<string, unknown>>;
+};
+
 export const osRepositoriesClient = {
   osRepositoriesDashboard: () => request<OsRepositoryDashboard>("/api/modules/os-repositories/dashboard"),
   osRepositories: (search = "") => request<OsRepositoryPage<OsRepository>>(`/api/modules/os-repositories/repositories?search=${encodeURIComponent(search)}`),
@@ -99,11 +112,17 @@ export const osRepositoriesClient = {
   offlineRepositoryTargets: () => request<OfflineRepositoryTarget[]>("/api/modules/os-repositories/offline/targets"),
   saveOfflineRepositoryTarget: (payload: Record<string, unknown>, id = "") => request<OfflineRepositoryTarget>(id ? `/api/modules/os-repositories/offline/targets/${encodeURIComponent(id)}` : "/api/modules/os-repositories/offline/targets", { method: id ? "PUT" : "POST", body: JSON.stringify(payload) }),
   deleteOfflineRepositoryTarget: (id: string) => request<{ ok: boolean }>(`/api/modules/os-repositories/offline/targets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  offlineRepositoryHostGroupCompatibility: (groupId: string, repositoryIds: string[]) => {
+    const query = repositoryIds.map((id) => `repository_id=${encodeURIComponent(id)}`).join("&");
+    return request<OfflineHostGroupCompatibility>(`/api/modules/os-repositories/offline/hosts/groups/${encodeURIComponent(groupId)}/compatibility?${query}`);
+  },
+  createOfflineRepositoryTargetsFromHostGroup: (payload: Record<string, unknown>) => request<{ compatibility: OfflineHostGroupCompatibility; targets: OfflineRepositoryTarget[] }>("/api/modules/os-repositories/offline/targets/from-host-group", { method: "POST", body: JSON.stringify({ ...payload, confirm: true }) }),
   planOfflineRepositoryExport: (payload: Record<string, unknown>) => request<Record<string, unknown>>("/api/modules/os-repositories/offline/exports/plan", { method: "POST", body: JSON.stringify(payload) }),
   createOfflineRepositoryExport: (payload: Record<string, unknown>) => request<OsRepositoryJob>("/api/modules/os-repositories/offline/exports", { method: "POST", body: JSON.stringify({ ...payload, confirm: true }) }),
   offlineRepositoryBundles: () => request<OsRepositoryPage<OfflineRepositoryBundle>>("/api/modules/os-repositories/offline/bundles"),
+  offlineRepositoryBundleDownloadPath: (id: string) => `/api/modules/os-repositories/offline/bundles/${encodeURIComponent(id)}/download`,
   pinOfflineRepositoryBundle: (id: string, pinned: boolean) => request<OfflineRepositoryBundle>(`/api/modules/os-repositories/offline/bundles/${encodeURIComponent(id)}/pin`, { method: "PUT", body: JSON.stringify({ pinned, confirm: true }) }),
-  deleteOfflineRepositoryBundle: (id: string, force = false) => request<{ ok: boolean }>(`/api/modules/os-repositories/offline/bundles/${encodeURIComponent(id)}?force=${force ? "true" : "false"}`, { method: "DELETE" }),
+  deleteOfflineRepositoryBundle: (id: string, force = false, confirmationText = "") => request<{ ok: boolean }>(`/api/modules/os-repositories/offline/bundles/${encodeURIComponent(id)}?force=${force ? "true" : "false"}&confirmation_text=${encodeURIComponent(confirmationText)}`, { method: "DELETE" }),
   stagedOfflineRepositoryBundles: () => request<{ items: Array<{ id: string; filename: string; size_bytes: number; modified_at: number }> }>("/api/modules/os-repositories/offline/imports/staged"),
   uploadOfflineRepositoryBundle: (file: File) => { const body = new FormData(); body.append("file", file); return request<{ id: string; filename: string; size_bytes: number; modified_at: number }>("/api/modules/os-repositories/offline/imports/upload", { method: "POST", body }); },
   inspectOfflineRepositoryBundle: (stagedId: string) => request<Record<string, unknown>>(`/api/modules/os-repositories/offline/imports/${encodeURIComponent(stagedId)}/inspect`),
@@ -112,6 +131,7 @@ export const osRepositoriesClient = {
   offlineRepositoryDeltaPlan: (baseSnapshotId: string, targetSnapshotId: string, architecture: string) => request<Record<string, unknown>>(`/api/modules/os-repositories/offline/delta/plan?base_snapshot_id=${encodeURIComponent(baseSnapshotId)}&target_snapshot_id=${encodeURIComponent(targetSnapshotId)}&architecture=${encodeURIComponent(architecture)}`),
   freezeOfflineRepositorySnapshot: (snapshotId: string) => request<Record<string, unknown>>(`/api/modules/os-repositories/offline/snapshots/${encodeURIComponent(snapshotId)}/freeze`, { method: "POST", body: "{}" }),
   offlineRepositoryStorage: () => request<Record<string, number>>("/api/modules/os-repositories/offline/storage"),
+  offlineRepositoryDiagnostics: () => request<{ checks: OfflineRepositoryDiagnostic[]; tools: Record<string, string>; active_offline_jobs: number; storage: Record<string, number>; air_gapped_mode: boolean }>("/api/modules/os-repositories/offline/diagnostics"),
   offlineRepositoryJobs: (status = "") => request<OsRepositoryPage<OsRepositoryJob>>(`/api/modules/os-repositories/offline/jobs?status=${encodeURIComponent(status)}`),
   offlineRepositoryJob: (id: string) => request<OsRepositoryJob & { logs: Array<{ id: number; stream: string; line: string; created_at: number }> }>(`/api/modules/os-repositories/offline/jobs/${encodeURIComponent(id)}`),
   cancelOfflineRepositoryJob: (id: string) => request<OsRepositoryJob>(`/api/modules/os-repositories/offline/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" }),
