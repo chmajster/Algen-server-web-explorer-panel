@@ -1,0 +1,233 @@
+name: Installer action menu test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - install.sh
+      - install-standard.sh
+      - .github/workflows/installer-menu-test.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - install.sh
+      - install-standard.sh
+      - .github/workflows/installer-menu-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-menu-test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  existing-install-actions:
+    name: Verify all 6 existing-install actions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      WEBNAS_TEST_PORT: "5199"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Verify runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v sudo
+          command -v systemctl
+          command -v script
+          sudo systemctl is-system-running >/dev/null 2>&1 || true
+
+      - name: Install baseline WebNAS
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo ./install.sh --yes --port "${WEBNAS_TEST_PORT}"
+          test -L /opt/webnas/current
+          test -f /etc/webnas/config.yaml
+          test -d /var/lib/webnas
+          test -d /var/log/webnas
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+          sudo touch /opt/webnas/menu-stale-app-marker
+          printf 'keep-config\n' | sudo tee /etc/webnas/menu-preserve-marker >/dev/null
+          printf 'keep-data\n' | sudo tee /var/lib/webnas/menu-preserve-marker >/dev/null
+          printf 'keep-logs\n' | sudo tee /var/log/webnas/menu-preserve-marker >/dev/null
+          sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}' > /tmp/webnas-menu-config-sha
+
+      - name: "Option 1: automatic timeout selects Update"
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_release="$(readlink -f /opt/webnas/current)"
+
+          script --quiet --return --command \
+            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            /dev/null </dev/null > /tmp/webnas-menu-option-1.log 2>&1
+
+          tr -d '\r' < /tmp/webnas-menu-option-1.log > /tmp/webnas-menu-option-1.clean
+          grep -F "No action selected within 5 seconds; starting update with configuration backup" /tmp/webnas-menu-option-1.clean
+          grep -F "Action:           update" /tmp/webnas-menu-option-1.clean
+
+          new_release="$(readlink -f /opt/webnas/current)"
+          test "${new_release}" != "${old_release}"
+          test -e /opt/webnas/menu-stale-app-marker
+          test -f /etc/webnas/menu-preserve-marker
+          test -f /var/lib/webnas/menu-preserve-marker
+          test -f /var/log/webnas/menu-preserve-marker
+          test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "$(cat /tmp/webnas-menu-config-sha)"
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+      - name: "Option 2: Reinstall cleans app and preserves state"
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_release="$(readlink -f /opt/webnas/current)"
+
+          printf '2\n' | script --quiet --return --command \
+            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            /dev/null > /tmp/webnas-menu-option-2.log 2>&1
+
+          tr -d '\r' < /tmp/webnas-menu-option-2.log > /tmp/webnas-menu-option-2.clean
+          grep -F "Action:           reinstall" /tmp/webnas-menu-option-2.clean
+          grep -F "Clean reinstall finalized" /tmp/webnas-menu-option-2.clean
+
+          new_release="$(readlink -f /opt/webnas/current)"
+          test "${new_release}" != "${old_release}"
+          test ! -e "${old_release}"
+          test ! -e /opt/webnas/menu-stale-app-marker
+          test -f /etc/webnas/menu-preserve-marker
+          test -f /var/lib/webnas/menu-preserve-marker
+          test -f /var/log/webnas/menu-preserve-marker
+          test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "$(cat /tmp/webnas-menu-config-sha)"
+          test "$(find /opt/webnas/releases -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+      - name: "Option 3: Backup config only"
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(find /var/backups/webnas -mindepth 1 -maxdepth 1 -type d -name '*-manual.*' 2>/dev/null | wc -l)"
+
+          printf '3\n' | script --quiet --return --command \
+            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            /dev/null > /tmp/webnas-menu-option-3.log 2>&1
+
+          tr -d '\r' < /tmp/webnas-menu-option-3.log > /tmp/webnas-menu-option-3.clean
+          grep -F "Config backup created:" /tmp/webnas-menu-option-3.clean
+          after="$(find /var/backups/webnas -mindepth 1 -maxdepth 1 -type d -name '*-manual.*' | wc -l)"
+          test "${after}" -eq $((before + 1))
+          backup_config="$(find /var/backups/webnas -mindepth 2 -maxdepth 2 -type f -path '*-manual.*/config.yaml' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          test -n "${backup_config}"
+          test "$(sudo sha256sum "${backup_config}" | awk '{print $1}')" = "$(cat /tmp/webnas-menu-config-sha)"
+          test -L /opt/webnas/current
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+      - name: "Option 6: Abort makes no changes"
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_before="$(readlink -f /opt/webnas/current)"
+          config_before="$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')"
+
+          set +e
+          printf '6\n' | script --quiet --return --command \
+            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            /dev/null > /tmp/webnas-menu-option-6.log 2>&1
+          status=$?
+          set -e
+
+          test "${status}" -ne 0
+          tr -d '\r' < /tmp/webnas-menu-option-6.log > /tmp/webnas-menu-option-6.clean
+          grep -F "Installation cancelled" /tmp/webnas-menu-option-6.clean
+          test "$(readlink -f /opt/webnas/current)" = "${current_before}"
+          test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "${config_before}"
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+      - name: "Option 4: Remove app preserves config data and logs"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          printf '4\ny\n' | script --quiet --return --command \
+            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            /dev/null > /tmp/webnas-menu-option-4.log 2>&1
+
+          tr -d '\r' < /tmp/webnas-menu-option-4.log > /tmp/webnas-menu-option-4.clean
+          grep -F "Removed application files from /opt/webnas" /tmp/webnas-menu-option-4.clean
+          grep -F "Kept config, data, and logs" /tmp/webnas-menu-option-4.clean
+          test ! -e /opt/webnas
+          test -f /etc/webnas/config.yaml
+          test -f /etc/webnas/menu-preserve-marker
+          test -f /var/lib/webnas/menu-preserve-marker
+          test -f /var/log/webnas/menu-preserve-marker
+          test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "$(cat /tmp/webnas-menu-config-sha)"
+          test ! -e /etc/systemd/system/webnas.service
+          test ! -e /etc/systemd/system/webnas-backend-blue.service
+          test ! -e /etc/systemd/system/webnas-backend-green.service
+          test ! -e /etc/nginx/conf.d/webnas.conf
+          test ! -e /etc/pam.d/webnas
+
+      - name: "Option 5: Remove app and all files"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo install -d -m 0755 /opt/webnas
+          sudo touch /opt/webnas/menu-remove-all-marker
+
+          printf '5\ny\n' | script --quiet --return --command \
+            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            /dev/null > /tmp/webnas-menu-option-5.log 2>&1
+
+          tr -d '\r' < /tmp/webnas-menu-option-5.log > /tmp/webnas-menu-option-5.clean
+          grep -F "Removed application files from /opt/webnas" /tmp/webnas-menu-option-5.clean
+          grep -F "Removed config, data, and logs" /tmp/webnas-menu-option-5.clean
+          test ! -e /opt/webnas
+          test ! -e /etc/webnas
+          test ! -e /var/lib/webnas
+          test ! -e /var/log/webnas
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          echo "=== option logs ==="
+          for file in /tmp/webnas-menu-option-*.clean /tmp/webnas-menu-option-*.log; do
+            [[ -f "${file}" ]] || continue
+            echo "--- ${file} ---"
+            tail -n 200 "${file}"
+          done
+          echo "=== filesystem ==="
+          sudo find /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas /var/backups/webnas -maxdepth 3 -print 2>/dev/null | sort | head -n 500
+          echo "=== services ==="
+          sudo systemctl status nginx webnas webnas-backend-blue webnas-backend-green --no-pager -l 2>/dev/null || true
+          echo "=== journals ==="
+          sudo journalctl -u nginx -u webnas -u webnas-backend-blue -u webnas-backend-green -n 250 --no-pager 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          sudo systemctl disable --now webnas.service webnas-backend-blue.service webnas-backend-green.service 2>/dev/null || true
+          sudo rm -f /etc/systemd/system/webnas.service \
+            /etc/systemd/system/webnas-backend-blue.service \
+            /etc/systemd/system/webnas-backend-green.service \
+            /etc/nginx/conf.d/webnas.conf \
+            /etc/pam.d/webnas
+          sudo systemctl daemon-reload || true
+          sudo systemctl reload nginx 2>/dev/null || true
+          sudo rm -rf /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas /var/backups/webnas

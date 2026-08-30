@@ -170,6 +170,42 @@ jobs:
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
             "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
 
+      - name: Verify clean reinstall preserves runtime state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          old_release="$(readlink -f /opt/webnas/current)"
+          config_sha_before="$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')"
+          printf '%s\n' "${old_release}" > /tmp/webnas-old-release
+          printf '%s\n' "${config_sha_before}" > /tmp/webnas-config-sha
+
+          sudo touch /opt/webnas/stale-app-marker
+          printf 'keep-config\n' | sudo tee /etc/webnas/reinstall-preserve-marker >/dev/null
+          printf 'keep-data\n' | sudo tee /var/lib/webnas/reinstall-preserve-marker >/dev/null
+          printf 'keep-logs\n' | sudo tee /var/log/webnas/reinstall-preserve-marker >/dev/null
+
+          sudo ./install.sh --yes --existing-action reinstall --port "${WEBNAS_TEST_PORT}"
+
+          new_release="$(readlink -f /opt/webnas/current)"
+          old_release="$(cat /tmp/webnas-old-release)"
+          config_sha_before="$(cat /tmp/webnas-config-sha)"
+          config_sha_after="$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')"
+
+          test "${new_release}" != "${old_release}"
+          test ! -e /opt/webnas/stale-app-marker
+          test ! -e "${old_release}"
+          test -f /etc/webnas/reinstall-preserve-marker
+          test -f /var/lib/webnas/reinstall-preserve-marker
+          test -f /var/log/webnas/reinstall-preserve-marker
+          test "${config_sha_after}" = "${config_sha_before}"
+
+          release_count="$(find /opt/webnas/releases -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          test "${release_count}" -eq 1
+
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
       - name: Collect diagnostics on failure
         if: failure()
         shell: bash

@@ -143,6 +143,111 @@ standard_action_has_runtime() {
   esac
 }
 
+standard_install_dir() {
+  local expect_dir="no"
+  local install_dir="/opt/webnas"
+  local arg=""
+  for arg in "${FORWARD_ARGS[@]}"; do
+    if [[ "$expect_dir" == "yes" ]]; then
+      install_dir="$arg"
+      expect_dir="no"
+      continue
+    fi
+    case "$arg" in
+      --install-dir|-d) expect_dir="yes" ;;
+      --install-dir=*) install_dir="${arg#*=}" ;;
+    esac
+  done
+  printf '%s' "$install_dir"
+}
+
+standard_reinstall_backup_snapshot() {
+  local state=""
+  for state in /var/backups/webnas/*-reinstall.*/installer-state; do
+    [[ -f "$state" ]] || continue
+    grep -qx 'action=reinstall' "$state" 2>/dev/null || continue
+    printf '%s\n' "$state"
+  done
+}
+
+standard_reinstall_happened() {
+  local before_snapshot="$1"
+  local state=""
+  while IFS= read -r state; do
+    [[ -n "$state" ]] || continue
+    if ! grep -Fxq -- "$state" <<< "$before_snapshot"; then
+      return 0
+    fi
+  done < <(standard_reinstall_backup_snapshot)
+  return 1
+}
+
+finalize_standard_reinstall() {
+  local install_dir=""
+  local requested_install_dir=""
+  local active_release=""
+  local entry=""
+  local release=""
+  local entry_name=""
+
+  requested_install_dir="$(standard_install_dir)"
+  if [[ "$requested_install_dir" != /* || "$requested_install_dir" == "/" || "$requested_install_dir" == "/etc" || "$requested_install_dir" == "/usr" || "$requested_install_dir" == "/bin" || "$requested_install_dir" == "/lib" ]]; then
+    printf '[ERROR] Refusing reinstall cleanup for unsafe installation directory: %s\n' "$requested_install_dir" >&2
+    return 1
+  fi
+
+  install_dir="$(readlink -f -- "$requested_install_dir" 2>/dev/null || true)"
+  if [[ -z "$install_dir" || "$install_dir" == "/" || "$install_dir" == "/etc" || "$install_dir" == "/usr" || "$install_dir" == "/bin" || "$install_dir" == "/lib" ]]; then
+    printf '[ERROR] Refusing reinstall cleanup because the installation directory could not be safely canonicalized: %s\n' "$requested_install_dir" >&2
+    return 1
+  fi
+  if [[ ! -L "${install_dir}/current" || ! -d "${install_dir}/releases" ]]; then
+    printf '[ERROR] Reinstall completed without a valid release layout in %s\n' "$install_dir" >&2
+    return 1
+  fi
+
+  active_release="$(readlink -f "${install_dir}/current" 2>/dev/null || true)"
+  case "$active_release" in
+    "${install_dir}/releases/"*) ;;
+    *)
+      printf '[ERROR] Refusing reinstall cleanup because current points outside %s/releases\n' "$install_dir" >&2
+      return 1
+      ;;
+  esac
+  [[ -d "$active_release" ]] || {
+    printf '[ERROR] Active release does not exist after reinstall: %s\n' "$active_release" >&2
+    return 1
+  }
+
+  # The release helper rewrites the privileged broker unit to the new release,
+  # but an already-running broker keeps executing the old binary until it is
+  # restarted. Restart it before deleting any previous release tree.
+  if systemctl is-active --quiet webnas-privileged.service 2>/dev/null; then
+    if ! systemctl restart webnas-privileged.service; then
+      printf '[ERROR] Could not restart webnas-privileged.service on the active release; old application files were not removed.\n' >&2
+      return 1
+    fi
+  fi
+
+  for release in "${install_dir}/releases"/*; do
+    [[ -e "$release" ]] || continue
+    [[ "$(readlink -f "$release" 2>/dev/null || true)" == "$active_release" ]] && continue
+    rm -rf --one-file-system -- "$release"
+  done
+
+  shopt -s nullglob dotglob
+  for entry in "${install_dir}"/*; do
+    entry_name="${entry##*/}"
+    case "$entry_name" in
+      current|releases|uninstall.sh|webnas_release.py) continue ;;
+    esac
+    rm -rf --one-file-system -- "$entry"
+  done
+  shopt -u dotglob nullglob
+
+  printf '[OK] Clean reinstall finalized: old application files removed; config, data, and logs preserved.\n'
+}
+
 standard_config_port() {
   local config_file="/etc/webnas/config.yaml"
   local configured=""
@@ -235,6 +340,10 @@ PY
 if [[ "$MODE" == "portable" ]]; then
   run_target "install-portable.sh" "${FORWARD_ARGS[@]}"
 else
+  reinstall_backups_before="$(standard_reinstall_backup_snapshot)"
   run_target "install-standard.sh" "${FORWARD_ARGS[@]}"
+  if standard_reinstall_happened "$reinstall_backups_before"; then
+    finalize_standard_reinstall
+  fi
   print_standard_authentication_summary
 fi
