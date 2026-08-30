@@ -157,6 +157,7 @@ class LdapManagerService:
         if config.get("security_mode") != "ldaps":
             return {"available": False, "reason": "Certificate details are collected directly for LDAPS; StartTLS is verified by the LDAP bind."}
         context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         ca = str(config.get("ca_certificate") or "")
         if ca:
             context.load_verify_locations(cadata=ca)
