@@ -10,7 +10,7 @@ The scan reuses Firewall Manager for firewall/open-port state, Linux Updates for
 
 ## Findings and score
 
-Severities are Critical, High, Medium, Low, Info and Passed. Findings contain severity, title, description, affected resource, detection source, recommendation, timestamp, category and status (`open`, `acknowledged`, `resolved`). Score penalties are severity-weighted and clamped to 0-100. Area summaries cover firewall, authentication/SSH, updates, network exposure, TLS/HTTPS, users, permissions and system security.
+Severities are Critical, High, Medium, Low, Info and Passed. Findings contain severity, title, description, affected resource, detection source, recommendation, timestamp, category and status (`open`, `acknowledged`, `resolved`). Score penalties are severity-weighted and clamped to the 0–100 range. Area summaries cover firewall, authentication/SSH, updates, network exposure, TLS/HTTPS, users, permissions and system security.
 
 Implemented checks include disabled/no-rule firewall state, permissive SSH root/password/empty-password settings, security/package updates and reboot requirement, public listeners without an explicit firewall match, WebNAS without HTTPS, multiple UID 0 accounts, unsafe WebNAS configuration write permissions and elevated failed-login volume. Unavailable data sources degrade to informational findings instead of silently reporting success.
 
