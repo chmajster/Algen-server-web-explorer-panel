@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from .activity import ActivityCategory, ActivityStatus, record_activity
 from .identity.service import access_profile
-from .local_auth import AuthMode, repository as local_repository
+from .local_auth import AuthMode, LocalInvalidCredentials, repository as local_repository
 from .security import (
     SessionUser,
     get_session_user,
@@ -39,10 +39,20 @@ class LocalUserPatch(BaseModel):
     display_name: str | None = Field(default=None, max_length=256)
 
 
-def _admin_user(request: Request, *, mutate: bool) -> SessionUser:
+class LocalPasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=12, max_length=1024)
+
+
+def _session_user(request: Request, *, mutate: bool) -> SessionUser:
     user = get_session_user(request)
     if mutate:
         require_csrf(request, user)
+    return user
+
+
+def _admin_user(request: Request, *, mutate: bool) -> SessionUser:
+    user = _session_user(request, mutate=mutate)
     profile = access_profile(user.username)
     if not bool(profile.get("is_admin")):
         raise HTTPException(HTTPStatus.FORBIDDEN, "Administrator access required")
@@ -55,6 +65,13 @@ def admin_read(request: Request) -> SessionUser:
 
 def admin_write(request: Request) -> SessionUser:
     return _admin_user(request, mutate=True)
+
+
+def local_write(request: Request) -> SessionUser:
+    user = _session_user(request, mutate=True)
+    if user.auth_provider != "local":
+        raise HTTPException(HTTPStatus.CONFLICT, "This password endpoint is available only for local WebNAS accounts")
+    return user
 
 
 def _state() -> dict:
@@ -95,11 +112,32 @@ def set_authentication_settings(
             details={"previous": previous, "current": mode},
             source="settings",
         )
-        # Authentication namespaces are mutually exclusive. Invalidate all
-        # sessions so no session authenticated under the previous namespace can
-        # continue operating after the switch.
         invalidate_all_sessions()
     return {**_state(), "reauthentication_required": mode != previous}
+
+
+@router.post("/local-password")
+def change_local_password(
+    payload: LocalPasswordChange,
+    user: SessionUser = Depends(local_write),
+):
+    store = local_repository()
+    try:
+        store.authenticate(user.username, payload.current_password)
+        store.update_user(user.username, password=payload.new_password)
+    except LocalInvalidCredentials as error:
+        raise HTTPException(HTTPStatus.UNAUTHORIZED, "Invalid username or password") from error
+    except ValueError as error:
+        raise HTTPException(HTTPStatus.UNPROCESSABLE_ENTITY, str(error)) from error
+    record_activity(
+        ActivityCategory.configuration,
+        "password_change",
+        user.username,
+        target=user.username,
+        details={"provider": "local"},
+        source="settings",
+    )
+    return {"ok": True}
 
 
 @router.get("/local-users")
