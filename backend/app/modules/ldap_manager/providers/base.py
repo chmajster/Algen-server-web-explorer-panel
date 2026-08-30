@@ -192,15 +192,28 @@ class LdapDirectoryProvider:
             close(bound)
         return f"{new_rdn},{superior}" if superior else new_rdn
 
+    def _membership_value(self, attribute: str, member_dn: str) -> str:
+        if attribute != "memberUid":
+            return member_dn
+        member = self.entry(member_dn)
+        raw_uid = member.get("attributes", {}).get("uid")
+        if isinstance(raw_uid, list):
+            raw_uid = raw_uid[0] if raw_uid else ""
+        uid = str(raw_uid or "").strip()
+        if not uid:
+            raise ProviderOperationError("LDAP_MEMBER_UID_MISSING", "POSIX group membership requires the member uid attribute")
+        return uid
+
     def add_member(self, group_dn: str, member_dn: str) -> None:
         group_dn = validate_dn(group_dn)
         member_dn = validate_dn(member_dn)
         attribute = self.membership_attribute(group_dn)
+        membership_value = self._membership_value(attribute, member_dn)
         bound = bind(self.config, purpose="ldap-manager-group-membership")
         try:
             from ldap3 import MODIFY_ADD
 
-            if not bound.connection.modify(group_dn, {attribute: [(MODIFY_ADD, [member_dn])]}):
+            if not bound.connection.modify(group_dn, {attribute: [(MODIFY_ADD, [membership_value])]}):
                 raise ProviderOperationError("LDAP_MEMBERSHIP_ADD_FAILED", str(bound.connection.result.get("description") or "LDAP membership update failed"))
         finally:
             close(bound)
@@ -209,9 +222,10 @@ class LdapDirectoryProvider:
         group_dn = validate_dn(group_dn)
         member_dn = validate_dn(member_dn)
         attribute = self.membership_attribute(group_dn)
+        membership_value = self._membership_value(attribute, member_dn)
         bound = bind(self.config, purpose="ldap-manager-group-membership")
         try:
-            if not bound.connection.modify(group_dn, {attribute: [(MODIFY_DELETE, [member_dn])]}):
+            if not bound.connection.modify(group_dn, {attribute: [(MODIFY_DELETE, [membership_value])]}):
                 raise ProviderOperationError("LDAP_MEMBERSHIP_REMOVE_FAILED", str(bound.connection.result.get("description") or "LDAP membership update failed"))
         finally:
             close(bound)
