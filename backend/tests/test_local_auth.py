@@ -21,6 +21,16 @@ def config(tmp_path: Path):
 
 def repo(monkeypatch, tmp_path: Path) -> local_auth.LocalAuthRepository:
     monkeypatch.setattr(local_auth, "get_config", lambda: config(tmp_path))
+    monkeypatch.setattr(
+        local_auth,
+        "_ensure_posix_mapping",
+        lambda username: {"uid": 12000, "gid": 12000, "home": f"/home/{username}"},
+    )
+    monkeypatch.setattr(
+        local_auth,
+        "_posix_mapping",
+        lambda username: {"uid": 12000, "gid": 12000, "home": f"/home/{username}"},
+    )
     return local_auth.LocalAuthRepository(tmp_path / "local-auth.sqlite3")
 
 
@@ -32,6 +42,7 @@ def test_local_database_is_default_and_bootstraps_random_admin(monkeypatch, tmp_
     assert users[0]["username"] == "admin"
     assert users[0]["role"] == "admin"
     assert users[0]["enabled"] is True
+    assert users[0]["posix_mapped"] is True
     assert store.bootstrap_path.exists()
     assert store.bootstrap_path.stat().st_mode & 0o777 == 0o600
 
@@ -50,6 +61,7 @@ def test_bootstrap_password_authenticates_and_file_is_consumed(monkeypatch, tmp_
     user = store.authenticate("admin", password)
 
     assert user["username"] == "admin"
+    assert user["home"] == "/home/admin"
     assert not store.bootstrap_path.exists()
 
 
@@ -94,12 +106,19 @@ def test_switch_to_local_requires_enabled_local_admin(monkeypatch, tmp_path):
     store = repo(monkeypatch, tmp_path)
     store.set_auth_mode("system", "admin")
     assert store.auth_mode() == "system"
-    # Simulate a damaged/externally edited database to verify that the mode
-    # transition itself still refuses to lock the application into local mode.
     with store.connect() as connection:
         connection.execute("UPDATE local_users SET enabled=0 WHERE role='admin'")
     with pytest.raises(ValueError):
         store.set_auth_mode("local", "system-admin")
+
+
+def test_local_login_requires_posix_mapping_after_valid_password(monkeypatch, tmp_path):
+    store = repo(monkeypatch, tmp_path)
+    content = store.bootstrap_path.read_text(encoding="utf-8")
+    password = next(line.split(": ", 1)[1] for line in content.splitlines() if line.startswith("Password: "))
+    monkeypatch.setattr(local_auth, "_ensure_posix_mapping", lambda username: None)
+    with pytest.raises(local_auth.LocalAuthConfigurationError):
+        store.authenticate("admin", password)
 
 
 def test_local_profile_uses_database_role_not_linux_admin(monkeypatch):
@@ -111,7 +130,7 @@ def test_local_profile_uses_database_role_not_linux_admin(monkeypatch):
             "username": username,
             "role": "admin",
             "enabled": True,
-            "home": "/var/lib/webnas/local-homes/admin",
+            "home": "/home/admin",
         },
     )
     monkeypatch.setattr(local_auth, "local_posix_mapping", lambda username: None)
@@ -137,7 +156,7 @@ def test_local_profile_keeps_file_permissions_with_safe_posix_mapping(monkeypatc
             "username": username,
             "role": "user",
             "enabled": True,
-            "home": "/var/lib/webnas/local-homes/alice",
+            "home": "/home/alice",
         },
     )
     monkeypatch.setattr(
