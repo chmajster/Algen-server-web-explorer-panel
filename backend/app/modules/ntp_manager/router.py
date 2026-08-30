@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from typing import Any
+
 from fastapi import APIRouter, Depends
+
 from ...activity import ActivityCategory, ActivityStatus, record_activity
 from ...identity.permissions import authorize
 from ...package_center.models import api_error
@@ -30,14 +32,14 @@ def _activity(actor: str, action: str, target: str = "", details: dict[str, Any]
 def _controlled(operation):
     try:
         return operation()
-    except NtpUnavailable as error:
-        api_error(503, "NTP_UNAVAILABLE", str(error))
-    except PermissionError as error:
-        api_error(503, "NTP_PERMISSION_DENIED", str(error))
-    except (OSError, RuntimeError) as error:
-        api_error(502, "NTP_OPERATION_FAILED", str(error))
-    except ValueError as error:
-        api_error(422, "NTP_VALIDATION_FAILED", str(error))
+    except NtpUnavailable:
+        api_error(503, "NTP_UNAVAILABLE", "NTP backend is unavailable")
+    except PermissionError:
+        api_error(503, "NTP_PERMISSION_DENIED", "NTP operation is not permitted")
+    except (OSError, RuntimeError):
+        api_error(502, "NTP_OPERATION_FAILED", "NTP operation failed")
+    except ValueError:
+        api_error(422, "NTP_VALIDATION_FAILED", "NTP request is invalid")
 
 
 def _managed_sources() -> list[NtpSourceInput]:
