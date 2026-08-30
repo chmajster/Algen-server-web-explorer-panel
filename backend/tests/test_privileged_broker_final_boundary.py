@@ -48,9 +48,11 @@ def test_blue_green_backend_is_unprivileged_but_broker_remains_root() -> None:
     assert "runtime, self.root" not in release
 
 
-def test_broker_server_uses_extended_fail_closed_policy() -> None:
+def test_broker_server_uses_storage_wrapper_and_extended_fail_closed_policy() -> None:
     server = (REPOSITORY_ROOT / "backend/app/privileged_broker/server.py").read_text(encoding="utf-8")
-    assert "from .extended_policy import dispatch" in server
+    storage_policy = (REPOSITORY_ROOT / "backend/app/privileged_broker/storage_policy.py").read_text(encoding="utf-8")
+    assert "from .storage_policy import dispatch" in server
+    assert "from .extended_policy import dispatch as extended_dispatch" in storage_policy
     assert "from .policy import dispatch" not in server
 
 
