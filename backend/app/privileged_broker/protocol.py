@@ -35,6 +35,7 @@ class Operation(StrEnum):
     ROUTING = "routing"
     SESSION = "session"
     FILE_WORKER = "file_worker"
+    PAM_AUTH = "pam_auth"
 
 
 class BrokerRequest(BaseModel):
