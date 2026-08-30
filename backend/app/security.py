@@ -23,7 +23,7 @@ from .transport import cookie_secure as transport_cookie_secure
 
 SESSION_CACHE_TTL_SECONDS = 2.0
 SESSION_CACHE_MAX_ENTRIES = 512
-AuthProvider = Literal["pam", "ldap"]
+AuthProvider = Literal["local", "pam", "ldap"]
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,6 @@ class SessionStore:
             self._cache.popitem(last=False)
 
     def invalidate(self, token: str) -> None:
-        """Drop one cached token after an out-of-band change to its persisted session."""
         token_hash = self._hash(token)
         with self._lock:
             self._cache.pop(token_hash, None)
@@ -186,12 +185,15 @@ class SessionStore:
             if not row:
                 return None
             provider = str(row["auth_provider"] or "pam")
+            normalized_provider: AuthProvider = (
+                "local" if provider == "local" else "ldap" if provider == "ldap" else "pam"
+            )
             session = StoredSession(
                 username=str(row["username"]),
                 csrf_token=str(row["csrf_token"]),
                 persistent=bool(row["persistent"]),
                 expires_at=float(row["expires_at"]),
-                auth_provider="ldap" if provider == "ldap" else "pam",
+                auth_provider=normalized_provider,
             )
             self._cache_session(token_hash, session)
             return session
@@ -273,6 +275,10 @@ def invalidate_user_sessions(username: str) -> int:
     return _session_store().revoke_user(username, "pam")
 
 
+def invalidate_provider_user_sessions(username: str, auth_provider: AuthProvider) -> int:
+    return _session_store().revoke_user(username, auth_provider)
+
+
 def create_session(
     response: Response,
     username: str,
@@ -300,9 +306,6 @@ def create_session(
         cfg.auth.session_cookie_name,
         token,
         httponly=True,
-        # Use the configured transport policy for both browser-session and
-        # persistent cookies. Forcing Secure only for remembered sessions
-        # makes them unusable on the default HTTP installation.
         secure=transport_cookie_secure(cfg),
         samesite="strict",
         max_age=lifetime if remember_me else None,
