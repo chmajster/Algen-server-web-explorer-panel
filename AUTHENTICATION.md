@@ -10,27 +10,17 @@ Local-user records contain the username, enabled state, display name, WebNAS rol
 
 ### Initial administrator
 
-When a new Local authentication database is initialized, WebNAS creates one administrator:
+A fresh standard installation creates this Local database administrator:
 
 ```text
-username: admin
+username: chris
+password: 1
 role: admin
 ```
 
-Its password is generated with `secrets.token_urlsafe()` and is not a static/default password. During bootstrap, the recoverable copy is stored only as an encrypted one-time secret in the existing Secrets Manager. The local-user database contains only the salted `scrypt` hash plus the identifier of that temporary secret.
+The password is stored in `local-auth.sqlite3` only as a salted `scrypt` hash; plaintext `1` is not stored in SQLite. The installer supplies this short bootstrap password through a dedicated first-user path that is available only while the Local database is empty. Normal local-user creation and password changes still require 12–1024 characters.
 
-A standard installation initializes the authentication subsystem after the release health check, retrieves that encrypted bootstrap credential as the WebNAS service identity, prints it once to the installer terminal, and immediately removes the temporary secret. No `initial-local-admin.txt` or other plaintext credential file is created.
-
-Example installer output:
-
-```text
-Initial local administrator credentials:
-Username: admin
-Password: <random-password>
-IMPORTANT: this password is displayed once and is not stored in plaintext.
-```
-
-Store the displayed password securely and change it after the first login. If the administrator successfully authenticates before the installer consumes the bootstrap secret, WebNAS deletes that temporary encrypted copy as part of the successful login lifecycle.
+The installer prints the default account and warns that the password must be changed immediately after the first login. Updates and reinstalls preserve an already initialized Local user database instead of recreating or resetting `chris`.
 
 ### Local user management
 
@@ -217,8 +207,8 @@ Authentication mode changes do not create a second authorization subsystem.
 - minimum 12-character password at the API boundary;
 - constant-style dummy verification for unknown usernames;
 - plaintext exists only in process memory while credentials are being created, submitted or verified;
-- the initial recoverable bootstrap copy is encrypted by Secrets Manager and deleted immediately after installer retrieval or the first successful admin login;
-- no plaintext bootstrap credential file is created;
+- the fresh-install bootstrap account is `chris` with default password `1`; SQLite stores only its salted `scrypt` hash;
+- the short password is accepted only by the empty-database installer bootstrap path; normal password APIs retain the 12-character minimum;
 - password changes replace the hash and never expose it through an API.
 
 ### PAM

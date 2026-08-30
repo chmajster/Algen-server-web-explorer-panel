@@ -30,10 +30,10 @@ Portable options:
   -h, --help               Show help for the selected mode
 
 Fresh standard installations use the WebNAS Local database authentication mode
-by default. The initial administrator password is generated randomly and shown
-once by the standard installer; it is never written to a plaintext credential
-file. PAM and optional LDAP are available later through Settings ->
-Administration -> Authentication. Standard installer options such as
+by default and create the administrator account chris with password 1. Change
+this default password immediately after the first login. PAM and optional LDAP
+are available later through Settings -> Administration -> Authentication.
+Standard installer options such as
 --install-dir, --user and --existing-action remain available.
 EOF_USAGE
 }
@@ -200,7 +200,7 @@ PY
   printf '\n==> Authentication summary\n'
   if [[ "$mode" == "local" ]]; then
     printf '[OK] Authentication mode: Local database (default)\n'
-    printf '[INFO] A newly generated administrator password is printed once by the standard installer and is not retained in plaintext.\n'
+    printf '[INFO] Fresh installations create the local administrator chris with default password 1; change it immediately after the first login.\n'
     printf '[INFO] PAM and optional LDAP can be enabled later in Settings -> Administration -> Authentication.\n'
   elif [[ "$mode" == "system" ]]; then
     printf '[OK] Authentication mode: System authentication (PAM + optional LDAP)\n'

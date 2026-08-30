@@ -29,33 +29,26 @@ def test_launcher_documents_local_database_as_standard_default():
     content = LAUNCHER.read_text(encoding="utf-8")
 
     assert "Local database authentication mode" in content
-    assert "shown\nonce" in content
-    assert "never written to a plaintext credential\nfile" in content
+    assert "administrator account chris with password 1" in content
+    assert "Change" in content and "password immediately" in content
     assert "PAM and optional LDAP" in content
-    assert "Settings ->\nAdministration -> Authentication" in content
 
 
-def test_standard_installer_initializes_and_prints_bootstrap_once():
+def test_standard_installer_creates_default_chris_account():
     standard = STANDARD.read_text(encoding="utf-8")
     helper = BOOTSTRAP_HELPER.read_text(encoding="utf-8")
 
-    assert "/api/auth/config" in standard
-    assert "consume_local_bootstrap.py" in standard
-    assert 'runuser -u "$SERVICE_USER"' in standard
-    assert "Initial local administrator credentials:" in helper
-    assert "displayed once and is not stored in plaintext" in helper
+    assert '"$python" "$helper" "chris" "1"' in standard
+    assert 'bootstrap_initial_admin' in helper
+    assert "Default local administrator created:" in helper
+    assert "change this default password immediately" in helper
 
 
-def test_bootstrap_password_has_no_plaintext_file_storage():
-    sources = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (LAUNCHER, STANDARD, PORTABLE, LOCAL_AUTH, BOOTSTRAP_HELPER)
-    )
-
-    assert "initial-local-admin.txt" not in sources
-    assert "bootstrap_path" not in LOCAL_AUTH.read_text(encoding="utf-8")
-    assert "secrets_service().save" in LOCAL_AUTH.read_text(encoding="utf-8")
-    assert "bootstrap_secret_id" in LOCAL_AUTH.read_text(encoding="utf-8")
+def test_default_password_is_only_an_installer_bootstrap_exception():
+    local_auth_source = LOCAL_AUTH.read_text(encoding="utf-8")
+    assert "_allow_short_password" in local_auth_source
+    assert "Local account password must contain between 12 and 1024 characters" in local_auth_source
+    assert "bootstrap_admin" in local_auth_source
 
 
 def test_launcher_preserves_standard_installer_failure_status(tmp_path: Path):
@@ -96,7 +89,5 @@ def test_portable_mode_explicitly_uses_system_pam_authentication():
 
 def test_portable_mode_never_creates_local_bootstrap_credentials():
     portable = PORTABLE.read_text(encoding="utf-8")
-    local_auth = LOCAL_AUTH.read_text(encoding="utf-8")
-
-    assert "initial-local-admin.txt" not in portable
-    assert 'if self.auth_mode() == "local":' in local_auth
+    assert '"chris" "1"' not in portable
+    assert "Portable authentication mode set to System/PAM" in portable

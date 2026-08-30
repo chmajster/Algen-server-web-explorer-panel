@@ -57,10 +57,13 @@ def create_test_app(root: Path):
     get_config.cache_clear()
 
     from app import auth_api
+    from app import local_auth
     from app import security as session_security
     from app.identity import permissions as identity_permissions
 
     session_security._store.cache_clear()
+    local_auth.repository.cache_clear()
+    local_auth.repository().set_auth_mode("system", "real-e2e")
     username = getpass.getuser()
 
     def fake_authenticate(candidate: str, password: str) -> None:

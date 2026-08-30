@@ -16,8 +16,6 @@ from typing import Any, Literal
 
 from .audit import logger
 from .config import get_config
-from .modules.secrets_manager.models import SecretInput
-from .modules.secrets_manager.service import service as secrets_service
 from .privileged_broker.runtime import broker_command, broker_required
 from .sqlite_utils import ClosingConnection
 
@@ -32,8 +30,6 @@ SCRYPT_N = 1 << 14
 SCRYPT_R = 8
 SCRYPT_P = 1
 SCRYPT_DKLEN = 32
-LOCAL_BOOTSTRAP_SECRET_PREFIX = "__webnas_initial_local_admin__"
-LOCAL_BOOTSTRAP_SECRET_MODULE = "authentication-bootstrap"
 
 
 class LocalAuthenticationError(Exception):
@@ -56,9 +52,9 @@ def _unb64(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def hash_password(password: str) -> str:
-    if len(password) < 12 or len(password) > 1024 or "\x00" in password:
-        raise ValueError("Local account password must contain between 12 and 1024 characters")
+def _hash_password_unchecked(password: str) -> str:
+    if not password or len(password) > 1024 or "\x00" in password:
+        raise ValueError("Local account password must contain between 1 and 1024 characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(
         password.encode("utf-8"),
@@ -69,6 +65,12 @@ def hash_password(password: str) -> str:
         dklen=SCRYPT_DKLEN,
     )
     return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${_b64(salt)}${_b64(digest)}"
+
+
+def hash_password(password: str) -> str:
+    if len(password) < 12 or len(password) > 1024 or "\x00" in password:
+        raise ValueError("Local account password must contain between 12 and 1024 characters")
+    return _hash_password_unchecked(password)
 
 
 @lru_cache(maxsize=1)
@@ -189,8 +191,6 @@ class LocalAuthRepository:
         self.homes_root = root / "local-homes"
         self._lock = threading.RLock()
         self._initialize()
-        if self.auth_mode() == "local":
-            self._ensure_initial_admin()
 
     def connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +207,6 @@ class LocalAuthRepository:
                 CREATE TABLE IF NOT EXISTS local_auth_settings(
                     id INTEGER PRIMARY KEY CHECK(id=1),
                     auth_mode TEXT NOT NULL DEFAULT 'local',
-                    bootstrap_secret_id TEXT NOT NULL DEFAULT '',
                     updated_at REAL NOT NULL DEFAULT 0,
                     updated_by TEXT NOT NULL DEFAULT ''
                 );
@@ -230,91 +229,12 @@ class LocalAuthRepository:
                     ON local_users(enabled,role);
                 """
             )
-            columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(local_auth_settings)").fetchall()}
-            if "bootstrap_secret_id" not in columns:
-                connection.execute("ALTER TABLE local_auth_settings ADD COLUMN bootstrap_secret_id TEXT NOT NULL DEFAULT ''")
         self.homes_root.mkdir(parents=True, exist_ok=True)
         try:
             os.chmod(self.path, 0o600)
             os.chmod(self.homes_root, 0o700)
         except OSError:
             pass
-
-    def _bootstrap_secret_id(self) -> str:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT bootstrap_secret_id FROM local_auth_settings WHERE id=1"
-            ).fetchone()
-        return str(row["bootstrap_secret_id"] or "") if row else ""
-
-    def _set_bootstrap_secret_id(self, secret_id: str) -> None:
-        with self.connect() as connection:
-            connection.execute(
-                "UPDATE local_auth_settings SET bootstrap_secret_id=? WHERE id=1",
-                (secret_id,),
-            )
-
-    @staticmethod
-    def _bootstrap_password(secret_id: str) -> str:
-        item = secrets_service().verified_secret(
-            secret_id,
-            module_id=LOCAL_BOOTSTRAP_SECRET_MODULE,
-            purpose="initial-local-admin",
-        )
-        password = str(item.get("secret") or "")
-        if not password:
-            raise LocalAuthConfigurationError("Initial local administrator credential is unavailable")
-        return password
-
-    def _ensure_initial_admin(self) -> None:
-        with self._lock:
-            if self.count() > 0:
-                return
-            secret_id = self._bootstrap_secret_id()
-            if secret_id:
-                password = self._bootstrap_password(secret_id)
-            else:
-                password = secrets.token_urlsafe(24)
-                stored = secrets_service().save(
-                    SecretInput(
-                        name=f"{LOCAL_BOOTSTRAP_SECRET_PREFIX}-{secrets.token_hex(8)}",
-                        type="generic_secret",
-                        secret=password,
-                        description="One-time WebNAS local administrator bootstrap credential",
-                        shared_with=[LOCAL_BOOTSTRAP_SECRET_MODULE],
-                    ),
-                    "local-auth-bootstrap",
-                )
-                secret_id = str(stored["id"])
-                self._set_bootstrap_secret_id(secret_id)
-            self.create_user(
-                "admin",
-                password,
-                role="admin",
-                display_name="WebNAS Administrator",
-            )
-
-    def consume_bootstrap_credential(self) -> dict[str, str] | None:
-        secret_id = self._bootstrap_secret_id()
-        if not secret_id:
-            return None
-        password = self._bootstrap_password(secret_id)
-        credentials = {"username": "admin", "password": password}
-        secrets_service().delete(secret_id, "local-auth-installer")
-        self._set_bootstrap_secret_id("")
-        return credentials
-
-    def _consume_bootstrap_secret(self, username: str) -> None:
-        if username.casefold() != "admin":
-            return
-        secret_id = self._bootstrap_secret_id()
-        if not secret_id:
-            return
-        try:
-            secrets_service().delete(secret_id, "local-auth-login")
-            self._set_bootstrap_secret_id("")
-        except Exception as error:
-            logger.warning("local_bootstrap_secret_cleanup_failed error=%s", type(error).__name__)
 
     @staticmethod
     def _key(username: str) -> str:
@@ -416,12 +336,13 @@ class LocalAuthRepository:
         *,
         role: str = "user",
         display_name: str = "",
+        _allow_short_password: bool = False,
     ) -> dict[str, Any]:
         username = validate_local_username(username)
         role_value = validate_local_role(role)
         if self.user(username) is not None:
             raise ValueError("A local WebNAS user with this username already exists")
-        password_hash = hash_password(password)
+        password_hash = _hash_password_unchecked(password) if _allow_short_password else hash_password(password)
         now = time.time()
         home = self._home_for(username)
         with self._lock, self.connect() as connection:
@@ -452,13 +373,21 @@ class LocalAuthRepository:
             raise RuntimeError("Created local user is unavailable")
         return user
 
-    def bootstrap_admin(self, username: str = "admin", password: str | None = None) -> tuple[dict[str, Any] | None, str]:
+    def bootstrap_admin(self, username: str, password: str) -> tuple[dict[str, Any] | None, str]:
         with self._lock:
             if self.count() > 0:
                 return None, ""
-            generated = password or secrets.token_urlsafe(24)
-            user = self.create_user(username, generated, role="admin", display_name="WebNAS Administrator")
-            return user, generated
+            username = validate_local_username(username)
+            if not password or len(password) > 1024 or "\x00" in password:
+                raise ValueError("Bootstrap password must contain between 1 and 1024 characters")
+            user = self.create_user(
+                username,
+                password,
+                role="admin",
+                display_name="WebNAS Administrator",
+                _allow_short_password=True,
+            )
+            return user, password
 
     def authenticate(self, username: str, password: str) -> dict[str, Any]:
         username = validate_local_username(username)
@@ -478,7 +407,6 @@ class LocalAuthRepository:
         user = self.user(username)
         if not user:
             raise LocalInvalidCredentials("Invalid username or password")
-        self._consume_bootstrap_secret(username)
         return user
 
     def update_user(
@@ -512,8 +440,6 @@ class LocalAuthRepository:
                 f"UPDATE local_users SET {','.join(updates)} WHERE username_key=?",  # noqa: S608 - fixed column list
                 tuple(values),
             )
-        if password is not None:
-            self._consume_bootstrap_secret(username)
         user = self.user(username)
         if not user:
             raise RuntimeError("Updated local user is unavailable")
@@ -566,5 +492,5 @@ def local_posix_mapping(username: str) -> dict[str, Any] | None:
     return _posix_mapping(username)
 
 
-def consume_initial_admin_credentials() -> dict[str, str] | None:
-    return repository().consume_bootstrap_credential()
+def bootstrap_initial_admin(username: str, password: str) -> tuple[dict[str, Any] | None, str]:
+    return repository().bootstrap_admin(username, password)

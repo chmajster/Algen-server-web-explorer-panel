@@ -155,11 +155,9 @@ Changing global authentication mode revokes all active sessions so a session cre
 
 ## Initial local administrator
 
-On an empty Local database, WebNAS creates an `admin` application account with a cryptographically random password. The standard installer retrieves the temporary encrypted bootstrap credential through Secrets Manager as the WebNAS service identity, prints it once to the terminal and immediately deletes that encrypted recoverable copy.
+A fresh standard installation bootstraps `chris` as the first Local database administrator with default password `1`. The SQLite user record contains only the salted `scrypt` hash. The installer-only bootstrap path accepts the short initial value only while the database is empty; normal account password rules continue to require 12–1024 characters. Existing user databases are preserved on update/reinstall.
 
-No plaintext bootstrap credential file is created. The Local database retains only the salted `scrypt` password hash.
-
-If the first successful `admin` login happens before installer retrieval, WebNAS deletes the temporary encrypted bootstrap secret during that successful-login lifecycle.
+Change the default password immediately after the first login.
 
 ## Safety and Proxmox
 

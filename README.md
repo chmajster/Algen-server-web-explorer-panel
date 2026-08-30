@@ -132,20 +132,15 @@ A browser will warn about the generated self-signed certificate until it is trus
 
 ### First login
 
-The default authentication mode is **Local database**. On first initialization WebNAS creates a local application administrator named `admin` with a cryptographically random password. The local user database stores only a salted `scrypt` hash.
-
-During installation the recoverable bootstrap copy is held only as an encrypted one-time secret in the existing Secrets Manager. After the release health check the standard installer prints the credentials once to its terminal and immediately deletes that temporary encrypted secret. WebNAS does not create a plaintext password file.
-
-Example output:
+The default authentication mode is **Local database**. A fresh standard installation creates the local administrator:
 
 ```text
-Initial local administrator credentials:
-Username: admin
-Password: <random-password>
-IMPORTANT: this password is displayed once and is not stored in plaintext.
+Username: chris
+Password: 1
+Role: admin
 ```
 
-Store the displayed password securely and change it immediately after the first login.
+Change the default password immediately after the first login. The Local database stores only a salted `scrypt` hash, not plaintext `1`. The short default is accepted only by the empty-database installer bootstrap path; normal local-user passwords still require at least 12 characters. Existing initialized databases are preserved during update/reinstall and are not reset to `chris:1`.
 
 Standard installations also create or reuse a locked, non-interactive POSIX mapping for local WebNAS users so filesystem operations can run under a dedicated Unix UID/GID. The application password is never written to `/etc/shadow`; the POSIX account uses `nologin` and a locked system password.
 
@@ -248,7 +243,7 @@ WebNAS uses an application-owned local user database by default and can alternat
 The project includes:
 
 - salted `scrypt` password hashing for local WebNAS users,
-- a random initial local administrator password delivered once by the standard installer, with its temporary recoverable copy encrypted in Secrets Manager and deleted after retrieval,
+- a fresh-install `chris` administrator with default password `1`, stored only as a salted `scrypt` hash and required to be changed after first login,
 - locked/non-interactive POSIX mappings for local application users in standard deployments,
 - PAM authentication restricted to local `/etc/passwd` accounts in system mode,
 - optional LDAP/StartTLS/LDAPS authentication with explicit provider selection and no automatic fallback,

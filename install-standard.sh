@@ -1791,24 +1791,19 @@ trap on_exit EXIT
 
 print_initial_local_admin() {
   section "Authentication"
-  local scheme=""
   local helper="${INSTALL_DIR}/current/scripts/consume_local_bootstrap.py"
   local python="${INSTALL_DIR}/current/backend/.venv/bin/python"
-  local curl_options=(--fail --silent --show-error --max-time 5)
-  scheme="$(effective_transport_scheme)"
-  [[ "$scheme" != "https" ]] || curl_options+=(--insecure)
-  curl "${curl_options[@]}" "${scheme}://127.0.0.1:${PORT}/api/auth/config" >/dev/null \
-    || fail "Could not initialize the authentication subsystem"
   [[ -x "$python" && -f "$helper" ]] || fail "Local administrator bootstrap helper is unavailable"
   if command -v runuser >/dev/null 2>&1; then
     runuser -u "$SERVICE_USER" -- env \
       WEBNAS_CONFIG="$CONFIG_FILE" \
       PYTHONPATH="${INSTALL_DIR}/current/backend" \
-      "$python" "$helper"
+      "$python" "$helper" "chris" "1"
   else
-    fail "runuser is required to retrieve the one-time local administrator credential safely"
+    fail "runuser is required to initialize the Local database administrator"
   fi
-  info "Default authentication mode: Local database. PAM and optional LDAP can be enabled later in Settings -> Administration -> Authentication."
+  info "Default authentication mode: Local database. Default account: chris / password: 1. Change it immediately after the first login."
+  info "PAM and optional LDAP can be enabled later in Settings -> Administration -> Authentication."
 }
 
 main() {
