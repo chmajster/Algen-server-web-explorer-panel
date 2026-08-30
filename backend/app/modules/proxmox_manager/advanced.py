@@ -782,7 +782,7 @@ def _report_orphans(manager: ProxmoxManagerService, connection_id: str) -> dict[
         if content_type not in {"images", "rootdir"}:
             continue
         try:
-            vmid = int(row.get("vmid"))
+            vmid = int(str(row.get("vmid") or ""))
         except (TypeError, ValueError):
             match = re.search(r"(?:vm|base)-(\d+)-", str(row.get("volid") or ""))
             vmid = int(match.group(1)) if match else 0
