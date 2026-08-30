@@ -15,13 +15,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .config import get_config
+from .privileged_broker.runtime import broker_command, broker_required
 from .sqlite_utils import ClosingConnection
 
 
 AuthMode = Literal["local", "system"]
 LocalRole = Literal["admin", "operator", "auditor", "user"]
 LOCAL_ROLES = {"admin", "operator", "auditor", "user"}
-LOCAL_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_.-]{0,31}\$?$", re.IGNORECASE)
+# Keep the application username inside the privileged broker's Linux account
+# policy grammar so a local WebNAS account can receive a locked POSIX mapping.
+LOCAL_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$", re.IGNORECASE)
 SCRYPT_N = 1 << 14
 SCRYPT_R = 8
 SCRYPT_P = 1
@@ -33,10 +36,6 @@ class LocalAuthenticationError(Exception):
 
 
 class LocalInvalidCredentials(LocalAuthenticationError):
-    pass
-
-
-class LocalAccountDisabled(LocalAuthenticationError):
     pass
 
 
@@ -65,6 +64,13 @@ def hash_password(password: str) -> str:
         dklen=SCRYPT_DKLEN,
     )
     return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${_b64(salt)}${_b64(digest)}"
+
+
+@lru_cache(maxsize=1)
+def _dummy_password_hash() -> str:
+    # Unknown usernames still execute one scrypt verification without generating
+    # a fresh expensive hash for every failed request.
+    return hash_password("webnas-invalid-password-placeholder")
 
 
 def verify_password(password: str, encoded: str) -> bool:
@@ -102,6 +108,73 @@ def validate_local_role(role: str) -> LocalRole:
     if value not in LOCAL_ROLES:
         raise ValueError("Invalid local WebNAS role")
     return value  # type: ignore[return-value]
+
+
+def _posix_mapping(username: str) -> dict[str, Any] | None:
+    try:
+        account = pwd.getpwnam(username)
+    except KeyError:
+        return None
+    cfg = get_config()
+    if account.pw_uid == 0 or account.pw_uid < cfg.security.system_uid_threshold:
+        return None
+    if not account.pw_dir or not Path(account.pw_dir).is_absolute():
+        return None
+    return {
+        "uid": int(account.pw_uid),
+        "gid": int(account.pw_gid),
+        "home": str(account.pw_dir),
+    }
+
+
+def _ensure_posix_mapping(username: str) -> dict[str, Any] | None:
+    mapping = _posix_mapping(username)
+    if mapping is not None:
+        return mapping
+    if not broker_required():
+        return None
+
+    # Standard installations run the application as the unprivileged `webnas`
+    # account and expose a typed root broker. Create a locked, non-interactive
+    # POSIX companion solely for UID/GID/home semantics; WebNAS never places the
+    # application password into /etc/shadow.
+    home = f"/home/{username}"
+    result = broker_command(
+        [
+            "useradd",
+            "--user-group",
+            "--create-home",
+            "--home-dir",
+            home,
+            "--shell",
+            "/usr/sbin/nologin",
+            username,
+        ],
+        actor="local-auth",
+    )
+    if result is None or result.returncode != 0:
+        # Some distributions install nologin under /sbin. Retry only when the
+        # first account was not created; useradd fails closed if the user exists.
+        result = broker_command(
+            [
+                "useradd",
+                "--user-group",
+                "--create-home",
+                "--home-dir",
+                home,
+                "--shell",
+                "/sbin/nologin",
+                username,
+            ],
+            actor="local-auth",
+        )
+    if result is None or result.returncode != 0:
+        return _posix_mapping(username)
+
+    locked = broker_command(["usermod", "--lock", username], actor="local-auth")
+    if locked is None or locked.returncode != 0:
+        return None
+    return _posix_mapping(username)
 
 
 class LocalAuthRepository:
@@ -213,6 +286,9 @@ class LocalAuthRepository:
         return mode
 
     def _home_for(self, username: str) -> str:
+        mapping = _ensure_posix_mapping(username)
+        if mapping:
+            return str(mapping["home"])
         digest = hashlib.sha256(username.casefold().encode("utf-8")).hexdigest()[:24]
         home = self.homes_root / digest
         home.mkdir(parents=True, exist_ok=True)
@@ -225,13 +301,14 @@ class LocalAuthRepository:
     @staticmethod
     def _public(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         item = dict(row)
+        mapping = _posix_mapping(str(item["username"]))
         return {
             "username": str(item["username"]),
             "role": str(item["role"]),
             "enabled": bool(item["enabled"]),
             "display_name": str(item.get("display_name") or ""),
-            "home": str(item.get("home") or ""),
-            "posix_mapped": _posix_mapping(str(item["username"])) is not None,
+            "home": str(mapping["home"] if mapping else item.get("home") or ""),
+            "posix_mapped": mapping is not None,
             "created_at": float(item.get("created_at") or 0),
             "updated_at": float(item.get("updated_at") or 0),
             "last_login_at": float(item.get("last_login_at") or 0),
@@ -288,6 +365,8 @@ class LocalAuthRepository:
     ) -> dict[str, Any]:
         username = validate_local_username(username)
         role_value = validate_local_role(role)
+        if self.user(username) is not None:
+            raise ValueError("A local WebNAS user with this username already exists")
         password_hash = hash_password(password)
         now = time.time()
         home = self._home_for(username)
@@ -330,14 +409,17 @@ class LocalAuthRepository:
     def authenticate(self, username: str, password: str) -> dict[str, Any]:
         username = validate_local_username(username)
         row = self._private_user(username)
-        encoded = str(row["password_hash"]) if row else hash_password("webnas-invalid-password-placeholder")
+        encoded = str(row["password_hash"]) if row else _dummy_password_hash()
         valid = bool(password) and verify_password(password, encoded)
         if not row or not valid or not bool(row["enabled"]):
             raise LocalInvalidCredentials("Invalid username or password")
+        mapping = _ensure_posix_mapping(username)
+        if mapping is None:
+            raise LocalAuthConfigurationError("Local user POSIX mapping is unavailable")
         with self.connect() as connection:
             connection.execute(
-                "UPDATE local_users SET last_login_at=? WHERE username_key=?",
-                (time.time(), self._key(username)),
+                "UPDATE local_users SET home=?,last_login_at=? WHERE username_key=?",
+                (str(mapping["home"]), time.time(), self._key(username)),
             )
         user = self.user(username)
         if not user:
@@ -391,6 +473,9 @@ class LocalAuthRepository:
             raise ValueError("The last enabled local administrator cannot be deleted")
         with self._lock, self.connect() as connection:
             connection.execute("DELETE FROM local_users WHERE username_key=?", (self._key(username),))
+        # Keep an existing POSIX identity intentionally. It may predate WebNAS or
+        # be shared with other services; deleting it automatically would be a
+        # destructive cross-boundary action.
 
 
 @lru_cache(maxsize=1)
@@ -421,23 +506,6 @@ def authenticate_local(username: str, password: str) -> dict[str, Any]:
     if auth_mode() != "local":
         raise LocalAuthConfigurationError("Local database authentication is disabled")
     return repository().authenticate(username, password)
-
-
-def _posix_mapping(username: str) -> dict[str, Any] | None:
-    try:
-        account = pwd.getpwnam(username)
-    except KeyError:
-        return None
-    cfg = get_config()
-    if account.pw_uid == 0 or account.pw_uid < cfg.security.system_uid_threshold:
-        return None
-    if not account.pw_dir or not Path(account.pw_dir).is_absolute():
-        return None
-    return {
-        "uid": int(account.pw_uid),
-        "gid": int(account.pw_gid),
-        "home": str(account.pw_dir),
-    }
 
 
 def local_posix_mapping(username: str) -> dict[str, Any] | None:
