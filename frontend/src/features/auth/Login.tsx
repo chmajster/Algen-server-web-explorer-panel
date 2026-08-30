@@ -41,7 +41,7 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
   const [loading, setLoading] = useState(false);
   const submitting = useRef(false);
   const t = (key: string) => translate(language, key);
-  const providerLabel = language === "pl-PL" ? "Metoda logowania" : "Authentication method";
+  const providerLabel = language === "pl-PL" ? "Źródło konta" : "Account source";
   const usernameLabel = authConfig.mode === "system" && !authConfig.ldap_enabled
     ? t("auth.linuxUser")
     : (language === "pl-PL" ? "Nazwa użytkownika" : "Username");
@@ -94,13 +94,16 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
     }
   }
 
-  const showSystemProviderSelector = authConfig.mode === "system" && authConfig.ldap_enabled;
+  const showSystemProviderSelector = authConfig.mode === "system"
+    && authConfig.ldap_enabled
+    && authConfig.available_providers.includes("ldap")
+    && authConfig.available_providers.includes("pam");
 
   return <main className="login-screen">
     <form className="login-panel" onSubmit={submit} aria-busy={loading}>
       <header className="login-brand"><span className="login-brand-icon"><HardDrive aria-hidden="true" /></span><div><h1>WebNAS</h1><p>{t("auth.subtitle")}</p></div></header>
       <div className="login-fields">
-        {showSystemProviderSelector && <label className="login-field"><span>{providerLabel}</span><select aria-label={providerLabel} value={provider} onChange={(event) => setProvider(event.target.value as AuthProvider)}><option value="ldap">LDAP</option><option value="pam">PAM</option></select></label>}
+        {showSystemProviderSelector && <label className="login-field"><span>{providerLabel}</span><select aria-label={providerLabel} value={provider} onChange={(event) => setProvider(event.target.value as AuthProvider)}><option value="ldap">LDAP</option><option value="pam">localUser</option></select></label>}
         <label className="login-field"><span>{usernameLabel}</span><span className="login-input"><UserRound aria-hidden="true" /><input autoFocus required autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" value={username} aria-invalid={Boolean(error)} aria-describedby={error ? "login-error" : undefined} onChange={(event) => setUsername(event.target.value)} /></span></label>
         <label className="login-field"><span>{t("auth.password")}</span><span className="login-input"><LockKeyhole aria-hidden="true" /><input required type={passwordVisible ? "text" : "password"} autoComplete="current-password" value={password} aria-invalid={Boolean(error)} aria-describedby={error ? "login-error" : undefined} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="login-password-toggle" aria-label={t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")} aria-pressed={passwordVisible} onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}</button></span></label>
       </div>
