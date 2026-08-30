@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from ...activity import ActivityCategory, ActivityStatus, record_activity
-from ...identity.permissions import Permission, require_permission
+from ...identity.permissions import Permission, authorize, require_permission
 from ...security import SessionUser
 from .inventory import cluster_health, list_nodes, list_storage, templates, vm_details
 from .service import ProxmoxApiError, ProxmoxApiClient, ProxmoxManagerService, service
@@ -47,6 +47,7 @@ FEATURE_BY_SLUG = {item["slug"]: item for item in FEATURES}
 _DISK_KEY = re.compile(r"^(?:ide|sata|scsi|virtio)\d+$")
 _NET_KEY = re.compile(r"^net\d+$")
 _VERSION_TAG = re.compile(r"^(?:version|ver|v)-?(.+)$", re.IGNORECASE)
+_VM_STORAGE_CONTENT = {"images", "rootdir"}
 
 
 class CloudInitProfileInput(BaseModel):
@@ -144,11 +145,21 @@ def _quote(value: object) -> str:
     return urllib.parse.quote(str(value), safe="")
 
 
+def _public_error(error: Exception) -> str:
+    if isinstance(error, ProxmoxApiError):
+        return "Proxmox API request failed"
+    if isinstance(error, KeyError):
+        return "Requested Proxmox resource was not found"
+    if isinstance(error, ValueError):
+        return "Invalid Proxmox request"
+    return "Proxmox operation failed"
+
+
 def _safe_get(client: ProxmoxApiClient, path: str, default: Any = None) -> tuple[Any, str]:
     try:
         return client.get(path), ""
     except (ProxmoxApiError, KeyError, ValueError) as error:
-        return default, str(error)[:1000]
+        return default, _public_error(error)
 
 
 def _safe_number(value: Any) -> float:
@@ -156,6 +167,79 @@ def _safe_number(value: Any) -> float:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _raw_resources(client: ProxmoxApiClient) -> list[dict[str, Any]]:
+    raw = client.get("cluster/resources?type=vm")
+    resources: list[dict[str, Any]] = []
+    for value in raw or []:
+        if not isinstance(value, dict):
+            continue
+        resource_type = str(value.get("type") or "")
+        if resource_type not in {"qemu", "lxc"}:
+            continue
+        try:
+            vmid = int(value["vmid"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        raw_tags = value.get("tags")
+        if isinstance(raw_tags, list):
+            tags = [str(item).strip() for item in raw_tags if str(item).strip()]
+        else:
+            tags = [item.strip() for item in str(raw_tags or "").split(";") if item.strip()]
+        resources.append(
+            {
+                "vmid": vmid,
+                "name": str(value.get("name") or f"{resource_type}-{vmid}"),
+                "node": str(value.get("node") or ""),
+                "type": resource_type,
+                "status": str(value.get("status") or "unknown"),
+                "template": bool(value.get("template")),
+                "uptime": int(value.get("uptime") or 0),
+                "cpu": _safe_number(value.get("cpu")),
+                "maxcpu": int(value.get("maxcpu") or 0),
+                "mem": int(value.get("mem") or 0),
+                "maxmem": int(value.get("maxmem") or 0),
+                "disk": int(value.get("disk") or 0),
+                "maxdisk": int(value.get("maxdisk") or 0),
+                "tags": list(dict.fromkeys(tags)),
+            }
+        )
+    return resources
+
+
+def _storage_content_tokens(row: dict[str, Any]) -> set[str]:
+    raw = row.get("content")
+    if isinstance(raw, (list, tuple, set)):
+        return {str(item).strip() for item in raw if str(item).strip()}
+    return {item.strip() for item in str(raw or "").split(",") if item.strip()}
+
+
+def _eligible_vm_storage(row: dict[str, Any]) -> bool:
+    return (
+        bool(row.get("enabled", True))
+        and str(row.get("status") or "") != "unavailable"
+        and bool(_storage_content_tokens(row) & _VM_STORAGE_CONTENT)
+    )
+
+
+def _unique_storage_slots(storage_rows: list[dict[str, Any]], disk_gb: int) -> int:
+    requested_bytes = disk_gb * 1024 * 1024 * 1024
+    if requested_bytes <= 0:
+        return 0
+    pool_free: dict[tuple[str, ...], int] = {}
+    for row in storage_rows:
+        if not _eligible_vm_storage(row):
+            continue
+        free_bytes = max(0, int(row.get("total") or 0) - int(row.get("used") or 0))
+        storage_name = str(row.get("storage") or "")
+        node_name = str(row.get("node") or "")
+        key = ("shared", storage_name) if bool(row.get("shared")) else ("local", node_name, storage_name)
+        if key[0] == "shared":
+            pool_free[key] = max(pool_free.get(key, 0), free_bytes)
+        else:
+            pool_free[key] = free_bytes
+    return sum(free_bytes // requested_bytes for free_bytes in pool_free.values())
 
 
 def _score_node(
@@ -456,17 +540,25 @@ def _report_cluster_health(manager: ProxmoxManagerService, connection_id: str) -
     }
 
 
-def _placement_rows(manager: ProxmoxManagerService, connection_id: str, cpu_cores: int, memory_mb: int, disk_gb: int) -> list[dict[str, Any]]:
+def _placement_rows(
+    manager: ProxmoxManagerService,
+    connection_id: str,
+    cpu_cores: int,
+    memory_mb: int,
+    disk_gb: int,
+    *,
+    nodes: list[dict[str, Any]] | None = None,
+    storage_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     connection = _connection(manager, connection_id)
-    nodes = list_nodes(manager, str(connection["id"]))["nodes"]
-    storage_rows = list_storage(manager, str(connection["id"]))["storage"]
-    storage_by_node: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    if nodes is None:
+        nodes = list_nodes(manager, str(connection["id"]))["nodes"]
+    if storage_rows is None:
+        storage_rows = list_storage(manager, str(connection["id"]))["storage"]
+    storage_by_node: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in storage_rows:
-        if not row.get("enabled", True) or str(row.get("status")) == "unavailable":
-            continue
-        bucket = storage_by_node[str(row.get("node") or "")]
-        bucket[0] += int(row.get("used") or 0)
-        bucket[1] += int(row.get("total") or 0)
+        if _eligible_vm_storage(row):
+            storage_by_node[str(row.get("node") or "")].append(row)
     result: list[dict[str, Any]] = []
     for node in nodes:
         maxcpu = max(0, int(node.get("maxcpu") or 0))
@@ -474,8 +566,13 @@ def _placement_rows(manager: ProxmoxManagerService, connection_id: str, cpu_core
         free_cpu = max(0.0, maxcpu - cpu_used)
         maxmem = int(node.get("maxmem") or 0)
         free_mem = max(0, maxmem - int(node.get("mem") or 0))
-        storage_used, storage_total = storage_by_node.get(str(node.get("node") or ""), [0, 0])
-        free_storage = max(0, storage_total - storage_used)
+        node_storage = storage_by_node.get(str(node.get("node") or ""), [])
+        storage_used = sum(int(row.get("used") or 0) for row in node_storage)
+        storage_total = sum(int(row.get("total") or 0) for row in node_storage)
+        free_storage = max(
+            (max(0, int(row.get("total") or 0) - int(row.get("used") or 0)) for row in node_storage),
+            default=0,
+        )
         cpu_util = _safe_number(node.get("cpu"))
         mem_util = (int(node.get("mem") or 0) / maxmem) if maxmem else 1.0
         storage_util = (storage_used / storage_total) if storage_total else 1.0
@@ -502,14 +599,17 @@ def _report_placement(manager: ProxmoxManagerService, connection_id: str, cpu_co
     return {
         "feature": FEATURE_BY_SLUG["placement-advisor"],
         "request": {"cpu_cores": cpu_cores, "memory_mb": memory_mb, "disk_gb": disk_gb},
-        "recommendation": next((row for row in rows if row["fits"]), None),
+        "recommendation": next((row for row in rows if row["fits"] and row["online"]), None),
         "nodes": rows,
     }
 
 
 def _report_capacity(manager: ProxmoxManagerService, connection_id: str, cpu_cores: int, memory_mb: int, disk_gb: int) -> dict[str, Any]:
-    rows = _placement_rows(manager, connection_id, cpu_cores, memory_mb, disk_gb)
+    connection = _connection(manager, connection_id)
+    storage_rows = list_storage(manager, str(connection["id"]))["storage"]
+    rows = _placement_rows(manager, str(connection["id"]), cpu_cores, memory_mb, disk_gb, storage_rows=storage_rows)
     result = []
+    compute_slots = 0
     for row in rows:
         count = _capacity_count(
             row["free_cpu_cores"],
@@ -519,13 +619,24 @@ def _report_capacity(manager: ProxmoxManagerService, connection_id: str, cpu_cor
             memory_mb,
             disk_gb,
         ) if row["online"] else 0
+        compute_slots += _capacity_count(
+            row["free_cpu_cores"],
+            row["free_memory_bytes"],
+            0,
+            cpu_cores,
+            memory_mb,
+            0,
+        ) if row["online"] else 0
         result.append({**row, "estimated_vm_capacity": count})
+    storage_slots = _unique_storage_slots(storage_rows, disk_gb)
     return {
         "feature": FEATURE_BY_SLUG["capacity-planner"],
         "request": {"cpu_cores": cpu_cores, "memory_mb": memory_mb, "disk_gb": disk_gb},
-        "estimated_vm_capacity": sum(row["estimated_vm_capacity"] for row in result),
+        "estimated_vm_capacity": min(compute_slots, storage_slots),
+        "compute_limited_capacity": compute_slots,
+        "unique_storage_limited_capacity": storage_slots,
         "nodes": result,
-        "method": "min(free CPU/request CPU, free RAM/request RAM, free storage/request disk); no HA reservation or overcommit policy is assumed",
+        "method": "cluster total is min(sum node CPU/RAM capacity, unique VM-capable storage slots); shared datastores are counted once",
     }
 
 
@@ -552,7 +663,7 @@ def _report_storage_balancer(manager: ProxmoxManagerService, connection_id: str)
         try:
             details = vm_details(manager, str(connection["id"]), int(vm["vmid"]))
         except (ProxmoxApiError, KeyError, ValueError) as error:
-            config_errors.append(str(error)[:500])
+            config_errors.append(_public_error(error))
             continue
         node = str(vm.get("node") or "")
         for disk in details.get("hardware", {}).get("disks", []):
@@ -659,22 +770,38 @@ def _report_ha(manager: ProxmoxManagerService, connection_id: str) -> dict[str, 
 
 
 def _report_migration(manager: ProxmoxManagerService, connection_id: str) -> dict[str, Any]:
-    connection = _connection(manager, connection_id)
+    connection, client = _client(manager, connection_id)
     nodes = list_nodes(manager, str(connection["id"]))["nodes"]
-    placements = {row["node"]: row for row in _placement_rows(manager, str(connection["id"]), 1, 512, 1)}
+    storage_rows = list_storage(manager, str(connection["id"]))["storage"]
     rows: list[dict[str, Any]] = []
-    for vm in [item for item in manager._resources(connection) if not item.get("template")]:
+    for vm in [item for item in _raw_resources(client) if not item.get("template")]:
+        required_cpu = max(1, int(vm.get("maxcpu") or 1))
+        required_memory_mb = max(128, math.ceil(int(vm.get("maxmem") or 0) / (1024 * 1024)))
+        required_disk_gb = max(1, math.ceil(int(vm.get("maxdisk") or 0) / (1024 * 1024 * 1024)))
+        placements = {
+            row["node"]: row
+            for row in _placement_rows(
+                manager,
+                str(connection["id"]),
+                required_cpu,
+                required_memory_mb,
+                required_disk_gb,
+                nodes=nodes,
+                storage_rows=storage_rows,
+            )
+        }
         candidates = [
             {
                 "node": node.get("node"),
                 "online": str(node.get("status")) in {"online", "running"},
+                "fits": bool(placements.get(str(node.get("node")), {}).get("fits")),
                 "score": placements.get(str(node.get("node")), {}).get("score", -1),
                 "live_supported": vm.get("type") == "qemu" and vm.get("status") == "running",
             }
             for node in nodes
             if str(node.get("node") or "") != str(vm.get("node") or "")
         ]
-        candidates.sort(key=lambda item: item["score"], reverse=True)
+        candidates.sort(key=lambda item: (item["fits"], item["score"]), reverse=True)
         rows.append(
             {
                 "vmid": vm["vmid"],
@@ -682,7 +809,8 @@ def _report_migration(manager: ProxmoxManagerService, connection_id: str) -> dic
                 "type": vm["type"],
                 "status": vm["status"],
                 "source_node": vm["node"],
-                "recommended_target": next((item for item in candidates if item["online"]), None),
+                "required": {"cpu_cores": required_cpu, "memory_mb": required_memory_mb, "disk_gb": required_disk_gb},
+                "recommended_target": next((item for item in candidates if item["online"] and item["fits"]), None),
                 "targets": candidates,
             }
         )
@@ -772,10 +900,10 @@ def _report_vm_policy(manager: ProxmoxManagerService, connection_id: str) -> dic
 
 
 def _report_orphans(manager: ProxmoxManagerService, connection_id: str) -> dict[str, Any]:
-    connection, client = _client(manager, connection_id)
+    _, client = _client(manager, connection_id)
     nodes, node_error = _safe_get(client, "nodes", [])
     content, errors = _list_storage_content(client, nodes or [])
-    known_vmids = {int(item["vmid"]) for item in manager._resources(connection, client)}
+    known_vmids = {int(item["vmid"]) for item in _raw_resources(client)}
     orphans = []
     for row in content:
         content_type = str(row.get("content") or "")
@@ -920,13 +1048,13 @@ def _report_drift(manager: ProxmoxManagerService, connection_id: str) -> dict[st
             }
             rows.append({"vmid": vmid, "name": details.get("name"), "node": details.get("node"), "drifted": bool(differences), "differences": differences, "expected": expected, "actual": actual})
         except (ProxmoxApiError, KeyError, ValueError) as error:
-            rows.append({"vmid": vmid, "drifted": True, "differences": {"resource": {"expected": "present", "actual": "missing"}}, "error": str(error)[:500]})
+            rows.append({"vmid": vmid, "drifted": True, "differences": {"resource": {"expected": "present", "actual": "missing"}}, "error": _public_error(error)})
     return {"feature": FEATURE_BY_SLUG["drift-manager"], "baselines": baselines, "vms": rows, "drifted": sum(item["drifted"] for item in rows)}
 
 
 def _report_bulk(manager: ProxmoxManagerService, connection_id: str) -> dict[str, Any]:
-    connection = _connection(manager, connection_id)
-    resources = [item for item in manager._resources(connection) if not item.get("template")]
+    _, client = _client(manager, connection_id)
+    resources = [item for item in _raw_resources(client) if not item.get("template")]
     by_status: dict[str, int] = defaultdict(int)
     by_node: dict[str, int] = defaultdict(int)
     for vm in resources:
@@ -995,9 +1123,11 @@ def report(
     except HTTPException:
         raise
     except KeyError as error:
-        raise HTTPException(status_code=404, detail=str(error).strip("'")) from error
-    except (ValueError, ProxmoxApiError) as error:
-        raise HTTPException(status_code=422 if isinstance(error, ValueError) else 502, detail=str(error)) from error
+        raise HTTPException(status_code=404, detail=_public_error(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=_public_error(error)) from error
+    except ProxmoxApiError as error:
+        raise HTTPException(status_code=502, detail=_public_error(error)) from error
 
 
 @router.post("/cloud-init-profiles")
@@ -1088,17 +1218,19 @@ def apply_snapshot_retention(
         path = f"nodes/{_quote(item['node'])}/{item['type']}/{item['vmid']}/snapshot/{_quote(item['snapshot'])}"
         try:
             upid = client.delete(path)
-            results.append({**item, "ok": True, "task": upid})
+            results.append({**item, "accepted": True, "status": "queued" if upid else "accepted", "task": upid})
         except (ProxmoxApiError, KeyError, ValueError) as error:
-            results.append({**item, "ok": False, "error": str(error)[:1000]})
+            results.append({**item, "accepted": False, "status": "failed", "error": _public_error(error)})
+    accepted = sum(item["accepted"] for item in results)
+    failed = sum(not item["accepted"] for item in results)
     _activity(
         user.username,
         "proxmox_snapshot_retention_apply",
         str(connection["id"]),
-        {"max_age_days": payload.max_age_days, "requested": len(candidates), "deleted": sum(item["ok"] for item in results)},
-        failed=any(not item["ok"] for item in results),
+        {"max_age_days": payload.max_age_days, "requested": len(candidates), "accepted": accepted},
+        failed=bool(failed),
     )
-    return {"results": results, "deleted": sum(item["ok"] for item in results), "failed": sum(not item["ok"] for item in results)}
+    return {"results": results, "accepted": accepted, "failed": failed}
 
 
 @router.post("/bulk")
@@ -1109,14 +1241,24 @@ def bulk_operation(
     expected = f"BULK {payload.action.upper()}"
     if payload.confirmation_text != expected:
         raise HTTPException(status_code=422, detail=f"confirmation_text must equal {expected}")
+    action_permission = {
+        "start": Permission.HOSTS_MANAGER_POWER_ON,
+        "shutdown": Permission.HOSTS_MANAGER_POWER_SHUTDOWN,
+        "stop": Permission.HOSTS_MANAGER_POWER_SHUTDOWN,
+        "reboot": Permission.HOSTS_MANAGER_POWER_REBOOT,
+    }.get(payload.action)
+    if action_permission is not None:
+        authorize(user, action_permission)
+    if payload.action == "migrate" and not payload.target_node:
+        raise HTTPException(status_code=422, detail="target_node is required for migrate")
     manager = service()
     connection, client = _client(manager, payload.connection_id)
-    resources = {int(item["vmid"]): item for item in manager._resources(connection, client) if not item.get("template")}
+    resources = {int(item["vmid"]): item for item in _raw_resources(client) if not item.get("template")}
     results: list[dict[str, Any]] = []
     for vmid in list(dict.fromkeys(payload.vmids)):
         vm = resources.get(vmid)
         if not vm:
-            results.append({"vmid": vmid, "ok": False, "error": "VM not found"})
+            results.append({"vmid": vmid, "accepted": False, "status": "failed", "error": "VM not found"})
             continue
         base = f"nodes/{_quote(vm['node'])}/{vm['type']}/{vmid}"
         try:
@@ -1126,20 +1268,20 @@ def bulk_operation(
                 name = payload.snapshot_name or f"webnas-bulk-{int(time.time())}"
                 task = client.post(f"{base}/snapshot", {"snapname": name, "description": "Created by WebNAS Proxmox Bulk Operations"})
             else:
-                if not payload.target_node:
-                    raise ValueError("target_node is required for migrate")
                 data: dict[str, Any] = {"target": payload.target_node}
                 if vm["type"] == "qemu" and vm.get("status") == "running":
                     data["online"] = 1
                 task = client.post(f"{base}/migrate", data)
-            results.append({"vmid": vmid, "name": vm["name"], "ok": True, "task": task})
+            results.append({"vmid": vmid, "name": vm["name"], "accepted": True, "status": "queued" if task else "accepted", "task": task})
         except (ProxmoxApiError, KeyError, ValueError) as error:
-            results.append({"vmid": vmid, "name": vm.get("name"), "ok": False, "error": str(error)[:1000]})
+            results.append({"vmid": vmid, "name": vm.get("name"), "accepted": False, "status": "failed", "error": _public_error(error)})
+    accepted = sum(item["accepted"] for item in results)
+    failed = sum(not item["accepted"] for item in results)
     _activity(
         user.username,
         "proxmox_bulk_operation",
         str(connection["id"]),
-        {"action": payload.action, "requested": len(payload.vmids), "ok": sum(item["ok"] for item in results)},
-        failed=any(not item["ok"] for item in results),
+        {"action": payload.action, "requested": len(payload.vmids), "accepted": accepted},
+        failed=bool(failed),
     )
-    return {"action": payload.action, "results": results, "ok": sum(item["ok"] for item in results), "failed": sum(not item["ok"] for item in results)}
+    return {"action": payload.action, "results": results, "accepted": accepted, "failed": failed}
