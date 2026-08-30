@@ -91,6 +91,38 @@ def assert_login_allowed(username: str) -> pwd.struct_passwd:
     return user
 
 
+def _pam_service_error(
+    *,
+    code: str,
+    stage: str,
+    reason: str,
+    hint: str,
+    request_id: str = "",
+    exit_code: int | None = None,
+    message: str = "PAM authentication service is unavailable",
+) -> HTTPException:
+    """Return sanitized diagnostics suitable for the public authentication API.
+
+    Never expose broker stderr, PAM stack text, passwords, paths from exceptions,
+    or Python exception messages. Stable error codes are enough for the UI and
+    operators to identify the failing boundary without leaking authentication
+    internals.
+    """
+
+    detail: dict[str, str | int] = {
+        "code": code,
+        "message": message,
+        "stage": stage,
+        "reason": reason,
+        "hint": hint,
+    }
+    if request_id:
+        detail["request_id"] = request_id
+    if exit_code is not None:
+        detail["exit_code"] = exit_code
+    return HTTPException(status_code=503, detail=detail)
+
+
 def _authenticate_with_broker(username: str, password: str) -> None:
     try:
         response = BrokerClient(timeout=30.0).request(
@@ -100,7 +132,13 @@ def _authenticate_with_broker(username: str, password: str) -> None:
         )
     except BrokerError as error:
         logger.error("pam_broker_unavailable user=%s error_code=%s", username, error.error_code)
-        raise HTTPException(503, "PAM authentication service is unavailable") from error
+        raise _pam_service_error(
+            code="PAM_BROKER_UNAVAILABLE",
+            stage="broker_connect",
+            reason=error.error_code or "BROKER_ERROR",
+            hint="Check webnas-privileged.socket and webnas-privileged.service status and journal.",
+            exit_code=error.exit_code,
+        ) from error
 
     if response.ok:
         return
@@ -115,7 +153,14 @@ def _authenticate_with_broker(username: str, password: str) -> None:
         response.error_code or "unknown",
         response.exit_code,
     )
-    raise HTTPException(503, "PAM authentication service is unavailable")
+    raise _pam_service_error(
+        code="PAM_SERVICE_UNAVAILABLE",
+        stage="broker_response",
+        reason=response.error_code or "UNKNOWN_BROKER_ERROR",
+        hint="Check the WebNAS PAM service and privileged broker journal.",
+        request_id=response.request_id,
+        exit_code=response.exit_code,
+    )
 
 
 def authenticate(username: str, password: str) -> None:
@@ -126,10 +171,22 @@ def authenticate(username: str, password: str) -> None:
     service = str(cfg.auth.pam_service or "").strip()
     if service != WEBNAS_PAM_SERVICE:
         logger.error("pam_configuration_invalid configured_service=%s required_service=%s", service, WEBNAS_PAM_SERVICE)
-        raise HTTPException(503, "PAM authentication is not configured for WebNAS")
+        raise _pam_service_error(
+            code="PAM_CONFIGURATION_INVALID",
+            stage="configuration",
+            reason="INVALID_PAM_SERVICE",
+            hint="Set auth.pam_service to webnas and restart the application.",
+            message="PAM authentication is not configured for WebNAS",
+        )
     if not WEBNAS_PAM_PATH.is_file():
         logger.error("pam_service_missing service=%s path=%s", WEBNAS_PAM_SERVICE, WEBNAS_PAM_PATH)
-        raise HTTPException(503, "PAM authentication is not configured for WebNAS")
+        raise _pam_service_error(
+            code="PAM_CONFIGURATION_MISSING",
+            stage="configuration",
+            reason="PAM_SERVICE_FILE_MISSING",
+            hint="Repair or reinstall the managed /etc/pam.d/webnas service definition.",
+            message="PAM authentication is not configured for WebNAS",
+        )
 
     if broker_required():
         _authenticate_with_broker(username, password)
