@@ -135,7 +135,7 @@ jobs:
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
             "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
 
-      - name: "Option 8: Restart application preserves release and state"
+      - name: "Option 8: Restart recovers stopped backend and broker"
         shell: bash
         run: |
           set -euo pipefail
@@ -149,15 +149,25 @@ jobs:
           pid_before="$(systemctl show -p MainPID --value "${active_unit}")"
           test "${pid_before}" -gt 0
 
+          # Reproduce the recovery case: neither the selected backend nor the
+          # root privileged broker is active when the menu restart begins.
+          sudo systemctl stop "${active_unit}"
+          sudo systemctl stop webnas-privileged.service
+          ! systemctl is-active --quiet "${active_unit}"
+          ! systemctl is-active --quiet webnas-privileged.service
+
           printf '8\n' | script --quiet --return --command \
             "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-menu-option-8.log 2>&1
 
           tr -d '\r' < /tmp/webnas-menu-option-8.log > /tmp/webnas-menu-option-8.clean
           grep -F "==> Restarting WebNAS application" /tmp/webnas-menu-option-8.clean
+          grep -F "[OK] WebNAS privileged broker is active." /tmp/webnas-menu-option-8.clean
+          grep -F "[OK] WebNAS health check passed after restart." /tmp/webnas-menu-option-8.clean
           grep -F "[OK] WebNAS application restarted:" /tmp/webnas-menu-option-8.clean
           test "$(readlink -f /opt/webnas/current)" = "${current_before}"
           test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "${config_before}"
+          systemctl is-active --quiet webnas-privileged.service
           systemctl is-active --quiet "${active_unit}"
           pid_after="$(systemctl show -p MainPID --value "${active_unit}")"
           test "${pid_after}" -gt 0
