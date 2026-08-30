@@ -9,8 +9,13 @@ def _pw(uid: int = 1000, shell: str = "/bin/bash", home: str = "/home/alice"):
     return SimpleNamespace(pw_uid=uid, pw_shell=shell, pw_dir=home)
 
 
+def _mark_local(monkeypatch):
+    monkeypatch.setattr(auth, "is_local_passwd_user", lambda username: True)
+
+
 def test_login_allowed_for_interactive_system_user(monkeypatch):
     seen = []
+    _mark_local(monkeypatch)
     monkeypatch.setattr(auth.pwd, "getpwnam", lambda username: seen.append(username) or _pw())
 
     user = auth.assert_login_allowed(" alice ")
@@ -20,6 +25,7 @@ def test_login_allowed_for_interactive_system_user(monkeypatch):
 
 
 def test_login_rejects_service_uid(monkeypatch):
+    _mark_local(monkeypatch)
     monkeypatch.setattr(auth.pwd, "getpwnam", lambda username: _pw(uid=999))
 
     try:
@@ -31,6 +37,7 @@ def test_login_rejects_service_uid(monkeypatch):
 
 
 def test_uid_zero_break_glass_login_still_requires_an_interactive_account(monkeypatch):
+    _mark_local(monkeypatch)
     monkeypatch.setattr(auth.pwd, "getpwnam", lambda username: _pw(uid=0, home="/root"))
 
     user = auth.assert_login_allowed("root")
@@ -40,6 +47,7 @@ def test_uid_zero_break_glass_login_still_requires_an_interactive_account(monkey
 
 
 def test_login_rejects_nologin_shell(monkeypatch):
+    _mark_local(monkeypatch)
     monkeypatch.setattr(auth.pwd, "getpwnam", lambda username: _pw(shell="/usr/sbin/nologin"))
 
     try:
@@ -51,6 +59,8 @@ def test_login_rejects_nologin_shell(monkeypatch):
 
 
 def test_login_rejects_unknown_local_user(monkeypatch):
+    monkeypatch.setattr(auth, "is_local_passwd_user", lambda username: False)
+
     def missing(username):
         raise KeyError(username)
 
