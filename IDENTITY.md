@@ -145,7 +145,7 @@ Every mutation requires a valid session, CSRF token, a concrete operation permis
 
 The existing policy database remains `<data_dir>/identity.sqlite3` with mode `0600`. It does not contain authentication passwords.
 
-The Local database authentication store is `<data_dir>/local-auth.sqlite3` and defaults to `auth_mode=local`. Local password values are salted `scrypt` hashes.
+The Local database authentication store is `<data_dir>/local-auth.sqlite3` and defaults to `auth_mode=local`. Local password values are salted `scrypt` hashes. During first-account bootstrap it stores only the identifier of a temporary encrypted Secrets Manager secret, never a recoverable password value.
 
 The session database automatically adds `auth_provider` when upgrading an older schema. Historical sessions without the field receive the compatibility value `pam`.
 
@@ -155,13 +155,11 @@ Changing global authentication mode revokes all active sessions so a session cre
 
 ## Initial local administrator
 
-On an empty Local database, WebNAS creates an `admin` application account with a random password. The one-time credential is written with filesystem mode `0600` to:
+On an empty Local database, WebNAS creates an `admin` application account with a cryptographically random password. The standard installer retrieves the temporary encrypted bootstrap credential through Secrets Manager as the WebNAS service identity, prints it once to the terminal and immediately deletes that encrypted recoverable copy.
 
-```text
-<data_dir>/initial-local-admin.txt
-```
+No plaintext bootstrap credential file is created. The Local database retains only the salted `scrypt` password hash.
 
-The file is removed after the first successful local admin login or after the password is changed. There is no static default password.
+If the first successful `admin` login happens before installer retrieval, WebNAS deletes the temporary encrypted bootstrap secret during that successful-login lifecycle.
 
 ## Safety and Proxmox
 
@@ -175,15 +173,11 @@ Existing Proxmox Safe Mode checks remain in the Linux account adapter. When host
 
 ### Local mode
 
-Retrieve the initial credential before its first use with:
+The initial `admin` password is intentionally displayed only once by the standard installer. There is no plaintext recovery file to read later.
 
-```bash
-sudo cat /var/lib/webnas/initial-local-admin.txt
-```
+If another enabled local administrator exists, use that account to reset the affected local user's password from **Settings → Administration → Authentication**. The last-admin protection prevents ordinary UI actions from removing all enabled local administrators.
 
-adjusting the path if `paths.data_dir` was changed.
-
-If a local administrator still exists, its password can be reset through another local administrator in Settings. The last-admin protection prevents ordinary UI actions from removing all local administrators.
+For a lost password to the only Local administrator, use a controlled offline recovery procedure rather than extracting or weakening password hashes. Stop WebNAS, back up `<data_dir>/local-auth.sqlite3` and the Secrets Manager state, and use a project-supported recovery path appropriate to the deployed version.
 
 ### System mode
 
