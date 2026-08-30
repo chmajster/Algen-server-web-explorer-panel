@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Database, KeyRound, LoaderCircle, Plus, PlugZap, RefreshCw, Search, Server, ShieldCheck, Trash2 } from "lucide-react";
 import type { ToastFn } from "../../app/types";
 import { request } from "../../core/api/transport";
+import "../../styles/authentication-settings.css";
 
 type SecurityMode = "ldap" | "starttls" | "ldaps";
 type FailoverStrategy = "priority" | "round_robin";
@@ -50,6 +51,10 @@ function toDraft(value: LdapSettings): LdapDraft {
       ? [{ id: "", host: value.server, port: value.port || 389, priority: 10, enabled: true }]
       : [];
   return { ...value, servers, bind_password: "", clear_bind_password: false };
+}
+
+function cloneDraft(value: LdapDraft): LdapDraft {
+  return { ...value, servers: value.servers.map((server) => ({ ...server })) };
 }
 
 function csvList(value: string): string[] {
@@ -138,7 +143,7 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
   function applyData(settings: LdapSettings, groupMappings: GroupMapping[], accessPolicy: AccessPolicy) {
     const next = toDraft(settings);
     setDraft(next);
-    setSaved(next);
+    setSaved(cloneDraft(next));
     setMappings(groupMappings);
     setPolicy(accessPolicy);
     setLoadError(null);
@@ -193,7 +198,7 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
       });
       const next = toDraft(updated);
       setDraft(next);
-      setSaved(next);
+      setSaved(cloneDraft(next));
       toast(pl ? "Ustawienia LDAP Authentication zapisane." : "LDAP Authentication settings saved.", "ok", "admin");
     } catch (error) { toast(errorText(error), "error", "admin"); }
     finally { setSaving(false); }
@@ -247,18 +252,6 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
     } catch (error) { toast(errorText(error), "error", "admin"); }
   }
 
-  const field = (
-    label: string,
-    value: string | number,
-    onChange: (value: string) => void,
-    type: "text" | "number" | "password" = "text",
-    placeholder = "",
-    hint = "",
-  ) => <div className="setting-row">
-    <div><strong>{label}</strong>{hint && <small>{hint}</small>}</div>
-    <div className="setting-control"><input type={type} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} /></div>
-  </div>;
-
   function addServer() {
     if (!draft) return;
     setDraft({
@@ -289,10 +282,26 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
     });
   }
 
+  const field = (
+    label: string,
+    value: string | number,
+    onChange: (value: string) => void,
+    type: "text" | "number" | "password" = "text",
+    placeholder = "",
+    hint = "",
+    wide = false,
+    technical = false,
+  ) => <label className={`ldap-field ${wide ? "ldap-field--wide" : ""} ${technical ? "ldap-code" : ""}`}>
+    <span>{label}</span>
+    <input type={type} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />
+    {hint && <small>{hint}</small>}
+  </label>;
+
   const dirty = Boolean(draft && saved && JSON.stringify(draft) !== JSON.stringify(saved));
   const invalid = draft ? configurationError(draft, pl) : null;
   const enabledServers = draft?.servers.filter((server) => server.enabled && server.host.trim()).length ?? 0;
   const transport = draft?.security_mode === "ldaps" ? "LDAPS" : draft?.security_mode === "starttls" ? "LDAP + StartTLS" : "LDAP";
+  const configurationComplete = Boolean(draft && (enabledServers > 0 || draft.dns_srv_domain.trim()) && draft.base_dn.trim() && draft.user_search_base.trim() && draft.bind_dn.trim() && !invalid);
   const sectionItems: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
     { id: "status", label: "Status", icon: <ShieldCheck size={15} /> },
     { id: "connection", label: pl ? "Połączenie" : "Connection", icon: <Server size={15} /> },
@@ -303,107 +312,154 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
   ];
 
   const card = active && target ? createPortal(
-    <div className="settings-card-stack" data-testid="ldap-settings-card">
-      {loading && !draft ? <section className="settings-card" style={{ padding: "1rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><LoaderCircle className="spin" size={18} />{pl ? "Wczytywanie konfiguracji LDAP…" : "Loading LDAP configuration…"}</div>
-      </section> : loadError && !draft ? <section className="settings-card" style={{ padding: "1rem" }}>
-        <h3>{pl ? "Nie udało się wczytać LDAP" : "Could not load LDAP"}</h3>
-        <p>{loadError}</p>
-        <div className="settings-actions"><button type="button" onClick={() => void load()}><RefreshCw size={16} /> {pl ? "Spróbuj ponownie" : "Retry"}</button></div>
+    <div className="ldap-settings-shell" data-testid="ldap-settings-card">
+      {loading && !draft ? <section className="ldap-panel ldap-section"><span className="ldap-inline-status"><LoaderCircle className="spin" size={18} />{pl ? "Wczytywanie konfiguracji LDAP…" : "Loading LDAP configuration…"}</span></section> : loadError && !draft ? <section className="ldap-panel ldap-section">
+        <div className="ldap-section__header"><h3>{pl ? "Nie udało się wczytać LDAP" : "Could not load LDAP"}</h3><p>{loadError}</p></div>
+        <button type="button" onClick={() => void load()}><RefreshCw size={16} /> {pl ? "Spróbuj ponownie" : "Retry"}</button>
       </section> : draft ? <>
-        <section className="settings-card" style={{ overflow: "hidden" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", padding: "0.9rem 1rem 0.75rem", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 0 }}>
-              <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.45rem" }}><KeyRound size={18} /> LDAP Authentication</h3>
-              <p style={{ margin: "0.35rem 0 0", maxWidth: "64rem" }}>{pl ? "Wyłącznie logowanie użytkowników do WebNAS przez LDAP. Administracja katalogiem pozostaje w osobnym module LDAP Manager i używa innych credentials." : "Only authenticates users to WebNAS through LDAP. Directory administration remains in the separate LDAP Manager module and uses different credentials."}</p>
+        <section className="ldap-panel">
+          <div className="ldap-hero">
+            <div className="ldap-hero__top">
+              <div className="ldap-hero__title">
+                <h3><KeyRound size={18} /> LDAP Authentication</h3>
+                <p>{pl ? "Centralne uwierzytelnianie użytkowników WebNAS. Administracja katalogiem pozostaje w osobnym module LDAP Manager." : "Central directory authentication for WebNAS users. Directory administration remains in the separate LDAP Manager module."}</p>
+              </div>
+              <span className={`ldap-badge ${draft.enabled ? "ldap-badge--ok" : "ldap-badge--muted"}`}>{draft.enabled ? (pl ? "Enabled" : "Enabled") : (pl ? "Disabled" : "Disabled")}</span>
             </div>
-            <span style={{ padding: "0.25rem 0.55rem", border: "1px solid var(--border-subtle)", borderRadius: "999px", background: draft.enabled ? "var(--surface-selected)" : "var(--surface-secondary)", color: draft.enabled ? "var(--accent)" : "var(--text-secondary)", fontWeight: 600 }}>
-              {draft.enabled ? (pl ? "LDAP aktywny" : "LDAP enabled") : (pl ? "LDAP wyłączony" : "LDAP disabled")}
-            </span>
+            <div className="ldap-summary-grid">
+              <div className="ldap-summary-item"><small>{pl ? "Serwery" : "Servers"}</small><strong>{draft.dns_srv_domain.trim() ? "DNS SRV" : `${enabledServers} ${pl ? "aktywnych" : "active"}`}</strong></div>
+              <div className="ldap-summary-item"><small>{pl ? "Transport" : "Transport"}</small><strong>{transport}</strong></div>
+              <div className="ldap-summary-item"><small>{pl ? "Credentials" : "Credentials"}</small><strong>{draft.bind_password_configured ? (pl ? "Configured" : "Configured") : (pl ? "Missing" : "Missing")}</strong></div>
+              <div className="ldap-summary-item"><small>{pl ? "Konfiguracja" : "Configuration"}</small><strong>{configurationComplete ? (pl ? "Complete" : "Complete") : (pl ? "Incomplete" : "Incomplete")}</strong></div>
+            </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(10rem, 1fr))", gap: "0.5rem", padding: "0.65rem 1rem", borderTop: "1px solid var(--border-subtle)" }}>
-            {[
-              [pl ? "Serwery" : "Servers", draft.dns_srv_domain.trim() ? `DNS SRV · ${draft.dns_srv_domain.trim()}` : `${enabledServers} ${pl ? "aktywnych" : "enabled"}`],
-              [pl ? "Transport" : "Transport", transport],
-              ["Bind password", draft.bind_password_configured ? (pl ? "skonfigurowany" : "configured") : (pl ? "brak" : "not configured")],
-              [pl ? "Stan zmian" : "Changes", dirty ? (pl ? "niezapisane" : "unsaved") : (pl ? "zapisane" : "saved")],
-            ].map(([label, value]) => <div key={label} style={{ padding: "0.55rem 0.65rem", border: "1px solid var(--border-subtle)", borderRadius: "0.55rem", minWidth: 0 }}><small style={{ display: "block", color: "var(--text-muted)" }}>{label}</small><strong style={{ overflowWrap: "anywhere" }}>{value}</strong></div>)}
-          </div>
-          <nav className="settings-tabs" style={{ paddingInline: "1rem", overflowX: "auto" }}>
-            {sectionItems.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>{item.icon}{item.label}</span></button>)}
+          <nav className="ldap-tabs" aria-label="LDAP settings sections">
+            {sectionItems.map((item) => <button key={item.id} type="button" className={section === item.id ? "active" : ""} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)}>{item.icon}{item.label}</button>)}
           </nav>
         </section>
 
-        {section === "status" && <section className="settings-card">
-          <h3>Status</h3>
-          <div className="setting-row"><div><strong>{pl ? "Włącz LDAP Authentication" : "Enable LDAP Authentication"}</strong><small>{pl ? "Aktywacja wykonuje preflight. Błędna konfiguracja pozostanie wyłączona. PAM jest osobnym providerem, nie fallbackiem." : "Activation runs a preflight. Invalid configuration remains disabled. PAM is a separate provider, not a fallback."}</small></div><div className="setting-control"><label className="settings-switch"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked, clear_bind_password: false })} /><span aria-hidden="true" /></label></div></div>
-          <div className="setting-row"><div><strong>{pl ? "Kompletność konfiguracji" : "Configuration readiness"}</strong><small>{invalid || (pl ? "Konfiguracja jest zgodna z wymaganiami formularza." : "Configuration satisfies the form requirements.")}</small></div><div className="setting-control"><span>{invalid ? (pl ? "WYMAGA POPRAWY" : "NEEDS ATTENTION") : "OK"}</span></div></div>
-        </section>}
+        <section className="ldap-panel">
+          {section === "status" && <div className="ldap-section">
+            <div className="ldap-section__header"><h3>Status</h3><p>{pl ? "Stan uwierzytelniania LDAP i gotowość konfiguracji." : "LDAP authentication state and configuration readiness."}</p></div>
+            {!configurationComplete && <div className="ldap-warning"><strong>{pl ? "Configuration incomplete" : "Configuration incomplete"}</strong><div>{invalid || (pl ? "Uzupełnij serwer lub DNS SRV, Base DN, User Search Base i Bind DN przed włączeniem LDAP." : "Complete server or DNS SRV, Base DN, User Search Base and Bind DN before enabling LDAP.")}</div></div>}
+            <div className="ldap-status-grid">
+              <div className="ldap-status-card"><small>LDAP status</small><strong>{draft.enabled ? "Enabled" : "Disabled"}</strong></div>
+              <div className="ldap-status-card"><small>{pl ? "Konfiguracja" : "Configuration"}</small><strong>{configurationComplete ? "Complete" : "Missing settings"}</strong></div>
+              <div className="ldap-status-card"><small>{pl ? "Serwery" : "Servers"}</small><strong>{enabledServers} / {draft.servers.length} active</strong></div>
+              <div className="ldap-status-card"><small>Transport</small><strong>{transport}</strong></div>
+              <div className="ldap-status-card"><small>Bind credentials</small><strong>{draft.bind_password_configured ? "Configured" : "Missing"}</strong></div>
+              <div className="ldap-status-card"><small>Access policy</small><strong>{policy.mode === "allow_all" ? "Allow all" : "Mapped groups"}</strong></div>
+            </div>
+            <div className="ldap-switch-row">
+              <div><strong>{pl ? "Włącz LDAP Authentication" : "Enable LDAP Authentication"}</strong><small>{pl ? "Aktywacja wykonuje preflight konfiguracji. PAM pozostaje osobnym providerem." : "Activation runs a configuration preflight. PAM remains a separate provider."}</small></div>
+              <label className="settings-switch"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked, clear_bind_password: false })} /><span aria-hidden="true" /></label>
+            </div>
+          </div>}
 
-        {section === "connection" && <section className="settings-card">
-          <h3>{pl ? "Połączenie i serwery" : "Connection and servers"}</h3>
-          <p>{pl ? "Failover dotyczy wyłącznie serwerów tego samego providera LDAP. Zmiana LDAP/LDAPS automatycznie przełącza standardowe porty 389/636; porty niestandardowe pozostają bez zmian." : "Failover applies only to servers of the same LDAP provider. Switching LDAP/LDAPS updates standard ports 389/636 automatically; custom ports remain unchanged."}</p>
-          <div className="setting-row"><div><strong>Directory type</strong></div><div className="setting-control"><select value={draft.directory_type} onChange={(event) => setDraft({ ...draft, directory_type: event.target.value as DirectoryType })}><option value="auto">Auto</option><option value="ldap">OpenLDAP</option><option value="active_directory">Active Directory</option><option value="freeipa">FreeIPA</option></select></div></div>
-          {draft.servers.map((server, index) => <div className="setting-row" key={server.id || `new-${index}`}><div><strong>LDAP server {index + 1}</strong><small>{server.enabled ? (pl ? "aktywny" : "enabled") : (pl ? "wyłączony" : "disabled")}</small></div><div className="setting-control" style={{ display: "grid", gridTemplateColumns: "minmax(11rem, 1fr) 6.5rem 6.5rem auto auto", gap: "0.35rem", alignItems: "center" }}><input aria-label={`LDAP server ${index + 1}`} placeholder="dc01.company.local" value={server.host} onChange={(event) => updateServer(index, { host: event.target.value })} /><input aria-label={`LDAP port ${index + 1}`} type="number" min={1} max={65535} value={server.port} onChange={(event) => updateServer(index, { port: Number(event.target.value) })} /><input aria-label={`LDAP priority ${index + 1}`} type="number" min={0} max={65535} value={server.priority} onChange={(event) => updateServer(index, { priority: Number(event.target.value) })} /><label className="settings-switch" title={pl ? "Aktywny" : "Enabled"}><input type="checkbox" checked={server.enabled} onChange={(event) => updateServer(index, { enabled: event.target.checked })} /><span aria-hidden="true" /></label><button type="button" aria-label={`Remove LDAP server ${index + 1}`} onClick={() => removeServer(index)}><Trash2 size={15} /></button></div></div>)}
-          <div className="settings-actions"><button type="button" onClick={addServer}><Plus size={16} /> {pl ? "Dodaj serwer" : "Add server"}</button></div>
-          <div className="setting-row"><div><strong>Failover</strong></div><div className="setting-control"><select value={draft.failover_strategy} onChange={(event) => setDraft({ ...draft, failover_strategy: event.target.value as FailoverStrategy })}><option value="priority">Priority</option><option value="round_robin">Round robin</option></select></div></div>
-          {field("DNS SRV discovery", draft.dns_srv_domain, (value) => setDraft({ ...draft, dns_srv_domain: value }), "text", "_ldap._tcp.dc._msdcs.company.local")}
-          <div className="setting-row"><div><strong>Security</strong></div><div className="setting-control"><select value={draft.security_mode} onChange={(event) => changeSecurityMode(event.target.value as SecurityMode)}><option value="ldap">LDAP</option><option value="starttls">LDAP + StartTLS</option><option value="ldaps">LDAPS</option></select></div></div>
-          <div className="setting-row"><div><strong>Verify TLS certificate</strong><small>{pl ? "Wyłączaj tylko w kontrolowanych środowiskach testowych." : "Disable only in controlled test environments."}</small></div><div className="setting-control"><label className="settings-switch"><input type="checkbox" checked={draft.verify_tls} onChange={(event) => setDraft({ ...draft, verify_tls: event.target.checked })} /><span aria-hidden="true" /></label></div></div>
-          {field("Connect timeout (s)", draft.connect_timeout, (value) => setDraft({ ...draft, connect_timeout: Number(value) }), "number")}
-          {field("Operation timeout (s)", draft.operation_timeout, (value) => setDraft({ ...draft, operation_timeout: Number(value) }), "number")}
-        </section>}
+          {section === "connection" && <div className="ldap-section">
+            <div className="ldap-section__header"><h3>{pl ? "Połączenie" : "Connection"}</h3><p>{pl ? "Serwery katalogowe i podstawowy transport LDAP." : "Directory servers and primary LDAP transport."}</p></div>
+            <div className="ldap-form-section">
+              <h4>Directory</h4>
+              <div className="ldap-form-grid">
+                <label className="ldap-field"><span>Directory type</span><select value={draft.directory_type} onChange={(event) => setDraft({ ...draft, directory_type: event.target.value as DirectoryType })}><option value="auto">Auto</option><option value="ldap">OpenLDAP</option><option value="active_directory">Active Directory</option><option value="freeipa">FreeIPA</option></select></label>
+                <label className="ldap-field"><span>Security</span><select value={draft.security_mode} onChange={(event) => changeSecurityMode(event.target.value as SecurityMode)}><option value="ldap">LDAP</option><option value="starttls">LDAP + StartTLS</option><option value="ldaps">LDAPS</option></select></label>
+              </div>
+            </div>
+            <div className="ldap-form-section">
+              <div className="ldap-panel__heading" style={{ padding: 0 }}><div><h4 style={{ margin: 0 }}>LDAP Servers</h4><p>{pl ? "Priorytet i failover dotyczą serwerów tego samego providera." : "Priority and failover apply to servers of the same provider."}</p></div><button type="button" onClick={addServer}><Plus size={16} /> {pl ? "Dodaj serwer" : "Add server"}</button></div>
+              <div className="ldap-table-wrap">
+                <table className="ldap-table">
+                  <thead><tr><th>Host</th><th>Port</th><th>Priority</th><th>Status</th><th>{pl ? "Akcje" : "Actions"}</th></tr></thead>
+                  <tbody>{draft.servers.map((server, index) => <tr key={server.id || `new-${index}`}>
+                    <td><input aria-label={`LDAP server ${index + 1}`} placeholder="ldap01.company.local" value={server.host} onChange={(event) => updateServer(index, { host: event.target.value })} /></td>
+                    <td><input aria-label={`LDAP port ${index + 1}`} type="number" min={1} max={65535} value={server.port} onChange={(event) => updateServer(index, { port: Number(event.target.value) })} /></td>
+                    <td><input aria-label={`LDAP priority ${index + 1}`} type="number" min={0} max={65535} value={server.priority} onChange={(event) => updateServer(index, { priority: Number(event.target.value) })} /></td>
+                    <td><label className="settings-switch" title={pl ? "Aktywny" : "Enabled"}><input type="checkbox" checked={server.enabled} onChange={(event) => updateServer(index, { enabled: event.target.checked })} /><span aria-hidden="true" /></label></td>
+                    <td><div className="ldap-server-actions"><button type="button" className="ldap-icon-button" aria-label={`Remove LDAP server ${index + 1}`} onClick={() => removeServer(index)}><Trash2 size={15} /></button></div></td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </div>
+            <div className="ldap-form-section">
+              <h4>{pl ? "TLS" : "TLS"}</h4>
+              <div className="ldap-switch-row"><div><strong>Verify TLS certificate</strong><small>{pl ? "Wyłączaj tylko w kontrolowanym środowisku testowym." : "Disable only in a controlled test environment."}</small></div><label className="settings-switch"><input type="checkbox" checked={draft.verify_tls} onChange={(event) => setDraft({ ...draft, verify_tls: event.target.checked })} /><span aria-hidden="true" /></label></div>
+            </div>
+          </div>}
 
-        {section === "search" && <section className="settings-card">
-          <h3>{pl ? "Wyszukiwanie i identity mapping" : "Search and identity mapping"}</h3>
-          {field("Base DN", draft.base_dn, (value) => setDraft({ ...draft, base_dn: value }), "text", "dc=company,dc=local")}
-          {field("User Search Base", draft.user_search_base, (value) => setDraft({ ...draft, user_search_base: value }))}
-          {field("User Search Filter", draft.user_search_filter, (value) => setDraft({ ...draft, user_search_filter: value }), "text", "(uid={username})", pl ? "Dokładnie jeden znacznik {username}." : "Exactly one {username} placeholder.")}
-          {field("Username Attribute", draft.username_attribute, (value) => setDraft({ ...draft, username_attribute: value }))}
-          {field("Immutable ID Attribute", draft.immutable_id_attribute, (value) => setDraft({ ...draft, immutable_id_attribute: value }), "text", pl ? "puste = objectGUID/entryUUID auto" : "blank = auto objectGUID/entryUUID")}
-          {field("Display Name Attribute", draft.display_name_attribute, (value) => setDraft({ ...draft, display_name_attribute: value }))}
-          {field("Email Attribute", draft.email_attribute, (value) => setDraft({ ...draft, email_attribute: value }))}
-          {field("Group Search Base", draft.group_search_base, (value) => setDraft({ ...draft, group_search_base: value }))}
-          {field("Group Search Filter", draft.group_search_filter, (value) => setDraft({ ...draft, group_search_filter: value }), "text", "", pl ? "Musi zawierać {username} lub {dn}." : "Must contain {username} or {dn}.")}
-          {field("Group membership attribute", draft.group_membership_attribute, (value) => setDraft({ ...draft, group_membership_attribute: value }))}
-        </section>}
+          {section === "search" && <div className="ldap-section">
+            <div className="ldap-section__header"><h3>{pl ? "Wyszukiwanie i identity mapping" : "Search and identity mapping"}</h3><p>{pl ? "Bazy wyszukiwania, filtry i mapowanie atrybutów użytkownika oraz grup." : "Search bases, filters and user/group attribute mapping."}</p></div>
+            <div className="ldap-form-section"><h4>User search</h4><div className="ldap-form-grid">
+              {field("Base DN", draft.base_dn, (value) => setDraft({ ...draft, base_dn: value }), "text", "dc=company,dc=local", "", true, true)}
+              {field("User Search Base", draft.user_search_base, (value) => setDraft({ ...draft, user_search_base: value }), "text", "ou=People,dc=company,dc=local", "", true, true)}
+              {field("User Search Filter", draft.user_search_filter, (value) => setDraft({ ...draft, user_search_filter: value }), "text", "(uid={username})", pl ? "Dokładnie jeden znacznik {username}." : "Exactly one {username} placeholder.", true, true)}
+              {field("Username Attribute", draft.username_attribute, (value) => setDraft({ ...draft, username_attribute: value }))}
+              {field("Immutable ID Attribute", draft.immutable_id_attribute, (value) => setDraft({ ...draft, immutable_id_attribute: value }), "text", "", pl ? "Puste = automatyczne objectGUID/entryUUID." : "Blank = automatic objectGUID/entryUUID.")}
+            </div></div>
+            <div className="ldap-form-section"><h4>User attributes</h4><div className="ldap-form-grid">
+              {field("Display Name Attribute", draft.display_name_attribute, (value) => setDraft({ ...draft, display_name_attribute: value }))}
+              {field("Email Attribute", draft.email_attribute, (value) => setDraft({ ...draft, email_attribute: value }))}
+            </div></div>
+            <div className="ldap-form-section"><h4>Group search</h4><div className="ldap-form-grid">
+              {field("Group Search Base", draft.group_search_base, (value) => setDraft({ ...draft, group_search_base: value }), "text", "ou=Groups,dc=company,dc=local", "", true, true)}
+              {field("Group Search Filter", draft.group_search_filter, (value) => setDraft({ ...draft, group_search_filter: value }), "text", "", pl ? "Musi zawierać {username} lub {dn}." : "Must contain {username} or {dn}.", true, true)}
+              {field("Group membership attribute", draft.group_membership_attribute, (value) => setDraft({ ...draft, group_membership_attribute: value }))}
+            </div></div>
+          </div>}
 
-        {section === "access" && <section className="settings-card">
-          <h3>Access Policy / LDAP Group → WebNAS RBAC</h3>
-          <p>{pl ? "Mapping zapisuje wynik do istniejącego WebNAS Identity/RBAC; deny ma pierwszeństwo przed allow." : "Mappings feed the existing WebNAS Identity/RBAC system; deny takes precedence over allow."}</p>
-          <div className="setting-row"><div><strong>Policy mode</strong></div><div className="setting-control"><select value={policy.mode} onChange={(event) => setPolicy({ ...policy, mode: event.target.value as AccessPolicy["mode"] })}><option value="allow_all">Allow all matched LDAP users</option><option value="mapped_groups">Allow only mapped LDAP groups</option></select></div></div>
-          {field("Allow groups", policy.allow_groups.join(", "), (value) => setPolicy({ ...policy, allow_groups: csvList(value) }))}
-          {field("Deny groups", policy.deny_groups.join(", "), (value) => setPolicy({ ...policy, deny_groups: csvList(value) }))}
-          <div className="settings-actions"><button type="button" onClick={() => void savePolicy()}>Save access policy</button></div>
-          <h4>Group mappings</h4>
-          {mappings.map((item) => <div className="setting-row" key={item.id}><div><strong>{item.group_dn}</strong><small>{item.role} · allow: {item.allow.join(", ") || "—"} · deny: {item.deny.join(", ") || "—"}</small></div><div className="setting-control"><button type="button" onClick={() => void removeMapping(item.id)}><Trash2 size={15} /></button></div></div>)}
-          <div className="setting-row"><div><strong>LDAP group DN</strong></div><div className="setting-control"><input value={mappingDn} onChange={(event) => setMappingDn(event.target.value)} placeholder="CN=WebNAS-Operators,OU=Groups,DC=company,DC=local" /><select value={mappingRole} onChange={(event) => setMappingRole(event.target.value as GroupMapping["role"])}><option value="user">user</option><option value="auditor">auditor</option><option value="operator">operator</option><option value="admin">admin</option></select></div></div>
-          {field("Allow permissions", mappingAllow, setMappingAllow, "text", "storage.read, files.read")}
-          {field("Deny permissions", mappingDeny, setMappingDeny, "text", "users.manage")}
-          <div className="settings-actions"><button type="button" onClick={() => void addMapping()}><Plus size={16} /> Add mapping</button></div>
-        </section>}
+          {section === "access" && <div className="ldap-section">
+            <div className="ldap-section__header"><h3>Access Policy / LDAP Group → WebNAS RBAC</h3><p>{pl ? "Deny ma pierwszeństwo przed allow. Mapowania zasilają istniejący WebNAS Identity/RBAC." : "Deny takes precedence over allow. Mappings feed the existing WebNAS Identity/RBAC system."}</p></div>
+            <div className="ldap-form-section"><h4>Access Policy</h4><div className="ldap-form-grid">
+              <label className="ldap-field"><span>Policy mode</span><select value={policy.mode} onChange={(event) => setPolicy({ ...policy, mode: event.target.value as AccessPolicy["mode"] })}><option value="allow_all">Allow all matched LDAP users</option><option value="mapped_groups">Allow only mapped LDAP groups</option></select></label>
+              {field("Allow groups", policy.allow_groups.join(", "), (value) => setPolicy({ ...policy, allow_groups: csvList(value) }))}
+              {field("Deny groups", policy.deny_groups.join(", "), (value) => setPolicy({ ...policy, deny_groups: csvList(value) }), "text", "", "", true)}
+            </div><div className="settings-actions"><button type="button" onClick={() => void savePolicy()}>Save access policy</button></div></div>
+            <div className="ldap-form-section"><div className="ldap-panel__heading" style={{ padding: 0 }}><div><h4 style={{ margin: 0 }}>Group mappings</h4></div></div>
+              <div className="ldap-table-wrap"><table className="ldap-table"><thead><tr><th>LDAP Group</th><th>WebNAS Role</th><th>Priority</th><th>Allow / Deny</th><th>{pl ? "Akcje" : "Actions"}</th></tr></thead><tbody>
+                {mappings.map((item) => <tr key={item.id}><td><strong>{item.group_dn}</strong></td><td><span className="ldap-badge ldap-badge--muted">{item.role}</span></td><td>{item.priority}</td><td><small>allow: {item.allow.join(", ") || "—"}<br />deny: {item.deny.join(", ") || "—"}</small></td><td><button type="button" className="ldap-icon-button" aria-label={`Remove ${item.group_dn}`} onClick={() => void removeMapping(item.id)}><Trash2 size={15} /></button></td></tr>)}
+              </tbody></table></div>
+              <div className="ldap-mapping-form"><div className="ldap-form-grid">
+                {field("LDAP group DN", mappingDn, setMappingDn, "text", "CN=WebNAS-Operators,OU=Groups,DC=company,DC=local", "", true, true)}
+                <label className="ldap-field"><span>WebNAS role</span><select value={mappingRole} onChange={(event) => setMappingRole(event.target.value as GroupMapping["role"])}><option value="user">user</option><option value="auditor">auditor</option><option value="operator">operator</option><option value="admin">admin</option></select></label>
+                {field("Allow permissions", mappingAllow, setMappingAllow, "text", "storage.read, files.read")}
+                {field("Deny permissions", mappingDeny, setMappingDeny, "text", "users.manage")}
+              </div><div className="settings-actions"><button type="button" disabled={!mappingDn.trim()} onClick={() => void addMapping()}><Plus size={16} /> Add group mapping</button></div></div>
+            </div>
+          </div>}
 
-        {section === "advanced" && <section className="settings-card">
-          <h3>Advanced</h3>
-          {field("Bind DN", draft.bind_dn, (value) => setDraft({ ...draft, bind_dn: value }))}
-          <div className="setting-row"><div><strong>Bind Password</strong><small>{draft.bind_password_configured ? (pl ? "Sekret jest zapisany. API nie zwraca jego wartości." : "Secret is stored. The API never returns its value.") : ""}</small></div><div className="setting-control"><input type="password" autoComplete="new-password" value={draft.bind_password} onChange={(event) => setDraft({ ...draft, bind_password: event.target.value, clear_bind_password: false })} /></div></div>
-          {draft.bind_password_configured && !draft.enabled && <div className="setting-row"><div><strong>{pl ? "Usuń zapisany Bind Password" : "Clear stored Bind Password"}</strong></div><div className="setting-control"><label className="settings-switch"><input type="checkbox" checked={draft.clear_bind_password} onChange={(event) => setDraft({ ...draft, clear_bind_password: event.target.checked, bind_password: "" })} /><span aria-hidden="true" /></label></div></div>}
-          {field("Group cache TTL (s)", draft.group_cache_ttl_seconds, (value) => setDraft({ ...draft, group_cache_ttl_seconds: Number(value) }), "number")}
-          <div className="setting-row"><div><strong>Custom CA certificate</strong></div><div className="setting-control"><textarea value={draft.ca_certificate} onChange={(event) => setDraft({ ...draft, ca_certificate: event.target.value })} placeholder="-----BEGIN CERTIFICATE-----" /></div></div>
-        </section>}
+          {section === "advanced" && <div className="ldap-section">
+            <div className="ldap-section__header"><h3>Advanced</h3><p>{pl ? "Zmieniaj te opcje tylko wtedy, gdy wymaga tego środowisko katalogowe." : "Change these options only if required by your directory environment."}</p></div>
+            <div className="ldap-form-section"><h4>Service bind</h4><div className="ldap-form-grid">
+              {field("Bind DN", draft.bind_dn, (value) => setDraft({ ...draft, bind_dn: value }), "text", "cn=webnas,ou=Service Accounts,dc=company,dc=local", "", true, true)}
+              <label className="ldap-field ldap-field--wide"><span>Bind Password</span><input type="password" autoComplete="new-password" value={draft.bind_password} onChange={(event) => setDraft({ ...draft, bind_password: event.target.value, clear_bind_password: false })} />{draft.bind_password_configured && <small>{pl ? "Sekret jest zapisany. API nie zwraca jego wartości." : "Secret is stored. The API never returns its value."}</small>}</label>
+              {draft.bind_password_configured && !draft.enabled && <div className="ldap-switch-row ldap-field--wide"><div><strong>{pl ? "Usuń zapisany Bind Password" : "Clear stored Bind Password"}</strong></div><label className="settings-switch"><input type="checkbox" checked={draft.clear_bind_password} onChange={(event) => setDraft({ ...draft, clear_bind_password: event.target.checked, bind_password: "" })} /><span aria-hidden="true" /></label></div>}
+            </div></div>
+            <div className="ldap-form-section"><h4>Failover and discovery</h4><div className="ldap-form-grid">
+              <label className="ldap-field"><span>Failover</span><select value={draft.failover_strategy} onChange={(event) => setDraft({ ...draft, failover_strategy: event.target.value as FailoverStrategy })}><option value="priority">Priority</option><option value="round_robin">Round robin</option></select></label>
+              {field("DNS SRV discovery", draft.dns_srv_domain, (value) => setDraft({ ...draft, dns_srv_domain: value }), "text", "_ldap._tcp.dc._msdcs.company.local", "", false, true)}
+            </div></div>
+            <div className="ldap-form-section"><h4>Timeouts and cache</h4><div className="ldap-form-grid">
+              {field("Connect timeout (s)", draft.connect_timeout, (value) => setDraft({ ...draft, connect_timeout: Number(value) }), "number")}
+              {field("Operation timeout (s)", draft.operation_timeout, (value) => setDraft({ ...draft, operation_timeout: Number(value) }), "number")}
+              {field("Group cache TTL (s)", draft.group_cache_ttl_seconds, (value) => setDraft({ ...draft, group_cache_ttl_seconds: Number(value) }), "number")}
+            </div></div>
+            <div className="ldap-form-section"><h4>Certificate authority</h4><label className="ldap-field ldap-field--wide ldap-code"><span>Custom CA certificate</span><textarea className="ldap-textarea" value={draft.ca_certificate} onChange={(event) => setDraft({ ...draft, ca_certificate: event.target.value })} placeholder="-----BEGIN CERTIFICATE-----" /></label></div>
+          </div>}
 
-        {section === "diagnostics" && <section className="settings-card">
-          <h3>{pl ? "Diagnostyka całego chainu" : "Full-chain diagnostics"}</h3>
-          <p>DNS → TCP → TLS → certificate → service bind → Base DN → user search → group lookup → NSS → UID/GID/home → RBAC mapping.</p>
-          {field(pl ? "Opcjonalny użytkownik testowy" : "Optional test username", diagnosticUser, setDiagnosticUser)}
-          {dirty && <p>{pl ? "Zapisz zmiany przed uruchomieniem diagnostyki. Endpoint diagnostyczny używa ostatnio zapisanej konfiguracji." : "Save changes before running diagnostics. The diagnostics endpoint uses the last saved configuration."}</p>}
-          <div className="settings-actions"><button type="button" disabled={testing || dirty || !draft.bind_password_configured} onClick={() => void runDiagnostics()}>{testing ? <LoaderCircle className="spin" size={16} /> : <PlugZap size={16} />}{testing ? (pl ? "Testowanie…" : "Testing…") : "Run diagnostics"}</button></div>
-          {diagnostics && <div>{diagnostics.steps.map((step) => <div className="setting-row" key={`${step.name}-${step.detail}`}><div><strong>{step.name}</strong></div><div className="setting-control"><span>{step.status.toUpperCase()}</span><small>{step.detail}</small></div></div>)}<p><strong>Overall:</strong> {diagnostics.overall.toUpperCase()}</p></div>}
-        </section>}
+          {section === "diagnostics" && <div className="ldap-section">
+            <div className="ldap-section__header"><h3>{pl ? "LDAP diagnostics" : "LDAP diagnostics"}</h3><p>DNS → TCP → TLS → certificate → service bind → Base DN → user search → group lookup → NSS → UID/GID/home → RBAC mapping.</p></div>
+            <div className="ldap-form-grid">{field(pl ? "Opcjonalny użytkownik testowy" : "Optional test username", diagnosticUser, setDiagnosticUser, "text", "test.user", "", true)}</div>
+            {dirty && <div className="ldap-warning">{pl ? "Zapisz zmiany przed uruchomieniem diagnostyki. Diagnostyka używa ostatnio zapisanej konfiguracji." : "Save changes before running diagnostics. Diagnostics uses the last saved configuration."}</div>}
+            <div className="settings-actions"><button type="button" disabled={testing || dirty || !draft.bind_password_configured} onClick={() => void runDiagnostics()}>{testing ? <LoaderCircle className="spin" size={16} /> : <PlugZap size={16} />}{testing ? (pl ? "Testowanie…" : "Testing…") : "Run diagnostics"}</button></div>
+            {diagnostics && <div className="ldap-diagnostic-list">{diagnostics.steps.map((step) => <div className="ldap-diagnostic-row" key={`${step.name}-${step.detail}`}><strong>{step.name}</strong><span className={`ldap-badge ${step.status === "ok" ? "ldap-badge--ok" : "ldap-badge--muted"}`}>{step.status.toUpperCase()}</span><small>{step.detail}</small></div>)}<div className="ldap-status-card"><small>Overall</small><strong>{diagnostics.overall.toUpperCase()}</strong></div></div>}
+          </div>}
 
-        <section className="settings-card">
-          {invalid && <p style={{ marginTop: 0 }}>{invalid}</p>}
-          <div className="settings-actions"><button className="button-primary" type="button" disabled={saving || testing || Boolean(invalid)} onClick={() => void saveSettings()}>{saving ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />}{saving ? (pl ? "Zapisywanie…" : "Saving…") : (pl ? "Zapisz LDAP Authentication" : "Save LDAP Authentication")}</button><button type="button" disabled={loading} onClick={() => void load()}>{loading ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={16} />}{pl ? "Odśwież" : "Refresh"}</button></div>
+          <div className="ldap-action-bar">
+            <span className="ldap-inline-status">{invalid ? invalid : dirty ? (pl ? "Niezapisane zmiany" : "Unsaved changes") : (pl ? "Wszystkie zmiany zapisane" : "All changes saved")}</span>
+            <div className="ldap-action-bar__actions">
+              <button type="button" disabled={loading || !dirty} onClick={() => saved && setDraft(cloneDraft(saved))}><RefreshCw size={16} />{pl ? "Odrzuć" : "Discard"}</button>
+              <button className="button-primary" type="button" disabled={saving || testing || Boolean(invalid) || !dirty} onClick={() => void saveSettings()}>{saving ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />}{saving ? (pl ? "Zapisywanie…" : "Saving…") : (pl ? "Zapisz zmiany" : "Save changes")}</button>
+            </div>
+          </div>
         </section>
       </> : null}
     </div>,
