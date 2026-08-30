@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException
+
 from app.config import get_config
 from app.path_policy import resolve_user_path
 
@@ -117,7 +119,10 @@ def _validate_request(request: BrokerRequest) -> tuple[str, str, dict[str, Any],
         raw = payload[key]
         if not isinstance(raw, str) or not raw or "\x00" in raw:
             raise base.PolicyError(f"invalid {key}")
-        resolved = resolve_user_path(username, raw)
+        try:
+            resolved = resolve_user_path(username, raw)
+        except HTTPException as error:
+            raise base.PolicyError(f"{key} is outside the user's allowed roots") from error
         if resolved != Path(raw).resolve(strict=False):
             raise base.PolicyError(f"invalid {key}")
 
