@@ -373,7 +373,7 @@ class Deployment:
         atomic_write(socket_unit, "\n".join([
             "[Unit]", "Description=WebNAS privileged operation broker socket", "",
             "[Socket]", "ListenStream=/run/webnas/privileged.sock", "SocketUser=root", f"SocketGroup={self.service_user}",
-            "SocketMode=0660", "DirectoryMode=0750", "RemoveOnStop=true", "",
+            "SocketMode=0660", "DirectoryMode=0755", "RemoveOnStop=true", "",
             "[Install]", "WantedBy=sockets.target", "",
         ]))
         atomic_write(broker_unit, "\n".join([
