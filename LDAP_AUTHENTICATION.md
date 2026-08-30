@@ -1,13 +1,12 @@
 # LDAP authentication
 
-WebNAS supports two authentication methods:
+LDAP belongs to WebNAS' alternative **PAM + LDAP system authentication mode**. The application's default global authentication mode is the WebNAS **Local database**; LDAP settings may be prepared while Local mode is active, but LDAP is not a login provider until an administrator switches the global mode to System authentication.
 
-- **PAM** for local Linux accounts defined in `/etc/passwd`;
-- **LDAP** for directory identities authenticated against a configured LDAP-compatible directory.
+See [AUTHENTICATION.md](AUTHENTICATION.md) for the global mode model.
 
-LDAP authentication is disabled by default. Existing and upgraded installations therefore remain PAM-only until an administrator explicitly enables LDAP in **Settings → Administration → LDAP Authentication**.
+## Login behaviour in System mode
 
-## Login behaviour
+PAM is always available in System mode. LDAP is disabled by default inside that mode.
 
 When LDAP is disabled, the login page remains PAM-only and does not show an authentication-method selector.
 
@@ -19,7 +18,11 @@ There is **no automatic provider fallback**:
 - a failed PAM login never causes WebNAS to try LDAP;
 - an LDAP outage leaves LDAP selected and the user may manually choose PAM.
 
-The login API accepts `auth_method: "ldap" | "pam"`. For backward compatibility, requests without `auth_method` use PAM while LDAP is disabled and LDAP while LDAP is enabled.
+The login API accepts `auth_method: "ldap" | "pam"` while System mode is active. Requests that attempt `local` in System mode are rejected. Requests without `auth_method` use PAM while LDAP is disabled and LDAP while LDAP is enabled.
+
+While the global mode is Local database, PAM/LDAP requests are rejected and `/api/auth/config` exposes only the `local` provider.
+
+## Public login configuration
 
 Public login configuration is available from:
 
@@ -27,7 +30,7 @@ Public login configuration is available from:
 GET /api/auth/config
 ```
 
-It returns only provider availability and the default provider. LDAP server addresses, DNs, TLS settings and secrets are never exposed by this endpoint.
+It returns only the active global mode, provider availability and the default provider. LDAP server addresses, DNs, TLS settings and secrets are never exposed by this endpoint.
 
 ## POSIX/NSS identity requirement
 
@@ -81,6 +84,8 @@ The LDAP settings page provides:
 - Bind Password;
 - optional Display Name Attribute;
 - optional Email Attribute.
+
+Enabling LDAP makes it available only when the global authentication mode is **PAM + LDAP**. In Local database mode, local users remain the only accepted login source.
 
 TLS certificate verification is enabled by default. Disabling verification applies only to the configured LDAP connection; WebNAS does not disable TLS verification globally.
 
@@ -143,6 +148,9 @@ User passwords supplied on the login screen are used only for the selected authe
 LDAP login uses the following sequence:
 
 ```text
+System authentication mode
+        |
+        v
 username + password
         |
         v
@@ -169,6 +177,8 @@ existing WebNAS session + CSRF + RBAC
 
 PAM and LDAP use the same session store, HttpOnly/SameSite cookie policy, CSRF protection, login rate limiter and central RBAC implementation. The session records `auth_provider` for identity isolation and auditing.
 
+Changing the global authentication mode invalidates all active sessions before the new namespace is used.
+
 ## Test LDAP Connection
 
 The administrator-only **Test LDAP Connection** action validates the saved configuration by checking:
@@ -185,9 +195,11 @@ Returned errors are sanitized into connection, TLS, bind or search failures. Bin
 
 - LDAP filter values use RFC4515 escaping.
 - More than one search result is an authentication failure; WebNAS never selects the first result.
+- The returned username attribute must match the requested username.
 - TLS verification is enabled by default.
 - LDAP and PAM never fall back to one another automatically.
 - Login rate limiting uses the same IP + username key regardless of selected provider, so switching providers does not reset the brute-force budget.
 - LDAP users do not automatically inherit Linux `sudo`/`wheel` administrator status.
-- Local `/etc/passwd` and LDAP namespaces cannot claim the same username through the two login providers.
+- Local `/etc/passwd` and LDAP namespaces cannot claim the same username through the two system providers.
 - Authentication errors do not reveal whether the directory user exists or whether only the password was incorrect.
+- LDAP settings and Bind Passwords remain inaccessible from the public auth-config endpoint.
