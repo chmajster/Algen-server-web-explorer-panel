@@ -35,17 +35,8 @@ def repository_payload() -> RepositoryInput:
     )
 
 
-def upload_package(
-    base: RepositoryService,
-    monkeypatch,
-    repository_id: str,
-    *,
-    filename: str,
-    name: str,
-    version: str = "1.0",
-    dependencies: list[str] | None = None,
-):
-    metadata = {
+def package_metadata(name: str, version: str = "1.0", dependencies: list[str] | None = None) -> dict:
+    return {
         "name": name,
         "version": version,
         "release": "",
@@ -58,6 +49,19 @@ def upload_package(
         "vendor": "",
         "license": "MIT",
     }
+
+
+def upload_package(
+    base: RepositoryService,
+    monkeypatch,
+    repository_id: str,
+    *,
+    filename: str,
+    name: str,
+    version: str = "1.0",
+    dependencies: list[str] | None = None,
+):
+    metadata = package_metadata(name, version, dependencies)
     monkeypatch.setattr(base, "_inspect_package", lambda _path, _expected: metadata)
     return base.upload_package(repository_id, filename, io.BytesIO(b"!<arch>\n" + f"{name}-{version}".encode()), "admin")
 
@@ -149,8 +153,18 @@ def test_full_bundle_round_trip_verification(services, monkeypatch):
     staged = offline.staging_root / source.name
     shutil.copy2(source, staged)
     staged_id = offline.discover_staged()[0]["id"]
+
+    def inspect_staged_package(path: Path, _expected):
+        payload = path.read_bytes()
+        if b"libdemo-1.0" in payload:
+            return package_metadata("libdemo")
+        if b"demo-1.0" in payload:
+            return package_metadata("demo", dependencies=["libdemo"])
+        raise AssertionError(f"unexpected test package payload: {path}")
+
+    monkeypatch.setattr(base, "_inspect_package", inspect_staged_package)
     verification = offline.verify_staged(staged_id)
-    assert verification["safe_to_import"] is True
+    assert verification["safe_to_import"] is True, verification
     assert verification["files_total"] == verification["files_verified"]
     assert verification["packages_total"] == 2
 
@@ -161,6 +175,7 @@ def test_durable_export_job_uses_shared_repository_job_store(services, monkeypat
     upload_package(base, monkeypatch, repository["id"], filename="demo.deb", name="demo")
     snapshot = base.create_snapshot(repository["id"], SnapshotInput(name="durable-export"), "admin")
     manager = OfflineRepositoryJobManager(offline)
+    sync_manager = RepositoryJobManager(base)
     try:
         queued = manager.enqueue_export(
             OfflineExportInput(
@@ -177,9 +192,10 @@ def test_durable_export_job_uses_shared_repository_job_store(services, monkeypat
         assert finished["status"] == "completed", finished.get("error")
         assert finished["operation"] == "offline_export"
         assert offline.bundles()["total"] == 1
-        assert RepositoryJobManager(base).job(finished["id"]) is None
+        assert sync_manager.job(finished["id"]) is None
     finally:
         manager.pool.shutdown(wait=False, cancel_futures=True)
+        sync_manager.pool.shutdown(wait=False, cancel_futures=True)
 
 
 def test_safe_extract_rejects_tar_traversal(services, tmp_path: Path):
