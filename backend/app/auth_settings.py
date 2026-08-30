@@ -104,7 +104,9 @@ def set_authentication_settings(
         mode = store.set_auth_mode(payload.mode, user.username)
     except ValueError as error:
         raise HTTPException(HTTPStatus.CONFLICT, str(error)) from error
-    if mode != previous:
+    changed = mode != previous
+    reauthentication_required = changed and mode == "local"
+    if changed:
         record_activity(
             ActivityCategory.administration,
             "auth.mode.changed",
@@ -112,8 +114,9 @@ def set_authentication_settings(
             details={"previous": previous, "current": mode},
             source="settings",
         )
-        invalidate_all_sessions()
-    return {**_state(), "reauthentication_required": mode != previous}
+        if reauthentication_required:
+            invalidate_all_sessions()
+    return {**_state(), "reauthentication_required": reauthentication_required}
 
 
 @router.post("/local-password")
@@ -150,8 +153,9 @@ def create_local_user(
     payload: LocalUserCreate,
     user: SessionUser = Depends(admin_write),
 ):
+    store = local_repository()
     try:
-        created = local_repository().create_user(
+        created = store.create_user(
             payload.username,
             payload.password,
             role=payload.role,
