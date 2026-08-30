@@ -27,6 +27,46 @@ from pathlib import Path
 from typing import Any
 
 
+def candidate_python_from_argv(argv: list[str]) -> Path | None:
+    """Return the candidate release interpreter without importing backend code."""
+
+    try:
+        release_index = argv.index("--release")
+        release = Path(argv[release_index + 1]).resolve()
+    except (ValueError, IndexError, OSError):
+        return None
+    candidate_python = release / "backend" / ".venv" / "bin" / "python"
+    if not candidate_python.is_file() or not os.access(candidate_python, os.X_OK):
+        return None
+    return candidate_python
+
+
+def ensure_candidate_runtime() -> None:
+    """Re-exec this helper inside the candidate venv before backend imports."""
+
+    candidate_python = candidate_python_from_argv(sys.argv[1:])
+    if candidate_python is None:
+        return
+    try:
+        current_python = Path(sys.executable).resolve()
+        expected_python = candidate_python.resolve()
+    except OSError:
+        current_python = Path(sys.executable)
+        expected_python = candidate_python
+    if current_python == expected_python:
+        return
+    os.execv(
+        str(candidate_python),
+        [str(candidate_python), str(Path(__file__).resolve()), *sys.argv[1:]],
+    )
+
+
+# install-standard.sh may itself run under the host Python.  The release helper
+# imports application modules, so it must switch to the candidate virtualenv
+# before importing anything from backend/app.
+ensure_candidate_runtime()
+
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = REPOSITORY_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
