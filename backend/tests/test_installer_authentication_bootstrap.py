@@ -10,7 +10,10 @@ import pytest
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 LAUNCHER = REPOSITORY / "install.sh"
+STANDARD = REPOSITORY / "install-standard.sh"
 PORTABLE = REPOSITORY / "install-portable.sh"
+LOCAL_AUTH = REPOSITORY / "backend" / "app" / "local_auth.py"
+BOOTSTRAP_HELPER = REPOSITORY / "scripts" / "consume_local_bootstrap.py"
 
 
 def _bash() -> str:
@@ -26,17 +29,33 @@ def test_launcher_documents_local_database_as_standard_default():
     content = LAUNCHER.read_text(encoding="utf-8")
 
     assert "Local database authentication mode" in content
+    assert "shown\nonce" in content
+    assert "never written to a plaintext credential\nfile" in content
     assert "PAM and optional LDAP" in content
-    assert "Settings -> Administration -> Authentication" in content
+    assert "Settings ->\nAdministration -> Authentication" in content
 
 
-def test_launcher_initializes_and_reports_local_authentication_after_install():
-    content = LAUNCHER.read_text(encoding="utf-8")
+def test_standard_installer_initializes_and_prints_bootstrap_once():
+    standard = STANDARD.read_text(encoding="utf-8")
+    helper = BOOTSTRAP_HELPER.read_text(encoding="utf-8")
 
-    assert "/api/auth/config" in content
-    assert "/var/lib/webnas/initial-local-admin.txt" in content
-    assert "Initial local administrator credentials" in content
-    assert "deleted after the first successful local login" in content
+    assert "/api/auth/config" in standard
+    assert "consume_local_bootstrap.py" in standard
+    assert 'runuser -u "$SERVICE_USER"' in standard
+    assert "Initial local administrator credentials:" in helper
+    assert "displayed once and is not stored in plaintext" in helper
+
+
+def test_bootstrap_password_has_no_plaintext_file_storage():
+    sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (LAUNCHER, STANDARD, PORTABLE, LOCAL_AUTH, BOOTSTRAP_HELPER)
+    )
+
+    assert "initial-local-admin.txt" not in sources
+    assert "bootstrap_path" not in LOCAL_AUTH.read_text(encoding="utf-8")
+    assert "secrets_service().save" in LOCAL_AUTH.read_text(encoding="utf-8")
+    assert "bootstrap_secret_id" in LOCAL_AUTH.read_text(encoding="utf-8")
 
 
 def test_launcher_preserves_standard_installer_failure_status(tmp_path: Path):
@@ -55,7 +74,7 @@ def test_launcher_preserves_standard_installer_failure_status(tmp_path: Path):
     )
 
     assert result.returncode == 23
-    assert "Authentication mode" not in result.stdout
+    assert "Authentication summary" not in result.stdout
 
 
 def test_launcher_skips_authentication_summary_for_non_runtime_actions():
@@ -75,7 +94,9 @@ def test_portable_mode_explicitly_uses_system_pam_authentication():
     assert "portable mode does not provision Local POSIX companions" in content
 
 
-def test_portable_mode_does_not_expose_unused_local_bootstrap_secret():
-    content = PORTABLE.read_text(encoding="utf-8")
+def test_portable_mode_never_creates_local_bootstrap_credentials():
+    portable = PORTABLE.read_text(encoding="utf-8")
+    local_auth = LOCAL_AUTH.read_text(encoding="utf-8")
 
-    assert 'rm -f -- "${WORK_DIR}/runtime/data/initial-local-admin.txt"' in content
+    assert "initial-local-admin.txt" not in portable
+    assert 'if self.auth_mode() == "local":' in local_auth
