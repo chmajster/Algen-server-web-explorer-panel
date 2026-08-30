@@ -7781,6 +7781,393 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/ldap-manager/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connections */
+        get: operations["connections_api_modules_ldap_manager_connections_get"];
+        put?: never;
+        /** Create Connection */
+        post: operations["create_connection_api_modules_ldap_manager_connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connection */
+        get: operations["connection_api_modules_ldap_manager_connections__connection_id__get"];
+        /** Update Connection */
+        put: operations["update_connection_api_modules_ldap_manager_connections__connection_id__put"];
+        post?: never;
+        /** Delete Connection */
+        delete: operations["delete_connection_api_modules_ldap_manager_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk */
+        post: operations["bulk_api_modules_ldap_manager_connections__connection_id__bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Diagnostics */
+        get: operations["diagnostics_api_modules_ldap_manager_connections__connection_id__diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Directory Entry */
+        get: operations["directory_entry_api_modules_ldap_manager_connections__connection_id__directory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/export/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Csv */
+        get: operations["export_csv_api_modules_ldap_manager_connections__connection_id__export_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/export/ldif": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Ldif */
+        post: operations["export_ldif_api_modules_ldap_manager_connections__connection_id__export_ldif_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Groups */
+        get: operations["groups_api_modules_ldap_manager_connections__connection_id__groups_get"];
+        /** Update Group */
+        put: operations["update_group_api_modules_ldap_manager_connections__connection_id__groups_put"];
+        /** Create Group */
+        post: operations["create_group_api_modules_ldap_manager_connections__connection_id__groups_post"];
+        /** Delete Group */
+        delete: operations["delete_group_api_modules_ldap_manager_connections__connection_id__groups_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/groups/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Group Member */
+        post: operations["add_group_member_api_modules_ldap_manager_connections__connection_id__groups_members_post"];
+        /** Remove Group Member */
+        delete: operations["remove_group_member_api_modules_ldap_manager_connections__connection_id__groups_members_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/import/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Csv */
+        post: operations["import_csv_api_modules_ldap_manager_connections__connection_id__import_csv_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/import/ldif": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Ldif */
+        post: operations["import_ldif_api_modules_ldap_manager_connections__connection_id__import_ldif_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/ous": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ous */
+        get: operations["ous_api_modules_ldap_manager_connections__connection_id__ous_get"];
+        /** Update Ou */
+        put: operations["update_ou_api_modules_ldap_manager_connections__connection_id__ous_put"];
+        /** Create Ou */
+        post: operations["create_ou_api_modules_ldap_manager_connections__connection_id__ous_post"];
+        /** Delete Ou */
+        delete: operations["delete_ou_api_modules_ldap_manager_connections__connection_id__ous_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/ous/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move Ou */
+        post: operations["move_ou_api_modules_ldap_manager_connections__connection_id__ous_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Overview */
+        get: operations["overview_api_modules_ldap_manager_connections__connection_id__overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Schema */
+        get: operations["schema_api_modules_ldap_manager_connections__connection_id__schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search */
+        post: operations["search_api_modules_ldap_manager_connections__connection_id__search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Users */
+        get: operations["users_api_modules_ldap_manager_connections__connection_id__users_get"];
+        /** Update User */
+        put: operations["update_user_api_modules_ldap_manager_connections__connection_id__users_put"];
+        /** Create User */
+        post: operations["create_user_api_modules_ldap_manager_connections__connection_id__users_post"];
+        /** Delete User */
+        delete: operations["delete_user_api_modules_ldap_manager_connections__connection_id__users_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/users/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable User */
+        post: operations["disable_user_api_modules_ldap_manager_connections__connection_id__users_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/users/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable User */
+        post: operations["enable_user_api_modules_ldap_manager_connections__connection_id__users_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/users/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move User */
+        post: operations["move_user_api_modules_ldap_manager_connections__connection_id__users_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/users/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset User Password */
+        post: operations["reset_user_password_api_modules_ldap_manager_connections__connection_id__users_password_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ldap-manager/connections/{connection_id}/users/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unlock User */
+        post: operations["unlock_user_api_modules_ldap_manager_connections__connection_id__users_unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/login-history/events": {
         parameters: {
             query?: never;
@@ -11184,6 +11571,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/authentication/ldap/access-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Access Policy */
+        get: operations["get_access_policy_api_settings_authentication_ldap_access_policy_get"];
+        /** Save Access Policy */
+        put: operations["save_access_policy_api_settings_authentication_ldap_access_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Diagnostics */
+        post: operations["run_diagnostics_api_settings_authentication_ldap_diagnostics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap/group-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Group Mappings */
+        get: operations["get_group_mappings_api_settings_authentication_ldap_group_mappings_get"];
+        put?: never;
+        /** Create Group Mapping */
+        post: operations["create_group_mapping_api_settings_authentication_ldap_group_mappings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap/group-mappings/{mapping_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Group Mapping */
+        put: operations["update_group_mapping_api_settings_authentication_ldap_group_mappings__mapping_id__put"];
+        post?: never;
+        /** Delete Group Mapping */
+        delete: operations["delete_group_mapping_api_settings_authentication_ldap_group_mappings__mapping_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Mapping */
+        post: operations["refresh_mapping_api_settings_authentication_ldap_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Servers */
+        get: operations["get_servers_api_settings_authentication_ldap_servers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/authentication/ldap/test": {
         parameters: {
             query?: never;
@@ -11897,6 +12389,31 @@ export interface components {
          * @enum {string}
          */
         BootstrapOS: "linux" | "windows";
+        /** BulkOperationRequest */
+        BulkOperationRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "add_to_group" | "remove_from_group" | "enable" | "disable" | "move" | "export";
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /**
+             * Group Dn
+             * @default
+             */
+            group_dn: string;
+            /**
+             * New Parent Dn
+             * @default
+             */
+            new_parent_dn: string;
+            /** Target Dns */
+            target_dns: string[];
+        };
         /** BulkServiceInput */
         BulkServiceInput: {
             /** Ids */
@@ -12019,6 +12536,66 @@ export interface components {
          * @enum {string}
          */
         ConcurrencyPolicy: "parallel" | "same_hosts" | "template" | "single";
+        /** ConnectionInput */
+        ConnectionInput: {
+            /** Base Dn */
+            base_dn: string;
+            /** Bind Dn */
+            bind_dn: string;
+            /**
+             * Bind Password
+             * @default
+             */
+            bind_password: string;
+            /**
+             * Ca Certificate
+             * @default
+             */
+            ca_certificate: string;
+            /**
+             * Clear Bind Password
+             * @default false
+             */
+            clear_bind_password: boolean;
+            /**
+             * Connect Timeout
+             * @default 5
+             */
+            connect_timeout: number;
+            /** @default generic */
+            directory_type: components["schemas"]["DirectoryType"];
+            /** Name */
+            name: string;
+            /**
+             * Operation Timeout
+             * @default 15
+             */
+            operation_timeout: number;
+            /** @default starttls */
+            security_mode: components["schemas"]["SecurityMode"];
+            /** Servers */
+            servers: components["schemas"]["ConnectionServer"][];
+            /**
+             * Verify Tls
+             * @default true
+             */
+            verify_tls: boolean;
+        };
+        /** ConnectionServer */
+        ConnectionServer: {
+            /** Host */
+            host: string;
+            /**
+             * Port
+             * @default 389
+             */
+            port: number;
+            /**
+             * Priority
+             * @default 10
+             */
+            priority: number;
+        };
         /**
          * ConnectionType
          * @enum {string}
@@ -12452,6 +13029,21 @@ export interface components {
             /** Working Directory */
             working_directory?: string | null;
         };
+        /** CsvImportRequest */
+        CsvImportRequest: {
+            /** Csv Text */
+            csv_text: string;
+            /**
+             * Default Parent Dn
+             * @default
+             */
+            default_parent_dn: string;
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
         /** DaemonConfigRequest */
         DaemonConfigRequest: {
             /** Config */
@@ -12769,6 +13361,41 @@ export interface components {
         DiagnosticInput: {
             /** Target */
             target: string;
+        };
+        /** DirectoryCreateRequest */
+        DirectoryCreateRequest: {
+            /** Attributes */
+            attributes?: {
+                [key: string]: unknown;
+            };
+            /** Dn */
+            dn: string;
+            /** Object Classes */
+            object_classes: string[];
+        };
+        /** DirectoryMoveRequest */
+        DirectoryMoveRequest: {
+            /** New Rdn */
+            new_rdn: string;
+            /**
+             * New Superior
+             * @default
+             */
+            new_superior: string;
+        };
+        /**
+         * DirectoryType
+         * @enum {string}
+         */
+        DirectoryType: "ldap" | "active_directory" | "freeipa" | "generic";
+        /** DirectoryUpdateRequest */
+        DirectoryUpdateRequest: {
+            /** Attributes */
+            attributes?: {
+                [key: string]: unknown;
+            };
+            /** Delete Attributes */
+            delete_attributes?: string[];
         };
         /** DnsLookupRequest */
         DnsLookupRequest: {
@@ -13909,8 +14536,21 @@ export interface components {
             /** Diff Mode */
             diff_mode?: boolean | null;
         };
-        /** LdapSettingsInput */
-        LdapSettingsInput: {
+        /** LdapAccessPolicyInput */
+        LdapAccessPolicyInput: {
+            /** Allow Groups */
+            allow_groups?: string[];
+            /** Deny Groups */
+            deny_groups?: string[];
+            /**
+             * Mode
+             * @default allow_all
+             * @enum {string}
+             */
+            mode: "allow_all" | "mapped_groups";
+        };
+        /** LdapAuthenticationSettingsInput */
+        LdapAuthenticationSettingsInput: {
             /**
              * Base Dn
              * @default
@@ -13927,6 +14567,11 @@ export interface components {
              */
             bind_password: string;
             /**
+             * Ca Certificate
+             * @default
+             */
+            ca_certificate: string;
+            /**
              * Clear Bind Password
              * @default false
              */
@@ -13936,11 +14581,18 @@ export interface components {
              * @default 5
              */
             connect_timeout: number;
+            /** @default auto */
+            directory_type: components["schemas"]["LdapDirectoryType"];
             /**
              * Display Name Attribute
              * @default displayName
              */
             display_name_attribute: string;
+            /**
+             * Dns Srv Domain
+             * @default
+             */
+            dns_srv_domain: string;
             /**
              * Email Attribute
              * @default mail
@@ -13951,6 +14603,33 @@ export interface components {
              * @default false
              */
             enabled: boolean;
+            /** @default priority */
+            failover_strategy: components["schemas"]["LdapFailoverStrategy"];
+            /**
+             * Group Cache Ttl Seconds
+             * @default 300
+             */
+            group_cache_ttl_seconds: number;
+            /**
+             * Group Membership Attribute
+             * @default memberOf
+             */
+            group_membership_attribute: string;
+            /**
+             * Group Search Base
+             * @default
+             */
+            group_search_base: string;
+            /**
+             * Group Search Filter
+             * @default (|(member={dn})(uniqueMember={dn})(memberUid={username}))
+             */
+            group_search_filter: string;
+            /**
+             * Immutable Id Attribute
+             * @default
+             */
+            immutable_id_attribute: string;
             /**
              * Operation Timeout
              * @default 10
@@ -13961,17 +14640,15 @@ export interface components {
              * @default 389
              */
             port: number;
-            /**
-             * Security Mode
-             * @default starttls
-             * @enum {string}
-             */
-            security_mode: "ldap" | "starttls" | "ldaps";
+            /** @default starttls */
+            security_mode: components["schemas"]["LdapSecurityMode"];
             /**
              * Server
              * @default
              */
             server: string;
+            /** Servers */
+            servers?: components["schemas"]["LdapServerInput"][];
             /**
              * User Search Base
              * @default
@@ -13992,6 +14669,85 @@ export interface components {
              * @default true
              */
             verify_tls: boolean;
+        };
+        /** LdapDiagnosticsRequest */
+        LdapDiagnosticsRequest: {
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+        };
+        /**
+         * LdapDirectoryType
+         * @enum {string}
+         */
+        LdapDirectoryType: "auto" | "ldap" | "active_directory" | "freeipa";
+        /**
+         * LdapFailoverStrategy
+         * @enum {string}
+         */
+        LdapFailoverStrategy: "priority" | "round_robin";
+        /** LdapGroupMappingInput */
+        LdapGroupMappingInput: {
+            /** Allow */
+            allow?: string[];
+            /** Deny */
+            deny?: string[];
+            /** Group Dn */
+            group_dn: string;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /** @default user */
+            role: components["schemas"]["Role"];
+        };
+        /** LdapRefreshRequest */
+        LdapRefreshRequest: {
+            /** Username */
+            username: string;
+        };
+        /**
+         * LdapSecurityMode
+         * @enum {string}
+         */
+        LdapSecurityMode: "ldap" | "starttls" | "ldaps";
+        /** LdapServerInput */
+        LdapServerInput: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Host */
+            host: string;
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /**
+             * Port
+             * @default 389
+             */
+            port: number;
+            /**
+             * Priority
+             * @default 10
+             */
+            priority: number;
+        };
+        /** LdifImportRequest */
+        LdifImportRequest: {
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /** Ldif Text */
+            ldif_text: string;
         };
         /** LeaseToHostRequest */
         LeaseToHostRequest: {
@@ -14293,6 +15049,11 @@ export interface components {
             widgets_enabled?: boolean | null;
             /** Window Transparency */
             window_transparency?: boolean | null;
+        };
+        /** MembershipRequest */
+        MembershipRequest: {
+            /** Member Dn */
+            member_dn: string;
         };
         /** ModuleActionRequest */
         ModuleActionRequest: {
@@ -15002,6 +15763,16 @@ export interface components {
              * @default true
              */
             confirm: boolean;
+            /**
+             * Force Change
+             * @default false
+             */
+            force_change: boolean;
+            /** New Password */
+            new_password: string;
+        };
+        /** PasswordResetRequest */
+        PasswordResetRequest: {
             /**
              * Force Change
              * @default false
@@ -16219,6 +16990,37 @@ export interface components {
          * @enum {string}
          */
         ScheduleKind: "once" | "hourly" | "daily" | "weekly" | "monthly" | "cron";
+        /** SearchRequest */
+        SearchRequest: {
+            /** Attributes */
+            attributes?: string[];
+            /**
+             * Base Dn
+             * @default
+             */
+            base_dn: string;
+            /**
+             * Cookie
+             * @default
+             */
+            cookie: string;
+            /**
+             * Ldap Filter
+             * @default (objectClass=*)
+             */
+            ldap_filter: string;
+            /**
+             * Page Size
+             * @default 100
+             */
+            page_size: number;
+            /**
+             * Scope
+             * @default subtree
+             * @enum {string}
+             */
+            scope: "base" | "one" | "subtree";
+        };
         /** SecretDeleteInput */
         SecretDeleteInput: {
             /**
@@ -16266,6 +17068,11 @@ export interface components {
              */
             username: string;
         };
+        /**
+         * SecurityMode
+         * @enum {string}
+         */
+        SecurityMode: "ldap" | "starttls" | "ldaps";
         /** ServiceAction */
         ServiceAction: {
             /**
@@ -34603,6 +35410,1190 @@ export interface operations {
             };
         };
     };
+    connections_api_modules_ldap_manager_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_connection_api_modules_ldap_manager_connections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connection_api_modules_ldap_manager_connections__connection_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_connection_api_modules_ldap_manager_connections__connection_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_connection_api_modules_ldap_manager_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_api_modules_ldap_manager_connections__connection_id__bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkOperationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diagnostics_api_modules_ldap_manager_connections__connection_id__diagnostics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    directory_entry_api_modules_ldap_manager_connections__connection_id__directory_get: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_csv_api_modules_ldap_manager_connections__connection_id__export_csv_get: {
+        parameters: {
+            query?: {
+                kind?: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_ldif_api_modules_ldap_manager_connections__connection_id__export_ldif_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    groups_api_modules_ldap_manager_connections__connection_id__groups_get: {
+        parameters: {
+            query?: {
+                search?: string;
+                page_size?: number;
+                cookie?: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_group_api_modules_ldap_manager_connections__connection_id__groups_put: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_group_api_modules_ldap_manager_connections__connection_id__groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_group_api_modules_ldap_manager_connections__connection_id__groups_delete: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_group_member_api_modules_ldap_manager_connections__connection_id__groups_members_post: {
+        parameters: {
+            query: {
+                group_dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_group_member_api_modules_ldap_manager_connections__connection_id__groups_members_delete: {
+        parameters: {
+            query: {
+                member_dn: string;
+                group_dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_csv_api_modules_ldap_manager_connections__connection_id__import_csv_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CsvImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_ldif_api_modules_ldap_manager_connections__connection_id__import_ldif_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdifImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ous_api_modules_ldap_manager_connections__connection_id__ous_get: {
+        parameters: {
+            query?: {
+                page_size?: number;
+                cookie?: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_ou_api_modules_ldap_manager_connections__connection_id__ous_put: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_ou_api_modules_ldap_manager_connections__connection_id__ous_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_ou_api_modules_ldap_manager_connections__connection_id__ous_delete: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_ou_api_modules_ldap_manager_connections__connection_id__ous_move_post: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_api_modules_ldap_manager_connections__connection_id__overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schema_api_modules_ldap_manager_connections__connection_id__schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_api_modules_ldap_manager_connections__connection_id__search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    users_api_modules_ldap_manager_connections__connection_id__users_get: {
+        parameters: {
+            query?: {
+                search?: string;
+                page_size?: number;
+                cookie?: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_api_modules_ldap_manager_connections__connection_id__users_put: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_user_api_modules_ldap_manager_connections__connection_id__users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_modules_ldap_manager_connections__connection_id__users_delete: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_user_api_modules_ldap_manager_connections__connection_id__users_disable_post: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_user_api_modules_ldap_manager_connections__connection_id__users_enable_post: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_user_api_modules_ldap_manager_connections__connection_id__users_move_post: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_user_password_api_modules_ldap_manager_connections__connection_id__users_password_reset_post: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_user_api_modules_ldap_manager_connections__connection_id__users_unlock_post: {
+        parameters: {
+            query: {
+                dn: string;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     events_api_modules_login_history_events_get: {
         parameters: {
             query?: {
@@ -41637,7 +43628,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LdapSettingsInput"];
+                "application/json": components["schemas"]["LdapAuthenticationSettingsInput"];
             };
         };
         responses: {
@@ -41657,6 +43648,264 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_access_policy_api_settings_authentication_ldap_access_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_access_policy_api_settings_authentication_ldap_access_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapAccessPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_diagnostics_api_settings_authentication_ldap_diagnostics_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapDiagnosticsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_group_mappings_api_settings_authentication_ldap_group_mappings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_group_mapping_api_settings_authentication_ldap_group_mappings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapGroupMappingInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_group_mapping_api_settings_authentication_ldap_group_mappings__mapping_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mapping_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapGroupMappingInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_group_mapping_api_settings_authentication_ldap_group_mappings__mapping_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mapping_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_mapping_api_settings_authentication_ldap_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_servers_api_settings_authentication_ldap_servers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

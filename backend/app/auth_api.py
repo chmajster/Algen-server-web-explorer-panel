@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from .activity import ActivityCategory, ActivityStatus, record_activity
 from .audit import logger
 from .auth import authenticate, normalize_username, user_home
-from .ldap_auth import (
+from .ldap_authentication import (
     AuthenticatedIdentity,
     LdapConfigurationError,
     LdapInvalidCredentials,
@@ -18,6 +18,7 @@ from .ldap_auth import (
     authenticate_ldap,
     ldap_enabled,
     ldap_home,
+    validate_ldap_session,
 )
 from .local_auth import (
     LocalAuthConfigurationError,
@@ -26,7 +27,14 @@ from .local_auth import (
     authenticate_local,
     local_home,
 )
-from .security import clear_session, create_session, get_session_user, rate_limiter, require_csrf
+from .security import (
+    clear_session,
+    create_session,
+    get_session_user,
+    invalidate_identity_sessions,
+    rate_limiter,
+    require_csrf,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 AuthMethod = Literal["local", "pam", "ldap"]
@@ -37,7 +45,16 @@ class LocalAuthenticatedIdentity:
     username: str
     provider: Literal["local"]
     home: str
+    identity_id: str
     display_name: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PamAuthenticatedIdentity:
+    username: str
+    provider: Literal["pam"]
+    home: str
+    identity_id: str
 
 
 class LoginRequest(BaseModel):
@@ -74,22 +91,27 @@ def _selected_provider(requested: AuthMethod | None) -> AuthMethod:
     return "ldap" if enabled else "pam"
 
 
-def _pam_identity(username: str, password: str) -> AuthenticatedIdentity:
+def _pam_identity(username: str, password: str) -> PamAuthenticatedIdentity:
     authenticate(username, password)
-    return AuthenticatedIdentity(username=username, provider="pam", home=user_home(username))
+    return PamAuthenticatedIdentity(
+        username=username,
+        provider="pam",
+        home=user_home(username),
+        identity_id=f"pam:{username.casefold()}",
+    )
 
 
 def _local_identity(username: str, password: str) -> LocalAuthenticatedIdentity:
     try:
         user = authenticate_local(username, password)
     except ValueError as error:
-        # Invalid local usernames are authentication failures, not application
-        # errors. Keep the response indistinguishable from a bad password.
         raise LocalInvalidCredentials("Invalid username or password") from error
+    canonical = str(user["username"])
     return LocalAuthenticatedIdentity(
-        username=str(user["username"]),
+        username=canonical,
         provider="local",
         home=str(user["home"]),
+        identity_id=f"local:{canonical.casefold()}",
         display_name=str(user.get("display_name") or ""),
     )
 
@@ -123,7 +145,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
     client = request.client.host if request.client else "unknown"
     key = f"{client}:{username}"
     provider: AuthMethod = "local" if auth_mode() == "local" else "pam"
-    identity: LocalAuthenticatedIdentity | AuthenticatedIdentity
+    identity: LocalAuthenticatedIdentity | PamAuthenticatedIdentity | AuthenticatedIdentity
     try:
         rate_limiter.check(key)
         provider = _selected_provider(payload.auth_method)
@@ -201,6 +223,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
         response,
         identity.username,
         auth_provider=identity.provider,
+        identity_id=identity.identity_id,
         remember_me=payload.remember_me,
     )
     logger.info("login user=%s provider=%s", identity.username, identity.provider)
@@ -212,6 +235,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
             "client": client,
             "persistent": payload.remember_me,
             "provider": identity.provider,
+            "identity_id": identity.identity_id if identity.provider == "ldap" else "",
         },
         source="auth",
     )
@@ -220,6 +244,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
         "home": identity.home,
         "csrf_token": csrf,
         "auth_provider": identity.provider,
+        "identity_id": identity.identity_id,
     }
 
 
@@ -244,6 +269,9 @@ def me(user=Depends(current_user)):
     elif user.auth_provider == "pam":
         home = user_home(user.username)
     else:
+        if not validate_ldap_session(user.identity_id, user.username):
+            invalidate_identity_sessions("ldap", user.identity_id)
+            raise HTTPException(HTTPStatus.UNAUTHORIZED, "LDAP access policy no longer permits this session")
         home = ldap_home(user.username)
     if not home:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, "Invalid or expired session")
@@ -252,4 +280,5 @@ def me(user=Depends(current_user)):
         "home": home,
         "csrf_token": user.csrf_token,
         "auth_provider": user.auth_provider,
+        "identity_id": user.identity_id,
     }

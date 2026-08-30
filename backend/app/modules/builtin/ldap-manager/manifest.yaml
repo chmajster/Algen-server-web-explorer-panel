@@ -1,0 +1,46 @@
+id: ldap-manager
+name: LDAP Manager
+version: 1.0.0
+category: identity
+icon: network
+permissions:
+  - ldap.connections.read
+  - ldap.connections.manage
+  - ldap.directory.read
+  - ldap.users.read
+  - ldap.users.create
+  - ldap.users.update
+  - ldap.users.delete
+  - ldap.users.password_reset
+  - ldap.groups.read
+  - ldap.groups.create
+  - ldap.groups.update
+  - ldap.groups.delete
+  - ldap.ou.read
+  - ldap.ou.manage
+  - ldap.schema.read
+  - ldap.import
+  - ldap.export
+  - ldap.bulk.execute
+  - ldap.diagnostics.read
+routers:
+  - app.modules.ldap_manager.router:router
+dependencies:
+  - identity
+  - secrets-manager
+  - activity
+capabilities:
+  - ldap-connections
+  - directory-browser
+  - ldap-users
+  - ldap-groups
+  - organizational-units
+  - schema-browser
+  - import-export
+  - bulk-operations
+  - diagnostics
+menu:
+  - id: ldap-manager
+    label: LDAP Manager
+    icon: network
+    route: /ldap-manager

@@ -1,194 +1,75 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Database, KeyRound, LoaderCircle, PlugZap, Search, Server } from "lucide-react";
+import { KeyRound, LoaderCircle, Plus, PlugZap, RefreshCw, Trash2 } from "lucide-react";
 import type { ToastFn } from "../../app/types";
 import { request } from "../../core/api/transport";
 
 type SecurityMode = "ldap" | "starttls" | "ldaps";
-type LdapSection = "connection" | "directory" | "mapping";
-
+type FailoverStrategy = "priority" | "round_robin";
+type DirectoryType = "auto" | "ldap" | "active_directory" | "freeipa";
+type Section = "status" | "connection" | "search" | "access" | "advanced" | "diagnostics";
+type LdapServer = { id: string; host: string; port: number; priority: number; enabled: boolean };
 type LdapSettings = {
   enabled: boolean;
+  directory_type: DirectoryType;
+  servers: LdapServer[];
   server: string;
   port: number;
+  failover_strategy: FailoverStrategy;
+  dns_srv_domain: string;
   security_mode: SecurityMode;
   verify_tls: boolean;
+  ca_certificate: string;
   connect_timeout: number;
   operation_timeout: number;
   base_dn: string;
   user_search_base: string;
   user_search_filter: string;
   username_attribute: string;
+  immutable_id_attribute: string;
   bind_dn: string;
   bind_password_configured: boolean;
   display_name_attribute: string;
   email_attribute: string;
+  group_search_base: string;
+  group_search_filter: string;
+  group_membership_attribute: string;
+  group_cache_ttl_seconds: number;
 };
-
-type LdapDraft = LdapSettings & {
-  bind_password: string;
-  clear_bind_password: boolean;
-};
-
-type Props = {
-  active: boolean;
-  locale: string;
-  toast: ToastFn;
-};
-
-const copy = {
-  pl: {
-    title: "Logowanie LDAP",
-    description: "Zewnętrzny katalog użytkowników dla trybu PAM + LDAP. Konfiguracja LDAP jest niezależna od lokalnych kont WebNAS.",
-    enabled: "Włącz logowanie LDAP",
-    enabledHint: "Po włączeniu LDAP pojawi się jako metoda logowania. PAM pozostaje dostępny jako alternatywa.",
-    enabledStatus: "LDAP aktywny",
-    disabledStatus: "LDAP wyłączony",
-    connection: "Połączenie",
-    connectionHint: "Adres serwera, transport TLS oraz limity czasu połączenia z katalogiem.",
-    directory: "Wyszukiwanie",
-    directoryHint: "Zakres katalogu i filtr używany do odnalezienia konta użytkownika.",
-    mapping: "Bind i atrybuty",
-    mappingHint: "Konto techniczne LDAP oraz mapowanie danych użytkownika.",
-    endpoint: "Endpoint",
-    transport: "Transport",
-    bindSecret: "Hasło Bind",
-    configured: "skonfigurowane",
-    notConfigured: "brak",
-    server: "Serwer LDAP / URI",
-    serverHint: "Hostname albo URI ldap:// / ldaps://.",
-    port: "Port",
-    security: "Tryb bezpieczeństwa",
-    verifyTls: "Weryfikuj certyfikat TLS",
-    verifyTlsHint: "Wyłączaj tylko dla kontrolowanych środowisk testowych.",
-    connectTimeout: "Timeout połączenia (s)",
-    operationTimeout: "Timeout operacji (s)",
-    baseDn: "Base DN",
-    searchBase: "User Search Base DN",
-    searchFilter: "User Search Filter",
-    searchFilterHint: "Filtr musi zawierać dokładnie jeden znacznik {username}.",
-    usernameAttribute: "Atrybut nazwy użytkownika",
-    bindDn: "Bind DN",
-    bindPassword: "Bind Password",
-    bindPasswordConfigured: "Sekret jest już zapisany. Puste pole zachowa obecne hasło.",
-    clearPassword: "Usuń zapisany Bind Password",
-    displayName: "Atrybut display name",
-    email: "Atrybut e-mail",
-    save: "Zapisz LDAP",
-    saving: "Zapisywanie…",
-    test: "Testuj połączenie",
-    testing: "Testowanie…",
-    testSavedHint: "Test używa ostatnio zapisanej konfiguracji.",
-    dirtyTestHint: "Zapisz zmiany przed wykonaniem testu połączenia.",
-    incomplete: "Uzupełnij wymagane pola LDAP przed włączeniem logowania.",
-    loading: "Wczytywanie konfiguracji LDAP…",
-    loadError: "Nie udało się odczytać ustawień LDAP.",
-    saved: "Ustawienia LDAP zostały zapisane.",
-    testOk: "Połączenie LDAP działa poprawnie.",
-  },
-  en: {
-    title: "LDAP authentication",
-    description: "External user directory for PAM + LDAP mode. LDAP configuration is independent from local WebNAS accounts.",
-    enabled: "Enable LDAP authentication",
-    enabledHint: "When enabled, LDAP appears as a sign-in method. PAM remains available as an alternative.",
-    enabledStatus: "LDAP enabled",
-    disabledStatus: "LDAP disabled",
-    connection: "Connection",
-    connectionHint: "Directory endpoint, TLS transport, and connection timeout settings.",
-    directory: "User search",
-    directoryHint: "Directory scope and filter used to locate the user account.",
-    mapping: "Bind and attributes",
-    mappingHint: "LDAP service account and user attribute mapping.",
-    endpoint: "Endpoint",
-    transport: "Transport",
-    bindSecret: "Bind password",
-    configured: "configured",
-    notConfigured: "none",
-    server: "LDAP server / URI",
-    serverHint: "Hostname or ldap:// / ldaps:// URI.",
-    port: "Port",
-    security: "Security mode",
-    verifyTls: "Verify TLS certificate",
-    verifyTlsHint: "Disable only in controlled test environments.",
-    connectTimeout: "Connection timeout (s)",
-    operationTimeout: "Operation timeout (s)",
-    baseDn: "Base DN",
-    searchBase: "User Search Base DN",
-    searchFilter: "User Search Filter",
-    searchFilterHint: "The filter must contain exactly one {username} placeholder.",
-    usernameAttribute: "Username attribute",
-    bindDn: "Bind DN",
-    bindPassword: "Bind Password",
-    bindPasswordConfigured: "A secret is already stored. Leave this field empty to keep it.",
-    clearPassword: "Clear stored Bind Password",
-    displayName: "Display name attribute",
-    email: "Email attribute",
-    save: "Save LDAP",
-    saving: "Saving…",
-    test: "Test connection",
-    testing: "Testing…",
-    testSavedHint: "The test uses the last saved configuration.",
-    dirtyTestHint: "Save changes before testing the connection.",
-    incomplete: "Complete the required LDAP fields before enabling authentication.",
-    loading: "Loading LDAP configuration…",
-    loadError: "Could not load LDAP settings.",
-    saved: "LDAP settings were saved.",
-    testOk: "LDAP connection is healthy.",
-  },
-} as const;
+type LdapDraft = LdapSettings & { bind_password: string; clear_bind_password: boolean };
+type GroupMapping = { id: string; group_dn: string; role: "admin" | "operator" | "auditor" | "user"; allow: string[]; deny: string[]; priority: number };
+type AccessPolicy = { mode: "allow_all" | "mapped_groups"; allow_groups: string[]; deny_groups: string[] };
+type DiagnosticStep = { name: string; status: "ok" | "warning" | "error" | "skipped"; detail: string };
+type DiagnosticResult = { overall: string; server: string; steps: DiagnosticStep[]; identity: Record<string, string | number | null> };
+type Props = { active: boolean; locale: string; toast: ToastFn };
 
 function toDraft(value: LdapSettings): LdapDraft {
-  return { ...value, bind_password: "", clear_bind_password: false };
+  const servers = value.servers?.length ? value.servers : value.server ? [{ id: "", host: value.server, port: value.port || 389, priority: 10, enabled: true }] : [];
+  return { ...value, servers, bind_password: "", clear_bind_password: false };
 }
 
-function fingerprint(value: LdapSettings | LdapDraft): string {
-  return JSON.stringify({
-    enabled: value.enabled,
-    server: value.server,
-    port: value.port,
-    security_mode: value.security_mode,
-    verify_tls: value.verify_tls,
-    connect_timeout: value.connect_timeout,
-    operation_timeout: value.operation_timeout,
-    base_dn: value.base_dn,
-    user_search_base: value.user_search_base,
-    user_search_filter: value.user_search_filter,
-    username_attribute: value.username_attribute,
-    bind_dn: value.bind_dn,
-    bind_password_configured: value.bind_password_configured,
-    display_name_attribute: value.display_name_attribute,
-    email_attribute: value.email_attribute,
-  });
-}
-
-function configurationComplete(value: LdapSettings | LdapDraft): boolean {
-  return Boolean(
-    value.server.trim()
-      && value.base_dn.trim()
-      && value.user_search_base.trim()
-      && value.user_search_filter.trim()
-      && value.user_search_filter.includes("{username}")
-      && value.username_attribute.trim()
-      && value.bind_dn.trim()
-      && Number.isFinite(value.port)
-      && value.port >= 1
-      && value.port <= 65535
-      && Number.isFinite(value.connect_timeout)
-      && value.connect_timeout >= 0.5
-      && Number.isFinite(value.operation_timeout)
-      && value.operation_timeout >= 0.5
-  );
+function csvList(value: string): string[] {
+  return value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
 export function LdapSettingsControl({ active, locale, toast }: Props) {
+  const pl = locale.toLowerCase().startsWith("pl");
   const anchorRef = useRef<HTMLSpanElement | null>(null);
   const [target, setTarget] = useState<Element | null>(null);
+  const [section, setSection] = useState<Section>("status");
   const [draft, setDraft] = useState<LdapDraft | null>(null);
-  const [saved, setSaved] = useState<LdapSettings | null>(null);
-  const [section, setSection] = useState<LdapSection>("connection");
+  const [mappings, setMappings] = useState<GroupMapping[]>([]);
+  const [policy, setPolicy] = useState<AccessPolicy>({ mode: "allow_all", allow_groups: [], deny_groups: [] });
+  const [mappingDn, setMappingDn] = useState("");
+  const [mappingRole, setMappingRole] = useState<GroupMapping["role"]>("user");
+  const [mappingAllow, setMappingAllow] = useState("");
+  const [mappingDeny, setMappingDeny] = useState("");
+  const [diagnosticUser, setDiagnosticUser] = useState("");
+  const [diagnostics, setDiagnostics] = useState<DiagnosticResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const text = locale.toLowerCase().startsWith("pl") ? copy.pl : copy.en;
+
+  const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
   useEffect(() => {
     if (!active) { setTarget(null); return; }
@@ -201,206 +82,133 @@ export function LdapSettingsControl({ active, locale, toast }: Props) {
     return () => observer.disconnect();
   }, [active]);
 
+  async function load() {
+    const [settings, groupMappings, accessPolicy] = await Promise.all([
+      request<LdapSettings>("/api/settings/authentication/ldap"),
+      request<{ items: GroupMapping[] }>("/api/settings/authentication/ldap/group-mappings"),
+      request<AccessPolicy>("/api/settings/authentication/ldap/access-policy"),
+    ]);
+    setDraft(toDraft(settings));
+    setMappings(groupMappings.items);
+    setPolicy(accessPolicy);
+  }
+
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    setDraft(null);
-    setSaved(null);
-    void request<LdapSettings>("/api/settings/authentication/ldap")
-      .then((value) => {
-        if (cancelled) return;
-        setSaved(value);
-        setDraft(toDraft(value));
-      })
-      .catch(() => { if (!cancelled) toast(text.loadError, "error", "admin"); });
+    void Promise.all([
+      request<LdapSettings>("/api/settings/authentication/ldap"),
+      request<{ items: GroupMapping[] }>("/api/settings/authentication/ldap/group-mappings"),
+      request<AccessPolicy>("/api/settings/authentication/ldap/access-policy"),
+    ]).then(([settings, groupMappings, accessPolicy]) => {
+      if (cancelled) return;
+      setDraft(toDraft(settings)); setMappings(groupMappings.items); setPolicy(accessPolicy);
+    }).catch((error) => { if (!cancelled) toast(errorText(error), "error", "admin"); });
     return () => { cancelled = true; };
-  }, [active, text.loadError, toast]);
+  }, [active, toast]);
 
-  async function save() {
+  async function saveSettings() {
     if (!draft) return;
     setSaving(true);
     try {
       const updated = await request<LdapSettings>("/api/settings/authentication/ldap", {
         method: "PUT",
-        body: JSON.stringify({
-          enabled: draft.enabled,
-          server: draft.server,
-          port: Number(draft.port),
-          security_mode: draft.security_mode,
-          verify_tls: draft.verify_tls,
-          connect_timeout: Number(draft.connect_timeout),
-          operation_timeout: Number(draft.operation_timeout),
-          base_dn: draft.base_dn,
-          user_search_base: draft.user_search_base,
-          user_search_filter: draft.user_search_filter,
-          username_attribute: draft.username_attribute,
-          bind_dn: draft.bind_dn,
-          bind_password: draft.bind_password,
-          clear_bind_password: draft.clear_bind_password,
-          display_name_attribute: draft.display_name_attribute,
-          email_attribute: draft.email_attribute,
-        }),
+        body: JSON.stringify({ ...draft, server: "", port: 389 }),
       });
-      setSaved(updated);
       setDraft(toDraft(updated));
-      toast(text.saved, "ok", "admin");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : text.loadError, "error", "admin");
-    } finally {
-      setSaving(false);
-    }
+      toast(pl ? "Ustawienia LDAP Authentication zapisane." : "LDAP Authentication settings saved.", "ok", "admin");
+    } catch (error) { toast(errorText(error), "error", "admin"); }
+    finally { setSaving(false); }
   }
 
-  async function testConnection() {
+  async function runDiagnostics() {
     setTesting(true);
     try {
-      const result = await request<{ ok: boolean; message: string }>("/api/settings/authentication/ldap/test", {
-        method: "POST",
-        body: "{}",
-      });
-      toast(result.message || text.testOk, "ok", "admin");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : text.loadError, "error", "admin");
-    } finally {
-      setTesting(false);
-    }
+      const result = await request<DiagnosticResult>("/api/settings/authentication/ldap/diagnostics", { method: "POST", body: JSON.stringify({ username: diagnosticUser }) });
+      setDiagnostics(result);
+      toast(result.overall === "healthy" ? (pl ? "Diagnostyka zakończona: HEALTHY" : "Diagnostics: HEALTHY") : (pl ? `Diagnostyka: ${result.overall}` : `Diagnostics: ${result.overall}`), result.overall === "healthy" ? "ok" : "error", "admin");
+    } catch (error) { toast(errorText(error), "error", "admin"); }
+    finally { setTesting(false); }
   }
 
-  function changeSecurityMode(mode: SecurityMode) {
+  async function addMapping() {
+    if (!mappingDn.trim()) return;
+    try {
+      await request("/api/settings/authentication/ldap/group-mappings", { method: "POST", body: JSON.stringify({ group_dn: mappingDn, role: mappingRole, allow: csvList(mappingAllow), deny: csvList(mappingDeny), priority: 100 }) });
+      setMappingDn(""); setMappingAllow(""); setMappingDeny("");
+      await load();
+    } catch (error) { toast(errorText(error), "error", "admin"); }
+  }
+
+  async function removeMapping(id: string) {
+    try {
+      await request(`/api/settings/authentication/ldap/group-mappings/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await load();
+    } catch (error) { toast(errorText(error), "error", "admin"); }
+  }
+
+  async function savePolicy() {
+    try {
+      const next = await request<AccessPolicy>("/api/settings/authentication/ldap/access-policy", { method: "PUT", body: JSON.stringify(policy) });
+      setPolicy(next);
+      toast(pl ? "Access policy zapisane; istniejące sesje LDAP unieważniono." : "Access policy saved; existing LDAP sessions were invalidated.", "ok", "admin");
+    } catch (error) { toast(errorText(error), "error", "admin"); }
+  }
+
+  const field = (label: string, value: string | number, onChange: (value: string) => void, type: "text" | "number" | "password" = "text", placeholder = "") => <div className="setting-row"><div><strong>{label}</strong></div><div className="setting-control"><input type={type} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} /></div></div>;
+
+  function addServer() {
     if (!draft) return;
-    const currentPortIsDefault = draft.port === 389 || draft.port === 636;
-    setDraft({
-      ...draft,
-      security_mode: mode,
-      port: currentPortIsDefault ? (mode === "ldaps" ? 636 : 389) : draft.port,
-    });
+    setDraft({ ...draft, servers: [...draft.servers, { id: "", host: "", port: draft.security_mode === "ldaps" ? 636 : 389, priority: (draft.servers.length + 1) * 10, enabled: true }] });
   }
 
-  const field = (
-    label: string,
-    value: string | number,
-    onChange: (value: string) => void,
-    options?: {
-      type?: "text" | "number" | "password";
-      placeholder?: string;
-      hint?: string;
-      min?: number;
-      max?: number;
-      step?: number;
-      autoComplete?: string;
-    },
-  ) => <label style={{ display: "grid", gap: "0.3rem", minWidth: 0 }}>
-    <span style={{ display: "grid", gap: "0.1rem" }}>
-      <strong>{label}</strong>
-      {options?.hint && <small style={{ color: "var(--text-muted)", lineHeight: 1.3 }}>{options.hint}</small>}
-    </span>
-    <input
-      style={{ width: "100%", minWidth: 0 }}
-      type={options?.type || "text"}
-      placeholder={options?.placeholder}
-      value={value}
-      min={options?.min}
-      max={options?.max}
-      step={options?.step}
-      autoComplete={options?.autoComplete}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  </label>;
+  function updateServer(index: number, patch: Partial<LdapServer>) {
+    if (!draft) return;
+    setDraft({ ...draft, servers: draft.servers.map((server, current) => current === index ? { ...server, ...patch } : server) });
+  }
 
-  const card = active && target ? createPortal(
-    <div className="settings-card-stack" data-testid="ldap-settings-card">
-      {!draft || !saved ? <section className="settings-card" style={{ padding: "1rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><LoaderCircle className="spin" size={18} />{text.loading}</div>
-      </section> : (() => {
-        const dirty = fingerprint(draft) !== fingerprint(saved) || Boolean(draft.bind_password) || draft.clear_bind_password;
-        const complete = configurationComplete(draft);
-        const savedComplete = configurationComplete(saved);
-        const transport = draft.security_mode === "ldaps" ? "LDAPS" : draft.security_mode === "starttls" ? "LDAP + StartTLS" : "LDAP";
-        const endpoint = draft.server.trim() ? `${draft.server.trim()}:${draft.port}` : "—";
-        const tabs = [
-          { id: "connection" as const, label: text.connection, icon: <Server size={15} /> },
-          { id: "directory" as const, label: text.directory, icon: <Search size={15} /> },
-          { id: "mapping" as const, label: text.mapping, icon: <Database size={15} /> },
-        ];
+  function removeServer(index: number) {
+    if (!draft) return;
+    setDraft({ ...draft, servers: draft.servers.filter((_, current) => current !== index) });
+  }
 
-        return <section className="settings-card" style={{ overflow: "hidden" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", padding: "0.9rem 1rem 0.75rem" }}>
-            <div style={{ minWidth: 0 }}>
-              <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.45rem" }}><KeyRound size={18} /> {text.title}</h3>
-              <p style={{ margin: "0.35rem 0 0", maxWidth: "60rem" }}>{text.description}</p>
-            </div>
-            <span style={{ flex: "0 0 auto", padding: "0.25rem 0.55rem", border: "1px solid var(--border-subtle)", borderRadius: "999px", background: draft.enabled ? "var(--surface-selected)" : "var(--surface-secondary)", color: draft.enabled ? "var(--accent)" : "var(--text-secondary)", fontWeight: 600 }}>
-              {draft.enabled ? text.enabledStatus : text.disabledStatus}
-            </span>
-          </div>
+  const card = active && target && draft ? createPortal(<div className="settings-card-stack" data-testid="ldap-settings-card">
+    <section className="settings-card"><h3><KeyRound size={18} /> LDAP Authentication</h3><p>{pl ? "Wyłącznie logowanie użytkowników do WebNAS przez LDAP. Administracja katalogiem znajduje się w osobnym module LDAP Manager i używa innych credentials." : "Only authenticates users to WebNAS through LDAP. Directory administration lives in the separate LDAP Manager module and uses different credentials."}</p>
+      <nav className="settings-tabs">{(["status", "connection", "search", "access", "advanced", "diagnostics"] as Section[]).map((item) => <button key={item} type="button" className={section === item ? "active" : ""} onClick={() => setSection(item)}>{item === "status" ? "Status" : item === "connection" ? (pl ? "Połączenie" : "Connection") : item === "search" ? (pl ? "Wyszukiwanie" : "Search") : item === "access" ? "Access / RBAC" : item === "advanced" ? "Advanced" : (pl ? "Diagnostyka" : "Diagnostics")}</button>)}</nav>
+    </section>
 
-          <div className="setting-row" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-            <div><strong>{text.enabled}</strong><small>{text.enabledHint}</small></div>
-            <div className="setting-control"><label className="settings-switch"><input type="checkbox" aria-label={text.enabled} checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked, clear_bind_password: false })} /><span aria-hidden="true" /></label></div>
-          </div>
+    {section === "status" && <section className="settings-card"><h3>Status</h3><div className="setting-row"><div><strong>{pl ? "Włącz LDAP Authentication" : "Enable LDAP Authentication"}</strong><small>{pl ? "Aktywacja wykonuje preflight. Błędna konfiguracja pozostanie wyłączona. PAM pozostaje osobnym providerem i nie jest fallbackiem." : "Activation runs a preflight. Invalid configuration remains disabled. PAM is a separate provider, not a fallback."}</small></div><div className="setting-control"><label className="settings-switch"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked, clear_bind_password: false })} /><span aria-hidden="true" /></label></div></div><p><strong>Bind password:</strong> {draft.bind_password_configured ? (pl ? "skonfigurowany w Secrets Manager" : "configured in Secrets Manager") : (pl ? "brak" : "not configured")}</p></section>}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))", gap: "0.5rem", padding: "0.65rem 1rem", borderTop: "1px solid var(--border-subtle)", background: "var(--surface-secondary)" }}>
-            <div style={{ minWidth: 0 }}><small style={{ display: "block", color: "var(--text-muted)" }}>{text.endpoint}</small><strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{endpoint}</strong></div>
-            <div><small style={{ display: "block", color: "var(--text-muted)" }}>{text.transport}</small><strong>{transport}</strong></div>
-            <div><small style={{ display: "block", color: "var(--text-muted)" }}>{text.bindSecret}</small><strong>{draft.bind_password_configured ? text.configured : text.notConfigured}</strong></div>
-          </div>
+    {section === "connection" && <section className="settings-card"><h3>{pl ? "Połączenie i serwery" : "Connection and servers"}</h3><p>{pl ? "Failover dotyczy wyłącznie serwerów tego samego providera LDAP. Błędne hasło nie uruchamia PAM." : "Failover applies only to servers of the same LDAP provider. Invalid credentials never trigger PAM."}</p>
+      <div className="setting-row"><div><strong>Directory type</strong></div><div className="setting-control"><select value={draft.directory_type} onChange={(event) => setDraft({ ...draft, directory_type: event.target.value as DirectoryType })}><option value="auto">Auto</option><option value="ldap">OpenLDAP</option><option value="active_directory">Active Directory</option><option value="freeipa">FreeIPA</option></select></div></div>
+      {draft.servers.map((server, index) => <div className="setting-row" key={server.id || `new-${index}`}><div><strong>LDAP server {index + 1}</strong><small>priority {server.priority}</small></div><div className="setting-control"><input aria-label={`LDAP server ${index + 1}`} placeholder="dc01.company.local" value={server.host} onChange={(event) => updateServer(index, { host: event.target.value })} /><input aria-label={`LDAP port ${index + 1}`} type="number" value={server.port} onChange={(event) => updateServer(index, { port: Number(event.target.value) })} /><input aria-label={`LDAP priority ${index + 1}`} type="number" value={server.priority} onChange={(event) => updateServer(index, { priority: Number(event.target.value) })} /><button type="button" aria-label={`Remove LDAP server ${index + 1}`} onClick={() => removeServer(index)}><Trash2 size={15} /></button></div></div>)}
+      <div className="settings-actions"><button type="button" onClick={addServer}><Plus size={16} /> {pl ? "Dodaj serwer" : "Add server"}</button></div>
+      <div className="setting-row"><div><strong>Failover</strong></div><div className="setting-control"><select value={draft.failover_strategy} onChange={(event) => setDraft({ ...draft, failover_strategy: event.target.value as FailoverStrategy })}><option value="priority">Priority</option><option value="round_robin">Round robin</option></select></div></div>
+      {field("DNS SRV discovery", draft.dns_srv_domain, (value) => setDraft({ ...draft, dns_srv_domain: value }), "text", "_ldap._tcp.dc._msdcs.company.local")}
+      <div className="setting-row"><div><strong>Security</strong></div><div className="setting-control"><select value={draft.security_mode} onChange={(event) => setDraft({ ...draft, security_mode: event.target.value as SecurityMode })}><option value="ldap">LDAP</option><option value="starttls">LDAP + StartTLS</option><option value="ldaps">LDAPS</option></select></div></div>
+      <div className="setting-row"><div><strong>Verify TLS certificate</strong></div><div className="setting-control"><label className="settings-switch"><input type="checkbox" checked={draft.verify_tls} onChange={(event) => setDraft({ ...draft, verify_tls: event.target.checked })} /><span aria-hidden="true" /></label></div></div>
+      {field("Connect timeout (s)", draft.connect_timeout, (value) => setDraft({ ...draft, connect_timeout: Number(value) }), "number")}{field("Operation timeout (s)", draft.operation_timeout, (value) => setDraft({ ...draft, operation_timeout: Number(value) }), "number")}
+    </section>}
 
-          <div role="tablist" aria-label={text.title} style={{ display: "flex", gap: "0.25rem", overflowX: "auto", padding: "0.5rem 0.65rem", borderTop: "1px solid var(--border-subtle)", borderBottom: "1px solid var(--border-subtle)" }}>
-            {tabs.map((tab) => <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={section === tab.id}
-              onClick={() => setSection(tab.id)}
-              style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", whiteSpace: "nowrap", borderColor: section === tab.id ? "var(--accent)" : "var(--border-subtle)", background: section === tab.id ? "var(--surface-selected)" : "var(--surface-elevated)", color: section === tab.id ? "var(--accent)" : "var(--text-primary)", fontWeight: section === tab.id ? 600 : 400 }}
-            >{tab.icon}{tab.label}</button>)}
-          </div>
+    {section === "search" && <section className="settings-card"><h3>{pl ? "Wyszukiwanie i identity mapping" : "Search and identity mapping"}</h3>
+      {field("Base DN", draft.base_dn, (value) => setDraft({ ...draft, base_dn: value }), "text", "dc=company,dc=local")}{field("User Search Base", draft.user_search_base, (value) => setDraft({ ...draft, user_search_base: value }))}{field("User Search Filter", draft.user_search_filter, (value) => setDraft({ ...draft, user_search_filter: value }), "text", "(uid={username})")}{field("Username Attribute", draft.username_attribute, (value) => setDraft({ ...draft, username_attribute: value }))}{field("Immutable ID Attribute", draft.immutable_id_attribute, (value) => setDraft({ ...draft, immutable_id_attribute: value }), "text", pl ? "puste = objectGUID/entryUUID auto" : "blank = auto objectGUID/entryUUID")}{field("Display Name Attribute", draft.display_name_attribute, (value) => setDraft({ ...draft, display_name_attribute: value }))}{field("Email Attribute", draft.email_attribute, (value) => setDraft({ ...draft, email_attribute: value }))}
+      {field("Group Search Base", draft.group_search_base, (value) => setDraft({ ...draft, group_search_base: value }))}{field("Group Search Filter", draft.group_search_filter, (value) => setDraft({ ...draft, group_search_filter: value }))}{field("Group membership attribute", draft.group_membership_attribute, (value) => setDraft({ ...draft, group_membership_attribute: value }))}
+    </section>}
 
-          <div role="tabpanel" style={{ padding: "0.85rem 1rem 1rem" }}>
-            <div style={{ marginBottom: "0.75rem" }}>
-              <strong>{section === "connection" ? text.connection : section === "directory" ? text.directory : text.mapping}</strong>
-              <p style={{ margin: "0.2rem 0 0", color: "var(--text-muted)" }}>{section === "connection" ? text.connectionHint : section === "directory" ? text.directoryHint : text.mappingHint}</p>
-            </div>
+    {section === "access" && <section className="settings-card"><h3>Access Policy / LDAP Group → WebNAS RBAC</h3><p>{pl ? "Mapping zapisuje wynik do istniejącego WebNAS Identity/RBAC; deny ma pierwszeństwo przed allow." : "Mappings feed the existing WebNAS Identity/RBAC system; deny takes precedence over allow."}</p>
+      <div className="setting-row"><div><strong>Policy mode</strong></div><div className="setting-control"><select value={policy.mode} onChange={(event) => setPolicy({ ...policy, mode: event.target.value as AccessPolicy["mode"] })}><option value="allow_all">Allow all matched LDAP users</option><option value="mapped_groups">Allow only mapped LDAP groups</option></select></div></div>
+      {field("Allow groups", policy.allow_groups.join(", "), (value) => setPolicy({ ...policy, allow_groups: csvList(value) }))}{field("Deny groups", policy.deny_groups.join(", "), (value) => setPolicy({ ...policy, deny_groups: csvList(value) }))}<div className="settings-actions"><button type="button" onClick={() => void savePolicy()}>Save access policy</button></div>
+      <h4>Group mappings</h4>{mappings.map((item) => <div className="setting-row" key={item.id}><div><strong>{item.group_dn}</strong><small>{item.role} · allow: {item.allow.join(", ") || "—"} · deny: {item.deny.join(", ") || "—"}</small></div><div className="setting-control"><button type="button" onClick={() => void removeMapping(item.id)}><Trash2 size={15} /></button></div></div>)}
+      <div className="setting-row"><div><strong>LDAP group DN</strong></div><div className="setting-control"><input value={mappingDn} onChange={(event) => setMappingDn(event.target.value)} placeholder="CN=WebNAS-Operators,OU=Groups,DC=company,DC=local" /><select value={mappingRole} onChange={(event) => setMappingRole(event.target.value as GroupMapping["role"])}><option value="user">user</option><option value="auditor">auditor</option><option value="operator">operator</option><option value="admin">admin</option></select></div></div>
+      {field("Allow permissions", mappingAllow, setMappingAllow, "text", "storage.read, files.read")}{field("Deny permissions", mappingDeny, setMappingDeny, "text", "users.manage")}<div className="settings-actions"><button type="button" onClick={() => void addMapping()}><Plus size={16} /> Add mapping</button></div>
+    </section>}
 
-            {section === "connection" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(15rem, 1fr))", gap: "0.8rem 1rem" }}>
-              {field(text.server, draft.server, (value) => setDraft({ ...draft, server: value }), { placeholder: "ldap.example.com", hint: text.serverHint })}
-              {field(text.port, draft.port, (value) => setDraft({ ...draft, port: Number(value) }), { type: "number", min: 1, max: 65535, step: 1 })}
-              <label style={{ display: "grid", gap: "0.3rem", minWidth: 0 }}><strong>{text.security}</strong><select style={{ width: "100%" }} value={draft.security_mode} onChange={(event) => changeSecurityMode(event.target.value as SecurityMode)}><option value="ldap">LDAP</option><option value="starttls">LDAP + StartTLS</option><option value="ldaps">LDAPS</option></select></label>
-              <div style={{ display: "grid", gap: "0.3rem", alignContent: "start" }}><span style={{ display: "grid", gap: "0.1rem" }}><strong>{text.verifyTls}</strong><small style={{ color: "var(--text-muted)", lineHeight: 1.3 }}>{text.verifyTlsHint}</small></span><div style={{ minHeight: "var(--control-height)", display: "flex", alignItems: "center" }}><label className="settings-switch"><input type="checkbox" aria-label={text.verifyTls} checked={draft.verify_tls} onChange={(event) => setDraft({ ...draft, verify_tls: event.target.checked })} /><span aria-hidden="true" /></label></div></div>
-              {field(text.connectTimeout, draft.connect_timeout, (value) => setDraft({ ...draft, connect_timeout: Number(value) }), { type: "number", min: 0.5, max: 60, step: 0.5 })}
-              {field(text.operationTimeout, draft.operation_timeout, (value) => setDraft({ ...draft, operation_timeout: Number(value) }), { type: "number", min: 0.5, max: 120, step: 0.5 })}
-            </div>}
+    {section === "advanced" && <section className="settings-card"><h3>Advanced</h3>{field("Bind DN", draft.bind_dn, (value) => setDraft({ ...draft, bind_dn: value }))}<div className="setting-row"><div><strong>Bind Password</strong><small>{draft.bind_password_configured ? (pl ? "Sekret jest zapisany. API nie zwraca jego wartości." : "Secret is stored. The API never returns its value.") : ""}</small></div><div className="setting-control"><input type="password" autoComplete="new-password" value={draft.bind_password} onChange={(event) => setDraft({ ...draft, bind_password: event.target.value, clear_bind_password: false })} /></div></div>{draft.bind_password_configured && !draft.enabled && <div className="setting-row"><div><strong>{pl ? "Usuń zapisany Bind Password" : "Clear stored Bind Password"}</strong></div><div className="setting-control"><label className="settings-switch"><input type="checkbox" checked={draft.clear_bind_password} onChange={(event) => setDraft({ ...draft, clear_bind_password: event.target.checked, bind_password: "" })} /><span aria-hidden="true" /></label></div></div>}{field("Group cache TTL (s)", draft.group_cache_ttl_seconds, (value) => setDraft({ ...draft, group_cache_ttl_seconds: Number(value) }), "number")}<div className="setting-row"><div><strong>Custom CA certificate</strong></div><div className="setting-control"><textarea value={draft.ca_certificate} onChange={(event) => setDraft({ ...draft, ca_certificate: event.target.value })} placeholder="-----BEGIN CERTIFICATE-----" /></div></div></section>}
 
-            {section === "directory" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(17rem, 1fr))", gap: "0.8rem 1rem" }}>
-              {field(text.baseDn, draft.base_dn, (value) => setDraft({ ...draft, base_dn: value }), { placeholder: "dc=example,dc=com" })}
-              {field(text.searchBase, draft.user_search_base, (value) => setDraft({ ...draft, user_search_base: value }), { placeholder: "ou=people,dc=example,dc=com" })}
-              {field(text.searchFilter, draft.user_search_filter, (value) => setDraft({ ...draft, user_search_filter: value }), { placeholder: "(uid={username})", hint: text.searchFilterHint })}
-              {field(text.usernameAttribute, draft.username_attribute, (value) => setDraft({ ...draft, username_attribute: value }), { placeholder: "uid" })}
-            </div>}
+    {section === "diagnostics" && <section className="settings-card"><h3>{pl ? "Diagnostyka całego chainu" : "Full-chain diagnostics"}</h3><p>DNS → TCP → TLS → certificate → service bind → Base DN → user search → group lookup → NSS → UID/GID/home → RBAC mapping.</p>{field(pl ? "Opcjonalny użytkownik testowy" : "Optional test username", diagnosticUser, setDiagnosticUser)}<div className="settings-actions"><button type="button" disabled={testing || !draft.bind_password_configured} onClick={() => void runDiagnostics()}>{testing ? <LoaderCircle className="spin" size={16} /> : <PlugZap size={16} />}{testing ? (pl ? "Testowanie…" : "Testing…") : "Run diagnostics"}</button></div>{diagnostics && <div>{diagnostics.steps.map((step) => <div className="setting-row" key={`${step.name}-${step.detail}`}><div><strong>{step.name}</strong></div><div className="setting-control"><span>{step.status.toUpperCase()}</span><small>{step.detail}</small></div></div>)}<p><strong>Overall:</strong> {diagnostics.overall.toUpperCase()}</p></div>}</section>}
 
-            {section === "mapping" && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(17rem, 1fr))", gap: "0.8rem 1rem" }}>
-              {field(text.bindDn, draft.bind_dn, (value) => setDraft({ ...draft, bind_dn: value }), { placeholder: "cn=webnas,ou=service,dc=example,dc=com" })}
-              {field(text.bindPassword, draft.bind_password, (value) => setDraft({ ...draft, bind_password: value, clear_bind_password: false }), { type: "password", autoComplete: "new-password", hint: draft.bind_password_configured ? text.bindPasswordConfigured : undefined })}
-              {field(text.displayName, draft.display_name_attribute, (value) => setDraft({ ...draft, display_name_attribute: value }), { placeholder: "displayName" })}
-              {field(text.email, draft.email_attribute, (value) => setDraft({ ...draft, email_attribute: value }), { placeholder: "mail" })}
-              {draft.bind_password_configured && !draft.enabled && <div style={{ display: "grid", gap: "0.3rem", alignContent: "start" }}><strong>{text.clearPassword}</strong><div style={{ minHeight: "var(--control-height)", display: "flex", alignItems: "center" }}><label className="settings-switch"><input type="checkbox" aria-label={text.clearPassword} checked={draft.clear_bind_password} onChange={(event) => setDraft({ ...draft, clear_bind_password: event.target.checked, bind_password: "" })} /><span aria-hidden="true" /></label></div></div>}
-            </div>}
-          </div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.65rem", padding: "0.65rem 1rem", borderTop: "1px solid var(--border-subtle)", background: "var(--surface-secondary)" }}>
-            <small style={{ color: draft.enabled && !complete ? "var(--warning)" : "var(--text-muted)" }}>
-              {draft.enabled && !complete ? text.incomplete : dirty ? text.dirtyTestHint : text.testSavedHint}
-            </small>
-            <div className="settings-actions" style={{ margin: 0 }}>
-              <button className="button-primary" type="button" disabled={saving || testing || !dirty || (draft.enabled && !complete)} onClick={() => void save()}>{saving && <LoaderCircle className="spin" size={16} />}{saving ? text.saving : text.save}</button>
-              <button type="button" disabled={saving || testing || dirty || !savedComplete} onClick={() => void testConnection()}><PlugZap size={16} />{testing ? text.testing : text.test}</button>
-            </div>
-          </div>
-        </section>;
-      })()}
-    </div>,
-    target,
-  ) : null;
+    <section className="settings-card"><div className="settings-actions"><button className="button-primary" type="button" disabled={saving || testing} onClick={() => void saveSettings()}>{saving ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />}{saving ? (pl ? "Zapisywanie…" : "Saving…") : (pl ? "Zapisz LDAP Authentication" : "Save LDAP Authentication")}</button><button type="button" onClick={() => void load()}><RefreshCw size={16} /> {pl ? "Odśwież" : "Refresh"}</button></div></section>
+  </div>, target) : null;
 
   return <><span ref={anchorRef} style={{ display: "none" }} />{card}</>;
 }

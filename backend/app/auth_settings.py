@@ -105,7 +105,7 @@ def set_authentication_settings(
     except ValueError as error:
         raise HTTPException(HTTPStatus.CONFLICT, str(error)) from error
     changed = mode != previous
-    reauthentication_required = changed and mode == "local"
+    reauthentication_required = changed
     if changed:
         record_activity(
             ActivityCategory.administration,
@@ -114,8 +114,7 @@ def set_authentication_settings(
             details={"previous": previous, "current": mode},
             source="settings",
         )
-        if reauthentication_required:
-            invalidate_all_sessions()
+        invalidate_all_sessions()
     return {**_state(), "reauthentication_required": reauthentication_required}
 
 

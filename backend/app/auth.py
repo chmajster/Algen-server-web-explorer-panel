@@ -19,6 +19,8 @@ BLOCKED_LOGIN_SHELLS = {
     "/usr/sbin/nologin",
 }
 LOCAL_PASSWD_PATH = Path("/etc/passwd")
+WEBNAS_PAM_SERVICE = "webnas"
+WEBNAS_PAM_PATH = Path("/etc/pam.d/webnas")
 
 
 def normalize_username(username: str) -> str:
@@ -30,8 +32,8 @@ def is_local_passwd_user(username: str, passwd_path: Path = LOCAL_PASSWD_PATH) -
 
     ``pwd.getpwnam`` resolves through NSS and can therefore also return LDAP,
     SSSD, winbind, or nslcd identities. The PAM provider is intentionally the
-    local-account provider, so provider selection must not silently collapse
-    an NSS-backed LDAP identity into PAM.
+    local-system namespace, so provider selection must not collapse an
+    NSS-backed LDAP identity into PAM.
     """
 
     username = normalize_username(username)
@@ -65,11 +67,10 @@ def assert_login_allowed(username: str) -> pwd.struct_passwd:
     if not is_local_passwd_user(username):
         raise HTTPException(401, "Invalid username or password")
 
-    # A remembered LDAP identity and a newly-created local account with the
-    # same name must not become one WebNAS identity. Fail closed until the
-    # collision is administratively resolved.
+    # Provider namespace isolation: a remembered LDAP identity and a local
+    # account with the same login must never become one WebNAS identity.
     try:
-        from .ldap_auth import is_ldap_identity
+        from .ldap_authentication import is_ldap_identity
 
         if is_ldap_identity(username):
             raise HTTPException(401, "Invalid username or password")
@@ -78,9 +79,6 @@ def assert_login_allowed(username: str) -> pwd.struct_passwd:
 
     user = system_user(username)
     cfg = get_config()
-    # UID 0 is an explicit identity/RBAC break-glass administrator. PAM and
-    # the interactive-shell checks below still apply; all other service UIDs
-    # remain blocked by the configured threshold.
     if user.pw_uid < cfg.security.system_uid_threshold and user.pw_uid != 0:
         raise HTTPException(403, "System service accounts cannot log in")
     if user.pw_shell in BLOCKED_LOGIN_SHELLS:
@@ -95,14 +93,22 @@ def authenticate(username: str, password: str) -> None:
     if not password:
         raise HTTPException(401, "Invalid username or password")
     cfg = get_config()
-    service = cfg.auth.pam_service
-    if not Path(f"/etc/pam.d/{service}").exists():
-        logger.warning("pam_service_missing service=%s fallback=login", service)
-        service = "login"
+    service = str(cfg.auth.pam_service or "").strip()
+    if service != WEBNAS_PAM_SERVICE:
+        logger.error("pam_configuration_invalid configured_service=%s required_service=%s", service, WEBNAS_PAM_SERVICE)
+        raise HTTPException(503, "PAM authentication is not configured for WebNAS")
+    if not WEBNAS_PAM_PATH.is_file():
+        logger.error("pam_service_missing service=%s path=%s", WEBNAS_PAM_SERVICE, WEBNAS_PAM_PATH)
+        raise HTTPException(503, "PAM authentication is not configured for WebNAS")
     authenticator = pam.pam()
-    if not authenticator.authenticate(username, password, service=service):
+    if not authenticator.authenticate(username, password, service=WEBNAS_PAM_SERVICE):
         reason = getattr(authenticator, "reason", "")
-        logger.warning("pam_auth_failed user=%s service=%s reason=%s", username, service, reason or "unknown")
+        logger.warning(
+            "pam_auth_failed user=%s service=%s reason=%s",
+            username,
+            WEBNAS_PAM_SERVICE,
+            reason or "unknown",
+        )
         raise HTTPException(401, "Invalid username or password")
 
 
