@@ -181,6 +181,18 @@ standard_install_dir() {
   printf '%s' "$install_dir"
 }
 
+standard_runtime_release() {
+  local install_dir=""
+  install_dir="$(standard_install_dir)"
+  readlink -f -- "${install_dir%/}/current" 2>/dev/null || true
+}
+
+standard_runtime_present() {
+  local release=""
+  release="$(standard_runtime_release)"
+  [[ -n "$release" && -d "$release" ]]
+}
+
 standard_reinstall_backup_snapshot() {
   local state=""
   for state in /var/backups/webnas/*-reinstall.*/installer-state; do
@@ -210,6 +222,14 @@ restart_standard_privileged_broker() {
 
   if ! systemctl cat webnas-privileged.socket >/dev/null 2>&1 || ! systemctl cat webnas-privileged.service >/dev/null 2>&1; then
     printf '[ERROR] WebNAS privileged broker units are missing.\n' >&2
+    return 1
+  fi
+
+  # Repair installations created by older socket units. DirectoryMode applies
+  # only when systemd creates a missing parent directory; it does not repair an
+  # existing root:root 0750 /run/webnas, which blocks the webnas service user.
+  if ! install -d -o root -g root -m 0755 /run/webnas; then
+    printf '[ERROR] Could not repair /run/webnas permissions.\n' >&2
     return 1
   fi
 
@@ -379,6 +399,7 @@ print_standard_authentication_summary() {
   local curl_options=(--fail --silent --show-error --max-time 5)
 
   standard_action_has_runtime || return 0
+  standard_runtime_present || return 0
   command -v curl >/dev/null 2>&1 || return 0
 
   port="$(standard_config_port)"
@@ -438,14 +459,19 @@ if [[ "$MODE" == "portable" ]]; then
   run_target "install-portable.sh" "${FORWARD_ARGS[@]}"
 else
   reinstall_backups_before="$(standard_reinstall_backup_snapshot)"
+  runtime_before="$(standard_runtime_release)"
+  broker_recovered="no"
   run_target "$(standard_installer_target)" "${FORWARD_ARGS[@]}"
   if standard_reinstall_happened "$reinstall_backups_before"; then
     finalize_standard_reinstall
+    broker_recovered="yes"
   fi
-  # Updates and fresh installs may replace the broker unit while the service is
-  # inactive. Start the new broker explicitly before reporting a healthy
-  # installation so PAM cannot degrade into BROKER_UNAVAILABLE on first login.
-  if standard_action_has_runtime; then
+  runtime_after="$(standard_runtime_release)"
+  # Fresh installs and updates may replace the broker unit while the service is
+  # inactive. Only recover it when a real application runtime exists and the
+  # active release changed. This also prevents an interactive Remove action
+  # from trying to restart units that the child installer just deleted.
+  if [[ "$broker_recovered" != "yes" ]] && standard_action_has_runtime && standard_runtime_present && { [[ -z "$runtime_before" ]] || [[ "$runtime_after" != "$runtime_before" ]]; }; then
     restart_standard_privileged_broker
   fi
   print_standard_authentication_summary
