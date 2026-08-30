@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import os
 import shlex
 import shutil
@@ -19,6 +20,9 @@ from ...privileged_broker.client import BrokerClient
 from ...privileged_broker.protocol import Operation
 from ...privileged_broker.runtime import broker_required
 from .models import PolicyRuleInput, RouteInput
+
+
+logger = logging.getLogger(__name__)
 
 
 class RoutingUnavailable(RuntimeError):
@@ -355,7 +359,7 @@ class RoutingService:
             try:
                 self._restore_persistent(persistent, actor=actor)
             except Exception:
-                pass
+                logger.exception("Failed to restore persistent routing state after apply failure")
             raise
         expires_at = time.time() + payload.rollback_seconds
         transaction = {
@@ -457,7 +461,10 @@ class RoutingService:
                 try:
                     self.rollback(str(transaction["id"]), automatic=True)
                 except Exception:
-                    pass
+                    logger.exception(
+                        "Failed to reconcile expired routing transaction",
+                        extra={"transaction_id": str(transaction.get("id") or "")},
+                    )
             else:
                 self._schedule_rollback(transaction)
 

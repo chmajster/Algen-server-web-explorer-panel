@@ -36,7 +36,7 @@ def _controlled(operation):
         api_error(503, "NTP_UNAVAILABLE", "NTP backend is unavailable")
     except PermissionError:
         api_error(503, "NTP_PERMISSION_DENIED", "NTP operation is not permitted")
-    except (OSError, RuntimeError):
+    except OSError, RuntimeError:
         api_error(502, "NTP_OPERATION_FAILED", "NTP operation failed")
     except ValueError:
         api_error(422, "NTP_VALIDATION_FAILED", "NTP request is invalid")

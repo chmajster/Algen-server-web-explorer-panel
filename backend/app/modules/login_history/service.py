@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -13,6 +14,9 @@ from ...alerts.service import service as alerts
 from ...privileged_broker.client import BrokerClient
 from ...privileged_broker.protocol import Operation
 from ...privileged_broker.runtime import broker_required
+
+
+logger = logging.getLogger(__name__)
 
 _ACCEPT_RE = re.compile(r"Accepted\s+(?P<method>\S+)\s+for\s+(?P<user>\S+)\s+from\s+(?P<ip>\S+)", re.I)
 _FAILED_RE = re.compile(r"Failed\s+(?P<method>\S+)\s+for\s+(?:invalid user\s+)?(?P<user>\S+)\s+from\s+(?P<ip>\S+)", re.I)
@@ -292,7 +296,7 @@ class LoginHistoryService:
                     )
                 )
             except Exception:
-                pass
+                logger.exception("Failed to emit login security alert", extra={"alert_key": key})
         return findings
 
     def overview(self) -> dict[str, Any]:

@@ -14,6 +14,9 @@ const permissions = [
   "transfers.view_own", "transfers.create", "settings.view_own", "settings.edit_own", "system.status", "modules.view", "modules.install",
   "modules.update", "modules.uninstall", "modules.configure", "dcst.read", "dcst.manage_services", "dcst.block_traffic", "dcst.sync",
   "dcst.manage_tags", "dcst.manage_ipsets", "dcst.manage_ports", "dcst.view_logs",
+  "firewall.view", "firewall.rules.create", "firewall.rules.delete", "firewall.enable", "firewall.disable", "firewall.reload", "firewall.backup", "firewall.restore",
+  "security.view", "security.scan", "security.findings.manage", "network_tools.view", "network_tools.ping", "network_tools.traceroute", "network_tools.dns",
+  "network_tools.port_test", "network_tools.http_test", "network_tools.routes", "network_tools.connections",
 ];
 
 const profile = {
@@ -80,6 +83,14 @@ export async function installMockApi(page: Page, authenticated = true): Promise<
     if (path.startsWith("/api/modules/dcst/services") && method === "GET") return respond(route, state.services);
     if (path === "/api/modules/dcst/services" && method === "POST") { const item = { id: `service-${state.services.length + 1}`, blocked: false, system_service: false, sync_status: "ok", state: "ACTIVE", last_error: "", ...(request.postDataJSON() as object) }; state.services.push(item); return respond(route, item); }
     if (path.startsWith("/api/modules/dcst/")) return respond(route, { ok: true });
+
+    if (path === "/api/modules/firewall-manager/status") return respond(route, { backend: "ufw", available_backends: ["ufw"], active: true, detail: "Status: active", rules: 1 });
+    if (path === "/api/modules/firewall-manager/rules") return respond(route, { items: [{ id: "ufw:1", backend: "ufw", action: "allow", direction: "in", protocol: "tcp", port: "22", source: "10.0.0.0/24", destination: "any", interface: "", comment: "SSH", family: "ipv4", enabled: true, editable: true }], total: 1 });
+    if (path === "/api/modules/firewall-manager/listening-ports") return respond(route, { items: [], total: 0 });
+    if (path === "/api/modules/firewall-manager/backups" || path === "/api/modules/firewall-manager/activity") return respond(route, { items: [] });
+    if (path === "/api/modules/security-center/summary") return respond(route, { score: 92, findings: 1, last_scan: 1, severity: { critical: 0, high: 0, medium: 1, low: 0, info: 0, passed: 0 }, areas: { firewall: { score: 100, findings: 0, critical: 0, high: 0 } }, metrics: {} });
+    if (path === "/api/modules/security-center/findings") return respond(route, { items: [{ id: "finding-1", check_id: "network.public_unmatched", severity: "medium", title: "Public listening port", description: "Test finding", affected_resource: "tcp:8080", detection_source: "Networking", recommendation: "Review exposure", timestamp: 1, status: "open", category: "network" }], total: 1 });
+    if (path === "/api/modules/network-tools/ping") return respond(route, { kind: "ping", target: "example.com", success: true, duration_ms: 4, output: "3 packets transmitted, 3 received" });
 
     const module = { id: "samba", manifest: { id: "samba", name: "Samba", description: "File sharing", long_description: "Samba test package", category: "file_sharing", version: "1.0.0", maintainer: "WebNAS", homepage: null, icon: "share-2", screenshots: [], license: "GPL", supported_distributions: ["debian"], supported_architectures: ["x86_64"], apt_packages: ["samba"], dnf_packages: [], systemd_services: ["smbd"], ports: ["445/tcp"], dependencies: [], conflicts: [], permissions: [], config_paths: [], data_paths: [], backup_paths: [], changelog: [], removable: true, configurable: true }, state: { installed: state.packageInstalled, installed_version: state.packageInstalled ? "1.0.0" : null, available_version: "1.0.0", update_available: false, requires_reboot: false, needs_configuration: false }, services: { smbd: state.packageInstalled ? "active" : "inactive" }, status: state.packageInstalled ? "running" : "available", compatible: true, blocked_by_proxmox: false, distribution: { id: "debian", name: "Debian", architecture: "x86_64", package_manager: "apt-get" }, jobs: [], module_status: { installed: state.packageInstalled, package_version: state.packageInstalled ? "1.0.0" : null, available_version: "1.0.0", update_available: false, service_state: state.packageInstalled ? "active" : "inactive", service_enabled: state.packageInstalled, services: {}, health: state.packageInstalled ? "healthy" : "not_installed", health_message: "", last_action: "", last_action_status: "", last_error: "", metrics: {} }, capabilities: { install: true, update: true, uninstall: true, configure: true, service_control: true, reload: true, logs: true, diagnostics: true, backups: true, import_export: true, healthcheck: true, resources: [], actions: [] }, active_job: null };
     if (path === "/api/apps" || path === "/api/modules") return respond(route, [module]);

@@ -1,0 +1,45 @@
+id: security-center
+name: Security Center
+description: Aggregate WebNAS and host security posture into actionable findings and a 0-100 score.
+long_description: Security Center reuses Firewall Manager, Linux Updates, HTTPS settings and host security signals, runs scans as WebNAS jobs and never applies remediation without an explicit administrator action.
+category: security
+version: "1.0.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: shield-check
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages: {apt: [], dnf: [], yum: []}
+installations: {}
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: false
+  reload: false
+  logs: false
+  diagnostics: true
+  backups: false
+  import_export: false
+  healthcheck: false
+  resources: [findings, checks]
+  actions: [scan, finding_acknowledge, finding_resolve]
+ports: []
+dependencies: [firewall-manager, linux-updates]
+conflicts: []
+permissions: [security.view, security.scan, security.findings.manage]
+config_paths: [/etc/ssh/sshd_config]
+data_paths: [/var/lib/webnas/security-center.sqlite3]
+backup_paths: []
+proxmox_safe: true
+requires_reboot: false
+requires_root: false
+configurable: false
+removable: true
+package_less: true
+ui: {hidden: false}
+changelog:
+  - Initial security posture aggregation with Security Score, findings workflow and job-based scans.

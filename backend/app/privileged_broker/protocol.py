@@ -27,6 +27,7 @@ class Operation(StrEnum):
     MOUNT_UNIT = "mount_unit"
     QUOTA = "quota"
     STORAGE_PROBE = "storage_probe"
+    FIREWALL = "firewall"
     NTP = "ntp"
     ROUTING = "routing"
     SESSION = "session"

@@ -43,6 +43,7 @@ PROTECTED_UNITS = {
 FIXED_SYSTEM_UNITS = {
     "nginx.service", "smbd.service", "nmbd.service", "samba.service", "winbind.service",
     "kea-dhcp4-server.service", "kea-dhcp4.service", "isc-dhcp-server.service", "dhcpd.service",
+    "firewalld.service", "nftables.service",
 }
 SYSTEMD_ACTIONS = {
     "start", "stop", "restart", "reload", "enable", "disable", "is-active", "is-enabled", "show",

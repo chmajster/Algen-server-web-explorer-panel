@@ -64,6 +64,9 @@ Main project goals:
 | **Webhook Manager** | Event subscriptions, delivery history, retry/backoff, HMAC signing and Secrets Manager-backed authentication with SSRF protection |
 | **Automation** | Ansible Automation Controller, schedules and Cron Manager |
 | **DHCP** | Kea DHCPv4 / ISC DHCP subnets, pools, reservations, leases, diagnostics and transactional configuration |
+| **Firewall Manager** | Local UFW/firewalld/nftables status, rules, open ports, safe changes, backups and rollback |
+| **Security Center** | Security Score, findings, SSH/authentication, updates, exposure, TLS, users and audit signals |
+| **Network Tools** | Safe ping, traceroute, DNS, TCP/HTTP tests, route lookup, neighbors, interfaces and connections |
 
 ## Modules
 
@@ -89,6 +92,9 @@ Available and supported modules include:
 - central APT/RPM repositories
 - Cron Manager
 - DHCP Manager (Kea DHCPv4 / ISC DHCP)
+- Firewall Manager
+- Security Center
+- Network Tools
 
 Containerized applications can also be deployed through **Containers Manager**, including:
 

@@ -731,6 +731,9 @@ def _update_service(payload: dict[str, Any], runner: base.Runner) -> base.Comman
 
 
 def dispatch(request: BrokerRequest, *, runner: base.Runner | None = None) -> BrokerResponse:
+    if request.operation == Operation.FIREWALL:
+        from .firewall_policy import dispatch as firewall_dispatch
+        return firewall_dispatch(request, runner=runner)
     selected_runner = runner or base._default_runner
     custom = {
         Operation.ACCOUNT,

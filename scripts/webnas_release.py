@@ -47,14 +47,16 @@ def ensure_candidate_runtime() -> None:
     candidate_python = candidate_python_from_argv(sys.argv[1:])
     if candidate_python is None:
         return
-    try:
-        current_python = Path(sys.executable).resolve()
-        expected_python = candidate_python.resolve()
-    except OSError:
-        current_python = Path(sys.executable)
-        expected_python = candidate_python
-    if current_python == expected_python:
+
+    # A venv's bin/python is normally a symlink to the host interpreter.  Do
+    # not compare resolved executable paths: /venv/bin/python and
+    # /usr/bin/python3.14 may resolve to the same inode while only the former
+    # activates the venv.  sys.prefix identifies the active environment.
+    candidate_prefix = candidate_python.parent.parent.absolute()
+    current_prefix = Path(sys.prefix).absolute()
+    if current_prefix == candidate_prefix:
         return
+
     os.execv(
         str(candidate_python),
         [str(candidate_python), str(Path(__file__).resolve()), *sys.argv[1:]],

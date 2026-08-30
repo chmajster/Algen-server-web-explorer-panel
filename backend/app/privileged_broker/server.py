@@ -100,11 +100,7 @@ def handle_connection(connection: socket.socket, *, expected_uid: int) -> None:
             pid,
             uid,
         )
-        response = (
-            dispatch_infrastructure(request)
-            if request.operation in _INFRASTRUCTURE_OPERATIONS
-            else standard_dispatch(request)
-        )
+        response = dispatch_infrastructure(request) if request.operation in _INFRASTRUCTURE_OPERATIONS else standard_dispatch(request)
         logger.info(
             "privileged_broker_result request_id=%s operation=%s ok=%s exit_code=%s error_code=%s",
             request.request_id,
