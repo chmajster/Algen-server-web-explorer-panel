@@ -1,6 +1,6 @@
 import { ArrowRight, LayoutGrid, LoaderCircle, LogOut, Monitor, PanelBottom, Pin, Power, RefreshCw, RotateCcw, Search, ShieldCheck, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, type SettingsMe } from "../api";
+import { api, ApiError, type SettingsMe } from "../api";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { powerClient } from "../modules/power/api/client";
 import type { AppDefinition, AppId, RecentApp, Translate } from "./types";
@@ -41,15 +41,20 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   const [powerMenuOpen, setPowerMenuOpen] = useState(false);
   const [powerBusy, setPowerBusy] = useState<"application" | null>(null);
   const [powerError, setPowerError] = useState("");
+  const [installedModules, setInstalledModules] = useState<Set<string> | null>(null);
   const [renderedAt] = useState(() => Date.now());
   const normalized = query.trim().toLocaleLowerCase(profile.language);
-  const filtered = useMemo(() => apps.filter((app) => t(app.labelKey).toLocaleLowerCase(profile.language).includes(normalized)), [apps, normalized, profile.language, t]);
+  const installedApps = useMemo(
+    () => apps.filter((app) => !app.moduleId || installedModules?.has(app.moduleId)),
+    [apps, installedModules],
+  );
+  const filtered = useMemo(() => installedApps.filter((app) => t(app.labelKey).toLocaleLowerCase(profile.language).includes(normalized)), [installedApps, normalized, profile.language, t]);
   const alphabeticalApps = useMemo(() => {
     const collator = new Intl.Collator(profile.language, { sensitivity: "base", numeric: true });
     return [...filtered].sort((first, second) => collator.compare(t(first.labelKey), t(second.labelKey)) || first.id.localeCompare(second.id));
   }, [filtered, profile.language, t]);
   const pinnedApps = filtered.filter((app) => startPinned.has(app.id));
-  const recent = recentApps.map((item) => ({ item, app: apps.find((app) => app.id === item.id) })).filter((value): value is { item: RecentApp; app: AppDefinition } => Boolean(value.app)).slice(0, 4);
+  const recent = recentApps.map((item) => ({ item, app: installedApps.find((app) => app.id === item.id) })).filter((value): value is { item: RecentApp; app: AppDefinition } => Boolean(value.app)).slice(0, 4);
   const allVisible = showAll || Boolean(normalized);
   const canRestartApplication = profile.permissions.includes("system.restart");
 
@@ -63,6 +68,26 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
 
   useEffect(() => {
     searchRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    let active = true;
+    let loading = false;
+    const refreshInstalledModules = async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        const modules = await api.modules();
+        if (active) setInstalledModules(new Set(modules.filter((item) => item.state.installed).map((item) => item.id)));
+      } catch {
+        // Fail closed: an unverified managed module must not be exposed in Start.
+      } finally {
+        loading = false;
+      }
+    };
+    const changed = () => { void refreshInstalledModules(); };
+    void refreshInstalledModules();
+    window.addEventListener("webnas:modules-changed", changed);
+    return () => { active = false; window.removeEventListener("webnas:modules-changed", changed); };
   }, []);
   useEffect(() => {
     function click(event: MouseEvent) {
