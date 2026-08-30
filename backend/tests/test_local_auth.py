@@ -65,9 +65,13 @@ def test_local_password_hash_uses_random_salt(monkeypatch, tmp_path):
     store = repo(monkeypatch, tmp_path)
     first = store.create_user("alice", "correct horse battery staple", role="user")
     assert first["username"] == "alice"
-    first_hash = str(store._private_user("alice")["password_hash"])
+    first_private = store._private_user("alice")
+    assert first_private is not None
+    first_hash = str(first_private["password_hash"])
     store.update_user("alice", password="correct horse battery staple")
-    second_hash = str(store._private_user("alice")["password_hash"])
+    second_private = store._private_user("alice")
+    assert second_private is not None
+    second_hash = str(second_private["password_hash"])
     assert first_hash != second_hash
     assert local_auth.verify_password("correct horse battery staple", second_hash)
 
@@ -88,11 +92,12 @@ def test_last_enabled_local_admin_cannot_be_removed_or_downgraded(monkeypatch, t
 
 def test_switch_to_local_requires_enabled_local_admin(monkeypatch, tmp_path):
     store = repo(monkeypatch, tmp_path)
-    store.create_user("second-admin", "another correct battery password", role="admin")
     store.set_auth_mode("system", "admin")
     assert store.auth_mode() == "system"
-    store.update_user("admin", enabled=False)
-    store.update_user("second-admin", enabled=False)
+    # Simulate a damaged/externally edited database to verify that the mode
+    # transition itself still refuses to lock the application into local mode.
+    with store.connect() as connection:
+        connection.execute("UPDATE local_users SET enabled=0 WHERE role='admin'")
     with pytest.raises(ValueError):
         store.set_auth_mode("local", "system-admin")
 
