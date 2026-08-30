@@ -34,7 +34,9 @@ jobs:
           cd frontend
           npm ci
       - name: Apply review fixes
-        run: python .github/scripts/address_pr121_review.py
+        run: |
+          python .github/scripts/address_pr121_review.py
+          python .github/scripts/fix_pr121_review_tests.py
       - name: Regenerate API contract
         working-directory: frontend
         run: npm run api:generate
@@ -52,7 +54,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -f .github/scripts/address_pr121_review.py .github/workflows/address-pr121-review.yml
+          rm -f .github/scripts/address_pr121_review.py .github/scripts/fix_pr121_review_tests.py .github/workflows/address-pr121-review.yml
           git add -A
           if git diff --cached --quiet; then
             exit 0
