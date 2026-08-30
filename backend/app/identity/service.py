@@ -15,13 +15,32 @@ from .permissions import ALL_PERMISSIONS, Permission, ROLE_PERMISSIONS
 from .repository import IdentityRepository, repository
 
 
+def _provider_safe_linux_admin(username: str) -> bool:
+    """Linux-admin elevation belongs only to the PAM/local identity namespace.
+
+    LDAP users may be exposed through NSS and may even be members of Unix
+    ``sudo``/``wheel`` groups. That must not implicitly make an LDAP-authenticated
+    identity a WebNAS administrator. A remembered LDAP identity stays in normal
+    WebNAS RBAC and can receive an explicit application role/policy instead.
+    """
+
+    try:
+        from ..ldap_auth import is_ldap_identity
+
+        if is_ldap_identity(username):
+            return False
+    except ImportError:
+        pass
+    return linux_accounts.is_linux_admin(username)
+
+
 class IdentityService:
     def __init__(self, policy_repository: IdentityRepository) -> None:
         self.repository = policy_repository
         self._lock = threading.RLock()
 
     def _profile(self, username: str, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None, groups_override: tuple[str, set[str]] | None = None) -> dict[str, Any]:
-        if linux_accounts.is_linux_admin(username):
+        if _provider_safe_linux_admin(username):
             return {
                 "username": username, "role": Role.admin.value, "role_source": "linux-admin", "linux_admin": True, "is_admin": True,
                 "permissions": sorted(ALL_PERMISSIONS), "effective_permissions": sorted(ALL_PERMISSIONS), "denied_permissions": [],
@@ -135,7 +154,7 @@ class IdentityService:
         with self._lock:
             linux_accounts.local_user(username)
             previous = self.repository.user_policy(username) or UserPolicy(username=username)
-            if linux_accounts.is_linux_admin(username):
+            if _provider_safe_linux_admin(username):
                 if payload.role != Role.admin or payload.deny:
                     identity_error(409, "LINUX_ADMIN_COMPATIBILITY", "A Linux administrator always retains full administrator access", field="role" if payload.role != Role.admin else "deny")
                 policy = UserPolicy(username=username, role=Role.admin, allow=payload.allow, deny=[])
@@ -260,7 +279,7 @@ class IdentityService:
                 logger.exception("identity_rename_group_compensation_failed old=%s new=%s", groupname, new_name)
             raise
         result = self.group(new_name)
-        self._audit(actor, "group_rename", new_name, previous=previous, current=result)
+        self._audit(actor, "group_rename" if new_name != groupname else "group_update", new_name, previous=previous, current=result)
         return result
 
     def delete_group(self, groupname: str, actor: str) -> None:
