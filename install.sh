@@ -360,5 +360,11 @@ else
   if standard_reinstall_happened "$reinstall_backups_before"; then
     finalize_standard_reinstall
   fi
+  # Updates run through the long-lived privileged broker. The release helper
+  # rewrites its unit to the newly activated release, so restart an active
+  # broker after a successful install/update before reporting completion.
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet webnas-privileged.service 2>/dev/null; then
+    systemctl restart webnas-privileged.service
+  fi
   print_standard_authentication_summary
 fi
