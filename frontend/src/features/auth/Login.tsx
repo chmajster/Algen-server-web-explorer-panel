@@ -41,10 +41,17 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
   const [loading, setLoading] = useState(false);
   const submitting = useRef(false);
   const t = (key: string) => translate(language, key);
-  const providerLabel = language === "pl-PL" ? "Źródło konta" : "Account source";
-  const usernameLabel = authConfig.mode === "system" && !authConfig.ldap_enabled
+  const providerLabel = language === "pl-PL" ? "Sposób logowania" : "Sign-in method";
+  const providerNames: Record<AuthProvider, string> = {
+    local: language === "pl-PL" ? "WebNAS (lokalne)" : "WebNAS (Local)",
+    pam: "Linux (PAM)",
+    ldap: "LDAP",
+  };
+  const usernameLabel = provider === "pam"
     ? t("auth.linuxUser")
-    : (language === "pl-PL" ? "Nazwa użytkownika" : "Username");
+    : provider === "ldap"
+      ? (language === "pl-PL" ? "Użytkownik LDAP" : "LDAP user")
+      : (language === "pl-PL" ? "Użytkownik WebNAS" : "WebNAS user");
 
   useEffect(() => {
     let live = true;
@@ -52,7 +59,11 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
       .then((value) => {
         if (!live) return;
         setAuthConfig(value);
-        setProvider(value.default_provider);
+        setProvider(
+          value.available_providers.includes(value.default_provider)
+            ? value.default_provider
+            : (value.available_providers[0] ?? "local"),
+        );
       })
       .catch(() => {
         if (!live) return;
@@ -94,16 +105,28 @@ export function Login({ language, onLogin }: { language: Language; onLogin: (use
     }
   }
 
-  const showSystemProviderSelector = authConfig.mode === "system"
-    && authConfig.ldap_enabled
-    && authConfig.available_providers.includes("ldap")
-    && authConfig.available_providers.includes("pam");
+  const showProviderSelector = authConfig.available_providers.length > 1;
 
   return <main className="login-screen">
     <form className="login-panel" onSubmit={submit} aria-busy={loading}>
       <header className="login-brand"><span className="login-brand-icon"><HardDrive aria-hidden="true" /></span><div><h1>WebNAS</h1><p>{t("auth.subtitle")}</p></div></header>
       <div className="login-fields">
-        {showSystemProviderSelector && <label className="login-field"><span>{providerLabel}</span><select aria-label={providerLabel} value={provider} onChange={(event) => setProvider(event.target.value as AuthProvider)}><option value="ldap">LDAP</option><option value="pam">localUser</option></select></label>}
+        {showProviderSelector && <fieldset className="login-provider-fieldset">
+          <legend>{providerLabel}</legend>
+          <div className="login-provider-options" role="radiogroup" aria-label={providerLabel}>
+            {authConfig.available_providers.map((method) => <label key={method} className={`login-provider-option${provider === method ? " active" : ""}`}>
+              <input
+                type="radio"
+                name="auth-provider"
+                value={method}
+                checked={provider === method}
+                disabled={loading}
+                onChange={() => { setProvider(method); setError(""); }}
+              />
+              <span>{providerNames[method]}</span>
+            </label>)}
+          </div>
+        </fieldset>}
         <label className="login-field"><span>{usernameLabel}</span><span className="login-input"><UserRound aria-hidden="true" /><input autoFocus required autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" value={username} aria-invalid={Boolean(error)} aria-describedby={error ? "login-error" : undefined} onChange={(event) => setUsername(event.target.value)} /></span></label>
         <label className="login-field"><span>{t("auth.password")}</span><span className="login-input"><LockKeyhole aria-hidden="true" /><input required type={passwordVisible ? "text" : "password"} autoComplete="current-password" value={password} aria-invalid={Boolean(error)} aria-describedby={error ? "login-error" : undefined} onChange={(event) => setPassword(event.target.value)} /><button type="button" className="login-password-toggle" aria-label={t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")} aria-pressed={passwordVisible} onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}</button></span></label>
       </div>

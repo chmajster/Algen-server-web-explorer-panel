@@ -340,11 +340,23 @@ PY
   fi
 }
 
+standard_installer_target() {
+  # A source checkout contains both files and uses the interactive menu wrapper.
+  # Small launcher harnesses and downstream packaging may intentionally provide
+  # only install-standard.sh; keep that local installer authoritative instead
+  # of downloading a mismatched menu wrapper from the main branch.
+  if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/install-standard.sh" && ! -f "${SCRIPT_DIR}/install-standard-menu.sh" ]]; then
+    printf '%s' "install-standard.sh"
+  else
+    printf '%s' "install-standard-menu.sh"
+  fi
+}
+
 if [[ "$MODE" == "portable" ]]; then
   run_target "install-portable.sh" "${FORWARD_ARGS[@]}"
 else
   reinstall_backups_before="$(standard_reinstall_backup_snapshot)"
-  run_target "install-standard-menu.sh" "${FORWARD_ARGS[@]}"
+  run_target "$(standard_installer_target)" "${FORWARD_ARGS[@]}"
   if standard_reinstall_happened "$reinstall_backups_before"; then
     finalize_standard_reinstall
   fi
