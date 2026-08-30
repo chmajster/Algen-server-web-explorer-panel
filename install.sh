@@ -61,6 +61,28 @@ if [[ "$MODE" == "standard" ]]; then
   done
 fi
 
+run_bash_target() {
+  local script="$1"
+  shift
+  local tty_fd=""
+  local exit_code=0
+
+  # `curl ... | sudo bash` gives the launcher a pipe on stdin. Pass the real
+  # controlling terminal to the downloaded installer when one is available,
+  # so interactive menus do not block while trying to recover /dev/tty later.
+  if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
+    if bash "$script" "$@" <&"$tty_fd"; then
+      exit_code=0
+    else
+      exit_code=$?
+    fi
+    exec {tty_fd}>&-
+    return "$exit_code"
+  fi
+
+  bash "$script" "$@"
+}
+
 run_target() {
   local target="$1"
   shift
@@ -69,7 +91,7 @@ run_target() {
   local exit_code=0
 
   if [[ -n "$SCRIPT_DIR" && -f "$local_target" ]]; then
-    if bash "$local_target" "$@"; then
+    if run_bash_target "$local_target" "$@"; then
       return 0
     else
       exit_code=$?
@@ -89,7 +111,7 @@ run_target() {
     return 1
   fi
 
-  if bash "$temp_script" "$@"; then
+  if run_bash_target "$temp_script" "$@"; then
     exit_code=0
   else
     exit_code=$?
