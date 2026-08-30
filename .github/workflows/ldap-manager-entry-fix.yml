@@ -1,0 +1,49 @@
+name: LDAP Manager entry normalizer fixer
+
+on:
+  push:
+    branches: [feat/ldap-auth-manager-separation]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ldap-auth-manager-separation
+      - name: Normalize mapping-backed LDAP Manager entries
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('backend/app/modules/ldap_manager/providers/base.py')
+          text = p.read_text(encoding='utf-8')
+          if 'from collections.abc import Mapping\n' not in text:
+              marker = 'import base64\n'
+              if marker not in text:
+                  raise SystemExit('base64 import marker not found')
+              text = text.replace(marker, marker + 'from collections.abc import Mapping\n', 1)
+          old = '    attributes: dict[str, Any] = raw_attributes if isinstance(raw_attributes, dict) else {}\n'
+          new = '    attributes: Mapping[str, Any] = raw_attributes if isinstance(raw_attributes, Mapping) else {}\n'
+          if old not in text:
+              raise SystemExit('LDAP Manager entry normalization block not found')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          p = Path('backend/tests/test_ldap_manager.py')
+          text = p.read_text(encoding='utf-8')
+          if 'from collections import UserDict\n' not in text:
+              text = text.replace('from pathlib import Path\n', 'from collections import UserDict\nfrom pathlib import Path\n', 1)
+          test = '''\n\ndef test_provider_entry_accepts_mapping_backed_attributes():\n    from app.modules.ldap_manager.providers import base as provider_base\n\n    member_dn = "uid=bob,ou=People,dc=example,dc=test"\n    normalized = provider_base._entry(\n        {\n            "dn": "cn=Integration-Team,ou=Groups,dc=example,dc=test",\n            "attributes": UserDict({"member": [member_dn], "cn": ["Integration-Team"]}),\n        }\n    )\n    assert normalized["attributes"]["member"] == [member_dn]\n'''
+          if 'def test_provider_entry_accepts_mapping_backed_attributes()' not in text:
+              text = text.rstrip() + test + '\n'
+          p.write_text(text, encoding='utf-8')
+          PY
+          git rm .github/workflows/ldap-manager-entry-fix.yml
+          git add backend/app/modules/ldap_manager/providers/base.py backend/tests/test_ldap_manager.py
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: normalize LDAP Manager mapping attributes'
+          git push origin HEAD:feat/ldap-auth-manager-separation
