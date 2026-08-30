@@ -1,0 +1,10 @@
+id: policy-as-code
+name: Policy-as-Code Engine
+version: 1.0.0
+category: security
+icon: file-code-2
+permissions: [policy.view, policy.evaluate, policy.manage]
+routers: [app.modules.policy_as_code.router:router]
+dependencies: []
+capabilities: [yaml-policies, json-policies, policy-validation, policy-evaluation, policy-crud]
+menu: [{id: policy-as-code, label: Policy-as-Code Engine, icon: file-code-2, permission: policy.view}]
