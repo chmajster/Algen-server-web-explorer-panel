@@ -1,8 +1,11 @@
 from app.modules.proxmox_manager.advanced import (
     _capacity_count,
     _config_summary,
+    _eligible_vm_storage,
     _policy_violations,
+    _raw_resources,
     _score_node,
+    _unique_storage_slots,
 )
 
 
@@ -26,6 +29,41 @@ def test_capacity_count_uses_tightest_resource():
     )
 
     assert capacity == 5
+
+
+def test_vm_storage_filter_rejects_backup_only_datastores():
+    assert _eligible_vm_storage({"content": "images,iso", "enabled": True, "status": "available"})
+    assert _eligible_vm_storage({"content": "rootdir", "enabled": True, "status": "available"})
+    assert not _eligible_vm_storage({"content": "backup,iso", "enabled": True, "status": "available"})
+    assert not _eligible_vm_storage({"content": "images", "enabled": True, "status": "unavailable"})
+
+
+def test_unique_storage_slots_deduplicate_shared_pool():
+    gib = 1024 * 1024 * 1024
+    rows = [
+        {"node": "pve1", "storage": "shared", "content": "images", "shared": True, "enabled": True, "status": "available", "used": 40 * gib, "total": 100 * gib},
+        {"node": "pve2", "storage": "shared", "content": "images", "shared": True, "enabled": True, "status": "available", "used": 40 * gib, "total": 100 * gib},
+        {"node": "pve1", "storage": "local-lvm", "content": "images", "shared": False, "enabled": True, "status": "available", "used": 80 * gib, "total": 100 * gib},
+        {"node": "pve1", "storage": "backup", "content": "backup", "shared": True, "enabled": True, "status": "available", "used": 0, "total": 500 * gib},
+    ]
+
+    assert _unique_storage_slots(rows, 10) == 8
+
+
+def test_raw_resources_do_not_apply_registry_sync_filters():
+    class Client:
+        def get(self, path):
+            assert path == "cluster/resources?type=vm"
+            return [
+                {"vmid": 100, "name": "template", "node": "pve1", "type": "qemu", "template": 1, "status": "stopped"},
+                {"vmid": 101, "name": "ct", "node": "pve1", "type": "lxc", "template": 0, "status": "running"},
+            ]
+
+    resources = _raw_resources(Client())
+
+    assert [item["vmid"] for item in resources] == [100, 101]
+    assert resources[0]["template"] is True
+    assert resources[1]["type"] == "lxc"
 
 
 def test_vm_policy_reports_name_tags_limits_and_backup():
