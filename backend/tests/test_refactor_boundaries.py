@@ -41,6 +41,8 @@ def test_jobs_own_persistence_and_controlled_runner():
     assert "threading.Thread" in runner
     assert "daemon=True" in runner
     assert "min(max(configured, 1), 16)" in runner
+    assert 'RuntimeError("Job runner is shut down")' in runner
+    assert "worker.join()" in runner
     assert "ThreadPoolExecutor" not in runner
 
 
