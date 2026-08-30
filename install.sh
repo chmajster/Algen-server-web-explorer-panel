@@ -69,8 +69,10 @@ run_target() {
   if [[ -n "$SCRIPT_DIR" && -f "$local_target" ]]; then
     if bash "$local_target" "$@"; then
       return 0
+    else
+      exit_code=$?
     fi
-    return $?
+    return "$exit_code"
   fi
 
   temp_script="$(mktemp -t webnas-launcher.XXXXXX.sh)"
@@ -177,8 +179,8 @@ print_standard_authentication_summary() {
     return 0
   fi
 
-  if command -v python3 >/dev/null 2>&1; then
-    mode="$(python3 - "$response_file" <<'PY' 2>/dev/null || true
+  if command -v python3.14 >/dev/null 2>&1; then
+    mode="$(python3.14 - "$response_file" <<'PY' 2>/dev/null || true
 import json
 import sys
 
