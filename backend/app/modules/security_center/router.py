@@ -39,7 +39,8 @@ def findings(user: SessionUser = Depends(current_user)):
 def scan(user: SessionUser = Depends(mutating_user)):
     _allow(user, SECURITY_SCAN)
 
-    def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any] | None:
+    def execute(context: JobContext, metadata: dict[str, Any]) -> dict[str, Any] | None:
+        _ = metadata
         record_activity(ActivityCategory.module, "security.scan.started", user.username, target="security-center", status=ActivityStatus.queued, source="security-center")
         context.update_progress(10, "Collecting security signals")
         result = service().scan()
