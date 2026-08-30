@@ -54,6 +54,8 @@ jobs:
               raise SystemExit('Expected routing reconcile exception block not found')
           routing.write_text(text.replace(old_reconcile, new_reconcile, 1))
           PY
+      - name: Format targeted files
+        run: python -m ruff format backend/app/modules/login_history/service.py backend/app/modules/routing_manager/service.py
       - name: Validate backend quality gates
         run: |
           python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py
