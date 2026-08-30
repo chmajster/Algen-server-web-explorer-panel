@@ -611,8 +611,8 @@ def authenticate_ldap(username: str, password: str) -> AuthenticatedIdentity:
             if connection is not None:
                 try:
                     connection.unbind()
-                except Exception:
-                    pass
+                except Exception as error:
+                    logger.debug("ldap_unbind_failed error=%s", type(error).__name__)
 
 
 def test_ldap_connection() -> dict[str, Any]:
@@ -665,5 +665,5 @@ def test_ldap_connection() -> dict[str, Any]:
         if connection is not None:
             try:
                 connection.unbind()
-            except Exception:
-                pass
+            except Exception as error:
+                logger.debug("ldap_unbind_failed error=%s", type(error).__name__)
