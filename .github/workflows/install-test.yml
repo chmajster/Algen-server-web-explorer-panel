@@ -58,7 +58,11 @@ jobs:
           test -f /var/lib/webnas/settings/deployment.json
           test -f /opt/webnas/current/.webnas-revision
           installed_sha="$(sudo cat /opt/webnas/current/.webnas-revision)"
-          test "${installed_sha}" = "${GITHUB_SHA}"
+          expected_sha="$(git rev-parse HEAD)"
+          if [[ "${installed_sha}" != "${expected_sha}" ]]; then
+            echo "Installed source revision ${installed_sha} does not match checked-out revision ${expected_sha}" >&2
+            exit 1
+          fi
 
       - name: Verify services and HTTP health
         shell: bash
