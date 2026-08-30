@@ -28,6 +28,8 @@ def _controlled(operation):
         api_error(503, "ROUTING_PERMISSION_DENIED", "Routing operation is not permitted")
     except RuntimeError:
         api_error(502, "ROUTING_OPERATION_FAILED", "Routing operation failed")
+    except Exception:  # fail closed at the HTTP boundary; never expose exception details
+        api_error(500, "ROUTING_INTERNAL_ERROR", "Routing operation failed")
 
 
 def _audit(actor: str, action: str, target: str = "") -> None:
