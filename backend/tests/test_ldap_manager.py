@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.modules.ldap_manager.models import ConnectionInput
+from app.modules.ldap_manager.providers.base import LdapDirectoryProvider, ProviderOperationError
 from app.modules.ldap_manager.repository import LdapManagerRepository
 from app.modules.ldap_manager.security import (
     escaped_filter_value,
@@ -96,3 +97,22 @@ def test_generic_attribute_update_blocks_sensitive_fields():
     with pytest.raises(ValueError):
         sanitize_attributes({"userAccountControl": 512})
     assert sanitize_attributes({"displayName": "Alice"}) == {"displayName": "Alice"}
+
+
+def test_posix_group_memberuid_uses_username_instead_of_dn(monkeypatch):
+    provider = LdapDirectoryProvider({})
+    monkeypatch.setattr(
+        provider,
+        "entry",
+        lambda dn: {"dn": dn, "attributes": {"uid": ["alice"]}},
+    )
+    member_dn = "uid=alice,ou=People,dc=example,dc=test"
+    assert provider._membership_value("memberUid", member_dn) == "alice"
+    assert provider._membership_value("member", member_dn) == member_dn
+
+
+def test_posix_group_memberuid_rejects_entry_without_uid(monkeypatch):
+    provider = LdapDirectoryProvider({})
+    monkeypatch.setattr(provider, "entry", lambda dn: {"dn": dn, "attributes": {}})
+    with pytest.raises(ProviderOperationError, match="requires the member uid"):
+        provider._membership_value("memberUid", "cn=NoUid,ou=People,dc=example,dc=test")
