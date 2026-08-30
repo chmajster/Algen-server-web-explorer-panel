@@ -1,0 +1,87 @@
+name: Offline Repository Manager finalize
+
+on:
+  push:
+    branches:
+      - feature/offline-repository-manager
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Finalize zstd bundle format
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          service = Path("backend/app/modules/os_repositories/offline_service.py")
+          text = service.read_text(encoding="utf-8")
+          text = text.replace("import gzip\n", "")
+          text = text.replace(
+              'ALLOWED_ARCHIVE_SUFFIXES = (".tar.gz", ".tgz")',
+              'ALLOWED_ARCHIVE_SUFFIXES = (".tar.zst", ".tzst", ".tar.gz", ".tgz")',
+          )
+          old_archive = '''    def _create_archive(self, root: Path, destination: Path) -> None:\n        temporary = destination.with_name(f".{destination.name}-{object_id()}.tmp")\n        try:\n            with temporary.open("wb") as raw:\n                with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:\n                    with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:\n                        directories = sorted((path for path in root.rglob("*") if path.is_dir()), key=lambda p: p.relative_to(root).as_posix())\n                        files = sorted((path for path in root.rglob("*") if path.is_file()), key=lambda p: p.relative_to(root).as_posix())\n                        for path in [*directories, *files]:\n                            self._tar_add(archive, root, path)\n                raw.flush()\n                os.fsync(raw.fileno())\n            os.replace(temporary, destination)\n            os.chmod(destination, 0o600)\n        finally:\n            temporary.unlink(missing_ok=True)\n'''
+          new_archive = '''    def _create_archive(self, root: Path, destination: Path) -> None:\n        temporary = destination.with_name(f".{destination.name}-{object_id()}.tmp")\n        try:\n            with tarfile.open(temporary, mode="w:zst", format=tarfile.PAX_FORMAT) as archive:\n                directories = sorted((path for path in root.rglob("*") if path.is_dir()), key=lambda p: p.relative_to(root).as_posix())\n                files = sorted((path for path in root.rglob("*") if path.is_file()), key=lambda p: p.relative_to(root).as_posix())\n                for path in [*directories, *files]:\n                    self._tar_add(archive, root, path)\n            os.replace(temporary, destination)\n            os.chmod(destination, 0o600)\n        finally:\n            temporary.unlink(missing_ok=True)\n'''
+          if old_archive in text:
+              text = text.replace(old_archive, new_archive)
+          text = text.replace('.tar.gz"\n        destination', '.tar.zst"\n        destination')
+          text = text.replace('"compression": "gzip"', '"compression": "zstd"')
+          text = text.replace('offline bundle must be a .tar.gz or .tgz archive', 'offline bundle must be a .tar.zst, .tzst, .tar.gz or .tgz archive')
+          service.write_text(text, encoding="utf-8")
+
+          router = Path("backend/app/modules/os_repositories/offline_router.py")
+          text = router.read_text(encoding="utf-8")
+          text = text.replace('Path(file.filename or "bundle.tar.gz").name', 'Path(file.filename or "bundle.tar.zst").name')
+          text = text.replace('return FileResponse(path, filename=path.name, media_type="application/gzip")', 'return FileResponse(path, filename=path.name, media_type="application/zstd" if path.name.endswith((".zst", ".tzst")) else "application/gzip")')
+          router.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Bump patch version once
+        run: |
+          if [ "$(cat VERSION)" = "0.1.28" ]; then
+            python scripts/sync-version.py --bump patch
+          else
+            python scripts/sync-version.py --check
+          fi
+
+      - name: Install backend runtime
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Regenerate OpenAPI TypeScript contract
+        working-directory: frontend
+        run: npm run api:generate
+
+      - name: Commit finalized artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION pyproject.toml backend/app/__init__.py frontend/package.json frontend/package-lock.json frontend/src/generated/api-types.ts backend/app/modules/os_repositories/offline_service.py backend/app/modules/os_repositories/offline_router.py
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git commit -m "chore: finalize Offline Repository Manager artifacts"
+          git push origin HEAD:feature/offline-repository-manager
