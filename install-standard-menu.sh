@@ -83,14 +83,59 @@ read_menu_choice() {
   printf '  5) Remove application and all files\n' >&2
   printf '  6) Abort\n' >&2
   printf '  7) Full Reinstall application (remove all data)\n' >&2
+  printf '  8) Restart application\n' >&2
 
-  if IFS= read -r -t "$timeout" -p 'Select [1-7]: ' answer; then
+  if IFS= read -r -t "$timeout" -p 'Select [1-8]: ' answer; then
     printf '%s' "${answer:-1}"
     return 0
   fi
 
   printf '\n[INFO] No action selected within 5 seconds; starting update with configuration backup\n' >&2
   printf '1'
+}
+
+restart_application() {
+  local unit=""
+  local -a active_units=()
+
+  command -v systemctl >/dev/null 2>&1 || {
+    printf '[ERROR] Cannot restart WebNAS: systemctl is unavailable.\n' >&2
+    return 1
+  }
+
+  # Standard releases use one active blue/green backend. Keep the legacy unit
+  # as a fallback for installations created before blue/green deployment.
+  for unit in webnas-backend-blue.service webnas-backend-green.service webnas.service; do
+    if systemctl is-active --quiet "$unit" 2>/dev/null; then
+      active_units+=("$unit")
+    fi
+  done
+
+  if (( ${#active_units[@]} == 0 )); then
+    printf '[ERROR] Cannot restart WebNAS: no active application service was found.\n' >&2
+    return 1
+  fi
+
+  printf '\n==> Restarting WebNAS application\n'
+
+  # The privileged broker is part of the application runtime. Restart it when
+  # already active; socket activation will start it later when currently idle.
+  if systemctl is-active --quiet webnas-privileged.service 2>/dev/null; then
+    systemctl restart webnas-privileged.service
+  fi
+
+  for unit in "${active_units[@]}"; do
+    systemctl restart "$unit"
+  done
+
+  for unit in "${active_units[@]}"; do
+    if ! systemctl is-active --quiet "$unit"; then
+      printf '[ERROR] WebNAS service did not become active after restart: %s\n' "$unit" >&2
+      return 1
+    fi
+  done
+
+  printf '[OK] WebNAS application restarted: %s\n' "${active_units[*]}"
 }
 
 full_reinstall_countdown() {
@@ -183,6 +228,9 @@ case "$choice" in
     ;;
   7)
     full_reinstall "$standard_script"
+    ;;
+  8)
+    restart_application
     ;;
   *)
     printf '[ERROR] Invalid choice: %s\n' "$choice" >&2
