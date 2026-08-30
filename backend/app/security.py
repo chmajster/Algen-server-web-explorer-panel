@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from http import HTTPStatus
 from pathlib import Path
+from typing import Literal
 
 from fastapi import HTTPException, Request, Response
 
@@ -22,12 +23,14 @@ from .transport import cookie_secure as transport_cookie_secure
 
 SESSION_CACHE_TTL_SECONDS = 2.0
 SESSION_CACHE_MAX_ENTRIES = 512
+AuthProvider = Literal["local", "pam", "ldap"]
 
 
 @dataclass(frozen=True)
 class SessionUser:
     username: str
     csrf_token: str
+    auth_provider: AuthProvider = "pam"
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,7 @@ class StoredSession:
     csrf_token: str
     persistent: bool
     expires_at: float
+    auth_provider: AuthProvider = "pam"
 
 
 class SessionStore:
@@ -75,12 +79,21 @@ class SessionStore:
                     csrf_token TEXT NOT NULL,
                     persistent INTEGER NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL,
-                    expires_at REAL NOT NULL
+                    expires_at REAL NOT NULL,
+                    auth_provider TEXT NOT NULL DEFAULT 'pam'
                 );
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(username);
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(auth_sessions)").fetchall()
+            }
+            if "auth_provider" not in columns:
+                connection.execute(
+                    "ALTER TABLE auth_sessions ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'pam'"
+                )
         try:
             os.chmod(self.path, 0o600)
         except OSError:
@@ -98,20 +111,46 @@ class SessionStore:
             self._cache.popitem(last=False)
 
     def invalidate(self, token: str) -> None:
-        """Drop one cached token after an out-of-band change to its persisted session."""
         token_hash = self._hash(token)
         with self._lock:
             self._cache.pop(token_hash, None)
 
-    def create(self, token: str, username: str, csrf_token: str, *, persistent: bool, expires_at: float) -> None:
+    def create(
+        self,
+        token: str,
+        username: str,
+        csrf_token: str,
+        *,
+        persistent: bool,
+        expires_at: float,
+        auth_provider: AuthProvider = "pam",
+    ) -> None:
         now = time.time()
         token_hash = self._hash(token)
-        session = StoredSession(username=username, csrf_token=csrf_token, persistent=persistent, expires_at=expires_at)
+        session = StoredSession(
+            username=username,
+            csrf_token=csrf_token,
+            persistent=persistent,
+            expires_at=expires_at,
+            auth_provider=auth_provider,
+        )
         with self._lock, self._connect() as connection:
             connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (now,))
             connection.execute(
-                "INSERT INTO auth_sessions(token_hash,username,csrf_token,persistent,created_at,expires_at) VALUES (?,?,?,?,?,?)",
-                (token_hash, username, csrf_token, int(persistent), now, expires_at),
+                """
+                INSERT INTO auth_sessions(
+                    token_hash,username,csrf_token,persistent,created_at,expires_at,auth_provider
+                ) VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    token_hash,
+                    username,
+                    csrf_token,
+                    int(persistent),
+                    now,
+                    expires_at,
+                    auth_provider,
+                ),
             )
             self._cache_session(token_hash, session)
 
@@ -134,7 +173,10 @@ class SessionStore:
 
             with self._connect() as connection:
                 row = connection.execute(
-                    "SELECT username,csrf_token,persistent,expires_at FROM auth_sessions WHERE token_hash=?",
+                    """
+                    SELECT username,csrf_token,persistent,expires_at,auth_provider
+                    FROM auth_sessions WHERE token_hash=?
+                    """,
                     (token_hash,),
                 ).fetchone()
                 if row and float(row["expires_at"]) <= now:
@@ -142,11 +184,16 @@ class SessionStore:
                     return None
             if not row:
                 return None
+            provider = str(row["auth_provider"] or "pam")
+            normalized_provider: AuthProvider = (
+                "local" if provider == "local" else "ldap" if provider == "ldap" else "pam"
+            )
             session = StoredSession(
                 username=str(row["username"]),
                 csrf_token=str(row["csrf_token"]),
                 persistent=bool(row["persistent"]),
                 expires_at=float(row["expires_at"]),
+                auth_provider=normalized_provider,
             )
             self._cache_session(token_hash, session)
             return session
@@ -157,12 +204,32 @@ class SessionStore:
             self._cache.pop(token_hash, None)
             connection.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
 
-    def revoke_user(self, username: str) -> int:
+    def revoke_user(self, username: str, auth_provider: AuthProvider | None = None) -> int:
         with self._lock, self._connect() as connection:
-            cursor = connection.execute("DELETE FROM auth_sessions WHERE username=?", (username,))
-            stale = [token_hash for token_hash, (session, _) in self._cache.items() if session.username == username]
+            if auth_provider is None:
+                cursor = connection.execute(
+                    "DELETE FROM auth_sessions WHERE username=?",
+                    (username,),
+                )
+            else:
+                cursor = connection.execute(
+                    "DELETE FROM auth_sessions WHERE username=? AND auth_provider=?",
+                    (username, auth_provider),
+                )
+            stale = [
+                token_hash
+                for token_hash, (session, _) in self._cache.items()
+                if session.username == username
+                and (auth_provider is None or session.auth_provider == auth_provider)
+            ]
             for token_hash in stale:
                 self._cache.pop(token_hash, None)
+            return max(0, int(cursor.rowcount))
+
+    def revoke_all(self) -> int:
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute("DELETE FROM auth_sessions")
+            self._cache.clear()
             return max(0, int(cursor.rowcount))
 
 
@@ -211,22 +278,44 @@ def _session_store() -> SessionStore:
 
 
 def invalidate_user_sessions(username: str) -> int:
-    return _session_store().revoke_user(username)
+    return _session_store().revoke_user(username, "pam")
 
 
-def create_session(response: Response, username: str, *, remember_me: bool = False) -> str:
+def invalidate_provider_user_sessions(username: str, auth_provider: AuthProvider) -> int:
+    return _session_store().revoke_user(username, auth_provider)
+
+
+def invalidate_all_sessions() -> int:
+    return _session_store().revoke_all()
+
+
+def create_session(
+    response: Response,
+    username: str,
+    *,
+    auth_provider: AuthProvider = "pam",
+    remember_me: bool = False,
+) -> str:
     cfg = get_config()
     csrf_token = secrets.token_urlsafe(32)
     token = secrets.token_urlsafe(48)
-    lifetime = (cfg.auth.remember_me_lifetime_days * 24 * 60 * 60) if remember_me else (cfg.auth.session_lifetime_hours * 60 * 60)
-    _session_store().create(token, username, csrf_token, persistent=remember_me, expires_at=time.time() + lifetime)
+    lifetime = (
+        cfg.auth.remember_me_lifetime_days * 24 * 60 * 60
+        if remember_me
+        else cfg.auth.session_lifetime_hours * 60 * 60
+    )
+    _session_store().create(
+        token,
+        username,
+        csrf_token,
+        persistent=remember_me,
+        expires_at=time.time() + lifetime,
+        auth_provider=auth_provider,
+    )
     response.set_cookie(
         cfg.auth.session_cookie_name,
         token,
         httponly=True,
-        # Use the configured transport policy for both browser-session and
-        # persistent cookies. Forcing Secure only for remembered sessions
-        # makes them unusable on the default HTTP installation.
         secure=transport_cookie_secure(cfg),
         samesite="strict",
         max_age=lifetime if remember_me else None,
@@ -258,7 +347,11 @@ def get_session_user(request: Request) -> SessionUser:
     session = _session_store().resolve(raw)
     if session is None:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, "Invalid or expired session")
-    return SessionUser(username=session.username, csrf_token=session.csrf_token)
+    return SessionUser(
+        username=session.username,
+        csrf_token=session.csrf_token,
+        auth_provider=session.auth_provider,
+    )
 
 
 def require_csrf(request: Request, user: SessionUser) -> None:

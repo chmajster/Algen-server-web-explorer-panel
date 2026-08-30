@@ -1483,6 +1483,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Authentication Config */
+        get: operations["authentication_config_api_auth_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -5937,15 +5954,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/modules/firewall-manager/activity": {
+    "/api/modules/fail2ban-manager/dashboard": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Activity */
-        get: operations["activity_api_modules_firewall_manager_activity_get"];
+        /** Dashboard */
+        get: operations["dashboard_api_modules_fail2ban_manager_dashboard_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5954,84 +5971,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/modules/firewall-manager/backups": {
+    "/api/modules/fail2ban-manager/jails": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Backups */
-        get: operations["backups_api_modules_firewall_manager_backups_get"];
-        put?: never;
-        /** Backup */
-        post: operations["backup_api_modules_firewall_manager_backups_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/firewall-manager/backups/{backup_id}/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Restore */
-        post: operations["restore_api_modules_firewall_manager_backups__backup_id__restore_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/firewall-manager/disable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Disable */
-        post: operations["disable_api_modules_firewall_manager_disable_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/firewall-manager/enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Enable */
-        post: operations["enable_api_modules_firewall_manager_enable_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/firewall-manager/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Export Config */
-        get: operations["export_config_api_modules_firewall_manager_export_get"];
+        /** Jails */
+        get: operations["jails_api_modules_fail2ban_manager_jails_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6040,15 +5988,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/modules/firewall-manager/listening-ports": {
+    "/api/modules/fail2ban-manager/jails/{jail}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Listening Ports */
-        get: operations["listening_ports_api_modules_firewall_manager_listening_ports_get"];
+        /** Jail */
+        get: operations["jail_api_modules_fail2ban_manager_jails__jail__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6057,87 +6005,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/modules/firewall-manager/reload": {
+    "/api/modules/fail2ban-manager/jails/{jail}/actions/plan": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        /** Reload Firewall */
-        post: operations["reload_firewall_api_modules_firewall_manager_reload_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/firewall-manager/rules": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Rules */
-        get: operations["rules_api_modules_firewall_manager_rules_get"];
-        put?: never;
-        /** Create Rule */
-        post: operations["create_rule_api_modules_firewall_manager_rules_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/firewall-manager/rules/plan": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Plan Rule */
-        post: operations["plan_rule_api_modules_firewall_manager_rules_plan_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/firewall-manager/rules/{rule_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Edit Rule */
-        put: operations["edit_rule_api_modules_firewall_manager_rules__rule_id__put"];
-        post?: never;
-        /** Delete Rule */
-        delete: operations["delete_rule_api_modules_firewall_manager_rules__rule_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/firewall-manager/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Status */
-        get: operations["status_api_modules_firewall_manager_status_get"];
+        /** Action Plan */
+        get: operations["action_plan_api_modules_fail2ban_manager_jails__jail__actions_plan_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/ban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ban */
+        post: operations["ban_api_modules_fail2ban_manager_jails__jail__ban_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jail Config */
+        get: operations["jail_config_api_modules_fail2ban_manager_jails__jail__config_get"];
+        /** Save Jail Config */
+        put: operations["save_jail_config_api_modules_fail2ban_manager_jails__jail__config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Jail Enabled */
+        put: operations["set_jail_enabled_api_modules_fail2ban_manager_jails__jail__enabled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/jails/{jail}/unban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unban */
+        post: operations["unban_api_modules_fail2ban_manager_jails__jail__unban_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Logs */
+        get: operations["logs_api_modules_fail2ban_manager_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reload Fail2Ban */
+        post: operations["reload_fail2ban_api_modules_fail2ban_manager_reload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/fail2ban-manager/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restart Fail2Ban */
+        post: operations["restart_fail2ban_api_modules_fail2ban_manager_restart_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7887,6 +7885,453 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/os-repositories/offline/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bundles */
+        get: operations["bundles_api_modules_os_repositories_offline_bundles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/bundles/{bundle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bundle */
+        get: operations["bundle_api_modules_os_repositories_offline_bundles__bundle_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Bundle */
+        delete: operations["delete_bundle_api_modules_os_repositories_offline_bundles__bundle_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/bundles/{bundle_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Bundle */
+        get: operations["download_bundle_api_modules_os_repositories_offline_bundles__bundle_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/bundles/{bundle_id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pin Bundle */
+        put: operations["pin_bundle_api_modules_os_repositories_offline_bundles__bundle_id__pin_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard */
+        get: operations["dashboard_api_modules_os_repositories_offline_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/delta/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Delta Plan */
+        get: operations["delta_plan_api_modules_os_repositories_offline_delta_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Diagnostics */
+        get: operations["diagnostics_api_modules_os_repositories_offline_diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Export */
+        post: operations["create_export_api_modules_os_repositories_offline_exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/exports/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Plan */
+        post: operations["export_plan_api_modules_os_repositories_offline_exports_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/hosts/groups/{group_id}/compatibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Host Group Compatibility */
+        get: operations["host_group_compatibility_api_modules_os_repositories_offline_hosts_groups__group_id__compatibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/imports/staged": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Staged Bundles */
+        get: operations["staged_bundles_api_modules_os_repositories_offline_imports_staged_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/imports/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Bundle */
+        post: operations["upload_bundle_api_modules_os_repositories_offline_imports_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/imports/{staged_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Bundle */
+        post: operations["import_bundle_api_modules_os_repositories_offline_imports__staged_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/imports/{staged_id}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect Bundle */
+        get: operations["inspect_bundle_api_modules_os_repositories_offline_imports__staged_id__inspect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/imports/{staged_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Bundle */
+        post: operations["verify_bundle_api_modules_os_repositories_offline_imports__staged_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Offline Jobs */
+        get: operations["offline_jobs_api_modules_os_repositories_offline_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Offline Job */
+        get: operations["offline_job_api_modules_os_repositories_offline_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Offline Job */
+        post: operations["cancel_offline_job_api_modules_os_repositories_offline_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/jobs/{job_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Offline Job Events */
+        get: operations["offline_job_events_api_modules_os_repositories_offline_jobs__job_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Offline Job */
+        post: operations["retry_offline_job_api_modules_os_repositories_offline_jobs__job_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Settings */
+        get: operations["settings_api_modules_os_repositories_offline_settings_get"];
+        /** Save Settings */
+        put: operations["save_settings_api_modules_os_repositories_offline_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/snapshots/{snapshot_id}/freeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Freeze Snapshot */
+        post: operations["freeze_snapshot_api_modules_os_repositories_offline_snapshots__snapshot_id__freeze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Storage */
+        get: operations["storage_api_modules_os_repositories_offline_storage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Targets */
+        get: operations["targets_api_modules_os_repositories_offline_targets_get"];
+        put?: never;
+        /** Create Target */
+        post: operations["create_target_api_modules_os_repositories_offline_targets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/targets/from-host-group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Targets From Host Group */
+        post: operations["create_targets_from_host_group_api_modules_os_repositories_offline_targets_from_host_group_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/os-repositories/offline/targets/{target_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Target */
+        get: operations["target_api_modules_os_repositories_offline_targets__target_id__get"];
+        /** Update Target */
+        put: operations["update_target_api_modules_os_repositories_offline_targets__target_id__put"];
+        post?: never;
+        /** Delete Target */
+        delete: operations["delete_target_api_modules_os_repositories_offline_targets__target_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/os-repositories/packages": {
         parameters: {
             query?: never;
@@ -8165,6 +8610,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/proxmox-manager/cluster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cluster */
+        get: operations["cluster_api_modules_proxmox_manager_cluster_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/proxmox-manager/connections": {
         parameters: {
             query?: never;
@@ -8235,6 +8697,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Create */
+        post: operations["vm_create_api_modules_proxmox_manager_connections__connection_id__vms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Virtual Machine Details */
+        get: operations["virtual_machine_details_api_modules_proxmox_manager_connections__connection_id__vms__vmid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vm Backups */
+        get: operations["vm_backups_api_modules_proxmox_manager_connections__connection_id__vms__vmid__backups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Clone */
+        post: operations["vm_clone_api_modules_proxmox_manager_connections__connection_id__vms__vmid__clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/disks/resize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Vm Disk Resize */
+        put: operations["vm_disk_resize_api_modules_proxmox_manager_connections__connection_id__vms__vmid__disks_resize_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/hardware": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Vm Hardware Update */
+        put: operations["vm_hardware_update_api_modules_proxmox_manager_connections__connection_id__vms__vmid__hardware_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/hardware/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Hardware Plan */
+        post: operations["vm_hardware_plan_api_modules_proxmox_manager_connections__connection_id__vms__vmid__hardware_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/migration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Migration */
+        post: operations["vm_migration_api_modules_proxmox_manager_connections__connection_id__vms__vmid__migration_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/migration/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Migration Validate */
+        post: operations["vm_migration_validate_api_modules_proxmox_manager_connections__connection_id__vms__vmid__migration_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/power": {
         parameters: {
             query?: never;
@@ -8252,6 +8867,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vm Snapshots */
+        get: operations["vm_snapshots_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots_get"];
+        put?: never;
+        /** Vm Snapshot Create */
+        post: operations["vm_snapshot_create_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/snapshots/{snapshot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Vm Snapshot Delete */
+        delete: operations["vm_snapshot_delete_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots__snapshot__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/connections/{connection_id}/vms/{vmid}/snapshots/{snapshot}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Vm Snapshot Rollback */
+        post: operations["vm_snapshot_rollback_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots__snapshot__rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/proxmox-manager/dashboard": {
         parameters: {
             query?: never;
@@ -8261,6 +8928,142 @@ export interface paths {
         };
         /** Dashboard */
         get: operations["dashboard_api_modules_proxmox_manager_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Nodes */
+        get: operations["nodes_api_modules_proxmox_manager_nodes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/nodes/{node}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Node Detail */
+        get: operations["node_detail_api_modules_proxmox_manager_nodes__node__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/nodes/{node}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Node Status */
+        get: operations["node_status_api_modules_proxmox_manager_nodes__node__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Storage */
+        get: operations["storage_api_modules_proxmox_manager_storage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tasks */
+        get: operations["tasks_api_modules_proxmox_manager_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/tasks/{upid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Task Details */
+        get: operations["task_details_api_modules_proxmox_manager_tasks__upid__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/tasks/{upid}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Task Logs */
+        get: operations["task_logs_api_modules_proxmox_manager_tasks__upid__log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/proxmox-manager/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Vm Templates */
+        get: operations["vm_templates_api_modules_proxmox_manager_templates_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8422,15 +9225,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/modules/security-center/checks": {
+    "/api/modules/secrets-manager/audit": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Checks */
-        get: operations["checks_api_modules_security_center_checks_get"];
+        /** Audit */
+        get: operations["audit_api_modules_secrets_manager_audit_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8439,24 +9242,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/modules/security-center/findings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Findings */
-        get: operations["findings_api_modules_security_center_findings_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/modules/security-center/findings/{finding_id}/state": {
+    "/api/modules/secrets-manager/backup": {
         parameters: {
             query?: never;
             header?: never;
@@ -8465,15 +9251,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Finding State */
-        post: operations["finding_state_api_modules_security_center_findings__finding_id__state_post"];
+        /** Backup */
+        post: operations["backup_api_modules_secrets_manager_backup_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/modules/security-center/scan": {
+    "/api/modules/secrets-manager/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -8482,25 +9268,252 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Scan */
-        post: operations["scan_api_modules_security_center_scan_post"];
+        /** Restore */
+        post: operations["restore_api_modules_secrets_manager_restore_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/modules/security-center/summary": {
+    "/api/modules/secrets-manager/rotate-key": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Summary */
-        get: operations["summary_api_modules_security_center_summary_get"];
+        get?: never;
+        put?: never;
+        /** Rotate Key */
+        post: operations["rotate_key_api_modules_secrets_manager_rotate_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Secrets */
+        get: operations["secrets_api_modules_secrets_manager_secrets_get"];
+        put?: never;
+        /** Create Secret */
+        post: operations["create_secret_api_modules_secrets_manager_secrets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/secrets/{secret_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Secret */
+        get: operations["secret_api_modules_secrets_manager_secrets__secret_id__get"];
+        /** Update Secret */
+        put: operations["update_secret_api_modules_secrets_manager_secrets__secret_id__put"];
+        post?: never;
+        /** Delete Secret */
+        delete: operations["delete_secret_api_modules_secrets_manager_secrets__secret_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/share-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Share Targets */
+        get: operations["share_targets_api_modules_secrets_manager_share_targets_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_modules_secrets_manager_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/secrets-manager/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Types */
+        get: operations["types_api_modules_secrets_manager_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard */
+        get: operations["dashboard_api_modules_webhook_manager_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deliveries */
+        get: operations["deliveries_api_modules_webhook_manager_deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Events */
+        get: operations["events_api_modules_webhook_manager_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/secret-choices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Secret Choices */
+        get: operations["secret_choices_api_modules_webhook_manager_secret_choices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Webhooks */
+        get: operations["webhooks_api_modules_webhook_manager_webhooks_get"];
+        put?: never;
+        /** Create Webhook */
+        post: operations["create_webhook_api_modules_webhook_manager_webhooks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/webhooks/{webhook_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Webhook */
+        get: operations["webhook_api_modules_webhook_manager_webhooks__webhook_id__get"];
+        /** Update Webhook */
+        put: operations["update_webhook_api_modules_webhook_manager_webhooks__webhook_id__put"];
+        post?: never;
+        /** Delete Webhook */
+        delete: operations["delete_webhook_api_modules_webhook_manager_webhooks__webhook_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/webhooks/{webhook_id}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Enabled */
+        put: operations["set_enabled_api_modules_webhook_manager_webhooks__webhook_id__enabled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/webhook-manager/webhooks/{webhook_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Webhook */
+        post: operations["test_webhook_api_modules_webhook_manager_webhooks__webhook_id__test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9057,6 +10070,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/authentication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Authentication Settings */
+        get: operations["get_authentication_settings_api_settings_authentication_get"];
+        /** Set Authentication Settings */
+        put: operations["set_authentication_settings_api_settings_authentication_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ldap Settings */
+        get: operations["get_ldap_settings_api_settings_authentication_ldap_get"];
+        /** Save Ldap Settings */
+        put: operations["save_ldap_settings_api_settings_authentication_ldap_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Saved Ldap Settings */
+        post: operations["test_saved_ldap_settings_api_settings_authentication_ldap_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/local-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Local Password */
+        post: operations["change_local_password_api_settings_authentication_local_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/local-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Local Users */
+        get: operations["get_local_users_api_settings_authentication_local_users_get"];
+        put?: never;
+        /** Create Local User */
+        post: operations["create_local_user_api_settings_authentication_local_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/local-users/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Local User */
+        delete: operations["delete_local_user_api_settings_authentication_local_users__username__delete"];
+        options?: never;
+        head?: never;
+        /** Update Local User */
+        patch: operations["update_local_user_api_settings_authentication_local_users__username__patch"];
+        trace?: never;
+    };
     "/api/settings/change-password": {
         parameters: {
             query?: never;
@@ -9535,6 +10654,14 @@ export interface components {
             /** Plan Id */
             plan_id: string;
         };
+        /** AuthenticationModeUpdate */
+        AuthenticationModeUpdate: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "local" | "system";
+        };
         /** AutoUpdatePatch */
         AutoUpdatePatch: {
             /**
@@ -9641,6 +10768,16 @@ export interface components {
              */
             remove_data: boolean;
         };
+        /** BanInput */
+        BanInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Ip */
+            ip: string;
+        };
         /** Body_import_container_filesystem_api_modules_docker_containers_import_post */
         Body_import_container_filesystem_api_modules_docker_containers_import_post: {
             /** Confirmation */
@@ -9667,6 +10804,11 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** Body_upload_bundle_api_modules_os_repositories_offline_imports_upload_post */
+        Body_upload_bundle_api_modules_os_repositories_offline_imports_upload_post: {
+            /** File */
+            file: string;
+        };
         /** Body_upload_package_api_modules_os_repositories_packages_upload_post */
         Body_upload_package_api_modules_os_repositories_packages_upload_post: {
             /** File */
@@ -9681,6 +10823,19 @@ export interface components {
         BulkServiceInput: {
             /** Ids */
             ids: string[];
+        };
+        /** BundlePinInput */
+        BundlePinInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Pinned
+             * @default true
+             */
+            pinned: boolean;
         };
         /** CancelInput */
         CancelInput: {
@@ -11397,6 +12552,61 @@ export interface components {
              */
             format: string;
         };
+        /** JailConfigInput */
+        JailConfigInput: {
+            /**
+             * Action
+             * @default
+             */
+            action: string;
+            /**
+             * Backend
+             * @default
+             */
+            backend: string;
+            /**
+             * Bantime
+             * @default
+             */
+            bantime: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Filter
+             * @default
+             */
+            filter: string;
+            /**
+             * Findtime
+             * @default
+             */
+            findtime: string;
+            /** Maxretry */
+            maxretry?: number | null;
+            /**
+             * Port
+             * @default
+             */
+            port: string;
+        };
+        /** JailToggleInput */
+        JailToggleInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Enabled */
+            enabled: boolean;
+        };
         /** Job */
         Job: {
             /**
@@ -11473,6 +12683,11 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "queued" | "running" | "success" | "failed" | "cancel_requested" | "cancelled" | "retrying" | "waiting";
+        /** KeyRotationInput */
+        KeyRotationInput: {
+            /** Confirmation */
+            confirmation: string;
+        };
         /** LaunchInput */
         LaunchInput: {
             /** Check Mode */
@@ -11484,6 +12699,90 @@ export interface components {
             confirm: boolean;
             /** Diff Mode */
             diff_mode?: boolean | null;
+        };
+        /** LdapSettingsInput */
+        LdapSettingsInput: {
+            /**
+             * Base Dn
+             * @default
+             */
+            base_dn: string;
+            /**
+             * Bind Dn
+             * @default
+             */
+            bind_dn: string;
+            /**
+             * Bind Password
+             * @default
+             */
+            bind_password: string;
+            /**
+             * Clear Bind Password
+             * @default false
+             */
+            clear_bind_password: boolean;
+            /**
+             * Connect Timeout
+             * @default 5
+             */
+            connect_timeout: number;
+            /**
+             * Display Name Attribute
+             * @default displayName
+             */
+            display_name_attribute: string;
+            /**
+             * Email Attribute
+             * @default mail
+             */
+            email_attribute: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Operation Timeout
+             * @default 10
+             */
+            operation_timeout: number;
+            /**
+             * Port
+             * @default 389
+             */
+            port: number;
+            /**
+             * Security Mode
+             * @default starttls
+             * @enum {string}
+             */
+            security_mode: "ldap" | "starttls" | "ldaps";
+            /**
+             * Server
+             * @default
+             */
+            server: string;
+            /**
+             * User Search Base
+             * @default
+             */
+            user_search_base: string;
+            /**
+             * User Search Filter
+             * @default (uid={username})
+             */
+            user_search_filter: string;
+            /**
+             * Username Attribute
+             * @default uid
+             */
+            username_attribute: string;
+            /**
+             * Verify Tls
+             * @default true
+             */
+            verify_tls: boolean;
         };
         /** LeaseToHostRequest */
         LeaseToHostRequest: {
@@ -11549,8 +12848,46 @@ export interface components {
             /** Used */
             used: number;
         };
+        /** LocalPasswordChange */
+        LocalPasswordChange: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
+        /** LocalUserCreate */
+        LocalUserCreate: {
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /** Password */
+            password: string;
+            /**
+             * Role
+             * @default user
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "auditor" | "user";
+            /** Username */
+            username: string;
+        };
+        /** LocalUserPatch */
+        LocalUserPatch: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Password */
+            password?: string | null;
+            /** Role */
+            role?: ("admin" | "operator" | "auditor" | "user") | null;
+        };
         /** LoginRequest */
         LoginRequest: {
+            /** Auth Method */
+            auth_method?: ("local" | "pam" | "ldap") | null;
             /** Password */
             password: string;
             /**
@@ -12142,6 +13479,141 @@ export interface components {
              */
             timeout_seconds: number;
         };
+        /**
+         * OfflineBundleType
+         * @enum {string}
+         */
+        OfflineBundleType: "full" | "selected" | "delta";
+        /** OfflineExportInput */
+        OfflineExportInput: {
+            /** Architecture */
+            architecture: string;
+            /** Base Snapshot Id */
+            base_snapshot_id?: string | null;
+            /** @default full */
+            bundle_type: components["schemas"]["OfflineBundleType"];
+            channel?: components["schemas"]["ChannelName"] | null;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Include Dependencies
+             * @default true
+             */
+            include_dependencies: boolean;
+            /** Package Names */
+            package_names?: string[];
+            /** Repository Id */
+            repository_id: string;
+            /**
+             * Sign Manifest
+             * @default true
+             */
+            sign_manifest: boolean;
+            /** Snapshot Id */
+            snapshot_id?: string | null;
+            /** Target Id */
+            target_id?: string | null;
+        };
+        /** OfflineHostGroupTargetInput */
+        OfflineHostGroupTargetInput: {
+            /** @default production */
+            channel: components["schemas"]["ChannelName"];
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Host Group Id */
+            host_group_id: string;
+            /**
+             * Include Dependencies
+             * @default true
+             */
+            include_dependencies: boolean;
+            /**
+             * Name Prefix
+             * @default Offline
+             */
+            name_prefix: string;
+            /** Package Names */
+            package_names?: string[];
+            /** Repository Ids */
+            repository_ids: string[];
+        };
+        /** OfflineImportInput */
+        OfflineImportInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            publish_channel?: components["schemas"]["ChannelName"] | null;
+            /** Repository Id */
+            repository_id: string;
+        };
+        /** OfflineSettingsInput */
+        OfflineSettingsInput: {
+            /**
+             * Air Gapped Mode
+             * @default false
+             */
+            air_gapped_mode: boolean;
+            /**
+             * Delete After Days
+             * @default 90
+             */
+            delete_after_days: number;
+            /**
+             * Keep Last
+             * @default 5
+             */
+            keep_last: number;
+            /**
+             * Keep Production
+             * @default true
+             */
+            keep_production: boolean;
+            /**
+             * Keep Signed
+             * @default true
+             */
+            keep_signed: boolean;
+        };
+        /** OfflineTargetInput */
+        OfflineTargetInput: {
+            /** Architecture */
+            architecture: string;
+            channel?: components["schemas"]["ChannelName"] | null;
+            /** Distribution */
+            distribution: string;
+            /** Distribution Version */
+            distribution_version: string;
+            /** Host Group Id */
+            host_group_id?: string | null;
+            /**
+             * Include Dependencies
+             * @default true
+             */
+            include_dependencies: boolean;
+            /** Name */
+            name: string;
+            /** Package Names */
+            package_names?: string[];
+            /** Repository Id */
+            repository_id: string;
+            /** Signing Key Id */
+            signing_key_id?: string | null;
+            /** Snapshot Id */
+            snapshot_id?: string | null;
+        };
         /** OnboardingInput */
         OnboardingInput: {
             /**
@@ -12521,6 +13993,38 @@ export interface components {
             /** Snapshot Id */
             snapshot_id: string;
         };
+        /** ProxmoxCloneInput */
+        ProxmoxCloneInput: {
+            /**
+             * Full
+             * @default true
+             */
+            full: boolean;
+            /** Name */
+            name: string;
+            /** New Vmid */
+            new_vmid: number;
+            /**
+             * Pool
+             * @default
+             */
+            pool: string;
+            /**
+             * Sync To Host Registry
+             * @default true
+             */
+            sync_to_host_registry: boolean;
+            /**
+             * Target Node
+             * @default
+             */
+            target_node: string;
+            /**
+             * Target Storage
+             * @default
+             */
+            target_storage: string;
+        };
         /** ProxmoxConnectionInput */
         ProxmoxConnectionInput: {
             /**
@@ -12565,6 +14069,11 @@ export interface components {
              */
             project: string;
             /**
+             * Sync Interval Seconds
+             * @default 300
+             */
+            sync_interval_seconds: number;
+            /**
              * Sync Lxc
              * @default true
              */
@@ -12587,6 +14096,85 @@ export interface components {
              */
             verify_tls: boolean;
         };
+        /** ProxmoxCreateVmInput */
+        ProxmoxCreateVmInput: {
+            /**
+             * Bridge
+             * @default vmbr0
+             */
+            bridge: string;
+            /**
+             * Cloud Init User
+             * @default
+             */
+            cloud_init_user: string;
+            /**
+             * Cores
+             * @default 2
+             */
+            cores: number;
+            /**
+             * Disk Size Gb
+             * @default 32
+             */
+            disk_size_gb: number;
+            /**
+             * Dns
+             * @default
+             */
+            dns: string;
+            /**
+             * Gateway
+             * @default
+             */
+            gateway: string;
+            /**
+             * Ipv4 Address
+             * @default
+             */
+            ipv4_address: string;
+            /**
+             * Ipv4 Mode
+             * @default dhcp
+             * @enum {string}
+             */
+            ipv4_mode: "dhcp" | "static";
+            /**
+             * Memory Mb
+             * @default 2048
+             */
+            memory_mb: number;
+            /** Name */
+            name: string;
+            /** Node */
+            node: string;
+            /**
+             * Sockets
+             * @default 1
+             */
+            sockets: number;
+            /**
+             * Ssh Public Key
+             * @default
+             */
+            ssh_public_key: string;
+            /**
+             * Start After Create
+             * @default false
+             */
+            start_after_create: boolean;
+            /** Storage */
+            storage: string;
+            /**
+             * Sync To Host Registry
+             * @default true
+             */
+            sync_to_host_registry: boolean;
+            /** Vlan */
+            vlan?: number | null;
+            /** Vmid */
+            vmid: number;
+        };
         /** ProxmoxDeleteInput */
         ProxmoxDeleteInput: {
             /**
@@ -12599,6 +14187,92 @@ export interface components {
              * @default
              */
             confirmation_text: string;
+        };
+        /** ProxmoxDestructiveInput */
+        ProxmoxDestructiveInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+        };
+        /** ProxmoxDiskResizeInput */
+        ProxmoxDiskResizeInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            /** Disk */
+            disk: string;
+            /** New Size Gb */
+            new_size_gb: number;
+        };
+        /** ProxmoxHardwareUpdateInput */
+        ProxmoxHardwareUpdateInput: {
+            /** Balloon Mb */
+            balloon_mb?: number | null;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            /** Cores */
+            cores?: number | null;
+            /** Memory Mb */
+            memory_mb?: number | null;
+            /** Sockets */
+            sockets?: number | null;
+        };
+        /** ProxmoxMigrationInput */
+        ProxmoxMigrationInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Confirmation Text
+             * @default
+             */
+            confirmation_text: string;
+            /**
+             * Migration Network
+             * @default
+             */
+            migration_network: string;
+            /**
+             * Online
+             * @default true
+             */
+            online: boolean;
+            /** Target Node */
+            target_node: string;
+            /**
+             * Target Storage
+             * @default
+             */
+            target_storage: string;
+            /**
+             * With Local Disks
+             * @default true
+             */
+            with_local_disks: boolean;
         };
         /** ProxmoxPowerInput */
         ProxmoxPowerInput: {
@@ -12617,6 +14291,21 @@ export interface components {
              * @default
              */
             confirmation_text: string;
+        };
+        /** ProxmoxSnapshotCreateInput */
+        ProxmoxSnapshotCreateInput: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Include Ram
+             * @default false
+             */
+            include_ram: boolean;
+            /** Name */
+            name: string;
         };
         /** ProxmoxSyncInput */
         ProxmoxSyncInput: {
@@ -13181,6 +14870,53 @@ export interface components {
          * @enum {string}
          */
         ScheduleKind: "once" | "hourly" | "daily" | "weekly" | "monthly" | "cron";
+        /** SecretDeleteInput */
+        SecretDeleteInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** SecretInput */
+        SecretInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Environment Id */
+            environment_id?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Passphrase
+             * @default
+             */
+            passphrase: string;
+            /**
+             * Secret
+             * @default
+             */
+            secret: string;
+            /** Shared With */
+            shared_with?: string[];
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "username_password" | "ssh_password" | "ssh_private_key" | "become_password" | "api_token" | "generic_secret" | "proxmox_api" | "redfish" | "ipmi" | "git_private_key" | "wol";
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+        };
         /** ServiceAction */
         ServiceAction: {
             /**
@@ -13188,6 +14924,14 @@ export interface components {
              * @default false
              */
             confirm_restart: boolean;
+        };
+        /** ServiceActionInput */
+        ServiceActionInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** ServiceInput */
         ServiceInput: {
@@ -13862,6 +15606,73 @@ export interface components {
             };
             /** Name */
             name: string;
+        };
+        /** WebhookDeleteInput */
+        WebhookDeleteInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** WebhookInput */
+        WebhookInput: {
+            /**
+             * Allow Private Networks
+             * @default false
+             */
+            allow_private_networks: boolean;
+            /**
+             * Auth Header Name
+             * @default X-API-Key
+             */
+            auth_header_name: string;
+            /**
+             * Auth Type
+             * @default none
+             * @enum {string}
+             */
+            auth_type: "none" | "bearer" | "basic" | "api_key_header" | "secret_header";
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Events */
+            events?: string[];
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /**
+             * Max Attempts
+             * @default 3
+             */
+            max_attempts: number;
+            /**
+             * Method
+             * @default POST
+             * @enum {string}
+             */
+            method: "POST" | "PUT" | "PATCH";
+            /** Name */
+            name: string;
+            /** Secret Id */
+            secret_id?: string | null;
+            /** Signing Secret Id */
+            signing_secret_id?: string | null;
+            /**
+             * Timeout Seconds
+             * @default 10
+             */
+            timeout_seconds: number;
+            /** Url */
+            url: string;
         };
         /** ConfirmationInput */
         app__modules__ansible_controller__models__ConfirmationInput: {
@@ -14636,6 +16447,13 @@ export interface components {
              * @default false
              */
             remove_data: boolean;
+        };
+        /** RestoreInput */
+        app__modules__secrets_manager__models__RestoreInput: {
+            /** Confirmation */
+            confirmation: string;
+            /** Payload */
+            payload: string;
         };
     };
     responses: never;
@@ -17669,6 +19487,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    authentication_config_api_auth_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -27433,7 +29271,7 @@ export interface operations {
             };
         };
     };
-    activity_api_modules_firewall_manager_activity_get: {
+    dashboard_api_modules_fail2ban_manager_dashboard_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -27453,7 +29291,7 @@ export interface operations {
             };
         };
     };
-    backups_api_modules_firewall_manager_backups_get: {
+    jails_api_modules_fail2ban_manager_jails_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -27473,145 +29311,13 @@ export interface operations {
             };
         };
     };
-    backup_api_modules_firewall_manager_backups_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FirewallBackupRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    restore_api_modules_firewall_manager_backups__backup_id__restore_post: {
+    jail_api_modules_fail2ban_manager_jails__jail__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                backup_id: string;
+                jail: string;
             };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FirewallActionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    disable_api_modules_firewall_manager_disable_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FirewallActionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    enable_api_modules_firewall_manager_enable_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FirewallActionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    export_config_api_modules_firewall_manager_export_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -27625,13 +29331,27 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
-    listening_ports_api_modules_firewall_manager_listening_ports_get: {
+    action_plan_api_modules_fail2ban_manager_jails__jail__actions_plan_get: {
         parameters: {
-            query?: never;
+            query: {
+                action: "ban" | "unban";
+                ip: string;
+            };
             header?: never;
-            path?: never;
+            path: {
+                jail: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -27645,30 +29365,6 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-        };
-    };
-    reload_firewall_api_modules_firewall_manager_reload_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FirewallActionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -27680,104 +29376,18 @@ export interface operations {
             };
         };
     };
-    rules_api_modules_firewall_manager_rules_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    create_rule_api_modules_firewall_manager_rules_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FirewallMutationRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    plan_rule_api_modules_firewall_manager_rules_plan_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FirewallRuleInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    edit_rule_api_modules_firewall_manager_rules__rule_id__put: {
+    ban_api_modules_fail2ban_manager_jails__jail__ban_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                rule_id: string;
+                jail: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FirewallMutationRequest"];
+                "application/json": components["schemas"]["BanInput"];
             };
         };
         responses: {
@@ -27801,18 +29411,49 @@ export interface operations {
             };
         };
     };
-    delete_rule_api_modules_firewall_manager_rules__rule_id__delete: {
+    jail_config_api_modules_fail2ban_manager_jails__jail__config_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                rule_id: string;
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_jail_config_api_modules_fail2ban_manager_jails__jail__config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jail: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FirewallActionRequest"];
+                "application/json": components["schemas"]["JailConfigInput"];
             };
         };
         responses: {
@@ -27836,9 +29477,85 @@ export interface operations {
             };
         };
     };
-    status_api_modules_firewall_manager_status_get: {
+    set_jail_enabled_api_modules_fail2ban_manager_jails__jail__enabled_put: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JailToggleInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unban_api_modules_fail2ban_manager_jails__jail__unban_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jail: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BanInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logs_api_modules_fail2ban_manager_logs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                query?: string;
+                jail?: string;
+                ip?: string;
+                action?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -27852,6 +29569,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_fail2ban_api_modules_fail2ban_manager_reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceActionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restart_fail2ban_api_modules_fail2ban_manager_restart_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceActionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -31670,6 +33462,937 @@ export interface operations {
             };
         };
     };
+    bundles_api_modules_os_repositories_offline_bundles_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bundle_api_modules_os_repositories_offline_bundles__bundle_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_bundle_api_modules_os_repositories_offline_bundles__bundle_id__delete: {
+        parameters: {
+            query?: {
+                force?: boolean;
+                confirmation_text?: string;
+            };
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_bundle_api_modules_os_repositories_offline_bundles__bundle_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_bundle_api_modules_os_repositories_offline_bundles__bundle_id__pin_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundlePinInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_api_modules_os_repositories_offline_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    delta_plan_api_modules_os_repositories_offline_delta_plan_get: {
+        parameters: {
+            query: {
+                base_snapshot_id: string;
+                target_snapshot_id: string;
+                architecture: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diagnostics_api_modules_os_repositories_offline_diagnostics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_export_api_modules_os_repositories_offline_exports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfflineExportInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_plan_api_modules_os_repositories_offline_exports_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfflineExportInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    host_group_compatibility_api_modules_os_repositories_offline_hosts_groups__group_id__compatibility_get: {
+        parameters: {
+            query: {
+                repository_id: string[];
+            };
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    staged_bundles_api_modules_os_repositories_offline_imports_staged_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    upload_bundle_api_modules_os_repositories_offline_imports_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_bundle_api_modules_os_repositories_offline_imports_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_bundle_api_modules_os_repositories_offline_imports__staged_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staged_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfflineImportInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_bundle_api_modules_os_repositories_offline_imports__staged_id__inspect_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staged_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_bundle_api_modules_os_repositories_offline_imports__staged_id__verify_post: {
+        parameters: {
+            query: {
+                repository_id: string;
+            };
+            header?: never;
+            path: {
+                staged_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_jobs_api_modules_os_repositories_offline_jobs_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_job_api_modules_os_repositories_offline_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_offline_job_api_modules_os_repositories_offline_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    offline_job_events_api_modules_os_repositories_offline_jobs__job_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_offline_job_api_modules_os_repositories_offline_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settings_api_modules_os_repositories_offline_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_settings_api_modules_os_repositories_offline_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfflineSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    freeze_snapshot_api_modules_os_repositories_offline_snapshots__snapshot_id__freeze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storage_api_modules_os_repositories_offline_storage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    targets_api_modules_os_repositories_offline_targets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_target_api_modules_os_repositories_offline_targets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfflineTargetInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_targets_from_host_group_api_modules_os_repositories_offline_targets_from_host_group_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfflineHostGroupTargetInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    target_api_modules_os_repositories_offline_targets__target_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_target_api_modules_os_repositories_offline_targets__target_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OfflineTargetInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_target_api_modules_os_repositories_offline_targets__target_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     packages_api_modules_os_repositories_packages_get: {
         parameters: {
             query?: {
@@ -32386,6 +35109,37 @@ export interface operations {
             };
         };
     };
+    cluster_api_modules_proxmox_manager_cluster_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     connections_api_modules_proxmox_manager_connections_get: {
         parameters: {
             query?: never;
@@ -32575,6 +35329,321 @@ export interface operations {
             };
         };
     };
+    vm_create_api_modules_proxmox_manager_connections__connection_id__vms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxCreateVmInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    virtual_machine_details_api_modules_proxmox_manager_connections__connection_id__vms__vmid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_backups_api_modules_proxmox_manager_connections__connection_id__vms__vmid__backups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_clone_api_modules_proxmox_manager_connections__connection_id__vms__vmid__clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxCloneInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_disk_resize_api_modules_proxmox_manager_connections__connection_id__vms__vmid__disks_resize_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxDiskResizeInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_hardware_update_api_modules_proxmox_manager_connections__connection_id__vms__vmid__hardware_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxHardwareUpdateInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_hardware_plan_api_modules_proxmox_manager_connections__connection_id__vms__vmid__hardware_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxHardwareUpdateInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_migration_api_modules_proxmox_manager_connections__connection_id__vms__vmid__migration_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxMigrationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_migration_validate_api_modules_proxmox_manager_connections__connection_id__vms__vmid__migration_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxMigrationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     vm_power_api_modules_proxmox_manager_connections__connection_id__vms__vmid__power_post: {
         parameters: {
             query?: never;
@@ -32588,6 +35657,148 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProxmoxPowerInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_snapshots_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_snapshot_create_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxSnapshotCreateInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_snapshot_delete_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots__snapshot__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+                snapshot: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxDestructiveInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_snapshot_rollback_api_modules_proxmox_manager_connections__connection_id__vms__vmid__snapshots__snapshot__rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+                vmid: number;
+                snapshot: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxmoxDestructiveInput"];
             };
         };
         responses: {
@@ -32627,6 +35838,266 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    nodes_api_modules_proxmox_manager_nodes_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    node_detail_api_modules_proxmox_manager_nodes__node__get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    node_status_api_modules_proxmox_manager_nodes__node__status_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storage_api_modules_proxmox_manager_storage_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tasks_api_modules_proxmox_manager_tasks_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                active_only?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_details_api_modules_proxmox_manager_tasks__upid__get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                upid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_logs_api_modules_proxmox_manager_tasks__upid__log_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                start?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                upid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vm_templates_api_modules_proxmox_manager_templates_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -32890,7 +36361,39 @@ export interface operations {
             };
         };
     };
-    checks_api_modules_security_center_checks_get: {
+    audit_api_modules_secrets_manager_audit_get: {
+        parameters: {
+            query?: {
+                secret_id?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backup_api_modules_secrets_manager_backup_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -32910,38 +36413,16 @@ export interface operations {
             };
         };
     };
-    findings_api_modules_security_center_findings_get: {
+    restore_api_modules_secrets_manager_restore_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    finding_state_api_modules_security_center_findings__finding_id__state_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                finding_id: string;
-            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FindingStateRequest"];
+                "application/json": components["schemas"]["app__modules__secrets_manager__models__RestoreInput"];
             };
         };
         responses: {
@@ -32965,7 +36446,40 @@ export interface operations {
             };
         };
     };
-    scan_api_modules_security_center_scan_post: {
+    rotate_key_api_modules_secrets_manager_rotate_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyRotationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    secrets_api_modules_secrets_manager_secrets_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -32985,7 +36499,141 @@ export interface operations {
             };
         };
     };
-    summary_api_modules_security_center_summary_get: {
+    create_secret_api_modules_secrets_manager_secrets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    secret_api_modules_secrets_manager_secrets__secret_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_secret_api_modules_secrets_manager_secrets__secret_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_secret_api_modules_secrets_manager_secrets__secret_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretDeleteInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    share_targets_api_modules_secrets_manager_share_targets_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -33001,6 +36649,357 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    status_api_modules_secrets_manager_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    types_api_modules_secrets_manager_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    dashboard_api_modules_webhook_manager_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    deliveries_api_modules_webhook_manager_deliveries_get: {
+        parameters: {
+            query?: {
+                webhook_id?: string;
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    events_api_modules_webhook_manager_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    secret_choices_api_modules_webhook_manager_secret_choices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    webhooks_api_modules_webhook_manager_webhooks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_webhook_api_modules_webhook_manager_webhooks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    webhook_api_modules_webhook_manager_webhooks__webhook_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_webhook_api_modules_webhook_manager_webhooks__webhook_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_webhook_api_modules_webhook_manager_webhooks__webhook_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookDeleteInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_enabled_api_modules_webhook_manager_webhooks__webhook_id__enabled_put: {
+        parameters: {
+            query: {
+                enabled: boolean;
+            };
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_webhook_api_modules_webhook_manager_webhooks__webhook_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -34224,6 +38223,284 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_authentication_settings_api_settings_authentication_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_authentication_settings_api_settings_authentication_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthenticationModeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ldap_settings_api_settings_authentication_ldap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_ldap_settings_api_settings_authentication_ldap_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_saved_ldap_settings_api_settings_authentication_ldap_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    change_local_password_api_settings_authentication_local_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalPasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_local_users_api_settings_authentication_local_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_local_user_api_settings_authentication_local_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalUserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_local_user_api_settings_authentication_local_users__username__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_local_user_api_settings_authentication_local_users__username__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalUserPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

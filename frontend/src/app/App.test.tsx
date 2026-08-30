@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   updatePublicProgress: vi.fn(),
   updateCompletion: vi.fn(),
   loadLanguageWithFallback: vi.fn(),
+  authRequest: vi.fn(),
+  authMe: vi.fn(),
+  resetAuthenticationState: vi.fn(),
 }));
 
 vi.mock("../api", async (importOriginal) => {
@@ -38,6 +41,16 @@ vi.mock("../i18n", async (importOriginal) => {
   return {
     ...actual,
     loadLanguageWithFallback: mocks.loadLanguageWithFallback,
+  };
+});
+
+vi.mock("../core/api/transport", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../core/api/transport")>();
+  return {
+    ...actual,
+    request: mocks.authRequest,
+    me: mocks.authMe,
+    resetAuthenticationState: mocks.resetAuthenticationState,
   };
 });
 
@@ -73,29 +86,48 @@ describe("authentication initialization", () => {
     mocks.updatePublicProgress.mockResolvedValue(idleUpdate);
     mocks.updateCompletion.mockResolvedValue({ notice: null });
     mocks.loadLanguageWithFallback.mockImplementation(async (language) => language);
+    mocks.authRequest.mockResolvedValue({
+      mode: "system",
+      local_enabled: false,
+      pam_enabled: true,
+      ldap_enabled: false,
+      available_providers: ["pam"],
+      default_provider: "pam",
+    });
+    mocks.authMe.mockResolvedValue(user);
     await loadLanguage("pl-PL");
   });
 
   it("passes the selected remember-me option to authentication", async () => {
     const onLogin = vi.fn();
-    mocks.login.mockResolvedValue(user);
+    mocks.authRequest
+      .mockResolvedValueOnce({ mode: "system", local_enabled: false, pam_enabled: true, ldap_enabled: false, available_providers: ["pam"], default_provider: "pam" })
+      .mockResolvedValueOnce({ username: "alice", home: "/home/alice", csrf_token: "csrf", auth_provider: "pam" });
     render(<Login language="pl-PL" onLogin={onLogin} />);
 
-    fireEvent.change(screen.getByLabelText("Użytkownik Linux"), { target: { value: " alice " } });
+    const username = await screen.findByLabelText("Użytkownik Linux");
+    fireEvent.change(username, { target: { value: " alice " } });
     fireEvent.change(screen.getByLabelText("Hasło"), { target: { value: "secret" } });
     fireEvent.click(screen.getByLabelText("Zapamiętaj mnie"));
     fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));
 
-    await waitFor(() => expect(mocks.login).toHaveBeenCalledWith("alice", "secret", true));
-    expect(onLogin).toHaveBeenCalledWith(expect.objectContaining({ username: "alice" }));
+    await waitFor(() => expect(mocks.authRequest).toHaveBeenCalledTimes(2));
+    const loginOptions = mocks.authRequest.mock.calls[1][1] as RequestInit;
+    expect(JSON.parse(String(loginOptions.body))).toMatchObject({
+      username: "alice", password: "secret", remember_me: true, auth_method: "pam",
+    });
+    await waitFor(() => expect(onLogin).toHaveBeenCalledWith(expect.objectContaining({ username: "alice" })));
   });
 
   it("adds error space only after authentication fails", async () => {
-    mocks.login.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    mocks.authRequest
+      .mockResolvedValueOnce({ mode: "system", local_enabled: false, pam_enabled: true, ldap_enabled: false, available_providers: ["pam"], default_provider: "pam" })
+      .mockRejectedValueOnce(Object.assign(new Error("Unauthorized"), { status: 401 }));
     const { container } = render(<Login language="pl-PL" onLogin={vi.fn()} />);
 
     expect(container.querySelector(".login-error")).toBeNull();
-    fireEvent.change(screen.getByLabelText("Użytkownik Linux"), { target: { value: "alice" } });
+    const username = await screen.findByLabelText("Użytkownik Linux");
+    fireEvent.change(username, { target: { value: "alice" } });
     fireEvent.change(screen.getByLabelText("Hasło"), { target: { value: "wrong" } });
     fireEvent.click(screen.getByRole("button", { name: "Zaloguj się" }));
 

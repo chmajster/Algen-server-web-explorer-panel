@@ -17,7 +17,7 @@ const DockerManagerApp = lazy(() => import("../docker/DockerManagerApp").then((l
 const AnsibleControllerApp = lazy(() => import("./ansible/AnsibleControllerApp").then((loaded) => ({ default: loaded.AnsibleControllerApp })));
 const HostsManagerApp = lazy(() => import("./hosts/HostsManagerApp").then((loaded) => ({ default: loaded.HostsManagerApp })));
 const ApmidApp = lazy(() => import("./apmid/ApmidApp").then((loaded) => ({ default: loaded.ApmidApp })));
-const OsRepositoriesApp = lazy(() => import("./os-repositories/OsRepositoriesApp").then((loaded) => ({ default: loaded.OsRepositoriesApp })));
+const OsRepositoriesHubApp = lazy(() => import("./os-repositories/OsRepositoriesHubApp").then((loaded) => ({ default: loaded.OsRepositoriesHubApp })));
 const CronManagerApp = lazy(() => import("./cron/CronManagerApp").then((loaded) => ({ default: loaded.CronManagerApp })));
 const DhcpManagerApp = lazy(() => import("./dhcp/DhcpManagerApp").then((loaded) => ({ default: loaded.DhcpManagerApp })));
 const MODULE_HEALTHY_REFRESH_INTERVAL = 60_000;
@@ -32,7 +32,7 @@ export function ModuleApp({ moduleId, initialPath, deepLink, draftKey, permissio
   else if (moduleId === "ansible-controller") content = <AnsibleControllerApp permissions={permissions} initialJobId={deepLink?.type === "ansible-job" ? deepLink.id : undefined} initialScanId={deepLink?.type === "ansible-scan" ? deepLink.id : undefined} t={t} toast={toast} onDeepLinkClose={onDeepLinkClose} />;
   else if (moduleId === "hosts-manager") content = <HostsManagerApp permissions={permissions} initialOperationId={deepLink?.type === "hosts-operation" ? deepLink.id : undefined} t={t} toast={toast} onDeepLinkClose={onDeepLinkClose} />;
   else if (moduleId === "apmid") content = <ApmidApp permissions={permissions} t={t} toast={toast} />;
-  else if (moduleId === "os-repositories") content = <OsRepositoriesApp permissions={permissions} t={t} toast={toast} />;
+  else if (moduleId === "os-repositories") content = <OsRepositoriesHubApp permissions={permissions} t={t} toast={toast} />;
   else if (moduleId === "cron") content = <CronManagerApp permissions={permissions} t={t} toast={toast} />;
   else if (moduleId === "dhcp") content = <DhcpManagerApp permissions={permissions} t={t} toast={toast} />;
   else if (["linux-updates", "pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"].includes(moduleId)) content = <ManagedModuleApp moduleId={moduleId} permissions={permissions} t={t} toast={toast} />;

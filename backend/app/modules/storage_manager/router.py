@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from ...identity.permissions import Permission, require_permission
 from ...security import SessionUser
+from .details import details_service
 from .service import service
 
 
@@ -27,6 +28,45 @@ def devices(user: SessionUser = Depends(require_permission(Permission.MODULES_VI
 def filesystems(user: SessionUser = Depends(require_permission(Permission.MODULES_VIEW))):
     del user
     return {"filesystems": service().filesystems(), "read_only": True}
+
+
+@router.get("/details")
+def details(user: SessionUser = Depends(require_permission(Permission.MODULES_VIEW))):
+    del user
+    inventory = service()
+    roots = inventory.block_devices()
+    mounted = inventory.filesystems()
+    health = inventory.device_health(roots)
+    return details_service().snapshot(devices=roots, filesystems=mounted, health=health)
+
+
+@router.get("/lvm")
+def lvm(user: SessionUser = Depends(require_permission(Permission.MODULES_VIEW))):
+    del user
+    return {"read_only": True, "lvm": details_service().lvm()}
+
+
+@router.get("/mounts")
+def mounts(user: SessionUser = Depends(require_permission(Permission.MODULES_VIEW))):
+    del user
+    inventory = service()
+    roots = inventory.block_devices()
+    mounted = inventory.filesystems()
+    return details_service().mounts(filesystems=mounted, devices=roots)
+
+
+@router.get("/io")
+def io(user: SessionUser = Depends(require_permission(Permission.MODULES_VIEW))):
+    del user
+    roots = service().block_devices()
+    return details_service().io_sample(roots)
+
+
+@router.get("/pools")
+def pools(user: SessionUser = Depends(require_permission(Permission.MODULES_VIEW))):
+    del user
+    mounted = service().filesystems()
+    return {"read_only": True, **details_service().pools(mounted)}
 
 
 @router.get("/diagnostics")

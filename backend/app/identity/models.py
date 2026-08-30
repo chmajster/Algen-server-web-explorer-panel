@@ -187,7 +187,7 @@ class GroupMemberRequest(AdminCredential):
 class AccessProfile(BaseModel):
     username: str
     role: Role
-    role_source: Literal["linux-admin", "assignment", "default"]
+    role_source: Literal["linux-admin", "assignment", "default", "local-database"]
     linux_admin: bool
     is_admin: bool
     permissions: list[str]

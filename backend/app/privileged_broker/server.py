@@ -14,8 +14,8 @@ from pydantic import ValidationError
 
 from app.core.redaction import redact_text
 
-from .firewall_policy import dispatch
 from .protocol import BrokerRequest, BrokerResponse, MAX_FRAME_BYTES, encode_frame
+from .storage_policy import dispatch
 
 
 logger = logging.getLogger("webnas.privileged_broker")

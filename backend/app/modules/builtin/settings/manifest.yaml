@@ -3,6 +3,6 @@ name: Settings
 category: system
 icon: settings
 permissions: [settings.view_own, settings.edit_own]
-routers: [app.settings:router, app.resource_processes:router, app.transport_settings:router]
-capabilities: [preferences, system, updates]
+routers: [app.settings:router, app.resource_processes:router, app.transport_settings:router, app.auth_settings:router, app.ldap_settings:router]
+capabilities: [preferences, system, updates, authentication]
 menu: [{id: settings, label: app.settings, icon: settings, permission: settings.view_own}]

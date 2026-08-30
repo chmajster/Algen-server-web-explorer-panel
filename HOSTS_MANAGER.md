@@ -9,13 +9,13 @@ Hosts Manager (`hosts-manager`) is the central WebNAS registry for remote server
 
 ## Architecture and migration
 
-The registry owns hosts, environments, APMIDs, groups/memberships, connection credentials, accepted SSH keys, sanitized facts, enrollment tokens, hostname patterns and reservations, agent identities/reports/version history, Git repository assignments, power profiles and host-correlated operations. Schema version 5 adds APMID records, durable APMID–environment–group relations and APMID/environment/managed-group references on new enrollment tokens. Startup migrations use additive, idempotent DDL and retain every existing row; historical tokens without those references remain valid.
+The registry owns hosts, environments, APMIDs, groups/memberships, stable credential references, accepted SSH keys, sanitized facts, enrollment tokens, hostname patterns and reservations, agent identities/reports/version history, Git repository assignments, power profiles and host-correlated operations. Secret values are owned by Secrets Manager, not by Hosts Manager. Schema version 5 adds APMID records, durable APMID–environment–group relations and APMID/environment/managed-group references on new enrollment tokens. Startup migrations use additive, idempotent DDL and retain every existing row; historical tokens without those references remain valid.
 
-At first initialization the service detects the Ansible database, creates a mode-`0600` SQLite backup, and transactionally copies central records. Host/group IDs are unchanged, so templates, `host_ids_json`, schedules, history and per-host results remain valid. Credential envelopes are re-encrypted with `/var/lib/webnas/secrets/hosts-manager.key`. A migration marker makes the operation idempotent. Legacy tables remain as a rollback artifact, but the production Ansible adapter no longer writes registry data there.
+At first initialization the service detects the Ansible database, creates a mode-`0600` SQLite backup, and transactionally copies central records. Host/group IDs are unchanged, so templates, `host_ids_json`, schedules, history and per-host results remain valid. Legacy Hosts Manager credential rows are subsequently migrated by Secrets Manager: credential IDs and metadata are preserved, legacy envelopes are decrypted only in memory, re-encrypted with the Secrets Manager master key and authenticated before commit. The original Hosts Manager database remains a rollback artifact. Existing Hosts Manager credential methods are retained as compatibility endpoints and are redirected to Secrets Manager only after migration succeeds.
 
 ## Security
 
-The data directory is `0700`; databases, backups, keys and secret-bearing artifacts are `0600`. Credential APIs return metadata and `secret_configured`, never plaintext or an envelope. Backend consumers supply a module and purpose to `verified_credential`. Variables and agent reports reject secret-like keys. Facts use an allowlist and hash `machine-id`. Agent tokens are stored only as salted hashes; each identity rotation invalidates the previous salt and returns the new raw token once.
+The data directory is `0700`; databases, backups, keys and secret-bearing artifacts are `0600`. Hosts Manager credential APIs are compatibility surfaces and return metadata plus `secret_configured`, never plaintext or an envelope. Backend calls to `verified_credential` are delegated to the Secrets Manager public contract, which requires a consumer module and purpose, enforces `shared_with`, and audits every secret use. Variables and agent reports reject secret-like keys. Facts use an allowlist and hash `machine-id`. Agent tokens are stored only as salted hashes; each identity rotation invalidates the previous salt and returns the new raw token once.
 
 Remote addresses reject loopback, unspecified and multicast targets. Discovery accepts bounded private networks. SSH uses fixed argument arrays, timeouts and `StrictHostKeyChecking=yes`. Enrollment never grants SSH trust: a host cannot connect until its SHA-256 fingerprint is scanned, compared out of band and explicitly accepted. A changed key blocks trust.
 
@@ -54,7 +54,7 @@ External modules register `HostCapabilityProvider` entries with an ID, permissio
 
 ## API and permissions
 
-The `/api/modules/hosts-manager` API covers dashboard/host CRUD and CSV export, environments, APMID CRUD and group synchronization, hostname patterns/skips, approval, fingerprints, test/facts, agent heartbeat/report/history/identity rotation, capability plan/execute, groups, inventory, one-time and permanent enrollment, discovery, credentials, repositories, power, operations/SSE, diagnostics and checksummed backups. APMID endpoints are `/apmids` and `/apmids/sync-groups`; reads use the view permission and mutations use host-management permission. `GET /settings` requires `hosts-manager.view`; `PUT /settings` requires `hosts-manager.configure`. Agent and installer endpoints use scoped Bearer tokens and do not require a browser session.
+The `/api/modules/hosts-manager` API covers dashboard/host CRUD and CSV export, environments, APMID CRUD and group synchronization, hostname patterns/skips, approval, fingerprints, test/facts, agent heartbeat/report/history/identity rotation, capability plan/execute, groups, inventory, one-time and permanent enrollment, discovery, credential compatibility endpoints, repositories, power, operations/SSE, diagnostics and checksummed backups. APMID endpoints are `/apmids` and `/apmids/sync-groups`; reads use the view permission and mutations use host-management permission. `GET /settings` requires `hosts-manager.view`; `PUT /settings` requires `hosts-manager.configure`. Agent and installer endpoints use scoped Bearer tokens and do not require a browser session.
 
 Permissions are:
 
@@ -70,7 +70,7 @@ Administrators receive all permissions. Operators manage hosts and safe actions 
 
 ## Backup, restore and uninstall
 
-Backup creates a consistent SQLite snapshot and versioned manifest in a checksummed archive. Restore validates checksum, member paths/sizes and SQLite integrity, creates a safety backup, then atomically replaces the database. Uninstall preserves registry data by default. Full removal is a separate high-risk operation requiring the exact text `Hosts Manager`; it never changes remote accounts or keys.
+Backup creates a consistent SQLite snapshot and versioned manifest in a checksummed archive. Restore validates checksum, member paths/sizes and SQLite integrity, creates a safety backup, then atomically replaces the database. Secrets Manager data and its master key are backed up and restored separately through the Secrets Manager lifecycle; a Hosts Manager backup is not a replacement for a Secrets Manager backup. Uninstall preserves registry data by default. Full removal is a separate high-risk operation requiring the exact text `Hosts Manager`; it never changes remote accounts or keys.
 
 ## Manual verification
 
@@ -86,12 +86,12 @@ Backup creates a consistent SQLite snapshot and versioned manifest in a checksum
 10. Configure Wake-on-LAN and verify the result says only that a request was sent.
 11. Assign/sync a Git repository and inspect its recorded commit.
 12. Create/validate/restore a backup and verify operator/auditor RBAC restrictions.
+13. Verify the migrated credential IDs are unchanged in Secrets Manager and that Hosts Manager, Ansible and Proxmox operations continue to resolve the same references.
 
+## Shared secrets and credential compatibility
 
-## Shared credentials
+Secrets Manager is the central encrypted credential and secret vault for infrastructure modules. It stores SSH passwords/keys, privilege passwords, generic username/password pairs, API tokens, generic secrets, Proxmox API tokens, Redfish/IPMI credentials, Wake-on-LAN data, Git private keys and webhook authentication/signing secrets.
 
-Hosts Manager is the central encrypted credential vault for infrastructure modules. Credentials may be SSH passwords/keys, privilege passwords, generic username/password pairs, API tokens, generic secrets, Proxmox API tokens, Redfish/IPMI credentials, Wake-on-LAN data, or Git private keys.
-
-Each credential has an explicit `shared_with` module allowlist. The browser only receives metadata and never secret material. A backend module must identify itself and its purpose when requesting a credential; Hosts Manager rejects access unless that module is present in the credential allowlist and records the use in the operation audit trail. Existing credentials are migrated with compatibility-safe defaults (for example SSH → Hosts Manager/Ansible and Proxmox API → Proxmox Manager).
+Each secret has an explicit `shared_with` module allowlist. The browser receives metadata only. A backend module must identify itself and its purpose when requesting plaintext; Secrets Manager rejects access unless that module is present in the allowlist and records the use in the secret audit trail. Existing Hosts Manager credential IDs are preserved during migration, so hosts, repositories, power profiles, Ansible templates and Proxmox integrations continue to reference the same IDs. The historical Hosts Manager credential API remains available through a compatibility adapter rather than maintaining a second writable vault.
 
 Proxmox Manager accepts either a `proxmox_api` token (`user@realm!tokenid` + token secret) or a `username_password` credential (`user@realm` + password) that is shared with `proxmox-manager`. Password authentication is exchanged server-side for a Proxmox ticket and CSRF token; the password is never copied into the Proxmox Manager database.
