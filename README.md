@@ -4,7 +4,7 @@
 
 **A modern web-based administration panel for managing Linux servers, files, services, and infrastructure.**
 
-FastAPI · React · TypeScript · PAM · systemd · rsync
+FastAPI · React · TypeScript · PAM + LDAP · systemd · rsync
 
 [Installation](#installation) · [Features](#key-features) · [Modules](#modules) · [Documentation](#documentation)
 
@@ -20,7 +20,7 @@ It combines file management, system administration, user management, containers,
 
 Main project goals:
 
-- authentication with local Linux accounts through PAM,
+- authentication with local Linux accounts through PAM and optional LDAP directory identities,
 - no separate user password database,
 - modular architecture,
 - granular RBAC permissions,
@@ -46,6 +46,7 @@ Main project goals:
 
 | Area | Capabilities |
 |---|---|
+| **Authentication** | PAM for local `/etc/passwd` accounts plus optional LDAP/StartTLS/LDAPS authentication with explicit provider selection and no automatic fallback |
 | **File Manager** | Browse files, upload, edit, copy and move with `rsync`, monitor transfer progress |
 | **Desktop UI** | Application windows, taskbar, Start menu, shortcuts, themes, wallpapers and per-user personalization |
 | **Users & Groups** | Manage local Linux users, groups, roles and granular permissions |
@@ -160,7 +161,8 @@ React + TypeScript
    ▼
 FastAPI
    │
-   ├── PAM / Linux users
+   ├── PAM / local Linux users
+   ├── LDAP / directory identities
    ├── File operations / rsync
    ├── systemd
    ├── Docker
@@ -174,7 +176,7 @@ Core technology stack:
 
 - **Backend:** Python 3.14 + FastAPI
 - **Frontend:** React + TypeScript + Vite
-- **Authentication:** PAM
+- **Authentication:** PAM + optional LDAP
 - **Authorization:** RBAC
 - **Service management:** systemd
 - **File transfers:** rsync
@@ -182,13 +184,28 @@ Core technology stack:
 
 The frontend uses feature boundaries, a shared WebNAS Design System and generated OpenAPI TypeScript DTOs. See [docs/frontend-architecture.md](docs/frontend-architecture.md) for component ownership, import rules and the standard `PageHeader -> DataTable -> Drawer/Modal` administrative UX pattern.
 
+## Authentication
+
+PAM is the default authentication method. LDAP is disabled by default, so existing and upgraded installations continue to show the original PAM-only login form until an administrator enables LDAP in Settings.
+
+When LDAP is enabled, the login page offers both **LDAP** and **PAM**. LDAP is selected by default and PAM remains manually selectable. There is no automatic LDAP → PAM or PAM → LDAP fallback: the backend executes only the provider explicitly selected by the user.
+
+LDAP supports plain LDAP, LDAP + StartTLS and LDAPS. TLS certificate verification is enabled by default. LDAP user-search values are escaped according to RFC4515, exactly one directory entry must match, and the discovered user DN is authenticated with a separate user bind.
+
+The LDAP Bind Password is stored through the existing encrypted Secrets Manager and is never returned by Settings APIs. The public `/api/auth/config` endpoint exposes only available authentication providers and the default provider.
+
+For filesystem-backed WebNAS functionality, LDAP identities must also resolve to a POSIX UID/GID/home through NSS, for example with SSSD, nslcd or winbind. PAM is restricted to accounts actually defined in `/etc/passwd`. LDAP identities cannot claim the same local username and do not automatically inherit WebNAS administrator privileges from NSS `sudo`/`wheel` membership.
+
+See [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md) for OpenLDAP, FreeIPA and Active Directory examples, NSS integration requirements, API behaviour and security details.
+
 ## Security
 
-WebNAS uses local Linux accounts as the primary identity source.
+WebNAS uses local Linux accounts as the primary identity source and can optionally authenticate directory users through LDAP.
 
 The project includes:
 
-- PAM authentication,
+- PAM authentication for local `/etc/passwd` accounts,
+- optional LDAP/StartTLS/LDAPS authentication with explicit provider selection and no automatic fallback,
 - HTTPS-first standard installation with an explicit plaintext-HTTP opt-in,
 - HttpOnly/SameSite session cookies and Secure cookies on the standard TLS configuration,
 - granular RBAC permissions,
@@ -216,6 +233,7 @@ Detailed documentation is available in separate files:
 | Document | Description |
 |---|---|
 | [INSTALL.md](INSTALL.md) | Installation, updates, configuration and troubleshooting |
+| [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md) | PAM/LDAP login behaviour, OpenLDAP/FreeIPA/AD configuration, POSIX/NSS integration and security model |
 | [docs/frontend-architecture.md](docs/frontend-architecture.md) | Frontend feature boundaries, Design System, generated API DTOs and module rules |
 | [docs/testing.md](docs/testing.md) | Unit, integration, trusted system and Playwright E2E testing |
 | [docs/deployment.md](docs/deployment.md) | CI/CD, trusted runner, production Environment, blue/green health checks and rollback |
