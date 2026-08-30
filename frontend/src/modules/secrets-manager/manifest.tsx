@@ -4,7 +4,7 @@ import { SecretsManagerApp } from "./SecretsManagerApp";
 
 const manifest: FrontendModuleManifest = {
   id: "secrets-manager",
-  labelKey: "Secrets Manager",
+  labelKey: "module.secretsManager",
   icon: <KeyRound />,
   category: "infrastructure",
   permission: "secrets-manager.view",
