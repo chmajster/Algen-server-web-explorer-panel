@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import socket
 import ssl
 from dataclasses import dataclass
@@ -11,6 +12,9 @@ from ldap3.core.exceptions import LDAPException, LDAPInvalidCredentialsResult, L
 from ..secrets_manager import service as secrets_service
 from .repository import SECRET_MODULE
 from .security import assert_safe_target, normalize_host
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,5 +102,5 @@ def close(bound: BoundDirectory | None) -> None:
         return
     try:
         bound.connection.unbind()
-    except Exception:
-        pass
+    except Exception as error:
+        logger.debug("ldap_manager_unbind_failed error=%s", type(error).__name__)

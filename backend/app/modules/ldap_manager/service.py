@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import socket
 import ssl
 import time
@@ -13,6 +14,9 @@ from .models import BulkOperationRequest, ConnectionInput, CsvImportRequest, Dir
 from .providers import ProviderOperationError, provider_for
 from .repository import LdapManagerRepository, repository
 from .security import validate_dn
+
+
+logger = logging.getLogger(__name__)
 
 
 _SENSITIVE_EXPORT_ATTRIBUTES = {"userpassword", "unicodepwd", "authpassword", "krbprincipalkey", "sambantpassword", "sambalmpassword"}
@@ -141,10 +145,10 @@ class LdapManagerService:
                     except (TypeError, ValueError):
                         pass
                 result.update({"disabled_users": disabled, "locked_users": locked, "password_expired_users": expired})
-        except Exception:
+        except Exception as error:
             # Dashboard counts are advisory. An unsupported subtree or ACL must
             # not turn a healthy connection into an application error.
-            pass
+            logger.debug("ldap_manager_dashboard_counts_unavailable error=%s", type(error).__name__)
         return result
 
     def search(self, connection_id: str, payload: SearchRequest) -> dict[str, Any]:
