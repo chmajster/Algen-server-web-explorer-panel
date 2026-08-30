@@ -38,9 +38,9 @@ type Props = {
 const copy = {
   pl: {
     title: "LDAP Authentication",
-    description: "Po włączeniu LDAP ekran logowania pozwala wybrać LDAP lub PAM. LDAP jest zaznaczony domyślnie, a PAM pozostaje ręcznie dostępną metodą awaryjną.",
+    description: "LDAP jest używany tylko w trybie uwierzytelniania PAM + LDAP. Po jego włączeniu w tym trybie ekran logowania pozwala wybrać LDAP lub PAM, a LDAP jest zaznaczony domyślnie.",
     enabled: "Włącz logowanie LDAP",
-    enabledHint: "Wyłączenie LDAP przywraca ekran logowania tylko przez PAM. Nie ma automatycznego fallbacku pomiędzy providerami.",
+    enabledHint: "W trybie Local database te ustawienia mogą być przygotowane, ale LDAP nie jest dostępny do logowania. Nie ma automatycznego fallbacku pomiędzy LDAP i PAM.",
     server: "Serwer LDAP / URI",
     port: "Port",
     security: "Tryb bezpieczeństwa",
@@ -67,9 +67,9 @@ const copy = {
   },
   en: {
     title: "LDAP Authentication",
-    description: "When LDAP is enabled the login page offers LDAP and PAM. LDAP is selected by default while PAM remains a manually selectable break-glass option.",
+    description: "LDAP is used only in PAM + LDAP system authentication mode. When enabled in that mode, the login page offers LDAP and PAM with LDAP selected by default.",
     enabled: "Enable LDAP authentication",
-    enabledHint: "Disabling LDAP restores PAM-only login. Providers never fall back to each other automatically.",
+    enabledHint: "In Local database mode these settings may be prepared, but LDAP is not available for login. LDAP and PAM never fall back to each other automatically.",
     server: "LDAP server / URI",
     port: "Port",
     security: "Security mode",
