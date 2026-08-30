@@ -48,7 +48,18 @@ export { osRepositoriesClient } from "./modules/os-repositories/api/client";
 export { ansibleControllerClient } from "./modules/ansible-controller/api/client";
 export { hostsManagerClient } from "./modules/hosts-manager/api/client";
 export { proxmoxManagerClient } from "./modules/proxmox-manager/api/client";
-export type { ProxmoxConnection, ProxmoxConnectionInput, ProxmoxVm, ProxmoxVmList } from "./modules/proxmox-manager/api/client";
+export type {
+  ProxmoxCluster,
+  ProxmoxConnection,
+  ProxmoxConnectionInput,
+  ProxmoxNode,
+  ProxmoxSnapshot,
+  ProxmoxStorage,
+  ProxmoxTask,
+  ProxmoxVm,
+  ProxmoxVmDetails,
+  ProxmoxVmList,
+} from "./modules/proxmox-manager/api/client";
 export { containersClient } from "./modules/containers/api/client";
 export { sambaClient } from "./modules/samba/api/client";
 export { mountsClient } from "./modules/mounts/api/client";
