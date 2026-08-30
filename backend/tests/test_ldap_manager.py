@@ -161,6 +161,7 @@ def test_export_csv_follows_all_paging_cookies(monkeypatch):
     assert "uid=a" in exported
     assert "uid=b" in exported
 
+
 def test_provider_entry_accepts_mapping_backed_attributes():
     from app.modules.ldap_manager.providers import base as provider_base
 
@@ -172,4 +173,3 @@ def test_provider_entry_accepts_mapping_backed_attributes():
         }
     )
     assert normalized["attributes"]["member"] == [member_dn]
-
