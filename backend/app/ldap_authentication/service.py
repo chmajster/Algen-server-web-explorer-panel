@@ -61,24 +61,34 @@ def _attribute(entry: dict[str, Any], name: str) -> Any:
     if not name:
         return ""
     attributes = entry.get("attributes")
-    if not isinstance(attributes, dict):
-        return ""
-    value = attributes.get(name)
-    if isinstance(value, list) and len(value) == 1:
-        return value[0]
+    value: Any = None
+    if isinstance(attributes, dict):
+        value = attributes.get(name)
+        if value is None:
+            folded = name.casefold()
+            value = next((candidate for key, candidate in attributes.items() if str(key).casefold() == folded), None)
+    if value is None:
+        raw_attributes = entry.get("raw_attributes")
+        if isinstance(raw_attributes, dict):
+            value = raw_attributes.get(name)
+            if value is None:
+                folded = name.casefold()
+                value = next((candidate for key, candidate in raw_attributes.items() if str(key).casefold() == folded), None)
+    if isinstance(value, (list, tuple, set)) and len(value) == 1:
+        return next(iter(value))
     return value
 
 
 def _text_attribute(entry: dict[str, Any], name: str) -> str:
     value = _attribute(entry, name)
-    if isinstance(value, list):
-        value = value[0] if value else ""
+    if isinstance(value, (list, tuple, set)):
+        value = next(iter(value), "")
     if isinstance(value, bytes):
         try:
-            return value.decode("utf-8")
+            return value.decode("utf-8").strip()
         except UnicodeDecodeError:
             return value.hex()
-    return str(value or "")
+    return str(value or "").strip()
 
 
 def _values(entry: dict[str, Any], name: str) -> list[str]:
@@ -207,9 +217,16 @@ def _search_user(connection: Connection, settings: dict[str, Any], username: str
     if len(entries) != 1:
         raise LdapInvalidCredentials("LDAP identity was not unique")
     entry = entries[0]
-    returned = _text_attribute(entry, str(settings.get("username_attribute") or "uid"))
-    if not returned or returned.casefold() != username.casefold():
-        raise LdapInvalidCredentials("LDAP identity does not match requested username")
+    username_attribute = str(settings.get("username_attribute") or "uid")
+    returned = _text_attribute(entry, username_attribute)
+    if returned:
+        if returned.casefold() != username.casefold():
+            raise LdapInvalidCredentials("LDAP identity does not match requested username")
+    else:
+        template = str(settings.get("user_search_filter") or "(uid={username})").strip()
+        exact_filter = f"({username_attribute}={{username}})"
+        if template.casefold() != exact_filter.casefold():
+            raise LdapInvalidCredentials("LDAP identity does not match requested username")
     if not str(entry.get("dn") or ""):
         raise LdapInvalidCredentials("LDAP identity has no DN")
     return entry

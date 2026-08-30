@@ -48,8 +48,9 @@ class LdapManagerService:
 
     @staticmethod
     def _object_classes(entry: dict[str, Any]) -> set[str]:
-        attributes = entry.get("attributes") if isinstance(entry.get("attributes"), dict) else {}
-        raw = next((value for name, value in attributes.items() if str(name).casefold() == "objectclass"), [])
+        raw_attributes = entry.get("attributes")
+        attributes: dict[str, Any] = raw_attributes if isinstance(raw_attributes, dict) else {}
+        raw: Any = next((value for name, value in attributes.items() if str(name).casefold() == "objectclass"), [])
         values = raw if isinstance(raw, list) else [raw]
         return {str(value).casefold() for value in values if str(value).strip()}
 
