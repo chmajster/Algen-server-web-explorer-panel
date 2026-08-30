@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from app import auth
 from app.privileged_broker import authentication_policy
+from app.privileged_broker.client import BrokerError
 from app.privileged_broker.protocol import BrokerRequest, BrokerResponse, Operation
 
 
@@ -75,6 +76,71 @@ def test_standard_install_invalid_pam_password_remains_unauthorized(monkeypatch,
         auth.authenticate("alice", "wrong-secret")
 
     assert error.value.status_code == 401
+
+
+def test_standard_install_broker_outage_returns_sanitized_diagnostics(monkeypatch, tmp_path):
+    _prepare_runtime_auth(monkeypatch, tmp_path)
+
+    class FakeBrokerClient:
+        def __init__(self, *, timeout: float):
+            pass
+
+        def request(self, operation, payload, *, actor):
+            raise BrokerError(
+                "do not expose this low-level exception text",
+                error_code="BROKER_UNAVAILABLE",
+                exit_code=1,
+            )
+
+    monkeypatch.setattr(auth, "BrokerClient", FakeBrokerClient)
+
+    with pytest.raises(HTTPException) as error:
+        auth.authenticate("alice", "local-secret")
+
+    assert error.value.status_code == 503
+    assert error.value.detail == {
+        "code": "PAM_BROKER_UNAVAILABLE",
+        "message": "PAM authentication service is unavailable",
+        "stage": "broker_connect",
+        "reason": "BROKER_UNAVAILABLE",
+        "hint": "Check webnas-privileged.socket and webnas-privileged.service status and journal.",
+        "exit_code": 1,
+    }
+    assert "low-level" not in str(error.value.detail)
+
+
+def test_standard_install_pam_broker_failure_returns_request_id(monkeypatch, tmp_path):
+    _prepare_runtime_auth(monkeypatch, tmp_path)
+
+    class FakeBrokerClient:
+        def __init__(self, *, timeout: float):
+            pass
+
+        def request(self, operation, payload, *, actor):
+            return BrokerResponse(
+                request_id="b" * 32,
+                ok=False,
+                exit_code=127,
+                error_code="PAM_UNAVAILABLE",
+                stderr="sensitive implementation detail must stay server-side",
+            )
+
+    monkeypatch.setattr(auth, "BrokerClient", FakeBrokerClient)
+
+    with pytest.raises(HTTPException) as error:
+        auth.authenticate("alice", "local-secret")
+
+    assert error.value.status_code == 503
+    assert error.value.detail == {
+        "code": "PAM_SERVICE_UNAVAILABLE",
+        "message": "PAM authentication service is unavailable",
+        "stage": "broker_response",
+        "reason": "PAM_UNAVAILABLE",
+        "hint": "Check the WebNAS PAM service and privileged broker journal.",
+        "request_id": "b" * 32,
+        "exit_code": 127,
+    }
+    assert "sensitive" not in str(error.value.detail)
 
 
 def test_privileged_pam_policy_authenticates_with_webnas_service(monkeypatch, tmp_path):
