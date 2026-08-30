@@ -1,0 +1,72 @@
+name: Temporary backend file logging patch
+
+on:
+  push:
+    branches:
+      - fix/backend-service-file-logging
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/backend-service-file-logging
+          fetch-depth: 0
+
+      - name: Patch generated backend units and tests
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          release = Path('scripts/webnas_release.py')
+          text = release.read_text(encoding='utf-8')
+          old = '''                "ExecStart=/bin/sh -c 'cd \\\"$WEBNAS_RELEASE/backend\\\" && exec \\\"$WEBNAS_RELEASE/backend/.venv/bin/python\\\" -m app.run'",
+                          "Restart=on-failure",'''
+          new = '''                "ExecStart=/bin/sh -c 'cd \\\"$WEBNAS_RELEASE/backend\\\" && exec \\\"$WEBNAS_RELEASE/backend/.venv/bin/python\\\" -m app.run'",
+                          f"StandardOutput=append:{log_dir}/webnas-backend-{slot}.log",
+                          f"StandardError=append:{log_dir}/webnas-backend-{slot}.log",
+                          "Restart=on-failure",'''
+          if old not in text:
+              raise SystemExit('webnas_release.py target block not found')
+          release.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          tests = Path('backend/tests/test_release_deployment.py')
+          text = tests.read_text(encoding='utf-8')
+          marker = '''def test_generated_services_allow_package_manager_writes(monkeypatch, tmp_path: Path):
+          '''
+          addition = '''def test_generated_services_append_stdout_and_stderr_to_slot_log(monkeypatch, tmp_path: Path):
+              target = deployment(tmp_path)
+              monkeypatch.setattr(release_module, "command", lambda *args, **kwargs: completed())
+
+              target.write_units()
+
+              log_dir = tmp_path / "log"
+              for slot in release_module.SLOTS:
+                  unit = (target.systemd_dir / target.unit_name(slot)).read_text(encoding="utf-8")
+                  expected = log_dir / f"webnas-backend-{slot}.log"
+                  assert f"StandardOutput=append:{expected}" in unit
+                  assert f"StandardError=append:{expected}" in unit
+
+
+          '''
+          if marker not in text:
+              raise SystemExit('test insertion point not found')
+          tests.write_text(text.replace(marker, addition + marker, 1), encoding='utf-8')
+          PY
+
+      - name: Run focused tests
+        run: python -m pytest -q backend/tests/test_release_deployment.py
+
+      - name: Commit patch and remove temporary workflow
+        run: |
+          rm -f .github/workflows/temporary-backend-file-logging.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/webnas_release.py backend/tests/test_release_deployment.py .github/workflows/temporary-backend-file-logging.yml
+          git commit -m "fix: persist backend service logs"
+          git push origin HEAD:fix/backend-service-file-logging
