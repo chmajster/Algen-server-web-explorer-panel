@@ -55,6 +55,7 @@ jobs:
           test -f /etc/webnas/config.yaml
           test -d /var/lib/webnas
           test -d /var/log/webnas
+          systemctl is-active --quiet webnas-privileged.service
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
             "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
 
@@ -85,10 +86,11 @@ jobs:
           test -f /var/lib/webnas/menu-preserve-marker
           test -f /var/log/webnas/menu-preserve-marker
           test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "$(cat /tmp/webnas-menu-config-sha)"
+          systemctl is-active --quiet webnas-privileged.service
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
             "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
 
-      - name: "Option 2: Reinstall cleans app and preserves state"
+      - name: "Option 2: Reinstall cleans app without dangling slot release"
         shell: bash
         run: |
           set -euo pipefail
@@ -101,6 +103,7 @@ jobs:
           tr -d '\r' < /tmp/webnas-menu-option-2.log > /tmp/webnas-menu-option-2.clean
           grep -F "Action:           reinstall" /tmp/webnas-menu-option-2.clean
           grep -F "Clean reinstall finalized" /tmp/webnas-menu-option-2.clean
+          grep -F "[OK] WebNAS privileged broker is active." /tmp/webnas-menu-option-2.clean
 
           new_release="$(readlink -f /opt/webnas/current)"
           test "${new_release}" != "${old_release}"
@@ -111,6 +114,24 @@ jobs:
           test -f /var/log/webnas/menu-preserve-marker
           test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "$(cat /tmp/webnas-menu-config-sha)"
           test "$(find /opt/webnas/releases -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1
+
+          active_slot="$(tr -d '[:space:]' < /etc/webnas/runtime/active-slot)"
+          test "${active_slot}" = "blue" -o "${active_slot}" = "green"
+          if [[ "${active_slot}" == "blue" ]]; then
+            inactive_slot="green"
+          else
+            inactive_slot="blue"
+          fi
+          active_env="/etc/webnas/runtime/backend-${active_slot}.env"
+          inactive_env="/etc/webnas/runtime/backend-${inactive_slot}.env"
+          test -f "${active_env}"
+          test ! -e "${inactive_env}"
+          env_release="$(sed -n 's/^WEBNAS_RELEASE=//p' "${active_env}" | head -n 1)"
+          test "$(readlink -f "${env_release}")" = "${new_release}"
+          ! grep -Fq "${old_release}" "${active_env}"
+          systemctl is-active --quiet webnas-privileged.service
+          ! systemctl is-active --quiet "webnas-backend-${inactive_slot}.service"
+
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
             "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
 
