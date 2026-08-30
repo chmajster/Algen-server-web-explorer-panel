@@ -4,6 +4,7 @@ import { api, type HostsManagerCredential, type ModuleStatus, type ProxmoxConnec
 import type { ToastFn, Translate } from "../../../app/types";
 import { useRefreshOnConnectionRestored } from "../../connection/ConnectionStatusMonitor";
 import { ModuleAppShell, type ModuleSection } from "../common/ModuleAppShell";
+import { ProxmoxAdvanced } from "./Advanced";
 import { ProxmoxClusterView } from "./Cluster";
 import { ProxmoxConnections } from "./Connections";
 import { ProxmoxNodes } from "./Nodes";
@@ -14,7 +15,7 @@ import { ProxmoxVmList } from "./VmList";
 
 export { buildEndpoint, splitEndpoint } from "./utils";
 
-const sections: ModuleSection[] = ["overview", "inventory", "hosts", "repositories", "environment", "operations", "settings"];
+const sections: ModuleSection[] = ["overview", "inventory", "hosts", "repositories", "environment", "operations", "audit", "settings"];
 const sectionLabels: Partial<Record<ModuleSection, string>> = {
   overview: "Overview",
   inventory: "Virtual Machines",
@@ -22,6 +23,7 @@ const sectionLabels: Partial<Record<ModuleSection, string>> = {
   repositories: "Storage",
   environment: "Cluster",
   operations: "Tasks",
+  audit: "Advanced 361–380",
   settings: "Settings",
 };
 
@@ -106,7 +108,9 @@ export function ProxmoxManagerApp({ permissions, t, toast }: { permissions: stri
             ? <ProxmoxClusterView refreshKey={refreshKey} t={t} toast={toast} />
             : section === "operations"
               ? <ProxmoxTasksView refreshKey={refreshKey} t={t} toast={toast} />
-              : <ProxmoxConnections connections={connections} credentials={credentials} permissions={permissions} t={t} toast={toast} onChanged={refresh} />;
+              : section === "audit"
+                ? <ProxmoxAdvanced connections={connections} permissions={permissions} t={t} toast={toast} />
+                : <ProxmoxConnections connections={connections} credentials={credentials} permissions={permissions} t={t} toast={toast} onChanged={refresh} />;
 
   return <ModuleAppShell
     className="proxmox-manager-app"
