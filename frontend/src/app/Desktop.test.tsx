@@ -246,7 +246,7 @@ describe("personalized desktop", () => {
     await waitFor(() => expect(api.modules).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "desktop.mainMenu" }));
     fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
-    expect(screen.getByRole("button", { name: "ansible.name" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "ansible.name" })).toBeInTheDocument();
   });
 
   it("does not restore an identity window after permission is removed", () => {
