@@ -173,3 +173,4 @@ def test_provider_entry_accepts_mapping_backed_attributes():
         }
     )
     assert normalized["attributes"]["member"] == [member_dn]
+    assert normalized["attributes"]["cn"] == ["Integration-Team"]
