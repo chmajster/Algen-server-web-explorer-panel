@@ -142,7 +142,11 @@ class PackageJobManager:
 
                     backup = get_provider(plan.module_id, job["created_by"]).create_backup(job["created_by"], f"Automatic backup before {plan.action.value}", True)
                     result["backup"] = backup
-                execute(plan, manifest, log, progress, cancelled)
+                if manifest.package_less:
+                    progress(90, "Registering package-less module")
+                    log("system", "Package-less module: no system package operation is required")
+                else:
+                    execute(plan, manifest, log, progress, cancelled)
                 if plan.action == PackageAction.uninstall:
                     if plan.module_id == "ansible-controller" and plan.remove_data:
                         result.update({"managed_config_removed": True, "remote_accounts_removed": False})
