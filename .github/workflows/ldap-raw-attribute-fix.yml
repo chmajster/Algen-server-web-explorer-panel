@@ -1,0 +1,33 @@
+name: LDAP raw attribute fixer
+
+on:
+  push:
+    branches: [feat/ldap-auth-manager-separation]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ldap-auth-manager-separation
+      - name: Fall back to raw LDAP attributes for empty decoded values
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/app/ldap_authentication/service.py')
+          text = p.read_text(encoding='utf-8')
+          old = '''    if isinstance(attributes, dict):\n        value = attributes.get(name)\n        if value is None:\n            folded = name.casefold()\n            value = next((candidate for key, candidate in attributes.items() if str(key).casefold() == folded), None)\n    if value is None:\n        raw_attributes = entry.get("raw_attributes")\n        if isinstance(raw_attributes, dict):\n            value = raw_attributes.get(name)\n            if value is None:\n                folded = name.casefold()\n                value = next((candidate for key, candidate in raw_attributes.items() if str(key).casefold() == folded), None)\n'''
+          new = '''    if isinstance(attributes, dict):\n        value = attributes.get(name)\n        if value is None:\n            folded = name.casefold()\n            value = next((candidate for key, candidate in attributes.items() if str(key).casefold() == folded), None)\n    decoded_missing = value is None or (isinstance(value, (list, tuple, set)) and not value)\n    if decoded_missing:\n        raw_attributes = entry.get("raw_attributes")\n        if isinstance(raw_attributes, dict):\n            raw_value = raw_attributes.get(name)\n            if raw_value is None:\n                folded = name.casefold()\n                raw_value = next((candidate for key, candidate in raw_attributes.items() if str(key).casefold() == folded), None)\n            if raw_value is not None:\n                value = raw_value\n'''
+          if old not in text:
+              raise SystemExit('LDAP attribute fallback block not found')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git add backend/app/ldap_authentication/service.py
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: use raw LDAP values when decoded attributes are empty'
+          git push origin HEAD:feat/ldap-auth-manager-separation
