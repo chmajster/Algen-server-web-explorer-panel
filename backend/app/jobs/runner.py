@@ -4,7 +4,7 @@ import itertools
 import os
 import queue
 import threading
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable
 
 from .models import JobPriority
@@ -28,12 +28,8 @@ class JobRunner:
         self._lock = threading.Lock()
         self._counter = itertools.count()
         self._shutdown = threading.Event()
-        self._threads = [
-            threading.Thread(target=self._worker, name=f"webnas-job-{index + 1}", daemon=True)
-            for index in range(self.max_workers)
-        ]
-        for thread in self._threads:
-            thread.start()
+        self._executor = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="webnas-job")
+        self._worker_futures = [self._executor.submit(self._worker) for _ in range(self.max_workers)]
 
     def submit(self, job_id: str, target: Callable[[], None], priority: JobPriority = JobPriority.normal) -> Future[None]:
         future: Future[None] = Future()
@@ -72,5 +68,4 @@ class JobRunner:
             futures = list(self._futures.values())
         for future in futures:
             future.cancel()
-        for thread in self._threads:
-            thread.join(timeout=1)
+        self._executor.shutdown(wait=True, cancel_futures=True)
