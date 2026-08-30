@@ -47,7 +47,6 @@ jobs:
           set -e
           if [[ "$merge_rc" -ne 0 ]]; then
             mapfile -t conflicts < <(git diff --name-only --diff-filter=U | sort)
-            printf 'Conflicts:\n%s\n' "${conflicts[*]}"
             expected=(
               "backend/app/privileged_broker/protocol.py"
               "backend/app/privileged_broker/server.py"
@@ -55,14 +54,12 @@ jobs:
             )
             mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
             if [[ "${conflicts[*]}" != "${expected_sorted[*]}" ]]; then
-              echo "Unexpected merge conflict set"
+              printf 'Unexpected conflicts: %s\n' "${conflicts[*]}"
               exit 1
             fi
-
             git checkout --ours backend/app/privileged_broker/protocol.py
             git checkout --ours backend/app/privileged_broker/server.py
             git checkout --theirs frontend/src/generated/api-types.ts
-
             python - <<'PY'
           from pathlib import Path
 
@@ -84,20 +81,61 @@ jobs:
               raise SystemExit(f"missing broker operations: {missing}")
           path.write_text(text, encoding="utf-8")
           PY
-
-            git add backend/app/privileged_broker/protocol.py
-            git add backend/app/privileged_broker/server.py
-            git add frontend/src/generated/api-types.ts
+            git add backend/app/privileged_broker/protocol.py backend/app/privileged_broker/server.py frontend/src/generated/api-types.ts
           fi
-
           rm -f .github/workflows/tmp-bandit-fix.yml
           git add -A
+      - name: Harden recovery error handling
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          login = Path("backend/app/modules/login_history/service.py")
+          text = login.read_text(encoding="utf-8")
+          if "import logging\n" not in text:
+              text = text.replace("import json\n", "import json\nimport logging\n", 1)
+          marker = "from ...privileged_broker.runtime import broker_required\n"
+          if "logger = logging.getLogger(__name__)" not in text:
+              if marker not in text:
+                  raise SystemExit("login history logger anchor missing")
+              text = text.replace(marker, marker + "\n\nlogger = logging.getLogger(__name__)\n", 1)
+          old = '''            except Exception:\n                pass\n        return findings\n'''
+          new = '''            except Exception:\n                logger.exception("Failed to emit login security alert", extra={"alert_key": key})\n        return findings\n'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif "Failed to emit login security alert" not in text:
+              raise SystemExit("login history recovery anchor missing")
+          login.write_text(text, encoding="utf-8")
+
+          routing = Path("backend/app/modules/routing_manager/service.py")
+          text = routing.read_text(encoding="utf-8")
+          if "import logging\n" not in text:
+              text = text.replace("import json\n", "import json\nimport logging\n", 1)
+          marker = "from .models import PolicyRuleInput, RouteInput\n"
+          if "logger = logging.getLogger(__name__)" not in text:
+              if marker not in text:
+                  raise SystemExit("routing logger anchor missing")
+              text = text.replace(marker, marker + "\n\nlogger = logging.getLogger(__name__)\n", 1)
+          old_restore = '''            try:\n                self._restore_persistent(persistent, actor=actor)\n            except Exception:\n                pass\n            raise\n'''
+          new_restore = '''            try:\n                self._restore_persistent(persistent, actor=actor)\n            except Exception:\n                logger.exception("Failed to restore persistent routing state after apply failure")\n            raise\n'''
+          if old_restore in text:
+              text = text.replace(old_restore, new_restore, 1)
+          elif "Failed to restore persistent routing state after apply failure" not in text:
+              raise SystemExit("routing restore anchor missing")
+          old_reconcile = '''                try:\n                    self.rollback(str(transaction["id"]), automatic=True)\n                except Exception:\n                    pass\n'''
+          new_reconcile = '''                try:\n                    self.rollback(str(transaction["id"]), automatic=True)\n                except Exception:\n                    logger.exception(\n                        "Failed to reconcile expired routing transaction",\n                        extra={"transaction_id": str(transaction.get("id") or "")},\n                    )\n'''
+          if old_reconcile in text:
+              text = text.replace(old_reconcile, new_reconcile, 1)
+          elif "Failed to reconcile expired routing transaction" not in text:
+              raise SystemExit("routing reconcile anchor missing")
+          routing.write_text(text, encoding="utf-8")
+          PY
       - name: Regenerate API contract
         working-directory: frontend
         run: npm run api:generate
       - name: Validate merged code
         run: |
-          python -m ruff format backend/app/privileged_broker/protocol.py backend/app/privileged_broker/server.py backend/app/modules/ntp_manager/router.py backend/app/modules/routing_manager/router.py
+          python -m ruff format backend/app/privileged_broker/protocol.py backend/app/privileged_broker/server.py backend/app/modules/ntp_manager/router.py backend/app/modules/routing_manager/router.py backend/app/modules/login_history/service.py backend/app/modules/routing_manager/service.py
           python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py
           python -m mypy
           python -m bandit -c pyproject.toml -r backend/app
