@@ -1,102 +1,135 @@
 # Offline Repository Manager
 
-Offline Repository Manager extends the existing `os-repositories` module with portable repository bundles for disconnected and air-gapped environments. It deliberately reuses the authoritative repository database, content-addressed package store, APT/RPM adapters, immutable snapshots, channels, GPG keys, audit integration and host-facing configuration model instead of introducing a second repository subsystem.
+Offline Repository Manager is an extension of the existing `os-repositories` module for building, transferring, verifying, importing and publishing Linux package repositories in disconnected and air-gapped environments.
 
-## Scope
+It does not create a second package-management subsystem. The implementation reuses the existing WebNAS repository database, content-addressed package store, APT/RPM adapters, immutable snapshots, channels, signing keys, audit trail, repository job tables and Hosts Manager public API.
 
-The current implementation provides the backend foundation for:
-
-- reusable offline repository targets;
-- full, selected-package and delta bundle planning;
-- recursive dependency-closure calculation from snapshot metadata;
-- deterministic JSON metadata and normalized tar/gzip archives;
-- controlled server-side staging and browser upload staging;
-- archive inspection and integrity verification before import;
-- import into the existing content-addressed package store;
-- creation of a new immutable snapshot for each import;
-- optional publication through the existing Testing/Production channel mechanism;
-- bundle pinning and retention;
-- snapshot freeze metadata;
-- storage accounting;
-- an enforceable Air-Gapped Mode that blocks repository synchronization in the backend.
-
-The API is rooted at `/api/modules/os-repositories/offline`.
-
-## Architecture
+## Supported workflow
 
 ```text
-os-repositories
-  |
-  +-- repositories / mirrors
-  +-- content-addressed package store
-  +-- APT / RPM adapters
-  +-- snapshots
-  +-- channels
-  +-- signing keys
-  +-- repository jobs
-  |
-  +-- offline
-      +-- targets
-      +-- bundle planning
-      +-- dependency closure
-      +-- export
-      +-- verification
-      +-- import
-      +-- delta calculation
-      +-- retention
-      +-- air-gap policy
+Internet / upstream repositories
+            |
+            v
+      WebNAS online
+            |
+       mirror / sync
+            |
+         snapshot
+            |
+  dependency closure + plan
+            |
+   Full / Selected / Delta
+       .tar.zst bundle
+            |
+      controlled transfer
+            |
+            v
+      WebNAS offline
+            |
+     stage -> inspect
+            |
+       verify integrity
+            |
+          import
+            |
+    immutable snapshot
+            |
+      optional publish
+       Testing / Production
+            |
+         Linux hosts
 ```
 
-Offline metadata is stored in the same SQLite database as the normal repository module. Package payloads are never stored as SQLite BLOBs.
+## User interface
 
-The extension creates idempotent tables for targets, bundle records, import history, imported-snapshot lineage, snapshot freeze state and offline settings. Existing repository/snapshot/package/channel tables remain authoritative.
+The `os-repositories` application exposes two modes:
 
-## Online to offline workflow
+- **Online repositories** — the existing repository manager;
+- **Offline Repository Manager** — the disconnected-repository workflow.
 
-```text
-Internet
-   |
-   v
-WebNAS online
-   |
-   +--> mirror/sync
-   +--> package filtering
-   +--> snapshot
-   +--> dependency closure
-   +--> offline bundle
-             |
-             +--> controlled transfer
-                      |
-                      v
-                WebNAS offline
-                      |
-                      +--> stage
-                      +--> inspect
-                      +--> verify
-                      +--> import
-                      +--> immutable snapshot
-                      +--> optional publish
-                              |
-                              v
-                         Linux clients
-```
+The offline UI contains:
 
-The offline instance does not need access to the source WebNAS database. The bundle contains the repository metadata and package descriptors needed to verify and ingest the payload.
+- Dashboard;
+- Targets;
+- Bundles;
+- Host Groups;
+- Import;
+- Delta & Freeze;
+- Jobs;
+- Storage;
+- Diagnostics;
+- Settings / Air-Gapped Mode.
+
+The UI hides destructive actions when the current user does not have the corresponding permission. Backend RBAC remains authoritative.
+
+## Reusable targets
+
+A target stores a reusable export definition:
+
+- repository;
+- snapshot or channel;
+- distribution and version;
+- architecture;
+- optional package allow-list;
+- dependency-closure policy;
+- signing key;
+- optional Hosts Manager group association.
+
+Targets can be created manually or generated from a Hosts Manager group. Group generation reads hosts exclusively through the supported Hosts Manager public registry. The offline module does not open the Hosts Manager SQLite database directly.
+
+For host-group generation, host distribution, release and architecture are compared with candidate repositories. Common architecture aliases are normalized, including `x86_64` -> `amd64` for APT and `amd64` -> `x86_64` for RPM.
+
+## Bundle types
+
+### Full
+
+Contains every package from the selected snapshot for the requested architecture, including architecture-independent packages (`all` for DEB and `noarch` for RPM).
+
+### Selected
+
+Starts from an explicit package list and recursively resolves dependencies from package metadata already stored by WebNAS. Missing dependencies and conflicts are reported before export.
+
+### Delta
+
+Compares a base snapshot with a target snapshot and exports only changed package payloads while carrying a complete target package descriptor set.
+
+The delta plan reports:
+
+- added packages;
+- updated packages;
+- removed packages;
+- unchanged packages;
+- full target size;
+- delta payload size.
+
+A delta import requires the destination to have the matching imported base snapshot. The source snapshot is never mutated.
+
+## Dependency closure
+
+The resolver understands common DEB/RPM dependency expressions, alternatives and version operators such as `=`, `>=`, `>`, `>>`, `<=`, `<` and `<<`.
+
+Resolution uses only metadata already present in the selected WebNAS snapshot. It never executes user-provided shell commands and never silently downloads missing packages.
 
 ## Bundle format
 
-The implemented portable format uses `.tar.gz` archives. The manifest version is currently `1`.
+New exports use Zstandard-compressed tar archives:
 
-Example:
+```text
+webnas-offline-<distribution>-<version>-<architecture>-<id>.tar.zst
+```
+
+Legacy `.tar.gz` and `.tgz` bundles remain accepted for import compatibility.
+
+Typical archive layout:
 
 ```text
 manifest.json
-manifest.json.asc             # optional
+manifest.json.asc             # optional detached GPG signature
 repository/
-  dists/...                   # APT
-  pool/...                    # APT
-  <arch>/Packages/...         # RPM
-  <arch>/repodata/...         # RPM
+  dists/...                   # APT metadata
+  pool/...                    # APT payloads
+  <arch>/Packages/...         # RPM payloads
+  <arch>/repodata/...         # RPM metadata
 keys/
   repository.asc              # public key only
 metadata/
@@ -105,182 +138,231 @@ metadata/
   packages.json
 ```
 
-`manifest.json` records the bundle ID, repository identity, format, distribution/version, source snapshot, optional base snapshot, channel, architecture, bundle type, package metadata, target package set, removed packages for delta bundles, creation time, compression, signing fingerprint and a SHA-256/size manifest for every non-manifest file.
-
 Private GPG material is never exported.
 
-## Full bundles
+The manifest contains repository identity, source/base snapshot identity, architecture, bundle type, package descriptors, removed packages for delta bundles, compression metadata and a SHA-256/size entry for every declared non-manifest file.
 
-A full bundle contains every package in the selected snapshot that matches the requested architecture plus architecture-independent packages (`all` for DEB and `noarch` for RPM).
+Tar metadata is normalized before compression to improve reproducibility. Payload hashing is streamed in bounded chunks.
 
-Before creation the backend returns a plan containing package counts, estimated bundle size, available disk space and dependency-closure state.
+## Controlled staging
 
-## Selected package bundles
-
-A selected bundle starts from an explicit package list. The resolver walks dependency metadata recursively and selects the highest available version that satisfies the recorded version constraint.
-
-Currently handled dependency syntax includes common package names, alternatives and the comparison operators `=`, `>=`, `>`, `>>`, `<=`, `<` and `<<`.
-
-The planner reports missing dependencies and conflicts. Export is rejected if the dependency closure is incomplete.
-
-The resolver operates exclusively on package metadata already ingested into the selected snapshot. It does not execute frontend-provided shell commands and does not silently fetch missing dependencies.
-
-## Delta bundles
-
-A delta plan compares a base snapshot with a target snapshot by `(package name, architecture)` and package SHA-256.
-
-It reports:
-
-- added packages;
-- updated packages;
-- removed packages;
-- unchanged packages;
-- target full size;
-- delta payload size.
-
-The bundle contains changed payloads plus a complete target package descriptor set. Import creates a new snapshot; the source/base snapshot is never mutated.
-
-For a delta import, the offline destination must already contain an imported snapshot whose recorded source snapshot matches the delta's base snapshot. Missing unchanged package content causes the import to fail rather than producing an incomplete snapshot.
-
-## Staging and import
-
-Server-side staging is restricted to:
+Browser uploads are written only to the managed staging directory:
 
 ```text
 /var/lib/webnas/os-repositories/incoming/offline-bundles/
 ```
 
-The API addresses staged artifacts by derived IDs. It does not accept arbitrary filesystem paths.
+The API addresses staged artifacts through derived IDs. It never accepts an arbitrary server filesystem path from the frontend.
 
-Browser uploads stream into this directory with the module's configured upload limit and an atomic final rename.
+Uploads are streamed, bounded by the configured repository upload limit and atomically renamed into place after completion.
 
-The import flow is:
+## Verification and import security
 
-```text
-stage
-  -> archive validation
-  -> safe extraction
-  -> manifest validation
-  -> SHA-256 verification
-  -> package inspection
-  -> optional GPG verification
-  -> destination compatibility check
-  -> content-addressed ingestion
-  -> immutable snapshot creation
-  -> optional channel publication
-```
+Offline archives are treated as hostile input.
 
-## Security model
-
-Offline archives are untrusted input.
-
-The extractor rejects:
+The safe extractor rejects:
 
 - absolute paths;
-- `..` path traversal;
+- `..` traversal;
 - backslash path ambiguity;
 - symlinks;
 - hardlinks;
 - devices;
 - FIFOs;
-- unsupported tar member types;
+- unsupported tar entry types;
 - duplicate paths;
 - case-colliding paths;
-- excessive archive member counts;
+- excessive member counts;
 - excessive declared extracted size.
 
-Extraction is manual rather than `extractall()`. Every destination is resolved through the module's managed-path guard before data is written.
+Extraction is manual; `extractall()` is not used.
 
-Files are streamed in bounded chunks. The implementation does not load an entire multi-gigabyte archive or package into memory.
+Before import WebNAS verifies:
 
-Before import, every declared file is checked for exact byte size and SHA-256. Unexpected files are reported. Package payloads are hashed independently and inspected by the existing DEB/RPM package inspector before ingestion.
+1. bundle format version;
+2. manifest structure;
+3. declared file presence;
+4. exact file size;
+5. SHA-256 for every declared file;
+6. absence of unexpected files;
+7. package payload SHA-256;
+8. DEB/RPM metadata using the existing package inspector;
+9. optional GPG manifest signature;
+10. destination repository compatibility;
+11. delta base availability when applicable.
 
-External tools continue to use fixed argument arrays, `shell=False`, a restricted environment and bounded timeouts.
+Import then ingests package payloads through the existing content-addressed repository service and creates a new immutable snapshot.
 
-## GPG verification
+## GPG trust model
 
-A signed bundle contains an armored detached signature for `manifest.json` and the corresponding public key.
+A signed bundle carries an armored detached signature and the public key needed for cryptographic verification.
 
-Verification occurs in a private temporary GnuPG home. If the cryptographic signature is correct but the fingerprint is not present in the local signing-key registry, the result is `verified` with trust `unknown`; it is not silently promoted to trusted.
+Verification runs in a private temporary GnuPG home. A cryptographically valid signature whose fingerprint is not known to the local WebNAS key registry is reported as **verified with unknown trust**; it is not silently promoted to trusted.
 
-Unsigned bundles are explicitly reported as unsigned. Repository-level package/signature policy remains controlled by the existing repository module.
+Unsigned bundles are explicitly reported as unsigned.
+
+## Durable jobs
+
+Export, verify and import operations use the existing `repository_sync_jobs` and `repository_sync_logs` infrastructure instead of a parallel job database.
+
+Offline operations are identified as:
+
+```text
+offline_export
+offline_verify
+offline_import
+```
+
+The API provides:
+
+- queued/running/completed/failed/cancelled state;
+- stages and progress;
+- current item;
+- persistent logs;
+- retry;
+- cancellation request;
+- SSE job updates;
+- restart handling through the existing durable repository store.
+
+The normal repository sync manager filters its own jobs to `operation='sync'`, so it does not consume offline work after restart.
 
 ## Air-Gapped Mode
 
-Air-Gapped Mode is persisted in the offline settings table.
+Air-Gapped Mode is a persisted backend policy, not a frontend-only switch.
 
-When enabled, the backend rejects new repository synchronization requests before they are queued. A synchronization job that was queued before Air-Gapped Mode was enabled is failed before DNS resolution, authenticated proxy setup or repository tooling can run.
+When enabled:
 
-Offline operations that use local content remain available: package browsing, bundle staging/verification/import, snapshots, channels, retention and storage inspection.
+- new mirror synchronization requests are rejected before queueing;
+- a sync queued before the mode was enabled is failed before DNS resolution, HTTP proxy setup or repository tooling can run;
+- local package browsing, staging, verification, import, snapshots, channels, bundles, retention and diagnostics remain available.
 
-This is a backend policy, not merely a hidden frontend control.
+Changing Air-Gapped Mode requires the dedicated critical permission `os-repositories.offline.airgap.manage`.
+
+## RBAC
+
+Offline Repository Manager registers dedicated permissions in the existing permission registry:
+
+```text
+os-repositories.offline.view
+os-repositories.offline.export
+os-repositories.offline.import
+os-repositories.offline.verify
+os-repositories.offline.delete
+os-repositories.offline.targets.manage
+os-repositories.offline.freeze
+os-repositories.offline.delta
+os-repositories.offline.configure
+os-repositories.offline.airgap.manage
+```
+
+Default role policy:
+
+- **Administrator** — all offline permissions;
+- **Operator** — operational offline permissions except destructive bundle deletion and Air-Gapped Mode switching;
+- **Auditor** — read-only offline view.
+
+Publishing an imported snapshot to Production additionally requires the existing `os-repositories.channels.promote` permission and Production confirmation.
+
+Deleting a pinned bundle requires the critical delete permission plus `force=true` and the exact confirmation text `DELETE`.
 
 ## Retention and pinning
 
-Default policy:
+Default retention settings are:
 
 - keep the latest 5 bundles;
-- remove eligible bundles older than 90 days;
-- keep Production bundles;
-- keep signed bundles;
-- always keep pinned bundles.
+- delete eligible artifacts older than 90 days;
+- retain Production bundles;
+- retain signed bundles;
+- always retain pinned bundles.
 
-Deleting a generated archive changes only the offline bundle artifact record. It does not delete packages from the shared content-addressed store, snapshots or published channels.
+Deleting a bundle removes the portable artifact record/file only. It does not delete shared package content, source snapshots or published channels.
 
-## Storage
+## Storage and deduplication
 
-The storage endpoint reports:
+Offline storage reporting includes:
 
 - logical package bytes;
-- generated offline bundle bytes;
+- generated bundle bytes;
 - staging/temporary bytes;
 - logical snapshot bytes;
 - physical content-store bytes;
-- estimated bytes saved through deduplication;
+- estimated bytes saved by deduplication;
 - filesystem free space.
 
-The authoritative package store remains SHA-256-addressed, so importing a package that already exists does not create another permanent payload copy.
+Imported packages continue to use the existing SHA-256-addressed package store. Re-importing content already present does not create another permanent payload copy.
+
+## Diagnostics
+
+Offline diagnostics report:
+
+- bundle directory availability;
+- staging directory availability;
+- temporary directory availability;
+- free space;
+- missing generated bundle artifacts;
+- orphaned offline job payloads;
+- active offline jobs;
+- Air-Gapped Mode state;
+- availability of GPG, DEB and RPM tooling;
+- current offline storage statistics.
+
+## Backup and restore
+
+Offline metadata lives in the same `repositories.sqlite3` database as the normal `os-repositories` module. The existing repository backup performs an SQLite backup of that database, therefore target, bundle, import, lineage, freeze, settings and offline-job metadata participate in the same backup/restore transaction model.
+
+Package payload storage remains governed by the normal repository backup/content-store policy.
 
 ## API
 
-Current endpoints:
+The extension is mounted under:
 
 ```text
-GET    /api/modules/os-repositories/offline/dashboard
-GET    /api/modules/os-repositories/offline/settings
-PUT    /api/modules/os-repositories/offline/settings
-
-GET    /api/modules/os-repositories/offline/targets
-POST   /api/modules/os-repositories/offline/targets
-GET    /api/modules/os-repositories/offline/targets/{id}
-PUT    /api/modules/os-repositories/offline/targets/{id}
-DELETE /api/modules/os-repositories/offline/targets/{id}
-
-POST   /api/modules/os-repositories/offline/exports/plan
-POST   /api/modules/os-repositories/offline/exports
-
-GET    /api/modules/os-repositories/offline/bundles
-GET    /api/modules/os-repositories/offline/bundles/{id}
-GET    /api/modules/os-repositories/offline/bundles/{id}/download
-PUT    /api/modules/os-repositories/offline/bundles/{id}/pin
-DELETE /api/modules/os-repositories/offline/bundles/{id}
-
-GET    /api/modules/os-repositories/offline/imports/staged
-POST   /api/modules/os-repositories/offline/imports/upload
-GET    /api/modules/os-repositories/offline/imports/{staged_id}/inspect
-POST   /api/modules/os-repositories/offline/imports/{staged_id}/verify
-POST   /api/modules/os-repositories/offline/imports/{staged_id}
-
-GET    /api/modules/os-repositories/offline/delta/plan
-POST   /api/modules/os-repositories/offline/snapshots/{snapshot_id}/freeze
-GET    /api/modules/os-repositories/offline/storage
+/api/modules/os-repositories/offline
 ```
 
-All routes are mounted through the existing module manifest and use the normal WebNAS session/CSRF/RBAC dependencies. Production publication additionally requires the existing `os-repositories.channels.promote` permission and exact `Production` confirmation.
+Main endpoint groups:
+
+```text
+GET/PUT  /settings
+GET      /dashboard
+
+GET/POST /targets
+GET/PUT/DELETE /targets/{id}
+POST     /targets/from-host-group
+GET      /hosts/groups/{group_id}/compatibility
+
+POST     /exports/plan
+POST     /exports
+GET      /bundles
+GET      /bundles/{id}
+GET      /bundles/{id}/download
+PUT      /bundles/{id}/pin
+DELETE   /bundles/{id}
+
+GET      /imports/staged
+POST     /imports/upload
+GET      /imports/{staged_id}/inspect
+POST     /imports/{staged_id}/verify
+POST     /imports/{staged_id}
+
+GET      /delta/plan
+POST     /snapshots/{snapshot_id}/freeze
+
+GET      /jobs
+GET      /jobs/{id}
+GET      /jobs/{id}/events
+POST     /jobs/{id}/cancel
+POST     /jobs/{id}/retry
+
+GET      /storage
+GET      /diagnostics
+```
 
 ## Database additions
 
-The extension uses idempotent `CREATE TABLE IF NOT EXISTS` migrations for:
+The extension creates its schema idempotently with `CREATE TABLE IF NOT EXISTS` and does not destructively replace the existing repository schema.
+
+Offline tables include:
 
 ```text
 offline_targets
@@ -289,51 +371,45 @@ offline_imports
 offline_snapshot_origins
 snapshot_freezes
 offline_settings
+offline_job_payloads
 ```
 
-Indexes cover repository/time and status/time bundle queries plus imported snapshot lineage.
+## Tests
 
-## Testing
+Dedicated automated coverage includes:
 
-Dedicated tests cover:
-
-- offline schema/settings/targets;
-- Air-Gapped Mode synchronization blocking;
+- schema/settings/targets;
+- Air-Gapped Mode sync blocking;
 - recursive dependency closure;
 - missing dependencies;
-- full bundle export and verification round trip;
-- tar traversal rejection;
+- bundle export and verification round trip;
+- malicious tar traversal;
 - delta calculation;
-- idempotent snapshot freeze.
+- snapshot freeze idempotency;
+- durable offline jobs sharing the repository job store;
+- offline role permissions;
+- Hosts Manager group compatibility and target generation.
 
-Repository CI additionally executes Ruff, mypy, Bandit, backend tests, integration tests, frontend validation/build, dependency review and CodeQL.
+The repository CI additionally runs Ruff, mypy, Bandit, backend unit/integration tests, frontend lint/typecheck/tests/build, generated OpenAPI consistency, dependency audits, Playwright, real-stack E2E and CodeQL.
 
-## Manual verification
+## Operational verification
 
-1. Install `os-repositories` and create a disposable local APT repository.
-2. Upload valid `.deb` packages and create a snapshot.
-3. Request `/offline/exports/plan` for the snapshot and verify disk-space/dependency output.
-4. Create a confirmed full bundle and download it.
-5. Copy the archive into the controlled staging directory of another disposable WebNAS instance.
-6. Inspect and verify the staged bundle.
-7. Import it into a compatible repository and verify that a new snapshot is created.
-8. Publish the imported snapshot to Testing and confirm the normal repository HTTP service serves its metadata.
-9. Enable Air-Gapped Mode and confirm `/repositories/{id}/sync` is rejected without DNS or HTTP activity.
-10. Generate a second source snapshot, create a delta plan/bundle and verify the offline destination requires the matching imported base snapshot.
+A representative acceptance test is:
 
-## Current limitations
+1. Create an APT or RPM repository on an online WebNAS instance.
+2. Synchronize/upload packages and create a snapshot.
+3. Run export plan and confirm dependency closure and free-space checks.
+4. Create a Full bundle and download the `.tar.zst` artifact.
+5. Transfer it to an offline WebNAS instance through the approved medium.
+6. Stage and inspect the archive.
+7. Run verification and review checksum/signature status.
+8. Import into a compatible destination repository.
+9. Confirm a new immutable snapshot is created.
+10. Publish to Testing and validate a disposable Linux client.
+11. Promote to Production only after normal repository approval.
+12. Create a second source snapshot and repeat with a Delta bundle.
+13. Enable Air-Gapped Mode and verify online synchronization is rejected before outbound network activity.
 
-The backend foundation is implemented, but the following items remain outside the current PR scope or require additional hardening before they should be considered complete production features:
+## Compatibility note
 
-- archive compression is currently deterministic gzip/tar rather than `.tar.zst`;
-- bundle export/import/verification currently execute synchronously instead of using dedicated durable offline jobs/SSE;
-- the existing generic `os-repositories.*` permissions are reused; dedicated `os-repositories.offline.*` RBAC permissions are not yet registered;
-- the dedicated Offline Repository Manager frontend workflow is not yet wired into `OsRepositoriesApp`;
-- Hosts Manager group-to-target generation is not yet implemented;
-- offline metadata is not yet included in the module backup/restore manifest;
-- diagnostics do not yet expose offline-specific checks;
-- snapshot freeze state is recorded but normal snapshot-deletion code does not yet consult it;
-- dependency closure is based on the metadata currently stored by WebNAS and does not yet implement virtual `Provides`/RPM `Obsoletes` semantics;
-- large exports are streamed to disk, but dedicated progress/cancellation/restart recovery for offline operations still requires durable-job integration.
-
-These limitations are intentionally explicit so the current PR is reviewable as a real backend increment rather than presenting unimplemented UI or job behavior as complete.
+Dependency closure is intentionally based on package dependency metadata currently modeled by WebNAS. Advanced virtual-provider semantics such as every RPM `Provides`/`Obsoletes` edge are not synthesized when those relationships were not present in the ingested metadata. Missing closure is reported and export is rejected rather than guessing a package set.
