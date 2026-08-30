@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Literal
 
@@ -29,6 +30,14 @@ from .security import clear_session, create_session, get_session_user, rate_limi
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 AuthMethod = Literal["local", "pam", "ldap"]
+
+
+@dataclass(frozen=True, slots=True)
+class LocalAuthenticatedIdentity:
+    username: str
+    provider: Literal["local"]
+    home: str
+    display_name: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -70,9 +79,14 @@ def _pam_identity(username: str, password: str) -> AuthenticatedIdentity:
     return AuthenticatedIdentity(username=username, provider="pam", home=user_home(username))
 
 
-def _local_identity(username: str, password: str) -> AuthenticatedIdentity:
-    user = authenticate_local(username, password)
-    return AuthenticatedIdentity(
+def _local_identity(username: str, password: str) -> LocalAuthenticatedIdentity:
+    try:
+        user = authenticate_local(username, password)
+    except ValueError as error:
+        # Invalid local usernames are authentication failures, not application
+        # errors. Keep the response indistinguishable from a bad password.
+        raise LocalInvalidCredentials("Invalid username or password") from error
+    return LocalAuthenticatedIdentity(
         username=str(user["username"]),
         provider="local",
         home=str(user["home"]),
