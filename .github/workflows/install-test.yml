@@ -48,21 +48,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -L /opt/webnas/current
-          test -x /opt/webnas/current/backend/.venv/bin/python
-          test -f /opt/webnas/current/frontend/dist/index.html
-          test -f /etc/webnas/config.yaml
-          test -f /etc/pam.d/webnas
-          grep -Eq '^([[:space:]]*@include[[:space:]]+common-auth|[[:space:]]*auth[[:space:]]+include[[:space:]]+system-auth)' /etc/pam.d/webnas
-          ! grep -Eq '^[[:space:]]*auth[[:space:]].*(login)' /etc/pam.d/webnas
-          test -f /var/lib/webnas/settings/deployment.json
-          test -f /opt/webnas/current/.webnas-revision
+          require_check() {
+            local description="$1"
+            shift
+            if "$@"; then
+              echo "[OK] ${description}"
+            else
+              echo "[FAIL] ${description}" >&2
+              return 1
+            fi
+          }
+
+          require_check "current release symlink exists" test -L /opt/webnas/current
+          require_check "backend virtualenv Python is executable" test -x /opt/webnas/current/backend/.venv/bin/python
+          require_check "frontend index exists" test -f /opt/webnas/current/frontend/dist/index.html
+          require_check "configuration exists" test -f /etc/webnas/config.yaml
+          require_check "dedicated PAM service exists" test -f /etc/pam.d/webnas
+          if grep -Eq '^([[:space:]]*@include[[:space:]]+common-auth|[[:space:]]*auth[[:space:]]+include[[:space:]]+system-auth)' /etc/pam.d/webnas; then
+            echo "[OK] PAM service includes the distribution authentication policy"
+          else
+            echo "[FAIL] PAM service does not include the expected distribution authentication policy" >&2
+            sudo cat /etc/pam.d/webnas >&2 || true
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*auth[[:space:]].*(login)' /etc/pam.d/webnas; then
+            echo "[FAIL] PAM service falls back to login" >&2
+            sudo cat /etc/pam.d/webnas >&2 || true
+            exit 1
+          fi
+          echo "[OK] PAM service has no login fallback"
+          require_check "deployment state exists" test -f /var/lib/webnas/settings/deployment.json
+          require_check "installed source revision exists" test -f /opt/webnas/current/.webnas-revision
+
           installed_sha="$(sudo cat /opt/webnas/current/.webnas-revision)"
           expected_sha="$(git rev-parse HEAD)"
           if [[ "${installed_sha}" != "${expected_sha}" ]]; then
-            echo "Installed source revision ${installed_sha} does not match checked-out revision ${expected_sha}" >&2
+            echo "[FAIL] Installed source revision ${installed_sha} does not match checked-out revision ${expected_sha}" >&2
             exit 1
           fi
+          echo "[OK] Installed source revision matches checked-out revision ${expected_sha}"
 
       - name: Verify services and HTTP health
         shell: bash
