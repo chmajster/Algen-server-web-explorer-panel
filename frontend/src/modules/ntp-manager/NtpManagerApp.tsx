@@ -58,7 +58,7 @@ export function NtpManagerApp({ permissions, toast }: Props) {
       const result = await ntpManagerClient.test(value);
       toast(
         `${value}: ${result.ok ? "OK" : "failed"}`,
-        result.ok ? "success" : "error",
+        result.ok ? "ok" : "error",
         "admin",
         "ntp-manager",
       );
