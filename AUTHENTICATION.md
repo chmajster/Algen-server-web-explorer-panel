@@ -6,30 +6,31 @@ WebNAS has two mutually exclusive global authentication modes.
 
 `Local database` is the default mode. The login page accepts only users stored in WebNAS' application-owned `local-auth.sqlite3` database. PAM and LDAP are not offered while this mode is active.
 
-Local-user records contain the username, enabled state, display name, WebNAS role, home metadata and timestamps. Passwords are stored only as salted `scrypt` hashes. Plaintext passwords are never written to the database, application logs, audit events or browser-readable APIs.
+Local-user records contain the username, enabled state, display name, WebNAS role, home metadata and timestamps. Passwords are stored only as salted `scrypt` hashes. Plaintext passwords are never written to the user database, application logs, audit events or browser-readable APIs.
 
 ### Initial administrator
 
-When a new local authentication database is initialized, WebNAS creates one administrator:
+When a new Local authentication database is initialized, WebNAS creates one administrator:
 
 ```text
 username: admin
 role: admin
 ```
 
-Its password is generated with `secrets.token_urlsafe()` and is not a static/default password. A one-time copy is written locally to:
+Its password is generated with `secrets.token_urlsafe()` and is not a static/default password. During bootstrap, the recoverable copy is stored only as an encrypted one-time secret in the existing Secrets Manager. The local-user database contains only the salted `scrypt` hash plus the identifier of that temporary secret.
+
+A standard installation initializes the authentication subsystem after the release health check, retrieves that encrypted bootstrap credential as the WebNAS service identity, prints it once to the installer terminal, and immediately removes the temporary secret. No `initial-local-admin.txt` or other plaintext credential file is created.
+
+Example installer output:
 
 ```text
-<paths.data_dir>/initial-local-admin.txt
+Initial local administrator credentials:
+Username: admin
+Password: <random-password>
+IMPORTANT: this password is displayed once and is not stored in plaintext.
 ```
 
-The file is created with mode `0600`. With the default data directory:
-
-```bash
-sudo cat /var/lib/webnas/initial-local-admin.txt
-```
-
-The bootstrap file is removed after the first successful `admin` login or after the administrator password is changed. Change the bootstrap password immediately.
+Store the displayed password securely and change it after the first login. If the administrator successfully authenticates before the installer consumes the bootstrap secret, WebNAS deletes that temporary encrypted copy as part of the successful login lifecycle.
 
 ### Local user management
 
@@ -215,7 +216,9 @@ Authentication mode changes do not create a second authorization subsystem.
 - random per-password salts;
 - minimum 12-character password at the API boundary;
 - constant-style dummy verification for unknown usernames;
-- plaintext exists only for the duration of the request;
+- plaintext exists only in process memory while credentials are being created, submitted or verified;
+- the initial recoverable bootstrap copy is encrypted by Secrets Manager and deleted immediately after installer retrieval or the first successful admin login;
+- no plaintext bootstrap credential file is created;
 - password changes replace the hash and never expose it through an API.
 
 ### PAM
