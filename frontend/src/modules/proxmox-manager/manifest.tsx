@@ -11,7 +11,8 @@ const ProxmoxManagerApp = lazy(() =>
 
 const manifest: FrontendModuleManifest = {
   id: "proxmox",
-  labelKey: "Proxmox Manager",
+  moduleId: "proxmox-manager",
+  labelKey: "module.proxmoxManager",
   icon: <Boxes />,
   category: "infrastructure",
   permission: "modules.view",
