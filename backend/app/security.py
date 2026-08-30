@@ -397,6 +397,12 @@ def get_session_user(request: Request) -> SessionUser:
     session = _session_store().resolve(raw)
     if session is None:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, "Invalid or expired session")
+    if session.auth_provider == "ldap":
+        from .ldap_authentication import validate_ldap_session
+
+        if not validate_ldap_session(session.identity_id, session.username):
+            _session_store().revoke(raw)
+            raise HTTPException(HTTPStatus.UNAUTHORIZED, "LDAP session policy is no longer valid")
     return SessionUser(
         username=session.username,
         csrf_token=session.csrf_token,
