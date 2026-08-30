@@ -14,7 +14,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from .audit import logger
 from .config import get_config
 from .privileged_broker.runtime import broker_command, broker_required
 from .sqlite_utils import ClosingConnection
