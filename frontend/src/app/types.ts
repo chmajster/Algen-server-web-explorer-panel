@@ -40,6 +40,8 @@ export type AppDefinition = {
   id: AppId;
   labelKey: string;
   icon: ReactNode;
+  /** Backend Package Center module that must be installed before this app is shown in Start. */
+  moduleId?: string;
   admin?: boolean;
   permission?: string;
   permissionAny?: string[];
