@@ -1,0 +1,3 @@
+- Added Compliance Manager with read-only CIS-aligned Level 1 checks for SSH, sudo, filesystem, kernel/sysctl, PAM and host firewall policy.
+- Added compliance scoring, per-category results, evidence/remediation guidance, RBAC, job-based scans and Activity Center audit events.
+- Added a dedicated React application with Polish/English scan UI text, policy filtering and regression coverage for scoring, SSH parsing and permissions.
