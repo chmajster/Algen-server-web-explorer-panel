@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "postbuild": "node -e \"console.log('[INFO] Frontend bundle built successfully.')\"",
+    "postbuild": "node -e \"console.log('[INFO] Frontend bundle build completed successfully.')\"",
     "build:analyze": "npm run build && node scripts/analyze-bundle.mjs",
     "bundle:report": "node scripts/analyze-bundle.mjs",
     "bundle:check": "node scripts/analyze-bundle.mjs --check",
