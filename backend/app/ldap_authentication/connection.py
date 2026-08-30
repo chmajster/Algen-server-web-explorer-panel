@@ -138,14 +138,14 @@ def connect(
         port=endpoint.port,
         use_ssl=settings.get("security_mode") == "ldaps",
         tls=tls_config(settings),
-        connect_timeout=float(settings.get("connect_timeout") or 5.0),
+        connect_timeout=max(1, int(float(settings.get("connect_timeout") or 5.0))),
         get_info=get_info,
     )
     connection = Connection(
         server,
         user=user,
         password=password,
-        receive_timeout=float(settings.get("operation_timeout") or 10.0),
+        receive_timeout=max(1, int(float(settings.get("operation_timeout") or 10.0))),
         raise_exceptions=True,
     )
     connection.open()

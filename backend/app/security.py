@@ -87,7 +87,6 @@ class SessionStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(username);
-                CREATE INDEX IF NOT EXISTS idx_auth_sessions_identity ON auth_sessions(auth_provider,identity_id);
                 """
             )
             columns = {

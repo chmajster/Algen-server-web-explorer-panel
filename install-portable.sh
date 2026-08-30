@@ -29,7 +29,7 @@ PAM authentication requires a named system policy, it temporarily provisions
 Portable mode intentionally uses plaintext HTTP. It binds to loopback by
 default. Use --bind-host 0.0.0.0 only in an isolated trusted network.
 
-Authentication in portable mode uses System/PAM. It uses the dedicated `webnas`
+Authentication in portable mode uses System/PAM; portable mode does not provision Local POSIX companions. It uses the dedicated `webnas`
 PAM service. The standard installed mode uses the WebNAS Local database by
 default. Portable mode does not install the privileged broker needed to
 provision Local-database POSIX companion accounts.

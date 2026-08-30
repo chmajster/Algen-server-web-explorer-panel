@@ -11,8 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ...config import get_config
-from ...modules.secrets_manager.models import SecretInput
-from ...modules.secrets_manager.service import service as secrets_service
+from ..secrets_manager import SecretInput, service as secrets_service
 from ...sqlite_utils import ClosingConnection
 from .models import ConnectionInput
 

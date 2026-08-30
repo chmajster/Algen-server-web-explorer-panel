@@ -19,7 +19,7 @@ from ..config import get_config
 from ..identity.models import Role, UserPolicy
 from ..identity.permissions import normalize_permissions
 from ..identity.repository import repository as identity_repository
-from ..modules.secrets_manager.service import service as secrets_service
+from ..modules.secrets_manager import service as secrets_service
 from .connection import LdapEndpoint, connect, endpoints, resolve_host
 from .repository import AUTH_SECRET_MODULE, LdapAuthenticationRepository, repository
 

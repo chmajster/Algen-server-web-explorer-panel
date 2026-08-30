@@ -12,8 +12,7 @@ from typing import Any
 
 from ..config import get_config
 from ..identity.repository import repository as identity_repository
-from ..modules.secrets_manager.models import SecretInput
-from ..modules.secrets_manager.service import service as secrets_service
+from ..modules.secrets_manager import SecretInput, service as secrets_service
 from ..sqlite_utils import ClosingConnection
 from .models import LdapAccessPolicyInput, LdapAuthenticationSettingsInput, LdapGroupMappingInput, LdapServerInput
 

@@ -8,7 +8,7 @@ from typing import Any
 from ldap3 import ALL, Connection, Server, Tls
 from ldap3.core.exceptions import LDAPException, LDAPInvalidCredentialsResult, LDAPStartTLSError
 
-from ...modules.secrets_manager.service import service as secrets_service
+from ..secrets_manager import service as secrets_service
 from .repository import SECRET_MODULE
 from .security import assert_safe_target, normalize_host
 
@@ -66,14 +66,14 @@ def bind(config: dict[str, Any], *, purpose: str = "ldap-manager-operation", get
                 port=port,
                 use_ssl=config.get("security_mode") == "ldaps",
                 tls=tls,
-                connect_timeout=float(config.get("connect_timeout") or 5.0),
+                connect_timeout=max(1, int(float(config.get("connect_timeout") or 5.0))),
                 get_info=get_info,
             )
             connection = Connection(
                 server,
                 user=str(config.get("bind_dn") or ""),
                 password=password,
-                receive_timeout=float(config.get("operation_timeout") or 15.0),
+                receive_timeout=max(1, int(float(config.get("operation_timeout") or 15.0))),
                 raise_exceptions=True,
             )
             connection.open()

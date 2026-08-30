@@ -53,7 +53,7 @@ jobs:
           test -f /opt/webnas/current/frontend/dist/index.html
           test -f /etc/webnas/config.yaml
           test -f /etc/pam.d/webnas
-          grep -Eq '^[[:space:]]*auth[[:space:]]+include[[:space:]]+(common-auth|system-auth)' /etc/pam.d/webnas
+          grep -Eq '^([[:space:]]*@include[[:space:]]+common-auth|[[:space:]]*auth[[:space:]]+include[[:space:]]+system-auth)' /etc/pam.d/webnas
           ! grep -Eq '^[[:space:]]*auth[[:space:]].*(login)' /etc/pam.d/webnas
           test -f /var/lib/webnas/settings/deployment.json
           test -f /opt/webnas/current/.webnas-revision

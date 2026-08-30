@@ -32,7 +32,8 @@ def _json_value(value: Any) -> Any:
 
 
 def _entry(item: dict[str, Any]) -> dict[str, Any]:
-    attributes = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    raw_attributes = item.get("attributes")
+    attributes: dict[str, Any] = raw_attributes if isinstance(raw_attributes, dict) else {}
     return {
         "dn": str(item.get("dn") or ""),
         "attributes": {str(key): _json_value(value) for key, value in attributes.items()},
