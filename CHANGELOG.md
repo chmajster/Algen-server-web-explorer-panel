@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v0.1.30 — 2026-08-30
+
+- Expanded Storage Manager with complete read-only diagnostics and brokered advanced probes.
+- Added application-owned Local database authentication as the default, optional PAM/LDAP system authentication, provider-aware sessions, local user administration, POSIX companion mappings, LDAP security controls, and installer bootstrap support.
+- Hardened release/update activation so release helpers reliably re-exec inside the candidate virtualenv, including symlinked Python launchers, and added an HTTP-safe clipboard fallback for copying update error details.
+- Added Firewall Manager, Security Center and Network Tools with granular RBAC/audit, typed privileged firewall operations, serialized backup/apply/verify/rollback transactions, normalized UFW/firewalld/nftables handling, non-destructive posture scanning, and bounded network diagnostics.
+- Added central Job Queue Manager, NTP Manager, Routing Manager, Login History and GitOps Config Manager with privileged-broker integration, safe routing transactions/rollback, authentication-event correlation, secret-safe GitOps workflows, frontend applications, generated OpenAPI contracts and regression coverage.
+- Hardened infrastructure manager error boundaries and Job Queue lifecycle: unexpected NTP/routing failures no longer expose exception details, and permanent queue workers are explicitly managed daemon threads so unit/integration processes shut down deterministically.
+
 ## v0.1.29 — 2026-08-30
 
 - Added Offline Repository Manager to `os-repositories`: Full/Selected/Delta `.tar.zst` bundles, dependency closure, controlled staging and hardened verification/import, durable offline jobs with SSE/retry/cancel, Air-Gapped Mode enforcement, granular offline RBAC, Hosts Manager group target generation, storage/retention/pinning/freeze/diagnostics, a complete React workflow, generated OpenAPI updates, tests, and operational documentation.
