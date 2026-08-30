@@ -34,7 +34,7 @@ export function FirewallManagerApp({ permissions, toast }: { permissions: readon
   const auth = (confirmation: string): Auth => ({ pam_password: password, confirmation, acknowledge_lockout: ack });
   async function mutate(action: () => Promise<unknown>) {
     if (!password) { toast("PAM password is required", "error"); return; }
-    try { await action(); toast("Firewall job queued", "success"); setPassword(""); await load(); } catch (error) { toast(String(error), "error"); }
+    try { await action(); toast("Firewall job queued", "ok"); setPassword(""); await load(); } catch (error) { toast(String(error), "error"); }
   }
 
   const ruleColumns = useMemo<DataTableColumn<FirewallRule>[]>(() => [

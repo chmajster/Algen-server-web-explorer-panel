@@ -10,9 +10,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ...modules.providers.linux_updates import LinuxUpdatesProvider
+from ..providers import LinuxUpdatesProvider
 from ...transport import read_transport_settings
-from ..firewall_manager.service import service as firewall_service
+from ..firewall_manager import service as firewall_service
 from .models import SecurityFinding, Severity
 
 

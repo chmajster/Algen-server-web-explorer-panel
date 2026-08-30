@@ -47,7 +47,7 @@ def _safe(operation: str, *, request: Request, acknowledge: bool, rule_id: str =
 
 
 def _job(actor: str, operation: str, handler: Callable[[JobContext], dict[str, Any]]) -> dict[str, Any]:
-    def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any]:
+    def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any] | None:
         service().record(actor, f"firewall.{operation}.started")
         context.update_progress(10, "Validate and snapshot firewall")
         rollback = service().create_backup(f"Automatic rollback before {operation}")

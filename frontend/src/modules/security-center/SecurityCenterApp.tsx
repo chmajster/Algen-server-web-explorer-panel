@@ -20,7 +20,7 @@ export function SecurityCenterApp({ permissions, toast }: { permissions: readonl
     finally { setLoading(false); }
   }, [toast]);
   useEffect(() => { void load(); }, [load]);
-  async function scan() { try { await securityClient.scan(); toast("Security scan queued", "success"); await load(); } catch (error) { toast(String(error), "error"); } }
+  async function scan() { try { await securityClient.scan(); toast("Security scan queued", "ok"); await load(); } catch (error) { toast(String(error), "error"); } }
   async function setState(item: Finding, status: Finding["status"]) { try { await securityClient.setState(item.id, status); await load(); } catch (error) { toast(String(error), "error"); } }
 
   const columns = useMemo<DataTableColumn<Finding>[]>(() => [

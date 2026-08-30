@@ -11,7 +11,6 @@ import subprocess
 from typing import Any
 
 from . import policy as base
-from .extended_policy import dispatch as extended_dispatch
 from .protocol import BrokerRequest, BrokerResponse, Operation
 
 _BACKENDS = {"ufw": "ufw", "firewalld": "firewall-cmd", "nftables": "nft"}
@@ -104,7 +103,7 @@ def _validate_nft(args: list[str]) -> None:
 
 def dispatch(request: BrokerRequest, *, runner: base.Runner | None = None) -> BrokerResponse:
     if request.operation != Operation.FIREWALL:
-        return extended_dispatch(request, runner=runner)
+        return BrokerResponse(request_id=request.request_id, ok=False, exit_code=126, error_code="POLICY_DENIED", stderr="unsupported firewall policy operation")
     selected = runner or base._default_runner
     try:
         extra = set(request.payload) - {"backend", "args", "timeout"}

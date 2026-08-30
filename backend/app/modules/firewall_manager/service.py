@@ -284,13 +284,29 @@ class FirewallService:
             raise FirewallError(result.stderr.strip() or result.stdout.strip() or "could not remove firewall rule")
         return {"deleted": rule_id}
 
+    @staticmethod
+    def _input_from_rule(rule: FirewallRule) -> FirewallRuleInput:
+        return FirewallRuleInput.model_validate(
+            {
+                "action": rule.action if rule.action in {"allow", "drop", "reject"} else "drop",
+                "direction": rule.direction if rule.direction in {"in", "out"} else "in",
+                "protocol": rule.protocol if rule.protocol in {"any", "tcp", "udp"} else "any",
+                "port": rule.port,
+                "source": rule.source,
+                "destination": rule.destination,
+                "interface": rule.interface,
+                "comment": rule.comment,
+                "family": rule.family if rule.family in {"any", "ipv4", "ipv6"} else "any",
+            }
+        )
+
     def edit_rule(self, rule_id: str, replacement: FirewallRuleInput) -> dict[str, Any]:
         previous = self._find(rule_id)
         self.delete_rule(rule_id)
         try:
             return self.add_rule(replacement)
         except Exception:
-            previous_input = FirewallRuleInput(action=previous.action if previous.action in {"allow", "drop", "reject"} else "drop", direction=previous.direction if previous.direction in {"in", "out"} else "in", protocol=previous.protocol if previous.protocol in {"any", "tcp", "udp"} else "any", port=previous.port, source=previous.source, destination=previous.destination, interface=previous.interface, comment=previous.comment, family=previous.family if previous.family in {"any", "ipv4", "ipv6"} else "any")
+            previous_input = self._input_from_rule(previous)
             self.add_rule(previous_input)
             raise
 
@@ -340,7 +356,7 @@ class FirewallService:
                 target = self._find(rule_id)
             except FirewallError:
                 target = None
-        if operation in {"disable", "enable", "restore"}:
+        if operation in {"disable", "enable", "restore", "import"}:
             warnings.append("Changing the global firewall state can interrupt administrative access")
         if target is not None:
             if self._rule_hits_port(target, 22):
@@ -414,7 +430,7 @@ class FirewallService:
                 if backend == FirewallBackend.nftables and not item.editable:
                     continue
                 try:
-                    self.add_rule(FirewallRuleInput(action=item.action if item.action in {"allow", "drop", "reject"} else "drop", direction=item.direction if item.direction in {"in", "out"} else "in", protocol=item.protocol if item.protocol in {"any", "tcp", "udp"} else "any", port=item.port, source=item.source, destination=item.destination, interface=item.interface, comment=item.comment, family=item.family if item.family in {"any", "ipv4", "ipv6"} else "any"))
+                    self.add_rule(self._input_from_rule(item))
                 except Exception:
                     pass
             raise

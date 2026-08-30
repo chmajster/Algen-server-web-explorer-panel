@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 
 from ...activity import ActivityCategory, ActivityStatus, record_activity
@@ -37,7 +39,7 @@ def findings(user: SessionUser = Depends(current_user)):
 def scan(user: SessionUser = Depends(mutating_user)):
     _allow(user, SECURITY_SCAN)
 
-    def execute(context: JobContext, _metadata: dict) -> dict:
+    def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any] | None:
         record_activity(ActivityCategory.module, "security.scan.started", user.username, target="security-center", status=ActivityStatus.queued, source="security-center")
         context.update_progress(10, "Collecting security signals")
         result = service().scan()

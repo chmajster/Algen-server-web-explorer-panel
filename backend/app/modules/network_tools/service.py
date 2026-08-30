@@ -14,7 +14,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from ...activity import ActivityCategory, record_activity
 from ...network_diagnostics import dns_configuration, network_overview, routing_snapshot, test_connectivity
-from ..firewall_manager.service import service as firewall_service
+from ..firewall_manager import service as firewall_service
 from .models import DnsLookupRequest, HttpTestRequest
 
 
@@ -71,7 +71,7 @@ class NetworkToolsService:
             if payload.record_type in {"A", "AAAA"}:
                 family = socket.AF_INET if payload.record_type == "A" else socket.AF_INET6
                 try:
-                    values = sorted({item[4][0] for item in socket.getaddrinfo(payload.hostname, None, family, socket.SOCK_STREAM)})
+                    values = sorted({str(item[4][0]) for item in socket.getaddrinfo(payload.hostname, None, family, socket.SOCK_STREAM)})
                 except socket.gaierror:
                     values = []
                 return {"hostname": payload.hostname, "record_type": payload.record_type, "server": payload.server or None, "answers": values, "success": bool(values), "latency_ms": round((time.perf_counter() - started) * 1000, 2), "backend": "socket"}
@@ -149,7 +149,7 @@ class NetworkToolsService:
     def _resolve(hostname: str, port: int) -> tuple[list[str], float]:
         started = time.perf_counter()
         try:
-            addresses = list(dict.fromkeys(item[4][0] for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)))[:16]
+            addresses = list(dict.fromkeys(str(item[4][0]) for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)))[:16]
         except socket.gaierror:
             addresses = []
         return addresses, round((time.perf_counter() - started) * 1000, 2)
@@ -169,7 +169,7 @@ class NetworkToolsService:
         try:
             context = ssl.create_default_context()
             wrapped = context.wrap_socket(raw, server_hostname=hostname)
-            certificate = wrapped.getpeercert()
+            certificate = wrapped.getpeercert() or {}
             tls_ms = round((time.perf_counter() - tls_started) * 1000, 2)
             summary = {"subject": certificate.get("subject"), "issuer": certificate.get("issuer"), "not_before": certificate.get("notBefore"), "not_after": certificate.get("notAfter"), "serial_number": certificate.get("serialNumber")}
             wrapped.close()
