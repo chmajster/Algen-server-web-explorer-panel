@@ -117,8 +117,8 @@ class OfflineRepositoryJobManager:
             actor = str(job["created_by"])
             if operation == "offline_export":
                 self.store.execute("UPDATE repository_sync_jobs SET stage='exporting',progress=15 WHERE id=?", (job_id,))
-                request = OfflineExportInput.model_validate(payload["request"])
-                result = self.service.create_bundle(request, actor)
+                export_request = OfflineExportInput.model_validate(payload["request"])
+                result = self.service.create_bundle(export_request, actor)
                 self.store.execute(
                     "UPDATE repository_sync_jobs SET stage='verifying',progress=90,current_item=?,downloaded_count=?,downloaded_bytes=? WHERE id=?",
                     (str(result.get("id", "")), int(result.get("package_count", 0)), int(result.get("size_bytes", 0)), job_id),
@@ -136,8 +136,8 @@ class OfflineRepositoryJobManager:
                 self._log(job_id, "system", "Offline bundle integrity verification completed")
             elif operation == "offline_import":
                 self.store.execute("UPDATE repository_sync_jobs SET stage='verifying',progress=15,current_item=? WHERE id=?", (str(payload["staged_id"]), job_id))
-                request = OfflineImportInput.model_validate(payload["request"])
-                result = self.service.import_staged(str(payload["staged_id"]), request, actor)
+                import_request = OfflineImportInput.model_validate(payload["request"])
+                result = self.service.import_staged(str(payload["staged_id"]), import_request, actor)
                 snapshot = result.get("snapshot") or {}
                 self.store.execute(
                     "UPDATE repository_sync_jobs SET stage='importing',progress=90,current_item=?,downloaded_count=? WHERE id=?",
