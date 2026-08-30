@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.1.29 — 2026-08-30
+
+- Added Offline Repository Manager to `os-repositories`: Full/Selected/Delta `.tar.zst` bundles, dependency closure, controlled staging and hardened verification/import, durable offline jobs with SSE/retry/cancel, Air-Gapped Mode enforcement, granular offline RBAC, Hosts Manager group target generation, storage/retention/pinning/freeze/diagnostics, a complete React workflow, generated OpenAPI updates, tests, and operational documentation.
+
 ## v0.1.28 — 2026-08-30
 
 - Expanded Proxmox Manager with live node/storage/cluster/VM detail views, central UPID task tracking, snapshots, cloning, migration, hardware and disk growth operations, full locked/backoff inventory auto-sync, a split responsive frontend, create-VM workflow, Host Registry identity preservation, audit integration, tests, and updated documentation without persisting Proxmox secrets or a duplicate VM/LXC inventory.

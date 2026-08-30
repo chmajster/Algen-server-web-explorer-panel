@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import shutil
+import sqlite3
 import subprocess
 import threading
 import time
@@ -26,17 +27,26 @@ class RepositoryJobManager:
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self.resume_pending()
 
+    def _air_gapped_mode(self) -> bool:
+        try:
+            setting = self.service.store.one("SELECT air_gapped_mode FROM offline_settings WHERE id=1")
+        except sqlite3.OperationalError:
+            return False
+        return bool(setting and setting["air_gapped_mode"])
+
     def resume_pending(self) -> None:
-        for job in self.service.store.all("SELECT * FROM repository_sync_jobs WHERE status='queued' ORDER BY created_at"):
+        for job in self.service.store.all("SELECT * FROM repository_sync_jobs WHERE status='queued' AND operation='sync' ORDER BY created_at"):
             self.pool.submit(self._run, str(job["id"]))
 
     def enqueue_sync(self, repository_id: str, actor: str, retry_of: str | None = None) -> dict[str, Any]:
+        if self._air_gapped_mode():
+            raise ValueError("repository synchronization is disabled in Air-Gapped Mode")
         repository = self.service.repository(repository_id)
         if not repository:
             raise KeyError("repository not found")
         active = self.service.store.one("SELECT id FROM repository_sync_jobs WHERE repository_id=? AND status IN ('queued','running')", (repository_id,))
         if active:
-            raise ValueError("repository synchronization is already active")
+            raise ValueError("repository operation is already active")
         job_id, now = object_id(), time.time()
         self.service.store.execute(
             "INSERT INTO repository_sync_jobs(id,repository_id,operation,status,stage,progress,current_item,downloaded_count,downloaded_bytes,speed_bps,warnings_json,error,retry_of,created_at,created_by) VALUES(?,?,'sync','queued','queued',0,'',0,0,0,'[]','',?,?,?)",
@@ -132,6 +142,15 @@ class RepositoryJobManager:
         repository = self.service.repository(str(job["repository_id"]))
         if not repository:
             return
+        if self._air_gapped_mode():
+            message = "repository synchronization is disabled in Air-Gapped Mode"
+            self._log(job_id, "system", message)
+            self.service.store.execute(
+                "UPDATE repository_sync_jobs SET status='failed',stage='failed',error=?,finished_at=? WHERE id=?",
+                (message, time.time(), job_id),
+            )
+            self.service._audit(str(job["created_by"]), "sync_blocked_air_gapped", job_id, {"repository_id": repository["id"]})
+            return
         now = time.time()
         self.service.store.execute("UPDATE repository_sync_jobs SET status='running',stage='preparing',progress=5,started_at=? WHERE id=?", (now, job_id))
         work = self.service.root / "temporary" / f"sync-{job_id}"
@@ -208,7 +227,7 @@ class RepositoryJobManager:
             shutil.rmtree(work, ignore_errors=True)
 
     def cancel_requested(self, job_id: str) -> bool:
-        item = self.service.store.one("SELECT cancel_requested FROM repository_sync_jobs WHERE id=?", (job_id,))
+        item = self.service.store.one("SELECT cancel_requested FROM repository_sync_jobs WHERE id=? AND operation='sync'", (job_id,))
         return bool(item and item["cancel_requested"])
 
     def cancel(self, job_id: str, actor: str) -> dict[str, Any]:
@@ -236,19 +255,24 @@ class RepositoryJobManager:
         return self.enqueue_sync(str(job["repository_id"]), actor, retry_of=job_id)
 
     def job(self, job_id: str) -> dict[str, Any] | None:
-        item = self.service.store.one("SELECT * FROM repository_sync_jobs WHERE id=?", (job_id,))
+        item = self.service.store.one("SELECT * FROM repository_sync_jobs WHERE id=? AND operation='sync'", (job_id,))
         if item:
             item["logs"] = self.logs(job_id, 200)
         return item
 
     def jobs(self, page: int = 1, page_size: int = 50, status: str = "") -> dict[str, Any]:
+        where = "operation='sync'"
+        values: tuple[Any, ...] = ()
+        if status:
+            where += " AND status=?"
+            values = (status,)
         return self.service.store.page(
             "repository_sync_jobs",
             page=page,
             page_size=page_size,
             order="created_at DESC",
-            where="status=?" if status else "",
-            values=(status,) if status else (),
+            where=where,
+            values=values,
         )
 
     def logs(self, job_id: str, limit: int = 500) -> list[dict[str, Any]]:
