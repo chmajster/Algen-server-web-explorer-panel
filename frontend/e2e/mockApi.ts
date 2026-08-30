@@ -47,6 +47,7 @@ export async function installMockApi(page: Page, authenticated = true): Promise<
     const method = request.method();
     state.calls.push(`${method} ${path}`);
 
+    if (path === "/api/auth/config") return respond(route, { mode: "system", local_enabled: false, pam_enabled: true, ldap_enabled: false, available_providers: ["pam"], default_provider: "pam" });
     if (path === "/api/auth/me") return state.authenticated ? respond(route, { username: "e2e", home: "/home/e2e", csrf_token: "csrf" }) : respond(route, { detail: "Not authenticated" }, 401);
     if (path === "/api/auth/login") {
       const body = request.postDataJSON() as { username?: string; password?: string };

@@ -7,6 +7,8 @@ import type { PolicySubject } from "../../features/admin/IdentityApp";
 
 const SettingsApp = lazy(() => import("../../features/settings/SettingsApp").then((loaded) => ({ default: loaded.SettingsAppView })));
 const HttpsSettingsControl = lazy(() => import("../../features/settings/HttpsSettingsControl").then((loaded) => ({ default: loaded.HttpsSettingsControl })));
+const AuthenticationSettingsControl = lazy(() => import("../../features/settings/AuthenticationSettingsControl").then((loaded) => ({ default: loaded.AuthenticationSettingsControl })));
+const LdapSettingsControl = lazy(() => import("../../features/settings/LdapSettingsControl").then((loaded) => ({ default: loaded.LdapSettingsControl })));
 const UpdateDetailsPolicyControl = lazy(() => import("../../features/settings/UpdateDetailsPolicyControl").then((loaded) => ({ default: loaded.UpdateDetailsPolicyControl })));
 const categories = new Set<SettingsCategory>(["system", "personalization", "files", "transfers", "notifications", "accessibility", "language", "account", "identity", "network", "networkResources", "updates", "policies", "administration", "about"]);
 const category = (value?: string): SettingsCategory => value && categories.has(value as SettingsCategory) ? value as SettingsCategory : "system";
@@ -22,6 +24,8 @@ export default {
     return lazyView(<>
       <SettingsApp settings={context.profile} initialSection={initialSection} initialPolicySubject={policySubject(context.item.moduleId)} deepLink={context.item.deepLink} t={context.t} toast={context.toast} onSettingsChange={context.onSettingsChange} onOpenApp={context.openApp} onDeepLinkClose={context.clearDeepLink} onSectionChange={context.setInitialPath} />
       <HttpsSettingsControl active={initialSection === "administration"} locale={context.profile.language} toast={context.toast} />
+      <AuthenticationSettingsControl active={initialSection === "administration"} locale={context.profile.language} toast={context.toast} />
+      <LdapSettingsControl active={initialSection === "administration"} locale={context.profile.language} toast={context.toast} />
       <UpdateDetailsPolicyControl active={initialSection === "policies"} t={context.t} toast={context.toast} />
     </>, context.t("status.loading"));
   },

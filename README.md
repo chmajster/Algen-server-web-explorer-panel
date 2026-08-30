@@ -4,7 +4,7 @@
 
 **A modern web-based administration panel for managing Linux servers, files, services, and infrastructure.**
 
-FastAPI · React · TypeScript · PAM · systemd · rsync
+FastAPI · React · TypeScript · Local users · PAM · LDAP · systemd · rsync
 
 [Installation](#installation) · [Features](#key-features) · [Modules](#modules) · [Documentation](#documentation)
 
@@ -20,8 +20,8 @@ It combines file management, system administration, user management, containers,
 
 Main project goals:
 
-- authentication with local Linux accounts through PAM,
-- no separate user password database,
+- application-owned local user authentication by default,
+- optional system authentication through PAM and LDAP,
 - modular architecture,
 - granular RBAC permissions,
 - controlled administrative operations,
@@ -46,9 +46,10 @@ Main project goals:
 
 | Area | Capabilities |
 |---|---|
+| **Authentication** | Default WebNAS local-user database, or mutually exclusive system mode with PAM and optional LDAP/StartTLS/LDAPS |
 | **File Manager** | Browse files, upload, edit, copy and move with `rsync`, monitor transfer progress |
 | **Desktop UI** | Application windows, taskbar, Start menu, shortcuts, themes, wallpapers and per-user personalization |
-| **Users & Groups** | Manage local Linux users, groups, roles and granular permissions |
+| **Users & Groups** | Manage WebNAS local users plus Linux users/groups and granular application permissions |
 | **Networking** | Interfaces, VLANs, bridges, bonds, DNS, routing, diagnostics and controlled network changes |
 | **Network Resources** | SMB/CIFS, NFS, SSHFS and WebDAV integrated with File Manager |
 | **DCST** | Logical `APMID.ENV` segmentation, reusable Ports/IPSets/Services, Proxmox Firewall reconciliation, block/unblock, drift detection and firewall diagnostics |
@@ -127,7 +128,21 @@ After installation, WebNAS is available by default at:
 https://SERVER_IP:5000
 ```
 
-A browser will warn about the generated self-signed certificate until it is trusted or replaced with a certificate issued by your local/public CA. Sign in using a local Linux account only after verifying the expected certificate/network endpoint.
+A browser will warn about the generated self-signed certificate until it is trusted or replaced with a certificate issued by your local/public CA.
+
+### First login
+
+The default authentication mode is **Local database**. A fresh standard installation creates the local administrator:
+
+```text
+Username: chris
+Password: 1
+Role: admin
+```
+
+Change the default password immediately after the first login. The Local database stores only a salted `scrypt` hash, not plaintext `1`. The short default is accepted only by the empty-database installer bootstrap path; normal local-user passwords still require at least 12 characters. Existing initialized databases are preserved during update/reinstall and are not reset to `chris:1`.
+
+Standard installations also create or reuse a locked, non-interactive POSIX mapping for local WebNAS users so filesystem operations can run under a dedicated Unix UID/GID. The application password is never written to `/etc/shadow`; the POSIX account uses `nologin` and a locked system password.
 
 Plaintext HTTP on a non-loopback interface requires the explicit `security.allow_insecure_http: true` opt-in and is intended only for isolated lab environments. Portable mode remains HTTP but binds to `127.0.0.1` by default.
 
@@ -160,7 +175,11 @@ React + TypeScript
    ▼
 FastAPI
    │
-   ├── PAM / Linux users
+   ├── Local WebNAS user database (default)
+   │       └── locked POSIX UID/GID mappings
+   ├── System authentication mode
+   │       ├── PAM / local Linux users
+   │       └── optional LDAP / directory identities
    ├── File operations / rsync
    ├── systemd
    ├── Docker
@@ -174,21 +193,61 @@ Core technology stack:
 
 - **Backend:** Python 3.14 + FastAPI
 - **Frontend:** React + TypeScript + Vite
-- **Authentication:** PAM
-- **Authorization:** RBAC
+- **Authentication:** WebNAS local database by default; alternative PAM + optional LDAP mode
+- **Authorization:** central WebNAS RBAC
 - **Service management:** systemd
 - **File transfers:** rsync
 - **Application/module state:** configuration files and SQLite depending on the component
 
 The frontend uses feature boundaries, a shared WebNAS Design System and generated OpenAPI TypeScript DTOs. See [docs/frontend-architecture.md](docs/frontend-architecture.md) for component ownership, import rules and the standard `PageHeader -> DataTable -> Drawer/Modal` administrative UX pattern.
 
+## Authentication
+
+WebNAS has two mutually exclusive global authentication modes.
+
+### Local database — default
+
+`Local database` is the default mode. Only users stored in the application-owned local user database can sign in. PAM and LDAP are not offered on the login page in this mode.
+
+Local passwords are stored only as salted `scrypt` hashes. The database stores roles and non-secret account metadata; it never stores plaintext passwords. Built-in roles use the existing central WebNAS RBAC matrix.
+
+For filesystem isolation, standard installations create or reuse a safe POSIX mapping for each local WebNAS user. A generated companion account has a locked system password and `nologin`; authentication still occurs solely against the WebNAS local database.
+
+Administrators can create, disable, delete and change roles/passwords for local users in **Settings → Administration → Authentication**. The last enabled local administrator cannot be disabled, downgraded or deleted.
+
+### PAM / LDAP system mode
+
+An administrator can switch the application to `PAM + LDAP` system authentication mode. Local-database authentication is then unavailable on the login page.
+
+PAM is always available in system mode. LDAP remains optional:
+
+- LDAP disabled: PAM only, with no provider selector;
+- LDAP enabled: LDAP and PAM are shown; LDAP is selected by default;
+- the user may manually select PAM;
+- there is no automatic LDAP → PAM or PAM → LDAP fallback.
+
+LDAP supports plain LDAP, LDAP + StartTLS and LDAPS. TLS certificate verification is enabled by default. LDAP user-search values are escaped according to RFC4515, exactly one directory entry must match, and the discovered user DN is authenticated with a separate user bind.
+
+The LDAP Bind Password is stored through the existing encrypted Secrets Manager and is never returned by Settings APIs. LDAP identities must resolve to a safe POSIX UID/GID/home through NSS, for example with SSSD, nslcd or winbind. LDAP identities do not automatically inherit WebNAS administrator rights from `sudo`, `wheel` or directory groups.
+
+Changing the global authentication mode invalidates active sessions and requires users to authenticate again through the newly selected mode. This prevents a session authenticated in one identity namespace from remaining active after a mode switch.
+
+The public `/api/auth/config` endpoint exposes only the active authentication mode, available login providers and default provider; it never returns LDAP connection settings, DNs, password hashes or secrets.
+
+See [AUTHENTICATION.md](AUTHENTICATION.md) for the complete mode model and [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md) for OpenLDAP, FreeIPA and Active Directory configuration.
+
 ## Security
 
-WebNAS uses local Linux accounts as the primary identity source.
+WebNAS uses an application-owned local user database by default and can alternatively use system PAM with optional LDAP.
 
 The project includes:
 
-- PAM authentication,
+- salted `scrypt` password hashing for local WebNAS users,
+- a fresh-install `chris` administrator with default password `1`, stored only as a salted `scrypt` hash and required to be changed after first login,
+- locked/non-interactive POSIX mappings for local application users in standard deployments,
+- PAM authentication restricted to local `/etc/passwd` accounts in system mode,
+- optional LDAP/StartTLS/LDAPS authentication with explicit provider selection and no automatic fallback,
+- authentication-mode session invalidation,
 - HTTPS-first standard installation with an explicit plaintext-HTTP opt-in,
 - HttpOnly/SameSite session cookies and Secure cookies on the standard TLS configuration,
 - granular RBAC permissions,
@@ -216,6 +275,8 @@ Detailed documentation is available in separate files:
 | Document | Description |
 |---|---|
 | [INSTALL.md](INSTALL.md) | Installation, updates, configuration and troubleshooting |
+| [AUTHENTICATION.md](AUTHENTICATION.md) | Local-database default mode, PAM/LDAP system mode, session isolation and local-user lifecycle |
+| [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md) | LDAP configuration, OpenLDAP/FreeIPA/AD examples, POSIX/NSS integration and security model |
 | [docs/frontend-architecture.md](docs/frontend-architecture.md) | Frontend feature boundaries, Design System, generated API DTOs and module rules |
 | [docs/testing.md](docs/testing.md) | Unit, integration, trusted system and Playwright E2E testing |
 | [docs/deployment.md](docs/deployment.md) | CI/CD, trusted runner, production Environment, blue/green health checks and rollback |
@@ -226,7 +287,7 @@ Detailed documentation is available in separate files:
 | [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md) | Ansible Automation Controller |
 | [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
 | [CRON_MANAGER.md](CRON_MANAGER.md) | Cron Manager |
-| [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases and safe configuration lifecycle |
+| [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases, diagnostics and transactional configuration lifecycle |
 | [DCST.md](DCST.md) | DCST architecture, Proxmox Firewall integration, Services, Ports, IPSets, TAGS, drift detection and troubleshooting |
 | [PACKAGE_CENTER.md](PACKAGE_CENTER.md) | Package Center |
 | [MODULES.md](MODULES.md) | Module architecture |

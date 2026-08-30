@@ -15,13 +15,89 @@ from .permissions import ALL_PERMISSIONS, Permission, ROLE_PERMISSIONS
 from .repository import IdentityRepository, repository
 
 
+def _local_database_profile(username: str) -> dict[str, Any] | None:
+    """Return the application-owned identity while local DB mode is active.
+
+    Local database users are intentionally isolated from Linux/LDAP RBAC
+    assignments that happen to use the same username. File/transfer permissions
+    are suppressed when no safe POSIX mapping exists because the worker boundary
+    cannot impersonate an application-only account.
+    """
+
+    try:
+        from ..local_auth import auth_mode, local_posix_mapping, local_user
+
+        if auth_mode() != "local":
+            return None
+        account = local_user(username)
+        if not account:
+            return None
+    except ImportError:
+        return None
+
+    try:
+        role = Role(str(account.get("role") or Role.user.value))
+    except ValueError:
+        role = Role.user
+    allowed = set(ROLE_PERMISSIONS[role])
+    denied: set[str] = set()
+    sources: dict[str, list[str]] = {
+        permission: [f"local-role:{role.value}"] for permission in allowed
+    }
+    if local_posix_mapping(username) is None:
+        denied = {
+            permission
+            for permission in allowed
+            if permission.startswith("files.") or permission.startswith("transfers.")
+        }
+        allowed -= denied
+        for permission in denied:
+            sources.setdefault(permission, []).append("deny:no-posix-mapping")
+    return {
+        "username": username,
+        "role": role.value,
+        "role_source": "local-database",
+        "linux_admin": False,
+        "is_admin": role == Role.admin and Permission.ACCESS_MANAGE_ROLES.value in allowed,
+        "permissions": sorted(allowed),
+        "effective_permissions": sorted(allowed),
+        "denied_permissions": sorted(denied),
+        "permission_sources": {
+            key: list(dict.fromkeys(value)) for key, value in sorted(sources.items())
+        },
+    }
+
+
+def _provider_safe_linux_admin(username: str) -> bool:
+    """Linux-admin elevation belongs only to the active system identity namespace."""
+
+    try:
+        from ..local_auth import auth_mode, local_user
+
+        if auth_mode() == "local" and local_user(username) is not None:
+            return False
+    except ImportError:
+        pass
+    try:
+        from ..ldap_auth import is_ldap_identity
+
+        if is_ldap_identity(username):
+            return False
+    except ImportError:
+        pass
+    return linux_accounts.is_linux_admin(username)
+
+
 class IdentityService:
     def __init__(self, policy_repository: IdentityRepository) -> None:
         self.repository = policy_repository
         self._lock = threading.RLock()
 
     def _profile(self, username: str, *, user_override: UserPolicy | None = None, group_override: GroupPolicy | None = None, groups_override: tuple[str, set[str]] | None = None) -> dict[str, Any]:
-        if linux_accounts.is_linux_admin(username):
+        local_profile = _local_database_profile(username)
+        if local_profile is not None:
+            return local_profile
+        if _provider_safe_linux_admin(username):
             return {
                 "username": username, "role": Role.admin.value, "role_source": "linux-admin", "linux_admin": True, "is_admin": True,
                 "permissions": sorted(ALL_PERMISSIONS), "effective_permissions": sorted(ALL_PERMISSIONS), "denied_permissions": [],
@@ -135,7 +211,7 @@ class IdentityService:
         with self._lock:
             linux_accounts.local_user(username)
             previous = self.repository.user_policy(username) or UserPolicy(username=username)
-            if linux_accounts.is_linux_admin(username):
+            if _provider_safe_linux_admin(username):
                 if payload.role != Role.admin or payload.deny:
                     identity_error(409, "LINUX_ADMIN_COMPATIBILITY", "A Linux administrator always retains full administrator access", field="role" if payload.role != Role.admin else "deny")
                 policy = UserPolicy(username=username, role=Role.admin, allow=payload.allow, deny=[])
@@ -260,7 +336,7 @@ class IdentityService:
                 logger.exception("identity_rename_group_compensation_failed old=%s new=%s", groupname, new_name)
             raise
         result = self.group(new_name)
-        self._audit(actor, "group_rename", new_name, previous=previous, current=result)
+        self._audit(actor, "group_rename" if new_name != groupname else "group_update", new_name, previous=previous, current=result)
         return result
 
     def delete_group(self, groupname: str, actor: str) -> None:

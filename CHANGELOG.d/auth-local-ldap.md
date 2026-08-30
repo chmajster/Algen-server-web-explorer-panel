@@ -1,0 +1,7 @@
+# Authentication
+
+- Add an application-owned local user database as the default WebNAS authentication mode, with salted scrypt password hashes, local user/role management, and locked POSIX execution mappings. Fresh standard installations create `chris` as the initial administrator with default password `1`; SQLite stores only the salted hash, the short value is accepted only by the empty-database installer bootstrap path, and the installer instructs the administrator to change it immediately.
+- Add a mutually exclusive PAM + optional LDAP system authentication mode. When LDAP is enabled, LDAP and PAM are both available on the login page, LDAP is selected by default, and there is no automatic provider fallback.
+- Add LDAP/StartTLS/LDAPS configuration, encrypted Secrets Manager storage for the Bind Password, Test LDAP Connection, RFC4515 filter escaping, NSS/POSIX identity validation, provider-aware sessions and identity-collision protections.
+- Invalidate active sessions when the global authentication mode changes.
+- Update standard installation for Local database bootstrap and keep portable mode explicitly on System/PAM because portable mode does not install the privileged broker required for Local POSIX companion provisioning.

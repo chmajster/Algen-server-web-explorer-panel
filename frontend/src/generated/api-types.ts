@@ -1483,6 +1483,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Authentication Config */
+        get: operations["authentication_config_api_auth_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -9815,6 +9832,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/authentication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Authentication Settings */
+        get: operations["get_authentication_settings_api_settings_authentication_get"];
+        /** Set Authentication Settings */
+        put: operations["set_authentication_settings_api_settings_authentication_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ldap Settings */
+        get: operations["get_ldap_settings_api_settings_authentication_ldap_get"];
+        /** Save Ldap Settings */
+        put: operations["save_ldap_settings_api_settings_authentication_ldap_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/ldap/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Saved Ldap Settings */
+        post: operations["test_saved_ldap_settings_api_settings_authentication_ldap_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/local-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Local Password */
+        post: operations["change_local_password_api_settings_authentication_local_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/local-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Local Users */
+        get: operations["get_local_users_api_settings_authentication_local_users_get"];
+        put?: never;
+        /** Create Local User */
+        post: operations["create_local_user_api_settings_authentication_local_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/authentication/local-users/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Local User */
+        delete: operations["delete_local_user_api_settings_authentication_local_users__username__delete"];
+        options?: never;
+        head?: never;
+        /** Update Local User */
+        patch: operations["update_local_user_api_settings_authentication_local_users__username__patch"];
+        trace?: never;
+    };
     "/api/settings/change-password": {
         parameters: {
             query?: never;
@@ -10292,6 +10415,14 @@ export interface components {
             confirmation_phrase: string;
             /** Plan Id */
             plan_id: string;
+        };
+        /** AuthenticationModeUpdate */
+        AuthenticationModeUpdate: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "local" | "system";
         };
         /** AutoUpdatePatch */
         AutoUpdatePatch: {
@@ -12207,6 +12338,90 @@ export interface components {
             /** Diff Mode */
             diff_mode?: boolean | null;
         };
+        /** LdapSettingsInput */
+        LdapSettingsInput: {
+            /**
+             * Base Dn
+             * @default
+             */
+            base_dn: string;
+            /**
+             * Bind Dn
+             * @default
+             */
+            bind_dn: string;
+            /**
+             * Bind Password
+             * @default
+             */
+            bind_password: string;
+            /**
+             * Clear Bind Password
+             * @default false
+             */
+            clear_bind_password: boolean;
+            /**
+             * Connect Timeout
+             * @default 5
+             */
+            connect_timeout: number;
+            /**
+             * Display Name Attribute
+             * @default displayName
+             */
+            display_name_attribute: string;
+            /**
+             * Email Attribute
+             * @default mail
+             */
+            email_attribute: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Operation Timeout
+             * @default 10
+             */
+            operation_timeout: number;
+            /**
+             * Port
+             * @default 389
+             */
+            port: number;
+            /**
+             * Security Mode
+             * @default starttls
+             * @enum {string}
+             */
+            security_mode: "ldap" | "starttls" | "ldaps";
+            /**
+             * Server
+             * @default
+             */
+            server: string;
+            /**
+             * User Search Base
+             * @default
+             */
+            user_search_base: string;
+            /**
+             * User Search Filter
+             * @default (uid={username})
+             */
+            user_search_filter: string;
+            /**
+             * Username Attribute
+             * @default uid
+             */
+            username_attribute: string;
+            /**
+             * Verify Tls
+             * @default true
+             */
+            verify_tls: boolean;
+        };
         /** LeaseToHostRequest */
         LeaseToHostRequest: {
             /** Confirmation */
@@ -12271,8 +12486,46 @@ export interface components {
             /** Used */
             used: number;
         };
+        /** LocalPasswordChange */
+        LocalPasswordChange: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
+        /** LocalUserCreate */
+        LocalUserCreate: {
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /** Password */
+            password: string;
+            /**
+             * Role
+             * @default user
+             * @enum {string}
+             */
+            role: "admin" | "operator" | "auditor" | "user";
+            /** Username */
+            username: string;
+        };
+        /** LocalUserPatch */
+        LocalUserPatch: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Password */
+            password?: string | null;
+            /** Role */
+            role?: ("admin" | "operator" | "auditor" | "user") | null;
+        };
         /** LoginRequest */
         LoginRequest: {
+            /** Auth Method */
+            auth_method?: ("local" | "pam" | "ldap") | null;
             /** Password */
             password: string;
             /**
@@ -18855,6 +19108,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    authentication_config_api_auth_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -37200,6 +37473,284 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_authentication_settings_api_settings_authentication_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_authentication_settings_api_settings_authentication_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthenticationModeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ldap_settings_api_settings_authentication_ldap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_ldap_settings_api_settings_authentication_ldap_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_saved_ldap_settings_api_settings_authentication_ldap_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    change_local_password_api_settings_authentication_local_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalPasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_local_users_api_settings_authentication_local_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_local_user_api_settings_authentication_local_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalUserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_local_user_api_settings_authentication_local_users__username__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_local_user_api_settings_authentication_local_users__username__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalUserPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

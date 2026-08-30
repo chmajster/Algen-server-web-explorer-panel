@@ -26,6 +26,10 @@ is used. System packages are never installed or changed by portable mode.
 Portable mode intentionally uses plaintext HTTP. It binds to loopback by
 default. Use --bind-host 0.0.0.0 only in an isolated trusted network.
 
+Authentication in portable mode uses System/PAM. The standard installed mode
+uses the WebNAS Local database by default. Portable mode does not install the
+privileged broker needed to provision Local-database POSIX companion accounts.
+
 Usage:
   sudo ./install.sh --portable [options]
   ./install-portable.sh [options]
@@ -240,6 +244,34 @@ EOF_CONFIG
   ok "Portable configuration created at ${PORTABLE_CONFIG}; /etc/webnas is not used"
 }
 
+initialize_portable_authentication() {
+  local auth_db="${WORK_DIR}/runtime/data/local-auth.sqlite3"
+  python3.14 - "$auth_db" <<'PY'
+import os
+import sqlite3
+import sys
+
+path = sys.argv[1]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with sqlite3.connect(path) as connection:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS local_auth_settings(
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            auth_mode TEXT NOT NULL DEFAULT 'local',
+            updated_at REAL NOT NULL DEFAULT 0,
+            updated_by TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    connection.execute(
+        "INSERT OR REPLACE INTO local_auth_settings(id,auth_mode,updated_at,updated_by) VALUES(1,'system',0,'portable-installer')"
+    )
+os.chmod(path, 0o600)
+PY
+  ok "Portable authentication mode set to System/PAM"
+}
+
 health_check() {
   local attempt
   for attempt in $(seq 1 40); do
@@ -290,6 +322,7 @@ run_portable() {
 
   health_check
   printf '\n[OK] WebNAS portable is running at http://%s:%s\n' "$display_host" "$PORT"
+  printf '[INFO] Authentication mode: System/PAM (portable mode does not provision Local POSIX companions).\n'
   printf '[INFO] Runtime directory: %s\n' "$WORK_DIR"
   printf '[INFO] No systemd service, service user, firewall rule or /etc/webnas config was created.\n'
   printf '[INFO] Stop with Ctrl+C. ./portable-run/ will be removed on exit%s.\n\n' "$([[ "$KEEP_WORKDIR" == "yes" ]] && printf ' only if --keep-workdir is not used' || true)"
@@ -305,6 +338,7 @@ main() {
   prepare_source
   prepare_runtime
   write_portable_config
+  initialize_portable_authentication
   run_portable
 }
 
