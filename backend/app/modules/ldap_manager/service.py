@@ -6,7 +6,7 @@ import socket
 import ssl
 import time
 from functools import lru_cache
-from typing import Any
+from typing import Any, Callable
 
 from .connection import DirectoryConnectionError, bind, close
 from .models import BulkOperationRequest, ConnectionInput, CsvImportRequest, DirectoryCreateRequest, DirectoryMoveRequest, DirectoryUpdateRequest, LdifImportRequest, SearchRequest
@@ -16,6 +16,12 @@ from .security import validate_dn
 
 
 _SENSITIVE_EXPORT_ATTRIBUTES = {"userpassword", "unicodepwd", "authpassword", "krbprincipalkey", "sambantpassword", "sambalmpassword"}
+
+_ENTRY_KIND_CLASSES = {
+    "user": {"person", "organizationalperson", "inetorgperson", "user", "posixaccount"},
+    "group": {"group", "groupofnames", "groupofuniquenames", "posixgroup"},
+    "ou": {"organizationalunit", "container"},
+}
 
 
 class LdapManagerService:
@@ -39,6 +45,46 @@ class LdapManagerService:
 
     def _provider(self, connection_id: str):
         return provider_for(self._config(connection_id))
+
+    @staticmethod
+    def _object_classes(entry: dict[str, Any]) -> set[str]:
+        attributes = entry.get("attributes") if isinstance(entry.get("attributes"), dict) else {}
+        raw = next((value for name, value in attributes.items() if str(name).casefold() == "objectclass"), [])
+        values = raw if isinstance(raw, list) else [raw]
+        return {str(value).casefold() for value in values if str(value).strip()}
+
+    @classmethod
+    def _assert_entry_kind(cls, provider: Any, dn: str, kind: str) -> None:
+        expected = _ENTRY_KIND_CLASSES[kind]
+        if not (cls._object_classes(provider.entry(dn)) & expected):
+            raise ValueError(f"LDAP entry is not a {kind} object")
+
+    @staticmethod
+    def _assert_payload_kind(payload: DirectoryCreateRequest, kind: str) -> None:
+        classes = {str(value).casefold() for value in payload.object_classes}
+        if not (classes & _ENTRY_KIND_CLASSES[kind]):
+            raise ValueError(f"LDAP objectClass set is not valid for {kind} creation")
+
+    @staticmethod
+    def _collect_pages(fetch_page: Callable[[str], dict[str, Any]], *, initial_cookie: str = "") -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        cookie = initial_cookie
+        seen = {cookie} if cookie else set()
+        while True:
+            page = fetch_page(cookie)
+            page_items = page.get("items")
+            if not isinstance(page_items, list):
+                raise ProviderOperationError("LDAP_PAGING_FAILED", "LDAP provider returned an invalid page")
+            items.extend(item for item in page_items if isinstance(item, dict))
+            if len(items) > 100_000:
+                raise ValueError("LDAP export is limited to 100000 entries")
+            next_cookie = str(page.get("cookie") or "")
+            if not next_cookie:
+                return items
+            if next_cookie in seen:
+                raise ProviderOperationError("LDAP_PAGING_FAILED", "LDAP provider repeated a paging cookie")
+            seen.add(next_cookie)
+            cookie = next_cookie
 
     def dashboard(self, connection_id: str) -> dict[str, Any]:
         config = self._config(connection_id)
@@ -122,32 +168,49 @@ class LdapManagerService:
     def ous(self, connection_id: str, page_size: int, cookie: str) -> dict[str, Any]:
         return self._provider(connection_id).ous(page_size=page_size, cookie=cookie)
 
-    def create_entry(self, connection_id: str, payload: DirectoryCreateRequest) -> dict[str, Any]:
+    def create_entry(self, connection_id: str, payload: DirectoryCreateRequest, *, kind: str) -> dict[str, Any]:
+        self._assert_payload_kind(payload, kind)
         return self._provider(connection_id).create(payload.dn, payload.object_classes, payload.attributes)
 
-    def update_entry(self, connection_id: str, dn: str, payload: DirectoryUpdateRequest) -> dict[str, Any]:
-        return self._provider(connection_id).update(dn, payload.attributes, payload.delete_attributes)
+    def update_entry(self, connection_id: str, dn: str, payload: DirectoryUpdateRequest, *, kind: str) -> dict[str, Any]:
+        provider = self._provider(connection_id)
+        self._assert_entry_kind(provider, dn, kind)
+        return provider.update(dn, payload.attributes, payload.delete_attributes)
 
-    def delete_entry(self, connection_id: str, dn: str) -> None:
-        self._provider(connection_id).delete(dn)
+    def delete_entry(self, connection_id: str, dn: str, *, kind: str) -> None:
+        provider = self._provider(connection_id)
+        self._assert_entry_kind(provider, dn, kind)
+        provider.delete(dn)
 
-    def move_entry(self, connection_id: str, dn: str, payload: DirectoryMoveRequest) -> str:
-        return self._provider(connection_id).move(dn, payload.new_rdn, payload.new_superior)
+    def move_entry(self, connection_id: str, dn: str, payload: DirectoryMoveRequest, *, kind: str) -> str:
+        provider = self._provider(connection_id)
+        self._assert_entry_kind(provider, dn, kind)
+        return provider.move(dn, payload.new_rdn, payload.new_superior)
 
     def reset_password(self, connection_id: str, dn: str, password: str, force_change: bool) -> None:
-        self._provider(connection_id).reset_password(dn, password, force_change)
+        provider = self._provider(connection_id)
+        self._assert_entry_kind(provider, dn, "user")
+        provider.reset_password(dn, password, force_change)
 
     def set_enabled(self, connection_id: str, dn: str, enabled: bool) -> None:
-        self._provider(connection_id).set_enabled(dn, enabled)
+        provider = self._provider(connection_id)
+        self._assert_entry_kind(provider, dn, "user")
+        provider.set_enabled(dn, enabled)
 
     def unlock(self, connection_id: str, dn: str) -> None:
-        self._provider(connection_id).unlock(dn)
+        provider = self._provider(connection_id)
+        self._assert_entry_kind(provider, dn, "user")
+        provider.unlock(dn)
 
     def add_member(self, connection_id: str, group_dn: str, member_dn: str) -> None:
-        self._provider(connection_id).add_member(group_dn, member_dn)
+        provider = self._provider(connection_id)
+        self._assert_entry_kind(provider, group_dn, "group")
+        provider.add_member(group_dn, member_dn)
 
     def remove_member(self, connection_id: str, group_dn: str, member_dn: str) -> None:
-        self._provider(connection_id).remove_member(group_dn, member_dn)
+        provider = self._provider(connection_id)
+        self._assert_entry_kind(provider, group_dn, "group")
+        provider.remove_member(group_dn, member_dn)
 
     def schema(self, connection_id: str) -> dict[str, Any]:
         return self._provider(connection_id).schema()
@@ -247,8 +310,12 @@ class LdapManagerService:
 
     def export_csv(self, connection_id: str, kind: str) -> str:
         provider = self._provider(connection_id)
-        result = provider.users(page_size=1000) if kind == "users" else provider.groups(page_size=1000)
-        items = result["items"]
+        fetch_page = (
+            (lambda cookie: provider.users(page_size=1000, cookie=cookie))
+            if kind == "users"
+            else (lambda cookie: provider.groups(page_size=1000, cookie=cookie))
+        )
+        items = self._collect_pages(fetch_page)
         attribute_names = sorted({name for item in items for name in item.get("attributes", {}) if name.casefold() not in _SENSITIVE_EXPORT_ATTRIBUTES})
         buffer = io.StringIO()
         writer = csv.writer(buffer)
@@ -263,7 +330,18 @@ class LdapManagerService:
         return buffer.getvalue()
 
     def export_ldif(self, connection_id: str, payload: SearchRequest) -> str:
-        items = self.search(connection_id, payload)["items"]
+        provider = self._provider(connection_id)
+        items = self._collect_pages(
+            lambda cookie: provider.search(
+                base_dn=payload.base_dn,
+                scope=payload.scope,
+                ldap_filter=payload.ldap_filter,
+                attributes=payload.attributes,
+                page_size=payload.page_size,
+                cookie=cookie,
+            ),
+            initial_cookie=payload.cookie,
+        )
         lines: list[str] = []
         for item in items:
             lines.append(f"dn: {item['dn']}")

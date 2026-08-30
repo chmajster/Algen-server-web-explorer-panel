@@ -128,7 +128,7 @@ def users(connection_id: str, search: str = Query(default="", max_length=256), p
 @router.post("/connections/{connection_id}/users")
 def create_user(connection_id: str, payload: DirectoryCreateRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_USERS_CREATE)  # noqa: F405
-    result = _translated(lambda: service().create_entry(connection_id, payload))
+    result = _translated(lambda: service().create_entry(connection_id, payload, kind="user"))
     _audit(user, connection_id, "ldap.user.create", payload.dn)
     return result
 
@@ -136,7 +136,7 @@ def create_user(connection_id: str, payload: DirectoryCreateRequest, user: Sessi
 @router.put("/connections/{connection_id}/users")
 def update_user(connection_id: str, payload: DirectoryUpdateRequest, dn: str = Query(..., max_length=2048), user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_USERS_UPDATE)  # noqa: F405
-    result = _translated(lambda: service().update_entry(connection_id, dn, payload))
+    result = _translated(lambda: service().update_entry(connection_id, dn, payload, kind="user"))
     _audit(user, connection_id, "ldap.user.update", dn, details={"attributes": sorted(payload.attributes), "deleted_attributes": sorted(payload.delete_attributes)})
     return result
 
@@ -144,7 +144,7 @@ def update_user(connection_id: str, payload: DirectoryUpdateRequest, dn: str = Q
 @router.delete("/connections/{connection_id}/users")
 def delete_user(connection_id: str, dn: str = Query(..., max_length=2048), user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_USERS_DELETE)  # noqa: F405
-    _translated(lambda: service().delete_entry(connection_id, dn))
+    _translated(lambda: service().delete_entry(connection_id, dn, kind="user"))
     _audit(user, connection_id, "ldap.user.delete", dn)
     return {"ok": True}
 
@@ -184,7 +184,7 @@ def unlock_user(connection_id: str, dn: str = Query(..., max_length=2048), user:
 @router.post("/connections/{connection_id}/users/move")
 def move_user(connection_id: str, payload: DirectoryMoveRequest, dn: str = Query(..., max_length=2048), user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_USERS_UPDATE)  # noqa: F405
-    result = _translated(lambda: service().move_entry(connection_id, dn, payload))
+    result = _translated(lambda: service().move_entry(connection_id, dn, payload, kind="user"))
     _audit(user, connection_id, "ldap.user.move", dn, details={"new_dn": result})
     return {"dn": result}
 
@@ -198,7 +198,7 @@ def groups(connection_id: str, search: str = Query(default="", max_length=256), 
 @router.post("/connections/{connection_id}/groups")
 def create_group(connection_id: str, payload: DirectoryCreateRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_GROUPS_CREATE)  # noqa: F405
-    result = _translated(lambda: service().create_entry(connection_id, payload))
+    result = _translated(lambda: service().create_entry(connection_id, payload, kind="group"))
     _audit(user, connection_id, "ldap.group.create", payload.dn)
     return result
 
@@ -206,7 +206,7 @@ def create_group(connection_id: str, payload: DirectoryCreateRequest, user: Sess
 @router.put("/connections/{connection_id}/groups")
 def update_group(connection_id: str, payload: DirectoryUpdateRequest, dn: str = Query(..., max_length=2048), user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_GROUPS_UPDATE)  # noqa: F405
-    result = _translated(lambda: service().update_entry(connection_id, dn, payload))
+    result = _translated(lambda: service().update_entry(connection_id, dn, payload, kind="group"))
     _audit(user, connection_id, "ldap.group.update", dn, details={"attributes": sorted(payload.attributes)})
     return result
 
@@ -214,7 +214,7 @@ def update_group(connection_id: str, payload: DirectoryUpdateRequest, dn: str = 
 @router.delete("/connections/{connection_id}/groups")
 def delete_group(connection_id: str, dn: str = Query(..., max_length=2048), user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_GROUPS_DELETE)  # noqa: F405
-    _translated(lambda: service().delete_entry(connection_id, dn))
+    _translated(lambda: service().delete_entry(connection_id, dn, kind="group"))
     _audit(user, connection_id, "ldap.group.delete", dn)
     return {"ok": True}
 
@@ -244,7 +244,7 @@ def ous(connection_id: str, page_size: int = Query(default=200, ge=1, le=1000), 
 @router.post("/connections/{connection_id}/ous")
 def create_ou(connection_id: str, payload: DirectoryCreateRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_OU_MANAGE)  # noqa: F405
-    result = _translated(lambda: service().create_entry(connection_id, payload))
+    result = _translated(lambda: service().create_entry(connection_id, payload, kind="ou"))
     _audit(user, connection_id, "ldap.ou.create", payload.dn)
     return result
 
@@ -252,7 +252,7 @@ def create_ou(connection_id: str, payload: DirectoryCreateRequest, user: Session
 @router.put("/connections/{connection_id}/ous")
 def update_ou(connection_id: str, payload: DirectoryUpdateRequest, dn: str = Query(..., max_length=2048), user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_OU_MANAGE)  # noqa: F405
-    result = _translated(lambda: service().update_entry(connection_id, dn, payload))
+    result = _translated(lambda: service().update_entry(connection_id, dn, payload, kind="ou"))
     _audit(user, connection_id, "ldap.ou.update", dn)
     return result
 
@@ -260,7 +260,7 @@ def update_ou(connection_id: str, payload: DirectoryUpdateRequest, dn: str = Que
 @router.post("/connections/{connection_id}/ous/move")
 def move_ou(connection_id: str, payload: DirectoryMoveRequest, dn: str = Query(..., max_length=2048), user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_OU_MANAGE)  # noqa: F405
-    result = _translated(lambda: service().move_entry(connection_id, dn, payload))
+    result = _translated(lambda: service().move_entry(connection_id, dn, payload, kind="ou"))
     _audit(user, connection_id, "ldap.ou.move", dn, details={"new_dn": result})
     return {"dn": result}
 
@@ -268,7 +268,7 @@ def move_ou(connection_id: str, payload: DirectoryMoveRequest, dn: str = Query(.
 @router.delete("/connections/{connection_id}/ous")
 def delete_ou(connection_id: str, dn: str = Query(..., max_length=2048), user: SessionUser = Depends(mutating_user)):
     _allow(user, LDAP_OU_MANAGE)  # noqa: F405
-    _translated(lambda: service().delete_entry(connection_id, dn))
+    _translated(lambda: service().delete_entry(connection_id, dn, kind="ou"))
     _audit(user, connection_id, "ldap.ou.delete", dn)
     return {"ok": True}
 
