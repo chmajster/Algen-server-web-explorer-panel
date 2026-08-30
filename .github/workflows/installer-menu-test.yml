@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   existing-install-actions:
-    name: Verify all 6 existing-install actions
+    name: Verify all 7 existing-install actions
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -135,6 +135,36 @@ jobs:
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
             "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
 
+      - name: "Option 8: Restart application preserves release and state"
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_before="$(readlink -f /opt/webnas/current)"
+          config_before="$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')"
+          active_unit="$(systemctl list-units --type=service --state=running --no-legend 'webnas-backend-*.service' | awk 'NR==1 {print $1}')"
+          if [[ -z "${active_unit}" ]] && systemctl is-active --quiet webnas.service; then
+            active_unit="webnas.service"
+          fi
+          test -n "${active_unit}"
+          pid_before="$(systemctl show -p MainPID --value "${active_unit}")"
+          test "${pid_before}" -gt 0
+
+          printf '8\n' | script --quiet --return --command \
+            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            /dev/null > /tmp/webnas-menu-option-8.log 2>&1
+
+          tr -d '\r' < /tmp/webnas-menu-option-8.log > /tmp/webnas-menu-option-8.clean
+          grep -F "==> Restarting WebNAS application" /tmp/webnas-menu-option-8.clean
+          grep -F "[OK] WebNAS application restarted:" /tmp/webnas-menu-option-8.clean
+          test "$(readlink -f /opt/webnas/current)" = "${current_before}"
+          test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "${config_before}"
+          systemctl is-active --quiet "${active_unit}"
+          pid_after="$(systemctl show -p MainPID --value "${active_unit}")"
+          test "${pid_after}" -gt 0
+          test "${pid_after}" != "${pid_before}"
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
       - name: "Option 6: Abort makes no changes"
         shell: bash
         run: |
@@ -215,9 +245,9 @@ jobs:
           echo "=== filesystem ==="
           sudo find /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas /var/backups/webnas -maxdepth 3 -print 2>/dev/null | sort | head -n 500
           echo "=== services ==="
-          sudo systemctl status nginx webnas webnas-backend-blue webnas-backend-green --no-pager -l 2>/dev/null || true
+          sudo systemctl status nginx webnas webnas-backend-blue webnas-backend-green webnas-privileged --no-pager -l 2>/dev/null || true
           echo "=== journals ==="
-          sudo journalctl -u nginx -u webnas -u webnas-backend-blue -u webnas-backend-green -n 250 --no-pager 2>/dev/null || true
+          sudo journalctl -u nginx -u webnas -u webnas-backend-blue -u webnas-backend-green -u webnas-privileged -n 250 --no-pager 2>/dev/null || true
 
       - name: Cleanup
         if: always()
