@@ -11,6 +11,7 @@ WORK_DIR="${LAUNCH_DIR}/portable-run"
 SOURCE_DIR=""
 BACKEND_PID=""
 PORTABLE_CONFIG=""
+PAM_SERVICE_CREATED="no"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 
 usage() {
@@ -21,14 +22,17 @@ Runs WebNAS without installing it as a system service. The application source,
 Python virtual environment, frontend dependencies, configuration and runtime
 data live in ./portable-run/ relative to the directory where the installer was
 started. The directory is removed when the process exits unless --keep-workdir
-is used. System packages are never installed or changed by portable mode.
+is used. Portable mode does not install system packages or services. Because
+PAM authentication requires a named system policy, it temporarily provisions
+/etc/pam.d/webnas when that dedicated policy is not already present.
 
 Portable mode intentionally uses plaintext HTTP. It binds to loopback by
 default. Use --bind-host 0.0.0.0 only in an isolated trusted network.
 
-Authentication in portable mode uses System/PAM. The standard installed mode
-uses the WebNAS Local database by default. Portable mode does not install the
-privileged broker needed to provision Local-database POSIX companion accounts.
+Authentication in portable mode uses System/PAM through the dedicated `webnas`
+PAM service. The standard installed mode uses the WebNAS Local database by
+default. Portable mode does not install the privileged broker needed to
+provision Local-database POSIX companion accounts.
 
 Usage:
   sudo ./install.sh --portable [options]
@@ -45,6 +49,8 @@ Options:
 Required host runtimes:
   Python 3.14 with venv support, Node.js 20.19+ or 22.12+, npm and tar.
   curl or wget is additionally required when started outside a repository clone.
+  Root privileges (directly or through sudo) are required only when the host
+  does not already provide /etc/pam.d/webnas.
 EOF_USAGE
 }
 
@@ -53,12 +59,28 @@ ok() { printf '[OK] %s\n' "$1"; }
 warn() { printf '[WARN] %s\n' "$1" >&2; }
 fail() { printf '[ERROR] %s\n' "$1" >&2; exit 1; }
 
+run_as_root() {
+  if [[ "${EUID}" -eq 0 ]]; then
+    "$@"
+    return
+  fi
+  command -v sudo >/dev/null 2>&1 || fail "Root privileges are required to provision /etc/pam.d/webnas"
+  sudo "$@"
+}
+
 cleanup() {
   local code=$?
   trap - EXIT INT TERM
   if [[ -n "$BACKEND_PID" ]] && kill -0 "$BACKEND_PID" 2>/dev/null; then
     kill "$BACKEND_PID" 2>/dev/null || true
     wait "$BACKEND_PID" 2>/dev/null || true
+  fi
+  if [[ "$PAM_SERVICE_CREATED" == "yes" && -f /etc/pam.d/webnas ]]; then
+    if [[ "${EUID}" -eq 0 ]]; then
+      rm -f /etc/pam.d/webnas || true
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo -n rm -f /etc/pam.d/webnas 2>/dev/null || warn "Could not remove temporary /etc/pam.d/webnas; remove it manually if it is no longer needed"
+    fi
   fi
   if [[ -d "$WORK_DIR" ]]; then
     if [[ "$KEEP_WORKDIR" == "yes" ]]; then
@@ -195,22 +217,45 @@ prepare_runtime() {
   ok "Portable application runtime prepared"
 }
 
-select_pam_service() {
-  local candidate
-  for candidate in login common-auth system-auth; do
-    if [[ -f "/etc/pam.d/${candidate}" ]]; then
-      printf '%s' "$candidate"
-      return 0
-    fi
-  done
-  printf '%s' "login"
+install_webnas_pam_service() {
+  if [[ -f /etc/pam.d/webnas ]]; then
+    ok "Using existing dedicated PAM service /etc/pam.d/webnas"
+    return
+  fi
+
+  local base=""
+  local pam_file="${WORK_DIR}/webnas.pam"
+  if [[ -f /etc/pam.d/common-auth ]]; then
+    base="common"
+    cat > "$pam_file" <<'EOF_PAM'
+#%PAM-1.0
+# WebNAS dedicated PAM service; delegates to the distribution-managed common policy.
+auth      include common-auth
+account   include common-account
+session   include common-session
+EOF_PAM
+  elif [[ -f /etc/pam.d/system-auth ]]; then
+    base="system-auth"
+    cat > "$pam_file" <<'EOF_PAM'
+#%PAM-1.0
+# WebNAS dedicated PAM service; delegates to the distribution-managed system policy.
+auth      include system-auth
+account   include system-auth
+password  include system-auth
+session   include system-auth
+EOF_PAM
+  else
+    fail "Cannot provision /etc/pam.d/webnas: neither common-auth nor system-auth is available"
+  fi
+
+  run_as_root install -m 0644 "$pam_file" /etc/pam.d/webnas
+  PAM_SERVICE_CREATED="yes"
+  ok "Temporary dedicated PAM service /etc/pam.d/webnas installed from ${base}"
 }
 
 write_portable_config() {
   local runtime_root="${WORK_DIR}/runtime"
-  local pam_service=""
   local secret=""
-  pam_service="$(select_pam_service)"
   secret="$(python3.14 - <<'PY'
 import secrets
 print(secrets.token_urlsafe(48))
@@ -226,7 +271,7 @@ server:
 
 auth:
   provider: pam
-  pam_service: "${pam_service}"
+  pam_service: "webnas"
 
 paths:
   default_root: home
@@ -322,7 +367,7 @@ run_portable() {
 
   health_check
   printf '\n[OK] WebNAS portable is running at http://%s:%s\n' "$display_host" "$PORT"
-  printf '[INFO] Authentication mode: System/PAM (portable mode does not provision Local POSIX companions).\n'
+  printf '[INFO] Authentication mode: System/PAM via /etc/pam.d/webnas.\n'
   printf '[INFO] Runtime directory: %s\n' "$WORK_DIR"
   printf '[INFO] No systemd service, service user, firewall rule or /etc/webnas config was created.\n'
   printf '[INFO] Stop with Ctrl+C. ./portable-run/ will be removed on exit%s.\n\n' "$([[ "$KEEP_WORKDIR" == "yes" ]] && printf ' only if --keep-workdir is not used' || true)"
@@ -337,6 +382,7 @@ main() {
   check_prerequisites
   prepare_source
   prepare_runtime
+  install_webnas_pam_service
   write_portable_config
   initialize_portable_authentication
   run_portable
