@@ -31,6 +31,7 @@ class SessionUser:
     username: str
     csrf_token: str
     auth_provider: AuthProvider = "pam"
+    identity_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class StoredSession:
     persistent: bool
     expires_at: float
     auth_provider: AuthProvider = "pam"
+    identity_id: str = ""
 
 
 class SessionStore:
@@ -80,7 +82,8 @@ class SessionStore:
                     persistent INTEGER NOT NULL DEFAULT 0,
                     created_at REAL NOT NULL,
                     expires_at REAL NOT NULL,
-                    auth_provider TEXT NOT NULL DEFAULT 'pam'
+                    auth_provider TEXT NOT NULL DEFAULT 'pam',
+                    identity_id TEXT NOT NULL DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(username);
@@ -94,6 +97,13 @@ class SessionStore:
                 connection.execute(
                     "ALTER TABLE auth_sessions ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'pam'"
                 )
+            if "identity_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE auth_sessions ADD COLUMN identity_id TEXT NOT NULL DEFAULT ''"
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_auth_sessions_identity ON auth_sessions(auth_provider,identity_id)"
+            )
         try:
             os.chmod(self.path, 0o600)
         except OSError:
@@ -124,6 +134,7 @@ class SessionStore:
         persistent: bool,
         expires_at: float,
         auth_provider: AuthProvider = "pam",
+        identity_id: str = "",
     ) -> None:
         now = time.time()
         token_hash = self._hash(token)
@@ -133,14 +144,15 @@ class SessionStore:
             persistent=persistent,
             expires_at=expires_at,
             auth_provider=auth_provider,
+            identity_id=identity_id,
         )
         with self._lock, self._connect() as connection:
             connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (now,))
             connection.execute(
                 """
                 INSERT INTO auth_sessions(
-                    token_hash,username,csrf_token,persistent,created_at,expires_at,auth_provider
-                ) VALUES (?,?,?,?,?,?,?)
+                    token_hash,username,csrf_token,persistent,created_at,expires_at,auth_provider,identity_id
+                ) VALUES (?,?,?,?,?,?,?,?)
                 """,
                 (
                     token_hash,
@@ -150,6 +162,7 @@ class SessionStore:
                     now,
                     expires_at,
                     auth_provider,
+                    identity_id,
                 ),
             )
             self._cache_session(token_hash, session)
@@ -174,7 +187,7 @@ class SessionStore:
             with self._connect() as connection:
                 row = connection.execute(
                     """
-                    SELECT username,csrf_token,persistent,expires_at,auth_provider
+                    SELECT username,csrf_token,persistent,expires_at,auth_provider,identity_id
                     FROM auth_sessions WHERE token_hash=?
                     """,
                     (token_hash,),
@@ -194,6 +207,7 @@ class SessionStore:
                 persistent=bool(row["persistent"]),
                 expires_at=float(row["expires_at"]),
                 auth_provider=normalized_provider,
+                identity_id=str(row["identity_id"] or ""),
             )
             self._cache_session(token_hash, session)
             return session
@@ -222,6 +236,31 @@ class SessionStore:
                 if session.username == username
                 and (auth_provider is None or session.auth_provider == auth_provider)
             ]
+            for token_hash in stale:
+                self._cache.pop(token_hash, None)
+            return max(0, int(cursor.rowcount))
+
+    def revoke_identity(self, auth_provider: AuthProvider, identity_id: str) -> int:
+        if not identity_id:
+            return 0
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM auth_sessions WHERE auth_provider=? AND identity_id=?",
+                (auth_provider, identity_id),
+            )
+            stale = [
+                token_hash
+                for token_hash, (session, _) in self._cache.items()
+                if session.auth_provider == auth_provider and session.identity_id == identity_id
+            ]
+            for token_hash in stale:
+                self._cache.pop(token_hash, None)
+            return max(0, int(cursor.rowcount))
+
+    def revoke_provider(self, auth_provider: AuthProvider) -> int:
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute("DELETE FROM auth_sessions WHERE auth_provider=?", (auth_provider,))
+            stale = [token_hash for token_hash, (session, _) in self._cache.items() if session.auth_provider == auth_provider]
             for token_hash in stale:
                 self._cache.pop(token_hash, None)
             return max(0, int(cursor.rowcount))
@@ -285,6 +324,14 @@ def invalidate_provider_user_sessions(username: str, auth_provider: AuthProvider
     return _session_store().revoke_user(username, auth_provider)
 
 
+def invalidate_provider_sessions(auth_provider: AuthProvider) -> int:
+    return _session_store().revoke_provider(auth_provider)
+
+
+def invalidate_identity_sessions(auth_provider: AuthProvider, identity_id: str) -> int:
+    return _session_store().revoke_identity(auth_provider, identity_id)
+
+
 def invalidate_all_sessions() -> int:
     return _session_store().revoke_all()
 
@@ -294,6 +341,7 @@ def create_session(
     username: str,
     *,
     auth_provider: AuthProvider = "pam",
+    identity_id: str = "",
     remember_me: bool = False,
 ) -> str:
     cfg = get_config()
@@ -311,6 +359,7 @@ def create_session(
         persistent=remember_me,
         expires_at=time.time() + lifetime,
         auth_provider=auth_provider,
+        identity_id=identity_id,
     )
     response.set_cookie(
         cfg.auth.session_cookie_name,
@@ -347,10 +396,17 @@ def get_session_user(request: Request) -> SessionUser:
     session = _session_store().resolve(raw)
     if session is None:
         raise HTTPException(HTTPStatus.UNAUTHORIZED, "Invalid or expired session")
+    if session.auth_provider == "ldap":
+        from .ldap_authentication import validate_ldap_session
+
+        if not validate_ldap_session(session.identity_id, session.username):
+            _session_store().revoke(raw)
+            raise HTTPException(HTTPStatus.UNAUTHORIZED, "LDAP session policy is no longer valid")
     return SessionUser(
         username=session.username,
         csrf_token=session.csrf_token,
         auth_provider=session.auth_provider,
+        identity_id=session.identity_id,
     )
 
 

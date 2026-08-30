@@ -46,7 +46,7 @@ Main project goals:
 
 | Area | Capabilities |
 |---|---|
-| **Authentication** | Default WebNAS local-user database, or mutually exclusive system mode with PAM and optional LDAP/StartTLS/LDAPS |
+| **Authentication** | Default WebNAS local-user database, or system mode with explicit PAM or LDAP login; LDAP Authentication is configured in Settings and remains independent from LDAP Manager |
 | **File Manager** | Browse files, upload, edit, copy and move with `rsync`, monitor transfer progress |
 | **Desktop UI** | Application windows, taskbar, Start menu, shortcuts, themes, wallpapers and per-user personalization |
 | **Users & Groups** | Manage WebNAS local users plus Linux users/groups and granular application permissions |
@@ -81,6 +81,7 @@ Available and supported modules include:
 - DATA Communication & Segmentation Tool - DCST
 - Proxmox Manager
 - Secrets Manager
+- LDAP Manager (remote OpenLDAP / Active Directory / FreeIPA administration)
 - Fail2Ban Manager
 - Webhook Manager
 - Nginx
@@ -105,6 +106,10 @@ Containerized applications can also be deployed through **Containers Manager**, 
 - Jellyfin
 - Nextcloud
 - Nginx Proxy Manager
+
+### LDAP Authentication vs LDAP Manager
+
+`Settings → Authentication → LDAP Authentication` controls only authentication of WebNAS users. `LDAP Manager` is an optional Module Center module for administering remote LDAP, Active Directory and FreeIPA directories. They use separate configuration and separate Secrets Manager credentials; installing, disabling or removing LDAP Manager does not control LDAP login. See `AUTHENTICATION.md`, `LDAP_AUTHENTICATION.md` and `LDAP_MANAGER.md`.
 
 ## Installation
 

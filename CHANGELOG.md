@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.31 — 2026-08-30
+
+- Separated LDAP Authentication in Settings from the independently installable LDAP Manager, including independent configuration databases and Secrets Manager credentials.
+- Added multi-server LDAP authentication failover, immutable directory identities, LDAP group-to-WebNAS RBAC mapping, access policies, diagnostics, session policy refresh, and explicit Local/PAM/LDAP provider selection without cross-provider password fallback.
+- Added LDAP Manager support for multiple LDAP/Active Directory/FreeIPA connections, directory browsing, users, groups, OUs, schema, paged search/export, bulk operations, provider-aware password controls, granular RBAC, audit logging, and injection/TLS/SSRF protections.
+- Hardened PAM to use only `/etc/pam.d/webnas`, added installer/upgrade migration validation and real OpenLDAP CI coverage, and fixed legacy session migration, object-scope authorization, paging, and TLS compatibility regressions found during review.
+
 ## v0.1.30 — 2026-08-30
 
 - Expanded Storage Manager with complete read-only diagnostics and brokered advanced probes.

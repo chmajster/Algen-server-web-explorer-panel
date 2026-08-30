@@ -1,0 +1,53 @@
+name: LDAP integration
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ldap-integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openldap:
+    name: OpenLDAP auth and manager integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      openldap:
+        image: osixia/openldap:1.5.0
+        env:
+          LDAP_ORGANISATION: Example
+          LDAP_DOMAIN: example.org
+          LDAP_ADMIN_PASSWORD: admin
+          LDAP_TLS: "false"
+        ports:
+          - 389:389
+        options: >-
+          --health-cmd "ldapsearch -x -H ldap://127.0.0.1:389 -b dc=example,dc=org -D cn=admin,dc=example,dc=org -w admin -s base '(objectClass=*)'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      WEBNAS_LDAP_INTEGRATION_HOST: 127.0.0.1
+      WEBNAS_LDAP_INTEGRATION_PORT: "389"
+      WEBNAS_LDAP_ADMIN_PASSWORD: admin
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements-dev.txt
+      - name: Run real LDAP integration
+        working-directory: backend
+        run: python -m pytest -q tests/integration/test_ldap_openldap.py

@@ -1,137 +1,80 @@
-# LDAP authentication
+# LDAP Authentication
 
-LDAP belongs to WebNAS' alternative **PAM + LDAP system authentication mode**. The application's default global authentication mode is the WebNAS **Local database**; LDAP settings may be prepared while Local mode is active, but LDAP is not a login provider until an administrator switches the global mode to System authentication.
-
-See [AUTHENTICATION.md](AUTHENTICATION.md) for the global mode model.
-
-## Login behaviour in System mode
-
-PAM is always available in System mode. LDAP is disabled by default inside that mode.
-
-When LDAP is disabled, the login page remains PAM-only and does not show an authentication-method selector.
-
-When LDAP is enabled, the login page offers both **LDAP** and **PAM**. LDAP is selected by default. A user can manually select PAM before submitting the form.
-
-There is **no automatic provider fallback**:
-
-- a failed LDAP login never causes WebNAS to try PAM;
-- a failed PAM login never causes WebNAS to try LDAP;
-- an LDAP outage leaves LDAP selected and the user may manually choose PAM.
-
-The login API accepts `auth_method: "ldap" | "pam"` while System mode is active. Requests that attempt `local` in System mode are rejected. Requests without `auth_method` use PAM while LDAP is disabled and LDAP while LDAP is enabled.
-
-While the global mode is Local database, PAM/LDAP requests are rejected and `/api/auth/config` exposes only the `local` provider.
-
-## Public login configuration
-
-Public login configuration is available from:
+LDAP Authentication is the WebNAS login provider configured under **Settings → Authentication → LDAP Authentication**. It is not an installable module and it is completely independent from [LDAP Manager](LDAP_MANAGER.md).
 
 ```text
-GET /api/auth/config
+WebNAS user
+  -> LDAP Authentication
+  -> WebNAS identity
+  -> existing WebNAS RBAC
+  -> WebNAS session
 ```
 
-It returns only the active global mode, provider availability and the default provider. LDAP server addresses, DNs, TLS settings and secrets are never exposed by this endpoint.
+LDAP Manager instead lets an administrator manage remote directories. Its connections, database and credentials are never used by LDAP Authentication.
 
-## POSIX/NSS identity requirement
+## Authentication modes
 
-Successful LDAP credentials must also resolve to a POSIX identity through the host NSS stack, for example through:
+WebNAS exposes explicit `local`, `pam` and `ldap` login providers according to the active global authentication mode. In System authentication mode PAM is available and LDAP can be enabled independently. When LDAP is enabled the login page lets the user select LDAP or PAM.
 
-- SSSD,
-- nslcd/libnss-ldapd,
-- winbind,
-- another NSS provider that exposes the directory account through `getent passwd USERNAME` / `pwd.getpwnam()`.
+There is no automatic provider fallback. An LDAP credential failure never invokes PAM, and a PAM credential failure never invokes LDAP. LDAP failover is limited to alternative servers belonging to the same LDAP Authentication configuration.
 
-This is required because WebNAS file operations execute under the authenticated Unix UID/GID. WebNAS does not create synthetic privileged Unix accounts for LDAP users.
+## Configuration
 
-A correctly integrated directory user should therefore return a Unix identity such as:
+LDAP Authentication supports:
 
-```bash
-getent passwd alice
-```
+- enabled/disabled state;
+- directory type: generic LDAP, Active Directory or FreeIPA-aware identity handling;
+- multiple LDAP servers with host, port, priority and enabled state;
+- failover strategy: priority or round robin;
+- optional DNS SRV discovery;
+- LDAP, LDAP + StartTLS and LDAPS;
+- TLS certificate verification, enabled by default;
+- optional custom CA certificate;
+- connection and operation timeouts;
+- Base DN and User Search Base;
+- User Search Filter and Username Attribute;
+- configurable immutable identity attribute;
+- Bind DN and dedicated Bind Password;
+- Display Name and Email attributes;
+- Group Search Base, Group Search Filter and membership attribute;
+- controlled group-cache TTL;
+- LDAP-group-to-WebNAS-role/permission mappings;
+- access allow/deny policy;
+- diagnostics and explicit identity-policy refresh.
 
-with a non-system UID and an absolute home directory.
-
-LDAP identities mapped to UID `0` or below the configured WebNAS system-UID threshold are rejected.
-
-## PAM and LDAP identity isolation
-
-PAM is intentionally restricted to accounts physically defined in `/etc/passwd`. NSS-only directory accounts do not silently become PAM identities.
-
-LDAP authentication rejects a username that collides with an existing local `/etc/passwd` account. This prevents an LDAP account named, for example, `admin` from inheriting the identity of a local PAM administrator.
-
-After the first successful LDAP authentication, WebNAS records non-secret identity metadata in `ldap-auth.sqlite3`. This record lets RBAC distinguish the LDAP identity from Linux administrator semantics.
-
-An LDAP user does **not** automatically become a WebNAS administrator because NSS reports membership in `sudo` or `wheel`. LDAP authentication starts in normal WebNAS RBAC. Administrators may explicitly assign WebNAS roles/policies after the LDAP identity has been established.
-
-No LDAP group such as `Domain Admins` is automatically mapped to the WebNAS Administrator role.
-
-## LDAP configuration
-
-The LDAP settings page provides:
-
-- Enable LDAP authentication;
-- LDAP server / URI;
-- port;
-- security mode: LDAP, LDAP + StartTLS, or LDAPS;
-- TLS certificate verification;
-- connection timeout;
-- operation/search timeout;
-- Base DN;
-- User Search Base DN;
-- User Search Filter;
-- Username Attribute;
-- Bind DN;
-- Bind Password;
-- optional Display Name Attribute;
-- optional Email Attribute.
-
-Enabling LDAP makes it available only when the global authentication mode is **PAM + LDAP**. In Local database mode, local users remain the only accepted login source.
-
-TLS certificate verification is enabled by default. Disabling verification applies only to the configured LDAP connection; WebNAS does not disable TLS verification globally.
-
-The search filter must contain `{username}` exactly once. WebNAS escapes the supplied username according to RFC4515 before inserting it into the filter. Authentication continues only when the search returns exactly one entry and the configured username attribute matches the requested username.
-
-## OpenLDAP example
+The primary API is rooted at:
 
 ```text
-LDAP server:          ldap.example.com
-Port:                 389
-Security:             LDAP + StartTLS
-Verify TLS:           enabled
-Base DN:              dc=example,dc=com
-User Search Base:     ou=people,dc=example,dc=com
-Username Attribute:  uid
-User Search Filter:   (uid={username})
-Bind DN:              cn=webnas,ou=services,dc=example,dc=com
+/api/settings/authentication/ldap
 ```
 
-The corresponding directory users should also be exposed through NSS with POSIX attributes such as `uidNumber`, `gidNumber` and `homeDirectory`, depending on the selected NSS integration.
+Subresources include `/servers`, `/group-mappings`, `/access-policy`, `/diagnostics`, `/test` and `/refresh`.
 
-## FreeIPA example
+## Multiple servers and failover
 
-FreeIPA can use the same LDAP flow. A typical setup uses StartTLS or LDAPS, a dedicated read-only service account for search, `uid` as the username attribute, and SSSD on the WebNAS host for POSIX identity resolution.
-
-## Microsoft Active Directory example
+Example:
 
 ```text
-LDAP server:          ad01.example.local
-Port:                 636
-Security:             LDAPS
-Verify TLS:           enabled
-Base DN:              DC=example,DC=local
-User Search Base:     OU=Users,DC=example,DC=local
-Username Attribute:  sAMAccountName
-User Search Filter:   (sAMAccountName={username})
-Bind DN:              CN=webnas-service,OU=Service Accounts,DC=example,DC=local
+dc01.company.local:636 priority 10
+dc02.company.local:636 priority 20
+dc03.company.local:636 priority 30
 ```
 
-For filesystem-backed WebNAS features, configure an NSS integration such as SSSD or winbind so the authenticated AD account has a Unix UID, GID and home directory on the WebNAS host.
+With `priority`, WebNAS tries servers in priority order when connection/TLS/service-bind failures make the preferred server unavailable. With `round_robin`, the first candidate rotates while preserving failover across the complete set.
 
-## Bind Password storage
+DNS SRV discovery can supplement configured endpoints, for example `_ldap._tcp.dc._msdcs.company.local` for Active Directory.
 
-The LDAP service-account Bind Password is stored through the existing WebNAS **Secrets Manager** encrypted storage. The LDAP settings database stores only the secret identifier.
+Invalid user credentials do not trigger authentication against PAM or another WebNAS provider.
 
-Settings responses expose only:
+## Dedicated service credential
+
+LDAP Authentication owns a read-oriented service credential, typically:
+
+```text
+CN=webnas-auth,OU=Service Accounts,DC=company,DC=local
+```
+
+Its Bind Password is stored only through the existing Secrets Manager as `auth-ldap-bind-password`. The authentication settings database stores only the secret identifier. API responses expose only:
 
 ```json
 {
@@ -139,67 +82,148 @@ Settings responses expose only:
 }
 ```
 
-They never return the Bind Password or the Secrets Manager identifier. Leaving the password field empty while saving other LDAP settings preserves the existing encrypted secret. The secret can be explicitly removed only while LDAP is disabled.
+The Bind Password and secret identifier are never returned to the browser.
 
-User passwords supplied on the login screen are used only for the selected authentication operation and are never stored in the database, Activity Center or application logs.
+LDAP Manager connections own different Secrets Manager entries such as `ldap-manager-connection-<id>-bind-password`. Credentials are never copied between these subsystems.
 
-## Authentication flow
+## User lookup and injection protection
 
-LDAP login uses the following sequence:
+The User Search Filter must contain `{username}` exactly once. Usernames are escaped as LDAP filter values according to RFC4515 before substitution. Authentication requires exactly one matching entry and verifies the configured username attribute against the requested username.
 
-```text
-System authentication mode
-        |
-        v
-username + password
-        |
-        v
-service-account bind
-        |
-        v
-escaped user search
-        |
-        v
-exactly one matching entry
-        |
-        v
-bind as discovered user DN
-        |
-        v
-validate PAM/LDAP namespace isolation
-        |
-        v
-resolve POSIX UID/GID/home through NSS
-        |
-        v
-existing WebNAS session + CSRF + RBAC
+Group-search templates similarly escape `{username}` and `{dn}` as LDAP filter values. Directory-management DN/RDN construction belongs to LDAP Manager and uses DN parsing/escaping separately.
+
+## Stable LDAP identity
+
+LDAP identity is not keyed only by username. WebNAS stores a stable immutable identifier:
+
+- Active Directory: `objectGUID` by default;
+- OpenLDAP: `entryUUID`;
+- FreeIPA: `ipaUniqueID`/`entryUUID` where available;
+- or a configured immutable-ID attribute.
+
+Stored identity metadata includes provider, immutable ID, username, canonical username, DN, display name, email, POSIX UID/GID/home, first-seen, last-seen and last-login timestamps plus controlled group-cache metadata.
+
+A username or DN rename for the same immutable identity therefore does not create a new WebNAS identity or intentionally discard its RBAC history.
+
+Local/PAM/LDAP namespaces remain isolated. A local account and an LDAP account with the same username are not automatically merged.
+
+## POSIX/NSS requirement
+
+LDAP credentials establish directory identity, but WebNAS filesystem operations still need a Unix execution identity. The authenticated account must therefore resolve through NSS, for example SSSD, nslcd/libnss-ldapd or winbind:
+
+```bash
+getent passwd alice
 ```
 
-PAM and LDAP use the same session store, HttpOnly/SameSite cookie policy, CSRF protection, login rate limiter and central RBAC implementation. The session records `auth_provider` for identity isolation and auditing.
+UID `0`, configured system-service UID ranges and invalid/non-absolute home mappings are rejected.
 
-Changing the global authentication mode invalidates all active sessions before the new namespace is used.
+## LDAP group → WebNAS RBAC
 
-## Test LDAP Connection
+Mappings reuse the existing Identity/RBAC system. They do not create a second authorization engine.
 
-The administrator-only **Test LDAP Connection** action validates the saved configuration by checking:
+Example:
 
-1. server connection;
-2. TLS/StartTLS negotiation when configured;
-3. certificate validation;
-4. service-account bind;
-5. execution of the configured search base/filter.
+```text
+CN=WebNAS-Admins,OU=Groups,DC=company,DC=local
+  -> role: admin
 
-Returned errors are sanitized into connection, TLS, bind or search failures. Bind passwords, directory entries and library stack traces are not returned to the browser.
+CN=Storage-Team,OU=Groups,DC=company,DC=local
+  -> role: user
+  -> allow: storage.read, storage.manage, files.read
+  -> deny: users.manage
+```
 
-## Security notes
+When multiple mappings apply, explicit deny permissions remove matching allows. LDAP-derived policy is written through the existing WebNAS Identity repository.
 
-- LDAP filter values use RFC4515 escaping.
-- More than one search result is an authentication failure; WebNAS never selects the first result.
-- The returned username attribute must match the requested username.
-- TLS verification is enabled by default.
-- LDAP and PAM never fall back to one another automatically.
-- Login rate limiting uses the same IP + username key regardless of selected provider, so switching providers does not reset the brute-force budget.
-- LDAP users do not automatically inherit Linux `sudo`/`wheel` administrator status.
-- Local `/etc/passwd` and LDAP namespaces cannot claim the same username through the two system providers.
-- Authentication errors do not reveal whether the directory user exists or whether only the password was incorrect.
-- LDAP settings and Bind Passwords remain inaccessible from the public auth-config endpoint.
+## Access policy
+
+Supported modes:
+
+- allow all matched LDAP users;
+- allow only users matching configured LDAP-group mappings.
+
+Optional allow-group and deny-group sets further restrict access. Deny takes precedence over allow.
+
+Changing group mappings or access policy invalidates active LDAP sessions. Session validation also refreshes LDAP group membership according to the configured TTL; a manual refresh endpoint is available. If membership no longer permits access, the LDAP identity's sessions are revoked.
+
+## Session model
+
+Every WebNAS session records at least username, `auth_provider` and `identity_id`. LDAP sessions use `auth_provider=ldap` and the immutable LDAP identity ID. This prevents provider collisions and enables targeted revocation.
+
+The existing HttpOnly/SameSite cookie policy, CSRF protection, persistent session store and login rate limiter are reused unchanged.
+
+## Preflight and break-glass behavior
+
+Enabling LDAP Authentication first persists the candidate configuration disabled, validates it, and only then activates it. An evidently unreachable/broken LDAP configuration remains disabled. A mapped-groups-only policy additionally requires at least one configured mapping.
+
+The global Local database authentication mode remains the break-glass path. Switching authentication modes uses the existing last-administrator protection and session invalidation rules documented in [AUTHENTICATION.md](AUTHENTICATION.md).
+
+## Diagnostics
+
+LDAP Authentication diagnostics report sanitized steps such as:
+
+```text
+DNS resolution
+TCP connection
+TLS handshake
+Certificate verification
+Service bind
+Base DN search
+User search
+Group lookup
+NSS user resolution
+POSIX UID/GID
+Home
+RBAC mapping
+Overall health
+```
+
+Diagnostics never return Bind Passwords, user passwords, Secrets Manager identifiers or raw stack traces.
+
+## OpenLDAP example
+
+```text
+Servers:             ldap01.example.com:636, ldap02.example.com:636
+Security:            LDAPS
+Verify TLS:          enabled
+Base DN:             dc=example,dc=com
+User Search Base:    ou=People,dc=example,dc=com
+Username Attribute: uid
+Immutable ID:        entryUUID
+User Search Filter:  (uid={username})
+Bind DN:             cn=webnas-auth,ou=Services,dc=example,dc=com
+```
+
+Typical POSIX attributes include `uidNumber`, `gidNumber` and `homeDirectory`.
+
+## Active Directory example
+
+```text
+Servers:             dc01.company.local:636, dc02.company.local:636
+Security:            LDAPS
+Verify TLS:          enabled
+Base DN:             DC=company,DC=local
+User Search Base:    OU=Users,DC=company,DC=local
+Username Attribute: sAMAccountName
+Immutable ID:        objectGUID
+User Search Filter:  (sAMAccountName={username})
+Bind DN:             CN=webnas-auth,OU=Service Accounts,DC=company,DC=local
+```
+
+SSSD or winbind can provide the POSIX identity required by filesystem features.
+
+## FreeIPA example
+
+Use StartTLS or LDAPS with a dedicated read-only service identity, `uid` for login lookup, `ipaUniqueID`/`entryUUID` for immutable identity where available, and SSSD for NSS/POSIX mapping.
+
+## Security properties
+
+- TLS certificate verification defaults to enabled and is scoped per LDAP configuration.
+- RFC4515 escaping is mandatory for values inserted into LDAP filters.
+- More than one user-search result is an authentication failure.
+- The service Bind Password is stored only in Secrets Manager.
+- User passwords are transient and never written to SQLite, Activity, Audit or logs.
+- Source-IP + username rate limiting is shared across login providers, so switching providers does not reset the brute-force budget.
+- LDAP users never inherit WebNAS administrator status merely because Linux NSS reports `sudo`/`wheel` membership.
+- Changing LDAP policy can invalidate active LDAP sessions.
+- LDAP Authentication does not depend on LDAP Manager being installed or enabled.
