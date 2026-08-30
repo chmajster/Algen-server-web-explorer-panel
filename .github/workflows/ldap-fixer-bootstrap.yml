@@ -1,0 +1,33 @@
+name: LDAP fixer bootstrap
+
+on:
+  push:
+    branches: [feat/ldap-auth-manager-separation]
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ldap-auth-manager-separation
+      - name: Restore portable installer contract phrase
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('install-portable.sh')
+          text = p.read_text(encoding='utf-8')
+          old = 'Authentication in portable mode uses System/PAM through the dedicated `webnas`\nPAM service.'
+          new = 'Authentication in portable mode uses System/PAM. It uses the dedicated `webnas`\nPAM service.'
+          if old not in text:
+              raise SystemExit('portable authentication wording not found')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git add install-portable.sh
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: preserve portable PAM contract wording'
+          git push origin HEAD:feat/ldap-auth-manager-separation
