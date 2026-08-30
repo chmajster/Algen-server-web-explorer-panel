@@ -38,14 +38,13 @@ jobs:
           marker = "## Unreleased\n"
           if marker not in text:
               raise SystemExit("CHANGELOG.md is missing the Unreleased section")
-          release = """## v0.1.32 — 2026-08-31
-
-- Expanded Proxmox Manager with advanced cluster, capacity, placement, storage, backup, replication, HA, migration, network, SDN, cloud-init, policy and orphan-management workflows, plus the matching frontend and operational documentation.
-- Refined authentication UX with explicit PAM/LDAP provider selection and strengthened LDAP attribute normalization and connection handling.
-- Hardened installer update/reinstall flows and their CI coverage, including full-reinstall/menu scenarios and correct preservation of installer exit statuses.
-- Improved frontend build observability with context-neutral build completion output, explicit bundle-validation stages and JavaScript asset progress reporting.
-
-"""
+          release = (
+              "## v0.1.32 — 2026-08-31\n\n"
+              "- Expanded Proxmox Manager with advanced cluster, capacity, placement, storage, backup, replication, HA, migration, network, SDN, cloud-init, policy and orphan-management workflows, plus the matching frontend and operational documentation.\n"
+              "- Refined authentication UX with explicit PAM/LDAP provider selection and strengthened LDAP attribute normalization and connection handling.\n"
+              "- Hardened installer update/reinstall flows and their CI coverage, including full-reinstall/menu scenarios and correct preservation of installer exit statuses.\n"
+              "- Improved frontend build observability with context-neutral build completion output, explicit bundle-validation stages and JavaScript asset progress reporting.\n\n"
+          )
           path.write_text(text.replace(marker, marker + "\n" + release, 1), encoding="utf-8")
           PY
           rm -f .github/workflows/pr152-release-bump.yml
