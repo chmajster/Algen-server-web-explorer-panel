@@ -18,6 +18,15 @@ jobs:
           ref: fix/backend-service-file-logging
           fetch-depth: 0
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend test dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+
       - name: Patch generated backend units and tests
         run: |
           python3 - <<'PY'
