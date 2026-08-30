@@ -276,7 +276,7 @@ describe("personalized desktop", () => {
     const first = renderDesktop({ startup_windows: "none" });
     fireEvent.click(within(screen.getByLabelText("desktop.taskbar")).getByRole("button", { name: "app.monitor" }));
     expect(screen.getByRole("dialog", { name: "app.monitor" })).toBeInTheDocument();
-    expect(sessionStorage.getItem("webnas_windows_test_session")).toContain('\"app\":\"monitor\"');
+    expect(sessionStorage.getItem("webnas_windows_test_session")).toContain('"app":"monitor"');
 
     first.unmount();
     renderDesktop({ startup_windows: "none" });
