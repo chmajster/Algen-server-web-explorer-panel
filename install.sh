@@ -83,6 +83,22 @@ run_bash_target() {
   bash "$script" "$@"
 }
 
+local_target_is_compatible() {
+  local target="$1"
+  local path="$2"
+
+  # A standalone install.sh is commonly downloaded into a directory that may
+  # still contain an older menu wrapper. Do not let that stale sibling shadow
+  # the current menu from main. Versioned menu files remain usable for source
+  # checkouts and packaged installer bundles.
+  if [[ "$target" == "install-standard-menu.sh" ]]; then
+    grep -Fxq 'WEBNAS_INSTALLER_MENU_API_VERSION=2' "$path" 2>/dev/null
+    return $?
+  fi
+
+  return 0
+}
+
 run_target() {
   local target="$1"
   shift
@@ -91,12 +107,16 @@ run_target() {
   local exit_code=0
 
   if [[ -n "$SCRIPT_DIR" && -f "$local_target" ]]; then
-    if run_bash_target "$local_target" "$@"; then
-      return 0
+    if ! local_target_is_compatible "$target" "$local_target"; then
+      printf '[INFO] Ignoring stale local %s; downloading the current version from main.\n' "$target" >&2
     else
-      exit_code=$?
+      if run_bash_target "$local_target" "$@"; then
+        return 0
+      else
+        exit_code=$?
+      fi
+      return "$exit_code"
     fi
-    return "$exit_code"
   fi
 
   temp_script="$(mktemp -t webnas-launcher.XXXXXX.sh)"
