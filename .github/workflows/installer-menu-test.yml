@@ -7,6 +7,7 @@ on:
     paths:
       - install.sh
       - install-standard.sh
+      - install-standard-menu.sh
       - .github/workflows/installer-menu-test.yml
   pull_request:
     branches:
@@ -14,6 +15,7 @@ on:
     paths:
       - install.sh
       - install-standard.sh
+      - install-standard-menu.sh
       - .github/workflows/installer-menu-test.yml
   workflow_dispatch:
 
@@ -116,7 +118,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          before="$(find /var/backups/webnas -mindepth 1 -maxdepth 1 -type d -name '*-manual.*' 2>/dev/null | wc -l)"
+          before="$(sudo find /var/backups/webnas -mindepth 1 -maxdepth 1 -type d -name '*-manual.*' 2>/dev/null | wc -l)"
 
           printf '3\n' | script --quiet --return --command \
             "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
@@ -124,9 +126,9 @@ jobs:
 
           tr -d '\r' < /tmp/webnas-menu-option-3.log > /tmp/webnas-menu-option-3.clean
           grep -F "Config backup created:" /tmp/webnas-menu-option-3.clean
-          after="$(find /var/backups/webnas -mindepth 1 -maxdepth 1 -type d -name '*-manual.*' | wc -l)"
+          after="$(sudo find /var/backups/webnas -mindepth 1 -maxdepth 1 -type d -name '*-manual.*' | wc -l)"
           test "${after}" -eq $((before + 1))
-          backup_config="$(find /var/backups/webnas -mindepth 2 -maxdepth 2 -type f -path '*-manual.*/config.yaml' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          backup_config="$(sudo find /var/backups/webnas -mindepth 2 -maxdepth 2 -type f -path '*-manual.*/config.yaml' -printf '%T@ %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
           test -n "${backup_config}"
           test "$(sudo sha256sum "${backup_config}" | awk '{print $1}')" = "$(cat /tmp/webnas-menu-config-sha)"
           test -L /opt/webnas/current
