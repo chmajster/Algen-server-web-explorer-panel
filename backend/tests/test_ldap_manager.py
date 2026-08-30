@@ -2,9 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from app.modules.ldap_manager.models import ConnectionInput
+from app.modules.ldap_manager.models import ConnectionInput, DirectoryUpdateRequest
 from app.modules.ldap_manager.providers.base import LdapDirectoryProvider, ProviderOperationError
 from app.modules.ldap_manager.repository import LdapManagerRepository
+from app.modules.ldap_manager.service import LdapManagerService
 from app.modules.ldap_manager.security import (
     escaped_filter_value,
     rdn,
@@ -116,3 +117,45 @@ def test_posix_group_memberuid_rejects_entry_without_uid(monkeypatch):
     monkeypatch.setattr(provider, "entry", lambda dn: {"dn": dn, "attributes": {}})
     with pytest.raises(ProviderOperationError, match="requires the member uid"):
         provider._membership_value("memberUid", "cn=NoUid,ou=People,dc=example,dc=test")
+
+
+class FakeTypedProvider:
+    def __init__(self, classes: list[str]) -> None:
+        self.classes = classes
+        self.updated = False
+
+    def entry(self, dn: str):
+        return {"dn": dn, "attributes": {"objectClass": self.classes}}
+
+    def update(self, dn: str, attributes, delete_attributes):
+        self.updated = True
+        return self.entry(dn)
+
+
+def test_ou_scope_rejects_user_entry(monkeypatch):
+    manager = LdapManagerService(object())  # type: ignore[arg-type]
+    provider = FakeTypedProvider(["top", "person", "inetOrgPerson"])
+    monkeypatch.setattr(manager, "_provider", lambda connection_id: provider)
+    with pytest.raises(ValueError, match="not a ou object"):
+        manager.update_entry(
+            "connection",
+            "uid=alice,ou=People,dc=example,dc=test",
+            DirectoryUpdateRequest(attributes={"description": "x"}),
+            kind="ou",
+        )
+    assert provider.updated is False
+
+
+def test_export_csv_follows_all_paging_cookies(monkeypatch):
+    manager = LdapManagerService(object())  # type: ignore[arg-type]
+
+    class PagedProvider:
+        def users(self, *, page_size=100, cookie="", search=""):
+            if not cookie:
+                return {"items": [{"dn": "uid=a", "attributes": {"uid": "a"}}], "cookie": "next"}
+            return {"items": [{"dn": "uid=b", "attributes": {"uid": "b"}}], "cookie": ""}
+
+    monkeypatch.setattr(manager, "_provider", lambda connection_id: PagedProvider())
+    exported = manager.export_csv("connection", "users")
+    assert "uid=a" in exported
+    assert "uid=b" in exported

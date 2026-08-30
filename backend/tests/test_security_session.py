@@ -208,3 +208,28 @@ def test_login_rate_limiter_counts_only_recorded_failures(monkeypatch):
 
     limiter.clear("client:alice")
     limiter.check("client:alice")
+
+
+def test_session_store_migrates_pre_identity_schema(tmp_path):
+    path = tmp_path / "legacy-sessions.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE auth_sessions (
+                token_hash TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                csrf_token TEXT NOT NULL,
+                persistent INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL,
+                expires_at REAL NOT NULL
+            );
+            CREATE INDEX idx_auth_sessions_expiry ON auth_sessions(expires_at);
+            CREATE INDEX idx_auth_sessions_user ON auth_sessions(username);
+            """
+        )
+    store = security.SessionStore(path, "pepper", cache_ttl_seconds=0)
+    with store._connect() as connection:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(auth_sessions)").fetchall()}
+        indexes = {row["name"] for row in connection.execute("PRAGMA index_list(auth_sessions)").fetchall()}
+    assert {"auth_provider", "identity_id"} <= columns
+    assert "idx_auth_sessions_identity" in indexes

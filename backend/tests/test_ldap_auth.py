@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import import_module
 import sqlite3
 import time
 from pathlib import Path
@@ -20,6 +21,9 @@ from app.ldap_authentication.models import (
 from app.ldap_authentication.repository import LdapAuthenticationRepository
 from app.ldap_authentication import service as ldap_service
 from app.security import SessionStore
+
+
+ldap_auth_repository_module = import_module("app.ldap_authentication.repository")
 
 
 class FakeSecretsService:
@@ -124,7 +128,7 @@ def test_round_robin_never_changes_server_set():
 
 def test_auth_repository_never_returns_bind_password(monkeypatch, tmp_path: Path):
     fake = FakeSecretsService()
-    monkeypatch.setattr("app.ldap_authentication.repository.secrets_service", lambda: fake)
+    monkeypatch.setattr(ldap_auth_repository_module, "secrets_service", lambda: fake)
     repo = LdapAuthenticationRepository(tmp_path / "ldap-auth.sqlite3")
     saved = repo.save(settings(), "admin")
     assert saved["bind_password_configured"] is True
@@ -229,7 +233,7 @@ def test_identity_is_keyed_by_immutable_id_and_survives_rename(monkeypatch, tmp_
         user_policy=lambda username: None,
         rename_user_policy=lambda old, new, actor: None,
     )
-    monkeypatch.setattr("app.ldap_authentication.repository.identity_repository", lambda: fake_identity_repo)
+    monkeypatch.setattr(ldap_auth_repository_module, "identity_repository", lambda: fake_identity_repo)
     original = repo.remember_identity(
         "uuid-1", "alice", "uid=alice,dc=example,dc=test",
         display_name="Alice", email="alice@example.test", uid=12001, gid=12000,

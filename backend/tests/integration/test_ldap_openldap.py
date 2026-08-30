@@ -17,7 +17,11 @@ BASE_DN = "dc=example,dc=org"
 ADMIN_DN = f"cn=admin,{BASE_DN}"
 ADMIN_PASSWORD = os.environ.get("WEBNAS_LDAP_ADMIN_PASSWORD", "admin")
 
-pytestmark = pytest.mark.skipif(not HOST, reason="real OpenLDAP integration environment is not configured")
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.system,
+    pytest.mark.skipif(not HOST, reason="real OpenLDAP integration environment is not configured"),
+]
 
 
 class FakeAuthRepository:
