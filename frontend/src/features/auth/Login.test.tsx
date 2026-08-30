@@ -140,7 +140,7 @@ describe("authentication mode selection", () => {
     expect(provider).toHaveValue("pam");
     expect(mocks.request).toHaveBeenCalledTimes(2);
     const loginOptions = mocks.request.mock.calls[1][1] as RequestInit;
-    expect(JSON.parse(String(loginOptions.body))).auth_method).toBe("pam");
+    expect(JSON.parse(String(loginOptions.body)).auth_method).toBe("pam");
     expect(mocks.me).not.toHaveBeenCalled();
   });
 });
