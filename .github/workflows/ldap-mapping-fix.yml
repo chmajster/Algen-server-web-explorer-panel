@@ -1,0 +1,40 @@
+name: LDAP mapping fixer
+
+on:
+  push:
+    branches: [feat/ldap-auth-manager-separation]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ldap-auth-manager-separation
+      - name: Accept mapping-backed LDAP attributes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/app/ldap_authentication/service.py')
+          text = p.read_text(encoding='utf-8')
+          if 'from collections.abc import Mapping\n' not in text:
+              marker = 'import uuid\n'
+              if marker not in text:
+                  raise SystemExit('uuid import marker not found')
+              text = text.replace(marker, marker + 'from collections.abc import Mapping\n', 1)
+          old1 = '    if isinstance(attributes, dict):\n'
+          old2 = '        if isinstance(raw_attributes, dict):\n'
+          if old1 not in text or old2 not in text:
+              raise SystemExit('LDAP mapping checks not found')
+          text = text.replace(old1, '    if isinstance(attributes, Mapping):\n', 1)
+          text = text.replace(old2, '        if isinstance(raw_attributes, Mapping):\n', 1)
+          p.write_text(text, encoding='utf-8')
+          PY
+          git add backend/app/ldap_authentication/service.py
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: accept mapping-backed LDAP attributes'
+          git push origin HEAD:feat/ldap-auth-manager-separation
