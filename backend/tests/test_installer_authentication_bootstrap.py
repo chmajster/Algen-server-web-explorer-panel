@@ -41,7 +41,7 @@ def test_standard_installer_creates_default_chris_account():
     assert '"$python" "$helper" "chris" "1"' in standard
     assert 'bootstrap_initial_admin' in helper
     assert "Default local administrator created:" in helper
-    assert "change this default password immediately" in helper
+    assert "change the default installer password immediately" in helper
 
 
 def test_default_password_is_only_an_installer_bootstrap_exception():
