@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { HardDrive, Settings } from "lucide-react";
+import { HardDrive, Settings, Shield } from "lucide-react";
 import { describe, expect, it, vi } from "vitest";
-import { ApiError } from "../api";
+import { api, ApiError } from "../api";
 import { powerClient } from "../modules/power/api/client";
 import { settingsFixture } from "../test/settings";
 import { AppLauncher } from "./AppLauncher";
@@ -20,6 +20,23 @@ describe("Start menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
 
     expect([...container.querySelectorAll(".launcher-list .launcher-open span")].map((item) => item.textContent)).toEqual(["File Manager", "Settings"]);
+  });
+
+  it("hides managed apps whose backend module is not installed", async () => {
+    vi.spyOn(api, "modules").mockResolvedValueOnce([
+      { id: "firewall-manager", state: { installed: true } },
+      { id: "security-center", state: { installed: false } },
+    ] as Awaited<ReturnType<typeof api.modules>>);
+    const apps: AppDefinition[] = [
+      ...appList,
+      { id: "firewall-manager", moduleId: "firewall-manager", labelKey: "Firewall Manager", icon: <Shield /> },
+      { id: "security-center", moduleId: "security-center", labelKey: "Security Center", icon: <Shield /> },
+    ];
+    render(<AppLauncher apps={apps} startPinned={new Set()} desktopShortcuts={new Set()} taskbarPinned={new Set()} profile={settingsFixture()} t={t} onOpen={vi.fn()} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "desktop.allApps" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Firewall Manager" })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Security Center" })).not.toBeInTheDocument();
   });
 
   it("filters apps, launches the selected app and closes", () => {
