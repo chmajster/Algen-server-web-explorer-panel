@@ -30,7 +30,7 @@ capabilities:
   diagnostics: true
   backups: true
   import_export: true
-  healthcheck: true
+  healthcheck: false
   resources: [rules, listening-ports, backups]
   actions: [rule_create, rule_edit, rule_delete, enable, disable, reload, backup, restore]
 ports: []
@@ -46,7 +46,6 @@ requires_root: true
 configurable: true
 removable: true
 package_less: false
-healthcheck: health.py
 ui: {hidden: false}
 changelog:
   - Initial local firewall management with UFW, firewalld and nftables detection, safe rule workflows and rollback backups.

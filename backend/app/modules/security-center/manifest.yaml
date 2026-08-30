@@ -24,7 +24,7 @@ capabilities:
   diagnostics: true
   backups: false
   import_export: false
-  healthcheck: true
+  healthcheck: false
   resources: [findings, checks]
   actions: [scan, finding_acknowledge, finding_resolve]
 ports: []
@@ -40,7 +40,6 @@ requires_root: false
 configurable: false
 removable: true
 package_less: true
-healthcheck: health.py
 ui: {hidden: false}
 changelog:
   - Initial security posture aggregation with Security Score, findings workflow and job-based scans.

@@ -30,7 +30,7 @@ capabilities:
   diagnostics: true
   backups: false
   import_export: false
-  healthcheck: true
+  healthcheck: false
   resources: [routes, connections, listening-ports, interfaces, neighbors, dns]
   actions: [ping, traceroute, dns, reverse_dns, port_test, http_test, route_lookup]
 ports: []
@@ -46,7 +46,6 @@ requires_root: false
 configurable: false
 removable: true
 package_less: false
-healthcheck: health.py
 ui: {hidden: false}
 changelog:
   - Initial safe network diagnostic suite integrated with the existing Networking data collectors.

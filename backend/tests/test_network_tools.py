@@ -37,3 +37,23 @@ def test_rate_limit_is_enforced() -> None:
         service.admit("tester")
     with pytest.raises(NetworkToolError):
         service.admit("tester")
+
+
+def test_ptr_address_uses_dig_reverse_mode(monkeypatch) -> None:
+    observed: list[str] = []
+
+    class Result:
+        returncode = 0
+        stdout = "host.example.\n"
+        stderr = ""
+
+    import importlib
+    network_service_module = importlib.import_module("app.modules.network_tools.service")
+    monkeypatch.setattr(network_service_module.shutil, "which", lambda _name: "/usr/bin/dig")
+    def fake_run(args, **_kwargs):
+        observed.extend(args)
+        return Result()
+    monkeypatch.setattr(network_service_module.subprocess, "run", fake_run)
+    result = NetworkToolsService.dns_lookup(DnsLookupRequest(hostname="192.0.2.10", record_type="PTR"))
+    assert result["success"] is True
+    assert observed[-2:] == ["-x", "192.0.2.10"]

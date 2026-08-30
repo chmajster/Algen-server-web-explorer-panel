@@ -5,7 +5,10 @@ import ipaddress
 import json
 import re
 import shutil
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -34,7 +37,7 @@ def parse_ufw_rules(content: str) -> list[FirewallRule]:
         number, destination_field, action, direction, source_field = match.groups()
         protocol = "any"
         port = ""
-        target = destination_field.strip()
+        target = re.sub(r"\s+\(v6\)$", "", destination_field.strip(), flags=re.IGNORECASE)
         target_match = re.match(r"^(\d+(?::\d+)?)(?:/(tcp|udp))?(?:\s+on\s+([A-Za-z0-9_.:@-]+))?$", target, re.IGNORECASE)
         interface = ""
         if target_match:
@@ -70,13 +73,27 @@ def parse_firewalld_rules(content: str) -> list[FirewallRule]:
         action = "allow" if re.search(r"\baccept\b", raw) else "reject" if re.search(r"\breject\b", raw) else "drop"
         port = _rich_value(raw, "port")
         protocol = _rich_value(raw, "protocol") or "any"
-        source = _rich_value(raw, "address") or "any"
+        source_match = re.search(r'source\s+address="([^"]+)"', raw)
+        source = source_match.group(1) if source_match else "any"
         destination_match = re.search(r'destination\s+address="([^"]+)"', raw)
         destination = destination_match.group(1) if destination_match else "any"
         family = _rich_value(raw, "family").replace("ipv", "ipv") or "any"
         digest = hashlib.sha256(raw.encode()).hexdigest()[:16]
         rules.append(FirewallRule(id=f"firewalld:{digest}", backend=FirewallBackend.firewalld, action=action, protocol=protocol, port=port, source=source, destination=destination, family=family, raw=raw))
     return rules
+
+
+def _nft_scalar(value: Any) -> str:
+    if isinstance(value, (str, int)):
+        return str(value)
+    if isinstance(value, dict):
+        prefix = value.get("prefix")
+        if isinstance(prefix, dict) and isinstance(prefix.get("addr"), str) and isinstance(prefix.get("len"), int):
+            return f"{prefix['addr']}/{prefix['len']}"
+        range_value = value.get("range")
+        if isinstance(range_value, list) and len(range_value) == 2 and all(isinstance(item, int) for item in range_value):
+            return f"{range_value[0]}-{range_value[1]}"
+    return ""
 
 
 def parse_nft_rules(content: str) -> list[FirewallRule]:
@@ -97,13 +114,80 @@ def parse_nft_rules(content: str) -> list[FirewallRule]:
         if not isinstance(handle, int):
             continue
         expressions = item.get("expr", [])
+        if not isinstance(expressions, list):
+            expressions = []
         raw = json.dumps(expressions, ensure_ascii=False, separators=(",", ":"))
-        verdict = "allow" if '"accept"' in raw else "reject" if '"reject"' in raw else "drop" if '"drop"' in raw else "unknown"
+        action = "unknown"
+        protocol = "any"
+        port = ""
+        source = "any"
+        destination = "any"
+        interface = ""
+        lossless = True
+        for expression in expressions:
+            if not isinstance(expression, dict):
+                lossless = False
+                continue
+            if "accept" in expression:
+                action = "allow"
+                continue
+            if "drop" in expression:
+                action = "drop"
+                continue
+            if "reject" in expression:
+                action = "reject"
+                continue
+            if "counter" in expression:
+                continue
+            match = expression.get("match")
+            if not isinstance(match, dict) or match.get("op", "==") != "==":
+                lossless = False
+                continue
+            left = match.get("left")
+            right = _nft_scalar(match.get("right"))
+            if not isinstance(left, dict) or not right:
+                lossless = False
+                continue
+            meta = left.get("meta")
+            if isinstance(meta, dict):
+                key = str(meta.get("key") or "")
+                if key in {"iifname", "oifname"}:
+                    interface = right
+                    continue
+                if key == "l4proto" and right in {"tcp", "udp"}:
+                    protocol = right
+                    continue
+                lossless = False
+                continue
+            payload_left = left.get("payload")
+            if isinstance(payload_left, dict):
+                nft_protocol = str(payload_left.get("protocol") or "")
+                field = str(payload_left.get("field") or "")
+                if nft_protocol in {"ip", "ip6"} and field == "saddr":
+                    source = right
+                    continue
+                if nft_protocol in {"ip", "ip6"} and field == "daddr":
+                    destination = right
+                    continue
+                if nft_protocol in {"tcp", "udp"} and field == "dport":
+                    protocol = nft_protocol
+                    port = right.replace(":", "-")
+                    continue
+            lossless = False
+        editable = (
+            family == "inet"
+            and table == "webnas"
+            and chain in {"input", "output"}
+            and action in {"allow", "drop", "reject"}
+            and lossless
+        )
         rules.append(FirewallRule(
             id=f"nft:{family}:{table}:{chain}:{handle}", backend=FirewallBackend.nftables,
-            action=verdict, direction="out" if chain.lower().startswith("out") else "in",
+            action=action, direction="out" if chain.lower().startswith("out") else "in",
+            protocol=protocol, port=port, source=source, destination=destination,
+            interface=interface,
             family="ipv4" if family == "ip" else "ipv6" if family == "ip6" else "any",
-            comment=str(item.get("comment") or "")[:120], editable=table == "webnas" and chain in {"input", "output"}, raw=raw,
+            comment=str(item.get("comment") or "")[:120], editable=editable, raw=raw,
         ))
     return rules
 
@@ -114,6 +198,12 @@ class FirewallService:
         self.root = root or Path(get_config().paths.data_dir) / "firewall-manager"
         self.backups_root = self.root / "backups"
         self.backups_root.mkdir(parents=True, exist_ok=True)
+        self._transaction_lock = threading.RLock()
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        with self._transaction_lock:
+            yield
 
     def status(self) -> dict[str, Any]:
         backend, available = self.system.detect()
@@ -200,8 +290,21 @@ class FirewallService:
         return args
 
     def _firewalld_rich(self, rule: FirewallRuleInput) -> str:
-        family = "ipv6" if rule.family == "ipv6" else "ipv4"
-        parts = [f'rule family="{family}"']
+        address_families: set[str] = set()
+        for value in (rule.source, rule.destination):
+            if value == "any":
+                continue
+            version = ipaddress.ip_network(value, strict=False).version
+            address_families.add("ipv6" if version == 6 else "ipv4")
+        if len(address_families) > 1:
+            raise FirewallError("firewalld rule cannot mix IPv4 and IPv6 addresses")
+        inferred = next(iter(address_families), "")
+        if rule.family != "any" and inferred and rule.family != inferred:
+            raise FirewallError("firewalld rule family does not match its addresses")
+        effective_family = rule.family if rule.family != "any" else inferred
+        parts = ["rule"]
+        if effective_family:
+            parts[0] += f' family="{effective_family}"'
         if rule.source != "any":
             parts.append(f'source address="{rule.source}"')
         if rule.destination != "any":
@@ -379,7 +482,36 @@ class FirewallService:
 
     def export_configuration(self) -> dict[str, Any]:
         status = self.status()
-        return {"schema": 1, "created_at": time.time(), "backend": status["backend"], "active": status["active"], "rules": [item.model_dump(mode="json", exclude={"raw", "id", "backend", "editable"}) for item in self.rules()]}
+        rules = self.rules()
+        if status["backend"] == FirewallBackend.nftables.value:
+            rules = [item for item in rules if item.editable]
+        return {"schema": 1, "created_at": time.time(), "backend": status["backend"], "active": status["active"], "rules": [item.model_dump(mode="json", exclude={"raw", "id", "backend", "editable", "enabled"}) for item in rules]}
+
+    def import_configuration(self, configuration: dict[str, Any]) -> dict[str, Any]:
+        if set(configuration) - {"schema", "created_at", "backend", "active", "rules", "id", "description"}:
+            raise FirewallError("firewall import contains unsupported fields")
+        if configuration.get("schema") != 1 or not isinstance(configuration.get("rules"), list):
+            raise FirewallError("firewall import schema is invalid")
+        raw_rules = configuration["rules"]
+        if len(raw_rules) > 2000:
+            raise FirewallError("firewall import exceeds the 2000-rule limit")
+        try:
+            candidate = [FirewallRuleInput.model_validate(raw_rule) for raw_rule in raw_rules]
+        except ValueError as error:
+            raise FirewallError("firewall import contains an invalid rule") from error
+        active = configuration.get("active")
+        if active is not None and not isinstance(active, bool):
+            raise FirewallError("firewall import active state must be boolean")
+        backend = self.system.detect()[0]
+        current = self.rules(backend=backend)
+        removable = [item for item in current if backend != FirewallBackend.nftables or item.editable]
+        for item in reversed(removable):
+            self.delete_rule(item.id)
+        for candidate_rule in candidate:
+            self.add_rule(candidate_rule)
+        if active is not None and bool(self.status().get("active")) != active:
+            self.set_enabled(active)
+        return {"backend": backend.value, "imported_rules": len(candidate), "active": self.status().get("active")}
 
     def create_backup(self, description: str = "") -> dict[str, Any]:
         identifier = f"fw-{int(time.time() * 1000)}"
@@ -413,6 +545,10 @@ class FirewallService:
 
     def restore_backup(self, backup_id: str) -> dict[str, Any]:
         payload = self._load_backup(backup_id)
+        try:
+            candidate = [FirewallRuleInput.model_validate(raw) for raw in payload["rules"][:2000]]
+        except ValueError as error:
+            raise FirewallError("firewall backup contains an invalid rule") from error
         current = self.rules()
         backend = self.system.detect()[0]
         removable = [item for item in current if backend != FirewallBackend.nftables or item.editable]
@@ -420,8 +556,8 @@ class FirewallService:
             self.delete_rule(item.id)
         restored = 0
         try:
-            for raw in payload["rules"][:2000]:
-                self.add_rule(FirewallRuleInput.model_validate(raw))
+            for rule in candidate:
+                self.add_rule(rule)
                 restored += 1
             if bool(payload.get("active")) != bool(self.status().get("active")):
                 self.set_enabled(bool(payload.get("active")))

@@ -31,17 +31,13 @@ class SecurityCenterService:
         states = self.repository.states()
         for item in detected:
             configured = states.get(item.id)
-            if configured in {FindingStatus.acknowledged.value, FindingStatus.resolved.value}:
-                item.status = FindingStatus(configured)
+            if configured == FindingStatus.acknowledged.value:
+                item.status = FindingStatus.acknowledged
         with self._lock:
             self._last_scan = {"timestamp": time.time(), "findings": detected, "metrics": metrics}
         return self.summary()
 
     def _snapshot(self) -> tuple[list[SecurityFinding], dict[str, dict[str, Any]], float | None]:
-        with self._lock:
-            timestamp = self._last_scan["timestamp"]
-        if timestamp is None:
-            self.scan()
         with self._lock:
             return list(self._last_scan["findings"]), dict(self._last_scan["metrics"]), self._last_scan["timestamp"]
 
@@ -67,6 +63,8 @@ class SecurityCenterService:
         findings, metrics, timestamp = self._snapshot()
         active = [item for item in findings if item.status != FindingStatus.resolved]
         severity = {level.value: sum(1 for item in active if item.severity == level) for level in Severity}
+        if timestamp is None:
+            return {"score": None, "severity": severity, "areas": {}, "metrics": {}, "findings": 0, "last_scan": None}
         areas: dict[str, dict[str, Any]] = {}
         for area in AREAS:
             relevant = [item for item in active if item.category == area or area == "system" and item.category == "system"]

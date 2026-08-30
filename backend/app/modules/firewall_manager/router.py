@@ -8,11 +8,12 @@ from fastapi import APIRouter, Depends, Request
 from ...activity import ActivityStatus
 
 from ...auth import authenticate
+from ...config import get_config
 from ...jobs.service import JobContext, service as jobs
 from ...package_center.models import api_error
 from ...rbac import current_user, mutating_user
 from ...security import SessionUser
-from .models import FirewallActionRequest, FirewallBackupRequest, FirewallMutationRequest, FirewallRuleInput
+from .models import FirewallActionRequest, FirewallBackupRequest, FirewallImportRequest, FirewallMutationRequest, FirewallRuleInput
 from .rbac import FIREWALL_BACKUP, FIREWALL_DISABLE, FIREWALL_ENABLE, FIREWALL_RELOAD, FIREWALL_RESTORE, FIREWALL_RULE_CREATE, FIREWALL_RULE_DELETE, FIREWALL_RULE_EDIT, FIREWALL_VIEW
 from ...identity.permissions import authorize
 from .service import service
@@ -33,9 +34,7 @@ def _reauth(user: SessionUser, password: str, confirmation: str, expected: str) 
 
 def _request_context(request: Request) -> tuple[str, int]:
     client_ip = request.client.host if request.client else ""
-    server = request.scope.get("server")
-    port = int(server[1]) if isinstance(server, (list, tuple)) and len(server) > 1 and isinstance(server[1], int) else 0
-    return client_ip, port
+    return client_ip, int(get_config().server.port)
 
 
 def _safe(operation: str, *, request: Request, acknowledge: bool, rule_id: str = "", rule: FirewallRuleInput | None = None) -> dict[str, Any]:
@@ -47,25 +46,28 @@ def _safe(operation: str, *, request: Request, acknowledge: bool, rule_id: str =
 
 
 def _job(actor: str, operation: str, handler: Callable[[JobContext], dict[str, Any]]) -> dict[str, Any]:
-    def execute(context: JobContext, _metadata: dict[str, Any]) -> dict[str, Any] | None:
-        service().record(actor, f"firewall.{operation}.started")
-        context.update_progress(10, "Validate and snapshot firewall")
-        rollback = service().create_backup(f"Automatic rollback before {operation}")
-        try:
-            context.update_progress(40, "Apply firewall change")
-            result = handler(context)
-            context.update_progress(80, "Verify firewall state")
-            service().status()
-            service().record(actor, f"firewall.{operation}", details={"rollback_backup": rollback["id"]})
-            return {**result, "rollback_backup": rollback["id"]}
-        except Exception as error:
+    def execute(context: JobContext, metadata: dict[str, Any]) -> dict[str, Any] | None:
+        _ = metadata
+        firewall = service()
+        with firewall.transaction():
+            firewall.record(actor, f"firewall.{operation}.started")
+            context.update_progress(10, "Validate and snapshot firewall")
+            rollback = firewall.create_backup(f"Automatic rollback before {operation}")
             try:
-                service().restore_backup(rollback["id"])
-            except Exception as rollback_error:
-                service().record(actor, f"firewall.{operation}", status=ActivityStatus.failure, summary=f"{type(error).__name__}; rollback={type(rollback_error).__name__}")
-                raise RuntimeError("firewall operation failed and automatic rollback could not be completed") from error
-            service().record(actor, f"firewall.{operation}", status=ActivityStatus.failure, summary=type(error).__name__)
-            raise
+                context.update_progress(40, "Apply firewall change")
+                result = handler(context)
+                context.update_progress(80, "Verify firewall state")
+                firewall.status()
+                firewall.record(actor, f"firewall.{operation}", details={"rollback_backup": rollback["id"]})
+                return {**result, "rollback_backup": rollback["id"]}
+            except Exception as error:
+                try:
+                    firewall.restore_backup(rollback["id"])
+                except Exception as rollback_error:
+                    firewall.record(actor, f"firewall.{operation}", status=ActivityStatus.failure, summary=f"{type(error).__name__}; rollback={type(rollback_error).__name__}")
+                    raise RuntimeError("firewall operation failed and automatic rollback could not be completed") from error
+                firewall.record(actor, f"firewall.{operation}", status=ActivityStatus.failure, summary=type(error).__name__)
+                raise
     job = jobs().submit_callable(job_type=f"firewall.{operation}", module="firewall-manager", created_by=actor, handler=execute, metadata={"operation": operation}, cancellable=False)
     return {"job": job.model_dump(mode="json")}
 
@@ -154,6 +156,15 @@ def reload_firewall(payload: FirewallActionRequest, user: SessionUser = Depends(
 def export_config(user: SessionUser = Depends(current_user)):
     _allow(user, FIREWALL_VIEW)
     return service().export_configuration()
+
+
+@router.post("/import")
+def import_config(payload: FirewallImportRequest, request: Request, user: SessionUser = Depends(mutating_user)):
+    _allow(user, FIREWALL_RESTORE)
+    _reauth(user, payload.pam_password, payload.confirmation, "firewall:import")
+    _safe("import", request=request, acknowledge=payload.acknowledge_lockout)
+    configuration = payload.configuration
+    return _job(user.username, "import", lambda _context: service().import_configuration(configuration))
 
 
 @router.get("/backups")

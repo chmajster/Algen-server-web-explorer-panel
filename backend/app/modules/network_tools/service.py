@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import shutil
 import socket
@@ -79,7 +80,11 @@ class NetworkToolsService:
         args = [tool, "+time=3", "+tries=1", "+short"]
         if payload.server:
             args.append(f"@{payload.server}")
-        args += [payload.hostname, payload.record_type]
+        try:
+            ptr_address = str(ipaddress.ip_address(payload.hostname)) if payload.record_type == "PTR" else None
+        except ValueError:
+            ptr_address = None
+        args += ["-x", ptr_address] if ptr_address else [payload.hostname, payload.record_type]
         try:
             result = subprocess.run(args, capture_output=True, text=True, timeout=5, check=False, shell=False)  # nosec B603
         except (OSError, subprocess.SubprocessError) as error:
@@ -168,6 +173,7 @@ class NetworkToolsService:
         tls_started = time.perf_counter()
         try:
             context = ssl.create_default_context()
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             wrapped = context.wrap_socket(raw, server_hostname=hostname)
             certificate = wrapped.getpeercert() or {}
             tls_ms = round((time.perf_counter() - tls_started) * 1000, 2)
