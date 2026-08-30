@@ -1,6 +1,6 @@
 id: storage-manager
 name: Storage Manager
-version: 1.2.0
+version: 1.2.1
 category: infrastructure
 icon: hard-drive
 permissions:
