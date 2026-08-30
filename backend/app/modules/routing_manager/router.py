@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from fastapi import APIRouter, Depends
+
 from ...activity import ActivityCategory, record_activity
 from ...identity.permissions import authorize
 from ...package_center.models import api_error
@@ -16,16 +18,16 @@ router = APIRouter(prefix="/api/modules/routing-manager", tags=["routing-manager
 def _controlled(operation):
     try:
         return operation()
-    except RoutingUnavailable as error:
-        api_error(503, "ROUTING_UNAVAILABLE", str(error))
-    except LookupError as error:
-        api_error(404, "ROUTING_TRANSACTION_NOT_FOUND", str(error))
-    except ValueError as error:
-        api_error(422, "ROUTING_VALIDATION_FAILED", str(error))
-    except PermissionError as error:
-        api_error(503, "ROUTING_PERMISSION_DENIED", str(error))
-    except RuntimeError as error:
-        api_error(502, "ROUTING_OPERATION_FAILED", str(error))
+    except RoutingUnavailable:
+        api_error(503, "ROUTING_UNAVAILABLE", "Routing backend is unavailable")
+    except LookupError:
+        api_error(404, "ROUTING_TRANSACTION_NOT_FOUND", "Routing transaction was not found")
+    except ValueError:
+        api_error(422, "ROUTING_VALIDATION_FAILED", "Routing request is invalid")
+    except PermissionError:
+        api_error(503, "ROUTING_PERMISSION_DENIED", "Routing operation is not permitted")
+    except RuntimeError:
+        api_error(502, "ROUTING_OPERATION_FAILED", "Routing operation failed")
 
 
 def _audit(actor: str, action: str, target: str = "") -> None:
