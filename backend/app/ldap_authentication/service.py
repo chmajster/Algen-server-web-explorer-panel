@@ -269,6 +269,9 @@ def _apply_rbac(username: str, mappings: list[dict[str, Any]]) -> dict[str, Any]
     policies = identity_repository()
     if not mappings:
         existing = policies.user_policy(username)
+        if existing and str(existing.updated_by or "") == "ldap-group-mapping":
+            policies.delete_user_policy(username, "ldap-group-mapping")
+            existing = None
         if existing:
             return existing.model_dump(mode="json")
         return UserPolicy(username=username).model_dump(mode="json")
@@ -290,7 +293,7 @@ def _service_connection(settings: dict[str, Any], bind_password: str) -> tuple[C
     for endpoint in candidates:
         try:
             return connect(settings, endpoint, user=str(settings.get("bind_dn") or ""), password=bind_password), endpoint
-        except LDAPInvalidCredentialsResult as error:
+        except LDAPInvalidCredentialsResult:
             failures.append(LdapServiceUnavailable("bind", "LDAP_BIND_FAILED", endpoint.label))
             logger.warning("ldap_auth_service_bind_failed server=%s", endpoint.label)
         except (LDAPStartTLSError, ssl.SSLError) as error:
