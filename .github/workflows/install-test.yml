@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   install:
-    name: Install and upgrade WebNAS on clean Ubuntu
+    name: Install and upgrade WebNAS on self-hosted Linux
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on:
       - self-hosted
@@ -38,6 +38,47 @@ jobs:
           command -v sudo
           command -v systemctl
           sudo systemctl is-system-running >/dev/null 2>&1 || true
+
+      - name: Ensure Python 3.14 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v python3.14 >/dev/null 2>&1; then
+            python3.14 --version
+            exit 0
+          fi
+
+          . /etc/os-release
+          if [[ "${ID:-}" != "debian" || "${VERSION_CODENAME:-}" != "trixie" ]]; then
+            echo "Python 3.14 is missing and the automatic source bootstrap is only defined for Debian 13 (trixie)." >&2
+            exit 1
+          fi
+
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential ca-certificates curl xz-utils pkg-config \
+            libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+            libffi-dev liblzma-dev libncurses-dev libgdbm-dev libnss3-dev uuid-dev
+
+          python_version="3.14.7"
+          python_sha256="62859805f6fdf25e2bcbf3fa3217801e1996887ca33e6a2af80674bdfa2dbe07"
+          workdir="$(mktemp -d -t webnas-python314.XXXXXX)"
+          trap 'rm -rf "${workdir}"' EXIT
+
+          curl --fail --location --silent --show-error \
+            "https://www.python.org/ftp/python/${python_version}/Python-${python_version}.tgz" \
+            -o "${workdir}/Python-${python_version}.tgz"
+          printf '%s  %s\n' "${python_sha256}" "${workdir}/Python-${python_version}.tgz" | sha256sum --check --status
+
+          tar -xzf "${workdir}/Python-${python_version}.tgz" -C "${workdir}"
+          cd "${workdir}/Python-${python_version}"
+          ./configure --prefix=/usr/local --with-ensurepip=install
+          make -j"$(nproc)"
+          sudo make altinstall
+          hash -r
+          command -v python3.14
+          python3.14 -c 'import sys; assert sys.version_info[:2] == (3, 14), sys.version'
+          python3.14 --version
 
       - name: Run full installer
         shell: bash
