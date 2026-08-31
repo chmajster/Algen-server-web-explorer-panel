@@ -26,68 +26,66 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_once(path: Path, old: str, new: str) -> None:
-              text = path.read_text(encoding="utf-8")
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f"Expected exactly one match in {path}, found {count}")
-              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+                  raise SystemExit(f"Expected exactly one {label} match, found {count}")
+              return text.replace(old, new, 1)
 
           helper = Path("scripts/install_python314_runtime.sh")
-          replace_once(
-              helper,
+          text = helper.read_text(encoding="utf-8")
+          text = replace_once(
+              text,
               '  INSTALLER_DISTRO_ID="$(os_release_value ID || true)"\n'
               '  INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID || true)"\n'
               '  INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME || true)"\n',
               '  INSTALLER_DISTRO_ID="$(os_release_value ID 2>/dev/null)" || INSTALLER_DISTRO_ID=""\n'
               '  INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID 2>/dev/null)" || INSTALLER_DISTRO_VERSION_ID=""\n'
               '  INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME 2>/dev/null)" || INSTALLER_DISTRO_CODENAME=""\n',
+              "distribution detection",
           )
-          replace_once(
-              helper,
+          text = replace_once(
+              text,
               '  candidate="$(command -v python3.14 2>/dev/null || true)"\n',
               '  if ! candidate="$(command -v python3.14 2>/dev/null)"; then\n'
               '    candidate=""\n'
               '  fi\n',
+              "python lookup",
           )
-          replace_once(
-              helper,
+          text = replace_once(
+              text,
               '    safe_remove_python314_path "$PYTHON314_BUILD_DIR" || true\n',
               '    if ! safe_remove_python314_path "$PYTHON314_BUILD_DIR"; then\n'
               '      warn "Could not fully clean the temporary Python build directory: ${PYTHON314_BUILD_DIR}"\n'
               '    fi\n',
+              "build cleanup",
           )
-          replace_once(
-              helper,
+          text = replace_once(
+              text,
               '      safe_remove_python314_path "$PYTHON_RUNTIME_DIR" || true\n',
               '      if ! safe_remove_python314_path "$PYTHON_RUNTIME_DIR"; then\n'
               '        warn "Could not fully remove the incomplete WebNAS Python runtime: ${PYTHON_RUNTIME_DIR}"\n'
               '      fi\n',
-          )
-          replace_once(
-              helper,
-              '      PYTHON_BIN="$(command -v python3.14 || true)"\n',
-              '      PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"\n',
-          )
-          replace_once(
-              helper,
-              '        PYTHON_BIN="$(command -v python3.14 || true)"\n',
-              '        PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"\n',
-          )
-          # The dnf and yum blocks contain the same assignment, so replace the second remaining copy.
-          replace_once(
-              helper,
-              '        PYTHON_BIN="$(command -v python3.14 || true)"\n',
-              '        PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"\n',
+              "runtime cleanup",
           )
 
+          old_lookup = 'PYTHON_BIN="$(command -v python3.14 || true)"'
+          lookup_count = text.count(old_lookup)
+          if lookup_count != 4:
+              raise SystemExit(f"Expected four post-package Python lookups, found {lookup_count}")
+          text = text.replace(
+              old_lookup,
+              'PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"',
+          )
+          helper.write_text(text, encoding="utf-8")
+
           tests = Path("backend/tests/test_installer_debian_python314.py")
-          text = tests.read_text(encoding="utf-8")
+          test_text = tests.read_text(encoding="utf-8")
           marker = '    assert "apt dist-upgrade" not in RUNTIME_HELPER\n'
-          if marker not in text:
+          if marker not in test_text:
               raise SystemExit("Could not find helper safety-test insertion point")
           tests.write_text(
-              text.replace(marker, marker + '    assert "|| true" not in RUNTIME_HELPER\n', 1),
+              test_text.replace(marker, marker + '    assert "|| true" not in RUNTIME_HELPER\n', 1),
               encoding="utf-8",
           )
           PY
