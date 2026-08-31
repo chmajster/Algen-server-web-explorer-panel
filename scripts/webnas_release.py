@@ -368,12 +368,16 @@ class Deployment:
         for writable in (Path(data_dir), Path(log_dir), Path(temp_dir)):
             writable.mkdir(parents=True, exist_ok=True)
             command("chown", "-R", f"{self.service_user}:{self.service_user}", str(writable))
+        # DirectoryMode only affects creation of a missing socket parent. Repair
+        # an existing directory left by older releases before enabling the
+        # socket, otherwise the webnas service user cannot traverse /run/webnas.
+        command("install", "-d", "-o", "root", "-g", "root", "-m", "0755", "/run/webnas")
         socket_unit = self.systemd_dir / "webnas-privileged.socket"
         broker_unit = self.systemd_dir / "webnas-privileged.service"
         atomic_write(socket_unit, "\n".join([
             "[Unit]", "Description=WebNAS privileged operation broker socket", "",
             "[Socket]", "ListenStream=/run/webnas/privileged.sock", "SocketUser=root", f"SocketGroup={self.service_user}",
-            "SocketMode=0660", "DirectoryMode=0750", "RemoveOnStop=true", "",
+            "SocketMode=0660", "DirectoryMode=0755", "RemoveOnStop=true", "",
             "[Install]", "WantedBy=sockets.target", "",
         ]))
         atomic_write(broker_unit, "\n".join([
