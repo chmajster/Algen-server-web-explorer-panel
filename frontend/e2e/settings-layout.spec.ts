@@ -108,7 +108,10 @@ test("Settings Administration and PAM / LDAP stay contained in a narrow desktop 
     windowElement.style.height = "700px";
   });
 
-  await settingsWindow.getByRole("button", { name: "Administration", exact: true }).click();
+  const categorySelect = settingsWindow.locator(".settings-header select");
+  await expect(categorySelect).toBeVisible();
+
+  await categorySelect.selectOption("administration");
   const administration = settingsWindow.locator(".administration-dashboard");
   const https = settingsWindow.getByTestId("https-settings-card");
   await expect(administration).toBeVisible();
@@ -121,7 +124,7 @@ test("Settings Administration and PAM / LDAP stay contained in a narrow desktop 
   const httpsControl = httpsPath.locator("xpath=ancestor::*[contains(@class, 'setting-control')]");
   await expectNoHorizontalOverflow(httpsControl);
 
-  await settingsWindow.getByRole("button", { name: "PAM / LDAP", exact: true }).click();
+  await categorySelect.selectOption("authentication");
   const authentication = settingsWindow.getByTestId("authentication-settings-card");
   const ldap = settingsWindow.locator(".ldap-settings-shell");
   await expect(authentication).toBeVisible();
