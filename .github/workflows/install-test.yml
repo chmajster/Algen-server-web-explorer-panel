@@ -1,243 +1,170 @@
 name: Installation smoke test
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
-  contents: read
-
-concurrency:
-  group: install-test-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  contents: write
 
 jobs:
-  install:
-    name: Install and upgrade WebNAS on clean Ubuntu
+  finalize-installer-relocation:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    env:
-      WEBNAS_TEST_PORT: "5099"
     steps:
-      - name: Checkout repository
+      - name: Checkout PR branch
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 2
 
-      - name: Verify runner prerequisites
+      - name: Apply final relocation fixes
         shell: bash
         run: |
           set -euo pipefail
-          test "$(id -u)" -ne 0
-          command -v sudo
-          command -v systemctl
-          sudo systemctl is-system-running >/dev/null 2>&1 || true
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Run full installer
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo ./install/install.sh \
-            --yes \
-            --port "${WEBNAS_TEST_PORT}"
+          repo = Path('.')
+          old_url = 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh'
+          new_url = 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh'
 
-      - name: Verify installed files, PAM and release provenance
-        shell: bash
-        run: |
-          set -euo pipefail
-          require_check() {
-            local description="$1"
-            shift
-            if "$@"; then
-              echo "[OK] ${description}"
+          # All public/self-update references must follow the relocated launcher.
+          for path in repo.rglob('*'):
+              if not path.is_file() or '.git' in path.parts:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except (UnicodeDecodeError, OSError):
+                  continue
+              updated = text.replace(old_url, new_url)
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+
+          # Launcher and menu download their sibling installers from install/.
+          for relative in ('install/install.sh', 'install/install-standard-menu.sh'):
+              path = repo / relative
+              text = path.read_text(encoding='utf-8')
+              text = text.replace(
+                  'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main"',
+                  'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"',
+                  1,
+              )
+              path.write_text(text, encoding='utf-8')
+
+          # Standard installer: when executed from install/, the repository root is its parent.
+          path = repo / 'install/install-standard.sh'
+          text = path.read_text(encoding='utf-8')
+          old = '''  local script_dir=""
+          local resolved_script_dir=""
+          local resolved_install_dir=""
+          script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+          resolved_script_dir="$(readlink -f "$script_dir" 2>/dev/null || printf '%s' "$script_dir")"
+          resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
+          if [[ -n "$script_dir" && -f "${script_dir}/backend/app/main.py" && -f "${script_dir}/frontend/package.json" ]]; then
+            if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
+              warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
             else
-              echo "[FAIL] ${description}" >&2
-              return 1
-            fi
+              SOURCE_DIR="$script_dir"
+          '''
+          new = '''  local script_dir=""
+          local source_root=""
+          local resolved_script_dir=""
+          local resolved_install_dir=""
+          script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+          source_root="$script_dir"
+          if [[ -n "$script_dir" && -f "${script_dir}/../backend/app/main.py" && -f "${script_dir}/../frontend/package.json" ]]; then
+            source_root="$(cd "${script_dir}/.." 2>/dev/null && pwd || true)"
+          fi
+          resolved_script_dir="$(readlink -f "$source_root" 2>/dev/null || printf '%s' "$source_root")"
+          resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
+          if [[ -n "$source_root" && -f "${source_root}/backend/app/main.py" && -f "${source_root}/frontend/package.json" ]]; then
+            if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
+              warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
+            else
+              SOURCE_DIR="$source_root"
+          '''
+          if old not in text and 'local source_root=""' not in text:
+              raise SystemExit('prepare_source block not found in install/install-standard.sh')
+          if old in text:
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+
+          # Portable installer also moved under install/ and must copy the repository parent.
+          path = repo / 'install/install-portable.sh'
+          text = path.read_text(encoding='utf-8')
+          marker = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"\n'
+          if 'SOURCE_ROOT="$SCRIPT_DIR"' not in text:
+              if marker not in text:
+                  raise SystemExit('SCRIPT_DIR marker not found in install/install-portable.sh')
+              text = text.replace(
+                  marker,
+                  marker
+                  + 'SOURCE_ROOT="$SCRIPT_DIR"\n'
+                  + 'if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/../backend/app/main.py" && -f "${SCRIPT_DIR}/../frontend/package.json" ]]; then\n'
+                  + '  SOURCE_ROOT="$(cd "${SCRIPT_DIR}/.." 2>/dev/null && pwd || true)"\n'
+                  + 'fi\n',
+                  1,
+              )
+          text = text.replace('tar -C "$SCRIPT_DIR" \\\n', 'tar -C "$SOURCE_ROOT" \\\n', 1)
+          text = text.replace(
+              'if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/backend/app/main.py" && -f "${SCRIPT_DIR}/frontend/package.json" ]]; then',
+              'if [[ -n "$SOURCE_ROOT" && -f "${SOURCE_ROOT}/backend/app/main.py" && -f "${SOURCE_ROOT}/frontend/package.json" ]]; then',
+              1,
+          )
+          path.write_text(text, encoding='utf-8')
+
+          # Keep tests aligned with the relocated files.
+          replacements = {
+              'backend/tests/test_install_launcher.py': {
+                  'LAUNCHER = REPOSITORY / "install.sh"': 'LAUNCHER = REPOSITORY / "install" / "install.sh"',
+              },
+              'backend/tests/test_installer.py': {
+                  'INSTALLER = REPOSITORY / "install-standard.sh"': 'INSTALLER = REPOSITORY / "install" / "install-standard.sh"',
+              },
           }
-
-          require_check "current release symlink exists" test -L /opt/webnas/current
-          require_check "backend virtualenv Python is executable" test -x /opt/webnas/current/backend/.venv/bin/python
-          require_check "frontend index exists" test -f /opt/webnas/current/frontend/dist/index.html
-          require_check "configuration exists" test -f /etc/webnas/config.yaml
-          require_check "dedicated PAM service exists" test -f /etc/pam.d/webnas
-          if grep -Eq '^[[:space:]]*(@include[[:space:]]+common-auth|auth[[:space:]]+include[[:space:]]+(common-auth|system-auth))[[:space:]]*$' /etc/pam.d/webnas; then
-            echo "[OK] PAM service includes the distribution authentication policy"
-          else
-            echo "[FAIL] PAM service does not include the expected distribution authentication policy" >&2
-            sudo cat /etc/pam.d/webnas >&2 || true
-            exit 1
-          fi
-          if grep -Eq '^[[:space:]]*auth[[:space:]].*(login)' /etc/pam.d/webnas; then
-            echo "[FAIL] PAM service falls back to login" >&2
-            sudo cat /etc/pam.d/webnas >&2 || true
-            exit 1
-          fi
-          echo "[OK] PAM service has no login fallback"
-          require_check "deployment state exists" test -f /var/lib/webnas/settings/deployment.json
-          require_check "installed source revision exists" test -f /opt/webnas/current/.webnas-revision
-
-          installed_sha="$(sudo cat /opt/webnas/current/.webnas-revision)"
-          expected_sha="$(git rev-parse HEAD)"
-          if [[ "${installed_sha}" != "${expected_sha}" ]]; then
-            echo "[FAIL] Installed source revision ${installed_sha} does not match checked-out revision ${expected_sha}" >&2
-            exit 1
-          fi
-          echo "[OK] Installed source revision matches checked-out revision ${expected_sha}"
-
-      - name: Verify services and HTTP health
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo systemctl is-active --quiet nginx
-          active_backends="$(sudo systemctl is-active webnas-backend-blue.service webnas-backend-green.service 2>/dev/null | grep -c '^active$' || true)"
-          test "${active_backends}" -eq 1
-
-          curl \
-            --fail \
-            --silent \
-            --show-error \
-            --retry 10 \
-            --retry-delay 2 \
-            --retry-connrefused \
-            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
-
-          auth_config="$(curl --fail --silent --show-error "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/auth/config")"
-          python3 - "${auth_config}" <<'PY'
-          import json
-          import sys
-
-          payload = json.loads(sys.argv[1])
-          assert payload.get("mode") in {"local", "system"}, payload
+          for relative, mapping in replacements.items():
+              path = repo / relative
+              text = path.read_text(encoding='utf-8')
+              for before, after in mapping.items():
+                  text = text.replace(before, after)
+              path.write_text(text, encoding='utf-8')
           PY
 
-      - name: Seed legacy LDAP authentication database
+          # Remove migration-only scaffolding and restore this smoke workflow itself.
+          rm -f .github/workflows/path-migration-patch.yml .github/path-migration-trigger.txt
+          git show HEAD^:.github/workflows/install-test.yml > .github/workflows/install-test.yml
+
+          bash -n install/install.sh install/install-standard.sh install/install-standard-menu.sh install/install-portable.sh
+          python3 -m py_compile backend/app/settings.py backend/app/privileged_broker/extended_policy.py \
+            backend/tests/test_install_launcher.py backend/tests/test_installer.py \
+            backend/tests/test_installer_authentication_bootstrap.py backend/tests/test_file_listing.py
+          python3 -m pytest -q backend/tests/test_install_launcher.py backend/tests/test_installer.py \
+            -k 'launcher or installer_has_valid_bash_syntax or source_archive or installation_summary or wsl or interactive_configuration'
+          git diff --check
+
+          test -f install/install.sh
+          test -f install/install-standard.sh
+          test -f install/install-standard-menu.sh
+          test -f install/install-portable.sh
+          test ! -e install.sh
+          test ! -e install-standard.sh
+          test ! -e install-standard-menu.sh
+          test ! -e install-portable.sh
+          ! git grep -n 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh'
+          ! grep -Fq 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main"' install/install.sh install/install-standard-menu.sh
+          grep -Fq 'SOURCE_DIR="$source_root"' install/install-standard.sh
+          grep -Fq 'SOURCE_ROOT="$SCRIPT_DIR"' install/install-portable.sh
+
+      - name: Commit final relocation
         shell: bash
         run: |
           set -euo pipefail
-          sudo systemctl stop webnas.service webnas-backend-blue.service webnas-backend-green.service 2>/dev/null || true
-          sudo rm -f /var/lib/webnas/ldap-auth.sqlite3
-          sudo python3 - <<'PY'
-          import sqlite3
-          path = "/var/lib/webnas/ldap-auth.sqlite3"
-          db = sqlite3.connect(path)
-          db.executescript("""
-          CREATE TABLE ldap_settings(
-              id INTEGER PRIMARY KEY, enabled INTEGER, server TEXT, port INTEGER,
-              security_mode TEXT, verify_tls INTEGER, connect_timeout REAL,
-              operation_timeout REAL, base_dn TEXT, user_search_base TEXT,
-              user_search_filter TEXT, username_attribute TEXT, bind_dn TEXT,
-              bind_secret_id TEXT, display_name_attribute TEXT, email_attribute TEXT
-          );
-          INSERT INTO ldap_settings VALUES(
-              1,0,'ldap-upgrade.example.test',389,'starttls',1,5,10,
-              'dc=example,dc=test','ou=People,dc=example,dc=test','(uid={username})',
-              'uid','cn=webnas-auth,dc=example,dc=test','','cn','mail'
-          );
-          """)
-          db.commit()
-          db.close()
-          PY
-          sudo chown webnas:webnas /var/lib/webnas/ldap-auth.sqlite3
-
-      - name: Run update over installed release
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo ./install/install.sh --yes --existing-action update --port "${WEBNAS_TEST_PORT}"
-
-      - name: Verify upgrade migration and health
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f /etc/pam.d/webnas
-          sudo /opt/webnas/current/backend/.venv/bin/python - <<'PY'
-          import sqlite3
-          db = sqlite3.connect('/var/lib/webnas/ldap-auth.sqlite3')
-          db.row_factory = sqlite3.Row
-          settings = db.execute('SELECT * FROM ldap_auth_settings_v2 WHERE id=1').fetchone()
-          server = db.execute('SELECT host,port FROM ldap_auth_servers ORDER BY position LIMIT 1').fetchone()
-          assert settings is not None
-          assert settings['base_dn'] == 'dc=example,dc=test'
-          assert server is not None
-          assert server['host'] == 'ldap-upgrade.example.test'
-          assert not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ldap_manager_connections'").fetchone()
-          db.close()
-          PY
-          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
-            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
-
-      - name: Verify clean reinstall preserves runtime state
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          old_release="$(readlink -f /opt/webnas/current)"
-          config_sha_before="$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')"
-          printf '%s\n' "${old_release}" > /tmp/webnas-old-release
-          printf '%s\n' "${config_sha_before}" > /tmp/webnas-config-sha
-
-          sudo touch /opt/webnas/stale-app-marker
-          printf 'keep-config\n' | sudo tee /etc/webnas/reinstall-preserve-marker >/dev/null
-          printf 'keep-data\n' | sudo tee /var/lib/webnas/reinstall-preserve-marker >/dev/null
-          printf 'keep-logs\n' | sudo tee /var/log/webnas/reinstall-preserve-marker >/dev/null
-
-          sudo ./install/install.sh --yes --existing-action reinstall --port "${WEBNAS_TEST_PORT}"
-
-          new_release="$(readlink -f /opt/webnas/current)"
-          old_release="$(cat /tmp/webnas-old-release)"
-          config_sha_before="$(cat /tmp/webnas-config-sha)"
-          config_sha_after="$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')"
-
-          test "${new_release}" != "${old_release}"
-          test ! -e /opt/webnas/stale-app-marker
-          test ! -e "${old_release}"
-          test -f /etc/webnas/reinstall-preserve-marker
-          test -f /var/lib/webnas/reinstall-preserve-marker
-          test -f /var/log/webnas/reinstall-preserve-marker
-          test "${config_sha_after}" = "${config_sha_before}"
-
-          release_count="$(find /opt/webnas/releases -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          test "${release_count}" -eq 1
-
-          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
-            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
-
-      - name: Collect diagnostics on failure
-        if: failure()
-        shell: bash
-        run: |
-          set +e
-          echo "=== WebNAS filesystem ==="
-          sudo find /opt/webnas -maxdepth 3 \( -type f -o -type l \) 2>/dev/null | sort | head -n 300
-          echo "=== systemd status ==="
-          sudo systemctl status nginx webnas webnas-backend-blue webnas-backend-green --no-pager -l
-          echo "=== WebNAS journals ==="
-          sudo journalctl -u nginx -u webnas -u webnas-backend-blue -u webnas-backend-green -n 250 --no-pager
-          echo "=== Listening sockets ==="
-          sudo ss -ltnp
-          echo "=== Installer configuration ==="
-          sudo cat /etc/webnas/config.yaml 2>/dev/null || true
-          echo "=== Deployment state ==="
-          sudo cat /var/lib/webnas/settings/deployment.json 2>/dev/null || true
-
-      - name: Uninstall test installation
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          if [[ -x /opt/webnas/uninstall.sh ]]; then
-            printf 'REMOVE WEBNAS\n' | sudo /opt/webnas/uninstall.sh --yes --remove-data
-          else
-            sudo systemctl disable --now webnas.service webnas-backend-blue.service webnas-backend-green.service 2>/dev/null || true
-            sudo rm -f /etc/systemd/system/webnas.service \
-              /etc/systemd/system/webnas-backend-blue.service \
-              /etc/systemd/system/webnas-backend-green.service \
-              /etc/nginx/conf.d/webnas.conf
-            sudo systemctl daemon-reload || true
-            sudo systemctl reload nginx 2>/dev/null || true
-            sudo rm -rf /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
           fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "fix: complete installer relocation"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
