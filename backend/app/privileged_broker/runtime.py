@@ -11,7 +11,7 @@ from .protocol import Operation
 
 
 BROKER_MODE_ENV = "WEBNAS_PRIVILEGED_BROKER"
-ACCOUNT_TOOLS = {"useradd", "usermod", "userdel", "groupadd", "groupmod", "groupdel", "gpasswd", "chpasswd", "chage"}
+ACCOUNT_TOOLS = {"useradd", "usermod", "userdel", "groupadd", "groupmod", "groupdel", "gpasswd", "chpasswd", "chage", "passwd"}
 PACKAGE_TOOLS = {"apt-get", "dnf", "yum", "zypper", "pacman", "apk", "dpkg", "rpm"}
 SYSTEMD_MUTATIONS = {"start", "stop", "restart", "reload", "enable", "disable"}
 
