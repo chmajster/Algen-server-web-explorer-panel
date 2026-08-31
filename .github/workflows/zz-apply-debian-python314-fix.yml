@@ -1,4 +1,4 @@
-name: Apply Debian Python 3.14 installer integration
+name: Apply Debian Python 3.14 runtime cleanup hardening
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
           ref: fix/debian-trixie-python314-runtime
           fetch-depth: 0
 
-      - name: Integrate runtime helper with existing installers
+      - name: Harden runtime helper cleanup and fallbacks
         shell: bash
         run: |
           set -euo pipefail
@@ -33,32 +33,66 @@ jobs:
                   raise SystemExit(f"Expected exactly one match in {path}, found {count}")
               path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          installer = Path("install-standard.sh")
+          helper = Path("scripts/install_python314_runtime.sh")
           replace_once(
-              installer,
-              "  update_step verify_files completed\n  prompt_configuration\n",
-              "  update_step verify_files completed\n"
-              "  [[ -f \"${SOURCE_DIR}/scripts/install_python314_runtime.sh\" ]] || fail \"Downloaded source is missing the Python 3.14 runtime helper\"\n"
-              "  # SOURCE_DIR is dynamic: local checkout or downloaded release archive.\n"
-              "  # shellcheck disable=SC1091\n"
-              "  source \"${SOURCE_DIR}/scripts/install_python314_runtime.sh\"\n"
-              "  prompt_configuration\n",
+              helper,
+              '  INSTALLER_DISTRO_ID="$(os_release_value ID || true)"\n'
+              '  INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID || true)"\n'
+              '  INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME || true)"\n',
+              '  INSTALLER_DISTRO_ID="$(os_release_value ID 2>/dev/null)" || INSTALLER_DISTRO_ID=""\n'
+              '  INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID 2>/dev/null)" || INSTALLER_DISTRO_VERSION_ID=""\n'
+              '  INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME 2>/dev/null)" || INSTALLER_DISTRO_CODENAME=""\n',
+          )
+          replace_once(
+              helper,
+              '  candidate="$(command -v python3.14 2>/dev/null || true)"\n',
+              '  if ! candidate="$(command -v python3.14 2>/dev/null)"; then\n'
+              '    candidate=""\n'
+              '  fi\n',
+          )
+          replace_once(
+              helper,
+              '    safe_remove_python314_path "$PYTHON314_BUILD_DIR" || true\n',
+              '    if ! safe_remove_python314_path "$PYTHON314_BUILD_DIR"; then\n'
+              '      warn "Could not fully clean the temporary Python build directory: ${PYTHON314_BUILD_DIR}"\n'
+              '    fi\n',
+          )
+          replace_once(
+              helper,
+              '      safe_remove_python314_path "$PYTHON_RUNTIME_DIR" || true\n',
+              '      if ! safe_remove_python314_path "$PYTHON_RUNTIME_DIR"; then\n'
+              '        warn "Could not fully remove the incomplete WebNAS Python runtime: ${PYTHON_RUNTIME_DIR}"\n'
+              '      fi\n',
+          )
+          replace_once(
+              helper,
+              '      PYTHON_BIN="$(command -v python3.14 || true)"\n',
+              '      PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"\n',
+          )
+          replace_once(
+              helper,
+              '        PYTHON_BIN="$(command -v python3.14 || true)"\n',
+              '        PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"\n',
+          )
+          # The dnf and yum blocks contain the same assignment, so replace the second remaining copy.
+          replace_once(
+              helper,
+              '        PYTHON_BIN="$(command -v python3.14 || true)"\n',
+              '        PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"\n',
           )
 
-          launcher = Path("install.sh")
-          replace_once(
-              launcher,
-              "      current|releases|uninstall.sh|webnas_release.py) continue ;;\n",
-              "      current|releases|runtime|uninstall.sh|webnas_release.py) continue ;;\n",
-          )
-          replace_once(
-              launcher,
-              "  printf '[INFO] Replacement release is active; removing all stale WebNAS application files while preserving config, data, and logs.\\n'\n",
-              "  printf '[INFO] Replacement release is active; removing stale release files while preserving the shared runtime, config, data, and logs.\\n'\n",
+          tests = Path("backend/tests/test_installer_debian_python314.py")
+          text = tests.read_text(encoding="utf-8")
+          marker = '    assert "apt dist-upgrade" not in RUNTIME_HELPER\n'
+          if marker not in text:
+              raise SystemExit("Could not find helper safety-test insertion point")
+          tests.write_text(
+              text.replace(marker, marker + '    assert "|| true" not in RUNTIME_HELPER\n', 1),
+              encoding="utf-8",
           )
           PY
 
-      - name: Validate integrated installer
+      - name: Validate hardening
         shell: bash
         run: |
           set -euo pipefail
@@ -68,12 +102,12 @@ jobs:
           shellcheck -e SC2015,SC2064,SC2317 install.sh install-standard.sh
           shellcheck scripts/install_python314_runtime.sh
 
-      - name: Commit installer integration only
+      - name: Commit runtime hardening
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add install.sh install-standard.sh
-          git commit -m "installer: use isolated Python runtime on Debian 13"
+          git add scripts/install_python314_runtime.sh backend/tests/test_installer_debian_python314.py
+          git commit -m "installer: harden private Python runtime cleanup"
           git push origin HEAD:fix/debian-trixie-python314-runtime
