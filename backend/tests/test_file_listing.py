@@ -144,7 +144,7 @@ def test_directory_write_capability_comes_from_user_worker(monkeypatch, tmp_path
 def test_systemd_profile_keeps_allowed_home_directories_writable():
     repository = Path(__file__).resolve().parents[2]
     packaged_service = (repository / "packaging" / "webnas.service").read_text(encoding="utf-8")
-    installer = (repository / "install-standard.sh").read_text(encoding="utf-8")
+    installer = (repository / "install" / "core" / "install-standard.sh").read_text(encoding="utf-8")
     release_manager = (repository / "scripts" / "webnas_release.py").read_text(encoding="utf-8")
 
     assert "ProtectHome=false" in packaged_service

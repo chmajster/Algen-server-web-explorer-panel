@@ -6,8 +6,7 @@ on:
       - main
     paths:
       - install.sh
-      - install-standard.sh
-      - install-standard-menu.sh
+      - install/**
       - uninstall.sh
       - .github/workflows/installer-full-reinstall-test.yml
   pull_request:
@@ -15,8 +14,7 @@ on:
       - main
     paths:
       - install.sh
-      - install-standard.sh
-      - install-standard-menu.sh
+      - install/**
       - uninstall.sh
       - .github/workflows/installer-full-reinstall-test.yml
   workflow_dispatch:
@@ -47,7 +45,7 @@ jobs:
           command -v systemctl
           command -v script
           sudo systemctl is-system-running >/dev/null 2>&1 || true
-          bash -n install.sh install-standard.sh install-standard-menu.sh uninstall.sh
+          bash -n install.sh install/install.sh install/install-standard.sh install/install-standard-menu.sh install/install-portable.sh install/core/install-standard.sh install/core/install-portable.sh uninstall.sh
 
       - name: Install baseline WebNAS
         shell: bash
