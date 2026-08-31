@@ -7,19 +7,19 @@ This document covers automatic installation, manual installation, updates, unins
 Recommended:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh | sudo bash
 ```
 
 With a custom port:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash -s -- --port 8080
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh | sudo bash -s -- --port 8080
 ```
 
 Safer flow:
 
 ```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh
+curl -fsSL -o install.sh https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh
 chmod +x install.sh
 sudo ./install.sh
 ```

@@ -662,7 +662,7 @@ def _update_service(payload: dict[str, Any], runner: base.Runner) -> base.Comman
     installer = runtime_root / "install.sh"
     runner_path = runtime_root / "runner.sh"
     request = urllib.request.Request(
-        "https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh",
+        "https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh",
         headers={"User-Agent": "WebNAS-privileged-update/1"},
     )
     try:

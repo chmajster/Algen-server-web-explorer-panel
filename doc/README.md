@@ -128,7 +128,7 @@ WebNAS is designed for systems including Debian, Ubuntu, Raspberry Pi OS, Fedora
 ### Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh | sudo bash
 ```
 
 New standard installations publish WebNAS through the stable nginx gateway with HTTPS enabled. When no certificate exists at the configured paths, the release helper creates a private self-signed certificate before the gateway is activated.
@@ -160,7 +160,7 @@ Plaintext HTTP on a non-loopback interface requires the explicit `security.allow
 ### Custom Port
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash -s -- --port 8080
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh | sudo bash -s -- --port 8080
 ```
 
 ### Update
@@ -168,7 +168,7 @@ curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer
 Run the installer again:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh | sudo bash
 ```
 
 The installer detects an existing WebNAS installation and performs the supported update procedure. Existing pre-policy HTTP configurations are preserved during normal updates for compatibility and emit a security warning instead of being silently rewritten; regenerate/update the configuration when you are ready to move that installation to TLS.
