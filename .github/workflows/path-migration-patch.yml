@@ -28,7 +28,7 @@ jobs:
           new_url = 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh'
 
           for path in repo.rglob('*'):
-              if not path.is_file() or '.git' in path.parts:
+              if not path.is_file() or '.git' in path.parts or '.github/workflows' in path.as_posix():
                   continue
               try:
                   text = path.read_text(encoding='utf-8')
@@ -40,8 +40,7 @@ jobs:
 
           for relative in ('install/install.sh', 'install/install-standard-menu.sh'):
               path = repo / relative
-              text = path.read_text(encoding='utf-8')
-              text = text.replace(
+              text = path.read_text(encoding='utf-8').replace(
                   'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main"',
                   'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"',
                   1,
@@ -129,23 +128,24 @@ jobs:
               path.write_text(path.read_text(encoding='utf-8').replace(before, after), encoding='utf-8')
           PY
 
-          git show d88352f617bf4e6871342eef9d574ef007f3dd54:.github/workflows/install-test.yml > .github/workflows/install-test.yml
-          rm -f .github/path-migration-trigger.txt .github/workflows/path-migration-patch.yml
-
           bash -n install/install.sh install/install-standard.sh install/install-standard-menu.sh install/install-portable.sh
           python3 -m py_compile backend/app/settings.py backend/app/privileged_broker/extended_policy.py backend/tests/test_install_launcher.py backend/tests/test_installer.py
           git diff --check
-          ! git grep -n 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh'
+          ! grep -RFn --exclude-dir=.git --exclude-dir=workflows 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh' .
           grep -Fq 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"' install/install.sh
           grep -Fq 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"' install/install-standard-menu.sh
           grep -Fq 'SOURCE_DIR="$source_root"' install/install-standard.sh
           grep -Fq 'SOURCE_ROOT="$SCRIPT_DIR"' install/install-portable.sh
 
-      - name: Commit finalized migration
+      - name: Commit code fixes
         shell: bash
         run: |
           set -euo pipefail
           git add -A
+          git reset -- .github/workflows
+          if git diff --cached --quiet; then
+            exit 0
+          fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git commit -m "fix: complete installer relocation"
