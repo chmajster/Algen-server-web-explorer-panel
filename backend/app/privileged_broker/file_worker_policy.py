@@ -178,6 +178,7 @@ def dispatch(request: BrokerRequest) -> BrokerResponse:
             check=False,
             shell=False,
             env=base.SAFE_ENV,
+            cwd=Path(__file__).resolve().parents[2],
         )
         if completed.returncode != 0:
             return BrokerResponse(
