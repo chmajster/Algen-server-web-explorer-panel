@@ -299,7 +299,7 @@ finalize_standard_reinstall() {
   }
 
   printf '\n==> Cleaning previous application files\n'
-  printf '[INFO] Replacement release is active; removing all stale WebNAS application files while preserving config, data, and logs.\n'
+  printf '[INFO] Replacement release is active; removing stale release files while preserving the shared runtime, config, data, and logs.\n'
 
   # A clean reinstall deliberately retains only the replacement release. Before
   # deleting the previous tree, detach the inactive blue/green slot from its
@@ -344,7 +344,7 @@ finalize_standard_reinstall() {
   for entry in "${install_dir}"/*; do
     entry_name="${entry##*/}"
     case "$entry_name" in
-      current|releases|uninstall.sh|webnas_release.py) continue ;;
+      current|releases|runtime|uninstall.sh|webnas_release.py) continue ;;
     esac
     rm -rf --one-file-system -- "$entry"
   done

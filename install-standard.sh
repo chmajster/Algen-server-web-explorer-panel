@@ -1828,6 +1828,10 @@ main() {
   update_step verify_files started
   [[ -f "${SOURCE_DIR}/backend/app/main.py" && -f "${SOURCE_DIR}/frontend/package.json" && -f "${SOURCE_DIR}/backend/requirements.txt" ]] || fail "Downloaded source is incomplete"
   update_step verify_files completed
+  [[ -f "${SOURCE_DIR}/scripts/install_python314_runtime.sh" ]] || fail "Downloaded source is missing the Python 3.14 runtime helper"
+  # SOURCE_DIR is dynamic: local checkout or downloaded release archive.
+  # shellcheck disable=SC1091
+  source "${SOURCE_DIR}/scripts/install_python314_runtime.sh"
   prompt_configuration
   install_dependencies
   setup_node_runtime
