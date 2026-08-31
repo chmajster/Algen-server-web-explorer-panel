@@ -21,7 +21,7 @@ type CredentialAction = { job: AppJob; operation: "cancel" | "retry" } | null;
 const packageViewStorageKey = "webnas_package_center_view";
 const defaultPackagePermissions = ["modules.install", "modules.update", "modules.uninstall", "modules.configure"];
 
-export function PackageCenterApp({ selectedJobId, permissions = defaultPackagePermissions, t, toast, onOpenModule, onSelectedJobClose }: { selectedJobId?: string; permissions?: readonly string[]; t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void; onSelectedJobClose?: () => void }) {
+export function PackageCenterApp({ selectedJobId, permissions = defaultPackagePermissions, desktopShortcutModules = new Set<string>(), t, toast, onOpenModule, onToggleDesktopShortcut, onSelectedJobClose }: { selectedJobId?: string; permissions?: readonly string[]; desktopShortcutModules?: ReadonlySet<string>; t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void; onToggleDesktopShortcut?: (moduleId: string) => void; onSelectedJobClose?: () => void }) {
   const canManageSources = permissions.includes("modules.install");
   const state = usePackageCenter(t, { canManageSources });
   const [view, setView] = useState<PackageView>(() => window.localStorage.getItem(packageViewStorageKey) === "list" ? "list" : "grid");
@@ -104,7 +104,7 @@ export function PackageCenterApp({ selectedJobId, permissions = defaultPackagePe
         {state.error
           ? <div className="error-state package-center-error" role="alert"><strong>{t("status.error")}</strong><span>{state.error}</span><button type="button" onClick={() => void state.refresh()}>{t("action.retry")}</button></div>
           : <>
-            {catalogTab && <PackageGrid modules={state.visibleModules} loading={state.loading} view={view} permissions={permissions} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: getPackageDisplayName(item, t) })} />}
+            {catalogTab && <PackageGrid modules={state.visibleModules} loading={state.loading} view={view} permissions={permissions} desktopShortcutModules={desktopShortcutModules} t={t} onDetails={setSelected} onOpen={onOpenModule ? (item) => onOpenModule(item.id) : undefined} onToggleDesktopShortcut={onToggleDesktopShortcut ? (item) => onToggleDesktopShortcut(item.id) : undefined} onAction={begin} onShowJob={(item, job) => setLiveJob({ job, name: getPackageDisplayName(item, t) })} />}
             {state.tab === "jobs" && <PackageJobs jobs={state.jobs} permissions={permissions} t={t} onCancel={(job) => setCredential({ job, operation: "cancel" })} onRetry={(job) => setCredential({ job, operation: "retry" })} />}
             {state.tab === "history" && <PackageHistory history={state.history} t={t} />}
             {canManageSources && state.tab === "sources" && <PackageSources sources={state.sources} t={t} toast={toast} onChanged={() => void state.refresh(true)} />}

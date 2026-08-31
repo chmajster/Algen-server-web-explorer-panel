@@ -12,6 +12,7 @@ export const defaultUserPreferences: UserPreferences = {
   pinned_modules: [],
   start_pinned_apps: ["files", "transfers", "monitor", "settings"],
   desktop_shortcut_apps: ["files", "transfers", "monitor", "settings"],
+  desktop_shortcut_modules: [],
   show_desktop_shortcuts: true,
   desktop_shortcut_size: "medium",
   show_welcome_widget: true,

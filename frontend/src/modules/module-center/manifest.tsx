@@ -16,7 +16,7 @@ export default [
     minWidth: 760,
     minHeight: 500,
     render: (context) => lazyView(
-      <PackageCenter permissions={context.profile.permissions} t={context.t} toast={context.toast} onOpenModule={(moduleId) => context.openApp("module", undefined, moduleId)} />,
+      <PackageCenter permissions={context.profile.permissions} desktopShortcutModules={context.desktopShortcutModules} t={context.t} toast={context.toast} onOpenModule={(moduleId) => context.openApp("module", undefined, moduleId)} onToggleDesktopShortcut={context.toggleDesktopModuleShortcut} />,
       context.t("status.loading"),
     ),
   },

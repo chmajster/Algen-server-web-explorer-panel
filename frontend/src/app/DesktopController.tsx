@@ -1,5 +1,5 @@
 import { confirmDialog } from "../components/DialogService";
-import { Bell, ShieldCheck, X } from "lucide-react";
+import { Bell, Package, ShieldCheck, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
 import { AppIcon } from "../components/AppIcon";
@@ -75,6 +75,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [applicationRestarting, setApplicationRestarting] = useState(false);
   const [restartElapsed, setRestartElapsed] = useState(0);
   const [selectedShortcut, setSelectedShortcut] = useState<AppId | null>(null);
+  const [selectedModuleShortcut, setSelectedModuleShortcut] = useState<string | null>(null);
   const [dirtyWindows, setDirtyWindows] = useState<Set<string>>(new Set());
   const legacyPinnedKey = `webnas_pinned_apps_${user.username}`;
   const [pinned, setPinned] = useState<Set<AppId>>(() => {
@@ -87,6 +88,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [pinnedModules, setPinnedModules] = useState<Set<string>>(() => new Set(profile.pinned_modules));
   const [startPinned, setStartPinned] = useState<Set<AppId>>(() => new Set(profile.start_pinned_apps));
   const [desktopShortcuts, setDesktopShortcuts] = useState<Set<AppId>>(() => new Set(profile.desktop_shortcut_apps));
+  const [desktopModuleShortcuts, setDesktopModuleShortcuts] = useState<Set<string>>(() => new Set(profile.desktop_shortcut_modules));
   const [recentApps, setRecentApps] = useState<RecentApp[]>(() => {
     try {
       const value = JSON.parse(localStorage.getItem(recentAppsKey) || "[]") as unknown;
@@ -479,6 +481,17 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
     });
   }
+
+  function toggleDesktopModuleShortcut(moduleId: string) {
+    const previous = new Set(desktopModuleShortcuts);
+    const next = new Set(desktopModuleShortcuts);
+    if (next.has(moduleId)) next.delete(moduleId); else next.add(moduleId);
+    setDesktopModuleShortcuts(next);
+    void onSettingsChange({ desktop_shortcut_modules: [...next] }).catch((error: unknown) => {
+      setDesktopModuleShortcuts(previous);
+      toast(error instanceof Error ? error.message : t("error.generic"), "error");
+    });
+  }
   function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); sessionStorage.removeItem(sessionWindowKey); void logout().finally(onLoggedOut); }
   function restartSystem() {
     setLauncherOpen(false);
@@ -531,7 +544,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   function changeTaskbarAlignment(alignment: "left" | "center") { void onSettingsChange({ taskbar_alignment: alignment }).catch((error: unknown) => toast(error instanceof Error ? error.message : t("error.generic"), "error")); }
   function renderApp(item: WindowInstance) {
     return moduleRegistry.render(item.app, {
-      item, user, profile, tasks, uploadControls, t, toast, onSettingsChange, openApp,
+      item, user, profile, tasks, uploadControls, t, toast, onSettingsChange, desktopShortcutModules: desktopModuleShortcuts, toggleDesktopModuleShortcut, openApp,
       closeWindow: () => closeWindow(item),
       clearDeepLink: () => dispatch({ type: "clearDeepLink", id: item.id }),
       setDirty: (dirty) => moduleDirty(item, dirty),
@@ -564,8 +577,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const clockText = clock.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit", second: profile.clock_show_seconds ? "2-digit" : undefined, hour12: profile.time_format === "12" });
 
   return <div ref={desktopRef} className={rootClasses} style={rootStyle}>
-    <main ref={surfaceRef} className="desktop-surface" style={wallpaperStyle(profile)} onPointerDown={(event) => { if (event.target === event.currentTarget) setSelectedShortcut(null); }}>
-      {profile.show_desktop_shortcuts && <div className={`desktop-shortcuts shortcuts-${profile.desktop_shortcut_size}`} aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => desktopShortcuts.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} selected={selectedShortcut === app.id} onSelect={() => setSelectedShortcut(app.id)} onOpen={() => openApp(app.id)} />)}</div>}
+    <main ref={surfaceRef} className="desktop-surface" style={wallpaperStyle(profile)} onPointerDown={(event) => { if (event.target === event.currentTarget) { setSelectedShortcut(null); setSelectedModuleShortcut(null); } }}>
+      {profile.show_desktop_shortcuts && <div className={`desktop-shortcuts shortcuts-${profile.desktop_shortcut_size}`} aria-label={t("desktop.shortcuts")}>{availableApps.filter((app) => desktopShortcuts.has(app.id)).map((app) => <AppIcon key={app.id} label={t(app.labelKey)} icon={app.icon} selected={selectedShortcut === app.id && selectedModuleShortcut === null} onSelect={() => { setSelectedShortcut(app.id); setSelectedModuleShortcut(null); }} onOpen={() => openApp(app.id)} />)}{[...desktopModuleShortcuts].filter((moduleId) => moduleNames.has(moduleId)).map((moduleId) => <AppIcon key={`module:${moduleId}`} label={moduleNames.get(moduleId) || moduleId} icon={<Package />} selected={selectedModuleShortcut === moduleId} onSelect={() => { setSelectedShortcut(null); setSelectedModuleShortcut(moduleId); }} onOpen={() => openApp("module", undefined, moduleId)} />)}</div>}
       {profile.show_welcome_widget && <div className="desktop-welcome"><span>WebNAS</span><strong>{t("desktop.welcome")}, {user.username}</strong><small>{t("desktop.welcomeHint")}</small></div>}
       <Suspense fallback={null}><DesktopWidgets profile={profile} tasks={tasks} toasts={toasts} t={t} onSettingsChange={onSettingsChange} /></Suspense>
       {state.windows.filter((item) => !item.minimized).map((item) => <DesktopWindow key={item.id} window={item} active={state.activeId === item.id} viewport={viewport} animationsEnabled={profile.animations_enabled && !profile.reduced_motion} t={t} onFocus={() => dispatch({ type: "focus", id: item.id })} onClose={() => closeWindow(item)} onMinimize={() => dispatch({ type: "minimize", id: item.id })} onCommit={(rect, restoreRect) => dispatch({ type: "commit", id: item.id, rect, restoreRect })} onToggleMaximize={() => dispatch({ type: "toggleMaximize", id: item.id, viewport })}><ConnectionRefreshScope active={state.activeId === item.id}>{renderApp(item)}</ConnectionRefreshScope></DesktopWindow>)}
