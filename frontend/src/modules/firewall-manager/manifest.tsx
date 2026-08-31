@@ -1,6 +1,9 @@
 import { Shield } from "lucide-react";
+import { lazy } from "react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
-import { FirewallManagerApp } from "./FirewallManagerApp";
+import { lazyView } from "../../app/registry/rendering";
+
+const FirewallManagerApp = lazy(() => import("./FirewallManagerApp").then((loaded) => ({ default: loaded.FirewallManagerApp })));
 
 const manifest: FrontendModuleManifest = {
   id: "firewall-manager",
@@ -12,6 +15,10 @@ const manifest: FrontendModuleManifest = {
   dependencies: [],
   minWidth: 920,
   minHeight: 620,
-  render: (context) => <FirewallManagerApp permissions={context.profile.permissions} language={context.profile.language} toast={context.toast} />,
+  render: (context) => lazyView(
+    <FirewallManagerApp permissions={context.profile.permissions} language={context.profile.language} toast={context.toast} />,
+    context.t("status.loading"),
+  ),
 };
+
 export default manifest;
