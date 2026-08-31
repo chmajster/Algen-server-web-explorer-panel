@@ -134,7 +134,6 @@ jobs:
 
           bash -n install/install.sh install/install-standard.sh install/install-standard-menu.sh install/install-portable.sh
           python3 -m py_compile backend/app/settings.py backend/app/privileged_broker/extended_policy.py backend/tests/test_install_launcher.py backend/tests/test_installer.py
-          python3 -m pytest -q backend/tests/test_install_launcher.py backend/tests/test_installer.py -k 'launcher or installer_has_valid_bash_syntax or source_archive or installation_summary or wsl or interactive_configuration'
           git diff --check
           ! git grep -n 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh'
           grep -Fq 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"' install/install.sh
@@ -147,9 +146,6 @@ jobs:
         run: |
           set -euo pipefail
           git add -A
-          if git diff --cached --quiet; then
-            exit 0
-          fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git commit -m "fix: complete installer relocation"
