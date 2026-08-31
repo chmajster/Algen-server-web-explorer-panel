@@ -1,6 +1,9 @@
 import { ShieldCheck } from "lucide-react";
+import { lazy } from "react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
-import { SecurityCenterApp } from "./SecurityCenterApp";
+import { lazyView } from "../../app/registry/rendering";
+
+const SecurityCenterApp = lazy(() => import("./SecurityCenterApp").then((loaded) => ({ default: loaded.SecurityCenterApp })));
 
 const manifest: FrontendModuleManifest = {
   id: "security-center",
@@ -12,6 +15,10 @@ const manifest: FrontendModuleManifest = {
   dependencies: ["firewall-manager"],
   minWidth: 960,
   minHeight: 640,
-  render: (context) => <SecurityCenterApp permissions={context.profile.permissions} language={context.profile.language} toast={context.toast} />,
+  render: (context) => lazyView(
+    <SecurityCenterApp permissions={context.profile.permissions} language={context.profile.language} toast={context.toast} />,
+    context.t("status.loading"),
+  ),
 };
+
 export default manifest;

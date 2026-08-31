@@ -1,6 +1,9 @@
 import { Network } from "lucide-react";
+import { lazy } from "react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
-import { LdapManagerApp } from "./LdapManagerApp";
+import { lazyView } from "../../app/registry/rendering";
+
+const LdapManagerApp = lazy(() => import("./LdapManagerApp").then((loaded) => ({ default: loaded.LdapManagerApp })));
 
 const manifest: FrontendModuleManifest = {
   id: "ldap-manager",
@@ -11,12 +14,13 @@ const manifest: FrontendModuleManifest = {
   permission: "ldap.connections.read",
   minWidth: 1080,
   minHeight: 720,
-  render: (context) => (
+  render: (context) => lazyView(
     <LdapManagerApp
       permissions={context.profile.permissions}
       language={context.profile.language}
       toast={context.toast}
-    />
+    />,
+    context.t("status.loading"),
   ),
 };
 

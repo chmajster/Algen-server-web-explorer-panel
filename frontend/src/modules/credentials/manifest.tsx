@@ -1,7 +1,10 @@
 import { KeyRound } from "lucide-react";
+import { lazy } from "react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
-import { CredentialsApp } from "./CredentialsApp";
+import { lazyView } from "../../app/registry/rendering";
 import "./credentials.css";
+
+const CredentialsApp = lazy(() => import("./CredentialsApp").then((loaded) => ({ default: loaded.CredentialsApp })));
 
 /**
  * Compatibility-only surface for restored pre-Secrets-Manager window state.
@@ -17,7 +20,7 @@ const credentialsManifest: FrontendModuleManifest = {
   hidden: true,
   minWidth: 900,
   minHeight: 580,
-  render: (context) => (
+  render: (context) => lazyView(
     <CredentialsApp
       permissions={context.profile.permissions}
       t={(key) =>
@@ -26,7 +29,8 @@ const credentialsManifest: FrontendModuleManifest = {
           : context.t(key)
       }
       toast={context.toast}
-    />
+    />,
+    context.t("status.loading"),
   ),
 };
 
