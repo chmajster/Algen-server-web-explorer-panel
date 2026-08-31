@@ -5,17 +5,13 @@ on:
     branches:
       - main
     paths:
-      - install.sh
-      - install-standard.sh
-      - install-standard-menu.sh
+      - install/**
       - .github/workflows/installer-menu-test.yml
   pull_request:
     branches:
       - main
     paths:
-      - install.sh
-      - install-standard.sh
-      - install-standard-menu.sh
+      - install/**
       - .github/workflows/installer-menu-test.yml
   workflow_dispatch:
 
@@ -50,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo ./install.sh --yes --port "${WEBNAS_TEST_PORT}"
+          sudo ./install/install.sh --yes --port "${WEBNAS_TEST_PORT}"
           test -L /opt/webnas/current
           test -f /etc/webnas/config.yaml
           test -d /var/lib/webnas
@@ -95,7 +91,7 @@ jobs:
           test "${legacy_connect_status}" -ne 0
 
           script --quiet --return --command \
-            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            "sudo ./install/install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null </dev/null > /tmp/webnas-menu-option-1.log 2>&1
 
           tr -d '\r' < /tmp/webnas-menu-option-1.log > /tmp/webnas-menu-option-1.clean
@@ -128,7 +124,7 @@ jobs:
           old_release="$(readlink -f /opt/webnas/current)"
 
           printf '2\n' | script --quiet --return --command \
-            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            "sudo ./install/install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-menu-option-2.log 2>&1
 
           tr -d '\r' < /tmp/webnas-menu-option-2.log > /tmp/webnas-menu-option-2.clean
@@ -175,7 +171,7 @@ jobs:
           before="$(sudo find /var/backups/webnas -mindepth 1 -maxdepth 1 -type d -name '*-manual.*' 2>/dev/null | wc -l)"
 
           printf '3\n' | script --quiet --return --command \
-            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            "sudo ./install/install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-menu-option-3.log 2>&1
 
           tr -d '\r' < /tmp/webnas-menu-option-3.log > /tmp/webnas-menu-option-3.clean
@@ -211,7 +207,7 @@ jobs:
           ! systemctl is-active --quiet webnas-privileged.service
 
           printf '8\n' | script --quiet --return --command \
-            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            "sudo ./install/install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-menu-option-8.log 2>&1
 
           tr -d '\r' < /tmp/webnas-menu-option-8.log > /tmp/webnas-menu-option-8.clean
@@ -238,7 +234,7 @@ jobs:
 
           set +e
           printf '6\n' | script --quiet --return --command \
-            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            "sudo ./install/install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-menu-option-6.log 2>&1
           status=$?
           set -e
@@ -257,7 +253,7 @@ jobs:
           set -euo pipefail
 
           printf '4\ny\n' | script --quiet --return --command \
-            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            "sudo ./install/install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-menu-option-4.log 2>&1
 
           tr -d '\r' < /tmp/webnas-menu-option-4.log > /tmp/webnas-menu-option-4.clean
@@ -285,7 +281,7 @@ jobs:
           sudo touch /opt/webnas/menu-remove-all-marker
 
           printf '5\ny\n' | script --quiet --return --command \
-            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            "sudo ./install/install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-menu-option-5.log 2>&1
 
           tr -d '\r' < /tmp/webnas-menu-option-5.log > /tmp/webnas-menu-option-5.clean

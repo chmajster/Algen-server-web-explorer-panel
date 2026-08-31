@@ -4,7 +4,7 @@ set -Eeuo pipefail
 SERVICE_NAME="webnas"
 REPO_URL="https://github.com/chmajster/Algen-server-web-explorer-panel"
 ARCHIVE_URL=""
-RAW_INSTALL_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh"
+RAW_INSTALL_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh"
 
 #TEST
 PORT="5000"
@@ -758,16 +758,21 @@ prepare_source() {
   update_step download_version started
   section "Preparing source"
   local script_dir=""
+  local source_root=""
   local resolved_script_dir=""
   local resolved_install_dir=""
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-  resolved_script_dir="$(readlink -f "$script_dir" 2>/dev/null || printf '%s' "$script_dir")"
+  source_root="$script_dir"
+  if [[ -n "$script_dir" && -f "${script_dir}/../backend/app/main.py" && -f "${script_dir}/../frontend/package.json" ]]; then
+    source_root="$(cd "${script_dir}/.." 2>/dev/null && pwd || true)"
+  fi
+  resolved_script_dir="$(readlink -f "$source_root" 2>/dev/null || printf '%s' "$source_root")"
   resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
-  if [[ -n "$script_dir" && -f "${script_dir}/backend/app/main.py" && -f "${script_dir}/frontend/package.json" ]]; then
+  if [[ -n "$source_root" && -f "${source_root}/backend/app/main.py" && -f "${source_root}/frontend/package.json" ]]; then
     if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
       warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
     else
-      SOURCE_DIR="$script_dir"
+      SOURCE_DIR="$source_root"
       if [[ -d "${SOURCE_DIR}/.git" ]]; then
         SOURCE_REVISION="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
       elif [[ -f "${SOURCE_DIR}/.webnas-revision" ]]; then

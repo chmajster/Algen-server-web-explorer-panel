@@ -822,7 +822,7 @@ def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: boo
     settings_dir = _auto_update_path().parent
     installer = settings_dir / "update-install.sh"
     download = subprocess.run(
-        [_tool("curl"), "-fsSL", "https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh"],
+        [_tool("curl"), "-fsSL", "https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh"],
         capture_output=True,
         timeout=60,
         check=False,

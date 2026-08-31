@@ -13,6 +13,10 @@ BACKEND_PID=""
 PORTABLE_CONFIG=""
 PAM_SERVICE_CREATED="no"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+SOURCE_ROOT="$SCRIPT_DIR"
+if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/../backend/app/main.py" && -f "${SCRIPT_DIR}/../frontend/package.json" ]]; then
+  SOURCE_ROOT="$(cd "${SCRIPT_DIR}/.." 2>/dev/null && pwd || true)"
+fi
 
 usage() {
   cat <<'EOF_USAGE'
@@ -160,7 +164,7 @@ check_prerequisites() {
 copy_local_source() {
   local destination="$1"
   mkdir -p "$destination"
-  tar -C "$SCRIPT_DIR" \
+  tar -C "$SOURCE_ROOT" \
     --exclude='./.git' \
     --exclude='./portable-run' \
     --exclude='./backend/.venv' \
@@ -178,7 +182,7 @@ prepare_source() {
   SOURCE_DIR="${WORK_DIR}/app"
   info "Portable runtime directory: ${WORK_DIR}"
 
-  if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/backend/app/main.py" && -f "${SCRIPT_DIR}/frontend/package.json" ]]; then
+  if [[ -n "$SOURCE_ROOT" && -f "${SOURCE_ROOT}/backend/app/main.py" && -f "${SOURCE_ROOT}/frontend/package.json" ]]; then
     info "Copying the local repository into ./portable-run/app"
     copy_local_source "$SOURCE_DIR"
   else

@@ -9,9 +9,10 @@ import pytest
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-LAUNCHER = REPOSITORY / "install.sh"
-STANDARD = REPOSITORY / "install-standard.sh"
-PORTABLE = REPOSITORY / "install-portable.sh"
+INSTALL_DIR = REPOSITORY / "install"
+LAUNCHER = INSTALL_DIR / "install.sh"
+STANDARD = INSTALL_DIR / "install-standard.sh"
+PORTABLE = INSTALL_DIR / "install-portable.sh"
 LOCAL_AUTH = REPOSITORY / "backend" / "app" / "local_auth.py"
 BOOTSTRAP_HELPER = REPOSITORY / "scripts" / "consume_local_bootstrap.py"
 
