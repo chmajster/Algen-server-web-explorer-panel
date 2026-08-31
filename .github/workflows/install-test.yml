@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.head_ref }}
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Apply final relocation fixes
         shell: bash
@@ -29,7 +29,7 @@ jobs:
           old_url = 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh'
           new_url = 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh'
 
-          # All public/self-update references must follow the relocated launcher.
+          # Update every textual self-update/download reference to the relocated launcher.
           for path in repo.rglob('*'):
               if not path.is_file() or '.git' in path.parts:
                   continue
@@ -41,99 +41,106 @@ jobs:
               if updated != text:
                   path.write_text(updated, encoding='utf-8')
 
-          # Launcher and menu download their sibling installers from install/.
+          # Launcher and menu download sibling installers from install/.
           for relative in ('install/install.sh', 'install/install-standard-menu.sh'):
               path = repo / relative
               text = path.read_text(encoding='utf-8')
-              text = text.replace(
-                  'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main"',
-                  'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"',
-                  1,
-              )
+              before = 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main"'
+              after = 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"'
+              text = text.replace(before, after, 1)
               path.write_text(text, encoding='utf-8')
 
-          # Standard installer: when executed from install/, the repository root is its parent.
+          # Standard installer: resolve the repository root as the parent of install/.
           path = repo / 'install/install-standard.sh'
           text = path.read_text(encoding='utf-8')
-          old = '''  local script_dir=""
-          local resolved_script_dir=""
-          local resolved_install_dir=""
-          script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-          resolved_script_dir="$(readlink -f "$script_dir" 2>/dev/null || printf '%s' "$script_dir")"
-          resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
-          if [[ -n "$script_dir" && -f "${script_dir}/backend/app/main.py" && -f "${script_dir}/frontend/package.json" ]]; then
-            if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
-              warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
-            else
-              SOURCE_DIR="$script_dir"
-          '''
-          new = '''  local script_dir=""
-          local source_root=""
-          local resolved_script_dir=""
-          local resolved_install_dir=""
-          script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-          source_root="$script_dir"
-          if [[ -n "$script_dir" && -f "${script_dir}/../backend/app/main.py" && -f "${script_dir}/../frontend/package.json" ]]; then
-            source_root="$(cd "${script_dir}/.." 2>/dev/null && pwd || true)"
-          fi
-          resolved_script_dir="$(readlink -f "$source_root" 2>/dev/null || printf '%s' "$source_root")"
-          resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
-          if [[ -n "$source_root" && -f "${source_root}/backend/app/main.py" && -f "${source_root}/frontend/package.json" ]]; then
-            if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
-              warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
-            else
-              SOURCE_DIR="$source_root"
-          '''
-          if old not in text and 'local source_root=""' not in text:
-              raise SystemExit('prepare_source block not found in install/install-standard.sh')
-          if old in text:
-              text = text.replace(old, new, 1)
+          prefix, marker, tail = text.partition('prepare_source() {')
+          if not marker:
+              raise SystemExit('prepare_source() not found in install/install-standard.sh')
+          body, end_marker, suffix = tail.partition('\n}\n\nprompt_install_dir()')
+          if not end_marker:
+              raise SystemExit('prepare_source() end not found in install/install-standard.sh')
+
+          if 'local source_root=""' not in body:
+              body = body.replace(
+                  '  local script_dir=""\n  local resolved_script_dir=""',
+                  '  local script_dir=""\n  local source_root=""\n  local resolved_script_dir=""',
+                  1,
+              )
+              script_line = '  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"\n'
+              if script_line not in body:
+                  raise SystemExit('script_dir assignment not found in prepare_source()')
+              body = body.replace(
+                  script_line,
+                  script_line
+                  + '  source_root="$script_dir"\n'
+                  + '  if [[ -n "$script_dir" && -f "${script_dir}/../backend/app/main.py" && -f "${script_dir}/../frontend/package.json" ]]; then\n'
+                  + '    source_root="$(cd "${script_dir}/.." 2>/dev/null && pwd || true)"\n'
+                  + '  fi\n',
+                  1,
+              )
+
+          body = body.replace(
+              'resolved_script_dir="$(readlink -f "$script_dir" 2>/dev/null || printf \'%s\' "$script_dir")"',
+              'resolved_script_dir="$(readlink -f "$source_root" 2>/dev/null || printf \'%s\' "$source_root")"',
+              1,
+          )
+          body = body.replace(
+              'if [[ -n "$script_dir" && -f "${script_dir}/backend/app/main.py" && -f "${script_dir}/frontend/package.json" ]]; then',
+              'if [[ -n "$source_root" && -f "${source_root}/backend/app/main.py" && -f "${source_root}/frontend/package.json" ]]; then',
+              1,
+          )
+          body = body.replace('SOURCE_DIR="$script_dir"', 'SOURCE_DIR="$source_root"', 1)
+          text = prefix + marker + body + end_marker + suffix
+          if 'SOURCE_DIR="$source_root"' not in body:
+              raise SystemExit('source_root migration failed in install/install-standard.sh')
           path.write_text(text, encoding='utf-8')
 
-          # Portable installer also moved under install/ and must copy the repository parent.
+          # Portable installer: copy from the repository root, not install/.
           path = repo / 'install/install-portable.sh'
           text = path.read_text(encoding='utf-8')
-          marker = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"\n'
+          script_line = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"\n'
           if 'SOURCE_ROOT="$SCRIPT_DIR"' not in text:
-              if marker not in text:
-                  raise SystemExit('SCRIPT_DIR marker not found in install/install-portable.sh')
+              if script_line not in text:
+                  raise SystemExit('SCRIPT_DIR assignment not found in install/install-portable.sh')
               text = text.replace(
-                  marker,
-                  marker
+                  script_line,
+                  script_line
                   + 'SOURCE_ROOT="$SCRIPT_DIR"\n'
                   + 'if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/../backend/app/main.py" && -f "${SCRIPT_DIR}/../frontend/package.json" ]]; then\n'
                   + '  SOURCE_ROOT="$(cd "${SCRIPT_DIR}/.." 2>/dev/null && pwd || true)"\n'
                   + 'fi\n',
                   1,
               )
-          text = text.replace('tar -C "$SCRIPT_DIR" \\\n', 'tar -C "$SOURCE_ROOT" \\\n', 1)
+          text = text.replace('tar -C "$SCRIPT_DIR" \\', 'tar -C "$SOURCE_ROOT" \\', 1)
           text = text.replace(
               'if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/backend/app/main.py" && -f "${SCRIPT_DIR}/frontend/package.json" ]]; then',
               'if [[ -n "$SOURCE_ROOT" && -f "${SOURCE_ROOT}/backend/app/main.py" && -f "${SOURCE_ROOT}/frontend/package.json" ]]; then',
               1,
           )
+          if 'tar -C "$SOURCE_ROOT" \\' not in text or 'SOURCE_ROOT="$SCRIPT_DIR"' not in text:
+              raise SystemExit('source-root migration failed in install/install-portable.sh')
           path.write_text(text, encoding='utf-8')
 
           # Keep tests aligned with the relocated files.
           replacements = {
-              'backend/tests/test_install_launcher.py': {
-                  'LAUNCHER = REPOSITORY / "install.sh"': 'LAUNCHER = REPOSITORY / "install" / "install.sh"',
-              },
-              'backend/tests/test_installer.py': {
-                  'INSTALLER = REPOSITORY / "install-standard.sh"': 'INSTALLER = REPOSITORY / "install" / "install-standard.sh"',
-              },
+              'backend/tests/test_install_launcher.py': (
+                  'LAUNCHER = REPOSITORY / "install.sh"',
+                  'LAUNCHER = REPOSITORY / "install" / "install.sh"',
+              ),
+              'backend/tests/test_installer.py': (
+                  'INSTALLER = REPOSITORY / "install-standard.sh"',
+                  'INSTALLER = REPOSITORY / "install" / "install-standard.sh"',
+              ),
           }
-          for relative, mapping in replacements.items():
+          for relative, (before, after) in replacements.items():
               path = repo / relative
-              text = path.read_text(encoding='utf-8')
-              for before, after in mapping.items():
-                  text = text.replace(before, after)
+              text = path.read_text(encoding='utf-8').replace(before, after)
               path.write_text(text, encoding='utf-8')
           PY
 
-          # Remove migration-only scaffolding and restore this smoke workflow itself.
+          # Remove migration-only scaffolding and restore the real smoke-test workflow.
           rm -f .github/workflows/path-migration-patch.yml .github/path-migration-trigger.txt
-          git show HEAD^:.github/workflows/install-test.yml > .github/workflows/install-test.yml
+          git show d88352f617bf4e6871342eef9d574ef007f3dd54:.github/workflows/install-test.yml > .github/workflows/install-test.yml
 
           bash -n install/install.sh install/install-standard.sh install/install-standard-menu.sh install/install-portable.sh
           python3 -m py_compile backend/app/settings.py backend/app/privileged_broker/extended_policy.py \
@@ -155,6 +162,8 @@ jobs:
           ! grep -Fq 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main"' install/install.sh install/install-standard-menu.sh
           grep -Fq 'SOURCE_DIR="$source_root"' install/install-standard.sh
           grep -Fq 'SOURCE_ROOT="$SCRIPT_DIR"' install/install-portable.sh
+          grep -Fq 'LAUNCHER = REPOSITORY / "install" / "install.sh"' backend/tests/test_install_launcher.py
+          grep -Fq 'INSTALLER = REPOSITORY / "install" / "install-standard.sh"' backend/tests/test_installer.py
 
       - name: Commit final relocation
         shell: bash
