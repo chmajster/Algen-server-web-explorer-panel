@@ -34,6 +34,24 @@ async function chooseSettingsCategory(settingsWindow: Locator, category: "admini
 test("Settings Administration and PAM / LDAP stay contained in a narrow desktop window", async ({ page }) => {
   await installMockApi(page);
 
+  await page.route("**/api/system/host-info", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      hostname: "very-long-webnas-production-server-name.example.internal",
+      operating_system: "Linux E2E",
+      kernel_version: "7.0.0-e2e",
+      architecture: "x86_64",
+      ip_addresses: ["10.0.0.12"],
+      uptime_seconds: 3600,
+      cpu: { model: "E2E CPU", physical_cores: 4, logical_threads: 8 },
+      memory: { total: 8589934592 },
+      gpus: [],
+      application_version: "0.1.32",
+      storage: { free: 53687091200, total: 107374182400, percent: 50 },
+    }),
+  }));
+
   const ldapSettings = {
     enabled: false,
     directory_type: "auto",
