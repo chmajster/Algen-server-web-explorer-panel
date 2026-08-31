@@ -22,14 +22,16 @@ function operationLabel(item: ModuleSummary, t: Translate): string {
 type PackageCardProps = {
   item: ModuleSummary;
   permissions?: readonly string[];
+  desktopShortcut?: boolean;
   t: Translate;
   onDetails: () => void;
   onOpen?: () => void;
+  onToggleDesktopShortcut?: () => void;
   onAction: (action: PackageAction) => void;
   onShowJob: (job: AppJob) => void;
 };
 
-export function PackageCard({ item, permissions = defaultPackagePermissions, t, onDetails, onOpen, onAction, onShowJob }: PackageCardProps) {
+export function PackageCard({ item, permissions = defaultPackagePermissions, desktopShortcut = false, t, onDetails, onOpen, onToggleDesktopShortcut, onAction, onShowJob }: PackageCardProps) {
   const status = getPackageUiStatus(item);
   const serviceStatus = getPackageServiceStatus(item);
   const updateAvailable = isPackageUpdateAvailable(item);
@@ -76,6 +78,7 @@ export function PackageCard({ item, permissions = defaultPackagePermissions, t, 
     </button>}
     <footer>
       <button type="button" onClick={onDetails}>{t("package.details")}</button>
+      {item.state.installed && onToggleDesktopShortcut && <button type="button" aria-pressed={desktopShortcut} onClick={onToggleDesktopShortcut}>{t(desktopShortcut ? "desktop.removeFromDesktop" : "desktop.addToDesktop")}</button>}
       {actions.map((action, index) => <button
         type="button"
         disabled={busy}

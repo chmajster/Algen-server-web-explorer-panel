@@ -21,7 +21,7 @@ const permissions = [
 
 const profile = {
   language: "en-US", theme: "light", startup_windows: "none", wallpaper: "", accent_color: "blue", wallpaper_fit: "cover", taskbar_alignment: "center",
-  pinned_apps: ["files", "settings"], pinned_modules: [], start_pinned_apps: ["files", "settings"], desktop_shortcut_apps: ["files", "settings"],
+  pinned_apps: ["files", "settings"], pinned_modules: [], start_pinned_apps: ["files", "settings"], desktop_shortcut_apps: ["files", "settings"], desktop_shortcut_modules: [],
   show_desktop_shortcuts: true, desktop_shortcut_size: "medium", show_welcome_widget: false, show_notifications: true, show_transfer_indicator: true,
   show_background_actions_indicator: true, window_transparency: true, animations_enabled: false, clock_show_seconds: false, date_format: "short", time_format: "24",
   interface_scale: 100, interface_font: "system", larger_text: false, high_contrast: false, reduced_motion: true, strong_active_borders: false, always_show_focus: false,

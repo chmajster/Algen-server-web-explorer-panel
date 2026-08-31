@@ -12,6 +12,8 @@ export type AppRenderContext = {
   t: Translate;
   toast: ToastFn;
   onSettingsChange: (patch: SettingsPatch) => Promise<void>;
+  desktopShortcutModules: ReadonlySet<string>;
+  toggleDesktopModuleShortcut: (moduleId: string) => void;
   openApp: (app: AppId, initialPath?: string, moduleId?: string) => void;
   closeWindow: () => void;
   clearDeepLink: () => void;

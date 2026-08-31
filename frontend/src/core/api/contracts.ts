@@ -92,6 +92,7 @@ export type UserPreferences = {
   pinned_modules: string[];
   start_pinned_apps: PinnedAppId[];
   desktop_shortcut_apps: PinnedAppId[];
+  desktop_shortcut_modules: string[];
   show_desktop_shortcuts: boolean;
   desktop_shortcut_size: "small" | "medium" | "large";
   show_welcome_widget: boolean;
