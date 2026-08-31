@@ -10,7 +10,7 @@ import pytest
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-INSTALLER = REPOSITORY / "install-standard.sh"
+INSTALLER = REPOSITORY / "install" / "install-standard.sh"
 UNINSTALLER = REPOSITORY / "uninstall.sh"
 
 
