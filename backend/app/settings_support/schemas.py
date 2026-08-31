@@ -79,6 +79,7 @@ class UserSettings(BaseModel):
     pinned_modules: list[str] = Field(default_factory=list, max_length=16)
     start_pinned_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
     desktop_shortcut_apps: list[PinnedAppId] = Field(default_factory=lambda: list(DEFAULT_PINNED_APPS), max_length=16)
+    desktop_shortcut_modules: list[str] = Field(default_factory=list, max_length=32)
     show_desktop_shortcuts: bool = True
     desktop_shortcut_size: Literal["small", "medium", "large"] = "medium"
     show_welcome_widget: bool = True
@@ -134,7 +135,7 @@ class UserSettings(BaseModel):
             raise ValueError("pinned application identifiers must be unique")
         return values
 
-    @field_validator("pinned_modules")
+    @field_validator("pinned_modules", "desktop_shortcut_modules")
     @classmethod
     def valid_pinned_modules(cls, values: list[str]) -> list[str]:
         if len(values) != len(set(values)):
@@ -161,6 +162,7 @@ class MePatch(BaseModel):
     pinned_modules: list[str] | None = Field(default=None, max_length=16)
     start_pinned_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
     desktop_shortcut_apps: list[PinnedAppId] | None = Field(default=None, max_length=16)
+    desktop_shortcut_modules: list[str] | None = Field(default=None, max_length=32)
     show_desktop_shortcuts: bool | None = None
     desktop_shortcut_size: Literal["small", "medium", "large"] | None = None
     show_welcome_widget: bool | None = None
@@ -215,7 +217,7 @@ class MePatch(BaseModel):
             raise ValueError("pinned application identifiers must be unique")
         return values
 
-    @field_validator("pinned_modules")
+    @field_validator("pinned_modules", "desktop_shortcut_modules")
     @classmethod
     def valid_pinned_modules(cls, values: list[str] | None) -> list[str] | None:
         if values is not None and len(values) != len(set(values)):
