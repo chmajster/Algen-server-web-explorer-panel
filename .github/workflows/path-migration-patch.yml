@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - chore/organize-doc-install-files
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: write
@@ -19,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Finalize moved installer references
+      - name: Finalize installer relocation
         shell: bash
         run: |
           set -euo pipefail
@@ -30,7 +27,6 @@ jobs:
           old_url = 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh'
           new_url = 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh'
 
-          # Public download references must follow the relocated launcher.
           for path in repo.rglob('*'):
               if not path.is_file() or '.git' in path.parts:
                   continue
@@ -42,87 +38,109 @@ jobs:
               if updated != text:
                   path.write_text(updated, encoding='utf-8')
 
-          # Launcher/menu download sibling installer scripts from install/.
           for relative in ('install/install.sh', 'install/install-standard-menu.sh'):
               path = repo / relative
               text = path.read_text(encoding='utf-8')
-              old = 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main"'
-              new = 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"'
-              if old in text:
-                  text = text.replace(old, new, 1)
+              text = text.replace(
+                  'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main"',
+                  'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"',
+                  1,
+              )
               path.write_text(text, encoding='utf-8')
 
-          # The standard installer now lives one directory below the repository root.
           path = repo / 'install/install-standard.sh'
           text = path.read_text(encoding='utf-8')
-          old = '''  local script_dir=""
-  local resolved_script_dir=""
-  local resolved_install_dir=""
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-  resolved_script_dir="$(readlink -f "$script_dir" 2>/dev/null || printf '%s' "$script_dir")"
-  resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
-  if [[ -n "$script_dir" && -f "${script_dir}/backend/app/main.py" && -f "${script_dir}/frontend/package.json" ]]; then
-    if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
-      warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
-    else
-      SOURCE_DIR="$script_dir"
-'''
-          new = '''  local script_dir=""
-  local source_root=""
-  local resolved_script_dir=""
-  local resolved_install_dir=""
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-  source_root="$script_dir"
-  if [[ -n "$script_dir" && -f "${script_dir}/../backend/app/main.py" && -f "${script_dir}/../frontend/package.json" ]]; then
-    source_root="$(cd "${script_dir}/.." 2>/dev/null && pwd || true)"
-  fi
-  resolved_script_dir="$(readlink -f "$source_root" 2>/dev/null || printf '%s' "$source_root")"
-  resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
-  if [[ -n "$source_root" && -f "${source_root}/backend/app/main.py" && -f "${source_root}/frontend/package.json" ]]; then
-    if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
-      warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
-    else
-      SOURCE_DIR="$source_root"
-'''
-          if old not in text and 'local source_root=""' not in text:
-              raise SystemExit('Expected prepare_source block not found in install/install-standard.sh')
-          if old in text:
-              text = text.replace(old, new, 1)
+          prefix, marker, tail = text.partition('prepare_source() {')
+          if not marker:
+              raise SystemExit('prepare_source() not found')
+          body, end_marker, suffix = tail.partition('\n}\n\nprompt_install_dir()')
+          if not end_marker:
+              raise SystemExit('prepare_source() end not found')
+          if 'local source_root=""' not in body:
+              body = body.replace(
+                  '  local script_dir=""\n  local resolved_script_dir=""',
+                  '  local script_dir=""\n  local source_root=""\n  local resolved_script_dir=""',
+                  1,
+              )
+              script_line = '  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"\n'
+              if script_line not in body:
+                  raise SystemExit('script_dir assignment not found')
+              body = body.replace(
+                  script_line,
+                  script_line
+                  + '  source_root="$script_dir"\n'
+                  + '  if [[ -n "$script_dir" && -f "${script_dir}/../backend/app/main.py" && -f "${script_dir}/../frontend/package.json" ]]; then\n'
+                  + '    source_root="$(cd "${script_dir}/.." 2>/dev/null && pwd || true)"\n'
+                  + '  fi\n',
+                  1,
+              )
+          body = body.replace(
+              'resolved_script_dir="$(readlink -f "$script_dir" 2>/dev/null || printf \'%s\' "$script_dir")"',
+              'resolved_script_dir="$(readlink -f "$source_root" 2>/dev/null || printf \'%s\' "$source_root")"',
+              1,
+          )
+          body = body.replace(
+              'if [[ -n "$script_dir" && -f "${script_dir}/backend/app/main.py" && -f "${script_dir}/frontend/package.json" ]]; then',
+              'if [[ -n "$source_root" && -f "${source_root}/backend/app/main.py" && -f "${source_root}/frontend/package.json" ]]; then',
+              1,
+          )
+          body = body.replace('SOURCE_DIR="$script_dir"', 'SOURCE_DIR="$source_root"', 1)
+          if 'SOURCE_DIR="$source_root"' not in body:
+              raise SystemExit('standard installer source-root patch failed')
+          path.write_text(prefix + marker + body + end_marker + suffix, encoding='utf-8')
+
+          path = repo / 'install/install-portable.sh'
+          text = path.read_text(encoding='utf-8')
+          script_line = 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"\n'
+          if 'SOURCE_ROOT="$SCRIPT_DIR"' not in text:
+              if script_line not in text:
+                  raise SystemExit('portable SCRIPT_DIR assignment not found')
+              text = text.replace(
+                  script_line,
+                  script_line
+                  + 'SOURCE_ROOT="$SCRIPT_DIR"\n'
+                  + 'if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/../backend/app/main.py" && -f "${SCRIPT_DIR}/../frontend/package.json" ]]; then\n'
+                  + '  SOURCE_ROOT="$(cd "${SCRIPT_DIR}/.." 2>/dev/null && pwd || true)"\n'
+                  + 'fi\n',
+                  1,
+              )
+          text = text.replace('tar -C "$SCRIPT_DIR" \\', 'tar -C "$SOURCE_ROOT" \\', 1)
+          text = text.replace(
+              'if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/backend/app/main.py" && -f "${SCRIPT_DIR}/frontend/package.json" ]]; then',
+              'if [[ -n "$SOURCE_ROOT" && -f "${SOURCE_ROOT}/backend/app/main.py" && -f "${SOURCE_ROOT}/frontend/package.json" ]]; then',
+              1,
+          )
+          if 'tar -C "$SOURCE_ROOT" \\' not in text:
+              raise SystemExit('portable installer source-root patch failed')
           path.write_text(text, encoding='utf-8')
 
-          # Remaining tests must read installers from install/.
           replacements = {
-              'backend/tests/test_install_launcher.py': {
-                  'LAUNCHER = REPOSITORY / "install.sh"': 'LAUNCHER = REPOSITORY / "install" / "install.sh"',
-              },
-              'backend/tests/test_installer.py': {
-                  'INSTALLER = REPOSITORY / "install-standard.sh"': 'INSTALLER = REPOSITORY / "install" / "install-standard.sh"',
-              },
+              'backend/tests/test_install_launcher.py': (
+                  'LAUNCHER = REPOSITORY / "install.sh"',
+                  'LAUNCHER = REPOSITORY / "install" / "install.sh"',
+              ),
+              'backend/tests/test_installer.py': (
+                  'INSTALLER = REPOSITORY / "install-standard.sh"',
+                  'INSTALLER = REPOSITORY / "install" / "install-standard.sh"',
+              ),
           }
-          for relative, mapping in replacements.items():
+          for relative, (before, after) in replacements.items():
               path = repo / relative
-              text = path.read_text(encoding='utf-8')
-              for old_value, new_value in mapping.items():
-                  text = text.replace(old_value, new_value)
-              path.write_text(text, encoding='utf-8')
+              path.write_text(path.read_text(encoding='utf-8').replace(before, after), encoding='utf-8')
           PY
 
-          bash -n install/install.sh install/install-standard.sh install/install-standard-menu.sh install/install-portable.sh
-          python3 -m py_compile backend/app/settings.py backend/app/privileged_broker/extended_policy.py \
-            backend/tests/test_install_launcher.py backend/tests/test_installer.py \
-            backend/tests/test_installer_authentication_bootstrap.py backend/tests/test_file_listing.py
-          python3 -m pytest -q backend/tests/test_install_launcher.py \
-            backend/tests/test_installer.py -k 'installer_has_valid_bash_syntax or source_archive or installation_summary or wsl or interactive_configuration'
-          git diff --check
+          git show d88352f617bf4e6871342eef9d574ef007f3dd54:.github/workflows/install-test.yml > .github/workflows/install-test.yml
+          rm -f .github/path-migration-trigger.txt .github/workflows/path-migration-patch.yml
 
-          test -f install/install.sh
-          test -f install/install-standard.sh
-          test -f install/install-standard-menu.sh
-          test -f install/install-portable.sh
-          test ! -e install.sh
-          test ! -e install-standard.sh
-          test ! -e install-standard-menu.sh
-          test ! -e install-portable.sh
+          bash -n install/install.sh install/install-standard.sh install/install-standard-menu.sh install/install-portable.sh
+          python3 -m py_compile backend/app/settings.py backend/app/privileged_broker/extended_policy.py backend/tests/test_install_launcher.py backend/tests/test_installer.py
+          python3 -m pytest -q backend/tests/test_install_launcher.py backend/tests/test_installer.py -k 'launcher or installer_has_valid_bash_syntax or source_archive or installation_summary or wsl or interactive_configuration'
+          git diff --check
+          ! git grep -n 'https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh'
+          grep -Fq 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"' install/install.sh
+          grep -Fq 'RAW_BASE_URL="https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install"' install/install-standard-menu.sh
+          grep -Fq 'SOURCE_DIR="$source_root"' install/install-standard.sh
+          grep -Fq 'SOURCE_ROOT="$SCRIPT_DIR"' install/install-portable.sh
 
       - name: Commit finalized migration
         shell: bash
@@ -134,6 +152,5 @@ jobs:
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git commit -m "fix: complete installer path migration"
-          target_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          git push origin "HEAD:${target_branch}"
+          git commit -m "fix: complete installer relocation"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
