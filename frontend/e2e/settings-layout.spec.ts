@@ -21,6 +21,16 @@ async function resizeSettingsWindow(settingsWindow: Locator, width: number) {
   }, width);
 }
 
+async function chooseSettingsCategory(settingsWindow: Locator, category: "administration" | "authentication") {
+  const categorySelect = settingsWindow.locator(".settings-header > select");
+  await expect(categorySelect).toHaveCount(1);
+  await categorySelect.evaluate((element, nextCategory) => {
+    const select = element as HTMLSelectElement;
+    select.value = nextCategory;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  }, category);
+}
+
 test("Settings Administration and PAM / LDAP stay contained in a narrow desktop window", async ({ page }) => {
   await installMockApi(page);
 
@@ -111,8 +121,7 @@ test("Settings Administration and PAM / LDAP stay contained in a narrow desktop 
   const settingsWindow = page.locator('.desktop-window[aria-label="Settings"]');
   await expect(settingsWindow).toBeVisible();
 
-  await resizeSettingsWindow(settingsWindow, 1100);
-  await settingsWindow.getByRole("button", { name: "Administration", exact: true }).click();
+  await chooseSettingsCategory(settingsWindow, "administration");
   await resizeSettingsWindow(settingsWindow, 760);
 
   const administration = settingsWindow.locator(".administration-dashboard");
@@ -127,9 +136,7 @@ test("Settings Administration and PAM / LDAP stay contained in a narrow desktop 
   const httpsControl = httpsPath.locator("xpath=ancestor::*[contains(@class, 'setting-control')]");
   await expectNoHorizontalOverflow(httpsControl);
 
-  await resizeSettingsWindow(settingsWindow, 1100);
-  await settingsWindow.getByRole("button", { name: "PAM / LDAP", exact: true }).click();
-  await resizeSettingsWindow(settingsWindow, 760);
+  await chooseSettingsCategory(settingsWindow, "authentication");
 
   const authentication = settingsWindow.getByTestId("authentication-settings-card");
   const ldap = settingsWindow.locator(".ldap-settings-shell");
