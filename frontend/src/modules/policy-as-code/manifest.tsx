@@ -1,6 +1,9 @@
 import { FileCode2 } from "lucide-react";
+import { lazy } from "react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
-import { PolicyAsCodeApp } from "./PolicyAsCodeApp";
+import { lazyView } from "../../app/registry/rendering";
+
+const PolicyAsCodeApp = lazy(() => import("./PolicyAsCodeApp").then((loaded) => ({ default: loaded.PolicyAsCodeApp })));
 
 const manifest: FrontendModuleManifest = {
   id: "policy-as-code",
@@ -11,13 +14,16 @@ const manifest: FrontendModuleManifest = {
   permission: "policy.view",
   minWidth: 1080,
   minHeight: 720,
-  render: (context) => <PolicyAsCodeApp
-    permissions={context.profile.permissions}
-    language={context.profile.language}
-    toast={context.toast}
-    t={context.t}
-    setDirty={context.setDirty}
-  />,
+  render: (context) => lazyView(
+    <PolicyAsCodeApp
+      permissions={context.profile.permissions}
+      language={context.profile.language}
+      toast={context.toast}
+      t={context.t}
+      setDirty={context.setDirty}
+    />,
+    context.t("status.loading"),
+  ),
 };
 
 export default manifest;
