@@ -5,18 +5,14 @@ on:
     branches:
       - main
     paths:
-      - install.sh
-      - install-standard.sh
-      - install-standard-menu.sh
+      - install/**
       - uninstall.sh
       - .github/workflows/installer-full-reinstall-test.yml
   pull_request:
     branches:
       - main
     paths:
-      - install.sh
-      - install-standard.sh
-      - install-standard-menu.sh
+      - install/**
       - uninstall.sh
       - .github/workflows/installer-full-reinstall-test.yml
   workflow_dispatch:
@@ -47,13 +43,13 @@ jobs:
           command -v systemctl
           command -v script
           sudo systemctl is-system-running >/dev/null 2>&1 || true
-          bash -n install.sh install-standard.sh install-standard-menu.sh uninstall.sh
+          bash -n install/install.sh install/install-standard.sh install/install-standard-menu.sh uninstall.sh
 
       - name: Install baseline WebNAS
         shell: bash
         run: |
           set -euo pipefail
-          sudo ./install.sh --yes --port "${WEBNAS_TEST_PORT}"
+          sudo ./install/install.sh --yes --port "${WEBNAS_TEST_PORT}"
           test -L /opt/webnas/current
           test -f /etc/webnas/config.yaml
           test -d /var/lib/webnas
@@ -78,7 +74,7 @@ jobs:
           set -euo pipefail
 
           printf '7\n' | script --quiet --return --command \
-            "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
+            "sudo ./install/install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null > /tmp/webnas-full-reinstall.log 2>&1
 
           tr -d '\r' < /tmp/webnas-full-reinstall.log > /tmp/webnas-full-reinstall.clean
