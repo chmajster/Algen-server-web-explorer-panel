@@ -1,0 +1,286 @@
+name: Debian 13 Trixie installation test
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - install.sh
+      - install-standard.sh
+      - scripts/install_python314_runtime.sh
+      - backend/tests/test_installer_debian_python314.py
+      - .github/workflows/debian-trixie-install-test.yml
+  push:
+    branches:
+      - main
+    paths:
+      - install.sh
+      - install-standard.sh
+      - scripts/install_python314_runtime.sh
+      - backend/tests/test_installer_debian_python314.py
+      - .github/workflows/debian-trixie-install-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: debian-trixie-install-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-safety:
+    name: Installer safety checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate shell syntax and shellcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh install-standard.sh scripts/install_python314_runtime.sh
+          shellcheck install.sh install-standard.sh scripts/install_python314_runtime.sh
+
+      - name: Run Debian Python installer contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest -q backend/tests/test_installer_debian_python314.py
+
+  debian-trixie-install:
+    name: Fresh install, update, reinstall and fail-safe on Debian 13
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      WEBNAS_TEST_PORT: "5099"
+      WEBNAS_CONTAINER: webnas-debian13
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build Debian 13 systemd test image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/Dockerfile.webnas-debian13" <<'DOCKERFILE'
+          FROM debian:13
+          ENV container=docker
+          ENV DEBIAN_FRONTEND=noninteractive
+          RUN apt-get update \
+              && apt-get install -y --no-install-recommends \
+                   systemd systemd-sysv dbus sudo python3 ca-certificates curl git rsync procps iproute2 \
+              && apt-get clean \
+              && rm -rf /var/lib/apt/lists/*
+          STOPSIGNAL SIGRTMIN+3
+          CMD ["/sbin/init"]
+          DOCKERFILE
+          docker build -f "${RUNNER_TEMP}/Dockerfile.webnas-debian13" -t webnas-debian13-systemd "${RUNNER_TEMP}"
+
+      - name: Start clean Debian 13 container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run \
+            --name "${WEBNAS_CONTAINER}" \
+            --privileged \
+            --cgroupns=host \
+            --tmpfs /run \
+            --tmpfs /run/lock \
+            -d webnas-debian13-systemd
+
+          for attempt in {1..30}; do
+            if docker exec "${WEBNAS_CONTAINER}" systemctl is-system-running >/dev/null 2>&1; then
+              break
+            fi
+            state="$(docker exec "${WEBNAS_CONTAINER}" systemctl is-system-running 2>/dev/null || true)"
+            if [[ "${state}" == "degraded" ]]; then
+              break
+            fi
+            sleep 1
+          done
+
+          docker exec "${WEBNAS_CONTAINER}" systemctl is-system-running || true
+          docker exec "${WEBNAS_CONTAINER}" test -x /usr/bin/python3
+
+      - name: Copy checked-out source into Debian container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec "${WEBNAS_CONTAINER}" mkdir -p /work
+          docker cp . "${WEBNAS_CONTAINER}:/work/repo"
+          docker exec "${WEBNAS_CONTAINER}" chmod +x \
+            /work/repo/install.sh \
+            /work/repo/install-standard.sh \
+            /work/repo/install-standard-menu.sh \
+            /work/repo/scripts/install_python314_runtime.sh
+
+      - name: Record Debian system Python before installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec "${WEBNAS_CONTAINER}" bash -lc '
+            set -euo pipefail
+            readlink -f /usr/bin/python3 > /tmp/system-python-target-before
+            /usr/bin/python3 --version > /tmp/system-python-version-before 2>&1
+            apt-get --version >/dev/null
+            test -z "$(dpkg --audit 2>&1)"
+          '
+
+      - name: Run fresh WebNAS installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -e WEBNAS_TEST_PORT="${WEBNAS_TEST_PORT}" "${WEBNAS_CONTAINER}" bash -lc '
+            set -euo pipefail
+            cd /work/repo
+            ./install.sh --yes --port "${WEBNAS_TEST_PORT}"
+          '
+
+      - name: Verify private Python runtime and system integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec "${WEBNAS_CONTAINER}" bash -lc '
+            set -euo pipefail
+            private_python=/opt/webnas/runtime/python/3.14/bin/python3.14
+            venv_python=/opt/webnas/current/backend/.venv/bin/python
+
+            test -x "${private_python}"
+            test -x "${venv_python}"
+            "${private_python}" -c "import sys; assert sys.version_info[:2] == (3, 14)"
+            "${venv_python}" -c "import sys; assert sys.version_info[:2] == (3, 14)"
+
+            test "$(readlink -f /usr/bin/python3)" = "$(cat /tmp/system-python-target-before)"
+            test "$(/usr/bin/python3 --version 2>&1)" = "$(cat /tmp/system-python-version-before)"
+            apt-get --version >/dev/null
+            test -z "$(dpkg --audit 2>&1)"
+
+            if grep -RIE "(^|[^[:alpha:]])(sid|forky|testing)([^[:alpha:]]|$)|deadsnakes|ppa:" \
+              /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null; then
+              echo "Forbidden Debian/PPA repository detected" >&2
+              exit 1
+            fi
+
+            test ! -e /usr/bin/python3.14
+            grep -F "ExecStart=/opt/webnas/runtime/python/3.14/bin/python3.14 " \
+              /etc/systemd/system/webnas-usb-mount@.service
+
+            sha256sum "${private_python}" | awk "{print \$1}" > /tmp/webnas-python-runtime-sha
+            stat -c "%Y" "${private_python}" > /tmp/webnas-python-runtime-mtime
+          '
+
+      - name: Verify HTTP health after fresh install
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec "${WEBNAS_CONTAINER}" curl \
+            --fail --silent --show-error \
+            --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+      - name: Verify idempotent update reuses private runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -e WEBNAS_TEST_PORT="${WEBNAS_TEST_PORT}" "${WEBNAS_CONTAINER}" bash -lc '
+            set -euo pipefail
+            cd /work/repo
+            ./install.sh --yes --existing-action update --port "${WEBNAS_TEST_PORT}" 2>&1 | tee /tmp/webnas-update.log
+
+            private_python=/opt/webnas/runtime/python/3.14/bin/python3.14
+            test "$(sha256sum "${private_python}" | awk "{print \$1}")" = "$(cat /tmp/webnas-python-runtime-sha)"
+            test "$(stat -c "%Y" "${private_python}")" = "$(cat /tmp/webnas-python-runtime-mtime)"
+            grep -F "Reusing WebNAS Python runtime: /opt/webnas/runtime/python/3.14/bin/python3.14" /tmp/webnas-update.log
+            ! grep -F "Building Python 3.14.7" /tmp/webnas-update.log
+          '
+
+      - name: Verify clean reinstall preserves private runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -e WEBNAS_TEST_PORT="${WEBNAS_TEST_PORT}" "${WEBNAS_CONTAINER}" bash -lc '
+            set -euo pipefail
+            cd /work/repo
+            ./install.sh --yes --existing-action reinstall --port "${WEBNAS_TEST_PORT}" 2>&1 | tee /tmp/webnas-reinstall.log
+
+            private_python=/opt/webnas/runtime/python/3.14/bin/python3.14
+            test -x "${private_python}"
+            test "$(sha256sum "${private_python}" | awk "{print \$1}")" = "$(cat /tmp/webnas-python-runtime-sha)"
+            test "$(stat -c "%Y" "${private_python}")" = "$(cat /tmp/webnas-python-runtime-mtime)"
+            ! grep -F "Building Python 3.14.7" /tmp/webnas-reinstall.log
+            test "$(readlink -f /usr/bin/python3)" = "$(cat /tmp/system-python-target-before)"
+            test "$(/usr/bin/python3 --version 2>&1)" = "$(cat /tmp/system-python-version-before)"
+          '
+
+      - name: Simulate Python source download failure without switching active release
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -e WEBNAS_TEST_PORT="${WEBNAS_TEST_PORT}" "${WEBNAS_CONTAINER}" bash -lc '
+            set -euo pipefail
+            current_before="$(readlink -f /opt/webnas/current)"
+            mv /opt/webnas/runtime/python/3.14 /opt/webnas/runtime/python/3.14.saved
+
+            set +e
+            HTTPS_PROXY=http://127.0.0.1:1 \
+            https_proxy=http://127.0.0.1:1 \
+              /work/repo/install.sh --yes --existing-action update --port "${WEBNAS_TEST_PORT}" \
+              >/tmp/webnas-failed-python-build.log 2>&1
+            rc=$?
+            set -e
+
+            test "${rc}" -ne 0
+            test "$(readlink -f /opt/webnas/current)" = "${current_before}"
+            test ! -e /opt/webnas/runtime/python/3.14
+            mv /opt/webnas/runtime/python/3.14.saved /opt/webnas/runtime/python/3.14
+
+            /opt/webnas/runtime/python/3.14/bin/python3.14 -c \
+              "import sys; assert sys.version_info[:2] == (3, 14)"
+            test "$(readlink -f /usr/bin/python3)" = "$(cat /tmp/system-python-target-before)"
+            test "$(/usr/bin/python3 --version 2>&1)" = "$(cat /tmp/system-python-version-before)"
+            apt-get --version >/dev/null
+            test -z "$(dpkg --audit 2>&1)"
+          '
+
+      - name: Verify active installation survived failed candidate preparation
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec "${WEBNAS_CONTAINER}" curl \
+            --fail --silent --show-error \
+            --retry 10 --retry-delay 2 --retry-connrefused \
+            "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
+
+      - name: Collect Debian diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          docker exec "${WEBNAS_CONTAINER}" bash -lc '
+            echo "=== os-release ==="
+            cat /etc/os-release
+            echo "=== Python ==="
+            /usr/bin/python3 --version 2>&1 || true
+            /opt/webnas/runtime/python/3.14/bin/python3.14 --version 2>&1 || true
+            /opt/webnas/current/backend/.venv/bin/python --version 2>&1 || true
+            echo "=== APT sources ==="
+            grep -R . /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null || true
+            echo "=== dpkg audit ==="
+            dpkg --audit 2>&1 || true
+            echo "=== failed Python build log ==="
+            cat /tmp/webnas-failed-python-build.log 2>/dev/null || true
+            echo "=== systemd ==="
+            systemctl status nginx webnas-backend-blue webnas-backend-green webnas-privileged.service --no-pager -l || true
+            echo "=== WebNAS journal ==="
+            journalctl -u nginx -u webnas-backend-blue -u webnas-backend-green -u webnas-privileged.service -n 250 --no-pager || true
+          '
+
+      - name: Remove Debian test container
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker rm -f "${WEBNAS_CONTAINER}"
