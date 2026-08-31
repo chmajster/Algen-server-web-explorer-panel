@@ -13,6 +13,14 @@ async function expectSeparated(upper: Locator, lower: Locator) {
   expect(lowerBox!.y - (upperBox!.y + upperBox!.height)).toBeGreaterThan(4);
 }
 
+async function resizeSettingsWindow(settingsWindow: Locator, width: number) {
+  await settingsWindow.evaluate((element, nextWidth) => {
+    const windowElement = element as HTMLElement;
+    windowElement.style.width = `${nextWidth}px`;
+    windowElement.style.height = "700px";
+  }, width);
+}
+
 test("Settings Administration and PAM / LDAP stay contained in a narrow desktop window", async ({ page }) => {
   await installMockApi(page);
 
@@ -102,16 +110,11 @@ test("Settings Administration and PAM / LDAP stay contained in a narrow desktop 
 
   const settingsWindow = page.locator('.desktop-window[aria-label="Settings"]');
   await expect(settingsWindow).toBeVisible();
-  await settingsWindow.evaluate((element) => {
-    const windowElement = element as HTMLElement;
-    windowElement.style.width = "760px";
-    windowElement.style.height = "700px";
-  });
 
-  const categorySelect = settingsWindow.locator(".settings-header select");
-  await expect(categorySelect).toBeVisible();
+  await resizeSettingsWindow(settingsWindow, 1100);
+  await settingsWindow.getByRole("button", { name: "Administration", exact: true }).click();
+  await resizeSettingsWindow(settingsWindow, 760);
 
-  await categorySelect.selectOption("administration");
   const administration = settingsWindow.locator(".administration-dashboard");
   const https = settingsWindow.getByTestId("https-settings-card");
   await expect(administration).toBeVisible();
@@ -124,7 +127,10 @@ test("Settings Administration and PAM / LDAP stay contained in a narrow desktop 
   const httpsControl = httpsPath.locator("xpath=ancestor::*[contains(@class, 'setting-control')]");
   await expectNoHorizontalOverflow(httpsControl);
 
-  await categorySelect.selectOption("authentication");
+  await resizeSettingsWindow(settingsWindow, 1100);
+  await settingsWindow.getByRole("button", { name: "PAM / LDAP", exact: true }).click();
+  await resizeSettingsWindow(settingsWindow, 760);
+
   const authentication = settingsWindow.getByTestId("authentication-settings-card");
   const ldap = settingsWindow.locator(".ldap-settings-shell");
   await expect(authentication).toBeVisible();
