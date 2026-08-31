@@ -81,13 +81,30 @@ jobs:
 
           tests = Path("backend/tests/test_installer_debian_python314.py")
           test_text = tests.read_text(encoding="utf-8")
-          marker = '    assert "apt dist-upgrade" not in RUNTIME_HELPER\n'
-          if marker not in test_text:
-              raise SystemExit("Could not find helper safety-test insertion point")
-          tests.write_text(
-              test_text.replace(marker, marker + '    assert "|| true" not in RUNTIME_HELPER\n', 1),
-              encoding="utf-8",
+          test_text = replace_once(
+              test_text,
+              '    assert "apt dist-upgrade" not in lowered\n',
+              '    assert "apt dist-upgrade" not in lowered\n'
+              '    assert "|| true" not in RUNTIME_HELPER\n',
+              "static safety assertion",
           )
+          test_text = replace_once(
+              test_text,
+              '    assert \'INSTALLER_DISTRO_ID="$(os_release_value ID || true)"\' in RUNTIME_HELPER\n'
+              '    assert \'INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID || true)"\' in RUNTIME_HELPER\n'
+              '    assert \'INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME || true)"\' in RUNTIME_HELPER\n',
+              '    assert \'INSTALLER_DISTRO_ID="$(os_release_value ID 2>/dev/null)" || INSTALLER_DISTRO_ID=""\' in RUNTIME_HELPER\n'
+              '    assert \'INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID 2>/dev/null)" || INSTALLER_DISTRO_VERSION_ID=""\' in RUNTIME_HELPER\n'
+              '    assert \'INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME 2>/dev/null)" || INSTALLER_DISTRO_CODENAME=""\' in RUNTIME_HELPER\n',
+              "distribution assertions",
+          )
+          test_text = replace_once(
+              test_text,
+              '    assert \'candidate="$(command -v python3.14 2>/dev/null || true)"\' in RUNTIME_HELPER\n',
+              '    assert \'if ! candidate="$(command -v python3.14 2>/dev/null)"; then\' in RUNTIME_HELPER\n',
+              "existing python assertion",
+          )
+          tests.write_text(test_text, encoding="utf-8")
           PY
 
       - name: Validate hardening
