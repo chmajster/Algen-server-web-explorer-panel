@@ -8,4 +8,7 @@ dependencies: [package-center]
 capabilities: [inventory, playbooks, jobs, scheduler]
 actions: [validate, launch, cancel, retry, schedule]
 jobs: [ansible-execution, network-scan]
+startup: app.modules.ansible_controller.scheduler:start_scheduler
+shutdown: app.modules.ansible_controller.scheduler:stop_scheduler
+health_check: app.modules.ansible_controller.scheduler:scheduler_status
 menu: [{id: ansible, label: ansible.name, icon: workflow, permission: modules.view}]

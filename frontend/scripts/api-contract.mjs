@@ -18,6 +18,21 @@ const python = process.env.PYTHON || (process.platform === "win32" ? "python" : 
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 const marker = "// AUTO-GENERATED. DO NOT EDIT.\n";
 
+function reportContractDrift(committed, generated) {
+  const previous = committed.split("\n");
+  const next = generated.split("\n");
+  const limit = Math.max(previous.length, next.length);
+  let shown = 0;
+  for (let index = 0; index < limit && shown < 80; index += 1) {
+    if (previous[index] === next[index]) continue;
+    console.error(`@@ line ${index + 1} @@`);
+    console.error(`- ${previous[index] ?? "<missing>"}`);
+    console.error(`+ ${next[index] ?? "<missing>"}`);
+    shown += 1;
+  }
+  if (shown === 80) console.error("... additional contract differences omitted");
+}
+
 mkdirSync(cache, { recursive: true });
 const exportResult = spawnSync(python, [resolve(root, "../scripts/export_openapi.py"), "--output", spec], { stdio: "inherit" });
 if (exportResult.status !== 0) process.exit(exportResult.status ?? 1);
@@ -36,6 +51,7 @@ if (mode === "generate") {
   const committed = existsSync(target) ? readFileSync(target, "utf8") : "";
   if (committed !== finalContent) {
     console.error("OpenAPI TypeScript contract is stale. Run: npm run api:generate");
+    reportContractDrift(committed, finalContent);
     rmSync(candidate, { force: true });
     process.exit(1);
   }

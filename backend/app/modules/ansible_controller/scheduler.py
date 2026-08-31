@@ -17,6 +17,8 @@ from .repository import repository
 
 _lock = threading.RLock()
 _started = False
+_stop_event = threading.Event()
+_thread: threading.Thread | None = None
 
 
 def _queue_due_key_rotations(store: object, current: float) -> int:
@@ -146,18 +148,49 @@ def scheduler_tick(now: float | None = None) -> int:
 
 
 def _loop() -> None:
-    while True:
+    while not _stop_event.is_set():
         try:
             scheduler_tick()
         except Exception:  # noqa: BLE001
             logger.exception("ansible_scheduler_tick_failed")
-        time.sleep(30)
+        _stop_event.wait(30)
 
 
 def start_scheduler() -> None:
-    global _started
+    global _started, _thread
     with _lock:
-        if _started:
+        if _thread is not None and _thread.is_alive():
+            _stop_event.clear()
+            _started = True
             return
+        _stop_event.clear()
+        thread = threading.Thread(target=_loop, daemon=True, name="ansible-controller-scheduler")
+        _thread = thread
         _started = True
-        threading.Thread(target=_loop, daemon=True, name="ansible-controller-scheduler").start()
+        thread.start()
+        logger.info("ansible_scheduler_started")
+
+
+def stop_scheduler() -> None:
+    global _started, _thread
+    with _lock:
+        thread = _thread
+        if not _started and (thread is None or not thread.is_alive()):
+            return
+        _started = False
+        _stop_event.set()
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=5)
+    with _lock:
+        if _thread is thread and (thread is None or not thread.is_alive()):
+            _thread = None
+    logger.info("ansible_scheduler_stopped")
+
+
+def scheduler_status() -> dict[str, str]:
+    with _lock:
+        running = bool(_started and _thread is not None and _thread.is_alive())
+    return {
+        "health_state": "healthy" if running else "degraded",
+        "message": "scheduler running" if running else "scheduler stopped",
+    }

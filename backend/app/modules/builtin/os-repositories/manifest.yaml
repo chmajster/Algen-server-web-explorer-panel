@@ -9,3 +9,6 @@ capabilities: [repositories, mirrors, synchronization, jobs, offline-bundles, ai
 actions: [sync, build, promote, rollback, cancel, retry, offline-export, offline-import, offline-verify]
 jobs: [repository-sync, package-build, offline-export, offline-verify, offline-import]
 system_capabilities: [apt, rpm]
+startup: app.modules.os_repositories.scheduler:start_scheduler
+shutdown: app.modules.os_repositories.scheduler:stop_scheduler
+health_check: app.modules.os_repositories.scheduler:scheduler_status

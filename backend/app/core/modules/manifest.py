@@ -19,6 +19,13 @@ class ModuleState(StrEnum):
     broken = "broken"
 
 
+class ModuleHealthState(StrEnum):
+    healthy = "healthy"
+    degraded = "degraded"
+    unhealthy = "unhealthy"
+    unknown = "unknown"
+
+
 class ModuleMenuItem(BaseModel):
     id: str
     label: str
@@ -45,6 +52,7 @@ class ModuleManifest(BaseModel):
     shutdown: str | None = None
     health_check: str | None = None
     enabled: bool = True
+    critical: bool = False
 
     @field_validator("id")
     @classmethod

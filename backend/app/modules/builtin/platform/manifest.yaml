@@ -5,3 +5,4 @@ icon: server
 routers: [app.auth_api:router, app.platform_api:router]
 capabilities: [authentication, health, frontend]
 system_capabilities: [pam]
+critical: true

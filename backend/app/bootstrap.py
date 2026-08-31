@@ -19,24 +19,22 @@ from .alerts.router import router as alerts_router
 from .alerts.scheduler import start_scheduler as start_alert_scheduler
 from .appliance_backup import router as appliance_backup_router
 from .audit import configure_logging
+from .command_runner import PrivilegedCommandRunner, ReadOnlyCommandRunner
 from .config import AppConfig, get_config
+from .core.background_tasks import BackgroundTaskManager
 from .core.cache import SLOW_CACHE_TTL_SECONDS, TTLCache
 from .core.errors import DomainError, domain_error_handler, success_payload, unhandled_error_handler
 from .core.modules import ModuleRegistry
 from .jobs.models import JobStatus
 from .jobs.service import service as job_service
 from .ldap_authentication import repository as ldap_auth_repository
-from .local_auth import initialize_active_auth_mode
-from .modules.ansible_controller.scheduler import start_scheduler as start_ansible_scheduler
-from .modules.os_repositories.scheduler import start_scheduler as start_os_repositories_scheduler
-from .modules.proxmox_manager.scheduler import start_scheduler as start_proxmox_scheduler
 from .network_mounts import active_mount_jobs
 from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
 from .performance import performance_timing
 from .platform_api import frontend_cache_policy
 from .power_control import router as power_control_router
-from .resource_sampler import resource_sampler, resource_sampler_loop
+from .resource_sampler import ResourceSampler, resource_sampler, resource_sampler_loop
 from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
@@ -55,6 +53,10 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 class ApplicationContainer:
     settings: AppConfig
     modules: ModuleRegistry
+    background_tasks: BackgroundTaskManager
+    resource_sampler: ResourceSampler
+    read_only_commands: ReadOnlyCommandRunner
+    privileged_commands: PrivilegedCommandRunner
 
 
 def build_module_registry(root: Path = BUILTIN_MODULES) -> ModuleRegistry:
@@ -63,22 +65,19 @@ def build_module_registry(root: Path = BUILTIN_MODULES) -> ModuleRegistry:
     return registry
 
 
-def _start_schedulers() -> None:
+def _start_global_schedulers() -> None:
+    """Start application-level schedulers that are not owned by a module manifest."""
     settings_api.start_auto_update_scheduler()
     start_alert_scheduler()
-    start_ansible_scheduler()
-    start_os_repositories_scheduler()
-    start_proxmox_scheduler()
 
 
 @asynccontextmanager
 async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     module_registry: ModuleRegistry = app.state.modules
+    background_tasks: BackgroundTaskManager = app.state.background_tasks
     app.state.ready = False
-    initialize_active_auth_mode()
     ldap_auth_repository().settings()
     global_jobs = job_service()
-    await module_registry.startup()
     repository = package_repository()
     manager = package_job_manager(repository)
     register_operation_provider(
@@ -99,23 +98,22 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     register_operation_provider("upload", active_uploads)
     register_operation_provider("direct", active_transient_operations)
 
-    promotion_task: asyncio.Task[None] | None = None
-    collector_task: asyncio.Task[None] | None = None
-    runtime_event_task: asyncio.Task[None] | None = None
-    resource_sampler_task: asyncio.Task[None] | None = None
+    runtime_started = False
 
-    def start_runtime_side_effects() -> None:
-        nonlocal collector_task, runtime_event_task, resource_sampler_task
-        _start_schedulers()
-        if collector_task is None or collector_task.done():
-            collector_task = asyncio.create_task(alert_collector_loop(module_registry))
-        if runtime_event_task is None or runtime_event_task.done():
-            runtime_event_task = asyncio.create_task(watch_update_progress())
-        if resource_sampler_task is None or resource_sampler_task.done():
-            resource_sampler_task = asyncio.create_task(resource_sampler_loop())
+    async def start_runtime_side_effects() -> None:
+        nonlocal runtime_started
+        if runtime_started:
+            return
+        await module_registry.startup()
+        _start_global_schedulers()
+        background_tasks.create(alert_collector_loop(module_registry), name="webnas-alert-collector")
+        background_tasks.create(watch_update_progress(), name="webnas-update-progress")
+        background_tasks.create(resource_sampler_loop(), name="webnas-resource-sampler")
+        runtime_started = True
 
     if os.environ.get("WEBNAS_CANDIDATE") != "1":
-        start_runtime_side_effects()
+        await start_runtime_side_effects()
+        app.state.ready = True
     else:
         slot = os.environ.get("WEBNAS_SLOT", "")
 
@@ -124,26 +122,19 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
             while True:
                 try:
                     if active_slot_file.read_text(encoding="utf-8").strip() == slot:
-                        start_runtime_side_effects()
+                        await start_runtime_side_effects()
+                        app.state.ready = True
                         return
                 except OSError:
                     pass
                 await asyncio.sleep(0.25)
 
-        promotion_task = asyncio.create_task(promote_candidate())
-    app.state.ready = True
+        background_tasks.create(promote_candidate(), name="webnas-candidate-promotion")
     try:
         yield
     finally:
         app.state.ready = False
-        if promotion_task and not promotion_task.done():
-            promotion_task.cancel()
-        if collector_task and not collector_task.done():
-            collector_task.cancel()
-        if runtime_event_task and not runtime_event_task.done():
-            runtime_event_task.cancel()
-        if resource_sampler_task and not resource_sampler_task.done():
-            resource_sampler_task.cancel()
+        await background_tasks.cancel_all()
         await module_registry.shutdown()
 
 
@@ -160,8 +151,13 @@ def _registry_router(registry: ModuleRegistry) -> APIRouter:
     async def module_health(_user: SessionUser = Depends(get_session_user)):
         diagnostics = await registry.health()
         catalog_cache.invalidate()
+        lifecycle_ok = all(item["state"] in {"active", "disabled"} for item in diagnostics)
+        health_ok = all(
+            item["state"] == "disabled" or item.get("health_state", "unknown") not in {"degraded", "unhealthy"}
+            for item in diagnostics
+        )
         return success_payload({
-            "status": "ok" if all(item["state"] in {"active", "disabled"} for item in diagnostics) else "degraded",
+            "status": "ok" if lifecycle_ok and health_ok else "degraded",
             "modules": diagnostics,
         })
 
@@ -173,15 +169,23 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     configure_logging()
     application_settings = settings or get_config()
     module_registry = registry or build_module_registry()
-    container = ApplicationContainer(application_settings, module_registry)
-    # settings.system_resources resolves this module global at request time.
-    # Inject the shared sampler at the composition root without changing the
-    # public API or the settings router's authorization dependency.
-    settings_api.collect_dashboard = resource_sampler.dashboard
+    background_tasks = BackgroundTaskManager()
+    read_only_commands = ReadOnlyCommandRunner()
+    privileged_commands = PrivilegedCommandRunner()
+    container = ApplicationContainer(
+        application_settings,
+        module_registry,
+        background_tasks,
+        resource_sampler,
+        read_only_commands,
+        privileged_commands,
+    )
     app = FastAPI(title="WebNAS", version=__version__, lifespan=application_lifespan)
     app.state.ready = False
     app.state.settings = application_settings
     app.state.modules = module_registry
+    app.state.background_tasks = background_tasks
+    app.state.resource_sampler = resource_sampler
     app.state.container = container
     app.add_exception_handler(DomainError, domain_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)

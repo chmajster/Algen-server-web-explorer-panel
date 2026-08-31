@@ -12,6 +12,8 @@ from .service import service
 logger = logging.getLogger(__name__)
 _started = False
 _lock = threading.Lock()
+_stop_event = threading.Event()
+_thread: threading.Thread | None = None
 
 
 def _field_matches(value: int, expression: str, minimum: int, maximum: int) -> bool:
@@ -64,19 +66,50 @@ def scheduler_tick(now: float | None = None) -> int:
     return queued
 
 
+def _loop() -> None:
+    while not _stop_event.is_set():
+        try:
+            scheduler_tick()
+        except Exception:  # noqa: BLE001 - scheduler survives one failed iteration.
+            logger.exception("os_repositories_scheduler_tick_failed")
+        _stop_event.wait(30)
+
+
 def start_scheduler() -> None:
-    global _started
+    global _started, _thread
     with _lock:
-        if _started:
+        if _thread is not None and _thread.is_alive():
+            _stop_event.clear()
+            _started = True
             return
+        _stop_event.clear()
+        thread = threading.Thread(target=_loop, daemon=True, name="os-repositories-scheduler")
+        _thread = thread
         _started = True
+        thread.start()
+        logger.info("os_repositories_scheduler_started")
 
-    def loop() -> None:
-        while True:
-            try:
-                scheduler_tick()
-            except Exception:
-                logger.exception("os_repositories_scheduler_tick_failed")
-            time.sleep(30)
 
-    threading.Thread(target=loop, daemon=True, name="os-repositories-scheduler").start()
+def stop_scheduler() -> None:
+    global _started, _thread
+    with _lock:
+        thread = _thread
+        if not _started and (thread is None or not thread.is_alive()):
+            return
+        _started = False
+        _stop_event.set()
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=5)
+    with _lock:
+        if _thread is thread and (thread is None or not thread.is_alive()):
+            _thread = None
+    logger.info("os_repositories_scheduler_stopped")
+
+
+def scheduler_status() -> dict[str, str]:
+    with _lock:
+        running = bool(_started and _thread is not None and _thread.is_alive())
+    return {
+        "health_state": "healthy" if running else "degraded",
+        "message": "scheduler running" if running else "scheduler stopped",
+    }

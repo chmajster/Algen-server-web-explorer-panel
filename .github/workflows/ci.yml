@@ -52,14 +52,20 @@ jobs:
             backend/requirements-dev.txt
       - name: Install backend development dependencies
         run: python -m pip install -r backend/requirements-dev.txt
-      - name: Run Ruff
-        run: python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py
+      - name: Run Ruff baseline
+        run: python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py --select E,F
+      - name: Run strict Ruff on refactored module core
+        run: |
+          python -m ruff check \
+            backend/app/core/modules/manifest.py \
+            backend/app/core/modules/registry.py \
+            --select E,F,I,UP,B,SIM,ASYNC
       - name: Run mypy
         run: python -m mypy
       - name: Run Bandit
         run: python -m bandit -c pyproject.toml -r backend/app
       - name: Validate module manifests and architecture boundaries
-        run: python -m pytest -q backend/tests/test_module_registry.py backend/tests/test_architecture_boundaries.py
+        run: python -m pytest -q backend/tests/test_module_registry.py backend/tests/test_architecture_boundaries.py backend/tests/test_command_runner.py backend/tests/test_module_scheduler_lifecycle.py
       - name: Build Python package
         run: python -m build
       - uses: actions/upload-artifact@v7

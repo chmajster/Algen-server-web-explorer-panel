@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import threading
-import time
 import urllib.parse
 from typing import Any
 
@@ -24,6 +23,8 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 60
 _started = False
 _lock = threading.Lock()
+_stop_event = threading.Event()
+_thread: threading.Thread | None = None
 
 
 def _tag_context(connection: dict[str, Any], host: dict[str, Any] | None) -> dict[str, Any]:
@@ -192,18 +193,49 @@ def scheduler_tick() -> int:
 
 
 def _loop() -> None:
-    while True:
+    while not _stop_event.is_set():
         try:
             scheduler_tick()
         except Exception:  # noqa: BLE001 - scheduler must survive one failed cycle
             logger.exception("proxmox_scheduler_tick_failed")
-        time.sleep(POLL_INTERVAL_SECONDS)
+        _stop_event.wait(POLL_INTERVAL_SECONDS)
 
 
 def start_scheduler() -> None:
-    global _started
+    global _started, _thread
     with _lock:
-        if _started:
+        if _thread is not None and _thread.is_alive():
+            _stop_event.clear()
+            _started = True
             return
+        _stop_event.clear()
+        thread = threading.Thread(target=_loop, daemon=True, name="proxmox-scheduler")
+        _thread = thread
         _started = True
-        threading.Thread(target=_loop, daemon=True, name="proxmox-scheduler").start()
+        thread.start()
+        logger.info("proxmox_scheduler_started")
+
+
+def stop_scheduler() -> None:
+    global _started, _thread
+    with _lock:
+        thread = _thread
+        if not _started and (thread is None or not thread.is_alive()):
+            return
+        _started = False
+        _stop_event.set()
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=5)
+    with _lock:
+        if _thread is thread and (thread is None or not thread.is_alive()):
+            _thread = None
+    logger.info("proxmox_scheduler_stopped")
+
+
+def scheduler_status() -> dict[str, str]:
+    with _lock:
+        running = bool(_started and _thread is not None and _thread.is_alive())
+    return {
+        "health_state": "healthy" if running else "degraded",
+        "message": "scheduler running" if running else "scheduler stopped",
+    }

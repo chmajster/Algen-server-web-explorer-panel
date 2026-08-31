@@ -14,6 +14,7 @@ from .service import service
 logger = logging.getLogger(__name__)
 COLLECT_INTERVAL_SECONDS = 60
 _BAD_MODULE_STATES = {"broken", "unavailable", "degraded", "failed"}
+_BAD_MODULE_HEALTH_STATES = {"degraded", "unhealthy"}
 _BAD_HOST_STATES = {"offline", "error", "unreachable", "stale"}
 
 
@@ -31,18 +32,21 @@ async def collect_module_health(registry: ModuleRegistry) -> int:
         if not module_id:
             continue
         state = _state(item.get("state"))
-        if state in _BAD_MODULE_STATES:
-            severity = AlertSeverity.critical if state in {"broken", "failed"} else AlertSeverity.error
+        health_state = _state(item.get("health_state"))
+        effective = state if state in _BAD_MODULE_STATES else health_state if health_state in _BAD_MODULE_HEALTH_STATES else ""
+        if effective:
+            severity = AlertSeverity.critical if effective in {"broken", "failed", "unhealthy"} else AlertSeverity.error
             manager.fire(
                 AlertEvent(
                     source="module.health",
                     key=module_id,
-                    title=f"Module health is {state}: {module_id}",
+                    title=f"Module health is {effective}: {module_id}",
                     object_ref=module_id,
                     severity=severity,
                     details={
                         "module_id": module_id,
                         "state": state,
+                        "health_state": health_state,
                         "message": redact_text(item.get("message", ""), limit=2000),
                     },
                 )

@@ -7,3 +7,4 @@ routers: [app.modules.files.api.router:router]
 capabilities: [browse, upload, download, tasks, sse]
 actions: [browse, create, copy, move, rename, delete, upload, download]
 menu: [{id: files, label: app.fileManager, icon: hard-drive, permission: files.view}]
+critical: true

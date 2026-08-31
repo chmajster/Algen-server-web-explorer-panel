@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
@@ -98,6 +99,19 @@ def _connection_heartbeat() -> dict[str, object | None]:
     }
 
 
+def _candidate_is_promoted() -> bool:
+    if os.environ.get("WEBNAS_CANDIDATE") != "1":
+        return True
+    slot = os.environ.get("WEBNAS_SLOT", "")
+    if not slot:
+        return False
+    active_slot_file = Path(os.environ.get("WEBNAS_ACTIVE_SLOT_FILE", "/run/webnas/active-slot"))
+    try:
+        return active_slot_file.read_text(encoding="utf-8").strip() == slot
+    except OSError:
+        return False
+
+
 @router.get("/api/health/live")
 def liveness():
     """Process-level health only; external providers never affect liveness."""
@@ -116,10 +130,17 @@ def readiness(request: Request, response: Response):
 
 
 @router.get("/api/health")
-def health():
-    """Backward-compatible health endpoint retained for existing installers."""
+def health(request: Request, response: Response):
+    """Backward-compatible health endpoint that gates an activated runtime."""
 
-    return {"status": "ok", "service": "webnas", **_deployment_metadata()}
+    ready = bool(getattr(request.app.state, "ready", False))
+    if _candidate_is_promoted() and not ready:
+        response.status_code = 503
+    return {
+        "status": "ok" if response.status_code < 400 else "not_ready",
+        "service": "webnas",
+        **_deployment_metadata(),
+    }
 
 
 @router.websocket("/api/health/ws")

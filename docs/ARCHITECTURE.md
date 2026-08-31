@@ -13,6 +13,47 @@ WebNAS is a Linux-first administration panel with a FastAPI backend and a React/
 
 The systemd service runs as root because impersonating arbitrary local users requires privilege. The worker immediately drops privileges before touching user files.
 
+### Application services and dependency direction
+
+The composition root owns shared runtime services through `ApplicationContainer`. HTTP handlers consume explicit application state/dependencies rather than mutating module globals at startup. The intended dependency direction for administrative features is:
+
+```text
+Router
+  ↓
+Service
+  ↓
+Repository / Adapter
+  ↓
+Privileged Broker
+```
+
+Read-only system probes should use the bounded `ReadOnlyCommandRunner`. Mutating operations that require privilege use typed `PrivilegedCommandRunner` operations backed by the existing privileged broker. The compatibility `broker_command()` translator remains migration-only and must not become a generic root-command escape hatch.
+
+Settings schemas and the administrative rate limiter live outside the compatibility settings router in `app.settings_support`. Further settings decomposition should preserve existing endpoint paths while moving business logic toward services/adapters.
+
+### Module lifecycle
+
+Builtin modules are discovered from data-only `manifest.yaml` files. A module manifest may declare:
+
+```text
+Module Manifest
+├── routers
+├── startup
+├── shutdown
+└── health_check
+```
+
+`bootstrap.py` does not import schedulers from individual business modules. Module-owned schedulers and other side effects start through manifest lifecycle callbacks and stop in reverse dependency order. Lifecycle start/stop operations are idempotent.
+
+Lifecycle state and health state are deliberately separate:
+
+- lifecycle: `active`, `disabled`, `unavailable`, `broken`
+- health: `healthy`, `degraded`, `unhealthy`, `unknown`
+
+A transient health-check failure does not change an active module to `broken`. A later successful health check can therefore recover from `unhealthy` to `healthy` without restarting WebNAS. Optional module initialization failures are isolated and exposed through diagnostics; only a manifest explicitly marked `critical` may fail the application startup.
+
+Application-owned asyncio tasks are registered with `BackgroundTaskManager`, then cancelled and awaited during shutdown. This prevents orphaned pending coroutines and centralizes background-task failure logging.
+
 ## Infrastructure module boundaries
 
 Backend modules are discovered from manifests and may consume another module only through an explicitly supported public contract. Secrets Manager is the authoritative encrypted secret boundary. Browser-facing APIs expose metadata only; plaintext is returned only to a backend consumer that provides its module ID and purpose and is present in the secret's `shared_with` allowlist.
@@ -53,6 +94,10 @@ Resource cache tiers are in-memory and process-local. User filesystem cache entr
 
 The UI is a desktop-in-browser experience with a top bar, taskbar, windowed File Manager, breadcrumbs, directory sidebar, list/icon views, upload/download, preview, drag-and-drop move, and task progress display.
 
+Desktop runtime concerns that are independent of window/business state are separated into dedicated hooks. Clock updates, system dark-mode observation and viewport/chrome measurement live outside `DesktopController`, reducing effect density while preserving the existing window state and persistence contract.
+
 ## Security Boundaries
 
 Every API path is resolved server-side before use. Client-provided paths are not passed to a shell. File operations use `subprocess.run` with argument arrays and a base64 JSON payload, then execute after privilege drop in the worker process.
+
+Architecture tests prevent module-private cross-imports, concrete business-module imports from the composition root, direct command execution from module HTTP routers and any `shell=True` backend invocation.

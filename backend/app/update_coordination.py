@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -21,9 +22,11 @@ except ImportError:  # pragma: no cover - Linux production uses fcntl.
     fcntl = None  # type: ignore[assignment]
 
 
+logger = logging.getLogger(__name__)
 ACTIVE_OPERATION_STATUSES = {"queued", "running"}
 BLOCKING_UPDATE_STATES = {"waiting", "preparing", "running"}
 UPDATE_BLOCKED_MESSAGE = "Trwa aktualizacja systemu. Nowe operacje są tymczasowo zablokowane."
+UPDATE_FAILURE_MESSAGE = "Aktualizacja nie powiodła się. Sprawdź logi serwera, aby uzyskać szczegóły."
 
 OperationProvider = Callable[[], Iterable[Mapping[str, Any]]]
 ResumeCallback = Callable[[], None]
@@ -35,8 +38,6 @@ _providers: dict[str, tuple[OperationProvider, ResumeCallback | None]] = {}
 _transient_lock = threading.RLock()
 _transient_operations: dict[str, dict[str, Any]] = {}
 
-# This is the single canonical order used by the API, installer coordination,
-# recovery code and frontend.  Labels live in the frontend locale files.
 UPDATE_STEPS = (
     "prepare",
     "check_operations",
@@ -223,7 +224,14 @@ def complete_update_step(step_id: str, message: str | None = None) -> dict[str, 
 
 
 def fail_update_step(step_id: str, error: str) -> dict[str, Any]:
-    return _transition_update_step(step_id, "failed", message=error, error=error)
+    safe_error = _redact_update_text(error)[:4000]
+    logger.error("update_step_failed step=%s error=%s", step_id, safe_error)
+    return _transition_update_step(
+        step_id,
+        "failed",
+        message=UPDATE_FAILURE_MESSAGE,
+        error=UPDATE_FAILURE_MESSAGE,
+    )
 
 
 def skip_update_step(step_id: str, reason: str | None = None) -> dict[str, Any]:

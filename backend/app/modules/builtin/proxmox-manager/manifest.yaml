@@ -13,4 +13,7 @@ capabilities:
   vm-drift, bulk-operations]
 actions: [test, sync, start, stop, shutdown, reboot, snapshot-retention-apply, bulk-operation]
 jobs: []
+startup: app.modules.proxmox_manager.scheduler:start_scheduler
+shutdown: app.modules.proxmox_manager.scheduler:stop_scheduler
+health_check: app.modules.proxmox_manager.scheduler:scheduler_status
 menu: [{id: proxmox, label: proxmox.name, icon: boxes, permission: modules.view}]

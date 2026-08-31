@@ -1,9 +1,20 @@
 import ast
+from collections import Counter
 from pathlib import Path
 
 
 BACKEND = Path(__file__).resolve().parents[1] / "app"
 REPOSITORY = BACKEND.parents[1]
+
+# Temporary migration ledger for command execution that predates CommandRunner.
+# The test below is a ratchet: new router subprocess calls fail immediately and
+# these exact budgets must be reduced as legacy call-sites move into adapters.
+LEGACY_ROUTER_COMMAND_BUDGET = {
+    ("modules/router.py", "subprocess.run"): 1,
+    ("modules/ansible_controller/router.py", "subprocess.run"): 1,
+    ("modules/hosts_manager/router.py", "subprocess.run"): 7,
+    ("modules/docker_manager/router.py", "subprocess.Popen"): 1,
+}
 
 
 def test_composition_root_contains_no_business_routes_or_router_imports():
@@ -13,6 +24,20 @@ def test_composition_root_contains_no_business_routes_or_router_imports():
     assert not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) for node in tree.body)
     assert "include_router" not in source
     assert "@app." not in source
+
+
+def test_bootstrap_does_not_import_specific_business_modules():
+    source = (BACKEND / "bootstrap.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("modules."):
+            violations.append(f"bootstrap.py:{node.lineno}:{node.module}")
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("app.modules."):
+                    violations.append(f"bootstrap.py:{node.lineno}:{alias.name}")
+    assert violations == []
 
 
 def test_manifest_catalog_contains_data_only_and_no_executable_manifests():
@@ -67,6 +92,56 @@ def test_modules_only_use_public_cross_module_contracts():
             if not public_path:
                 violations.append(f"{relative}:{node.lineno}:{imported}")
     assert violations == []
+
+
+def _call_name(node: ast.Call) -> str:
+    if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+        return f"{node.func.value.id}.{node.func.attr}"
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    return ""
+
+
+def test_http_routers_do_not_add_direct_system_command_execution():
+    forbidden = {"subprocess.run", "subprocess.Popen", "subprocess.call", "os.system", "os.popen"}
+    observed: Counter[tuple[str, str]] = Counter()
+    violations: list[str] = []
+    for path in BACKEND.rglob("router.py"):
+        relative = str(path.relative_to(BACKEND))
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            call = _call_name(node)
+            if call not in forbidden:
+                continue
+            key = (relative, call)
+            observed[key] += 1
+            if observed[key] > LEGACY_ROUTER_COMMAND_BUDGET.get(key, 0):
+                violations.append(f"{relative}:{node.lineno}:{call}")
+    assert violations == []
+    assert all(observed[key] <= budget for key, budget in LEGACY_ROUTER_COMMAND_BUDGET.items())
+
+
+def test_shell_true_is_forbidden_outside_explicit_command_boundary():
+    violations: list[str] = []
+    for path in BACKEND.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
+                    violations.append(f"{path.relative_to(BACKEND)}:{node.lineno}:shell=True")
+    assert violations == []
+
+
+def test_command_runner_is_the_documented_new_execution_boundary():
+    source = (BACKEND / "command_runner.py").read_text(encoding="utf-8")
+    assert "class ReadOnlyCommandRunner" in source
+    assert "class PrivilegedCommandRunner" in source
+    assert "shell=False" in source
+    assert "privileged_broker.runtime" in source
 
 
 def test_frontend_has_discovered_manifests_and_composed_api_clients():
