@@ -9,7 +9,8 @@ import pytest
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-LAUNCHER = REPOSITORY / "install.sh"
+ROOT_LAUNCHER = REPOSITORY / "install.sh"
+LAUNCHER = REPOSITORY / "install" / "install.sh"
 
 
 def _bash() -> str:
@@ -21,9 +22,14 @@ def _bash() -> str:
     return executable
 
 
-def test_launcher_has_valid_bash_syntax():
+@pytest.mark.parametrize(
+    "launcher",
+    [ROOT_LAUNCHER, LAUNCHER],
+    ids=["compatibility-bootstrap", "canonical-launcher"],
+)
+def test_launcher_has_valid_bash_syntax(launcher: Path):
     result = subprocess.run(
-        [_bash(), "-n", str(LAUNCHER)],
+        [_bash(), "-n", str(launcher)],
         capture_output=True,
         text=True,
         timeout=10,
