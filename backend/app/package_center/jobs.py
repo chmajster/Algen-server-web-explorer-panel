@@ -11,8 +11,21 @@ from ..update_coordination import coordination_lock, operation_admission, update
 from .detached_updates import detached_update_session
 from .executor import execute
 from .manifests import load_manifest
-from .models import PackageAction, PackageJobStatus, PackagePlan, api_error
+from .models import InstallationType, ModuleManifest, PackageAction, PackageJobStatus, PackagePlan, api_error
 from .repository import PackageRepository
+
+
+def _lifecycle_execution_plan(plan: PackagePlan, manifest: ModuleManifest) -> PackagePlan:
+    """Disable package-manager work while retaining trusted lifecycle handling."""
+
+    if manifest.package_less and not manifest.installations and plan.installation_type is None:
+        return plan.model_copy(
+            update={
+                "installation_type": InstallationType.command,
+                "distribution": plan.distribution.model_copy(update={"package_manager": None}),
+            }
+        )
+    return plan
 
 
 class PackageJobManager:
@@ -142,7 +155,10 @@ class PackageJobManager:
 
                     backup = get_provider(plan.module_id, job["created_by"]).create_backup(job["created_by"], f"Automatic backup before {plan.action.value}", True)
                     result["backup"] = backup
-                execute(plan, manifest, log, progress, cancelled)
+                execution_plan = _lifecycle_execution_plan(plan, manifest)
+                if execution_plan is not plan:
+                    log("system", "Package-less module: no system package operation is required")
+                execute(execution_plan, manifest, log, progress, cancelled)
                 if plan.action == PackageAction.uninstall:
                     if plan.module_id == "ansible-controller" and plan.remove_data:
                         result.update({"managed_config_removed": True, "remote_accounts_removed": False})
