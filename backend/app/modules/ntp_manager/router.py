@@ -10,6 +10,7 @@ from ...package_center.models import api_error
 from ...rbac import current_user, mutating_user
 from ...security import SessionUser
 from ..infrastructure_permissions import register_infrastructure_permissions
+from .diagnostics import collect_diagnostics
 from .models import NtpSourceInput, ServiceActionInput
 from .service import NtpBackend, NtpUnavailable, service
 
@@ -54,10 +55,23 @@ def _managed_sources() -> list[NtpSourceInput]:
     return instance._managed_sources(text)
 
 
+def _dashboard_payload() -> dict[str, Any]:
+    diagnostics = collect_diagnostics(service())
+    return {
+        **diagnostics["status"],
+        "health": diagnostics["health"],
+        "metrics": diagnostics["metrics"],
+        "sources": diagnostics["sources"],
+        "summary": diagnostics["summary"],
+        "warnings": diagnostics["warnings"],
+        "collected_at": diagnostics["collected_at"],
+    }
+
+
 @router.get("/dashboard")
 def dashboard(user: SessionUser = Depends(current_user)):
     authorize(user, "ntp.view")
-    return _controlled(service().status)
+    return _controlled(_dashboard_payload)
 
 
 @router.get("/sources")
