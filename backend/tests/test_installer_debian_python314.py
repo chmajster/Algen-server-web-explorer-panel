@@ -43,12 +43,13 @@ def test_debian_path_never_enables_ubuntu_or_unstable_python_repositories() -> N
     assert "sources.list" not in lowered
     assert "apt full-upgrade" not in lowered
     assert "apt dist-upgrade" not in lowered
+    assert "|| true" not in RUNTIME_HELPER
 
 
 def test_debian_trixie_detection_uses_os_release_fields() -> None:
-    assert 'INSTALLER_DISTRO_ID="$(os_release_value ID || true)"' in RUNTIME_HELPER
-    assert 'INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID || true)"' in RUNTIME_HELPER
-    assert 'INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME || true)"' in RUNTIME_HELPER
+    assert 'INSTALLER_DISTRO_ID="$(os_release_value ID 2>/dev/null)" || INSTALLER_DISTRO_ID=""' in RUNTIME_HELPER
+    assert 'INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID 2>/dev/null)" || INSTALLER_DISTRO_VERSION_ID=""' in RUNTIME_HELPER
+    assert 'INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME 2>/dev/null)" || INSTALLER_DISTRO_CODENAME=""' in RUNTIME_HELPER
     assert '"$INSTALLER_DISTRO_ID" == "debian"' in RUNTIME_HELPER
     assert '"$INSTALLER_DISTRO_VERSION_ID" == "13"' in RUNTIME_HELPER
     assert '"$INSTALLER_DISTRO_CODENAME" == "trixie"' in RUNTIME_HELPER
@@ -58,7 +59,7 @@ def test_existing_private_runtime_is_checked_before_building() -> None:
     private_check = RUNTIME_HELPER.index('if verify_python314 "$PYTHON_RUNTIME_BIN"; then')
     source_build = RUNTIME_HELPER.index("install_python314_debian_source")
     assert private_check < source_build
-    assert 'candidate="$(command -v python3.14 2>/dev/null || true)"' in RUNTIME_HELPER
+    assert 'if ! candidate="$(command -v python3.14 2>/dev/null)"; then' in RUNTIME_HELPER
     assert 'ok "Reusing WebNAS Python runtime: ${PYTHON_BIN}"' in RUNTIME_HELPER
 
 

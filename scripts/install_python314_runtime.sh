@@ -42,9 +42,9 @@ PY
 }
 
 detect_installer_distribution() {
-  INSTALLER_DISTRO_ID="$(os_release_value ID || true)"
-  INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID || true)"
-  INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME || true)"
+  INSTALLER_DISTRO_ID="$(os_release_value ID 2>/dev/null)" || INSTALLER_DISTRO_ID=""
+  INSTALLER_DISTRO_VERSION_ID="$(os_release_value VERSION_ID 2>/dev/null)" || INSTALLER_DISTRO_VERSION_ID=""
+  INSTALLER_DISTRO_CODENAME="$(os_release_value VERSION_CODENAME 2>/dev/null)" || INSTALLER_DISTRO_CODENAME=""
 
   case "$INSTALLER_DISTRO_ID" in
     debian)
@@ -72,7 +72,9 @@ detect_python314() {
     return 0
   fi
 
-  candidate="$(command -v python3.14 2>/dev/null || true)"
+  if ! candidate="$(command -v python3.14 2>/dev/null)"; then
+    candidate=""
+  fi
   if verify_python314 "$candidate"; then
     PYTHON_BIN="$candidate"
     ok "Using existing Python 3.14 runtime: ${PYTHON_BIN}"
@@ -177,13 +179,17 @@ cleanup_python314_build_trap() {
   trap - EXIT
 
   if [[ -n "$PYTHON314_BUILD_DIR" && -d "$PYTHON314_BUILD_DIR" ]]; then
-    safe_remove_python314_path "$PYTHON314_BUILD_DIR" || true
+    if ! safe_remove_python314_path "$PYTHON314_BUILD_DIR"; then
+      warn "Could not fully clean the temporary Python build directory: ${PYTHON314_BUILD_DIR}"
+    fi
   fi
 
   if [[ "$status" -ne 0 && "$PYTHON314_RUNTIME_INSTALL_STARTED" == "yes" ]]; then
     if ! verify_python314 "$PYTHON_RUNTIME_BIN"; then
       warn "Removing incomplete WebNAS Python runtime after failed build"
-      safe_remove_python314_path "$PYTHON_RUNTIME_DIR" || true
+      if ! safe_remove_python314_path "$PYTHON_RUNTIME_DIR"; then
+        warn "Could not fully remove the incomplete WebNAS Python runtime: ${PYTHON_RUNTIME_DIR}"
+      fi
     fi
   fi
 
@@ -290,7 +296,7 @@ ensure_python314() {
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3.14 python3.14-venv python3.14-dev || \
         fail "Python 3.14 packages were found, but python3.14, python3.14-venv, or python3.14-dev could not be installed. Inspect the APT error above and retry."
-      PYTHON_BIN="$(command -v python3.14 || true)"
+      PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"
       ;;
     debian)
       fail "Python 3.14 is unavailable for Debian ${INSTALLER_DISTRO_VERSION_ID:-unknown} ${INSTALLER_DISTRO_CODENAME:-unknown}; the isolated source runtime is currently supported for Debian 13 Trixie"
@@ -300,7 +306,7 @@ ensure_python314() {
       DEBIAN_FRONTEND=noninteractive apt_get install -y \
         python3.14 python3.14-venv python3.14-dev || \
         fail "Python 3.14 packages could not be installed for ${INSTALLER_DISTRO_ID:-this distribution}"
-      PYTHON_BIN="$(command -v python3.14 || true)"
+      PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"
       ;;
   esac
 
@@ -334,7 +340,7 @@ install_dependencies() {
       if ! detect_python314; then
         dnf install -y python3.14 python3.14-devel || \
           fail "Python 3.14 packages are unavailable. Enable a repository providing python3.14 and python3.14-devel, then retry."
-        PYTHON_BIN="$(command -v python3.14 || true)"
+        PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"
       fi
       dnf install -y \
         gcc gcc-c++ make \
@@ -346,7 +352,7 @@ install_dependencies() {
       if ! detect_python314; then
         yum install -y python3.14 python3.14-devel || \
           fail "Python 3.14 packages are unavailable. Enable a repository providing python3.14 and python3.14-devel, then retry."
-        PYTHON_BIN="$(command -v python3.14 || true)"
+        PYTHON_BIN="$(command -v python3.14)" || fail "Python 3.14 executable was not found after package installation"
       fi
       yum install -y \
         gcc gcc-c++ make \
