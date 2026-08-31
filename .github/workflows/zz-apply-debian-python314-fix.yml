@@ -1,0 +1,79 @@
+name: Apply Debian Python 3.14 installer integration
+
+on:
+  push:
+    branches:
+      - fix/debian-trixie-python314-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/debian-trixie-python314-runtime
+          fetch-depth: 0
+
+      - name: Integrate runtime helper with existing installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}, found {count}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          installer = Path("install-standard.sh")
+          replace_once(
+              installer,
+              "  update_step verify_files completed\n  prompt_configuration\n",
+              "  update_step verify_files completed\n"
+              "  [[ -f \"${SOURCE_DIR}/scripts/install_python314_runtime.sh\" ]] || fail \"Downloaded source is missing the Python 3.14 runtime helper\"\n"
+              "  # shellcheck source=scripts/install_python314_runtime.sh\n"
+              "  source \"${SOURCE_DIR}/scripts/install_python314_runtime.sh\"\n"
+              "  prompt_configuration\n",
+          )
+
+          launcher = Path("install.sh")
+          replace_once(
+              launcher,
+              "      current|releases|uninstall.sh|webnas_release.py) continue ;;\n",
+              "      current|releases|runtime|uninstall.sh|webnas_release.py) continue ;;\n",
+          )
+          replace_once(
+              launcher,
+              "  printf '[INFO] Replacement release is active; removing all stale WebNAS application files while preserving config, data, and logs.\\n'\n",
+              "  printf '[INFO] Replacement release is active; removing stale release files while preserving the shared runtime, config, data, and logs.\\n'\n",
+          )
+          PY
+
+      - name: Validate integrated installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh install-standard.sh scripts/install_python314_runtime.sh
+          python3 -m pytest -q backend/tests/test_installer_debian_python314.py
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck install.sh install-standard.sh scripts/install_python314_runtime.sh
+          fi
+
+      - name: Commit integrated installer changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/zz-apply-debian-python314-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add install.sh install-standard.sh .github/workflows/zz-apply-debian-python314-fix.yml
+          git commit -m "installer: use isolated Python runtime on Debian 13"
+          git push origin HEAD:fix/debian-trixie-python314-runtime
