@@ -14,10 +14,12 @@ from pydantic import ValidationError
 
 from app.core.redaction import redact_text
 
+from .account_policy import dispatch as dispatch_account
 from .authentication_policy import dispatch as dispatch_authentication
 from .infrastructure_policy import dispatch_infrastructure
 from .protocol import BrokerRequest, BrokerResponse, MAX_FRAME_BYTES, Operation, encode_frame
 from .storage_policy import dispatch as standard_dispatch
+from .update_policy import dispatch as dispatch_update
 
 
 logger = logging.getLogger("webnas.privileged_broker")
@@ -102,7 +104,11 @@ def handle_connection(connection: socket.socket, *, expected_uid: int) -> None:
             pid,
             uid,
         )
-        if request.operation in _AUTHENTICATION_OPERATIONS:
+        if request.operation == Operation.ACCOUNT:
+            response = dispatch_account(request)
+        elif request.operation == Operation.UPDATE_SERVICE:
+            response = dispatch_update(request)
+        elif request.operation in _AUTHENTICATION_OPERATIONS:
             response = dispatch_authentication(request)
         elif request.operation in _INFRASTRUCTURE_OPERATIONS:
             response = dispatch_infrastructure(request)
