@@ -39,7 +39,8 @@ jobs:
               "  update_step verify_files completed\n  prompt_configuration\n",
               "  update_step verify_files completed\n"
               "  [[ -f \"${SOURCE_DIR}/scripts/install_python314_runtime.sh\" ]] || fail \"Downloaded source is missing the Python 3.14 runtime helper\"\n"
-              "  # shellcheck source=scripts/install_python314_runtime.sh\n"
+              "  # SOURCE_DIR is dynamic: local checkout or downloaded release archive.\n"
+              "  # shellcheck disable=SC1091\n"
               "  source \"${SOURCE_DIR}/scripts/install_python314_runtime.sh\"\n"
               "  prompt_configuration\n",
           )
