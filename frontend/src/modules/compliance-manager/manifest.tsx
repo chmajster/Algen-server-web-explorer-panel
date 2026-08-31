@@ -1,6 +1,9 @@
 import { ClipboardCheck } from "lucide-react";
+import { lazy } from "react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
-import { ComplianceManagerApp } from "./ComplianceManagerApp";
+import { lazyView } from "../../app/registry/rendering";
+
+const ComplianceManagerApp = lazy(() => import("./ComplianceManagerApp").then((loaded) => ({ default: loaded.ComplianceManagerApp })));
 
 const manifest: FrontendModuleManifest = {
   id: "compliance-manager",
@@ -12,7 +15,10 @@ const manifest: FrontendModuleManifest = {
   dependencies: ["firewall-manager"],
   minWidth: 1040,
   minHeight: 680,
-  render: (context) => <ComplianceManagerApp permissions={context.profile.permissions} language={context.profile.language} toast={context.toast} />,
+  render: (context) => lazyView(
+    <ComplianceManagerApp permissions={context.profile.permissions} language={context.profile.language} toast={context.toast} />,
+    context.t("status.loading"),
+  ),
 };
 
 export default manifest;

@@ -51,6 +51,11 @@ def compatibility_issue(manifest: ModuleManifest, distro: DistributionInfo) -> s
         return f"Distribution '{distro.id}' is not supported by module '{manifest.id}'"
     if distro.architecture not in manifest.supported_architectures:
         return f"Architecture '{distro.architecture}' is not supported by module '{manifest.id}'"
+    # A strategy-less package-less module has no host package dependency. Modules
+    # that do declare installation strategies must still pass the normal manager
+    # compatibility checks because their lifecycle hooks are strategy-specific.
+    if manifest.package_less and not manifest.installations:
+        return None
     if distro.package_manager is None:
         return "No supported package manager was detected on this system"
     installation = installation_for(manifest, distro)
