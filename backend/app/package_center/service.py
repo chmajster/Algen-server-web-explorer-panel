@@ -217,7 +217,10 @@ def plan_operation(module_id: str, action: PackageAction, *, remove_data: bool =
         steps=steps,
         create_backup=action == PackageAction.reinstall and manifest.capabilities.backups,
     )
-    plan.steps = [" ".join(command) for command in command_preview(plan, manifest)]
+    if manifest.package_less and not manifest.installations and plan.installation_type is None:
+        plan.steps = []
+    else:
+        plan.steps = [" ".join(command) for command in command_preview(plan, manifest)]
     return plan
 
 

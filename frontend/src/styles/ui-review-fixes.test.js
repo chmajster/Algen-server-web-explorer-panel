@@ -48,6 +48,41 @@ describe("UI review regression fixes", () => {
     expect(css).toContain("@container app-window (max-width: 36rem)");
   });
 
+  it("spaces portal-backed Settings sections in normal document flow", () => {
+    expect(css).toContain('.settings-content:has(> [data-testid="authentication-settings-card"])');
+    expect(css).toContain(".settings-content:has(> .administration-dashboard)");
+    expect(css).toContain("gap: 0.875rem");
+  });
+
+  it("uses app-window breakpoints for Settings instead of relying on browser viewport width", () => {
+    expect(css).toContain("@container app-window (max-width: 70rem)");
+    expect(css).toContain("@container app-window (max-width: 60rem)");
+    expect(css).toContain("@container app-window (max-width: 52rem)");
+    expect(css).toContain("@container app-window (max-width: 42rem)");
+    expect(css).toContain(".desktop .admin-content-grid");
+    expect(css).toContain(".desktop .ldap-summary-grid");
+  });
+
+  it("allows authentication and LDAP grids to shrink without horizontal overflow", () => {
+    expect(css).toContain("grid-template-columns: auto minmax(0, 1fr) auto");
+    expect(css).toContain(".desktop .ldap-diagnostic-row");
+    expect(css).toContain("overflow-wrap: anywhere");
+    expect(css).toContain(".desktop .auth-users-table td");
+  });
+
+  it("keeps the LDAP action bar from covering narrow-window form content", () => {
+    expect(css).toContain(".desktop .ldap-action-bar");
+    expect(css).toContain("position: static");
+    expect(css).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+  });
+
+  it("gives HTTPS paths a shrinkable responsive control column", () => {
+    expect(css).toContain('[data-testid="https-settings-card"] .setting-row');
+    expect(css).toContain('input[type="text"], code');
+    expect(css).toContain("max-width: none");
+    expect(css).toContain("white-space: normal");
+  });
+
   it("does not use important overrides", () => {
     expect(css).not.toContain("!important");
   });

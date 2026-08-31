@@ -14961,6 +14961,8 @@ export interface components {
             date_format?: ("locale" | "short" | "long" | "iso") | null;
             /** Desktop Shortcut Apps */
             desktop_shortcut_apps?: ("files" | "transfers" | "activity" | "identity" | "users" | "groups" | "mounts" | "samba" | "services" | "store" | "logs" | "settings" | "monitor" | "modules" | "access" | "containers" | "ansible" | "module")[] | null;
+            /** Desktop Shortcut Modules */
+            desktop_shortcut_modules?: string[] | null;
             /** Desktop Shortcut Size */
             desktop_shortcut_size?: ("small" | "medium" | "large") | null;
             /** Desktop Widgets */

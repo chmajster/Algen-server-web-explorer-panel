@@ -71,3 +71,314 @@
     grid-column: 1;
   }
 }
+
+/* Settings runs inside a resizable WebNAS window. Protect semantic sections
+ * from intrinsic-width overflow and let the app-window container drive layout. */
+.desktop :where(
+  .administration-dashboard,
+  .auth-settings-shell,
+  .ldap-settings-shell,
+  [data-testid="https-settings-card"]
+) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Authentication/LDAP and Administration/HTTPS are separate portal roots.
+ * Make the shared Settings content area own the inter-section spacing. */
+.desktop .settings-content:has(> [data-testid="authentication-settings-card"]),
+.desktop .settings-content:has(> .administration-dashboard) {
+  display: grid;
+  align-content: start;
+  gap: 0.875rem;
+}
+
+.desktop .auth-mode-card {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.desktop :where(
+  .auth-panel,
+  .ldap-panel,
+  .auth-mode-card,
+  .ldap-summary-item,
+  .ldap-status-card,
+  .ldap-section,
+  .ldap-action-bar
+) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.desktop :where(
+  .auth-panel__heading > div:first-child,
+  .ldap-panel__heading > div:first-child,
+  .ldap-hero__title,
+  .auth-mode-card__content
+) {
+  min-width: 0;
+}
+
+.desktop :where(
+  .auth-mode-card__content,
+  .auth-mode-card__content strong,
+  .auth-mode-card__content small,
+  .ldap-summary-item strong,
+  .ldap-status-card,
+  .ldap-diagnostic-row,
+  .ldap-diagnostic-row small
+) {
+  overflow-wrap: anywhere;
+}
+
+.desktop :where(.auth-field, .ldap-field, .auth-static-value) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.desktop :where(
+  .auth-field input,
+  .auth-field select,
+  .ldap-field input,
+  .ldap-field select,
+  .ldap-field textarea
+) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.desktop :where(.auth-users-table-wrap, .ldap-table-wrap, .ldap-tabs) {
+  min-width: 0;
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+}
+
+.desktop .ldap-tabs {
+  scrollbar-width: thin;
+}
+
+.desktop .ldap-diagnostic-row {
+  grid-template-columns: minmax(8rem, 0.7fr) auto minmax(0, 1fr);
+}
+
+.desktop .ldap-action-bar,
+.desktop .ldap-action-bar__actions {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.desktop .ldap-switch-row > :first-child {
+  min-width: 0;
+}
+
+.desktop .admin-overall-state {
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.desktop .admin-summary-grid article strong,
+.desktop .admin-summary-grid article div > span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.desktop .admin-summary-grid article div > span {
+  display: block;
+}
+
+.desktop .admin-tool-links {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+}
+
+/* HTTPS uses generic SettingRow markup. Scope a grid here so long filesystem
+ * paths and the public URL cannot compete with the label column. */
+.desktop [data-testid="https-settings-card"] .settings-card > p {
+  margin: 0;
+  padding: 0 1.125rem 0.875rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+
+.desktop [data-testid="https-settings-card"] .setting-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 42%);
+  align-items: start;
+}
+
+.desktop [data-testid="https-settings-card"] .setting-row > div:first-child,
+.desktop [data-testid="https-settings-card"] .setting-control {
+  min-width: 0;
+  width: 100%;
+}
+
+.desktop [data-testid="https-settings-card"] .setting-control {
+  max-width: none;
+}
+
+.desktop [data-testid="https-settings-card"] .setting-control :where(input[type="text"], code) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.desktop [data-testid="https-settings-card"] .setting-control code {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.desktop [data-testid="https-settings-card"] .setting-control .settings-switch {
+  margin-left: auto;
+}
+
+.desktop [data-testid="https-settings-card"] .settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.875rem 1.125rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The browser viewport can remain wide while the Settings window is narrow.
+ * These breakpoints deliberately follow the app-window inline size. */
+@container app-window (max-width: 70rem) {
+  .desktop .ldap-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container app-window (max-width: 60rem) {
+  .desktop .admin-overview-hero {
+    flex-wrap: wrap;
+  }
+
+  .desktop .admin-overall-state {
+    width: max-content;
+    margin-left: 0;
+  }
+
+  .desktop .admin-content-grid,
+  .desktop .auth-mode-grid,
+  .desktop .auth-form-grid,
+  .desktop .ldap-form-grid,
+  .desktop .ldap-status-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop :where(
+    .auth-panel__heading,
+    .ldap-panel__heading,
+    .ldap-hero__top,
+    .ldap-switch-row
+  ) {
+    flex-wrap: wrap;
+  }
+
+  .desktop .ldap-diagnostic-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .desktop .ldap-action-bar {
+    position: static;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop .ldap-action-bar__actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop [data-testid="https-settings-card"] .setting-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop [data-testid="https-settings-card"] .setting-control .settings-switch {
+    margin-left: 0;
+  }
+}
+
+@container app-window (max-width: 52rem) {
+  .desktop .ldap-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .auth-panel__heading,
+  .desktop .ldap-panel__heading,
+  .desktop .ldap-hero__top,
+  .desktop .ldap-switch-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop .auth-panel__heading--actions > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .desktop .auth-users-table,
+  .desktop .auth-users-table tbody,
+  .desktop .auth-users-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .desktop .auth-users-table thead {
+    display: none;
+  }
+
+  .desktop .auth-users-table tr {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .desktop .auth-users-table td {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.3125rem 0;
+    border: 0;
+  }
+
+  .desktop .auth-users-table td::before {
+    content: attr(data-label);
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .desktop .auth-users-table td > :last-child {
+    min-width: 0;
+  }
+
+  .desktop .auth-users-table__actions {
+    width: auto;
+  }
+
+  .desktop .auth-users-table__actions::before {
+    display: none;
+  }
+}
+
+@container app-window (max-width: 42rem) {
+  .desktop .administration-dashboard .settings-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .ldap-action-bar__actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop [data-testid="https-settings-card"] .settings-actions {
+    justify-content: flex-start;
+  }
+
+  .desktop [data-testid="https-settings-card"] .settings-actions button {
+    width: 100%;
+  }
+}
