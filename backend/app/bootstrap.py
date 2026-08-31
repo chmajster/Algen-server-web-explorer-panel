@@ -28,6 +28,7 @@ from .core.modules import ModuleRegistry
 from .jobs.models import JobStatus
 from .jobs.service import service as job_service
 from .ldap_authentication import repository as ldap_auth_repository
+from .local_auth import initialize_active_auth_mode
 from .network_mounts import active_mount_jobs
 from .package_center.jobs import manager as package_job_manager
 from .package_center.service import repository as package_repository
@@ -76,6 +77,7 @@ async def application_lifespan(app: FastAPI) -> AsyncIterator[None]:
     module_registry: ModuleRegistry = app.state.modules
     background_tasks: BackgroundTaskManager = app.state.background_tasks
     app.state.ready = False
+    initialize_active_auth_mode()
     ldap_auth_repository().settings()
     global_jobs = job_service()
     repository = package_repository()
