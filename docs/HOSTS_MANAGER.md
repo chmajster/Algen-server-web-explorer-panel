@@ -39,7 +39,7 @@ The dependency-free Python agent supports Debian/Ubuntu/Raspberry Pi OS, Fedora/
 
 The agent sends heartbeats and bounded inventory reports over HTTPS. Reports cover OS/DMI identity, CPU, memory, disks, filesystems, network interfaces, services, package-manager metadata, repositories and update counts. It uses fixed subprocess argument arrays, command timeouts, retries with backoff and rotating logs. It never reports credential values. Reinstalling or rotating an identity invalidates its old salt and token; manual invalidation moves the host to `authentication_required`.
 
-Configuration, installation, removal and troubleshooting are documented in [docs/HOSTS_MANAGER_AGENT.md](docs/HOSTS_MANAGER_AGENT.md).
+Configuration, installation, removal and troubleshooting are documented in [HOSTS_MANAGER_AGENT.md](HOSTS_MANAGER_AGENT.md).
 The repository also includes `.env.example` for selecting the WebNAS YAML configuration and for the optional standalone agent installer variables; enrollment token values must remain empty until generated for a specific installation.
 
 Inventory endpoints validate/preview YAML, JSON and Ansible YAML/INI before confirmed import. Export is generated from active central hosts/groups and rejects plaintext secrets.
