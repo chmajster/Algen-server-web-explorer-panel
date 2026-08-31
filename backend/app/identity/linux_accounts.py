@@ -12,6 +12,7 @@ from typing import Any
 from ..audit import logger
 from ..config import get_config
 from ..package_center.executor import redact
+from ..privileged_broker.runtime import broker_command, broker_required
 from ..proxmox_guard import assert_admin_group_allowed, assert_admin_user_allowed
 from .exceptions import identity_error
 from .models import IDENTITY_NAME_RE, GroupCreateRequest, UserCreateRequest, UserPatchRequest, UserQuotaRequest
@@ -81,11 +82,35 @@ def _tool(name: str) -> str:
     return executable
 
 
+def _local_run(args: list[str], *, input_text: str | None = None, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        input=input_text,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        shell=False,
+        env={"PATH": os.environ.get("PATH", "/usr/sbin:/usr/bin:/sbin:/bin"), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+    )
+
+
 def _run(args: list[str], *, input_text: str | None = None, timeout: int = 60) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=timeout, check=False, shell=False, env={"PATH": os.environ.get("PATH", "/usr/sbin:/usr/bin:/sbin:/bin"), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"})
+    if broker_required():
+        result = broker_command(args, input_text=input_text, timeout=timeout, actor="identity")
+        if result is None:
+            identity_error(503, "PRIVILEGED_BROKER_OPERATION_UNSUPPORTED", "Privileged broker does not support this Linux account operation")
+    else:
+        result = _local_run(args, input_text=input_text, timeout=timeout)
     if result.returncode != 0:
         identity_error(400, "LINUX_ACCOUNT_OPERATION_FAILED", redact(result.stderr.strip() or "Linux account operation failed"))
     return result
+
+
+def _run_status(args: list[str], *, timeout: int = 5) -> subprocess.CompletedProcess[str] | None:
+    if broker_required():
+        return broker_command(args, timeout=timeout, actor="identity")
+    return _local_run(args, timeout=timeout)
 
 
 def local_user(username: str) -> pwd.struct_passwd:
@@ -158,14 +183,15 @@ def _account_status(username: str) -> tuple[bool, bool]:
     passwd = shutil.which("passwd")
     if not passwd:
         return False, False
-    result = subprocess.run([passwd, "-S", username], capture_output=True, text=True, timeout=5, check=False, shell=False, env={"LANG": "C", "LC_ALL": "C"})
-    fields = result.stdout.split()
+    result = _run_status([passwd, "-S", username])
+    fields = result.stdout.split() if result is not None and result.returncode == 0 else []
     locked = len(fields) > 1 and fields[1] in {"L", "LK"}
     chage = shutil.which("chage")
     required = False
     if chage:
-        expiry = subprocess.run([chage, "-l", username], capture_output=True, text=True, timeout=5, check=False, shell=False, env={"LANG": "C", "LC_ALL": "C"})
-        required = "password must be changed" in expiry.stdout.casefold()
+        expiry = _run_status([chage, "-l", username])
+        if expiry is not None and expiry.returncode == 0:
+            required = "password must be changed" in expiry.stdout.casefold()
     return locked, required
 
 
