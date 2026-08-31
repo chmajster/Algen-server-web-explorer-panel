@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo ./install.sh \
+          sudo ./install/install.sh \
             --yes \
             --port "${WEBNAS_TEST_PORT}"
 
@@ -147,7 +147,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo ./install.sh --yes --existing-action update --port "${WEBNAS_TEST_PORT}"
+          sudo ./install/install.sh --yes --existing-action update --port "${WEBNAS_TEST_PORT}"
 
       - name: Verify upgrade migration and health
         shell: bash
@@ -185,7 +185,7 @@ jobs:
           printf 'keep-data\n' | sudo tee /var/lib/webnas/reinstall-preserve-marker >/dev/null
           printf 'keep-logs\n' | sudo tee /var/log/webnas/reinstall-preserve-marker >/dev/null
 
-          sudo ./install.sh --yes --existing-action reinstall --port "${WEBNAS_TEST_PORT}"
+          sudo ./install/install.sh --yes --existing-action reinstall --port "${WEBNAS_TEST_PORT}"
 
           new_release="$(readlink -f /opt/webnas/current)"
           old_release="$(cat /tmp/webnas-old-release)"
