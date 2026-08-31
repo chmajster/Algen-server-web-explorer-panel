@@ -109,7 +109,7 @@ Containerized applications can also be deployed through **Containers Manager**, 
 
 ### LDAP Authentication vs LDAP Manager
 
-`Settings → Authentication → LDAP Authentication` controls only authentication of WebNAS users. `LDAP Manager` is an optional Module Center module for administering remote LDAP, Active Directory and FreeIPA directories. They use separate configuration and separate Secrets Manager credentials; installing, disabling or removing LDAP Manager does not control LDAP login. See `AUTHENTICATION.md`, `LDAP_AUTHENTICATION.md` and `LDAP_MANAGER.md`.
+`Settings → Authentication → LDAP Authentication` controls only authentication of WebNAS users. `LDAP Manager` is an optional Module Center module for administering remote LDAP, Active Directory and FreeIPA directories. They use separate configuration and separate Secrets Manager credentials; installing, disabling or removing LDAP Manager does not control LDAP login. See `docs/AUTHENTICATION.md`, `docs/LDAP_AUTHENTICATION.md` and `docs/LDAP_MANAGER.md`.
 
 ## Installation
 
@@ -130,6 +130,8 @@ WebNAS is designed for systems including Debian, Ubuntu, Raspberry Pi OS, Fedora
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
 ```
+
+The installer implementation is stored under `install/`. The root `install.sh` is a compatibility bootstrap so existing one-command installs and the in-application updater continue to work.
 
 New standard installations publish WebNAS through the stable nginx gateway with HTTPS enabled. When no certificate exists at the configured paths, the release helper creates a private self-signed certificate before the gateway is activated.
 
@@ -173,7 +175,7 @@ curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer
 
 The installer detects an existing WebNAS installation and performs the supported update procedure. Existing pre-policy HTTP configurations are preserved during normal updates for compatibility and emit a security warning instead of being silently rewritten; regenerate/update the configuration when you are ready to move that installation to TLS.
 
-Full installation documentation: [INSTALL.md](INSTALL.md)
+Full installation documentation: [docs/INSTALL.md](docs/INSTALL.md)
 
 ## Architecture
 
@@ -245,7 +247,7 @@ Changing the global authentication mode invalidates active sessions and requires
 
 The public `/api/auth/config` endpoint exposes only the active authentication mode, available login providers and default provider; it never returns LDAP connection settings, DNs, password hashes or secrets.
 
-See [AUTHENTICATION.md](AUTHENTICATION.md) for the complete mode model and [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md) for OpenLDAP, FreeIPA and Active Directory configuration.
+See [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) for the complete mode model and [docs/LDAP_AUTHENTICATION.md](docs/LDAP_AUTHENTICATION.md) for OpenLDAP, FreeIPA and Active Directory configuration.
 
 ## Security
 
@@ -285,28 +287,28 @@ Detailed documentation is available in separate files:
 
 | Document | Description |
 |---|---|
-| [INSTALL.md](INSTALL.md) | Installation, updates, configuration and troubleshooting |
-| [AUTHENTICATION.md](AUTHENTICATION.md) | Local-database default mode, PAM/LDAP system mode, session isolation and local-user lifecycle |
-| [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md) | LDAP configuration, OpenLDAP/FreeIPA/AD examples, POSIX/NSS integration and security model |
+| [docs/INSTALL.md](docs/INSTALL.md) | Installation, updates, configuration and troubleshooting |
+| [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md) | Local-database default mode, PAM/LDAP system mode, session isolation and local-user lifecycle |
+| [docs/LDAP_AUTHENTICATION.md](docs/LDAP_AUTHENTICATION.md) | LDAP configuration, OpenLDAP/FreeIPA/AD examples, POSIX/NSS integration and security model |
 | [docs/frontend-architecture.md](docs/frontend-architecture.md) | Frontend feature boundaries, Design System, generated API DTOs and module rules |
 | [docs/testing.md](docs/testing.md) | Unit, integration, trusted system and Playwright E2E testing |
 | [docs/deployment.md](docs/deployment.md) | CI/CD, trusted runner, production Environment, blue/green health checks and rollback |
-| [HOSTS_MANAGER.md](HOSTS_MANAGER.md) | Hosts Manager |
-| [SECRETS_MANAGER.md](SECRETS_MANAGER.md) | Secrets Manager, credential migration, encryption, sharing, backup/restore and rotation model |
-| [FAIL2BAN_MANAGER.md](FAIL2BAN_MANAGER.md) | Fail2Ban status, jail configuration, bans, logs and safety model |
-| [WEBHOOK_MANAGER.md](WEBHOOK_MANAGER.md) | Webhook subscriptions, retries, authentication/HMAC and SSRF controls |
-| [ANSIBLE_CONTROLLER.md](ANSIBLE_CONTROLLER.md) | Ansible Automation Controller |
-| [CONTAINERS_MANAGER.md](CONTAINERS_MANAGER.md) | Docker and Containers Manager |
-| [CRON_MANAGER.md](CRON_MANAGER.md) | Cron Manager |
-| [DHCP_MANAGER.md](DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases, diagnostics and transactional configuration lifecycle |
-| [DCST.md](DCST.md) | DCST architecture, Proxmox Firewall integration, Services, Ports, IPSets, TAGS, drift detection and troubleshooting |
-| [PACKAGE_CENTER.md](PACKAGE_CENTER.md) | Package Center |
-| [MODULES.md](MODULES.md) | Module architecture |
-| [INFRASTRUCTURE_MODULES.md](INFRASTRUCTURE_MODULES.md) | Infrastructure modules |
-| [IDENTITY.md](IDENTITY.md) | Users, roles and permissions |
-| [APMID.md](APMID.md) | Application ownership and resource registry |
-| [OS_REPOSITORIES.md](OS_REPOSITORIES.md) | Central APT/RPM repositories |
-| [CHANGELOG.md](CHANGELOG.md) | Project changelog |
+| [docs/HOSTS_MANAGER.md](docs/HOSTS_MANAGER.md) | Hosts Manager |
+| [docs/SECRETS_MANAGER.md](docs/SECRETS_MANAGER.md) | Secrets Manager, credential migration, encryption, sharing, backup/restore and rotation model |
+| [docs/FAIL2BAN_MANAGER.md](docs/FAIL2BAN_MANAGER.md) | Fail2Ban status, jail configuration, bans, logs and safety model |
+| [docs/WEBHOOK_MANAGER.md](docs/WEBHOOK_MANAGER.md) | Webhook subscriptions, retries, authentication/HMAC and SSRF controls |
+| [docs/ANSIBLE_CONTROLLER.md](docs/ANSIBLE_CONTROLLER.md) | Ansible Automation Controller |
+| [docs/CONTAINERS_MANAGER.md](docs/CONTAINERS_MANAGER.md) | Docker and Containers Manager |
+| [docs/CRON_MANAGER.md](docs/CRON_MANAGER.md) | Cron Manager |
+| [docs/DHCP_MANAGER.md](docs/DHCP_MANAGER.md) | DHCP Manager: Kea/ISC, subnets, reservations, leases, diagnostics and transactional configuration lifecycle |
+| [docs/DCST.md](docs/DCST.md) | DCST architecture, Proxmox Firewall integration, Services, Ports, IPSets, TAGS, drift detection and troubleshooting |
+| [docs/PACKAGE_CENTER.md](docs/PACKAGE_CENTER.md) | Package Center |
+| [docs/MODULES.md](docs/MODULES.md) | Module architecture |
+| [docs/INFRASTRUCTURE_MODULES.md](docs/INFRASTRUCTURE_MODULES.md) | Infrastructure modules |
+| [docs/IDENTITY.md](docs/IDENTITY.md) | Users, roles and permissions |
+| [docs/APMID.md](docs/APMID.md) | Application ownership and resource registry |
+| [docs/OS_REPOSITORIES.md](docs/OS_REPOSITORIES.md) | Central APT/RPM repositories |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Project changelog |
 | [docs/self-hosted-runner-security.md](docs/self-hosted-runner-security.md) | Self-hosted runner trust boundary, labels and hardening |
 | [docs/releasing.md](docs/releasing.md) | Version bump, tag and GitHub Release process |
 
