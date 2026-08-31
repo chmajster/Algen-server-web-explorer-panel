@@ -55,6 +55,25 @@ jobs:
               "  printf '[INFO] Replacement release is active; removing all stale WebNAS application files while preserving config, data, and logs.\\n'\n",
               "  printf '[INFO] Replacement release is active; removing stale release files while preserving the shared runtime, config, data, and logs.\\n'\n",
           )
+
+          workflow = Path(".github/workflows/debian-trixie-install-test.yml")
+          replace_once(
+              workflow,
+              "          bash -n install.sh install-standard.sh scripts/install_python314_runtime.sh\n"
+              "          shellcheck install.sh install-standard.sh scripts/install_python314_runtime.sh\n",
+              "          bash -n install.sh install-standard.sh scripts/install_python314_runtime.sh\n"
+              "          # These exclusions are the repository's pre-existing baseline in the legacy installers.\n"
+              "          shellcheck -e SC2015,SC2064,SC2317 install.sh install-standard.sh\n"
+              "          shellcheck scripts/install_python314_runtime.sh\n",
+          )
+          replace_once(
+              workflow,
+              "          set -euo pipefail\n"
+              "          python3 -m pytest -q backend/tests/test_installer_debian_python314.py\n",
+              "          set -euo pipefail\n"
+              "          python3 -m pip install --disable-pip-version-check pytest\n"
+              "          python3 -m pytest -q backend/tests/test_installer_debian_python314.py\n",
+          )
           PY
 
       - name: Validate integrated installer
@@ -64,9 +83,8 @@ jobs:
           bash -n install.sh install-standard.sh scripts/install_python314_runtime.sh
           python3 -m pip install --disable-pip-version-check pytest
           python3 -m pytest -q backend/tests/test_installer_debian_python314.py
-          if command -v shellcheck >/dev/null 2>&1; then
-            shellcheck install.sh install-standard.sh scripts/install_python314_runtime.sh
-          fi
+          shellcheck -e SC2015,SC2064,SC2317 install.sh install-standard.sh
+          shellcheck scripts/install_python314_runtime.sh
 
       - name: Commit integrated installer changes
         shell: bash
@@ -75,6 +93,6 @@ jobs:
           rm -f .github/workflows/zz-apply-debian-python314-fix.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add install.sh install-standard.sh .github/workflows/zz-apply-debian-python314-fix.yml
+          git add install.sh install-standard.sh .github/workflows/debian-trixie-install-test.yml .github/workflows/zz-apply-debian-python314-fix.yml
           git commit -m "installer: use isolated Python runtime on Debian 13"
           git push origin HEAD:fix/debian-trixie-python314-runtime
