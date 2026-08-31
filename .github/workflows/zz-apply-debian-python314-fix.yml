@@ -62,6 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n install.sh install-standard.sh scripts/install_python314_runtime.sh
+          python3 -m pip install --disable-pip-version-check pytest
           python3 -m pytest -q backend/tests/test_installer_debian_python314.py
           if command -v shellcheck >/dev/null 2>&1; then
             shellcheck install.sh install-standard.sh scripts/install_python314_runtime.sh
