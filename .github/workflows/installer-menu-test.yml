@@ -78,6 +78,22 @@ jobs:
           set -euo pipefail
           old_release="$(readlink -f /opt/webnas/current)"
 
+          # Reproduce the production upgrade defect: older socket units could
+          # leave /run/webnas as root:root 0750. The socket itself remains
+          # root:webnas 0660, but the service account cannot traverse its parent.
+          sudo chown root:root /run/webnas
+          sudo chmod 0750 /run/webnas
+          set +e
+          sudo -u webnas python3 - <<'PY'
+          import socket
+          connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          connection.settimeout(2)
+          connection.connect("/run/webnas/privileged.sock")
+          PY
+          legacy_connect_status=$?
+          set -e
+          test "${legacy_connect_status}" -ne 0
+
           script --quiet --return --command \
             "sudo ./install.sh --port ${WEBNAS_TEST_PORT}" \
             /dev/null </dev/null > /tmp/webnas-menu-option-1.log 2>&1
@@ -93,6 +109,15 @@ jobs:
           test -f /var/lib/webnas/menu-preserve-marker
           test -f /var/log/webnas/menu-preserve-marker
           test "$(sudo sha256sum /etc/webnas/config.yaml | awk '{print $1}')" = "$(cat /tmp/webnas-menu-config-sha)"
+          test "$(stat -c '%a:%U:%G' /run/webnas)" = "755:root:root"
+          systemctl is-active --quiet webnas-privileged.service
+          sudo -u webnas python3 - <<'PY'
+          import socket
+          connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          connection.settimeout(3)
+          connection.connect("/run/webnas/privileged.sock")
+          connection.close()
+          PY
           curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused \
             "http://127.0.0.1:${WEBNAS_TEST_PORT}/api/health"
 
@@ -132,7 +157,7 @@ jobs:
           test ! -e "${inactive_env}"
           active_release_from_env="$(sudo sed -n 's/^WEBNAS_RELEASE=//p' "${active_env}" | head -n 1)"
           test "$(readlink -f "${active_release_from_env}")" = "${new_release}"
-          ! grep -Fq "${old_release}" /etc/webnas/runtime/backend-*.env 2>/dev/null
+          ! sudo grep -Fq "${old_release}" /etc/webnas/runtime/backend-*.env 2>/dev/null
           ! systemctl is-active --quiet "webnas-backend-${inactive_slot}.service"
           systemctl is-active --quiet webnas-privileged.service
           sudo -u webnas python3 - <<'PY'
@@ -238,6 +263,7 @@ jobs:
           tr -d '\r' < /tmp/webnas-menu-option-4.log > /tmp/webnas-menu-option-4.clean
           grep -F "Removed application files from /opt/webnas" /tmp/webnas-menu-option-4.clean
           grep -F "Kept config, data, and logs" /tmp/webnas-menu-option-4.clean
+          ! grep -Fq "WebNAS privileged broker units are missing" /tmp/webnas-menu-option-4.clean
           test ! -e /opt/webnas
           test -f /etc/webnas/config.yaml
           test -f /etc/webnas/menu-preserve-marker
@@ -265,6 +291,7 @@ jobs:
           tr -d '\r' < /tmp/webnas-menu-option-5.log > /tmp/webnas-menu-option-5.clean
           grep -F "Removed application files from /opt/webnas" /tmp/webnas-menu-option-5.clean
           grep -F "Removed config, data, and logs" /tmp/webnas-menu-option-5.clean
+          ! grep -Fq "WebNAS privileged broker units are missing" /tmp/webnas-menu-option-5.clean
           test ! -e /opt/webnas
           test ! -e /etc/webnas
           test ! -e /var/lib/webnas
