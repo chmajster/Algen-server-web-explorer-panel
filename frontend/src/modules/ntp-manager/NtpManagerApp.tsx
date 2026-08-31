@@ -2,7 +2,12 @@ import { Clock, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { ToastFn } from "../../app/types";
 import { confirmDialog } from "../../components/DialogService";
-import { ntpManagerClient, type NtpSource, type NtpStatus } from "./api/client";
+import {
+  ntpManagerClient,
+  type NtpDiagnostics,
+  type NtpSource,
+  type NtpStatus,
+} from "./api/client";
 import "../infrastructure-managers.css";
 
 type Props = {
@@ -13,6 +18,7 @@ type Props = {
 
 export function NtpManagerApp({ permissions, toast }: Props) {
   const [status, setStatus] = useState<NtpStatus | null>(null);
+  const [diagnostics, setDiagnostics] = useState<NtpDiagnostics | null>(null);
   const [sources, setSources] = useState<NtpSource[]>([]);
   const [server, setServer] = useState("");
   const [loading, setLoading] = useState(true);
@@ -20,12 +26,10 @@ export function NtpManagerApp({ permissions, toast }: Props) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextStatus, nextSources] = await Promise.all([
-        ntpManagerClient.dashboard(),
-        ntpManagerClient.sources(),
-      ]);
-      setStatus(nextStatus);
-      setSources(nextSources.items);
+      const nextDiagnostics = await ntpManagerClient.dashboard();
+      setDiagnostics(nextDiagnostics);
+      setStatus(nextDiagnostics);
+      setSources(nextDiagnostics.sources);
     } catch (error) {
       toast(error instanceof Error ? error.message : "NTP error", "error", "admin", "ntp-manager");
     } finally {
@@ -74,7 +78,7 @@ export function NtpManagerApp({ permissions, toast }: Props) {
           <Clock />
           <div>
             <h2>NTP Manager</h2>
-            <p>Time synchronization, sources, offset and service state.</p>
+            <p>Time synchronization, source quality, offset, jitter and service diagnostics.</p>
           </div>
         </div>
         <div className="infra-manager-actions">
@@ -105,8 +109,16 @@ export function NtpManagerApp({ permissions, toast }: Props) {
 
       <div className="infra-stat-grid">
         <div className="infra-stat">
+          <strong>{diagnostics?.health || "—"}</strong>
+          <small>Health</small>
+        </div>
+        <div className="infra-stat">
           <strong>{status?.synchronized ? "Synchronized" : "Not synchronized"}</strong>
           <small>{status?.backend || "none"}</small>
+        </div>
+        <div className="infra-stat">
+          <strong>{status?.source || "—"}</strong>
+          <small>Selected source</small>
         </div>
         <div className="infra-stat">
           <strong>{status?.stratum ?? "—"}</strong>
@@ -117,6 +129,22 @@ export function NtpManagerApp({ permissions, toast }: Props) {
           <small>Offset</small>
         </div>
         <div className="infra-stat">
+          <strong>{status?.jitter || "—"}</strong>
+          <small>Jitter / dispersion</small>
+        </div>
+        <div className="infra-stat">
+          <strong>{status?.root_delay || "—"}</strong>
+          <small>Root delay</small>
+        </div>
+        <div className="infra-stat">
+          <strong>{status?.frequency || "—"}</strong>
+          <small>Frequency</small>
+        </div>
+        <div className="infra-stat">
+          <strong>{status?.leap_status || "—"}</strong>
+          <small>Leap status</small>
+        </div>
+        <div className="infra-stat">
           <strong>{status?.timezone || "—"}</strong>
           <small>Timezone</small>
         </div>
@@ -124,7 +152,17 @@ export function NtpManagerApp({ permissions, toast }: Props) {
           <strong>{status?.service_state || "—"}</strong>
           <small>{status?.service || "Service"}</small>
         </div>
+        <div className="infra-stat">
+          <strong>{diagnostics?.summary.reachable_count ?? 0}/{diagnostics?.summary.source_count ?? 0}</strong>
+          <small>Reachable sources</small>
+        </div>
       </div>
+
+      {diagnostics?.warnings.length ? (
+        <div className="infra-manager-toolbar">
+          <span>Diagnostics: {diagnostics.warnings.join("; ")}</span>
+        </div>
+      ) : null}
 
       {permissions.includes("ntp.manage") && (
         <div className="infra-manager-toolbar">
@@ -147,20 +185,30 @@ export function NtpManagerApp({ permissions, toast }: Props) {
             <tr>
               <th>Server</th>
               <th>State</th>
+              <th>Mode</th>
               <th>Selected</th>
               <th>Stratum</th>
               <th>Reach</th>
+              <th>Last RX</th>
+              <th>Delay</th>
+              <th>Offset</th>
+              <th>Jitter</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {sources.map((source) => (
-              <tr key={source.server}>
+              <tr key={`${source.server}-${source.mode || "source"}`}>
                 <td>{source.server}</td>
                 <td>{source.state || "configured"}</td>
+                <td>{source.mode || "—"}</td>
                 <td>{source.selected ? "yes" : "no"}</td>
                 <td>{source.stratum ?? "—"}</td>
                 <td>{source.reach ?? "—"}</td>
+                <td>{source.last_rx || "—"}</td>
+                <td>{source.delay || "—"}</td>
+                <td>{source.offset || "—"}</td>
+                <td>{source.jitter || source.std_dev || source.uncertainty || "—"}</td>
                 <td>
                   <div className="infra-row-actions">
                     <button type="button" onClick={() => void testServer(source.server)}>

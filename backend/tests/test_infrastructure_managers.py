@@ -10,6 +10,14 @@ from app.jobs.repository import JobRepository
 from app.modules.gitops_manager.models import RepositoryInput
 from app.modules.gitops_manager.service import GitOpsService
 from app.modules.login_history.service import LoginHistoryService
+from app.modules.ntp_manager.diagnostics import (
+    duration_seconds,
+    evaluate_health,
+    parse_chrony_sources,
+    parse_chrony_sourcestats,
+    parse_ntpq_peers,
+    parse_ntpq_system,
+)
 from app.modules.ntp_manager.models import NtpBackend, NtpSourceInput
 from app.modules.ntp_manager.service import NtpService
 from app.modules.routing_manager.models import PolicyRuleInput, RouteInput
@@ -45,6 +53,57 @@ def test_ntp_parser_and_managed_block():
     rendered = service._render(NtpBackend.timesyncd, "[Time]\nFallbackNTP=fallback.example\n", [NtpSourceInput(server="time.example")])
     assert "# BEGIN WEBNAS NTP" in rendered
     assert "NTP=time.example" in rendered
+
+
+def test_ntp_diagnostics_parse_chrony_sources_and_stats():
+    sources = parse_chrony_sources(
+        "MS Name/IP address         Stratum Poll Reach LastRx Last sample\n"
+        "===============================================================================\n"
+        "^* 192.0.2.10                    2   6   377    18   -42us[ -51us] +/- 2ms\n"
+        "^? 192.0.2.11                    0   6     0     -     +0ns[  +0ns] +/- 0ns\n"
+    )
+    assert len(sources) == 2
+    assert sources[0]["selected"] is True
+    assert sources[0]["state"] == "selected"
+    assert sources[0]["reach"] == 377
+    assert sources[0]["offset_seconds"] == pytest.approx(-42e-6)
+    assert sources[1]["state"] == "unreachable"
+
+    stats = parse_chrony_sourcestats(
+        "Name/IP Address            NP  NR  Span  Frequency  Freq Skew  Offset  Std Dev\n"
+        "===============================================================================\n"
+        "192.0.2.10                  8   5   420     +0.010      0.030    -12us    19us\n"
+    )
+    assert stats["192.0.2.10"]["samples"] == 8
+    assert stats["192.0.2.10"]["jitter"] == "19us"
+
+
+def test_ntp_diagnostics_parse_ntpd_and_health():
+    peers = parse_ntpq_peers(
+        "     remote           refid      st t when poll reach   delay   offset  jitter\n"
+        "==============================================================================\n"
+        "*192.0.2.20     .GPS.            1 u   12   64  377    0.123   -0.456   0.789\n"
+        "+192.0.2.21     192.0.2.20       2 u   21   64  377    1.200    0.100   0.400\n"
+    )
+    assert peers[0]["selected"] is True
+    assert peers[0]["offset_seconds"] == pytest.approx(-0.000456)
+    assert peers[1]["state"] == "candidate"
+
+    system = parse_ntpq_system('stratum=2, rootdelay=1.234, rootdisp=2.345, offset=-0.456, frequency=5.5, leap=00')
+    assert system["stratum"] == "2"
+    assert system["leap"] == "00"
+
+    healthy = {
+        "available": True,
+        "synchronized": True,
+        "service_state": "active",
+        "offset_seconds": 0.002,
+    }
+    assert evaluate_health(healthy, peers) == "healthy"
+    assert evaluate_health({**healthy, "offset_seconds": 0.5}, peers) == "degraded"
+    assert evaluate_health({**healthy, "synchronized": False}, peers) == "unsynchronized"
+    assert evaluate_health({"available": False}, []) == "unavailable"
+    assert duration_seconds("250 ms") == pytest.approx(0.25)
 
 
 def test_ntp_source_validation_rejects_path_like_input():
