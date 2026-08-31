@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - chore/organize-doc-install-files
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -132,4 +135,5 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git commit -m "fix: complete installer path migration"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          target_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          git push origin "HEAD:${target_branch}"
