@@ -9,7 +9,7 @@ import pytest
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-LAUNCHER = REPOSITORY / "install.sh"
+LAUNCHER = REPOSITORY / "install" / "install.sh"
 
 
 def _bash() -> str:
