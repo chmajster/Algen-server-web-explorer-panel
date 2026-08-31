@@ -32,15 +32,15 @@ Main project goals:
 
 ### Dashboard
 
-![WebNAS dashboard](docs/screenshots/webnas-dashboard.webp)
+![WebNAS dashboard](screenshots/webnas-dashboard.webp)
 
 ### Package Center
 
-![WebNAS Package Center](docs/screenshots/webnas-package-center.webp)
+![WebNAS Package Center](screenshots/webnas-package-center.webp)
 
 ### Settings
 
-![WebNAS settings](docs/screenshots/webnas-settings.webp)
+![WebNAS settings](screenshots/webnas-settings.webp)
 
 ## Key Features
 
@@ -127,8 +127,16 @@ WebNAS is designed for systems including Debian, Ubuntu, Raspberry Pi OS, Fedora
 
 ### Quick Install
 
+The canonical public installer is [`install.sh`](../install.sh) in the repository root. Installer implementation files remain under `install/*`.
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+```
+
+For a cloned repository, run:
+
+```bash
+sudo ./install.sh
 ```
 
 New standard installations publish WebNAS through the stable nginx gateway with HTTPS enabled. When no certificate exists at the configured paths, the release helper creates a private self-signed certificate before the gateway is activated.
@@ -160,18 +168,38 @@ Plaintext HTTP on a non-loopback interface requires the explicit `security.allow
 ### Custom Port
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh | sudo bash -s -- --port 8080
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash -s -- --port 8080
+```
+
+### Portable mode
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash -s -- --portable
 ```
 
 ### Update
 
-Run the installer again:
+Run the root installer again:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
 ```
 
 The installer detects an existing WebNAS installation and performs the supported update procedure. Existing pre-policy HTTP configurations are preserved during normal updates for compatibility and emit a security warning instead of being silently rewritten; regenerate/update the configuration when you are ready to move that installation to TLS.
+
+### Installer layout
+
+```text
+Algen-server-web-explorer-panel/
+├── install.sh                    # canonical public entrypoint
+└── install/
+    ├── install.sh                # launcher implementation
+    ├── install-standard.sh       # standard installer
+    ├── install-standard-menu.sh  # existing-install action menu
+    └── install-portable.sh       # portable installer
+```
+
+User-facing commands should invoke the root `install.sh`. Files under `install/*` are implementation details used by the launcher.
 
 Full installation documentation: [INSTALL.md](INSTALL.md)
 
@@ -210,7 +238,7 @@ Core technology stack:
 - **File transfers:** rsync
 - **Application/module state:** configuration files and SQLite depending on the component
 
-The frontend uses feature boundaries, a shared WebNAS Design System and generated OpenAPI TypeScript DTOs. See [docs/frontend-architecture.md](docs/frontend-architecture.md) for component ownership, import rules and the standard `PageHeader -> DataTable -> Drawer/Modal` administrative UX pattern.
+The frontend uses feature boundaries, a shared WebNAS Design System and generated OpenAPI TypeScript DTOs. See [frontend-architecture.md](frontend-architecture.md) for component ownership, import rules and the standard `PageHeader -> DataTable -> Drawer/Modal` administrative UX pattern.
 
 ## Authentication
 
@@ -288,9 +316,9 @@ Detailed documentation is available in separate files:
 | [INSTALL.md](INSTALL.md) | Installation, updates, configuration and troubleshooting |
 | [AUTHENTICATION.md](AUTHENTICATION.md) | Local-database default mode, PAM/LDAP system mode, session isolation and local-user lifecycle |
 | [LDAP_AUTHENTICATION.md](LDAP_AUTHENTICATION.md) | LDAP configuration, OpenLDAP/FreeIPA/AD examples, POSIX/NSS integration and security model |
-| [docs/frontend-architecture.md](docs/frontend-architecture.md) | Frontend feature boundaries, Design System, generated API DTOs and module rules |
-| [docs/testing.md](docs/testing.md) | Unit, integration, trusted system and Playwright E2E testing |
-| [docs/deployment.md](docs/deployment.md) | CI/CD, trusted runner, production Environment, blue/green health checks and rollback |
+| [frontend-architecture.md](frontend-architecture.md) | Frontend feature boundaries, Design System, generated API DTOs and module rules |
+| [testing.md](testing.md) | Unit, integration, trusted system and Playwright E2E testing |
+| [deployment.md](deployment.md) | CI/CD, trusted runner, production Environment, blue/green health checks and rollback |
 | [HOSTS_MANAGER.md](HOSTS_MANAGER.md) | Hosts Manager |
 | [SECRETS_MANAGER.md](SECRETS_MANAGER.md) | Secrets Manager, credential migration, encryption, sharing, backup/restore and rotation model |
 | [FAIL2BAN_MANAGER.md](FAIL2BAN_MANAGER.md) | Fail2Ban status, jail configuration, bans, logs and safety model |
@@ -307,8 +335,8 @@ Detailed documentation is available in separate files:
 | [APMID.md](APMID.md) | Application ownership and resource registry |
 | [OS_REPOSITORIES.md](OS_REPOSITORIES.md) | Central APT/RPM repositories |
 | [CHANGELOG.md](CHANGELOG.md) | Project changelog |
-| [docs/self-hosted-runner-security.md](docs/self-hosted-runner-security.md) | Self-hosted runner trust boundary, labels and hardening |
-| [docs/releasing.md](docs/releasing.md) | Version bump, tag and GitHub Release process |
+| [self-hosted-runner-security.md](self-hosted-runner-security.md) | Self-hosted runner trust boundary, labels and hardening |
+| [releasing.md](releasing.md) | Version bump, tag and GitHub Release process |
 
 ## CI, versioning and releases
 
