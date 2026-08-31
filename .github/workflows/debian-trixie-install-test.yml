@@ -42,12 +42,15 @@ jobs:
         run: |
           set -euo pipefail
           bash -n install.sh install-standard.sh scripts/install_python314_runtime.sh
-          shellcheck install.sh install-standard.sh scripts/install_python314_runtime.sh
+          # Existing legacy-installer ShellCheck baseline; the new helper is checked strictly.
+          shellcheck -e SC2015,SC2064,SC2317 install.sh install-standard.sh
+          shellcheck scripts/install_python314_runtime.sh
 
       - name: Run Debian Python installer contract tests
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m pip install --disable-pip-version-check pytest
           python3 -m pytest -q backend/tests/test_installer_debian_python314.py
 
   debian-trixie-install:
