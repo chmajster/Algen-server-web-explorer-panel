@@ -1,7 +1,7 @@
 # Generated from pyproject.toml by scripts/sync-python-deps.py. Do not edit manually.
 fastapi==0.141.1
 starlette==1.6.0
-uvicorn[standard]==0.35.0
+uvicorn[standard]==0.52.4
 python-multipart==0.0.32
 PyYAML==6.0.3
 python-pam==2.0.2
