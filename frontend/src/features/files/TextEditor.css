@@ -1,0 +1,83 @@
+.text-editor-codemirror {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.text-editor-codemirror .cm-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: var(--font-size-sm);
+}
+
+.text-editor-codemirror .cm-editor.cm-focused {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.text-editor-codemirror .cm-scroller {
+  min-height: 0;
+  overflow: auto;
+  font-family: inherit;
+  line-height: 1.55;
+  tab-size: 4;
+}
+
+.text-editor-codemirror .cm-content {
+  min-height: 100%;
+  padding: 0.75rem 0;
+  caret-color: var(--text-primary);
+}
+
+.text-editor-codemirror .cm-line {
+  padding: 0 0.75rem;
+}
+
+.text-editor-codemirror .cm-gutters {
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  background: var(--surface-secondary);
+}
+
+.text-editor-codemirror .cm-activeLine,
+.text-editor-codemirror .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.text-editor-codemirror .cm-selectionBackground,
+.text-editor-codemirror .cm-content ::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent) !important;
+}
+
+.text-editor-codemirror .cm-cursor,
+.text-editor-codemirror .cm-dropCursor {
+  border-left-color: var(--text-primary);
+}
+
+.text-editor-codemirror .cm-panels,
+.text-editor-codemirror .cm-tooltip {
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+}
+
+.text-editor-codemirror .cm-searchMatch {
+  outline: 1px solid color-mix(in srgb, var(--warning) 65%, transparent);
+  background: color-mix(in srgb, var(--warning) 24%, transparent);
+}
+
+.text-editor-codemirror .cm-searchMatch.cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.text-editor.read-only .text-editor-codemirror .cm-editor {
+  color: var(--text-secondary);
+  background: var(--surface-secondary);
+}
