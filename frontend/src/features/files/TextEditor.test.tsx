@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { EditorView } from "codemirror";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type FileItem } from "../../api";
 import { TextEditor } from "./TextEditor";
@@ -16,6 +17,14 @@ const item: FileItem = {
   can_rename: true, is_symlink: false,
 };
 
+function replaceDocument(editor: HTMLElement, content: string) {
+  const view = EditorView.findFromDOM(editor);
+  expect(view).not.toBeNull();
+  act(() => {
+    view?.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } });
+  });
+}
+
 describe("text editor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -23,12 +32,13 @@ describe("text editor", () => {
     vi.mocked(api.writeText).mockResolvedValue({ path: item.path, encoding: "utf-8", size: 11, mtime_ns: "200", ok: true });
   });
 
-  it("loads, edits and saves with Ctrl+S", async () => {
+  it("loads CodeMirror, edits and saves with Ctrl+S", async () => {
     const onSaved = vi.fn();
     render(<TextEditor item={item} t={t} onClose={vi.fn()} onSaved={onSaved} />);
     const editor = await screen.findByRole("textbox", { name: "editor.content" });
 
-    fireEvent.change(editor, { target: { value: "hello world" } });
+    expect(editor.closest(".cm-editor")).not.toBeNull();
+    replaceDocument(editor, "hello world");
     fireEvent.keyDown(editor, { key: "s", ctrlKey: true });
 
     await waitFor(() => expect(api.writeText).toHaveBeenCalledWith(item.path, "hello world", "100"));
@@ -40,16 +50,16 @@ describe("text editor", () => {
     render(<TextEditor item={{ ...item, can_write: false }} t={t} onClose={vi.fn()} onSaved={vi.fn()} />);
 
     const editor = await screen.findByRole("textbox", { name: "editor.content" });
-    expect(editor).toHaveAttribute("readonly");
+    expect(editor).toHaveAttribute("contenteditable", "false");
     expect(screen.getByText("editor.readOnly")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /action.save/ })).toBeDisabled();
   });
 
-  it("asks before closing with unsaved changes", async () => {
+  it("asks before closing with unsaved CodeMirror changes", async () => {
     const onClose = vi.fn();
     render(<TextEditor item={item} t={t} onClose={onClose} onSaved={vi.fn()} />);
     const editor = await screen.findByRole("textbox", { name: "editor.content" });
-    fireEvent.change(editor, { target: { value: "changed" } });
+    replaceDocument(editor, "changed");
 
     const closeButtons = screen.getAllByRole("button", { name: "action.close" });
     fireEvent.click(closeButtons[closeButtons.length - 1]);
