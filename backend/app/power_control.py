@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 
 from .audit import logger
 from .config import get_config
+from .privileged_broker.runtime import broker_command, broker_required
 from .rbac import authorize
 from .security import SessionUser, get_session_user, require_csrf
 
@@ -62,14 +64,52 @@ def _command_error(result: subprocess.CompletedProcess[str]) -> str:
     return message[:1000]
 
 
-def _schedule_systemctl(action: str, *arguments: str) -> dict[str, str | bool]:
-    """Schedule a systemd action outside the current backend service cgroup.
+def _run_broker_systemctl(action: str, arguments: tuple[str, ...]) -> None:
+    """Execute the delayed action after the HTTP response through the root broker.
 
-    Restarting the WebNAS service synchronously terminates the HTTP worker before
-    it can return a response. systemd-run creates a transient timer and executes
-    the action after the response has been sent. A --no-block fallback is kept
-    for installations where systemd-run is unavailable.
+    The normal WebNAS backend intentionally runs as the unprivileged ``webnas``
+    account.  A short in-process delay lets the API return first; once the helper
+    sends its typed request, the dedicated broker owns the privileged systemctl
+    process and can complete it even when restarting WebNAS kills this backend
+    cgroup.
     """
+    try:
+        result = broker_command(
+            ["systemctl", *arguments],
+            timeout=120,
+            actor=f"power-control-{action}",
+        )
+        if result is None:
+            logger.error("power_action_broker_rejected action=%s arguments=%s", action, arguments)
+            return
+        if result.returncode != 0:
+            logger.error(
+                "power_action_broker_failed action=%s returncode=%s error=%s",
+                action,
+                result.returncode,
+                _command_error(result),
+            )
+    except Exception:  # noqa: BLE001 - background task must never escape the scheduling thread.
+        logger.exception("power_action_broker_failed action=%s", action)
+
+
+def _schedule_systemctl(action: str, *arguments: str) -> dict[str, str | bool]:
+    """Schedule a systemd action outside the current HTTP request lifecycle.
+
+    Standard installations run the backend as the unprivileged ``webnas`` user,
+    so creating a system transient timer directly would trigger polkit and fail
+    with "interactive authentication has not been enabled".  In that deployment
+    mode the delayed helper submits the already-allowlisted systemctl operation
+    to WebNAS' dedicated root privileged broker instead.
+
+    Root/portable installations keep the existing systemd-run path.
+    """
+    if broker_required():
+        timer = threading.Timer(2.0, _run_broker_systemctl, args=(action, tuple(arguments)))
+        timer.daemon = True
+        timer.start()
+        return {"ok": True, "scheduled": True, "mode": "privileged-broker-delay", "unit": ""}
+
     systemctl = shutil.which("systemctl")
     if not systemctl:
         raise HTTPException(503, "systemctl is unavailable")
