@@ -12,17 +12,6 @@ from pathlib import Path
 from typing import Any
 
 
-# The worker is started as a file by GNU screen. Add the backend root so the
-# existing privileged-broker package can be imported without relying on a
-# caller-provided PYTHONPATH.
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
-
-from app.privileged_broker.client import BrokerClient
-from app.privileged_broker.runtime import broker_command
-
-
 PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._:-]{0,127}$")
 APT_INST_RE = re.compile(r"^Inst\s+(?P<name>[A-Za-z0-9][A-Za-z0-9+._:-]*)\s+")
 SESSION_RE = re.compile(r"^[a-f0-9]{24}$")
@@ -144,6 +133,18 @@ def _broker_update_command(command: list[str]) -> list[str] | None:
     raise ValueError("Unsupported privileged detached update command")
 
 
+def _broker_runtime():
+    # GNU screen starts this worker by file path. Add the backend root lazily so
+    # the app package is importable without trusting a caller-provided PYTHONPATH.
+    backend_root = Path(__file__).resolve().parents[2]
+    if str(backend_root) not in sys.path:
+        sys.path.insert(0, str(backend_root))
+    from app.privileged_broker.client import BrokerClient
+    from app.privileged_broker.runtime import broker_command
+
+    return BrokerClient, broker_command
+
+
 def _run_privileged_update(command: list[str], output) -> int:
     translated = _broker_update_command(command)
     if translated is None:
@@ -153,8 +154,9 @@ def _run_privileged_update(command: list[str], output) -> int:
 
     output.write("WebNAS is executing the package operation through the privileged broker.\n")
     output.flush()
-    client = BrokerClient(timeout=3665.0)
-    result = broker_command(
+    broker_client_type, broker_runner = _broker_runtime()
+    client = broker_client_type(timeout=3665.0)
+    result = broker_runner(
         translated,
         timeout=3600,
         actor="linux-updates-detached",
