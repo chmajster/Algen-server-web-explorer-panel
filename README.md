@@ -30,10 +30,12 @@ WebNAS provides a browser-based administration interface for Linux systems. It c
 
 ### Quick install
 
-The canonical installer entrypoint is `install.sh` in the root of the `main` branch:
+The canonical installer entrypoint is `install.sh` in the root of the `main` branch. The installer is downloaded first and then executed from a temporary file so interactive actions use the terminal directly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh -o /tmp/webnas-install.sh \
+&& sudo bash /tmp/webnas-install.sh \
+; rm -f /tmp/webnas-install.sh
 ```
 
 ### Install from a cloned repository
@@ -47,19 +49,25 @@ sudo ./install.sh
 ### Custom port
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash -s -- --port 8080
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh -o /tmp/webnas-install.sh \
+&& sudo bash /tmp/webnas-install.sh --port 8080 \
+; rm -f /tmp/webnas-install.sh
 ```
 
 ### Non-interactive installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash -s -- --yes
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh -o /tmp/webnas-install.sh \
+&& sudo bash /tmp/webnas-install.sh --yes \
+; rm -f /tmp/webnas-install.sh
 ```
 
 ### Portable mode
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash -s -- --portable
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh -o /tmp/webnas-install.sh \
+&& sudo bash /tmp/webnas-install.sh --portable \
+; rm -f /tmp/webnas-install.sh
 ```
 
 ### Update
@@ -67,7 +75,9 @@ curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer
 Run the same root installer again:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-web-explorer-panel/main/install.sh -o /tmp/webnas-install.sh \
+&& sudo bash /tmp/webnas-install.sh \
+; rm -f /tmp/webnas-install.sh
 ```
 
 The installer detects an existing WebNAS installation and exposes the supported update/reinstall/backup/remove/restart actions.
