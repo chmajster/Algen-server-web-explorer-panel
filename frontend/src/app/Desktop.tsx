@@ -1,4 +1,5 @@
 import { Desktop as DesktopController } from "./DesktopController";
+import { DesktopEnhancements } from "./DesktopEnhancements";
 import type { DesktopProps } from "./desktop/types";
 
 /**
@@ -10,5 +11,8 @@ import type { DesktopProps } from "./desktop/types";
  * the stable application boundary imported by App.
  */
 export function Desktop(props: DesktopProps) {
-  return <DesktopController {...props} />;
+  return <>
+    <DesktopController {...props} />
+    <DesktopEnhancements profile={props.profile} t={props.t} toast={props.toast} onSettingsChange={props.onSettingsChange} />
+  </>;
 }
