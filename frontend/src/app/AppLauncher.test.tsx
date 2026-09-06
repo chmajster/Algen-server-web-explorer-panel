@@ -88,6 +88,18 @@ describe("Start menu", () => {
     expect(taskbar).toHaveBeenCalledWith("settings");
   });
 
+  it("keeps only the Start pin on pinned tiles and uses right-click for desktop shortcuts", () => {
+    const desktop = vi.fn();
+    const { container } = render(<div className="desktop"><AppLauncher apps={appList} startPinned={new Set(["files"])} desktopShortcuts={new Set()} taskbarPinned={new Set()} profile={settingsFixture()} t={t} onOpen={vi.fn()} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={desktop} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={vi.fn()} /></div>);
+
+    expect(container.querySelector(".launcher-desktop-pin")).not.toBeInTheDocument();
+    expect(container.querySelector(".launcher-grid .launcher-pin")).toBeInTheDocument();
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "File Manager" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "desktop.addToDesktop" }));
+    expect(desktop).toHaveBeenCalledWith("files");
+  });
+
   it("shows recently used applications with a compact relative time", () => {
     const open = vi.fn();
     render(<AppLauncher apps={appList} startPinned={new Set(["files"])} desktopShortcuts={new Set()} taskbarPinned={new Set()} recentApps={[{ id: "settings", usedAt: Date.now() }]} profile={settingsFixture()} t={t} onOpen={open} onToggleStartPin={vi.fn()} onToggleDesktopShortcut={vi.fn()} onToggleTaskbarPin={vi.fn()} onLogout={vi.fn()} onClose={vi.fn()} />);

@@ -119,11 +119,8 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
     ];
   }
   function appButton(app: AppDefinition, compact = false) {
-    const onDesktop = desktopShortcuts.has(app.id);
-    const desktopLabel = t(onDesktop ? "desktop.removeFromDesktop" : "desktop.addToDesktop");
     return <article className={`launcher-app ${app.admin ? "administrative" : ""} ${compact ? "compact" : ""}`} key={app.id}>
       <button className="launcher-open" type="button" onClick={() => open(app.id)} onContextMenu={(event) => showContext(event, app)}>{app.icon}<span>{t(app.labelKey)}</span>{app.admin && <small><ShieldCheck />{t("desktop.adminApp")}</small>}</button>
-      <button className={`launcher-desktop-pin ${onDesktop ? "active" : ""}`} type="button" aria-pressed={onDesktop} aria-label={`${desktopLabel} ${t(app.labelKey)}`} title={desktopLabel} onClick={() => onToggleDesktopShortcut(app.id)}><Monitor /></button>
       <button className={`launcher-pin ${startPinned.has(app.id) ? "active" : ""}`} type="button" aria-label={`${startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} ${t(app.labelKey)}`} title={startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} onClick={() => onToggleStartPin(app.id)}><Pin /></button>
     </article>;
   }

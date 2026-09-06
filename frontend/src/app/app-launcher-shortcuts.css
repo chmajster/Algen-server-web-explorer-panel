@@ -1,55 +1,99 @@
-.desktop .launcher-desktop-pin {
-  position: absolute;
-  z-index: 2;
+.desktop .launcher-grid {
+  gap: 0.5rem;
+}
+
+.desktop .launcher-grid .launcher-app {
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  background: transparent;
+  transition: transform .12s ease, border-color .12s ease, background .12s ease, box-shadow .12s ease;
+}
+
+.desktop .launcher-grid .launcher-app:hover {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border-subtle));
+  background: color-mix(in srgb, var(--surface-hover) 88%, transparent);
+  box-shadow: 0 0.25rem 0.8rem color-mix(in srgb, var(--text-primary) 9%, transparent);
+  transform: translateY(-1px);
+}
+
+.desktop .launcher-grid .launcher-app:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-subtle));
+  background: color-mix(in srgb, var(--surface-selected) 68%, transparent);
+}
+
+.desktop .launcher-grid .launcher-open {
+  min-height: 5.75rem;
+  padding: 0.75rem 0.5rem 0.625rem;
+  border-radius: inherit;
+}
+
+.desktop .launcher-grid .launcher-open span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The only inline control on a Start tile is the Start pin itself.
+   Desktop/taskbar actions intentionally live in the right-click context menu. */
+.desktop .launcher-grid .launcher-pin {
   top: 0.375rem;
-  right: 2.375rem;
-  width: 1.75rem;
-  height: 1.75rem;
-  min-height: 1.75rem;
+  right: 0.375rem;
+  width: 1.625rem;
+  height: 1.625rem;
+  min-height: 1.625rem;
   display: grid;
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 0.375rem;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
-  opacity: 0;
-  transition: opacity .12s ease, border-color .12s ease, background .12s ease, color .12s ease;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: transparent;
+  opacity: 0.42;
+  transition: opacity .12s ease, color .12s ease, border-color .12s ease, background .12s ease;
 }
 
-.desktop .launcher-desktop-pin svg {
-  width: 0.875rem;
-  height: 0.875rem;
+.desktop .launcher-grid .launcher-pin svg {
+  width: 0.78rem;
+  height: 0.78rem;
 }
 
-.desktop .launcher-app:hover .launcher-desktop-pin,
-.desktop .launcher-desktop-pin.active,
-.desktop .launcher-desktop-pin:focus-visible {
-  opacity: 1;
+.desktop .launcher-grid .launcher-app:hover .launcher-pin,
+.desktop .launcher-grid .launcher-pin:focus-visible,
+.desktop .launcher-grid .launcher-pin.active {
+  opacity: 0.9;
 }
 
-.desktop .launcher-desktop-pin:hover,
-.desktop .launcher-desktop-pin:focus-visible {
+.desktop .launcher-grid .launcher-pin:hover,
+.desktop .launcher-grid .launcher-pin:focus-visible {
   border-color: var(--border-subtle);
   color: var(--accent);
   background: var(--surface-hover);
 }
 
-.desktop .launcher-desktop-pin.active {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle));
+.desktop .launcher-grid .launcher-pin.active {
   color: var(--accent);
-  background: var(--surface-selected);
 }
 
-.desktop .launcher-app.compact .launcher-desktop-pin {
-  top: 0.75rem;
+.desktop .launcher-list .launcher-app.compact {
+  border-radius: 0.625rem;
 }
 
-.desktop.high-contrast .launcher-desktop-pin {
+.desktop .launcher-list .launcher-app.compact:hover {
+  background: color-mix(in srgb, var(--surface-hover) 90%, transparent);
+}
+
+.desktop.high-contrast .launcher-grid .launcher-app,
+.desktop.high-contrast .launcher-grid .launcher-pin {
   border-color: currentColor;
-  background: var(--surface-elevated);
 }
 
-@media (hover: none) {
-  .desktop .launcher-desktop-pin { opacity: 1; }
+.desktop.no-animations .launcher-grid .launcher-app,
+.desktop.no-animations .launcher-grid .launcher-pin {
+  transition: none;
+}
+
+.desktop.no-animations .launcher-grid .launcher-app:hover {
+  transform: none;
 }
