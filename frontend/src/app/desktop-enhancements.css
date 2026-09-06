@@ -1,0 +1,64 @@
+.desktop > .desktop-management-context { z-index: 3300; min-width: 17rem; }
+.desktop > .desktop-management-context button svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
+
+.desktop .desktop-manager-modal { width: min(60rem, calc(100vw - 2rem)); }
+.desktop .desktop-manager { display: grid; gap: 1rem; min-width: 0; }
+.desktop .desktop-manager-intro { display: flex; align-items: center; gap: 0.75rem; padding: 0.875rem 1rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--surface-secondary); }
+.desktop .desktop-manager-intro > svg { width: 1.5rem; height: 1.5rem; color: var(--accent); flex: 0 0 auto; }
+.desktop .desktop-manager-intro > div { min-width: 0; display: grid; gap: 0.1875rem; }
+.desktop .desktop-manager-intro strong { font-size: var(--font-size-md); }
+.desktop .desktop-manager-intro span { color: var(--text-muted); font-size: var(--font-size-xs); }
+
+.desktop .desktop-manager-search { min-height: 2.5rem; display: flex; align-items: center; gap: 0.5rem; padding: 0 0.75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); }
+.desktop .desktop-manager-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+.desktop .desktop-manager-search > svg { width: 1rem; height: 1rem; color: var(--text-muted); }
+.desktop .desktop-manager-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); }
+
+.desktop .desktop-manager-section { min-width: 0; display: grid; gap: 0.625rem; }
+.desktop .desktop-manager-section > h3, .desktop .desktop-manager-section-heading h3 { margin: 0; font-size: var(--font-size-sm); }
+.desktop .desktop-manager-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.desktop .desktop-manager-section-heading > span { min-width: 1.75rem; padding: 0.125rem 0.4375rem; border-radius: 1rem; color: var(--text-secondary); background: var(--surface-secondary); font-size: var(--font-size-xs); text-align: center; }
+
+.desktop .desktop-manager-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.desktop .desktop-manager-settings-grid > label { min-width: 0; min-height: 3.125rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.625rem 0.75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-secondary); }
+.desktop .desktop-manager-settings-grid > label > span { min-width: 0; color: var(--text-secondary); font-size: var(--font-size-xs); }
+.desktop .desktop-manager-settings-grid select { max-width: 13rem; min-width: 8.5rem; }
+.desktop .desktop-manager-settings-grid input[type="checkbox"] { width: 1.125rem; height: 1.125rem; flex: 0 0 auto; accent-color: var(--accent); }
+
+.desktop .desktop-manager-list { display: grid; gap: 0.375rem; }
+.desktop .desktop-manager-item { min-width: 0; display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) auto; align-items: center; gap: 0.625rem; padding: 0.5rem 0.625rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: color-mix(in srgb, var(--surface-secondary) 82%, transparent); }
+.desktop .desktop-manager-item:hover { background: var(--surface-hover); }
+.desktop .desktop-manager-item-icon { width: 2.5rem; height: 2.5rem; display: grid; place-items: center; border-radius: 0.625rem; color: var(--accent); background: var(--surface-selected); }
+.desktop .desktop-manager-item-icon svg { width: 1.25rem; height: 1.25rem; }
+.desktop .desktop-manager-item-copy { min-width: 0; display: grid; gap: 0.125rem; }
+.desktop .desktop-manager-item-copy strong, .desktop .desktop-manager-item-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desktop .desktop-manager-item-copy strong { font-size: var(--font-size-sm); }
+.desktop .desktop-manager-item-copy small { color: var(--text-muted); font-size: var(--font-size-xs); }
+.desktop .desktop-manager-item-actions { display: flex; align-items: center; gap: 0.25rem; }
+.desktop .desktop-manager-item-actions button { min-height: 2rem; display: inline-flex; align-items: center; gap: 0.3125rem; padding: 0 0.5625rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-primary); color: var(--text-secondary); font-size: var(--font-size-xs); }
+.desktop .desktop-manager-item-actions button:hover { background: var(--surface-hover); }
+.desktop .desktop-manager-item-actions button.active { border-color: color-mix(in srgb, var(--accent) 60%, var(--border-subtle)); color: var(--accent); background: var(--surface-selected); }
+.desktop .desktop-manager-item-actions button svg { width: 0.875rem; height: 0.875rem; }
+.desktop .desktop-manager-item-actions button:disabled { opacity: 0.55; }
+.desktop .desktop-manager-empty, .desktop .desktop-manager-loading { margin: 0; padding: 1rem; border: 1px dashed var(--border-subtle); border-radius: var(--radius-control); color: var(--text-muted); font-size: var(--font-size-xs); text-align: center; }
+
+.desktop .desktop-manager-danger-zone { display: flex; justify-content: flex-end; padding-top: 0.75rem; border-top: 1px solid var(--border-subtle); }
+.desktop .desktop-manager-danger-zone button { display: inline-flex; align-items: center; gap: 0.4375rem; }
+.desktop .desktop-manager-danger-zone button svg { width: 1rem; height: 1rem; }
+
+@media (max-width: 760px) {
+  .desktop .desktop-manager-settings-grid { grid-template-columns: 1fr; }
+  .desktop .desktop-manager-item { grid-template-columns: 2.25rem minmax(0, 1fr); }
+  .desktop .desktop-manager-item-icon { width: 2.25rem; height: 2.25rem; }
+  .desktop .desktop-manager-item-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .desktop .desktop-manager-item-actions button { justify-content: center; }
+}
+
+@media (max-width: 480px) {
+  .desktop .desktop-manager-item-actions { grid-template-columns: 1fr; }
+}
+
+.desktop.high-contrast .desktop-manager-item,
+.desktop.high-contrast .desktop-manager-settings-grid > label,
+.desktop.high-contrast .desktop-manager-search,
+.desktop.high-contrast .desktop-manager-intro { border-width: 2px; }
