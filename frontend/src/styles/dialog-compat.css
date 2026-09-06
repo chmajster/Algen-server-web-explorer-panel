@@ -22,7 +22,8 @@
   z-index: 5100;
 }
 
-.desktop > .taskbar-context-menu {
+.desktop > .taskbar-context-menu,
+.desktop > .launcher-context-menu {
   z-index: 5200;
 }
 
