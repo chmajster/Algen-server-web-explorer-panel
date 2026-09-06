@@ -5,6 +5,7 @@ import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { powerClient } from "../modules/power/api/client";
 import type { AppDefinition, AppId, RecentApp, Translate } from "./types";
 import "./app-launcher-power.css";
+import "./app-launcher-shortcuts.css";
 
 type LauncherContext = { x: number; y: number; app: AppDefinition; portalTarget: Element | null };
 
@@ -105,6 +106,11 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   }, [powerMenuOpen]);
 
   function open(app: AppId) { setContext(null); onOpen(app); onClose(); }
+  function showContext(event: React.MouseEvent<HTMLElement>, app: AppDefinition) {
+    event.preventDefault();
+    event.stopPropagation();
+    setContext({ x: event.clientX, y: event.clientY, app, portalTarget: event.currentTarget.closest(".desktop") });
+  }
   function contextItems(app: AppDefinition): ContextMenuItem[] {
     return [
       { label: t(desktopShortcuts.has(app.id) ? "desktop.removeFromDesktop" : "desktop.addToDesktop"), icon: <Monitor />, action: () => onToggleDesktopShortcut(app.id) },
@@ -113,8 +119,11 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
     ];
   }
   function appButton(app: AppDefinition, compact = false) {
+    const onDesktop = desktopShortcuts.has(app.id);
+    const desktopLabel = t(onDesktop ? "desktop.removeFromDesktop" : "desktop.addToDesktop");
     return <article className={`launcher-app ${app.admin ? "administrative" : ""} ${compact ? "compact" : ""}`} key={app.id}>
-      <button className="launcher-open" type="button" onClick={() => open(app.id)} onContextMenu={compact ? (event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, app, portalTarget: event.currentTarget.closest(".desktop") }); } : undefined}>{app.icon}<span>{t(app.labelKey)}</span>{app.admin && <small><ShieldCheck />{t("desktop.adminApp")}</small>}</button>
+      <button className="launcher-open" type="button" onClick={() => open(app.id)} onContextMenu={(event) => showContext(event, app)}>{app.icon}<span>{t(app.labelKey)}</span>{app.admin && <small><ShieldCheck />{t("desktop.adminApp")}</small>}</button>
+      <button className={`launcher-desktop-pin ${onDesktop ? "active" : ""}`} type="button" aria-pressed={onDesktop} aria-label={`${desktopLabel} ${t(app.labelKey)}`} title={desktopLabel} onClick={() => onToggleDesktopShortcut(app.id)}><Monitor /></button>
       <button className={`launcher-pin ${startPinned.has(app.id) ? "active" : ""}`} type="button" aria-label={`${startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} ${t(app.labelKey)}`} title={startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} onClick={() => onToggleStartPin(app.id)}><Pin /></button>
     </article>;
   }
@@ -143,7 +152,7 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
 
   return <div ref={ref} className="app-launcher" role="dialog" aria-modal="false" aria-label={t("desktop.mainMenu")}>
     <div className="launcher-search"><Search /><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("desktop.searchApps")} aria-label={t("desktop.searchApps")} />{query && <button type="button" aria-label={t("action.clear")} onClick={() => setQuery("")}><X /></button>}</div>
-    {!allVisible && <><header className="launcher-section-title"><strong>{t("desktop.pinned")}</strong><button type="button" onClick={() => setShowAll(true)}>{t("desktop.allApps")}<ArrowRight /></button></header><div className="launcher-grid">{pinnedApps.map((app) => appButton(app))}</div><header className="launcher-section-title launcher-recent-title"><strong>{t("desktop.recentlyUsed")}</strong></header>{recent.length > 0 ? <div className="launcher-recent-list">{recent.map(({ item, app }) => <button type="button" key={app.id} onClick={() => open(app.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, app, portalTarget: event.currentTarget.closest(".desktop") }); }}>{app.icon}<span><strong>{t(app.labelKey)}</strong><small>{relativeTime(item.usedAt)}</small></span></button>)}</div> : <p className="launcher-recent-empty">{t("desktop.noRecentApps")}</p>}</>}
+    {!allVisible && <><header className="launcher-section-title"><strong>{t("desktop.pinned")}</strong><button type="button" onClick={() => setShowAll(true)}>{t("desktop.allApps")}<ArrowRight /></button></header><div className="launcher-grid">{pinnedApps.map((app) => appButton(app))}</div><header className="launcher-section-title launcher-recent-title"><strong>{t("desktop.recentlyUsed")}</strong></header>{recent.length > 0 ? <div className="launcher-recent-list">{recent.map(({ item, app }) => <button type="button" key={app.id} onClick={() => open(app.id)} onContextMenu={(event) => showContext(event, app)}>{app.icon}<span><strong>{t(app.labelKey)}</strong><small>{relativeTime(item.usedAt)}</small></span></button>)}</div> : <p className="launcher-recent-empty">{t("desktop.noRecentApps")}</p>}</>}
     {allVisible && <><header className="launcher-section-title"><strong>{t("desktop.allApps")}</strong>{showAll && !normalized && <button type="button" onClick={() => setShowAll(false)}>{t("action.back")}</button>}</header><div className="launcher-list">{alphabeticalApps.length > 0 ? alphabeticalApps.map((app) => appButton(app, true)) : <p className="launcher-empty">{t("desktop.noAppsFound")}</p>}</div></>}
     <footer className="launcher-footer"><button className="launcher-profile" type="button" title={t("desktop.openUserSettings")} aria-label={`${t("desktop.openUserSettings")}: ${profile.username}`} onClick={() => { onOpenProfile?.(); onClose(); }}><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? <><ShieldCheck />{t("desktop.administrator")}</> : t(`rbac.role.${profile.role}`)}</small></span></button><div ref={powerActionsRef} className="launcher-power-actions">{(onShutdown || onRestart || canRestartApplication) && <><button className="launcher-shutdown" type="button" title={t("shutdown.powerMenu")} aria-label={t("shutdown.powerMenu")} aria-haspopup="menu" aria-expanded={powerMenuOpen} onClick={() => { setPowerError(""); setPowerMenuOpen((value) => !value); }}><Power /></button>{powerMenuOpen && <div ref={powerMenuRef} className="launcher-power-menu" role="menu" aria-label={t("shutdown.powerMenu")} onKeyDown={(event) => {
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
