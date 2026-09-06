@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Eye, EyeOff, Grid2X2, LayoutGrid, Monitor, Package, PanelBottom, RefreshCw, Search, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { AlignCenter, AlignLeft, Bell, BellOff, Check, Clock3, Eye, EyeOff, Grid2X2, Image, LayoutGrid, Monitor, Moon, Package, PanelBottom, RefreshCw, Search, SlidersHorizontal, Sparkles, Sun, Trash2, WandSparkles } from "lucide-react";
 import { api, type ModuleSummary, type SettingsMe, type SettingsPatch } from "../api";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import { confirmDialog } from "../components/DialogService";
@@ -47,12 +47,33 @@ const copy = {
     startupLast: "Przywróć ostatnie okna",
     startupNone: "Nie przywracaj okien",
     wallpaperFit: "Dopasowanie tapety",
-    cover: "Wypełnij",
-    contain: "Dopasuj",
+    cover: "Wypełnij ekran",
+    contain: "Dopasuj do ekranu",
     stretch: "Rozciągnij",
     center: "Wyśrodkuj",
+    taskbarAlignment: "Wyrównanie paska",
+    left: "Do lewej",
+    centered: "Na środku",
+    theme: "Motyw",
+    themeSystem: "Zgodny z systemem",
+    themeLight: "Jasny",
+    themeDark: "Ciemny",
+    notificationsOn: "Włącz powiadomienia",
+    notificationsOff: "Wyłącz powiadomienia",
+    transfersOn: "Pokaż wskaźnik transferów",
+    transfersOff: "Ukryj wskaźnik transferów",
+    actionsOn: "Pokaż działania w tle",
+    actionsOff: "Ukryj działania w tle",
+    transparencyOn: "Włącz przezroczystość okien",
+    transparencyOff: "Wyłącz przezroczystość okien",
+    animationsOn: "Włącz animacje",
+    animationsOff: "Wyłącz animacje",
+    secondsOn: "Pokaż sekundy zegara",
+    secondsOff: "Ukryj sekundy zegara",
     clearShortcuts: "Wyczyść skróty pulpitu",
     clearConfirm: "Usunąć wszystkie skróty aplikacji i modułów z pulpitu?",
+    resetDesktop: "Przywróć domyślne ustawienia pulpitu",
+    resetConfirm: "Przywrócić domyślne ustawienia wyglądu i zachowania pulpitu? Skróty aplikacji nie zostaną usunięte.",
     close: "Zamknij",
     saveFailed: "Nie udało się zapisać ustawień pulpitu.",
   },
@@ -85,12 +106,33 @@ const copy = {
     startupLast: "Restore last windows",
     startupNone: "Do not restore windows",
     wallpaperFit: "Wallpaper fit",
-    cover: "Cover",
-    contain: "Contain",
+    cover: "Fill screen",
+    contain: "Fit to screen",
     stretch: "Stretch",
     center: "Center",
+    taskbarAlignment: "Taskbar alignment",
+    left: "Left",
+    centered: "Center",
+    theme: "Theme",
+    themeSystem: "Use system setting",
+    themeLight: "Light",
+    themeDark: "Dark",
+    notificationsOn: "Enable notifications",
+    notificationsOff: "Disable notifications",
+    transfersOn: "Show transfer indicator",
+    transfersOff: "Hide transfer indicator",
+    actionsOn: "Show background actions",
+    actionsOff: "Hide background actions",
+    transparencyOn: "Enable window transparency",
+    transparencyOff: "Disable window transparency",
+    animationsOn: "Enable animations",
+    animationsOff: "Disable animations",
+    secondsOn: "Show clock seconds",
+    secondsOff: "Hide clock seconds",
     clearShortcuts: "Clear desktop shortcuts",
     clearConfirm: "Remove all application and module shortcuts from the desktop?",
+    resetDesktop: "Restore default desktop settings",
+    resetConfirm: "Restore default desktop appearance and behavior? Application shortcuts will not be removed.",
     close: "Close",
     saveFailed: "Could not save desktop settings.",
   },
@@ -125,9 +167,12 @@ export function DesktopEnhancements({ profile, t, toast, onSettingsChange }: Des
   useEffect(() => {
     function contextMenu(event: MouseEvent) {
       const target = event.target;
-      if (!(target instanceof HTMLElement) || !target.classList.contains("desktop-surface")) return;
+      if (!(target instanceof HTMLElement)) return;
+      const surface = target.closest(".desktop-surface");
+      if (!surface) return;
+      if (target.closest(".desktop-window, .desktop-shortcuts, .desktop-welcome, .desktop-widget, .context-menu, .modal-panel")) return;
       event.preventDefault();
-      setMenu({ x: event.clientX, y: event.clientY, portalTarget: target.closest(".desktop") });
+      setMenu({ x: event.clientX, y: event.clientY, portalTarget: surface.closest(".desktop") });
     }
     document.addEventListener("contextmenu", contextMenu);
     return () => document.removeEventListener("contextmenu", contextMenu);
@@ -150,6 +195,29 @@ export function DesktopEnhancements({ profile, t, toast, onSettingsChange }: Des
     }
   }
 
+  async function clearShortcuts() {
+    if (await confirmDialog(text.clearConfirm, t)) await save({ desktop_shortcut_apps: [], desktop_shortcut_modules: [] });
+  }
+
+  async function resetDesktop() {
+    if (!(await confirmDialog(text.resetConfirm, t))) return;
+    await save({
+      show_desktop_shortcuts: true,
+      desktop_shortcut_size: "medium",
+      show_welcome_widget: false,
+      wallpaper_fit: "cover",
+      taskbar_alignment: "center",
+      startup_windows: "last",
+      theme: "system",
+      show_notifications: true,
+      show_transfer_indicator: true,
+      show_background_actions_indicator: true,
+      window_transparency: true,
+      animations_enabled: true,
+      clock_show_seconds: false,
+    });
+  }
+
   const installedModuleIds = useMemo(() => new Set(modules.filter((item) => item.state.installed).map((item) => item.id)), [modules]);
   const normalized = query.trim().toLocaleLowerCase(profile.language);
   const visibleApps = useMemo(() => apps
@@ -165,11 +233,35 @@ export function DesktopEnhancements({ profile, t, toast, onSettingsChange }: Des
   const menuItems: ContextMenuItem[] = [
     { label: text.manage, icon: <SlidersHorizontal />, action: () => setManagerOpen(true) },
     { label: text.refresh, icon: <RefreshCw />, action: () => void refreshModules(true) },
+
     { label: profile.show_desktop_shortcuts ? text.hideIcons : text.showIcons, icon: profile.show_desktop_shortcuts ? <EyeOff /> : <Eye />, separator: true, action: () => void save({ show_desktop_shortcuts: !profile.show_desktop_shortcuts }) },
     { label: `${text.iconSize}: ${text.small}`, icon: profile.desktop_shortcut_size === "small" ? <Check /> : <Grid2X2 />, action: () => void save({ desktop_shortcut_size: "small" }) },
     { label: `${text.iconSize}: ${text.medium}`, icon: profile.desktop_shortcut_size === "medium" ? <Check /> : <Grid2X2 />, action: () => void save({ desktop_shortcut_size: "medium" }) },
     { label: `${text.iconSize}: ${text.large}`, icon: profile.desktop_shortcut_size === "large" ? <Check /> : <Grid2X2 />, action: () => void save({ desktop_shortcut_size: "large" }) },
-    { label: profile.show_welcome_widget ? text.welcomeOff : text.welcomeOn, icon: <Sparkles />, separator: true, action: () => void save({ show_welcome_widget: !profile.show_welcome_widget }) },
+    { label: profile.show_welcome_widget ? text.welcomeOff : text.welcomeOn, icon: <Sparkles />, action: () => void save({ show_welcome_widget: !profile.show_welcome_widget }) },
+
+    { label: `${text.wallpaperFit}: ${text.cover}`, icon: profile.wallpaper_fit === "cover" ? <Check /> : <Image />, separator: true, action: () => void save({ wallpaper_fit: "cover" }) },
+    { label: `${text.wallpaperFit}: ${text.contain}`, icon: profile.wallpaper_fit === "contain" ? <Check /> : <Image />, action: () => void save({ wallpaper_fit: "contain" }) },
+    { label: `${text.wallpaperFit}: ${text.stretch}`, icon: profile.wallpaper_fit === "stretch" ? <Check /> : <Image />, action: () => void save({ wallpaper_fit: "stretch" }) },
+    { label: `${text.wallpaperFit}: ${text.center}`, icon: profile.wallpaper_fit === "center" ? <Check /> : <Image />, action: () => void save({ wallpaper_fit: "center" }) },
+
+    { label: `${text.taskbarAlignment}: ${text.left}`, icon: profile.taskbar_alignment === "left" ? <Check /> : <AlignLeft />, separator: true, action: () => void save({ taskbar_alignment: "left" }) },
+    { label: `${text.taskbarAlignment}: ${text.centered}`, icon: profile.taskbar_alignment === "center" ? <Check /> : <AlignCenter />, action: () => void save({ taskbar_alignment: "center" }) },
+    { label: `${text.theme}: ${text.themeSystem}`, icon: profile.theme === "system" ? <Check /> : <Monitor />, action: () => void save({ theme: "system" }) },
+    { label: `${text.theme}: ${text.themeLight}`, icon: profile.theme === "light" ? <Check /> : <Sun />, action: () => void save({ theme: "light" }) },
+    { label: `${text.theme}: ${text.themeDark}`, icon: profile.theme === "dark" ? <Check /> : <Moon />, action: () => void save({ theme: "dark" }) },
+
+    { label: `${text.startup}: ${text.startupLast}`, icon: profile.startup_windows === "last" ? <Check /> : <LayoutGrid />, separator: true, action: () => void save({ startup_windows: "last" }) },
+    { label: `${text.startup}: ${text.startupNone}`, icon: profile.startup_windows === "none" ? <Check /> : <LayoutGrid />, action: () => void save({ startup_windows: "none" }) },
+    { label: profile.show_notifications ? text.notificationsOff : text.notificationsOn, icon: profile.show_notifications ? <BellOff /> : <Bell />, action: () => void save({ show_notifications: !profile.show_notifications }) },
+    { label: profile.show_transfer_indicator ? text.transfersOff : text.transfersOn, icon: <PanelBottom />, action: () => void save({ show_transfer_indicator: !profile.show_transfer_indicator }) },
+    { label: profile.show_background_actions_indicator ? text.actionsOff : text.actionsOn, icon: <WandSparkles />, action: () => void save({ show_background_actions_indicator: !profile.show_background_actions_indicator }) },
+    { label: profile.window_transparency ? text.transparencyOff : text.transparencyOn, icon: <Sparkles />, action: () => void save({ window_transparency: !profile.window_transparency }) },
+    { label: profile.animations_enabled ? text.animationsOff : text.animationsOn, icon: <WandSparkles />, action: () => void save({ animations_enabled: !profile.animations_enabled }) },
+    { label: profile.clock_show_seconds ? text.secondsOff : text.secondsOn, icon: <Clock3 />, action: () => void save({ clock_show_seconds: !profile.clock_show_seconds }) },
+
+    { label: text.clearShortcuts, icon: <Trash2 />, separator: true, disabled: !profile.desktop_shortcut_apps.length && !profile.desktop_shortcut_modules.length, action: () => void clearShortcuts() },
+    { label: text.resetDesktop, icon: <RefreshCw />, action: () => void resetDesktop() },
   ];
 
   return <>
@@ -187,6 +279,11 @@ export function DesktopEnhancements({ profile, t, toast, onSettingsChange }: Des
             <label><span>{text.iconSize}</span><select value={profile.desktop_shortcut_size} disabled={saving} onChange={(event) => void save({ desktop_shortcut_size: event.target.value as "small" | "medium" | "large" })}><option value="small">{text.small}</option><option value="medium">{text.medium}</option><option value="large">{text.large}</option></select></label>
             <label><span>{text.startup}</span><select value={profile.startup_windows} disabled={saving} onChange={(event) => void save({ startup_windows: event.target.value as "last" | "none" })}><option value="last">{text.startupLast}</option><option value="none">{text.startupNone}</option></select></label>
             <label><span>{text.wallpaperFit}</span><select value={profile.wallpaper_fit} disabled={saving} onChange={(event) => void save({ wallpaper_fit: event.target.value as "cover" | "contain" | "stretch" | "center" })}><option value="cover">{text.cover}</option><option value="contain">{text.contain}</option><option value="stretch">{text.stretch}</option><option value="center">{text.center}</option></select></label>
+            <label><span>{text.taskbarAlignment}</span><select value={profile.taskbar_alignment} disabled={saving} onChange={(event) => void save({ taskbar_alignment: event.target.value as "left" | "center" })}><option value="left">{text.left}</option><option value="center">{text.centered}</option></select></label>
+            <label><span>{text.theme}</span><select value={profile.theme} disabled={saving} onChange={(event) => void save({ theme: event.target.value as "system" | "light" | "dark" })}><option value="system">{text.themeSystem}</option><option value="light">{text.themeLight}</option><option value="dark">{text.themeDark}</option></select></label>
+            <label><span>{profile.show_notifications ? text.notificationsOff : text.notificationsOn}</span><input type="checkbox" checked={profile.show_notifications} disabled={saving} onChange={() => void save({ show_notifications: !profile.show_notifications })} /></label>
+            <label><span>{profile.window_transparency ? text.transparencyOff : text.transparencyOn}</span><input type="checkbox" checked={profile.window_transparency} disabled={saving} onChange={() => void save({ window_transparency: !profile.window_transparency })} /></label>
+            <label><span>{profile.animations_enabled ? text.animationsOff : text.animationsOn}</span><input type="checkbox" checked={profile.animations_enabled} disabled={saving} onChange={() => void save({ animations_enabled: !profile.animations_enabled })} /></label>
           </div>
         </section>
 
@@ -222,7 +319,7 @@ export function DesktopEnhancements({ profile, t, toast, onSettingsChange }: Des
           </div>}
         </section>
 
-        <footer className="desktop-manager-danger-zone"><button type="button" className="button-danger" disabled={saving || (!profile.desktop_shortcut_apps.length && !profile.desktop_shortcut_modules.length)} onClick={() => void (async () => { if (await confirmDialog(text.clearConfirm, t)) await save({ desktop_shortcut_apps: [], desktop_shortcut_modules: [] }); })()}><Trash2 />{text.clearShortcuts}</button></footer>
+        <footer className="desktop-manager-danger-zone"><button type="button" className="button-danger" disabled={saving || (!profile.desktop_shortcut_apps.length && !profile.desktop_shortcut_modules.length)} onClick={() => void clearShortcuts()}><Trash2 />{text.clearShortcuts}</button><button type="button" disabled={saving} onClick={() => void resetDesktop()}><RefreshCw />{text.resetDesktop}</button></footer>
       </section>
     </Modal>}
   </>;
