@@ -1,0 +1,54 @@
+name: Fix desktop purity
+
+on:
+  push:
+    branches:
+      - feature/webnas-shell-foundation
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, '[desktop-purity-fixed]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/webnas-shell-foundation
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Apply React purity fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('frontend/src/app/DesktopWorkspace.tsx')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('created_at: Date.now() });\n    }\n    for (const moduleId', 'created_at: 0 });\n    }\n    for (const moduleId', 1)
+          text = text.replace('created_at: Date.now() });\n    }\n    const custom', 'created_at: 0 });\n    }\n    const custom', 1)
+          old = '    const missing = entries.filter((item) => !stored.some((storedItem) => storedItem.id === item.id));\n    if (missing.length) persistEntries([...stored, ...missing]);'
+          new = '    const missing = entries.filter((item) => !stored.some((storedItem) => storedItem.id === item.id));\n    if (missing.length) {\n      const createdAt = Date.now();\n      persistEntries([...stored, ...missing.map((item, index) => ({ ...item, created_at: item.created_at || createdAt + index }))]);\n    }'
+          if old not in text:
+              raise SystemExit('Expected DesktopWorkspace persistence block not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Verify frontend lint
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/app/DesktopWorkspace.tsx
+          git commit -m "fix(frontend): keep desktop defaults render-pure [desktop-purity-fixed] [skip ci]"
+          git push origin HEAD:feature/webnas-shell-foundation
