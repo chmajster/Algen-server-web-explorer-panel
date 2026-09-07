@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import tempfile
@@ -50,6 +49,8 @@ class DesktopEntry(BaseModel):
     def safe_target(cls, value: str) -> str:
         if "\x00" in value:
             raise ValueError("invalid target")
+        if value.lower().startswith(("javascript:", "data:text/html", "vbscript:")):
+            raise ValueError("unsafe shortcut target")
         return value
 
 
@@ -76,6 +77,10 @@ class WindowState(BaseModel):
     height: int = Field(ge=1, le=100000)
     minimized: bool = False
     maximized: bool = False
+    restore_x: int | None = Field(default=None, ge=-100000, le=100000)
+    restore_y: int | None = Field(default=None, ge=-100000, le=100000)
+    restore_width: int | None = Field(default=None, ge=1, le=100000)
+    restore_height: int | None = Field(default=None, ge=1, le=100000)
     initial_path: str | None = Field(default=None, max_length=4096)
     module_id: str | None = Field(default=None, max_length=80)
 
@@ -106,6 +111,38 @@ class ShellPreferences(BaseModel):
     @classmethod
     def valid_recent_files(cls, values: list[str]) -> list[str]:
         if any("\x00" in value or len(value) > 4096 for value in values):
+            raise ValueError("invalid recent file path")
+        return values
+
+
+class ShellPreferencesPatch(BaseModel):
+    version: int | None = Field(default=None, ge=1, le=100)
+    desktop: dict | None = None
+    desktop_entries: list[DesktopEntry] | None = Field(default=None, max_length=512)
+    taskbar_order: list[str] | None = Field(default=None, max_length=128)
+    start_order: list[str] | None = Field(default=None, max_length=256)
+    start_hidden: list[str] | None = Field(default=None, max_length=256)
+    recent_files: list[str] | None = Field(default=None, max_length=50)
+    windows: list[WindowState] | None = Field(default=None, max_length=64)
+    widgets: list[WidgetState] | None = Field(default=None, max_length=64)
+    notifications: dict | None = None
+    mobile: dict | None = None
+
+    @field_validator("taskbar_order", "start_order", "start_hidden")
+    @classmethod
+    def valid_id_lists(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        if len(values) != len(set(values)):
+            raise ValueError("duplicate identifiers")
+        if any(not SAFE_ID.fullmatch(value) for value in values):
+            raise ValueError("invalid identifier")
+        return values
+
+    @field_validator("recent_files")
+    @classmethod
+    def valid_recent_files(cls, values: list[str] | None) -> list[str] | None:
+        if values is not None and any("\x00" in value or len(value) > 4096 for value in values):
             raise ValueError("invalid recent file path")
         return values
 
@@ -156,17 +193,29 @@ def _save(username: str, value: ShellPreferences) -> None:
                 pass
 
 
+def _patch(username: str, patch: ShellPreferencesPatch) -> ShellPreferences:
+    with _lock:
+        current = _load(username)
+        merged = current.model_dump(mode="python")
+        merged.update(patch.model_dump(exclude_none=True, mode="python"))
+        value = ShellPreferences.model_validate(merged)
+        _save(username, value)
+        return value
+
+
 @router.get("/preferences", response_model=ShellPreferences)
 def get_shell_preferences(user: SessionUser = Depends(get_session_user)) -> ShellPreferences:
     return _load(user.username)
 
 
 @router.put("/preferences", response_model=ShellPreferences)
-def put_shell_preferences(
-    payload: ShellPreferences,
-    request: Request,
-    user: SessionUser = Depends(get_session_user),
-) -> ShellPreferences:
+def put_shell_preferences(payload: ShellPreferences, request: Request, user: SessionUser = Depends(get_session_user)) -> ShellPreferences:
     require_csrf(request, user)
     _save(user.username, payload)
     return payload
+
+
+@router.patch("/preferences", response_model=ShellPreferences)
+def patch_shell_preferences(payload: ShellPreferencesPatch, request: Request, user: SessionUser = Depends(get_session_user)) -> ShellPreferences:
+    require_csrf(request, user)
+    return _patch(user.username, payload)
