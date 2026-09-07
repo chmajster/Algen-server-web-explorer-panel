@@ -3,7 +3,7 @@ name: Identity and access
 category: security
 icon: users
 permissions: [users.view, groups.view, access.view]
-routers: [app.identity.router:router, app.rbac:router]
-capabilities: [users, groups, rbac, pam]
+routers: [app.identity.router:router, app.rbac:router, app.ldap_rbac:router]
+capabilities: [users, groups, rbac, pam, ldap, ldap-groups, policies, scoped-rbac]
 system_capabilities: [pam, linux-accounts]
 menu: [{id: identity, label: app.identity, icon: users}]

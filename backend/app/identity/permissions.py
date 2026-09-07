@@ -6,7 +6,6 @@ from typing import Any, Callable
 from fastapi import Depends, Request
 
 from ..security import SessionUser, get_session_user, require_csrf
-from .exceptions import identity_error
 from .models import PermissionMetadata, PermissionRisk, Role
 
 
@@ -33,7 +32,6 @@ class Permission(StrEnum):
     TRANSFERS_CHANGE_PRIORITY = "transfers.change_priority"
     SETTINGS_VIEW_OWN = "settings.view_own"
     SETTINGS_EDIT_OWN = "settings.edit_own"
-    # These are permission identifiers, not embedded credentials.
     SETTINGS_CHANGE_OWN_PASSWORD = "settings.change_own_password"  # nosec B105
     SETTINGS_VIEW_SYSTEM = "settings.view_system"
     SETTINGS_EDIT_SYSTEM = "settings.edit_system"
@@ -236,30 +234,13 @@ class Permission(StrEnum):
 _READ_OPERATIONS = {"view", "read", "download", "view_own", "view_all", "logs", "status", "diagnostics", "live", "export"}
 _CRITICAL = {Permission.USERS_DELETE, Permission.GROUPS_DELETE, Permission.ACCESS_MANAGE_ROLES, Permission.SYSTEM_RESTART, Permission.SYSTEM_SHUTDOWN, Permission.MODULES_UNINSTALL, Permission.MODULES_BACKUP_RESTORE, Permission.DOCKER_INSTALL_ENGINE, Permission.DOCKER_UPDATE_ENGINE, Permission.DOCKER_RESTORE_BACKUP, Permission.DOCKER_PRUNE, Permission.DOCKER_HIGH_RISK, Permission.HOSTS_MANAGER_POWER_SHUTDOWN, Permission.HOSTS_MANAGER_POWER_REBOOT, Permission.HOSTS_MANAGER_PASSWORDS_ROTATE, Permission.HOSTS_MANAGER_RESTORE, Permission.OS_REPOSITORIES_CHANNELS_PROMOTE, Permission.OS_REPOSITORIES_KEYS_MANAGE, Permission.OS_REPOSITORIES_RESTORE, Permission.OS_REPOSITORIES_FULL_REMOVE, Permission.APMID_DELETE, Permission.APMID_PERMISSIONS_MANAGE, Permission.APMID_RESTORE, Permission.CRON_DELETE, Permission.CRON_ADMIN, Permission.DHCP_SERVICE_CONTROL, Permission.DHCP_RESTORE, Permission.DHCP_UNINSTALL}
 _APPLICATIONS: dict[str, list[str]] = {
-    "files": ["files"],
-    "transfers": ["transfers"],
-    "settings": ["settings"],
-    "users": ["identity"],
-    "groups": ["identity"],
-    "access": ["identity"],
-    "audit": ["activity"],
-    "modules": ["modules", "store"],
-    "services": ["services"],
-    "updates": ["modules", "settings"],
-    "network_resources": ["settings"],
-    "network": ["settings"],
-    "docker": ["module:docker"],
-    "dns": ["module:pihole", "module:adguard-home"],
-    "databases": ["module:postgresql", "module:mariadb", "module:redis"],
-    "homeassistant": ["module:home-assistant"],
-    "ansible-controller": ["module:ansible-controller"],
-    "hosts-manager": ["module:hosts-manager"],
-    "os-repositories": ["module:os-repositories"],
-    "apmid": ["module:apmid"],
-    "cron": ["module:cron"],
-    "dhcp": ["module:dhcp"],
-    "logs": ["logs"],
-    "system": ["monitor", "logs", "settings"],
+    "files": ["files"], "transfers": ["transfers"], "settings": ["settings"], "users": ["identity"],
+    "groups": ["identity"], "access": ["identity"], "audit": ["activity"], "modules": ["modules", "store"],
+    "services": ["services"], "updates": ["modules", "settings"], "network_resources": ["settings"], "network": ["settings"],
+    "docker": ["module:docker"], "dns": ["module:pihole", "module:adguard-home"],
+    "databases": ["module:postgresql", "module:mariadb", "module:redis"], "homeassistant": ["module:home-assistant"],
+    "ansible-controller": ["module:ansible-controller"], "hosts-manager": ["module:hosts-manager"], "os-repositories": ["module:os-repositories"],
+    "apmid": ["module:apmid"], "cron": ["module:cron"], "dhcp": ["module:dhcp"], "logs": ["logs"], "system": ["monitor", "logs", "settings"],
 }
 
 
@@ -267,43 +248,22 @@ def _metadata(permission: Permission) -> PermissionMetadata:
     category, operation = permission.value.split(".", 1)
     mutating = operation not in _READ_OPERATIONS and not operation.startswith("view") and not operation.endswith(".view")
     risk = PermissionRisk.critical if permission in _CRITICAL else PermissionRisk.high if mutating else PermissionRisk.low
-    return PermissionMetadata(
-        id=permission.value,
-        category=category,
-        operation=operation,
-        applications=_APPLICATIONS[category],
-        risk=risk,
-        mutating=mutating,
-        label_key=f"permissions.{permission.value}",
-        description_key=f"permissions.category.{category}.description",
-    )
+    return PermissionMetadata(id=permission.value, category=category, operation=operation, applications=_APPLICATIONS[category], risk=risk, mutating=mutating, label_key=f"permissions.{permission.value}", description_key=f"permissions.category.{category}.description")
 
 
 PERMISSION_REGISTRY: dict[str, PermissionMetadata] = {item.value: _metadata(item) for item in Permission}
-
 LEGACY_PERMISSION_MAP: dict[str, str] = {
-    "apps.files": Permission.FILES_VIEW.value,
-    "apps.settings": Permission.SETTINGS_VIEW_OWN.value,
-    "apps.monitor": Permission.SYSTEM_STATUS.value,
-    "apps.transfers": Permission.TRANSFERS_VIEW_OWN.value,
-    "modules.operate": Permission.MODULES_CONFIGURE.value,
-    "modules.configure": Permission.MODULES_CONFIGURE.value,
-    "modules.install": Permission.MODULES_INSTALL.value,
-    "updates.view": Permission.UPDATES_VIEW.value,
-    "updates.apply": Permission.UPDATES_APPLY.value,
-    "docker.view": Permission.DOCKER_VIEW.value,
-    "docker.operate": Permission.DOCKER_CONTAINERS.value,
-    "docker.compose": Permission.DOCKER_COMPOSE.value,
-    "dns.view": Permission.DNS_VIEW.value,
-    "dns.configure": Permission.DNS_CONFIGURE.value,
-    "databases.view": Permission.DATABASES_VIEW.value,
-    "databases.backup": Permission.DATABASES_BACKUP.value,
-    "databases.restore": Permission.DATABASES_RESTORE.value,
-    "homeassistant.view": Permission.HOMEASSISTANT_VIEW.value,
-    "homeassistant.operate": Permission.HOMEASSISTANT_OPERATE.value,
-    "rbac.manage": Permission.ACCESS_MANAGE_ROLES.value,
-    "audit.view": Permission.AUDIT_VIEW_ALL.value,
-    "widgets.manage": Permission.SETTINGS_EDIT_OWN.value,
+    "apps.files": Permission.FILES_VIEW.value, "apps.settings": Permission.SETTINGS_VIEW_OWN.value,
+    "apps.monitor": Permission.SYSTEM_STATUS.value, "apps.transfers": Permission.TRANSFERS_VIEW_OWN.value,
+    "modules.operate": Permission.MODULES_CONFIGURE.value, "modules.configure": Permission.MODULES_CONFIGURE.value,
+    "modules.install": Permission.MODULES_INSTALL.value, "updates.view": Permission.UPDATES_VIEW.value,
+    "updates.apply": Permission.UPDATES_APPLY.value, "docker.view": Permission.DOCKER_VIEW.value,
+    "docker.operate": Permission.DOCKER_CONTAINERS.value, "docker.compose": Permission.DOCKER_COMPOSE.value,
+    "dns.view": Permission.DNS_VIEW.value, "dns.configure": Permission.DNS_CONFIGURE.value,
+    "databases.view": Permission.DATABASES_VIEW.value, "databases.backup": Permission.DATABASES_BACKUP.value,
+    "databases.restore": Permission.DATABASES_RESTORE.value, "homeassistant.view": Permission.HOMEASSISTANT_VIEW.value,
+    "homeassistant.operate": Permission.HOMEASSISTANT_OPERATE.value, "rbac.manage": Permission.ACCESS_MANAGE_ROLES.value,
+    "audit.view": Permission.AUDIT_VIEW_ALL.value, "widgets.manage": Permission.SETTINGS_EDIT_OWN.value,
 }
 
 
@@ -320,82 +280,53 @@ def normalize_permissions(values: list[str]) -> list[str]:
 
 
 ALL_PERMISSIONS = set(PERMISSION_REGISTRY)
-
 _FILES = {item.value for item in Permission if item.value.startswith("files.")}
 _TRANSFERS_OWN = {Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_CREATE.value, Permission.TRANSFERS_PAUSE.value, Permission.TRANSFERS_RESUME.value, Permission.TRANSFERS_CANCEL.value, Permission.TRANSFERS_RETRY.value, Permission.TRANSFERS_CHANGE_PRIORITY.value}
 _SETTINGS_OWN = {Permission.SETTINGS_VIEW_OWN.value, Permission.SETTINGS_EDIT_OWN.value, Permission.SETTINGS_CHANGE_OWN_PASSWORD.value}
-_DOCKER_OPERATOR = {
-    Permission.DOCKER_VIEW.value, Permission.DOCKER_CONTAINERS.value, Permission.DOCKER_IMAGES.value, Permission.DOCKER_COMPOSE.value,
-    Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_CREATE_CONTAINER.value, Permission.DOCKER_START_CONTAINER.value,
-    Permission.DOCKER_STOP_CONTAINER.value, Permission.DOCKER_RESTART_CONTAINER.value, Permission.DOCKER_REMOVE_CONTAINER.value,
-    Permission.DOCKER_INSPECT_CONTAINER.value, Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value,
-    Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_PULL_IMAGE.value, Permission.DOCKER_REMOVE_IMAGE.value,
-    Permission.DOCKER_MANAGE_REGISTRIES.value, Permission.DOCKER_MANAGE_VOLUMES.value, Permission.DOCKER_MANAGE_NETWORKS.value,
-    Permission.DOCKER_EXPORT_BACKUP.value, Permission.DOCKER_DIAGNOSTICS.value,
-}
+_DOCKER_OPERATOR = {Permission.DOCKER_VIEW.value, Permission.DOCKER_CONTAINERS.value, Permission.DOCKER_IMAGES.value, Permission.DOCKER_COMPOSE.value, Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_CREATE_CONTAINER.value, Permission.DOCKER_START_CONTAINER.value, Permission.DOCKER_STOP_CONTAINER.value, Permission.DOCKER_RESTART_CONTAINER.value, Permission.DOCKER_REMOVE_CONTAINER.value, Permission.DOCKER_INSPECT_CONTAINER.value, Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value, Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_PULL_IMAGE.value, Permission.DOCKER_REMOVE_IMAGE.value, Permission.DOCKER_MANAGE_REGISTRIES.value, Permission.DOCKER_MANAGE_VOLUMES.value, Permission.DOCKER_MANAGE_NETWORKS.value, Permission.DOCKER_EXPORT_BACKUP.value, Permission.DOCKER_DIAGNOSTICS.value}
 
 ROLE_PERMISSIONS: dict[Role, set[str]] = {
     Role.admin: set(ALL_PERMISSIONS),
     Role.operator: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {
         Permission.SYSTEM_STATUS.value, Permission.SYSTEM_LOGS.value, Permission.SETTINGS_VIEW_SYSTEM.value,
-        Permission.LOGS_VIEW_OWN.value, Permission.LOGS_VIEW_SYSTEM.value, Permission.LOGS_VIEW_KERNEL.value,
-        Permission.LOGS_VIEW_SERVICES.value, Permission.LOGS_VIEW_WEBNAS.value, Permission.LOGS_VIEW_CONTAINERS.value,
-        Permission.LOGS_LIVE.value, Permission.LOGS_EXPORT.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value,
+        Permission.LOGS_VIEW_OWN.value, Permission.LOGS_VIEW_SYSTEM.value, Permission.LOGS_VIEW_KERNEL.value, Permission.LOGS_VIEW_SERVICES.value, Permission.LOGS_VIEW_WEBNAS.value, Permission.LOGS_VIEW_CONTAINERS.value, Permission.LOGS_LIVE.value, Permission.LOGS_EXPORT.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value,
         Permission.USERS_VIEW.value, Permission.USERS_UPDATE.value, Permission.USERS_LOCK.value, Permission.USERS_UNLOCK.value, Permission.USERS_CHANGE_PASSWORD.value, Permission.USERS_MANAGE_GROUPS.value, Permission.USERS_MANAGE_QUOTA.value,
         Permission.GROUPS_VIEW.value, Permission.GROUPS_CREATE.value, Permission.GROUPS_MANAGE_MEMBERS.value, Permission.ACCESS_VIEW.value,
         Permission.AUDIT_VIEW_OWN.value, Permission.MODULES_VIEW.value, Permission.MODULES_CONFIGURE.value, Permission.MODULES_DIAGNOSTICS.value, Permission.MODULES_LOGS.value, Permission.MODULES_BACKUP_CREATE.value, Permission.MODULES_BACKUP_RESTORE.value,
         Permission.SERVICES_VIEW.value, Permission.SERVICES_START.value, Permission.SERVICES_STOP.value, Permission.SERVICES_RESTART.value, Permission.SERVICES_ENABLE.value, Permission.SERVICES_DISABLE.value, Permission.SERVICES_LOGS.value,
-        Permission.UPDATES_VIEW.value, Permission.UPDATES_APPLY.value, Permission.NETWORK_VIEW.value, Permission.NETWORK_CREATE.value, Permission.NETWORK_UPDATE.value, Permission.NETWORK_MOUNT.value, Permission.NETWORK_UNMOUNT.value,
-        Permission.NETWORK_CONFIG_VIEW.value,
-        *_DOCKER_OPERATOR,
-        Permission.DNS_VIEW.value, Permission.DNS_CONFIGURE.value, Permission.DATABASES_VIEW.value, Permission.DATABASES_CONFIGURE.value, Permission.DATABASES_BACKUP.value, Permission.DATABASES_RESTORE.value,
-        Permission.HOMEASSISTANT_VIEW.value, Permission.HOMEASSISTANT_OPERATE.value,
-        Permission.ANSIBLE_VIEW.value, Permission.ANSIBLE_CONFIGURE.value, Permission.ANSIBLE_HOSTS_VIEW.value, Permission.ANSIBLE_HOSTS_MANAGE.value,
-        Permission.ANSIBLE_DISCOVERY.value, Permission.ANSIBLE_CREDENTIALS_VIEW.value, Permission.ANSIBLE_CREDENTIALS_MANAGE.value,
-        Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PROJECTS_MANAGE.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value,
-        Permission.ANSIBLE_PLAYBOOKS_MANAGE.value, Permission.ANSIBLE_JOBS_LAUNCH.value, Permission.ANSIBLE_JOBS_CANCEL.value,
-        Permission.ANSIBLE_SCHEDULES_MANAGE.value, Permission.ANSIBLE_BACKUP.value,
-        Permission.HOSTS_MANAGER_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_MANAGE.value,
-        Permission.HOSTS_MANAGER_HOSTS_APPROVE.value, Permission.HOSTS_MANAGER_DISCOVERY.value, Permission.HOSTS_MANAGER_INVENTORY_MANAGE.value,
-        Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_MANAGE.value,
-        Permission.HOSTS_MANAGER_POWER_VIEW.value, Permission.HOSTS_MANAGER_POWER_ON.value,
-        Permission.HOSTS_MANAGER_ACTIONS_EXECUTE.value, Permission.HOSTS_MANAGER_BACKUP.value, Permission.HOSTS_MANAGER_CONFIGURE.value,
-        Permission.OS_REPOSITORIES_VIEW.value, Permission.OS_REPOSITORIES_MANAGE.value, Permission.OS_REPOSITORIES_SYNC.value,
-        Permission.OS_REPOSITORIES_PACKAGES_UPLOAD.value, Permission.OS_REPOSITORIES_PACKAGES_BUILD.value,
-        Permission.OS_REPOSITORIES_SNAPSHOTS_MANAGE.value, Permission.OS_REPOSITORIES_HOSTS_ASSIGN.value,
-        Permission.OS_REPOSITORIES_JOBS_CANCEL.value, Permission.OS_REPOSITORIES_BACKUP.value, Permission.OS_REPOSITORIES_CONFIGURE.value,
-        Permission.APMID_VIEW.value, Permission.APMID_CREATE.value, Permission.APMID_UPDATE.value,
-        Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_MEMBERS_MANAGE.value,
-        Permission.APMID_PERMISSIONS_VIEW.value, Permission.APMID_AUDIT_VIEW.value, Permission.APMID_BACKUP.value,
-        Permission.CRON_VIEW.value, Permission.CRON_CREATE.value, Permission.CRON_EDIT.value,
-        Permission.CRON_ENABLE.value, Permission.CRON_LOGS.value,
-        Permission.DHCP_VIEW.value, Permission.DHCP_CONFIGURE.value, Permission.DHCP_SUBNETS_MANAGE.value,
-        Permission.DHCP_RESERVATIONS_MANAGE.value, Permission.DHCP_LEASES_VIEW.value, Permission.DHCP_SERVICE_CONTROL.value,
-        Permission.DHCP_BACKUP.value, Permission.DHCP_DIAGNOSTICS.value,
+        Permission.UPDATES_VIEW.value, Permission.UPDATES_APPLY.value, Permission.NETWORK_VIEW.value, Permission.NETWORK_CREATE.value, Permission.NETWORK_UPDATE.value, Permission.NETWORK_MOUNT.value, Permission.NETWORK_UNMOUNT.value, Permission.NETWORK_CONFIG_VIEW.value,
+        *_DOCKER_OPERATOR, Permission.DNS_VIEW.value, Permission.DNS_CONFIGURE.value, Permission.DATABASES_VIEW.value, Permission.DATABASES_CONFIGURE.value, Permission.DATABASES_BACKUP.value, Permission.DATABASES_RESTORE.value,
+        Permission.HOMEASSISTANT_VIEW.value, Permission.HOMEASSISTANT_OPERATE.value, Permission.ANSIBLE_VIEW.value, Permission.ANSIBLE_CONFIGURE.value, Permission.ANSIBLE_HOSTS_VIEW.value, Permission.ANSIBLE_HOSTS_MANAGE.value, Permission.ANSIBLE_DISCOVERY.value, Permission.ANSIBLE_CREDENTIALS_VIEW.value, Permission.ANSIBLE_CREDENTIALS_MANAGE.value, Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PROJECTS_MANAGE.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value, Permission.ANSIBLE_PLAYBOOKS_MANAGE.value, Permission.ANSIBLE_JOBS_LAUNCH.value, Permission.ANSIBLE_JOBS_CANCEL.value, Permission.ANSIBLE_SCHEDULES_MANAGE.value, Permission.ANSIBLE_BACKUP.value,
+        Permission.HOSTS_MANAGER_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_MANAGE.value, Permission.HOSTS_MANAGER_HOSTS_APPROVE.value, Permission.HOSTS_MANAGER_DISCOVERY.value, Permission.HOSTS_MANAGER_INVENTORY_MANAGE.value, Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_MANAGE.value, Permission.HOSTS_MANAGER_POWER_VIEW.value, Permission.HOSTS_MANAGER_POWER_ON.value, Permission.HOSTS_MANAGER_ACTIONS_EXECUTE.value, Permission.HOSTS_MANAGER_BACKUP.value, Permission.HOSTS_MANAGER_CONFIGURE.value,
+        Permission.OS_REPOSITORIES_VIEW.value, Permission.OS_REPOSITORIES_MANAGE.value, Permission.OS_REPOSITORIES_SYNC.value, Permission.OS_REPOSITORIES_PACKAGES_UPLOAD.value, Permission.OS_REPOSITORIES_PACKAGES_BUILD.value, Permission.OS_REPOSITORIES_SNAPSHOTS_MANAGE.value, Permission.OS_REPOSITORIES_HOSTS_ASSIGN.value, Permission.OS_REPOSITORIES_JOBS_CANCEL.value, Permission.OS_REPOSITORIES_BACKUP.value, Permission.OS_REPOSITORIES_CONFIGURE.value,
+        Permission.APMID_VIEW.value, Permission.APMID_CREATE.value, Permission.APMID_UPDATE.value, Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_MEMBERS_MANAGE.value, Permission.APMID_PERMISSIONS_VIEW.value, Permission.APMID_AUDIT_VIEW.value, Permission.APMID_BACKUP.value,
+        Permission.CRON_VIEW.value, Permission.CRON_CREATE.value, Permission.CRON_EDIT.value, Permission.CRON_ENABLE.value, Permission.CRON_LOGS.value,
+        Permission.DHCP_VIEW.value, Permission.DHCP_CONFIGURE.value, Permission.DHCP_SUBNETS_MANAGE.value, Permission.DHCP_RESERVATIONS_MANAGE.value, Permission.DHCP_LEASES_VIEW.value, Permission.DHCP_SERVICE_CONTROL.value, Permission.DHCP_BACKUP.value, Permission.DHCP_DIAGNOSTICS.value,
     },
     Role.auditor: {
         Permission.FILES_VIEW.value, Permission.FILES_READ.value, Permission.FILES_DOWNLOAD.value, Permission.TRANSFERS_VIEW_OWN.value, Permission.TRANSFERS_VIEW_ALL.value,
         Permission.SETTINGS_VIEW_OWN.value, Permission.SETTINGS_VIEW_SYSTEM.value, Permission.USERS_VIEW.value, Permission.GROUPS_VIEW.value, Permission.ACCESS_VIEW.value,
         Permission.AUDIT_VIEW_OWN.value, Permission.AUDIT_VIEW_ALL.value, Permission.AUDIT_EXPORT.value, Permission.MODULES_VIEW.value, Permission.MODULES_DIAGNOSTICS.value, Permission.MODULES_LOGS.value,
         Permission.SERVICES_VIEW.value, Permission.SERVICES_LOGS.value, Permission.UPDATES_VIEW.value, Permission.NETWORK_VIEW.value, Permission.NETWORK_CONFIG_VIEW.value,
-        Permission.DOCKER_VIEW.value, Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_INSPECT_CONTAINER.value,
-        Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value, Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_DIAGNOSTICS.value,
+        Permission.DOCKER_VIEW.value, Permission.DOCKER_VIEW_CONTAINERS.value, Permission.DOCKER_INSPECT_CONTAINER.value, Permission.DOCKER_VIEW_LOGS.value, Permission.DOCKER_VIEW_STATS.value, Permission.DOCKER_VIEW_IMAGES.value, Permission.DOCKER_DIAGNOSTICS.value,
         Permission.DNS_VIEW.value, Permission.DATABASES_VIEW.value, Permission.HOMEASSISTANT_VIEW.value, Permission.SYSTEM_STATUS.value, Permission.SYSTEM_LOGS.value,
-        Permission.LOGS_VIEW_OWN.value, Permission.LOGS_VIEW_SYSTEM.value, Permission.LOGS_VIEW_KERNEL.value,
-        Permission.LOGS_VIEW_SERVICES.value, Permission.LOGS_VIEW_WEBNAS.value, Permission.LOGS_VIEW_CONTAINERS.value,
-        Permission.LOGS_EXPORT.value,
-        Permission.ANSIBLE_VIEW.value, Permission.ANSIBLE_HOSTS_VIEW.value, Permission.ANSIBLE_CREDENTIALS_VIEW.value,
-        Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value, Permission.ANSIBLE_AUDIT_VIEW.value,
-        Permission.HOSTS_MANAGER_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_VIEW.value, Permission.HOSTS_MANAGER_POWER_VIEW.value,
-        Permission.HOSTS_MANAGER_AUDIT_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value,
-        Permission.OS_REPOSITORIES_VIEW.value, Permission.OS_REPOSITORIES_KEYS_VIEW.value,
-        Permission.APMID_VIEW.value, Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_PERMISSIONS_VIEW.value,
-        Permission.APMID_AUDIT_VIEW.value,
-        Permission.CRON_VIEW.value, Permission.CRON_LOGS.value,
-        Permission.DHCP_VIEW.value, Permission.DHCP_LEASES_VIEW.value, Permission.DHCP_DIAGNOSTICS.value,
+        Permission.LOGS_VIEW_OWN.value, Permission.LOGS_VIEW_SYSTEM.value, Permission.LOGS_VIEW_KERNEL.value, Permission.LOGS_VIEW_SERVICES.value, Permission.LOGS_VIEW_WEBNAS.value, Permission.LOGS_VIEW_CONTAINERS.value, Permission.LOGS_EXPORT.value,
+        Permission.ANSIBLE_VIEW.value, Permission.ANSIBLE_HOSTS_VIEW.value, Permission.ANSIBLE_CREDENTIALS_VIEW.value, Permission.ANSIBLE_PROJECTS_VIEW.value, Permission.ANSIBLE_PLAYBOOKS_VIEW.value, Permission.ANSIBLE_AUDIT_VIEW.value,
+        Permission.HOSTS_MANAGER_VIEW.value, Permission.HOSTS_MANAGER_HOSTS_VIEW.value, Permission.HOSTS_MANAGER_POWER_VIEW.value, Permission.HOSTS_MANAGER_AUDIT_VIEW.value, Permission.HOSTS_MANAGER_REPOSITORIES_VIEW.value,
+        Permission.OS_REPOSITORIES_VIEW.value, Permission.OS_REPOSITORIES_KEYS_VIEW.value, Permission.APMID_VIEW.value, Permission.APMID_MEMBERS_VIEW.value, Permission.APMID_PERMISSIONS_VIEW.value, Permission.APMID_AUDIT_VIEW.value,
+        Permission.CRON_VIEW.value, Permission.CRON_LOGS.value, Permission.DHCP_VIEW.value, Permission.DHCP_LEASES_VIEW.value, Permission.DHCP_DIAGNOSTICS.value,
     },
     Role.user: _FILES | _TRANSFERS_OWN | _SETTINGS_OWN | {Permission.AUDIT_VIEW_OWN.value, Permission.LOGS_VIEW_OWN.value, Permission.LOGS_SAVED_VIEWS_MANAGE.value, Permission.SYSTEM_STATUS.value},
 }
+
+
+def _legacy_migrate(user: SessionUser) -> bool:
+    """Migrate an existing legacy identity into the central graph on first use."""
+    try:
+        from ..rbac import _migrate_legacy_assignment
+        return _migrate_legacy_assignment(user)
+    except (ImportError, RuntimeError):
+        return False
 
 
 def has_permission(username: str, permission: str | Permission) -> bool:
@@ -403,15 +334,24 @@ def has_permission(username: str, permission: str | Permission) -> bool:
         expected = normalize_permission(permission)
     except ValueError:
         return False
-    from .service import access_profile
-
-    return expected in access_profile(username)["permissions"]
+    from .permission_service import permission_service
+    subject = SessionUser(username=username, csrf_token="", auth_provider="pam", identity_id=username)
+    central = permission_service()
+    if central.can(subject, expected):
+        return True
+    if _legacy_migrate(subject):
+        central.invalidate()
+        return central.can(subject, expected)
+    return False
 
 
 def authorize(user: SessionUser, permission: str | Permission) -> None:
     expected = normalize_permission(permission)
-    if not has_permission(user.username, expected):
-        identity_error(403, "PERMISSION_REQUIRED", "The operation is not allowed for this role", field=expected)
+    from .permission_service import permission_service
+    central = permission_service()
+    if not central.can(user, expected) and _legacy_migrate(user):
+        central.invalidate()
+    central.authorize(user, expected)
 
 
 def require_permission(permission: str | Permission, *, mutating: bool | None = None) -> Callable[..., SessionUser]:
