@@ -26,7 +26,10 @@ export function ContextMenu({ x, y, items, onClose, className = "" }: {
   portalTarget?: Element | null;
 }) {
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const id = WebNAS.contextMenu.open({
