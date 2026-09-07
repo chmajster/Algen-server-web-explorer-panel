@@ -59,12 +59,12 @@ export function DesktopWorkspace({ apps, modules, appIds, moduleIds, home, uploa
     const generated: ShellDesktopEntry[] = [];
     for (const app of apps.filter((item) => appIds.has(item.id))) {
       const key = `app:${app.id}`;
-      generated.push(byId.get(key) ?? { id: key, kind: "app", name: app.label, target: app.id, position: { x: 12, y: 12 + index++ * GRID_Y }, created_at: Date.now() });
+      generated.push(byId.get(key) ?? { id: key, kind: "app", name: app.label, target: app.id, position: { x: 12, y: 12 + index++ * GRID_Y }, created_at: 0 });
     }
     for (const moduleId of moduleIds) {
       if (!modules.has(moduleId)) continue;
       const key = `module:${moduleId}`;
-      generated.push(byId.get(key) ?? { id: key, kind: "module", name: modules.get(moduleId) || moduleId, target: moduleId, position: { x: 12, y: 12 + index++ * GRID_Y }, created_at: Date.now() });
+      generated.push(byId.get(key) ?? { id: key, kind: "module", name: modules.get(moduleId) || moduleId, target: moduleId, position: { x: 12, y: 12 + index++ * GRID_Y }, created_at: 0 });
     }
     const custom = current.filter((item) => !item.id.startsWith("app:") && !item.id.startsWith("module:"));
     return [...generated, ...custom];
@@ -79,7 +79,10 @@ export function DesktopWorkspace({ apps, modules, appIds, moduleIds, home, uploa
     if (!preferences) return;
     const stored = preferences.desktop_entries;
     const missing = entries.filter((item) => !stored.some((storedItem) => storedItem.id === item.id));
-    if (missing.length) persistEntries([...stored, ...missing]);
+    if (missing.length) {
+      const createdAt = Date.now();
+      persistEntries([...stored, ...missing.map((item, index) => ({ ...item, created_at: item.created_at || createdAt + index }))]);
+    }
   }, [entries, persistEntries, preferences]);
 
   const entryById = useCallback((id: string) => entries.find((item) => item.id === id), [entries]);
