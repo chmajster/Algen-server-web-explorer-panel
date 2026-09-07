@@ -20,6 +20,7 @@ export type ManagedContextMenuRequest = {
   source?: string;
   className?: string;
   ariaLabel?: string;
+  portalTarget?: Element | null;
   onClose?: () => void;
 };
 
