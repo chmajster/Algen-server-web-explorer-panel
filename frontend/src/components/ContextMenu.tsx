@@ -17,7 +17,7 @@ export type ContextMenuItem = {
  * Compatibility adapter for legacy callers. Rendering is delegated to the
  * single SystemContextMenuHost owned by WebNAS Shell.
  */
-export function ContextMenu({ x, y, items, onClose, className = "" }: {
+export function ContextMenu({ x, y, items, onClose, className = "", portalTarget }: {
   x: number;
   y: number;
   items: ContextMenuItem[];
@@ -36,12 +36,13 @@ export function ContextMenu({ x, y, items, onClose, className = "" }: {
       x,
       y,
       className,
+      portalTarget,
       source: className || "legacy-context-menu",
       items,
       onClose: () => closeRef.current(),
     });
     return () => WebNAS.contextMenu.close(id);
-  }, [x, y, items, className]);
+  }, [x, y, items, className, portalTarget]);
 
   return null;
 }
