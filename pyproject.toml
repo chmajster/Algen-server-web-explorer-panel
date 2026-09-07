@@ -42,6 +42,9 @@ ignore = ["B008", "E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/app/ldap_authentication/service.py" = ["F841"]
+# rbac.py deliberately re-exports ROLE_PERMISSIONS for legacy extensions while
+# the central PermissionService remains the runtime authorization source.
+"backend/app/rbac.py" = ["F401"]
 
 [tool.mypy]
 python_version = "3.14"
