@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import subprocess
-from typing import Any
 
 from app.core.redaction import redact_text
 
