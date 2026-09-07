@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import { SystemContextMenuHost } from "./components/SystemContextMenuHost";
 import { detectLanguage, loadLanguageWithFallback } from "./i18n";
 import "./styles/app.css";
 import "./styles/design-system.css";
@@ -44,6 +45,7 @@ export async function bootstrap() {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />
+      <SystemContextMenuHost />
     </StrictMode>,
   );
 }
