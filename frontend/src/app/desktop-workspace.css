@@ -1,3 +1,7 @@
+.desktop.webnas-managed-workspace .desktop-shortcuts {
+  display: none !important;
+}
+
 .desktop-workspace {
   position: absolute;
   inset: 0;
