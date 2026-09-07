@@ -23,6 +23,7 @@ import { ShutdownDialog } from "./ShutdownDialog";
 import type { AppId, RecentApp, Theme, Toast, ToastFn, Translate, User, WindowInstance } from "./types";
 import { initialWindowState, restoreWindowState, windowReducer, type ViewportMetrics } from "./windowState";
 import { measureWorkspaceMetrics, navbarElements, sameViewportMetrics } from "./workspaceMetrics";
+import { useShellBindings } from "./shell/useShellBindings";
 
 const DesktopWidgets = lazy(() => import("../features/widgets/DesktopWidgets").then((module) => ({ default: module.DesktopWidgets })));
 
@@ -554,6 +555,29 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       },
     });
   }
+
+  useShellBindings({
+    state,
+    viewport,
+    dispatch,
+    profile,
+    t,
+    toasts,
+    pinned,
+    startPinned,
+    canUseApp,
+    openApp,
+    togglePin,
+    toggleStartPin,
+    setLauncherOpen,
+    setNotificationsOpen,
+    setActionsOpen,
+    setCalendarOpen,
+    setShutdownOpen,
+    signOut,
+    restartApplication,
+    restartSystem,
+  });
 
   useLayoutEffect(() => {
     const root = document.documentElement;

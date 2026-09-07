@@ -1,4 +1,14 @@
 import "@testing-library/jest-dom/vitest";
+import { render } from "@testing-library/react";
+import { createElement } from "react";
+import { beforeEach } from "vitest";
+import { SystemContextMenuHost } from "../components/SystemContextMenuHost";
+import { WebNAS } from "../app/shell/WebNASShell";
+
+beforeEach(() => {
+  WebNAS.contextMenu.close();
+  render(createElement(SystemContextMenuHost));
+});
 
 Object.defineProperty(window, "matchMedia", {
   writable: true,

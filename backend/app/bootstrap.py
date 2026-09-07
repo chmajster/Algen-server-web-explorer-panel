@@ -40,6 +40,7 @@ from .resource_sampler import resource_sampler, resource_sampler_loop
 from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
+from .shell_preferences import router as shell_preferences_router
 from .startup_bootstrap import router as startup_bootstrap_router
 from .tasks import task_store
 from .update_coordination import active_transient_operations, register_operation_provider
@@ -174,9 +175,6 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     application_settings = settings or get_config()
     module_registry = registry or build_module_registry()
     container = ApplicationContainer(application_settings, module_registry)
-    # settings.system_resources resolves this module global at request time.
-    # Inject the shared sampler at the composition root without changing the
-    # public API or the settings router's authorization dependency.
     settings_api.collect_dashboard = resource_sampler.dashboard
     app = FastAPI(title="WebNAS", version=__version__, lifespan=application_lifespan)
     app.state.ready = False
@@ -197,6 +195,7 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     app.include_router(power_control_router)
     app.include_router(appliance_backup_router, include_in_schema=False)
     app.include_router(alerts_router)
+    app.include_router(shell_preferences_router)
     if mount_frontend and FRONTEND_DIST.exists():
         app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
     return app

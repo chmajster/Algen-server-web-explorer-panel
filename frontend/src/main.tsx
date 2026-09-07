@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import { SystemContextMenuHost } from "./components/SystemContextMenuHost";
 import { detectLanguage, loadLanguageWithFallback } from "./i18n";
 import "./styles/app.css";
 import "./styles/design-system.css";
@@ -11,6 +12,8 @@ import "./styles/ui-consistency.css";
 import "./styles/ui-feature-consistency.css";
 import "./styles/ui-specialized-consistency.css";
 import "./styles/ui-review-fixes.css";
+import "./styles/mobile-shell.css";
+import "./styles/shell-taskbar.css";
 
 function renderBootstrapError(error: unknown) {
   console.error("WebNAS bootstrap failed", error);
@@ -42,6 +45,7 @@ export async function bootstrap() {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />
+      <SystemContextMenuHost />
     </StrictMode>,
   );
 }
