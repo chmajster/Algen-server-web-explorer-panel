@@ -66,7 +66,7 @@ export function DesktopWorkspacePortal(props: DesktopProps) {
     modules={moduleNames}
     appIds={new Set(props.profile.desktop_shortcut_apps)}
     moduleIds={new Set(props.profile.desktop_shortcut_modules)}
-    home={props.user.home}
+    home={props.profile.home}
     uploadControls={props.uploadControls}
     t={props.t}
     openApp={(app, initialPath, moduleId) => {
