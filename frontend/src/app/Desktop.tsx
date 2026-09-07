@@ -6,6 +6,7 @@ import { DesktopWorkspacePortal } from "./DesktopWorkspacePortal";
 import type { DesktopProps } from "./desktop/types";
 import { DesktopContextBridge } from "./shell/DesktopContextBridge";
 import { ShellStateController } from "./shell/ShellStateController";
+import { SystemSearchProviders } from "./shell/SystemSearchProviders";
 import { WebNAS } from "./shell/WebNASShell";
 
 /** Desktop composition root and lifecycle boundary for the managed WebNAS Shell. */
@@ -24,6 +25,7 @@ export function Desktop(props: DesktopProps) {
     <DesktopEnhancements profile={props.profile} t={props.t} toast={props.toast} onSettingsChange={props.onSettingsChange} />
     <DesktopWorkspacePortal {...props} />
     <DesktopContextBridge />
+    <SystemSearchProviders profile={props.profile} />
     <ShellStateController />
     <SystemContextMenuHost />
   </>;
