@@ -1,0 +1,71 @@
+name: PR207 finish
+
+on:
+  push:
+    branches:
+      - codex/webnas-rbac-ldap
+    paths:
+      - .github/workflows/pr207-finish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: codex/webnas-rbac-ldap
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.2'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Patch regression fixtures and workflow cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/tests/test_infrastructure_modules.py')
+          text = path.read_text()
+          old = '    monkeypatch.setattr(linux_update_worker.shutil, "which", lambda name: f"/usr/bin/{name}")\n    monkeypatch.setattr(linux_update_worker.subprocess, "Popen", lambda *args, **kwargs: Process())'
+          new = '    monkeypatch.setattr(linux_update_worker.shutil, "which", lambda name: f"/usr/bin/{name}")\n    monkeypatch.setattr(linux_update_worker.os, "geteuid", lambda: 0)\n    monkeypatch.setattr(linux_update_worker.subprocess, "Popen", lambda *args, **kwargs: Process())'
+          if old not in text:
+              raise SystemExit('infrastructure test patch target missing')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('backend/app/log_system/api.py')
+          text = path.read_text()
+          old = '        target["items"].append({"id": identifier, "label": label, "available": available, "status": status, "permission": permission.value})'
+          new = '        items = target.get("items")\n        if not isinstance(items, list):\n            items = []\n            target["items"] = items\n        items.append({"id": identifier, "label": label, "available": available, "status": status, "permission": permission.value})'
+          if old not in text:
+              raise SystemExit('log-system mypy patch target missing')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('.github/workflows/install-test.yml')
+          text = path.read_text()
+          old = '            sudo rm -rf /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas\n'
+          new = old + '          fi\n'
+          if old not in text or text.rstrip().endswith('fi'):
+              raise SystemExit('install cleanup patch target missing or already fixed')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Refresh vulnerable transitive npm lock entries
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm audit fix --package-lock-only --ignore-scripts
+          npm audit --audit-level=high
+      - name: Commit generated changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'webnas-ci'
+          git config user.email 'webnas-ci@users.noreply.github.com'
+          git add frontend/package-lock.json backend/tests/test_infrastructure_modules.py backend/app/log_system/api.py .github/workflows/install-test.yml
+          git diff --cached --check
+          git commit -m 'fix(ci): clear remaining PR 207 blockers'
+          git push origin HEAD:codex/webnas-rbac-ldap
