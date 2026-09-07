@@ -6,6 +6,7 @@ import { DesktopWorkspacePortal } from "./DesktopWorkspacePortal";
 import type { DesktopProps } from "./desktop/types";
 import { DesktopContextBridge } from "./shell/DesktopContextBridge";
 import { ShellStateController } from "./shell/ShellStateController";
+import { StartGlobalSearchBridge } from "./shell/StartGlobalSearchBridge";
 import { SystemSearchProviders } from "./shell/SystemSearchProviders";
 import { WebNAS } from "./shell/WebNASShell";
 
@@ -26,6 +27,7 @@ export function Desktop(props: DesktopProps) {
     <DesktopWorkspacePortal {...props} />
     <DesktopContextBridge />
     <SystemSearchProviders profile={props.profile} />
+    <StartGlobalSearchBridge />
     <ShellStateController />
     <SystemContextMenuHost />
   </>;
