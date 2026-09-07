@@ -57,8 +57,45 @@ export const defaultShellPreferences: ShellPreferences = {
   mobile: {},
 };
 
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function array<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
+export function normalizeShellPreferences(value: unknown): ShellPreferences {
+  const source = record(value);
+  return {
+    version: typeof source.version === "number" && Number.isFinite(source.version) ? source.version : 1,
+    desktop: record(source.desktop),
+    desktop_entries: array<ShellDesktopEntry>(source.desktop_entries),
+    taskbar_order: array<string>(source.taskbar_order).filter((item): item is string => typeof item === "string"),
+    start_order: array<string>(source.start_order).filter((item): item is string => typeof item === "string"),
+    start_hidden: array<string>(source.start_hidden).filter((item): item is string => typeof item === "string"),
+    recent_files: array<string>(source.recent_files).filter((item): item is string => typeof item === "string"),
+    windows: array<PersistedShellWindow>(source.windows),
+    widgets: array<ShellWidgetState>(source.widgets),
+    notifications: record(source.notifications),
+    mobile: record(source.mobile),
+  };
+}
+
+async function getPreferences() {
+  return normalizeShellPreferences(await request<unknown>("/api/shell/preferences", { cache: "no-store" }));
+}
+
+async function savePreferences(value: ShellPreferences) {
+  return normalizeShellPreferences(await request<unknown>("/api/shell/preferences", { method: "PUT", body: JSON.stringify(value) }));
+}
+
+async function patchPreferences(value: ShellPreferencesPatch) {
+  return normalizeShellPreferences(await request<unknown>("/api/shell/preferences", { method: "PATCH", body: JSON.stringify(value) }));
+}
+
 export const shellPreferencesClient = {
-  get: () => request<ShellPreferences>("/api/shell/preferences", { cache: "no-store" }),
-  save: (value: ShellPreferences) => request<ShellPreferences>("/api/shell/preferences", { method: "PUT", body: JSON.stringify(value) }),
-  patch: (value: ShellPreferencesPatch) => request<ShellPreferences>("/api/shell/preferences", { method: "PATCH", body: JSON.stringify(value) }),
+  get: getPreferences,
+  save: savePreferences,
+  patch: patchPreferences,
 };
