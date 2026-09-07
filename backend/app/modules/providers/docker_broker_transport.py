@@ -41,7 +41,8 @@ def install_docker_broker_transport(provider_class: type[Any]) -> None:
                 # privileged execution surface.
                 return subprocess.CompletedProcess(args, 126, "", "Docker broker does not accept custom environment variables")
             actor = str(getattr(self, "actor", "") or f"module-{getattr(self, 'module_id', 'docker')}")
-            response = BrokerClient().request(
+            broker_timeout = max(65.0, float(timeout) + 5.0)
+            response = BrokerClient(timeout=broker_timeout).request(
                 Operation.DOCKER,
                 {"tool": tool, "args": args[1:], "stdin": input_text, "timeout": timeout},
                 actor=actor,
