@@ -4,6 +4,7 @@ import { Desktop as DesktopController } from "./DesktopController";
 import { DesktopEnhancements } from "./DesktopEnhancements";
 import { DesktopWorkspacePortal } from "./DesktopWorkspacePortal";
 import type { DesktopProps } from "./desktop/types";
+import { DesktopContextBridge } from "./shell/DesktopContextBridge";
 import { ShellStateController } from "./shell/ShellStateController";
 import { WebNAS } from "./shell/WebNASShell";
 
@@ -22,6 +23,7 @@ export function Desktop(props: DesktopProps) {
     <DesktopController {...props} />
     <DesktopEnhancements profile={props.profile} t={props.t} toast={props.toast} onSettingsChange={props.onSettingsChange} />
     <DesktopWorkspacePortal {...props} />
+    <DesktopContextBridge />
     <ShellStateController />
     <SystemContextMenuHost />
   </>;
