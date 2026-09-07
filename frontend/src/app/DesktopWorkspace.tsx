@@ -132,7 +132,9 @@ export function DesktopWorkspace({ apps, modules, appIds, moduleIds, home, uploa
     const url = safeUrl(target);
     if (url) { kind = "url"; normalized = url; }
     else if (target.endsWith("/")) kind = "directory";
-    const name = window.prompt("Nazwa skrótu", target.split("/").filter(Boolean).at(-1) || target)?.trim();
+    const targetParts = target.split("/").filter(Boolean);
+    const defaultName = targetParts.length ? targetParts[targetParts.length - 1] : target;
+    const name = window.prompt("Nazwa skrótu", defaultName || target)?.trim();
     if (!name) return;
     const next: ShellDesktopEntry = { id: idFor("shortcut"), kind, name: name.slice(0, 240), target: normalized.slice(0, 4096), position: { x: 12, y: 12 }, created_at: Date.now() };
     persistEntries([...(preferences?.desktop_entries ?? []), next]);
