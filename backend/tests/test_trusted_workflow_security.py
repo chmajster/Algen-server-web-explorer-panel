@@ -31,7 +31,7 @@ def test_production_deploy_downloads_frontend_from_the_verified_ci_run() -> None
     workflow = TRUSTED_WORKFLOW.read_text(encoding="utf-8")
 
     assert "ci_run_id: ${{ steps.resolve-ci-run.outputs.run_id }}" in workflow
-    assert "uses: actions/download-artifact@v7" in workflow
+    assert "uses: actions/download-artifact@v8" in workflow
     assert "name: frontend-dist" in workflow
     assert "github-token: ${{ github.token }}" in workflow
     assert "run-id: ${{ needs.trusted-integration.outputs.ci_run_id }}" in workflow
