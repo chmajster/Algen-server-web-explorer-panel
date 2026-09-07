@@ -1,0 +1,51 @@
+.desktop-workspace {
+  position: absolute;
+  inset: 0;
+  z-index: var(--webnas-layer-desktop, 0);
+  overflow: hidden;
+  outline: none;
+  user-select: none;
+  touch-action: none;
+}
+
+.desktop-workspace-item {
+  position: absolute;
+  width: 84px;
+  min-height: 84px;
+  display: grid;
+  place-items: center;
+  border-radius: .65rem;
+  touch-action: none;
+}
+
+.desktop-workspace-item.selected {
+  background: color-mix(in srgb, var(--accent, #2584ff) 22%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent, #2584ff) 65%, transparent);
+}
+
+.desktop-workspace-item .app-icon { width: 100%; }
+
+.desktop-selection-rect {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--accent, #2584ff) 75%, white 10%);
+  background: color-mix(in srgb, var(--accent, #2584ff) 14%, transparent);
+}
+
+.desktop-empty-create {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2.75rem;
+}
+
+.desktop-empty-create svg { width: 1rem; height: 1rem; }
+
+@media (max-width: 640px) {
+  .desktop-workspace { touch-action: pan-y; overflow-y: auto; }
+  .desktop-workspace-item { width: 88px; min-height: 88px; }
+}
