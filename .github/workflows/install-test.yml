@@ -240,3 +240,4 @@ jobs:
             sudo systemctl daemon-reload || true
             sudo systemctl reload nginx 2>/dev/null || true
             sudo rm -rf /opt/webnas /etc/webnas /var/lib/webnas /var/log/webnas
+          fi

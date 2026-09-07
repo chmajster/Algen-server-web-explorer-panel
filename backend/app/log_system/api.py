@@ -97,7 +97,11 @@ def log_sources(user: SessionUser = Depends(_current_user)):
         if target is None:
             target = {"id": group, "label": group, "items": []}
             groups.append(target)
-        target["items"].append({"id": identifier, "label": label, "available": available, "status": status, "permission": permission.value})
+        items = target.get("items")
+        if not isinstance(items, list):
+            items = []
+            target["items"] = items
+        items.append({"id": identifier, "label": label, "available": available, "status": status, "permission": permission.value})
 
     journal = shutil.which("journalctl") is not None
     add("journal", "journal", "System journal", Permission.LOGS_VIEW_SYSTEM, journal, "available" if journal else "missing_program")
