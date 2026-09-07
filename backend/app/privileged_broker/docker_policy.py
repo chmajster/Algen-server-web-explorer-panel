@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ipaddress
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -170,8 +169,8 @@ def _validate_run(args: list[str]) -> None:
         if item not in RUN_VALUE_FLAGS or index + 1 >= len(args):
             raise base.PolicyError(f"unsupported Docker runtime option: {item}")
         value = args[index + 1]
-        if item == "--network" and value in SYSTEM_NETWORKS:
-            raise base.PolicyError("host and none Docker network modes are not permitted")
+        if item == "--network" and value == "none":
+            raise base.PolicyError("Docker none network mode is not permitted")
         if item == "--network":
             _identifier(value, "network")
         elif item == "--env-file":
@@ -413,7 +412,7 @@ def _validate_simple(args: list[str]) -> None:
         index = 0
         allowed = {"--cpu-shares", "--memory", "--memory-swap", "--restart"}
         while index < len(tail) - 1:
-            if tail[index] not in allowed or index + 1 >= len(tail) - 0:
+            if tail[index] not in allowed or index + 1 >= len(tail):
                 raise base.PolicyError("unsupported Docker update option")
             index += 2
         if index != len(tail) - 1:
