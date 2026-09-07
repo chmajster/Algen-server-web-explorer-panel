@@ -1,5 +1,6 @@
 import { Check, ChevronRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { WebNAS } from "../app/shell/WebNASShell";
 import type { ManagedContextMenuItem, ManagedContextMenuRequest } from "../app/shell/ContextMenuManager";
 import "./system-context-menu.css";
@@ -28,6 +29,7 @@ export function SystemContextMenuHost() {
       x: Math.max(8, Math.min(request.x, window.innerWidth - rect.width - 8)),
       y: Math.max(8, Math.min(request.y, window.innerHeight - rect.height - 8)),
     });
+    ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
   }, [request, submenu]);
 
   useEffect(() => {
@@ -71,7 +73,7 @@ export function SystemContextMenuHost() {
     try { item.action?.(); } finally { WebNAS.contextMenu.close(request.id); }
   };
 
-  return <div
+  const menu = <div
     ref={ref}
     className={`context-menu system-context-menu ${mobile ? "system-context-menu-mobile" : ""} ${request.className || ""}`.trim()}
     style={mobile ? undefined : { left: position.x, top: position.y }}
@@ -100,4 +102,7 @@ export function SystemContextMenuHost() {
       </div>;
     })}
   </div>;
+
+  const menuRoot = request.portalTarget?.closest(".desktop") ?? document.querySelector(".desktop") ?? request.portalTarget ?? document.body;
+  return createPortal(menu, menuRoot);
 }
