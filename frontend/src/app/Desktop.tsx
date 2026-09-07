@@ -1,20 +1,12 @@
 import { useEffect } from "react";
+import { SystemContextMenuHost } from "../components/SystemContextMenuHost";
 import { Desktop as DesktopController } from "./DesktopController";
 import { DesktopEnhancements } from "./DesktopEnhancements";
 import type { DesktopProps } from "./desktop/types";
 import { WebNAS } from "./shell/WebNASShell";
 
 /**
- * Desktop composition root.
- *
- * Window state/reducer, registry-backed module rendering, launcher, taskbar,
- * dialogs and widgets remain independent subsystems. The controller owns only
- * the orchestration contract between those existing pieces while this file is
- * the stable application boundary imported by App.
- *
- * The WebNAS runtime is installed here so system-wide layers and public shell
- * services have one lifecycle boundary instead of being owned by individual
- * applications.
+ * Desktop composition root and lifecycle boundary for the managed WebNAS Shell.
  */
 export function Desktop(props: DesktopProps) {
   useEffect(() => {
@@ -29,5 +21,6 @@ export function Desktop(props: DesktopProps) {
   return <>
     <DesktopController {...props} />
     <DesktopEnhancements profile={props.profile} t={props.t} toast={props.toast} onSettingsChange={props.onSettingsChange} />
+    <SystemContextMenuHost />
   </>;
 }
