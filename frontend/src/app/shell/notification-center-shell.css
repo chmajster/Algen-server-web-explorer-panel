@@ -1,0 +1,37 @@
+.notification-center.webnas-managed-notification-center > *:not(.shell-notification-center) { display: none !important; }
+.notification-center.webnas-managed-notification-center { padding: 0; overflow: hidden; }
+.shell-notification-center { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.shell-notification-center > header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem; border-bottom: 1px solid var(--border-subtle); }
+.shell-notification-center > header > div:first-child { display: flex; align-items: center; gap: .55rem; }
+.shell-notification-center > header span { display: grid; gap: .1rem; }
+.shell-notification-center > header small { color: var(--text-muted); font-size: .75rem; }
+.shell-notification-header-actions { display: flex; gap: .25rem; }
+.shell-notification-header-actions button { width: 2.1rem; height: 2.1rem; display: grid; place-items: center; }
+.shell-notification-header-actions svg { width: 1rem; height: 1rem; }
+.shell-notification-filters { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; padding: .55rem .75rem; border-bottom: 1px solid var(--border-subtle); }
+.shell-notification-filters select { min-width: 0; }
+.shell-notification-list { flex: 1; min-height: 0; overflow: auto; padding: .45rem; display: grid; align-content: start; gap: .35rem; }
+.shell-notification-list article { position: relative; border: 1px solid var(--border-subtle); border-radius: .65rem; background: var(--surface-secondary); overflow: hidden; }
+.shell-notification-list article.unread { border-left: 3px solid var(--accent); }
+.shell-notification-list article.read { opacity: .78; }
+.shell-notification-main { width: 100%; display: grid; grid-template-columns: .6rem minmax(0,1fr); gap: .45rem; padding: .65rem 2.5rem .55rem .65rem; text-align: left; }
+.shell-notification-main > span:last-child { display: grid; gap: .15rem; min-width: 0; }
+.shell-notification-main strong, .shell-notification-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-notification-main small { color: var(--text-muted); font-size: .72rem; }
+.shell-notification-main p { margin: .2rem 0 0; white-space: normal; }
+.shell-notification-dot { width: .5rem; height: .5rem; margin-top: .3rem; border-radius: 999px; background: currentColor; }
+.shell-notification-list article.error { color: var(--danger, #d33); }
+.shell-notification-list article.warning { color: var(--warning, #d88a00); }
+.shell-notification-list article.success { color: var(--success, #198754); }
+.shell-notification-list article .shell-notification-main p, .shell-notification-list article .shell-notification-main strong { color: var(--text-primary); }
+.shell-notification-actions { display: flex; flex-wrap: wrap; gap: .35rem; padding: 0 .65rem .6rem 1.7rem; }
+.shell-notification-actions button { min-height: 2rem; padding: 0 .65rem; }
+.shell-notification-remove { position: absolute; right: .35rem; top: .35rem; width: 1.9rem; height: 1.9rem; display: grid; place-items: center; }
+.shell-notification-remove svg { width: .95rem; height: .95rem; }
+.shell-notification-empty { min-height: 8rem; display: grid; place-items: center; align-content: center; gap: .5rem; color: var(--text-muted); }
+
+@media (max-width: 640px) {
+  .shell-notification-filters { grid-template-columns: 1fr; }
+  .shell-notification-main { min-height: 4rem; }
+  .shell-notification-actions button { min-height: 2.75rem; }
+}
