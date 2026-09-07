@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .identity.linux_accounts import is_linux_admin as is_linux_admin
-from .identity.models import Role as Role
-from .identity.permission_service import PermissionRepository, Resource, normalize_permission_id, permission_service
+from .identity.models import Role as Role, UserPolicyRequest
+from .identity.permission_service import Resource, permission_service
 from .identity.permissions import ALL_PERMISSIONS, Permission
-from .identity.service import access_profile
+from .identity.service import access_profile, service as legacy_identity_service
 from .security import SessionUser, get_session_user, require_csrf
 
 PERMISSIONS = set(ALL_PERMISSIONS)
@@ -58,6 +58,13 @@ class UserRoleInput(BaseModel):
     role_id: str
 
 
+class LegacyAssignmentInput(BaseModel):
+    username: str
+    role: Role = Role.user
+    allow: list[str] = Field(default_factory=list)
+    deny: list[str] = Field(default_factory=list)
+
+
 class PolicySubjectInput(BaseModel):
     subject_type: Literal["user", "group", "external_group", "provider"]
     subject_id: str = Field(min_length=1, max_length=4096)
@@ -96,20 +103,16 @@ def _ip(request: Request) -> str:
 
 
 def _migrate_legacy_assignment(user: SessionUser) -> bool:
-    """One-way compatibility migration into the central RBAC graph.
-
-    Default legacy `user` access is deliberately not migrated: an identity with
-    no explicit assignment remains default-deny in the new model.
-    """
+    """One-way migration of the old admin/operator/auditor/user role into RBAC v2."""
     profile = access_profile(user.username)
-    source = str(profile.get("role_source") or "")
-    if source == "default":
-        return False
     role = str(profile.get("role") or "user")
     role_name = {"admin": "Administrator", "operator": "Operator", "auditor": "Auditor", "user": "User"}.get(role, "User")
     role_id = f"system:{role_name.casefold().replace(' ', '-')}"
-    permission_service().repository.assign_user_role(user, role_id, "legacy-migration")
-    permission_service().invalidate()
+    central = permission_service()
+    if any(source.source_type == "direct-role" and source.source_id == role_id for source in central.sources(user)):
+        return False
+    central.repository.assign_user_role(user, role_id, "legacy-migration")
+    central.invalidate()
     return True
 
 
@@ -143,13 +146,20 @@ def mutating_user(request: Request) -> SessionUser:
 
 
 def has_permission(username: str, permission: str | Permission) -> bool:
-    # Compatibility helper for call sites that only know a PAM/local username.
     user = SessionUser(username=username, csrf_token="", auth_provider="pam", identity_id=username)
-    return permission_service().can(user, str(getattr(permission, "value", permission)))
+    expected = str(getattr(permission, "value", permission))
+    central = permission_service()
+    if central.can(user, expected):
+        return True
+    return _migrate_legacy_assignment(user) and central.can(user, expected)
 
 
 def authorize(user: SessionUser, permission: str | Permission, resource: Resource | None = None) -> None:
-    permission_service().authorize(user, str(getattr(permission, "value", permission)), resource)
+    expected = str(getattr(permission, "value", permission))
+    central = permission_service()
+    if not central.can(user, expected) and _migrate_legacy_assignment(user):
+        central.invalidate()
+    central.authorize(user, expected, resource)
 
 
 def require_permission(permission: str | Permission, *, mutating: bool | None = None):
@@ -158,7 +168,7 @@ def require_permission(permission: str | Permission, *, mutating: bool | None = 
         user = get_session_user(request)
         if mutating is not False and request.method not in {"GET", "HEAD", "OPTIONS"}:
             require_csrf(request, user)
-        permission_service().authorize(user, expected)
+        authorize(user, expected)
         return user
     return dependency
 
@@ -255,7 +265,7 @@ def assign_user_role(username: str, payload: UserRoleInput, request: Request, us
 
 
 @router.delete("/users/{username}/roles/{role_id}")
-def revoke_user_role(username: str, role_id: str, auth_provider: Literal["local","pam","ldap"] = "pam", identity_id: str = "", request: Request = None, user: SessionUser = Depends(rbac_write)):
+def revoke_user_role(request: Request, username: str, role_id: str, auth_provider: Literal["local","pam","ldap"] = "pam", identity_id: str = "", user: SessionUser = Depends(rbac_write)):
     subject = SessionUser(username=username, csrf_token="", auth_provider=auth_provider, identity_id=identity_id or username)
     permission_service().repository.revoke_user_role(subject, role_id, user.username, _ip(request)); permission_service().invalidate(); return {"ok": True}
 
@@ -278,8 +288,7 @@ def create_policy(payload: PolicyInput, request: Request, user: SessionUser = De
 @router.post("/simulate")
 def simulate(payload: ExplainInput, _user: SessionUser = Depends(rbac_read)):
     subject=SessionUser(username=payload.username,csrf_token="",auth_provider=payload.auth_provider,identity_id=payload.identity_id or payload.username)
-    resource=Resource(payload.resource_type,payload.resource_id,payload.scope)
-    return permission_service().explain(subject,payload.permission,resource).as_dict()
+    return permission_service().explain(subject,payload.permission,Resource(payload.resource_type,payload.resource_id,payload.scope)).as_dict()
 
 
 @router.get("/external-groups")
@@ -295,3 +304,21 @@ def map_external_group(payload: ExternalMappingInput, request: Request, user: Se
 @router.get("/audit")
 def audit(limit: int = 200, _user: SessionUser = Depends(rbac_read)):
     return {"items": permission_service().repository.audit(limit)}
+
+
+# Legacy API kept only as a migration façade. It writes the old policy once and
+# immediately projects the selected role into the central RBAC graph.
+@router.get("/assignments")
+def legacy_assignments(_user: SessionUser = Depends(rbac_read)):
+    return legacy_identity_service().users(include_system=True)
+
+
+@router.put("/assignments/{username}")
+def legacy_save_assignment(username: str, payload: LegacyAssignmentInput, request: Request, user: SessionUser = Depends(rbac_write)):
+    if username != payload.username:
+        raise HTTPException(400, "Assignment username does not match route")
+    legacy_identity_service().save_user_policy(username, UserPolicyRequest(role=payload.role, allow=payload.allow, deny=payload.deny), user.username)
+    subject = SessionUser(username=username, csrf_token="", auth_provider="pam", identity_id=username)
+    _migrate_legacy_assignment(subject)
+    permission_service().invalidate()
+    return legacy_identity_service().user(username)
