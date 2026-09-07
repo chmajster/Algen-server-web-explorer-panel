@@ -1,5 +1,17 @@
 import { ContextMenuManager } from "./ContextMenuManager";
 import { LayerManager } from "./LayerManager";
+import {
+  ActivityManager,
+  ApplicationManager,
+  ClipboardManager,
+  DesktopManager,
+  NotificationManager,
+  SearchManager,
+  SessionManager,
+  StartMenuManager,
+  TaskbarManager,
+  WindowManager,
+} from "./managers";
 
 export type WebNASDeviceMode = "mobile" | "tablet" | "desktop";
 
@@ -20,6 +32,16 @@ export class WebNASShellRuntime {
   readonly layer = new LayerManager();
   readonly contextMenu = new ContextMenuManager();
   readonly device = new DeviceManager();
+  readonly window = new WindowManager();
+  readonly notification = new NotificationManager();
+  readonly search = new SearchManager();
+  readonly taskbar = new TaskbarManager();
+  readonly startMenu = new StartMenuManager();
+  readonly desktop = new DesktopManager();
+  readonly clipboard = new ClipboardManager();
+  readonly activity = new ActivityManager();
+  readonly app = new ApplicationManager();
+  readonly session = new SessionManager();
 
   install(): void {
     this.layer.assertOrdering();
