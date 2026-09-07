@@ -52,6 +52,7 @@ ignore_missing_imports = true
 check_untyped_defs = false
 disallow_untyped_defs = false
 warn_unused_ignores = false
+allow_redefinition = true
 
 [tool.pytest.ini_options]
 pythonpath = ["backend"]
