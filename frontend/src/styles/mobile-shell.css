@@ -1,0 +1,78 @@
+@media (max-width: 640px) {
+  html, body, #root { width: 100%; min-width: 0; max-width: 100%; overflow: hidden; }
+  .desktop { width: 100dvw; height: 100dvh; min-width: 0; overflow: hidden; }
+  .desktop-surface { position: absolute; inset: 0 0 calc(3.75rem + env(safe-area-inset-bottom, 0px)) 0; overflow: hidden; }
+
+  .desktop-window {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    transform: none !important;
+  }
+
+  .desktop-window .window-titlebar { min-height: 3rem; touch-action: none; }
+  .desktop-window .window-titlebar [data-window-drag-handle],
+  .desktop-window .window-resize-handle { pointer-events: none !important; display: none !important; }
+  .desktop-window .window-content { min-width: 0; overflow: auto; overscroll-behavior: contain; }
+
+  .taskbar {
+    min-width: 0;
+    height: calc(3.75rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: max(.25rem, env(safe-area-inset-left, 0px));
+    padding-right: max(.25rem, env(safe-area-inset-right, 0px));
+  }
+
+  .taskbar .taskbar-items { overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .taskbar .taskbar-items::-webkit-scrollbar { display: none; }
+  .taskbar button { min-width: 2.75rem; min-height: 2.75rem; }
+  .taskbar .taskbar-user span,
+  .taskbar .taskbar-items button > span { display: none; }
+
+  .app-launcher {
+    position: fixed !important;
+    left: max(.5rem, env(safe-area-inset-left, 0px)) !important;
+    right: max(.5rem, env(safe-area-inset-right, 0px)) !important;
+    top: max(.5rem, env(safe-area-inset-top, 0px)) !important;
+    bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 1rem !important;
+    overflow: auto;
+  }
+
+  .notification-center,
+  .actions-center,
+  .calendar-flyout {
+    position: fixed !important;
+    left: max(.5rem, env(safe-area-inset-left, 0px)) !important;
+    right: max(.5rem, env(safe-area-inset-right, 0px)) !important;
+    top: auto !important;
+    bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: min(72dvh, 44rem) !important;
+    overflow: auto;
+    border-radius: 1rem !important;
+  }
+
+  .desktop-shortcuts { max-width: 100%; overflow: auto; touch-action: pan-y; }
+  .desktop-shortcuts button,
+  .desktop-shortcuts [role="button"] { min-width: 3rem; min-height: 3rem; }
+
+  .desktop :where(button, a, input, select, textarea) { -webkit-tap-highlight-color: transparent; }
+  .desktop :where(button, a) { touch-action: manipulation; }
+  .desktop :where(*):hover { --webnas-hover-disabled: 1; }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .desktop-window { max-width: calc(100dvw - 1rem); max-height: calc(100dvh - 4.5rem); }
+  .app-launcher, .notification-center, .actions-center, .calendar-flyout { max-width: min(38rem, calc(100dvw - 1rem)); }
+}
