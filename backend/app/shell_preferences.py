@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 from .config import get_config
 from .security import SessionUser, get_session_user, require_csrf
 
-router = APIRouter(prefix="/api/shell", tags=["shell"])
+router = APIRouter(prefix="/api/shell", tags=["shell"], include_in_schema=False)
 _lock = threading.RLock()
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 

@@ -1,5 +1,5 @@
 import { SlidersHorizontal, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { request } from "../../core/api/transport";
@@ -45,6 +45,7 @@ export function UpdateDetailsPolicyControl({
   t: Translate;
   toast: ToastFn;
 }) {
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
   const text = useMemo(() => languageText(), []);
   const [target, setTarget] = useState<Element | null>(null);
   const [open, setOpen] = useState(false);
@@ -61,51 +62,49 @@ export function UpdateDetailsPolicyControl({
       return;
     }
 
+    const root = anchorRef.current?.parentElement;
+    if (!root) return;
+
     let currentCount: HTMLElement | null = null;
     const restoreCount = () => {
       if (currentCount?.dataset.updateDetailsOriginalCount !== undefined) {
-        currentCount.textContent = currentCount.dataset.updateDetailsOriginalCount;
+        const original = currentCount.dataset.updateDetailsOriginalCount;
+        if (currentCount.textContent !== original) currentCount.textContent = original;
         delete currentCount.dataset.updateDetailsOriginalCount;
       }
       currentCount = null;
     };
 
     const resolveTarget = () => {
-      const browser = document.querySelector(".settings-content.policy-content .policy-browser");
+      const browser = root.querySelector(".settings-content.policy-content .policy-browser");
       const updateGroup = browser?.querySelector(".policy-groups button:first-of-type");
       const list = browser?.querySelector(".policy-list");
       const updatesActive = Boolean(updateGroup?.classList.contains("active") && list);
 
-      if (!updatesActive) {
+      if (!updatesActive || !list) {
         restoreCount();
-        setTarget(null);
+        setTarget((current) => current === null ? current : null);
         return;
       }
 
-      const count = list?.querySelector(":scope > header > b") as HTMLElement | null;
+      const count = list.querySelector(":scope > header > b") as HTMLElement | null;
       if (count && count !== currentCount) {
         restoreCount();
         currentCount = count;
-        currentCount.dataset.updateDetailsOriginalCount = currentCount.textContent || "4";
+        currentCount.dataset.updateDetailsOriginalCount = currentCount.textContent || "5";
       }
       if (currentCount) {
-        const original = Number(currentCount.dataset.updateDetailsOriginalCount || 4);
-        currentCount.textContent = String(Math.max(5, original + 1));
+        const original = Number(currentCount.dataset.updateDetailsOriginalCount || 5);
+        const nextCount = String(Math.max(6, original + 1));
+        if (currentCount.textContent !== nextCount) currentCount.textContent = nextCount;
       }
 
-      let host = list?.querySelector("[data-update-details-policy-host]") as HTMLElement | null;
-      if (!host && list) {
-        host = document.createElement("span");
-        host.dataset.updateDetailsPolicyHost = "true";
-        host.style.display = "contents";
-        list.appendChild(host);
-      }
-      setTarget(host);
+      setTarget((current) => current === list ? current : list);
     };
 
     resolveTarget();
     const observer = new MutationObserver(resolveTarget);
-    observer.observe(document.body, {
+    observer.observe(root, {
       childList: true,
       subtree: true,
       attributes: true,
@@ -163,6 +162,7 @@ export function UpdateDetailsPolicyControl({
   }
 
   return <>
+    <span ref={anchorRef} hidden aria-hidden="true" />
     {target && createPortal(
       <button
         type="button"

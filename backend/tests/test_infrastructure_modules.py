@@ -335,8 +335,8 @@ def test_detached_update_worker_accepts_only_closed_commands_and_records_result(
         def wait():
             return 0
 
-    monkeypatch.setattr(linux_update_worker.os, "geteuid", lambda: 0)
     monkeypatch.setattr(linux_update_worker.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(linux_update_worker.os, "geteuid", lambda: 0)
     monkeypatch.setattr(linux_update_worker.subprocess, "Popen", lambda *args, **kwargs: Process())
     result = linux_update_worker.run_update(tmp_path, "0123456789abcdef01234567", ["apt-get", "upgrade", "-y"])
 

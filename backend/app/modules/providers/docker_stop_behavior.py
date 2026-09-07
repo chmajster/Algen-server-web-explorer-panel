@@ -8,6 +8,9 @@ from typing import Any
 
 from ...package_center.executor import redact
 from ...package_center.models import api_error
+from ...privileged_broker.client import BrokerClient
+from ...privileged_broker.protocol import Operation
+from ...privileged_broker.runtime import broker_required
 from .base import CancelCallback, LogCallback, ProgressCallback
 
 
@@ -30,6 +33,20 @@ def _log_process_output(result: subprocess.CompletedProcess[str], log: LogCallba
         log("stdout" if result.returncode == 0 else "stderr", redact(line))
 
 
+def _broker_graceful_stop(target: str) -> subprocess.CompletedProcess[str]:
+    response = BrokerClient(timeout=24 * 60 * 60 + 5).request(
+        Operation.DOCKER_GRACEFUL_STOP,
+        {"container": target},
+        actor="docker-manager",
+    )
+    return subprocess.CompletedProcess(
+        ["docker", "stop", "--time", "-1", target],
+        int(response.exit_code),
+        str(response.stdout or ""),
+        str(response.stderr or ""),
+    )
+
+
 def _graceful_stop(
     provider: Any,
     payload: dict[str, Any],
@@ -50,28 +67,32 @@ def _graceful_stop(
     log("command", f"docker stop --time -1 {target}")
     progress(35, "Waiting for the container to shut down gracefully")
 
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        shell=False,
-        env=_safe_environment(),
-        start_new_session=True,
-    )
+    if broker_required():
+        result = _broker_graceful_stop(target)
+    else:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=False,
+            env=_safe_environment(),
+            start_new_session=True,
+        )
 
-    while process.poll() is None:
-        if cancelled():
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-            raise InterruptedError("Graceful container stop was cancelled")
-        time.sleep(0.25)
+        while process.poll() is None:
+            if cancelled():
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                raise InterruptedError("Graceful container stop was cancelled")
+            time.sleep(0.25)
 
-    stdout, stderr = process.communicate()
-    result = subprocess.CompletedProcess(command, process.returncode or 0, stdout, stderr)
+        stdout, stderr = process.communicate()
+        result = subprocess.CompletedProcess(command, process.returncode or 0, stdout, stderr)
+
     _log_process_output(result, log)
     if result.returncode != 0:
         raise RuntimeError(redact(result.stderr.strip() or result.stdout.strip() or "Docker stop failed"))

@@ -2,6 +2,9 @@
 
 from .models import Role
 from .permissions import Permission, has_permission, require_permission
+from .principal_compat import install_principal_compatibility
 from .service import access_profile, service
+
+install_principal_compatibility()
 
 __all__ = ["Permission", "Role", "access_profile", "has_permission", "require_permission", "service"]

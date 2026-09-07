@@ -2486,6 +2486,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ldap/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Find Groups */
+        get: operations["find_groups_api_ldap_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ldap/mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mappings */
+        get: operations["mappings_api_ldap_mappings_get"];
+        put?: never;
+        /** Create Mapping */
+        post: operations["create_mapping_api_ldap_mappings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ldap/mappings/{group_id}/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Mapping */
+        delete: operations["delete_mapping_api_ldap_mappings__group_id___role_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ldap/roles/from-group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Role From Group */
+        post: operations["role_from_group_api_ldap_roles_from_group_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ldap/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync */
+        post: operations["sync_api_ldap_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ldap/sync-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Sync Settings */
+        get: operations["get_sync_settings_api_ldap_sync_settings_get"];
+        /** Save Sync Settings */
+        put: operations["save_sync_settings_api_ldap_sync_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ldap/sync-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sync Status */
+        get: operations["sync_status_api_ldap_sync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ldap/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Connection */
+        post: operations["test_connection_api_ldap_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ldap/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Find Users */
+        get: operations["find_users_api_ldap_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/logs/boots": {
         parameters: {
             query?: never;
@@ -11474,8 +11629,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Assignments */
-        get: operations["assignments_api_rbac_assignments_get"];
+        /** Legacy Assignments */
+        get: operations["legacy_assignments_api_rbac_assignments_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11492,8 +11647,129 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Save Assignment */
-        put: operations["save_assignment_api_rbac_assignments__username__put"];
+        /** Legacy Save Assignment */
+        put: operations["legacy_save_assignment_api_rbac_assignments__username__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit */
+        get: operations["audit_api_rbac_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/external-group-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Map External Group */
+        post: operations["map_external_group_api_rbac_external_group_mappings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/external-group-mappings/{group_id}/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unmap External Group */
+        delete: operations["unmap_external_group_api_rbac_external_group_mappings__group_id___role_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/external-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** External Groups */
+        get: operations["external_groups_api_rbac_external_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Groups */
+        get: operations["groups_api_rbac_groups_get"];
+        put?: never;
+        /** Create Group */
+        post: operations["create_group_api_rbac_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Group */
+        put: operations["update_group_api_rbac_groups__group_id__put"];
+        post?: never;
+        /** Delete Group */
+        delete: operations["delete_group_api_rbac_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/groups/{group_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Group Members */
+        put: operations["set_group_members_api_rbac_groups__group_id__members_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -11518,6 +11794,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rbac/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Permissions */
+        get: operations["permissions_api_rbac_permissions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Policies */
+        get: operations["policies_api_rbac_policies_get"];
+        put?: never;
+        /** Create Policy */
+        post: operations["create_policy_api_rbac_policies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/policies/{policy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Policy */
+        put: operations["update_policy_api_rbac_policies__policy_id__put"];
+        post?: never;
+        /** Delete Policy */
+        delete: operations["delete_policy_api_rbac_policies__policy_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rbac/roles": {
         parameters: {
             query?: never;
@@ -11528,8 +11857,113 @@ export interface paths {
         /** Roles */
         get: operations["roles_api_rbac_roles_get"];
         put?: never;
+        /** Create Role */
+        post: operations["create_role_api_rbac_roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Role */
+        get: operations["role_api_rbac_roles__role_id__get"];
+        /** Update Role */
+        put: operations["update_role_api_rbac_roles__role_id__put"];
+        post?: never;
+        /** Delete Role */
+        delete: operations["delete_role_api_rbac_roles__role_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/roles/{role_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Duplicate Role */
+        post: operations["duplicate_role_api_rbac_roles__role_id__duplicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate */
+        post: operations["simulate_api_rbac_simulate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/users/{username}/effective-permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Effective Permissions */
+        get: operations["effective_permissions_api_rbac_users__username__effective_permissions_get"];
+        put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/users/{username}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assign User Role */
+        post: operations["assign_user_role_api_rbac_users__username__roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rbac/users/{username}/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke User Role */
+        delete: operations["revoke_user_role_api_rbac_users__username__roles__role_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -11833,25 +12267,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/shell/preferences": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Shell Preferences */
-        get: operations["get_shell_preferences_api_shell_preferences_get"];
-        /** Put Shell Preferences */
-        put: operations["put_shell_preferences_api_shell_preferences_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Patch Shell Preferences */
-        patch: operations["patch_shell_preferences_api_shell_preferences_patch"];
         trace?: never;
     };
     "/api/system/host-info": {
@@ -13141,31 +13556,6 @@ export interface components {
             /** Paths */
             paths?: string[] | null;
         };
-        /** DesktopEntry */
-        DesktopEntry: {
-            /**
-             * Created At
-             * @default 0
-             */
-            created_at: number;
-            /** Id */
-            id: string;
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "app" | "module" | "file" | "directory" | "url" | "folder";
-            /** Name */
-            name: string;
-            /** Parent Id */
-            parent_id?: string | null;
-            position?: components["schemas"]["Point"];
-            /**
-             * Target
-             * @default
-             */
-            target: string;
-        };
         /** DesktopWidget */
         DesktopWidget: {
             /**
@@ -13561,6 +13951,39 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /** ExplainInput */
+        ExplainInput: {
+            /**
+             * Auth Provider
+             * @default pam
+             * @enum {string}
+             */
+            auth_provider: "local" | "pam" | "ldap";
+            /**
+             * Identity Id
+             * @default
+             */
+            identity_id: string;
+            /** Permission */
+            permission: string;
+            /**
+             * Resource Id
+             * @default *
+             */
+            resource_id: string;
+            /**
+             * Resource Type
+             * @default global
+             */
+            resource_type: string;
+            /**
+             * Scope
+             * @default *
+             */
+            scope: string;
+            /** Username */
+            username: string;
+        };
         /** ExportRequest */
         ExportRequest: {
             /**
@@ -13658,6 +14081,13 @@ export interface components {
              * @default
              */
             username: string;
+        };
+        /** ExternalMappingInput */
+        ExternalMappingInput: {
+            /** External Group Id */
+            external_group_id: string;
+            /** Role Id */
+            role_id: string;
         };
         /** FileRestoreInput */
         FileRestoreInput: {
@@ -13891,6 +14321,24 @@ export interface components {
             confirm: boolean;
             /** Username */
             username: string;
+        };
+        /** GroupMembersInput */
+        GroupMembersInput: {
+            /** Members */
+            members?: {
+                [key: string]: string;
+            }[];
+        };
+        /** GroupPatch */
+        GroupPatch: {
+            /** Active */
+            active?: boolean | null;
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Role Ids */
+            role_ids?: string[] | null;
         };
         /** GroupPatchRequest */
         GroupPatchRequest: {
@@ -14748,6 +15196,46 @@ export interface components {
             /** @default user */
             role: components["schemas"]["Role"];
         };
+        /** LdapMappingInput */
+        LdapMappingInput: {
+            /** External Group Id */
+            external_group_id: string;
+            /** Role Id */
+            role_id: string;
+        };
+        /** LdapPeriodicSyncSettings */
+        LdapPeriodicSyncSettings: {
+            /**
+             * Auto Create Local Groups
+             * @default false
+             */
+            auto_create_local_groups: boolean;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Interval Minutes
+             * @default 60
+             */
+            interval_minutes: number;
+            /**
+             * Max Depth
+             * @default 8
+             */
+            max_depth: number;
+            /**
+             * Max Nodes
+             * @default 5000
+             */
+            max_nodes: number;
+            /**
+             * Nested Groups
+             * @default true
+             */
+            nested_groups: boolean;
+        };
         /** LdapRefreshRequest */
         LdapRefreshRequest: {
             /** Username */
@@ -14782,6 +15270,29 @@ export interface components {
              * @default 10
              */
             priority: number;
+        };
+        /** LdapSyncInput */
+        LdapSyncInput: {
+            /**
+             * Auto Create Local Groups
+             * @default false
+             */
+            auto_create_local_groups: boolean;
+            /**
+             * Max Depth
+             * @default 8
+             */
+            max_depth: number;
+            /**
+             * Max Nodes
+             * @default 5000
+             */
+            max_nodes: number;
+            /**
+             * Nested Groups
+             * @default true
+             */
+            nested_groups: boolean;
         };
         /** LdifImportRequest */
         LdifImportRequest: {
@@ -14832,6 +15343,17 @@ export interface components {
             hostname: string;
             /** Pam Password */
             pam_password: string;
+        };
+        /** LegacyAssignmentInput */
+        LegacyAssignmentInput: {
+            /** Allow */
+            allow?: string[];
+            /** Deny */
+            deny?: string[];
+            /** @default user */
+            role: components["schemas"]["Role"];
+            /** Username */
+            username: string;
         };
         /** LocalDisk */
         LocalDisk: {
@@ -15832,6 +16354,32 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** PermissionGrantInput */
+        PermissionGrantInput: {
+            /**
+             * Effect
+             * @default allow
+             * @enum {string}
+             */
+            effect: "allow" | "deny";
+            /** Permission */
+            permission: string;
+            /**
+             * Resource Id
+             * @default *
+             */
+            resource_id: string;
+            /**
+             * Resource Type
+             * @default global
+             */
+            resource_type: string;
+            /**
+             * Scope
+             * @default *
+             */
+            scope: string;
+        };
         /** PlanRequest */
         PlanRequest: {
             change: components["schemas"]["NetworkChange"];
@@ -15867,13 +16415,6 @@ export interface components {
          * @enum {string}
          */
         PluginTrust: "unverified" | "trusted" | "blocked";
-        /** Point */
-        Point: {
-            /** X */
-            x: number;
-            /** Y */
-            y: number;
-        };
         /** PolicyEvaluateRequest */
         PolicyEvaluateRequest: {
             /** Facts */
@@ -15886,6 +16427,75 @@ export interface components {
             policy_id?: string | null;
             /** Source */
             source?: string | null;
+        };
+        /** PolicyInput */
+        PolicyInput: {
+            /**
+             * Active
+             * @default true
+             */
+            active: boolean;
+            /** Conditions */
+            conditions?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Effect
+             * @default allow
+             * @enum {string}
+             */
+            effect: "allow" | "deny";
+            /** Name */
+            name: string;
+            /** Permission */
+            permission: string;
+            /**
+             * Resource Id
+             * @default *
+             */
+            resource_id: string;
+            /**
+             * Resource Type
+             * @default global
+             */
+            resource_type: string;
+            /**
+             * Scope
+             * @default *
+             */
+            scope: string;
+            /** Subjects */
+            subjects?: components["schemas"]["PolicySubjectInput"][];
+        };
+        /** PolicyPatch */
+        PolicyPatch: {
+            /** Active */
+            active?: boolean | null;
+            /** Conditions */
+            conditions?: {
+                [key: string]: unknown;
+            } | null;
+            /** Description */
+            description?: string | null;
+            /** Effect */
+            effect?: ("allow" | "deny") | null;
+            /** Name */
+            name?: string | null;
+            /** Permission */
+            permission?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
+            /** Resource Type */
+            resource_type?: string | null;
+            /** Scope */
+            scope?: string | null;
+            /** Subjects */
+            subjects?: components["schemas"]["PolicySubjectInput"][] | null;
         };
         /** PolicyResetRequest */
         PolicyResetRequest: {
@@ -15949,6 +16559,16 @@ export interface components {
             format: "yaml" | "json";
             /** Source */
             source: string;
+        };
+        /** PolicySubjectInput */
+        PolicySubjectInput: {
+            /** Subject Id */
+            subject_id: string;
+            /**
+             * Subject Type
+             * @enum {string}
+             */
+            subject_type: "user" | "group" | "external_group" | "provider";
         };
         /** PortInput */
         PortInput: {
@@ -16651,31 +17271,49 @@ export interface components {
          * @enum {string}
          */
         Role: "admin" | "operator" | "auditor" | "user";
-        /** RoleAssignmentRequest */
-        RoleAssignmentRequest: {
-            /** Allow */
-            allow?: string[];
+        /** RoleFromLdapGroupInput */
+        RoleFromLdapGroupInput: {
             /**
-             * Created At
-             * @default 0
-             */
-            created_at: number;
-            /** Deny */
-            deny?: string[];
-            /** @default user */
-            role: components["schemas"]["Role"];
-            /**
-             * Updated At
-             * @default 0
-             */
-            updated_at: number;
-            /**
-             * Updated By
+             * Description
              * @default
              */
-            updated_by: string;
-            /** Username */
-            username: string;
+            description: string;
+            /** External Group Id */
+            external_group_id: string;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** RoleInput */
+        RoleInput: {
+            /**
+             * Active
+             * @default true
+             */
+            active: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions?: components["schemas"]["PermissionGrantInput"][];
+        };
+        /** RolePatch */
+        RolePatch: {
+            /** Active */
+            active?: boolean | null;
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Permissions */
+            permissions?: components["schemas"]["PermissionGrantInput"][] | null;
         };
         /** RollbackInput */
         RollbackInput: {
@@ -17204,71 +17842,6 @@ export interface components {
              */
             upload_limit_mb: number;
         };
-        /** ShellPreferences */
-        ShellPreferences: {
-            /** Desktop */
-            desktop?: {
-                [key: string]: unknown;
-            };
-            /** Desktop Entries */
-            desktop_entries?: components["schemas"]["DesktopEntry"][];
-            /** Mobile */
-            mobile?: {
-                [key: string]: unknown;
-            };
-            /** Notifications */
-            notifications?: {
-                [key: string]: unknown;
-            };
-            /** Recent Files */
-            recent_files?: string[];
-            /** Start Hidden */
-            start_hidden?: string[];
-            /** Start Order */
-            start_order?: string[];
-            /** Taskbar Order */
-            taskbar_order?: string[];
-            /**
-             * Version
-             * @default 1
-             */
-            version: number;
-            /** Widgets */
-            widgets?: components["schemas"]["WidgetState"][];
-            /** Windows */
-            windows?: components["schemas"]["WindowState"][];
-        };
-        /** ShellPreferencesPatch */
-        ShellPreferencesPatch: {
-            /** Desktop */
-            desktop?: {
-                [key: string]: unknown;
-            } | null;
-            /** Desktop Entries */
-            desktop_entries?: components["schemas"]["DesktopEntry"][] | null;
-            /** Mobile */
-            mobile?: {
-                [key: string]: unknown;
-            } | null;
-            /** Notifications */
-            notifications?: {
-                [key: string]: unknown;
-            } | null;
-            /** Recent Files */
-            recent_files?: string[] | null;
-            /** Start Hidden */
-            start_hidden?: string[] | null;
-            /** Start Order */
-            start_order?: string[] | null;
-            /** Taskbar Order */
-            taskbar_order?: string[] | null;
-            /** Version */
-            version?: number | null;
-            /** Widgets */
-            widgets?: components["schemas"]["WidgetState"][] | null;
-            /** Windows */
-            windows?: components["schemas"]["WindowState"][] | null;
-        };
         /** ShutdownAction */
         ShutdownAction: {
             /**
@@ -17332,13 +17905,6 @@ export interface components {
             private_key: string;
             /** Public Key */
             public_key: string;
-        };
-        /** Size */
-        Size: {
-            /** Height */
-            height: number;
-            /** Width */
-            width: number;
         };
         /** SnapshotInput */
         SnapshotInput: {
@@ -17852,6 +18418,24 @@ export interface components {
             /** Soft Mb */
             soft_mb: number;
         };
+        /** UserRoleInput */
+        UserRoleInput: {
+            /**
+             * Auth Provider
+             * @default pam
+             * @enum {string}
+             */
+            auth_provider: "local" | "pam" | "ldap";
+            /**
+             * Identity Id
+             * @default
+             */
+            identity_id: string;
+            /** Role Id */
+            role_id: string;
+            /** Username */
+            username: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -17964,55 +18548,6 @@ export interface components {
             timeout_seconds: number;
             /** Url */
             url: string;
-        };
-        /** WidgetState */
-        WidgetState: {
-            /** Id */
-            id: string;
-            position: components["schemas"]["Point"];
-            size: components["schemas"]["Size"];
-            /**
-             * Visible
-             * @default true
-             */
-            visible: boolean;
-        };
-        /** WindowState */
-        WindowState: {
-            /** App */
-            app: string;
-            /** Height */
-            height: number;
-            /** Id */
-            id: string;
-            /** Initial Path */
-            initial_path?: string | null;
-            /**
-             * Maximized
-             * @default false
-             */
-            maximized: boolean;
-            /**
-             * Minimized
-             * @default false
-             */
-            minimized: boolean;
-            /** Module Id */
-            module_id?: string | null;
-            /** Restore Height */
-            restore_height?: number | null;
-            /** Restore Width */
-            restore_width?: number | null;
-            /** Restore X */
-            restore_x?: number | null;
-            /** Restore Y */
-            restore_y?: number | null;
-            /** Width */
-            width: number;
-            /** X */
-            x: number;
-            /** Y */
-            y: number;
         };
         /** ConfirmationInput */
         app__modules__ansible_controller__models__ConfirmationInput: {
@@ -18830,6 +19365,39 @@ export interface components {
             confirmation: string;
             /** Payload */
             payload: string;
+        };
+        /** GroupInput */
+        app__rbac__GroupInput: {
+            /**
+             * Active
+             * @default true
+             */
+            active: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Distinguished Name
+             * @default
+             */
+            distinguished_name: string;
+            /**
+             * External Id
+             * @default
+             */
+            external_id: string;
+            /** Name */
+            name: string;
+            /** Role Ids */
+            role_ids?: string[];
+            /**
+             * Source
+             * @default local
+             * @enum {string}
+             */
+            source: "local" | "ldap";
         };
     };
     responses: never;
@@ -23884,6 +24452,314 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    find_groups_api_ldap_groups_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mappings_api_ldap_mappings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_mapping_api_ldap_mappings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapMappingInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_mapping_api_ldap_mappings__group_id___role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    role_from_group_api_ldap_roles_from_group_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleFromLdapGroupInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_api_ldap_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapSyncInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sync_settings_api_ldap_sync_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save_sync_settings_api_ldap_sync_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LdapPeriodicSyncSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_status_api_ldap_sync_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    test_connection_api_ldap_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    find_users_api_ldap_users_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -43625,7 +44501,7 @@ export interface operations {
             };
         };
     };
-    assignments_api_rbac_assignments_get: {
+    legacy_assignments_api_rbac_assignments_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -43645,7 +44521,7 @@ export interface operations {
             };
         };
     };
-    save_assignment_api_rbac_assignments__username__put: {
+    legacy_save_assignment_api_rbac_assignments__username__put: {
         parameters: {
             query?: never;
             header?: never;
@@ -43656,7 +44532,277 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RoleAssignmentRequest"];
+                "application/json": components["schemas"]["LegacyAssignmentInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_api_rbac_audit_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    map_external_group_api_rbac_external_group_mappings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalMappingInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmap_external_group_api_rbac_external_group_mappings__group_id___role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    external_groups_api_rbac_external_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    groups_api_rbac_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_group_api_rbac_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__rbac__GroupInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_group_api_rbac_groups__group_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_group_api_rbac_groups__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_group_members_api_rbac_groups__group_id__members_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupMembersInput"];
             };
         };
         responses: {
@@ -43700,6 +44846,145 @@ export interface operations {
             };
         };
     };
+    permissions_api_rbac_permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    policies_api_rbac_policies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_policy_api_rbac_policies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_policy_api_rbac_policies__policy_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_policy_api_rbac_policies__policy_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                policy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     roles_api_rbac_roles_get: {
         parameters: {
             query?: never;
@@ -43716,6 +45001,304 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_role_api_rbac_roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    role_api_rbac_roles__role_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_role_api_rbac_roles__role_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RolePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_role_api_rbac_roles__role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_role_api_rbac_roles__role_id__duplicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_api_rbac_simulate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExplainInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    effective_permissions_api_rbac_users__username__effective_permissions_get: {
+        parameters: {
+            query?: {
+                auth_provider?: "local" | "pam" | "ldap";
+                identity_id?: string;
+            };
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_user_role_api_rbac_users__username__roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserRoleInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_user_role_api_rbac_users__username__roles__role_id__delete: {
+        parameters: {
+            query?: {
+                auth_provider?: "local" | "pam" | "ldap";
+                identity_id?: string;
+            };
+            header?: never;
+            path: {
+                username: string;
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -44497,92 +46080,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_shell_preferences_api_shell_preferences_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ShellPreferences"];
-                };
-            };
-        };
-    };
-    put_shell_preferences_api_shell_preferences_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ShellPreferences"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ShellPreferences"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    patch_shell_preferences_api_shell_preferences_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ShellPreferencesPatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ShellPreferences"];
                 };
             };
             /** @description Validation Error */
