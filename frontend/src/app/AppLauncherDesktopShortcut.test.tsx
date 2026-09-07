@@ -34,28 +34,28 @@ function renderLauncher(desktopShortcuts = new Set<string>()) {
 }
 
 describe("Start menu desktop shortcuts", () => {
-  it("shows a direct Add to desktop action on pinned applications", () => {
-    const toggleDesktop = renderLauncher();
-
-    const button = screen.getByRole("button", { name: "desktop.addToDesktop Settings" });
-    expect(button).toHaveAttribute("aria-pressed", "false");
-
-    fireEvent.click(button);
-    expect(toggleDesktop).toHaveBeenCalledWith("settings");
-  });
-
-  it("shows the remove state when the application is already on the desktop", () => {
-    renderLauncher(new Set(["settings"]));
-
-    const button = screen.getByRole("button", { name: "desktop.removeFromDesktop Settings" });
-    expect(button).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("opens shortcut actions from right click on a pinned tile too", () => {
+  it("adds a pinned application to the desktop from its context menu", () => {
     const toggleDesktop = renderLauncher();
 
     fireEvent.contextMenu(screen.getByRole("button", { name: "Settings" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "desktop.addToDesktop" }));
+
     expect(toggleDesktop).toHaveBeenCalledWith("settings");
+  });
+
+  it("shows the remove action when the application is already on the desktop", () => {
+    renderLauncher(new Set(["settings"]));
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("menuitem", { name: "desktop.removeFromDesktop" })).toBeInTheDocument();
+  });
+
+  it("keeps Start and taskbar shortcut actions in the same context menu", () => {
+    renderLauncher();
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("menuitem", { name: "desktop.addToDesktop" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "desktop.unpinFromStart" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" })).toBeInTheDocument();
   });
 });
