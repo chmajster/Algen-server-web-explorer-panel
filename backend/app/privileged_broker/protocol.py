@@ -30,6 +30,8 @@ class Operation(StrEnum):
     MOUNT_UNIT = "mount_unit"
     QUOTA = "quota"
     STORAGE_PROBE = "storage_probe"
+    DOCKER = "docker"
+    DOCKER_GRACEFUL_STOP = "docker_graceful_stop"
     FIREWALL = "firewall"
     NTP = "ntp"
     ROUTING = "routing"
