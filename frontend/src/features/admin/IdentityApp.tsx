@@ -11,9 +11,9 @@ type Dialog = { title: string; fields: AdminField[]; danger?: boolean; submit: (
 type PolicyState = { allow: string[]; deny: string[] };
 export type PolicySubject = { type: "user" | "group"; id: string };
 
-const roleValues: RbacRole[] = ["admin", "operator", "auditor", "user"];
 const splitNames = (value: string): string[] => [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
 const optionalNumber = (value: string): number | null => value.trim() ? Number(value) : null;
+const backendRoleValues = (roles: IdentityRoles | null): RbacRole[] => roles ? Object.keys(roles.roles) as RbacRole[] : [];
 
 export function IdentityApp({ permissions, initialTab = "users", embedded = false, t, toast, onOpenPolicies }: { permissions: string[]; initialTab?: Tab; embedded?: boolean; t: Translate; toast: ToastFn; onOpenPolicies?: (subject: PolicySubject) => void }) {
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -31,6 +31,7 @@ export function IdentityApp({ permissions, initialTab = "users", embedded = fals
   const [includeSystem, setIncludeSystem] = useState(false);
 
   const can = useCallback((permission: string) => permissions.includes(permission), [permissions]);
+  const roleValues = useMemo(() => backendRoleValues(roles), [roles]);
   const accessibleTabs = useMemo<Tab[]>(() => [...(can("users.view") ? ["users" as const] : []), ...(can("groups.view") ? ["groups" as const] : [])], [can]);
   useEffect(() => { if (!accessibleTabs.includes(tab) && accessibleTabs[0]) setTab(accessibleTabs[0]); }, [accessibleTabs, tab]);
   const refresh = useCallback(async () => {
@@ -59,6 +60,7 @@ export function IdentityApp({ permissions, initialTab = "users", embedded = fals
   }
 
   function createUser() {
+    const defaultRole = roleValues.includes("user") ? "user" : roleValues[0];
     setDialog({ title: t("identity.user.create"), fields: [
       { name: "username", label: t("settings.username"), required: true },
       { name: "password", label: t("settings.newPassword"), type: "password", required: true },
@@ -68,7 +70,7 @@ export function IdentityApp({ permissions, initialTab = "users", embedded = fals
       { name: "home", label: t("identity.homeHint") },
       { name: "shell", label: t("identity.shell"), value: "/bin/bash" },
       { name: "groups", label: t("identity.supplementaryGroupsHint") },
-      { name: "role", label: t("rbac.role"), type: "select", value: "user", options: roleValues.map((role) => ({ value: role, label: t(`rbac.role.${role}`) })) },
+      { name: "role", label: t("rbac.role"), type: "select", value: defaultRole || "", options: roleValues.map((role) => ({ value: role, label: t(`rbac.role.${role}`) })) },
       { name: "force_password_change", label: t("identity.forcePasswordChange"), type: "select", value: "false", options: [{ value: "false", label: t("common.no") }, { value: "true", label: t("common.yes") }] },
     ], submit: (values) => perform(() => api.createIdentityUser({ username: values.username, password: values.password, gecos: values.gecos, uid: optionalNumber(values.uid), gid: optionalNumber(values.gid), home: values.home || null, shell: values.shell || null, role: values.role, groups: splitNames(values.groups), allow: [], deny: [], create_home: true, force_password_change: values.force_password_change === "true" })) });
   }
@@ -83,7 +85,7 @@ export function IdentityApp({ permissions, initialTab = "users", embedded = fals
     <nav className="identity-tabs" aria-label={t("identity.tabs")}>
       {accessibleTabs.map((name) => <button className={tab === name ? "active" : ""} key={name} onClick={() => { setTab(name); setSearch(""); }}>{name === "users" ? <Users /> : name === "groups" ? <UserCog /> : name === "roles" ? <ShieldCheck /> : <History />}<span>{t(`identity.tab.${name}`)}</span></button>)}
     </nav>
-    {tab === "users" && can("users.view") && <UsersView users={users} selected={selectedUser} metadata={metadata} search={search} roleFilter={roleFilter} statusFilter={statusFilter} includeSystem={includeSystem} can={can} t={t} onSearch={setSearch} onRole={setRoleFilter} onStatus={setStatusFilter} onSystem={setIncludeSystem} onCreate={createUser} onSelect={setSelectedUser} onDialog={setDialog} perform={perform} onOpenPolicies={onOpenPolicies} />}
+    {tab === "users" && can("users.view") && <UsersView users={users} selected={selectedUser} metadata={metadata} roleValues={roleValues} search={search} roleFilter={roleFilter} statusFilter={statusFilter} includeSystem={includeSystem} can={can} t={t} onSearch={setSearch} onRole={setRoleFilter} onStatus={setStatusFilter} onSystem={setIncludeSystem} onCreate={createUser} onSelect={setSelectedUser} onDialog={setDialog} perform={perform} onOpenPolicies={onOpenPolicies} />}
     {tab === "groups" && <GroupsView groups={groups} selected={selectedGroup} metadata={metadata} search={search} includeSystem={includeSystem} can={can} t={t} onSearch={setSearch} onSystem={setIncludeSystem} onCreate={createGroup} onSelect={setSelectedGroup} onDialog={setDialog} perform={perform} onOpenPolicies={onOpenPolicies} />}
     {tab === "roles" && roles && <RoleMatrix roles={roles} t={t} />}
     {tab === "history" && <HistoryView items={history} t={t} />}
@@ -91,8 +93,8 @@ export function IdentityApp({ permissions, initialTab = "users", embedded = fals
   </section>;
 }
 
-function UsersView({ users, selected, metadata: _metadata, search, roleFilter, statusFilter, includeSystem, can, t, onSearch, onRole, onStatus, onSystem, onCreate, onSelect, onDialog, perform, onOpenPolicies }: {
-  users: IdentityUser[]; selected: IdentityUser | null; metadata: PermissionMetadata[]; search: string; roleFilter: string; statusFilter: string; includeSystem: boolean; can: (permission: string) => boolean; t: Translate;
+function UsersView({ users, selected, metadata: _metadata, roleValues, search, roleFilter, statusFilter, includeSystem, can, t, onSearch, onRole, onStatus, onSystem, onCreate, onSelect, onDialog, perform, onOpenPolicies }: {
+  users: IdentityUser[]; selected: IdentityUser | null; metadata: PermissionMetadata[]; roleValues: RbacRole[]; search: string; roleFilter: string; statusFilter: string; includeSystem: boolean; can: (permission: string) => boolean; t: Translate;
   onSearch: (value: string) => void; onRole: (value: string) => void; onStatus: (value: string) => void; onSystem: (value: boolean) => void; onCreate: () => void; onSelect: (user: IdentityUser | null) => void; onDialog: (value: Dialog) => void; perform: (action: () => Promise<unknown>) => Promise<void>; onOpenPolicies?: (subject: PolicySubject) => void;
 }) {
   return <div className={`identity-workspace ${selected ? "has-details" : ""}`}><div className="identity-list-pane"><div className="identity-toolbar"><label className="identity-search"><Search /><input aria-label={t("action.search")} value={search} onChange={(event) => onSearch(event.target.value)} placeholder={t("identity.searchUsers")} /></label><select aria-label={t("rbac.role")} value={roleFilter} onChange={(event) => onRole(event.target.value)}><option value="">{t("identity.allRoles")}</option>{roleValues.map((role) => <option key={role} value={role}>{t(`rbac.role.${role}`)}</option>)}</select><select aria-label={t("identity.status")} value={statusFilter} onChange={(event) => onStatus(event.target.value)}><option value="">{t("identity.allStatuses")}</option><option value="active">{t("identity.active")}</option><option value="locked">{t("identity.locked")}</option></select><label className="identity-check"><input type="checkbox" checked={includeSystem} onChange={(event) => onSystem(event.target.checked)} />{t("identity.showSystem")}</label>{can("users.create") && <button className="button-primary" onClick={onCreate}><Plus />{t("identity.user.create")}</button>}</div><div className="identity-table-wrap"><table className="identity-table"><thead><tr><th>{t("settings.username")}</th><th>UID</th><th>{t("identity.primaryGroup")}</th><th>{t("rbac.role")}</th><th>{t("identity.status")}</th></tr></thead><tbody>{users.map((user) => <tr className={selected?.username === user.username ? "selected" : ""} key={user.username} tabIndex={0} onClick={() => onSelect(user)} onKeyDown={(event) => { if (event.key === "Enter") onSelect(user); }}><td><strong>{user.username}</strong><span className="identity-badges">{user.linux_admin && <small>{t("identity.linuxAdmin")}</small>}{user.is_system && <small>{t("identity.systemAccount")}</small>}</span></td><td>{user.uid}</td><td>{user.primary_group}</td><td>{t(`rbac.role.${user.role}`)}</td><td>{user.locked ? t("identity.locked") : t("identity.active")}</td></tr>)}</tbody></table></div></div>{selected && <UserDetails user={selected} can={can} t={t} onClose={() => onSelect(null)} onDialog={onDialog} perform={perform} onOpenPolicies={onOpenPolicies} />}</div>;
@@ -129,6 +131,7 @@ export function AccessPolicies({ permissions, initialSubject, t, toast }: { perm
   const [role, setRole] = useState<RbacRole>("user");
   const [query, setQuery] = useState("");
   const can = useCallback((permission: string) => permissions.includes(permission), [permissions]);
+  const roleValues = useMemo(() => backendRoleValues(roles), [roles]);
   const refresh = useCallback(async () => {
     if (!can("access.view")) return;
     try {
@@ -179,6 +182,7 @@ function PermissionMatrix({ metadata, policy, sources, disabled, t, onChange }: 
 }
 
 function RoleMatrix({ roles, t }: { roles: IdentityRoles; t: Translate }) {
+  const roleValues = backendRoleValues(roles);
   return <div className="identity-role-matrix"><table><thead><tr><th>{t("identity.permission")}</th>{roleValues.map((role) => <th key={role}>{t(`rbac.role.${role}`)}</th>)}</tr></thead><tbody>{roles.permissions.map((permission) => <tr key={permission.id}><td><strong>{t(permission.label_key)}</strong><small>{permission.id}</small></td>{roleValues.map((role) => <td key={role} aria-label={`${permission.id} ${role}`}>{roles.roles[role].includes(permission.id) ? "✓" : "—"}</td>)}</tr>)}</tbody></table></div>;
 }
 

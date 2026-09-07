@@ -35,8 +35,9 @@
   white-space: nowrap;
 }
 
-/* The only inline control on a Start tile is the Start pin itself.
-   Desktop/taskbar actions intentionally live in the right-click context menu. */
+/* Keep the two frequent Start-tile actions directly accessible; the full
+   shortcut set remains available from the right-click context menu. */
+.desktop .launcher-grid .launcher-desktop,
 .desktop .launcher-grid .launcher-pin {
   top: 0.375rem;
   right: 0.375rem;
@@ -54,17 +55,27 @@
   transition: opacity .12s ease, color .12s ease, border-color .12s ease, background .12s ease;
 }
 
+.desktop .launcher-grid .launcher-desktop {
+  right: 2.25rem;
+}
+
+.desktop .launcher-grid .launcher-desktop svg,
 .desktop .launcher-grid .launcher-pin svg {
   width: 0.78rem;
   height: 0.78rem;
 }
 
+.desktop .launcher-grid .launcher-app:hover .launcher-desktop,
 .desktop .launcher-grid .launcher-app:hover .launcher-pin,
+.desktop .launcher-grid .launcher-desktop:focus-visible,
 .desktop .launcher-grid .launcher-pin:focus-visible,
+.desktop .launcher-grid .launcher-desktop.active,
 .desktop .launcher-grid .launcher-pin.active {
   opacity: 0.9;
 }
 
+.desktop .launcher-grid .launcher-desktop:hover,
+.desktop .launcher-grid .launcher-desktop:focus-visible,
 .desktop .launcher-grid .launcher-pin:hover,
 .desktop .launcher-grid .launcher-pin:focus-visible {
   border-color: var(--border-subtle);
@@ -72,6 +83,7 @@
   background: var(--surface-hover);
 }
 
+.desktop .launcher-grid .launcher-desktop.active,
 .desktop .launcher-grid .launcher-pin.active {
   color: var(--accent);
 }
@@ -85,11 +97,13 @@
 }
 
 .desktop.high-contrast .launcher-grid .launcher-app,
+.desktop.high-contrast .launcher-grid .launcher-desktop,
 .desktop.high-contrast .launcher-grid .launcher-pin {
   border-color: currentColor;
 }
 
 .desktop.no-animations .launcher-grid .launcher-app,
+.desktop.no-animations .launcher-grid .launcher-desktop,
 .desktop.no-animations .launcher-grid .launcher-pin {
   transition: none;
 }

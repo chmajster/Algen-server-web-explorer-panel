@@ -84,7 +84,9 @@ export function TextEditor({ item, t, onClose, onSaved }: {
       setSaving(false);
     }
   }, [item.path, onSaved, original, readOnly, saving, t, version]);
-  saveRef.current = () => { void save(); };
+  useEffect(() => {
+    saveRef.current = () => { void save(); };
+  }, [save]);
 
   useEffect(() => {
     const host = editorHost.current;
