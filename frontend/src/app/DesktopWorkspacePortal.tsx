@@ -10,6 +10,7 @@ import type { AppId } from "./types";
 export function DesktopWorkspacePortal(props: DesktopProps) {
   const [target, setTarget] = useState<Element | null>(null);
   const [moduleNames, setModuleNames] = useState<Map<string, string>>(new Map());
+  const [specialAvailability, setSpecialAvailability] = useState({ apmid: false, cron: false });
 
   useEffect(() => {
     let cancelled = false;
@@ -44,9 +45,29 @@ export function DesktopWorkspacePortal(props: DesktopProps) {
     return () => { active = false; window.removeEventListener("webnas:modules-changed", changed); };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      const [apmid, cron] = await Promise.allSettled([api.apmidAccess(), api.cronAccess()]);
+      if (!active) return;
+      setSpecialAvailability({
+        apmid: apmid.status === "fulfilled" && apmid.value.installed && apmid.value.allowed,
+        cron: cron.status === "fulfilled" && cron.value.installed && cron.value.allowed,
+      });
+    };
+    void refresh();
+    const changed = () => void refresh();
+    window.addEventListener("webnas:modules-changed", changed);
+    return () => { active = false; window.removeEventListener("webnas:modules-changed", changed); };
+  }, []);
+
   const availableApps = useMemo(() => apps
     .filter((app) => !app.hidden && moduleRegistry.availableFor(app.id, props.profile.permissions, props.profile.is_admin))
-    .map((app) => ({ id: app.id, label: props.t(app.labelKey), icon: app.icon })), [props.profile.is_admin, props.profile.permissions, props.t]);
+    .filter((app) => app.id !== "ansible" || moduleNames.has("ansible-controller"))
+    .filter((app) => app.id !== "hosts" || moduleNames.has("hosts-manager"))
+    .filter((app) => app.id !== "apmid" || specialAvailability.apmid)
+    .filter((app) => app.id !== "cron" || specialAvailability.cron)
+    .map((app) => ({ id: app.id, label: props.t(app.labelKey), icon: app.icon })), [moduleNames, props.profile.is_admin, props.profile.permissions, props.t, specialAvailability.apmid, specialAvailability.cron]);
 
   if (!target || !props.profile.show_desktop_shortcuts) return null;
 
