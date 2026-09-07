@@ -1,4 +1,3 @@
-import { SystemContextMenuHost } from "../../components/SystemContextMenuHost";
 import { DesktopEnhancements } from "../DesktopEnhancements";
 import { DesktopWorkspacePortal } from "../DesktopWorkspacePortal";
 import type { DesktopProps } from "../desktop/types";
@@ -15,6 +14,5 @@ export function ManagedShell(props: DesktopProps) {
     <SystemSearchProviders profile={props.profile} />
     <StartGlobalSearchBridge />
     <ShellStateController />
-    <SystemContextMenuHost />
   </>;
 }
