@@ -3,11 +3,10 @@ import { SystemContextMenuHost } from "../components/SystemContextMenuHost";
 import { Desktop as DesktopController } from "./DesktopController";
 import { DesktopEnhancements } from "./DesktopEnhancements";
 import type { DesktopProps } from "./desktop/types";
+import { ShellStateController } from "./shell/ShellStateController";
 import { WebNAS } from "./shell/WebNASShell";
 
-/**
- * Desktop composition root and lifecycle boundary for the managed WebNAS Shell.
- */
+/** Desktop composition root and lifecycle boundary for the managed WebNAS Shell. */
 export function Desktop(props: DesktopProps) {
   useEffect(() => {
     WebNAS.install();
@@ -21,6 +20,7 @@ export function Desktop(props: DesktopProps) {
   return <>
     <DesktopController {...props} />
     <DesktopEnhancements profile={props.profile} t={props.t} toast={props.toast} onSettingsChange={props.onSettingsChange} />
+    <ShellStateController />
     <SystemContextMenuHost />
   </>;
 }
