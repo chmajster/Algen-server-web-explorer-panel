@@ -7,6 +7,7 @@ from app.core.redaction import redact_text
 
 from . import policy as base
 from .docker_policy import dispatch as docker_dispatch
+from .docker_stop_policy import dispatch as docker_stop_dispatch
 from .extended_policy import dispatch as extended_dispatch
 from .file_worker_policy import dispatch as file_worker_dispatch
 from .protocol import BrokerRequest, BrokerResponse, Operation
@@ -61,6 +62,8 @@ def dispatch(request: BrokerRequest, *, runner: base.Runner | None = None) -> Br
         return file_worker_dispatch(request)
     if request.operation == Operation.DOCKER:
         return docker_dispatch(request, runner=runner)
+    if request.operation == Operation.DOCKER_GRACEFUL_STOP:
+        return docker_stop_dispatch(request, runner=runner)
     if request.operation != Operation.STORAGE_PROBE:
         return extended_dispatch(request, runner=runner)
 
