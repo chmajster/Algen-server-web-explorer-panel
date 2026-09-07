@@ -11,7 +11,7 @@ This module is transitional and can be removed after all legacy call sites use
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 
@@ -22,7 +22,14 @@ def coerce_session_user(user: Any) -> SessionUser:
     if isinstance(user, SessionUser):
         return user
     username = str(getattr(user, "username", "") or "").strip()
-    provider = str(getattr(user, "auth_provider", "") or "pam").strip() or "pam"
+    provider_raw = str(getattr(user, "auth_provider", "") or "pam").strip()
+    provider: Literal["local", "pam", "ldap"]
+    if provider_raw == "local":
+        provider = "local"
+    elif provider_raw == "ldap":
+        provider = "ldap"
+    else:
+        provider = "pam"
     identity_id = str(getattr(user, "identity_id", "") or "").strip() or username
     csrf_token = str(getattr(user, "csrf_token", "") or "")
     return SessionUser(
