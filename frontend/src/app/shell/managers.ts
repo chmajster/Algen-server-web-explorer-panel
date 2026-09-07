@@ -179,14 +179,22 @@ export type AppManifest = {
 };
 
 const safeId = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-const safeEntry = /^\/(?:[a-zA-Z0-9._~-]+\/?)*$/;
+const safeEntrySegment = /^[a-zA-Z0-9._~-]+$/;
+function isSafeEntry(entry: string): boolean {
+  if (!entry.startsWith("/") || entry.includes("..") || entry.includes("//")) return false;
+  const withoutLeadingSlash = entry.slice(1);
+  const normalized = withoutLeadingSlash.endsWith("/") ? withoutLeadingSlash.slice(0, -1) : withoutLeadingSlash;
+  if (!normalized) return true;
+  return normalized.split("/").every((segment) => safeEntrySegment.test(segment));
+}
+
 export class ApplicationManager extends EventManager {
   private manifests = new Map<string, AppManifest>();
 
   validate(manifest: AppManifest): AppManifest {
     if (!safeId.test(manifest.id)) throw new Error("Invalid application id");
     if (!manifest.name.trim() || manifest.name.length > 120) throw new Error("Invalid application name");
-    if (!safeEntry.test(manifest.entry) || manifest.entry.includes("..")) throw new Error("Invalid application entry");
+    if (!isSafeEntry(manifest.entry)) throw new Error("Invalid application entry");
     if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(manifest.version)) throw new Error("Invalid application version");
     if (!Array.isArray(manifest.permissions) || manifest.permissions.some((value) => !/^[a-z0-9._:-]{1,80}$/i.test(value))) throw new Error("Invalid application permissions");
     return { ...manifest, permissions: [...manifest.permissions] };
