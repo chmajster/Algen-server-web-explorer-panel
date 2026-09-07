@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import HTTPException
+
 from ..security import SessionUser
 
 
@@ -44,6 +46,7 @@ def install_principal_compatibility() -> None:
     original_assign = PermissionRepository.assign_user_role
     original_revoke = PermissionRepository.revoke_user_role
     original_legacy_migrate = permissions_module._legacy_migrate
+    original_authorize = permissions_module.authorize
 
     def sources(self: PermissionService, user: Any):
         return original_sources(self, coerce_session_user(user))
@@ -89,6 +92,22 @@ def install_principal_compatibility() -> None:
             return False
         return original_legacy_migrate(subject)
 
+    def compatibility_authorize(user: Any, permission: Any) -> None:
+        """Keep old monkeypatchable permission probes working during migration.
+
+        Explicit LDAP principals stay on the provider-aware central resolver.
+        Legacy PAM/local callers continue through ``has_permission`` so existing
+        modules and tests that replace that facade do not silently bypass their
+        authorization seam.
+        """
+        subject = coerce_session_user(user)
+        if subject.auth_provider == "ldap":
+            original_authorize(subject, permission)
+            return
+        if permissions_module.has_permission(subject.username, permission):
+            return
+        raise HTTPException(status_code=403, detail="Permission denied")
+
     setattr(PermissionService, "sources", sources)
     setattr(PermissionService, "effective", effective)
     setattr(PermissionService, "_webnas_principal_compat", True)
@@ -96,3 +115,4 @@ def install_principal_compatibility() -> None:
     setattr(PermissionRepository, "assign_user_role", assign_user_role)
     setattr(PermissionRepository, "revoke_user_role", revoke_user_role)
     setattr(permissions_module, "_legacy_migrate", safe_legacy_migrate)
+    setattr(permissions_module, "authorize", compatibility_authorize)
