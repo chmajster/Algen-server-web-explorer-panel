@@ -11835,6 +11835,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shell/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Shell Preferences */
+        get: operations["get_shell_preferences_api_shell_preferences_get"];
+        /** Put Shell Preferences */
+        put: operations["put_shell_preferences_api_shell_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Shell Preferences */
+        patch: operations["patch_shell_preferences_api_shell_preferences_patch"];
+        trace?: never;
+    };
     "/api/system/host-info": {
         parameters: {
             query?: never;
@@ -13121,6 +13140,31 @@ export interface components {
             path?: string | null;
             /** Paths */
             paths?: string[] | null;
+        };
+        /** DesktopEntry */
+        DesktopEntry: {
+            /**
+             * Created At
+             * @default 0
+             */
+            created_at: number;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "app" | "module" | "file" | "directory" | "url" | "folder";
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            position?: components["schemas"]["Point"];
+            /**
+             * Target
+             * @default
+             */
+            target: string;
         };
         /** DesktopWidget */
         DesktopWidget: {
@@ -15823,6 +15867,13 @@ export interface components {
          * @enum {string}
          */
         PluginTrust: "unverified" | "trusted" | "blocked";
+        /** Point */
+        Point: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
         /** PolicyEvaluateRequest */
         PolicyEvaluateRequest: {
             /** Facts */
@@ -17153,6 +17204,71 @@ export interface components {
              */
             upload_limit_mb: number;
         };
+        /** ShellPreferences */
+        ShellPreferences: {
+            /** Desktop */
+            desktop?: {
+                [key: string]: unknown;
+            };
+            /** Desktop Entries */
+            desktop_entries?: components["schemas"]["DesktopEntry"][];
+            /** Mobile */
+            mobile?: {
+                [key: string]: unknown;
+            };
+            /** Notifications */
+            notifications?: {
+                [key: string]: unknown;
+            };
+            /** Recent Files */
+            recent_files?: string[];
+            /** Start Hidden */
+            start_hidden?: string[];
+            /** Start Order */
+            start_order?: string[];
+            /** Taskbar Order */
+            taskbar_order?: string[];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+            /** Widgets */
+            widgets?: components["schemas"]["WidgetState"][];
+            /** Windows */
+            windows?: components["schemas"]["WindowState"][];
+        };
+        /** ShellPreferencesPatch */
+        ShellPreferencesPatch: {
+            /** Desktop */
+            desktop?: {
+                [key: string]: unknown;
+            } | null;
+            /** Desktop Entries */
+            desktop_entries?: components["schemas"]["DesktopEntry"][] | null;
+            /** Mobile */
+            mobile?: {
+                [key: string]: unknown;
+            } | null;
+            /** Notifications */
+            notifications?: {
+                [key: string]: unknown;
+            } | null;
+            /** Recent Files */
+            recent_files?: string[] | null;
+            /** Start Hidden */
+            start_hidden?: string[] | null;
+            /** Start Order */
+            start_order?: string[] | null;
+            /** Taskbar Order */
+            taskbar_order?: string[] | null;
+            /** Version */
+            version?: number | null;
+            /** Widgets */
+            widgets?: components["schemas"]["WidgetState"][] | null;
+            /** Windows */
+            windows?: components["schemas"]["WindowState"][] | null;
+        };
         /** ShutdownAction */
         ShutdownAction: {
             /**
@@ -17216,6 +17332,13 @@ export interface components {
             private_key: string;
             /** Public Key */
             public_key: string;
+        };
+        /** Size */
+        Size: {
+            /** Height */
+            height: number;
+            /** Width */
+            width: number;
         };
         /** SnapshotInput */
         SnapshotInput: {
@@ -17841,6 +17964,55 @@ export interface components {
             timeout_seconds: number;
             /** Url */
             url: string;
+        };
+        /** WidgetState */
+        WidgetState: {
+            /** Id */
+            id: string;
+            position: components["schemas"]["Point"];
+            size: components["schemas"]["Size"];
+            /**
+             * Visible
+             * @default true
+             */
+            visible: boolean;
+        };
+        /** WindowState */
+        WindowState: {
+            /** App */
+            app: string;
+            /** Height */
+            height: number;
+            /** Id */
+            id: string;
+            /** Initial Path */
+            initial_path?: string | null;
+            /**
+             * Maximized
+             * @default false
+             */
+            maximized: boolean;
+            /**
+             * Minimized
+             * @default false
+             */
+            minimized: boolean;
+            /** Module Id */
+            module_id?: string | null;
+            /** Restore Height */
+            restore_height?: number | null;
+            /** Restore Width */
+            restore_width?: number | null;
+            /** Restore X */
+            restore_x?: number | null;
+            /** Restore Y */
+            restore_y?: number | null;
+            /** Width */
+            width: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
         };
         /** ConfirmationInput */
         app__modules__ansible_controller__models__ConfirmationInput: {
@@ -44325,6 +44497,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_shell_preferences_api_shell_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShellPreferences"];
+                };
+            };
+        };
+    };
+    put_shell_preferences_api_shell_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShellPreferences"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShellPreferences"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_shell_preferences_api_shell_preferences_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShellPreferencesPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShellPreferences"];
                 };
             };
             /** @description Validation Error */
