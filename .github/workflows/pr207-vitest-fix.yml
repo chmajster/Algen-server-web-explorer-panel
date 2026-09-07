@@ -1,0 +1,102 @@
+name: PR207 Vitest fix
+
+on:
+  push:
+    branches: [codex/webnas-rbac-ldap]
+    paths: [.github/workflows/pr207-vitest-fix.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: codex/webnas-rbac-ldap
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Restore direct desktop shortcut action
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/app/AppLauncher.tsx')
+          text = path.read_text()
+          old = '''      <button className={`launcher-pin ${startPinned.has(app.id) ? "active" : ""}`} type="button" aria-label={`${startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} ${t(app.labelKey)}`} title={startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} onClick={() => onToggleStartPin(app.id)}><Pin /></button>'''
+          new = '''      {!compact && <button className={`launcher-desktop ${desktopShortcuts.has(app.id) ? "active" : ""}`} type="button" aria-label={`${desktopShortcuts.has(app.id) ? t("desktop.removeFromDesktop") : t("desktop.addToDesktop")} ${t(app.labelKey)}`} title={desktopShortcuts.has(app.id) ? t("desktop.removeFromDesktop") : t("desktop.addToDesktop")} aria-pressed={desktopShortcuts.has(app.id)} onClick={() => onToggleDesktopShortcut(app.id)}><Monitor /></button>}
+      <button className={`launcher-pin ${startPinned.has(app.id) ? "active" : ""}`} type="button" aria-label={`${startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} ${t(app.labelKey)}`} title={startPinned.has(app.id) ? t("desktop.unpinFromStart") : t("desktop.pinToStart")} onClick={() => onToggleStartPin(app.id)}><Pin /></button>'''
+          if text.count(old) != 1:
+              raise SystemExit('AppLauncher patch target not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('frontend/src/app/app-launcher-shortcuts.css')
+          text = path.read_text()
+          old = '''/* The only inline control on a Start tile is the Start pin itself.
+   Desktop/taskbar actions intentionally live in the right-click context menu. */
+.desktop .launcher-grid .launcher-pin {'''
+          new = '''/* Keep the two frequent Start-tile actions directly accessible; the full
+   shortcut set remains available from the right-click context menu. */
+.desktop .launcher-grid .launcher-desktop,
+.desktop .launcher-grid .launcher-pin {'''
+          if text.count(old) != 1:
+              raise SystemExit('shortcut CSS patch target not found exactly once')
+          text = text.replace(old, new, 1)
+          text = text.replace('''.desktop .launcher-grid .launcher-pin svg {
+  width: 0.78rem;
+  height: 0.78rem;
+}''', '''.desktop .launcher-grid .launcher-desktop {
+  right: 2.25rem;
+}
+
+.desktop .launcher-grid .launcher-desktop svg,
+.desktop .launcher-grid .launcher-pin svg {
+  width: 0.78rem;
+  height: 0.78rem;
+}''', 1)
+          text = text.replace('''.desktop .launcher-grid .launcher-app:hover .launcher-pin,
+.desktop .launcher-grid .launcher-pin:focus-visible,
+.desktop .launcher-grid .launcher-pin.active {''', '''.desktop .launcher-grid .launcher-app:hover .launcher-desktop,
+.desktop .launcher-grid .launcher-app:hover .launcher-pin,
+.desktop .launcher-grid .launcher-desktop:focus-visible,
+.desktop .launcher-grid .launcher-pin:focus-visible,
+.desktop .launcher-grid .launcher-desktop.active,
+.desktop .launcher-grid .launcher-pin.active {''', 1)
+          text = text.replace('''.desktop .launcher-grid .launcher-pin:hover,
+.desktop .launcher-grid .launcher-pin:focus-visible {''', '''.desktop .launcher-grid .launcher-desktop:hover,
+.desktop .launcher-grid .launcher-desktop:focus-visible,
+.desktop .launcher-grid .launcher-pin:hover,
+.desktop .launcher-grid .launcher-pin:focus-visible {''', 1)
+          text = text.replace('''.desktop .launcher-grid .launcher-pin.active {
+  color: var(--accent);
+}''', '''.desktop .launcher-grid .launcher-desktop.active,
+.desktop .launcher-grid .launcher-pin.active {
+  color: var(--accent);
+}''', 1)
+          text = text.replace('''.desktop.high-contrast .launcher-grid .launcher-app,
+.desktop.high-contrast .launcher-grid .launcher-pin {''', '''.desktop.high-contrast .launcher-grid .launcher-app,
+.desktop.high-contrast .launcher-grid .launcher-desktop,
+.desktop.high-contrast .launcher-grid .launcher-pin {''', 1)
+          text = text.replace('''.desktop.no-animations .launcher-grid .launcher-app,
+.desktop.no-animations .launcher-grid .launcher-pin {''', '''.desktop.no-animations .launcher-grid .launcher-app,
+.desktop.no-animations .launcher-grid .launcher-desktop,
+.desktop.no-animations .launcher-grid .launcher-pin {''', 1)
+          path.write_text(text)
+          PY
+          cd frontend
+          npm ci
+          npx vitest run src/app/AppLauncherDesktopShortcut.test.tsx
+          npm run typecheck
+          cd ..
+          git diff --check
+          git config user.name 'webnas-ci'
+          git config user.email 'webnas-ci@users.noreply.github.com'
+          git add frontend/src/app/AppLauncher.tsx frontend/src/app/app-launcher-shortcuts.css
+          git commit -m 'fix(start): restore direct desktop shortcut action'
+          git push origin HEAD:codex/webnas-rbac-ldap
