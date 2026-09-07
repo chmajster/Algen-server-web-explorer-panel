@@ -230,7 +230,7 @@ def mutating_user(request: Request) -> SessionUser:
 def has_permission(username: str, permission: str | Permission) -> bool:
     subject = SessionUser(
         username=username,
-        csrf_token="",
+        csrf_token=str(),
         auth_provider="pam",
         identity_id=username,
     )
@@ -516,7 +516,7 @@ def assign_user_role(
         raise HTTPException(400, "Username does not match route")
     subject = SessionUser(
         username=payload.username,
-        csrf_token="",
+        csrf_token=str(),
         auth_provider=payload.auth_provider,
         identity_id=payload.identity_id or payload.username,
     )
@@ -541,7 +541,7 @@ def revoke_user_role(
 ):
     subject = SessionUser(
         username=username,
-        csrf_token="",
+        csrf_token=str(),
         auth_provider=auth_provider,
         identity_id=identity_id or username,
     )
@@ -564,7 +564,7 @@ def effective_permissions(
 ):
     subject = SessionUser(
         username=username,
-        csrf_token="",
+        csrf_token=str(),
         auth_provider=auth_provider,
         identity_id=identity_id or username,
     )
@@ -627,7 +627,7 @@ def delete_policy(
 def simulate(payload: ExplainInput, _user: SessionUser = Depends(rbac_read)):
     subject = SessionUser(
         username=payload.username,
-        csrf_token="",
+        csrf_token=str(),
         auth_provider=payload.auth_provider,
         identity_id=payload.identity_id or payload.username,
     )
@@ -703,7 +703,7 @@ def legacy_save_assignment(
     )
     subject = SessionUser(
         username=username,
-        csrf_token="",
+        csrf_token=str(),
         auth_provider="pam",
         identity_id=username,
     )

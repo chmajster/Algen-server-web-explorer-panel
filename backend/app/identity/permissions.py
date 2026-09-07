@@ -335,7 +335,7 @@ def has_permission(username: str, permission: str | Permission) -> bool:
     except ValueError:
         return False
     from .permission_service import permission_service
-    subject = SessionUser(username=username, csrf_token="", auth_provider="pam", identity_id=username)
+    subject = SessionUser(username=username, csrf_token=str(), auth_provider="pam", identity_id=username)
     central = permission_service()
     if central.can(subject, expected):
         return True
