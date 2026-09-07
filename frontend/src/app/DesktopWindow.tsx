@@ -112,7 +112,7 @@ export function DesktopWindow({ window: item, active, viewport, t, onFocus, onCl
     window.setTimeout(onMinimize, 120);
   }
 
-  return <section role="dialog" aria-modal="false" className={`desktop-window ${active ? "active" : "inactive"} ${maximized ? "maximized" : ""} ${mobileFullscreen ? "mobile-fullscreen" : ""} ${minimizing ? "minimizing" : ""}`} style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: item.zIndex }} onPointerDown={onFocus} aria-label={title}>
+  return <section role="dialog" aria-modal="false" className={`desktop-window ${active ? "active" : "inactive"} ${maximized ? "maximized" : ""} ${mobileFullscreen ? "mobile-fullscreen" : ""} ${minimizing ? "minimizing" : ""}`} style={{ left: displayRect.x, top: displayRect.y, width: displayRect.width, height: displayRect.height, zIndex: `calc(var(--webnas-layer-windows, 1000) + ${item.zIndex})` }} onPointerDown={onFocus} aria-label={title}>
     <header className="window-titlebar" onPointerDown={startMove} onDoubleClick={() => { if (mobileFullscreen) return; gesture.current = null; onToggleMaximize(); }}>
       <span className="window-app-icon">{icon}</span><strong>{title}</strong>
       <div className="window-controls">
