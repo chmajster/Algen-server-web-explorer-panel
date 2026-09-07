@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from .config import get_config
 from .identity.linux_accounts import is_linux_admin as is_linux_admin
-from .identity.models import Role as Role, UserPolicyRequest
+from .identity.models import Role as Role, UserPolicy, UserPolicyRequest
 from .identity.permission_service import Resource, permission_service
-from .identity.permissions import ALL_PERMISSIONS, Permission
+from .identity.permissions import ALL_PERMISSIONS, ROLE_PERMISSIONS, Permission, normalize_permissions
+from .identity.repository import IdentityRepository
 from .identity.service import access_profile, service as legacy_identity_service
 from .security import SessionUser, get_session_user, require_csrf
 
@@ -65,6 +68,24 @@ class UserRoleInput(BaseModel):
     role_id: str
 
 
+class RoleAssignment(UserPolicy):
+    """Legacy API model retained only for migration/compatibility callers."""
+
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if isinstance(obj, dict):
+            obj = {
+                **obj,
+                "allow": normalize_permissions(list(obj.get("allow") or [])),
+                "deny": normalize_permissions(list(obj.get("deny") or [])),
+            }
+        return super().model_validate(obj, *args, **kwargs)
+
+
+class RoleAssignmentRequest(RoleAssignment):
+    pass
+
+
 class LegacyAssignmentInput(BaseModel):
     username: str
     role: Role = Role.user
@@ -118,12 +139,45 @@ class ExternalMappingInput(BaseModel):
     role_id: str
 
 
+def _path() -> Path:
+    return Path(get_config().paths.data_dir) / "rbac.json"
+
+
+def _read() -> dict[str, RoleAssignment]:
+    store = IdentityRepository(_path().parent / "identity.sqlite3", legacy_path=_path())
+    return {
+        name: RoleAssignment(
+            username=policy.username,
+            role=policy.role,
+            allow=policy.allow,
+            deny=policy.deny,
+        )
+        for name, policy in store.user_policies().items()
+    }
+
+
+def _write(assignments: dict[str, RoleAssignment]) -> None:
+    store = IdentityRepository(_path().parent / "identity.sqlite3", legacy_path=_path())
+    for assignment in assignments.values():
+        store.save_user_policy(
+            UserPolicy.model_validate(assignment.model_dump(mode="json")),
+            "compatibility",
+        )
+
+
 def _ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
 def _migrate_legacy_assignment(user: SessionUser) -> bool:
-    """One-way migration of legacy admin/operator/auditor/user assignments."""
+    """One-way migration of legacy local/PAM role assignments.
+
+    LDAP principals are intentionally excluded because the legacy store is keyed
+    only by username. Migrating an LDAP principal through this path could let a
+    same-name directory identity inherit a local/PAM assignment.
+    """
+    if user.auth_provider == "ldap":
+        return False
     profile = access_profile(user.username)
     role_name = {
         "admin": "Administrator",
