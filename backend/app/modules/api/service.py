@@ -26,6 +26,26 @@ def _operations(contract: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]
     return sorted(values, key=lambda item: (item[0], HTTP_METHODS.index(item[1])))
 
 
+def _resolve_local_ref(contract: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:
+    """Resolve an in-document JSON Pointer without performing any I/O."""
+    ref = value.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return value
+
+    target: Any = contract
+    for raw_part in ref[2:].split("/"):
+        part = raw_part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(target, dict) or part not in target:
+            return value
+        target = target[part]
+
+    if not isinstance(target, dict):
+        return value
+
+    siblings = {key: item for key, item in value.items() if key != "$ref"}
+    return {**target, **siblings}
+
+
 def _parameter_lists(
     contract: dict[str, Any],
     path: str,
@@ -39,7 +59,7 @@ def _parameter_lists(
         operation.get("parameters", []),
     ):
         if isinstance(raw, list):
-            values.append([item for item in raw if isinstance(item, dict)])
+            values.append([_resolve_local_ref(contract, item) for item in raw if isinstance(item, dict)])
     return values
 
 
