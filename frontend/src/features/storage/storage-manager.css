@@ -17,12 +17,17 @@
   gap: 20px;
 }
 
+.storage-manager__header > div:first-child {
+  min-width: 0;
+}
+
 .storage-manager__header h1 {
   display: flex;
   align-items: center;
   gap: 9px;
   margin: 3px 0 5px;
   font-size: 22px;
+  overflow-wrap: anywhere;
 }
 
 .storage-manager__header p,
@@ -30,6 +35,7 @@
   margin: 0;
   color: var(--text-secondary, #9ca3af);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .storage-manager__eyebrow {
@@ -42,6 +48,7 @@
 .storage-manager__actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -90,6 +97,7 @@
 }
 
 .storage-manager__content {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -104,6 +112,7 @@
 .storage-manager__metrics article,
 .storage-manager__panel,
 .storage-manager__health-grid article {
+  min-width: 0;
   border: 1px solid var(--border-color, #374151);
   background: var(--surface-1, rgba(17, 24, 39, 0.72));
   border-radius: 10px;
@@ -119,11 +128,13 @@
 .storage-manager__metrics span {
   color: var(--text-secondary, #9ca3af);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .storage-manager__metrics strong {
   font-size: 22px;
   text-transform: capitalize;
+  overflow-wrap: anywhere;
 }
 
 .storage-manager__panel {
@@ -135,6 +146,7 @@
 }
 
 .storage-manager__panel-title {
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -142,9 +154,14 @@
   margin-bottom: 12px;
 }
 
+.storage-manager__panel-title > div:first-child {
+  min-width: 0;
+}
+
 .storage-manager__panel-title h2 {
   margin: 0 0 3px;
   font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .storage-manager__issues {
@@ -153,6 +170,7 @@
 }
 
 .storage-manager__issues article {
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -162,9 +180,11 @@
 }
 
 .storage-manager__issues article div {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
+  overflow-wrap: anywhere;
 }
 
 .storage-manager__issues article span,
@@ -178,12 +198,14 @@
 .storage-manager__healthy,
 .storage-manager__error,
 .storage-manager__empty {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px;
   border-radius: 8px;
   border: 1px solid var(--border-color, #374151);
+  overflow-wrap: anywhere;
 }
 
 .storage-manager__error {
@@ -197,6 +219,7 @@
 }
 
 .storage-manager__tool-grid > div {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -205,6 +228,11 @@
   border-radius: 7px;
   background: var(--surface-2, #1f2937);
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.storage-manager__tool-grid > div > * {
+  min-width: 0;
 }
 
 .storage-manager__tool-grid .ok,
@@ -229,6 +257,7 @@
 }
 
 .storage-manager__table-wrap {
+  max-width: 100%;
   overflow: auto;
 }
 
@@ -262,14 +291,21 @@
 }
 
 .storage-manager__device {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
+.storage-manager__device > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .storage-manager__badge {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 4px;
   margin-left: 5px;
   padding: 3px 6px;
@@ -313,9 +349,11 @@
 }
 
 .storage-manager__health-grid article div {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-wrap: anywhere;
 }
 
 .storage-manager__health-grid span {
