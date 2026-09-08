@@ -38,6 +38,7 @@ import { RegistryManager } from "./RegistryManager";
 import { VolumesManager } from "./VolumesManager";
 import { DockerTable, LoadState, errorMessage } from "./shared";
 import "./docker-manager.css";
+import "./docker-window.css";
 
 type Section =
   | "dashboard"
