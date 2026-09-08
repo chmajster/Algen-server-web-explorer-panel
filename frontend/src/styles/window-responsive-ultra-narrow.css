@@ -1,0 +1,63 @@
+/* Final app-window adaptations for Settings subpages that only had the 420px
+ * viewport fallback. These rules intentionally follow the resizable window. */
+@container app-window (max-width: 26.25rem) {
+  .desktop .admin-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .admin-overview-icon {
+    width: 2.625rem;
+    height: 2.625rem;
+  }
+
+  .desktop .admin-overview-copy {
+    flex-basis: calc(100% - 3.625rem);
+  }
+
+  .desktop .admin-overall-state {
+    margin-left: 0;
+  }
+
+  .desktop .admin-summary-grid article {
+    min-height: 5.5rem;
+  }
+
+  .desktop .network-interface-details,
+  .desktop .network-dns-test,
+  .desktop .network-summary-grid,
+  .desktop .network-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .network-diagnostic-panel > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .desktop .network-diagnostic-panel > header button {
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  .desktop .network-header-actions {
+    width: 100%;
+  }
+
+  .desktop .network-header-actions button {
+    flex: 1 1 0;
+  }
+
+  .desktop .network-toolbar .network-search {
+    grid-column: auto;
+  }
+
+  .desktop .network-routing-heading,
+  .desktop .network-routing-heading > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop .network-routing-heading .network-search {
+    width: 100%;
+  }
+}
