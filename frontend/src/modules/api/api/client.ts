@@ -53,6 +53,30 @@ export type ApiContractReport = {
   issues: ApiContractIssue[];
 };
 
+export type ApiTestResult = {
+  check: string;
+  status: "passed" | "failed";
+  severity: "warning" | "error";
+  path: string;
+  method: string;
+  message: string;
+};
+
+export type ApiTestSummary = {
+  status: ApiContractStatus;
+  total: number;
+  passed: number;
+  failed: number;
+  error_count: number;
+  warning_count: number;
+  score: number;
+};
+
+export type ApiTestReport = {
+  summary: ApiTestSummary;
+  results: ApiTestResult[];
+};
+
 export type ApiEndpointQuery = {
   search?: string;
   method?: string;
@@ -78,4 +102,5 @@ export const apiExplorerClient = {
   summary: () => request<ApiSummary>("/api/modules/api/summary"),
   endpoints: (query: ApiEndpointQuery = {}) => request<ApiEndpointPage>(`/api/modules/api/endpoints${endpointQuery(query)}`),
   contract: () => request<ApiContractReport>("/api/modules/api/contract"),
+  tests: () => request<ApiTestReport>("/api/modules/api/tests"),
 };
