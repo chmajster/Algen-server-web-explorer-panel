@@ -10,6 +10,8 @@ function read(relativePath) {
 const rbac = read("src/features/admin/rbac-access.css");
 const storage = read("src/features/storage/storage-manager.css");
 const policy = read("src/modules/policy-as-code/policy-as-code.css");
+const followups = read("src/styles/window-responsive-followups.css");
+const main = read("src/main.tsx");
 
 const desktopWindowBreakpoint = "@container app-window (max-width: 56.25rem)";
 
@@ -28,5 +30,30 @@ describe("feature layouts inside resizable desktop windows", () => {
   it("makes Policy-as-Code collapse according to app-window width", () => {
     expect(policy).toContain(desktopWindowBreakpoint);
     expect(policy).toContain(".policy-code-grid {\n    grid-template-columns: 1fr;");
+  });
+
+  it("loads the follow-up responsive layer after the UI review fixes", () => {
+    expect(main).toContain('import "./styles/window-responsive-followups.css"');
+    expect(main.indexOf('import "./styles/window-responsive-followups.css"')).toBeGreaterThan(main.indexOf('import "./styles/ui-review-fixes.css"'));
+  });
+
+  it("makes API Explorer summary cards follow the app-window width", () => {
+    expect(followups).toContain("@container app-window (max-width: 65.625rem)");
+    expect(followups).toContain("@container app-window (max-width: 43.75rem)");
+    expect(followups).toContain("@container app-window (max-width: 28.75rem)");
+    expect(followups).toContain(".desktop .api-explorer-stats");
+  });
+
+  it("makes Offline Repository Manager forms follow the app-window width", () => {
+    expect(followups).toContain("@container app-window (max-width: 51.25rem)");
+    expect(followups).toContain(".desktop .orm-form-grid");
+    expect(followups).toContain(".desktop .orm-diagnostic");
+  });
+
+  it("makes Docker container controls follow the app-window width", () => {
+    expect(followups).toContain(desktopWindowBreakpoint);
+    expect(followups).toContain("@container app-window (max-width: 38.75rem)");
+    expect(followups).toContain(".desktop .docker-container-summary");
+    expect(followups).toContain(".desktop .docker-containers-toolbar .docker-search");
   });
 });
