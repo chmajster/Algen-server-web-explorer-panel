@@ -220,6 +220,53 @@
   }
 }
 
+/* Native Operation Progress runs inside a resizable WebNAS desktop window.
+ * Mirror the compact log layout against app-window width so narrowing only the
+ * application still produces the same usable layout as a narrow viewport. */
+@container app-window (max-width: 42rem) {
+  .desktop .operation-progress-native .operation-progress-window-body {
+    padding: 0.625rem;
+  }
+
+  .desktop .operation-progress-native > footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop .operation-progress-native > footer .package-live-footer-note {
+    margin-right: 0;
+    white-space: normal;
+  }
+
+  .desktop .operation-progress-native > footer > button {
+    width: 100%;
+  }
+
+  .desktop .operation-progress-native .package-live-log-header,
+  .desktop .operation-progress-native .package-live-log-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop .operation-progress-native .package-live-log-actions > span {
+    align-self: flex-start;
+  }
+
+  .desktop .operation-progress-native .package-live-log-actions button {
+    justify-content: center;
+    min-height: 2.75rem;
+  }
+
+  .desktop .operation-progress-native .package-live-log-line {
+    grid-template-columns: 4.75rem minmax(0, 1fr);
+    gap: 0.25rem 0.5rem;
+  }
+
+  .desktop .operation-progress-native .package-live-log-line code {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .operation-progress-dialog .spin {
     animation: none;
