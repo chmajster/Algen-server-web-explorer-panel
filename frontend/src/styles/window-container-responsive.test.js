@@ -115,4 +115,20 @@ describe("feature layouts inside resizable desktop windows", () => {
     expect(followups).toContain("@container app-window (max-width: 34rem)");
     expect(followups).toContain(".desktop .dcst-detail-list > div");
   });
+
+  it("mirrors narrow Settings feature pages against app-window width", () => {
+    expect(followups).toContain("@container app-window (max-width: 43.75rem)");
+    expect(followups).toContain("@container app-window (max-width: 26.25rem)");
+    for (const selector of [
+      ".desktop .settings-content.identity-content",
+      ".desktop .personalization-link-card",
+      ".desktop .wallpaper-hero",
+      ".desktop .wallpaper-gallery",
+      ".desktop .wallpaper-options > label",
+      ".desktop .update-settings-status",
+      ".desktop .settings-details",
+    ]) {
+      expect(followups).toContain(selector);
+    }
+  });
 });
