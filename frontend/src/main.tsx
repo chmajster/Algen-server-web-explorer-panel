@@ -13,6 +13,7 @@ import "./styles/ui-feature-consistency.css";
 import "./styles/ui-specialized-consistency.css";
 import "./styles/ui-review-fixes.css";
 import "./styles/window-responsive-followups.css";
+import "./styles/window-responsive-ultra-narrow.css";
 import "./styles/mobile-shell.css";
 import "./styles/shell-taskbar.css";
 
