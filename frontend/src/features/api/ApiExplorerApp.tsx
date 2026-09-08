@@ -2,7 +2,12 @@ import { AlertTriangle, Braces, CheckCircle2, RefreshCw, Search } from "lucide-r
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { Translate } from "../../app/types";
-import { apiExplorerClient, type ApiContractReport, type ApiEndpoint } from "../../modules/api/api/client";
+import {
+  apiExplorerClient,
+  type ApiContractReport,
+  type ApiEndpoint,
+  type ApiTestReport,
+} from "../../modules/api/api/client";
 import "../../styles/api-explorer.css";
 
 const METHODS = ["", "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "TRACE"];
@@ -19,6 +24,7 @@ function methodTone(method: string) {
 
 export function ApiExplorerApp({ t }: { t: Translate }) {
   const [report, setReport] = useState<ApiContractReport | null>(null);
+  const [testReport, setTestReport] = useState<ApiTestReport | null>(null);
   const [endpoints, setEndpoints] = useState<ApiEndpoint[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
@@ -32,11 +38,13 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
     setLoading(true);
     setError("");
     try {
-      const [contract, page] = await Promise.all([
+      const [contract, tests, page] = await Promise.all([
         apiExplorerClient.contract(),
+        apiExplorerClient.tests(),
         apiExplorerClient.endpoints({ search, method, tag, includeDeprecated, limit: 500 }),
       ]);
       setReport(contract);
+      setTestReport(tests);
       setEndpoints(page.items);
       setTotal(page.total);
     } catch (reason) {
@@ -53,16 +61,23 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
     [report?.summary.tag_counts],
   );
 
+  const failedTests = useMemo(
+    () => testReport?.results.filter((result) => result.status === "failed") || [],
+    [testReport],
+  );
+
   const summary = report?.summary;
+  const testSummary = testReport?.summary;
 
   return <section className="api-explorer-app">
     <header className="wn-page-header">
       <div className="wn-page-header-copy">
         <span className="wn-page-eyebrow">Development</span>
         <h2><Braces aria-hidden="true" /> API Explorer</h2>
-        <p>Read-only inventory and validation of the FastAPI OpenAPI contract currently exposed by WebNAS.</p>
+        <p>Read-only inventory, diagnostics and structural test suite for the FastAPI OpenAPI contract exposed by WebNAS.</p>
       </div>
       <div className="wn-page-header-actions">
+        {testSummary && <span className={`wn-status-badge tone-${statusTone(testSummary.status)}`}>Tests: {testSummary.score}%</span>}
         {summary && <span className={`wn-status-badge tone-${statusTone(summary.status)}`}>Contract: {summary.status}</span>}
         <button type="button" onClick={() => void refresh()} disabled={loading}>
           <RefreshCw className={loading ? "spin" : ""} aria-hidden="true" />
@@ -73,7 +88,7 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
 
     <div className="wn-page-section">
       <div className="wn-inline-alert tone-info api-explorer-notice">
-        This module does not execute API requests. It only inspects the server-side OpenAPI schema, preventing accidental destructive calls and SSRF-style proxy behavior.
+        This module does not execute API requests. Contract tests inspect OpenAPI in memory only, preventing destructive calls and SSRF-style proxy behavior.
       </div>
 
       {error && <div className="wn-inline-alert tone-danger" role="alert">{error}</div>}
@@ -83,8 +98,29 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
         <article className="wn-card wn-stat-card"><span>Read-only</span><strong>{summary.read_only_count}</strong><small>GET / HEAD / OPTIONS</small></article>
         <article className="wn-card wn-stat-card"><span>Mutating</span><strong>{summary.mutating_count}</strong><small>POST / PUT / PATCH / DELETE</small></article>
         <article className="wn-card wn-stat-card"><span>Contract issues</span><strong>{summary.issue_count}</strong><small>{summary.error_count} errors · {summary.warning_count} warnings</small></article>
+        <article className="wn-card wn-stat-card"><span>API tests</span><strong>{testSummary ? `${testSummary.score}%` : "—"}</strong><small>{testSummary ? `${testSummary.passed}/${testSummary.total} passed` : "Loading"}</small></article>
         <article className="wn-card wn-stat-card"><span>OpenAPI</span><strong>{summary.openapi || "—"}</strong><small>{summary.title} {summary.version}</small></article>
       </div>}
+
+      <section className="wn-card api-explorer-contract" aria-labelledby="api-test-suite">
+        <div className="wn-section-header">
+          <div>
+            <h3 id="api-test-suite">API test suite</h3>
+            <p>Runs read-only OpenAPI checks for metadata, paths, parameters, request bodies, responses, documentation and operation identifiers.</p>
+          </div>
+          {testSummary && <span className={`wn-status-badge tone-${statusTone(testSummary.status)}`}>
+            {testSummary.passed}/{testSummary.total} passed
+          </span>}
+        </div>
+        {!testReport && loading && <div className="wn-state wn-loading-state is-compact"><span className="wn-spinner" aria-hidden="true" />{t("status.loading")}</div>}
+        {testReport && failedTests.length === 0 && <div className="wn-inline-alert tone-success api-explorer-health"><CheckCircle2 aria-hidden="true" />All API contract tests passed.</div>}
+        {testReport && failedTests.length > 0 && <div className="api-explorer-issues">
+          {failedTests.map((result, index) => <div className={`wn-inline-alert tone-${result.severity === "error" ? "danger" : "warning"}`} key={`${result.check}:${result.path}:${result.method}:${index}`}>
+            <AlertTriangle aria-hidden="true" />
+            <div><strong>{result.check}</strong><span>{result.method} {result.path}</span><p>{result.message}</p></div>
+          </div>)}
+        </div>}
+      </section>
 
       <section className="wn-card api-explorer-contract" aria-labelledby="api-contract-health">
         <div className="wn-section-header">
