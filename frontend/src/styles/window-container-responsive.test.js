@@ -11,7 +11,7 @@ const rbac = read("src/features/admin/rbac-access.css");
 const storage = read("src/features/storage/storage-manager.css");
 const policy = read("src/modules/policy-as-code/policy-as-code.css");
 const followups = read("src/styles/window-responsive-followups.css");
-const ultra = read("src/styles/window-responsive-ultra-narrow.css");
+const settingsGaps = read("src/styles/window-responsive-settings-gaps.css");
 const main = read("src/main.tsx");
 
 const desktopWindowBreakpoint = "@container app-window (max-width: 56.25rem)";
@@ -35,9 +35,9 @@ describe("feature layouts inside resizable desktop windows", () => {
 
   it("loads responsive fix layers after the UI review fixes", () => {
     expect(main).toContain('import "./styles/window-responsive-followups.css"');
-    expect(main).toContain('import "./styles/window-responsive-ultra-narrow.css"');
+    expect(main).toContain('import "./styles/window-responsive-settings-gaps.css"');
     expect(main.indexOf('import "./styles/window-responsive-followups.css"')).toBeGreaterThan(main.indexOf('import "./styles/ui-review-fixes.css"'));
-    expect(main.indexOf('import "./styles/window-responsive-ultra-narrow.css"')).toBeGreaterThan(main.indexOf('import "./styles/window-responsive-followups.css"'));
+    expect(main.indexOf('import "./styles/window-responsive-settings-gaps.css"')).toBeGreaterThan(main.indexOf('import "./styles/window-responsive-followups.css"'));
   });
 
   it("makes API Explorer summary cards and filters follow the app-window width", () => {
@@ -135,8 +135,23 @@ describe("feature layouts inside resizable desktop windows", () => {
     }
   });
 
+  it("mirrors medium Settings layouts at the window breakpoint", () => {
+    expect(settingsGaps).toContain("@container app-window (max-width: 57.5rem)");
+    expect(settingsGaps).toContain("@container app-window (min-width: 43.751rem) and (max-width: 57.5rem)");
+    expect(settingsGaps).toContain(".desktop .password-settings");
+    expect(settingsGaps).toContain(".desktop .admin-summary-grid");
+    expect(settingsGaps).toContain(".desktop .settings-app");
+  });
+
+  it("mirrors Network compact Settings layouts", () => {
+    expect(settingsGaps).toContain("@container app-window (max-width: 43.75rem)");
+    expect(settingsGaps).toContain(".desktop .network-settings-tabs");
+    expect(settingsGaps).toContain(".desktop .network-summary-grid");
+    expect(settingsGaps).toContain(".desktop .network-toolbar");
+  });
+
   it("mirrors Administration and Network ultra-narrow Settings layouts", () => {
-    expect(ultra).toContain("@container app-window (max-width: 26.25rem)");
+    expect(settingsGaps).toContain("@container app-window (max-width: 26.25rem)");
     for (const selector of [
       ".desktop .admin-summary-grid",
       ".desktop .admin-overview-icon",
@@ -146,7 +161,7 @@ describe("feature layouts inside resizable desktop windows", () => {
       ".desktop .network-toolbar",
       ".desktop .network-routing-heading",
     ]) {
-      expect(ultra).toContain(selector);
+      expect(settingsGaps).toContain(selector);
     }
   });
 });
