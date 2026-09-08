@@ -103,3 +103,62 @@
     justify-content: flex-end;
   }
 }
+
+/* Credentials: toolbar density, header actions and form columns must follow the
+ * resizable application window instead of the browser viewport. */
+@container app-window (max-width: 70rem) {
+  .desktop .credentials-toolbar {
+    grid-template-columns: minmax(12rem, 1.5fr) repeat(2, minmax(9rem, 1fr)) auto;
+  }
+
+  .desktop .credentials-toolbar > label:nth-of-type(4) {
+    grid-column: 1 / 2;
+  }
+}
+
+@container app-window (max-width: 56rem) {
+  .desktop .credentials-app {
+    padding: 0.5rem;
+  }
+
+  .desktop .credentials-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop .credentials-header-actions {
+    justify-content: flex-end;
+  }
+
+  .desktop .credentials-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop .credentials-search-field {
+    grid-column: 1 / -1;
+  }
+
+  .desktop .credentials-toolbar > label:nth-of-type(4) {
+    grid-column: auto;
+  }
+
+  .desktop .credentials-count {
+    justify-self: end;
+  }
+
+  .desktop .credentials-form {
+    min-width: min(34rem, 78vw);
+  }
+}
+
+@container app-window (max-width: 42rem) {
+  .desktop .credentials-toolbar,
+  .desktop .credentials-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .credentials-form-span,
+  .desktop .credentials-search-field {
+    grid-column: auto;
+  }
+}
