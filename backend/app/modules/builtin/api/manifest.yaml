@@ -1,0 +1,11 @@
+id: api
+name: API Explorer
+version: 1.0.0
+category: development
+icon: braces
+permissions: [modules.view]
+routers: [app.modules.api.router:router]
+dependencies: []
+capabilities: [catalog, search, contract-diagnostics]
+actions: [inspect]
+menu: [{id: api, label: API Explorer, icon: braces, permission: modules.view}]

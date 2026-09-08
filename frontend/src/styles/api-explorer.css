@@ -1,0 +1,43 @@
+.api-explorer-app { min-height: 100%; background: var(--wn-surface-1); color: var(--wn-text); }
+.api-explorer-app .wn-page-header h2 { display: flex; align-items: center; gap: var(--wn-space-2); }
+.api-explorer-app .wn-page-header h2 svg { width: 1.25rem; height: 1.25rem; }
+.api-explorer-app button { display: inline-flex; align-items: center; justify-content: center; gap: var(--wn-space-2); }
+.api-explorer-app button svg { width: 1rem; height: 1rem; }
+.api-explorer-notice { line-height: var(--line-height-relaxed); }
+.api-explorer-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--wn-space-3); }
+.api-explorer-stats .wn-stat-card strong { overflow-wrap: anywhere; }
+.api-explorer-contract { display: grid; gap: var(--wn-space-3); }
+.api-explorer-health { display: flex; align-items: center; gap: var(--wn-space-2); }
+.api-explorer-health svg, .api-explorer-issues svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
+.api-explorer-issues { display: grid; gap: var(--wn-space-2); }
+.api-explorer-issues .wn-inline-alert { display: flex; align-items: flex-start; gap: var(--wn-space-2); }
+.api-explorer-issues .wn-inline-alert > div { display: grid; gap: .15rem; }
+.api-explorer-issues span { color: var(--wn-text-secondary); font-family: var(--font-family-monospace); font-size: var(--wn-font-xs); }
+.api-explorer-issues p { margin: 0; color: var(--wn-text-secondary); }
+.api-explorer-catalog-header { margin-bottom: var(--wn-space-3); }
+.api-explorer-filters { margin-bottom: var(--wn-space-3); }
+.api-explorer-filters .wn-form-field { min-width: 10rem; }
+.api-explorer-filters .wn-form-field > span { color: var(--wn-text-secondary); font-size: var(--wn-font-sm); font-weight: var(--wn-weight-semibold); }
+.api-explorer-deprecated { margin-inline-start: auto; white-space: nowrap; }
+.api-explorer-table table { min-width: 60rem; }
+.api-explorer-table td:nth-child(2) { min-width: 18rem; }
+.api-explorer-table td:nth-child(3) { min-width: 14rem; }
+.api-explorer-table td:nth-child(2) small { display: block; margin-top: .2rem; color: var(--wn-muted); font-family: var(--font-family-monospace); font-size: var(--wn-font-xs); }
+.api-explorer-path { color: var(--wn-text); font-weight: var(--wn-weight-semibold); }
+.api-explorer-method { display: inline-flex; min-width: 4.4rem; justify-content: center; padding: .2rem .45rem; border: 1px solid currentColor; border-radius: var(--wn-radius-sm); font-family: var(--font-family-monospace); font-size: var(--wn-font-xs); font-weight: var(--wn-weight-bold); }
+.api-explorer-method.read { color: var(--wn-success); }
+.api-explorer-method.write { color: var(--wn-warning); }
+.api-explorer-flags { display: flex; flex-wrap: wrap; gap: var(--wn-space-1); }
+
+@media (max-width: 1050px) {
+  .api-explorer-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .api-explorer-stats { grid-template-columns: 1fr 1fr; }
+  .api-explorer-deprecated { margin-inline-start: 0; width: 100%; }
+}
+
+@media (max-width: 460px) {
+  .api-explorer-stats { grid-template-columns: 1fr; }
+}
