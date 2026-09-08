@@ -16,7 +16,7 @@
 .api-explorer-issues p { margin: 0; color: var(--wn-text-secondary); }
 .api-explorer-catalog-header { margin-bottom: var(--wn-space-3); }
 .api-explorer-filters { margin-bottom: var(--wn-space-3); }
-.api-explorer-filters .wn-form-field { min-width: 10rem; }
+.api-explorer-filters .wn-form-field { min-width: min(100%, 10rem); }
 .api-explorer-filters .wn-form-field > span { color: var(--wn-text-secondary); font-size: var(--wn-font-sm); font-weight: var(--wn-weight-semibold); }
 .api-explorer-deprecated { margin-inline-start: auto; white-space: nowrap; }
 .api-explorer-table table { min-width: 60rem; }
@@ -29,13 +29,26 @@
 .api-explorer-method.write { color: var(--wn-warning); }
 .api-explorer-flags { display: flex; flex-wrap: wrap; gap: var(--wn-space-1); }
 
+@container app-window (max-width: 65.625rem) {
+  .api-explorer-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container app-window (max-width: 43.75rem) {
+  .api-explorer-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .api-explorer-deprecated { margin-inline-start: 0; width: 100%; white-space: normal; }
+}
+
+@container app-window (max-width: 28.75rem) {
+  .api-explorer-stats { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (max-width: 1050px) {
   .api-explorer-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 700px) {
   .api-explorer-stats { grid-template-columns: 1fr 1fr; }
-  .api-explorer-deprecated { margin-inline-start: 0; width: 100%; }
+  .api-explorer-deprecated { margin-inline-start: 0; width: 100%; white-space: normal; }
 }
 
 @media (max-width: 460px) {
