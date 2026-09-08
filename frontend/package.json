@@ -48,8 +48,6 @@
     "vitest": "4.1.11"
   },
   "overrides": {
-    "@redocly/openapi-core": {
-      "js-yaml": "4.3.2"
-    }
+    "js-yaml": "4.3.2"
   }
 }
