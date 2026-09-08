@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections import Counter
 import re
+from collections import Counter
 from typing import Any
 
 
@@ -12,7 +12,10 @@ PATH_ITEM_METADATA = {"parameters", "$ref", "summary", "description", "servers"}
 
 def _operations(contract: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
     values: list[tuple[str, str, dict[str, Any]]] = []
-    for path, path_item in contract.get("paths", {}).items():
+    paths = contract.get("paths", {})
+    if not isinstance(paths, dict):
+        return values
+    for path, path_item in paths.items():
         if not isinstance(path, str) or not isinstance(path_item, dict):
             continue
         for raw_method, operation in path_item.items():
@@ -28,7 +31,8 @@ def _parameter_lists(
     path: str,
     operation: dict[str, Any],
 ) -> list[list[dict[str, Any]]]:
-    path_item = contract.get("paths", {}).get(path, {})
+    paths = contract.get("paths", {})
+    path_item = paths.get(path, {}) if isinstance(paths, dict) else {}
     values: list[list[dict[str, Any]]] = []
     for raw in (
         path_item.get("parameters", []) if isinstance(path_item, dict) else [],
@@ -288,6 +292,12 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
                 severity="error",
                 message="OpenAPI paths is an object.",
             ),
+            _test_result(
+                "operations-present",
+                bool(operations),
+                severity="error",
+                message="At least one API operation is declared." if operations else "No API operations are declared.",
+            ),
         ]
     )
 
@@ -334,12 +344,13 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
                 message="Path is inside /api/." if path.startswith("/api/") else "Path is outside /api/.",
             )
         )
+        valid_tags = isinstance(tags, list) and any(str(tag).strip() for tag in tags)
         results.append(
             _test_result(
                 "operation-tags",
-                isinstance(tags, list) and bool(tags),
+                valid_tags,
                 **scope,
-                message="At least one tag is declared." if isinstance(tags, list) and tags else "No tags are declared.",
+                message="At least one non-empty tag is declared." if valid_tags else "No non-empty tags are declared.",
             )
         )
         documented = bool(str(operation.get("summary") or "").strip() or str(operation.get("description") or "").strip())
