@@ -56,4 +56,12 @@ describe("feature layouts inside resizable desktop windows", () => {
     expect(followups).toContain(".desktop .docker-container-summary");
     expect(followups).toContain(".desktop .docker-containers-toolbar .docker-search");
   });
+
+  it("makes Credentials toolbar and forms follow the app-window width", () => {
+    expect(followups).toContain("@container app-window (max-width: 70rem)");
+    expect(followups).toContain("@container app-window (max-width: 56rem)");
+    expect(followups).toContain("@container app-window (max-width: 42rem)");
+    expect(followups).toContain(".desktop .credentials-toolbar");
+    expect(followups).toContain(".desktop .credentials-form-grid");
+  });
 });
