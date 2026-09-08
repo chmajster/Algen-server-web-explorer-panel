@@ -63,5 +63,43 @@ describe("feature layouts inside resizable desktop windows", () => {
     expect(followups).toContain("@container app-window (max-width: 42rem)");
     expect(followups).toContain(".desktop .credentials-toolbar");
     expect(followups).toContain(".desktop .credentials-form-grid");
+    expect(followups).toContain("min-width: min(34rem, 100%);");
+  });
+
+  it("makes shared design-system headers follow app-window width", () => {
+    expect(followups).toContain("@container app-window (max-width: 43.75rem)");
+    expect(followups).toContain(".desktop .wn-page-header");
+    expect(followups).toContain(".desktop .wn-section-header");
+    expect(followups).toContain(".desktop .wn-search-input");
+  });
+
+  it("makes Identity compact controls follow app-window width", () => {
+    expect(followups).toContain("@container app-window (max-width: 38.75rem)");
+    expect(followups).toContain(".desktop .identity-tabs");
+    expect(followups).toContain(".desktop .identity-toolbar");
+    expect(followups).toContain(".desktop .identity-history article");
+  });
+
+  it("guards intrinsic grids against narrow-window overflow", () => {
+    for (const selector of [
+      ".desktop .orm-checkbox-grid",
+      ".desktop .storage-manager__tool-grid",
+      ".desktop .docker-container-detail-grid",
+      ".desktop .docker-app-grid",
+      ".desktop .docker-inspect-grid",
+      ".desktop .docker-path-folders",
+      ".desktop .dcst-app .checkbox-grid",
+      ".desktop .monitor-overview-grid",
+    ]) {
+      expect(followups).toContain(selector);
+    }
+    expect(followups).toContain("minmax(min(100%, 16.25rem), 1fr)");
+    expect(followups).toContain("minmax(min(100%, 18.75rem), 1fr)");
+  });
+
+  it("sizes Resource Monitor process search against its parent", () => {
+    expect(followups).toContain(".desktop .monitor-process-tools input");
+    expect(followups).toContain("width: min(16.25rem, 100%);");
+    expect(followups).toContain("max-width: 100%;");
   });
 });
