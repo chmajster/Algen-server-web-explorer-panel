@@ -1,0 +1,73 @@
+/* Docker layouts rendered inside a resizable WebNAS application window.
+ * Modal/wizard viewport rules stay in docker-manager.css. */
+
+@container app-window (max-width: 56.25rem) {
+  .docker-container-summary {
+    grid-template-columns: repeat(3, minmax(7rem, 1fr));
+  }
+
+  .docker-containers-toolbar .docker-search {
+    flex-basis: 100%;
+  }
+
+  .docker-containers-toolbar .docker-toolbar-filters {
+    flex: 1 1 auto;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .docker-containers-toolbar .docker-toolbar-actions {
+    margin-left: 0;
+  }
+}
+
+@container app-window (max-width: 38.75rem) {
+  .docker-containers-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .docker-containers-header-actions {
+    justify-content: stretch;
+  }
+
+  .docker-containers-header-actions button {
+    flex: 1 1 auto;
+  }
+
+  .docker-container-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .docker-containers-toolbar .docker-toolbar-filters,
+  .docker-containers-toolbar .docker-toolbar-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .docker-containers-toolbar .docker-toolbar-filters select {
+    min-width: 0;
+    flex: 1 1 7.5rem;
+  }
+
+  .docker-containers-toolbar .docker-toolbar-actions {
+    justify-content: flex-end;
+  }
+}
+
+/* Intrinsic track minima must never exceed the owning window. */
+.docker-container-detail-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.75rem), 1fr));
+}
+
+.docker-app-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18.75rem), 1fr));
+}
+
+.docker-inspect-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.75rem), 1fr));
+}
+
+.docker-path-folders {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.125rem), 1fr));
+}
