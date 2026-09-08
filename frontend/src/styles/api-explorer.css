@@ -4,7 +4,7 @@
 .api-explorer-app button { display: inline-flex; align-items: center; justify-content: center; gap: var(--wn-space-2); }
 .api-explorer-app button svg { width: 1rem; height: 1rem; }
 .api-explorer-notice { line-height: var(--line-height-relaxed); }
-.api-explorer-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--wn-space-3); }
+.api-explorer-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wn-space-3); }
 .api-explorer-stats .wn-stat-card strong { overflow-wrap: anywhere; }
 .api-explorer-contract { display: grid; gap: var(--wn-space-3); }
 .api-explorer-health { display: flex; align-items: center; gap: var(--wn-space-2); }
