@@ -11,6 +11,7 @@ const rbac = read("src/features/admin/rbac-access.css");
 const storage = read("src/features/storage/storage-manager.css");
 const policy = read("src/modules/policy-as-code/policy-as-code.css");
 const followups = read("src/styles/window-responsive-followups.css");
+const ultra = read("src/styles/window-responsive-ultra-narrow.css");
 const main = read("src/main.tsx");
 
 const desktopWindowBreakpoint = "@container app-window (max-width: 56.25rem)";
@@ -32,9 +33,11 @@ describe("feature layouts inside resizable desktop windows", () => {
     expect(policy).toContain(".policy-code-grid {\n    grid-template-columns: 1fr;");
   });
 
-  it("loads the follow-up responsive layer after the UI review fixes", () => {
+  it("loads responsive fix layers after the UI review fixes", () => {
     expect(main).toContain('import "./styles/window-responsive-followups.css"');
+    expect(main).toContain('import "./styles/window-responsive-ultra-narrow.css"');
     expect(main.indexOf('import "./styles/window-responsive-followups.css"')).toBeGreaterThan(main.indexOf('import "./styles/ui-review-fixes.css"'));
+    expect(main.indexOf('import "./styles/window-responsive-ultra-narrow.css"')).toBeGreaterThan(main.indexOf('import "./styles/window-responsive-followups.css"'));
   });
 
   it("makes API Explorer summary cards and filters follow the app-window width", () => {
@@ -129,6 +132,21 @@ describe("feature layouts inside resizable desktop windows", () => {
       ".desktop .settings-details",
     ]) {
       expect(followups).toContain(selector);
+    }
+  });
+
+  it("mirrors Administration and Network ultra-narrow Settings layouts", () => {
+    expect(ultra).toContain("@container app-window (max-width: 26.25rem)");
+    for (const selector of [
+      ".desktop .admin-summary-grid",
+      ".desktop .admin-overview-icon",
+      ".desktop .network-interface-details",
+      ".desktop .network-dns-test",
+      ".desktop .network-diagnostic-panel > header",
+      ".desktop .network-toolbar",
+      ".desktop .network-routing-heading",
+    ]) {
+      expect(ultra).toContain(selector);
     }
   });
 });
