@@ -147,7 +147,7 @@
   }
 
   .desktop .credentials-form {
-    min-width: min(34rem, 78vw);
+    min-width: min(34rem, 100%);
   }
 }
 
@@ -161,4 +161,103 @@
   .desktop .credentials-search-field {
     grid-column: auto;
   }
+}
+
+/* Shared WebNAS design-system primitives appear inside resizable application
+ * windows as well as full-page surfaces. Mirror the 700px viewport adaptation
+ * against the application window so headers and search controls do not stay wide. */
+@container app-window (max-width: 43.75rem) {
+  .desktop .wn-page-header,
+  .desktop .wn-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop .wn-page-header-actions,
+  .desktop .wn-section-actions {
+    justify-content: flex-start;
+  }
+
+  .desktop .wn-search-input {
+    min-width: 100%;
+  }
+}
+
+/* Identity already collapses its master/detail workspace by container width,
+ * but the compact toolbar, history and table spacing were viewport-only. */
+@container app-window (max-width: 38.75rem) {
+  .desktop .identity-tabs {
+    padding-inline: 0.4375rem;
+  }
+
+  .desktop .identity-tabs button {
+    padding-inline: 0.5625rem;
+  }
+
+  .desktop .identity-toolbar {
+    align-items: stretch;
+  }
+
+  .desktop .identity-toolbar > * {
+    flex: 1 1 8.75rem;
+  }
+
+  .desktop .identity-table {
+    min-width: 40.625rem;
+  }
+
+  .desktop .identity-list-pane {
+    padding: 0.5rem;
+  }
+
+  .desktop .identity-history article {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .desktop .identity-history article > span,
+  .desktop .identity-history article > time {
+    grid-column: 2;
+  }
+}
+
+/* Intrinsic grid minima must never be wider than their resizable parent. Without
+ * min(100%, ...), auto-fit/auto-fill tracks can still force horizontal overflow
+ * at extreme window widths even when surrounding layouts are responsive. */
+.desktop .orm-checkbox-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.25rem), 1fr));
+}
+
+.desktop .storage-manager__tool-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.125rem), 1fr));
+}
+
+.desktop .docker-container-detail-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.75rem), 1fr));
+}
+
+.desktop .docker-app-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18.75rem), 1fr));
+}
+
+.desktop .docker-inspect-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.75rem), 1fr));
+}
+
+.desktop .docker-path-folders {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.125rem), 1fr));
+}
+
+.desktop .dcst-app .checkbox-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+}
+
+.desktop .monitor-overview-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+}
+
+/* Resource Monitor process search previously used 50vw, coupling an in-window
+ * control to the browser viewport instead of its toolbar. */
+.desktop .monitor-process-tools input {
+  width: min(16.25rem, 100%);
+  max-width: 100%;
 }
