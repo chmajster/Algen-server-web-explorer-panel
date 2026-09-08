@@ -1,0 +1,105 @@
+/* Window-relative follow-up fixes for applications rendered inside resizable WebNAS windows.
+ * Viewport media queries remain as fallbacks; these rules respond to the actual app window.
+ */
+
+/* API Explorer: summary cards must collapse when the application window narrows,
+ * even if the browser viewport remains wide. */
+@container app-window (max-width: 65.625rem) {
+  .desktop .api-explorer-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container app-window (max-width: 43.75rem) {
+  .desktop .api-explorer-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop .api-explorer-deprecated {
+    width: 100%;
+    margin-inline-start: 0;
+  }
+}
+
+@container app-window (max-width: 28.75rem) {
+  .desktop .api-explorer-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Offline Repository Manager: form and diagnostic layouts previously depended
+ * only on the browser viewport and overflowed in a narrow desktop window. */
+@container app-window (max-width: 51.25rem) {
+  .desktop .orm-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desktop .orm-form-grid .wide,
+  .desktop .orm-form-grid fieldset.wide {
+    grid-column: auto;
+  }
+
+  .desktop .orm-diagnostic {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .desktop .orm-diagnostic small {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Docker Containers: the shell/sidebar already follows app-window size, but the
+ * result summary and filter toolbar still used viewport-only breakpoints. */
+@container app-window (max-width: 56.25rem) {
+  .desktop .docker-container-summary {
+    grid-template-columns: repeat(3, minmax(7rem, 1fr));
+  }
+
+  .desktop .docker-containers-toolbar .docker-search {
+    flex-basis: 100%;
+  }
+
+  .desktop .docker-containers-toolbar .docker-toolbar-filters {
+    flex: 1 1 auto;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .desktop .docker-containers-toolbar .docker-toolbar-actions {
+    margin-left: 0;
+  }
+}
+
+@container app-window (max-width: 38.75rem) {
+  .desktop .docker-containers-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .desktop .docker-containers-header-actions {
+    justify-content: stretch;
+  }
+
+  .desktop .docker-containers-header-actions button {
+    flex: 1 1 auto;
+  }
+
+  .desktop .docker-container-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .desktop .docker-containers-toolbar .docker-toolbar-filters,
+  .desktop .docker-containers-toolbar .docker-toolbar-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .desktop .docker-containers-toolbar .docker-toolbar-filters select {
+    min-width: 0;
+    flex: 1 1 7.5rem;
+  }
+
+  .desktop .docker-containers-toolbar .docker-toolbar-actions {
+    justify-content: flex-end;
+  }
+}
