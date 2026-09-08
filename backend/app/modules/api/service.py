@@ -321,7 +321,6 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
     )
 
     for path, method, operation in operations:
-        scope = {"path": path, "method": method}
         operation_id = str(operation.get("operationId") or "").strip()
         tags = operation.get("tags", [])
         responses = operation.get("responses", {})
@@ -332,7 +331,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "operation-id",
                 bool(operation_id),
-                **scope,
+                path=path,
+                method=method,
                 message="operationId is declared." if operation_id else "operationId is missing.",
             )
         )
@@ -340,7 +340,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "api-namespace",
                 path.startswith("/api/"),
-                **scope,
+                path=path,
+                method=method,
                 message="Path is inside /api/." if path.startswith("/api/") else "Path is outside /api/.",
             )
         )
@@ -349,7 +350,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "operation-tags",
                 valid_tags,
-                **scope,
+                path=path,
+                method=method,
                 message="At least one non-empty tag is declared." if valid_tags else "No non-empty tags are declared.",
             )
         )
@@ -358,7 +360,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "operation-documentation",
                 documented,
-                **scope,
+                path=path,
+                method=method,
                 message="Summary or description is declared." if documented else "Summary and description are both missing.",
             )
         )
@@ -369,7 +372,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
                 "responses-declared",
                 valid_responses,
                 severity="error",
-                **scope,
+                path=path,
+                method=method,
                 message="At least one response is declared." if valid_responses else "No responses are declared.",
             )
         )
@@ -379,7 +383,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "success-response",
                 has_success,
-                **scope,
+                path=path,
+                method=method,
                 message="A 2xx response is declared." if has_success else "No 2xx response is declared.",
             )
         )
@@ -396,7 +401,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
                 _test_result(
                     "response-descriptions",
                     not missing_descriptions,
-                    **scope,
+                    path=path,
+                    method=method,
                     message=(
                         "All inline responses have descriptions."
                         if not missing_descriptions
@@ -410,7 +416,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "read-without-request-body",
                 read_body_ok,
-                **scope,
+                path=path,
+                method=method,
                 message=(
                     "Read-only method has no request body."
                     if read_body_ok
@@ -427,7 +434,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
                 _test_result(
                     "request-body-content",
                     has_content,
-                    **scope,
+                    path=path,
+                    method=method,
                     message=(
                         "Inline request body declares content."
                         if has_content
@@ -450,7 +458,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
                 "path-parameters-declared",
                 not missing_path_parameters,
                 severity="error",
-                **scope,
+                path=path,
+                method=method,
                 message=(
                     "All path placeholders have parameter declarations."
                     if not missing_path_parameters
@@ -462,7 +471,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "path-parameters-match-template",
                 not extra_path_parameters,
-                **scope,
+                path=path,
+                method=method,
                 message=(
                     "Declared path parameters match the path template."
                     if not extra_path_parameters
@@ -480,7 +490,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
                 "path-parameters-required",
                 not non_required_path_parameters,
                 severity="error",
-                **scope,
+                path=path,
+                method=method,
                 message=(
                     "All declared path parameters are required."
                     if not non_required_path_parameters
@@ -501,7 +512,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "unique-parameters",
                 not duplicate_parameters,
-                **scope,
+                path=path,
+                method=method,
                 message=(
                     "No duplicate parameters are declared at the same scope."
                     if not duplicate_parameters
@@ -521,7 +533,8 @@ def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
             _test_result(
                 "parameter-schema",
                 not parameters_without_schema,
-                **scope,
+                path=path,
+                method=method,
                 message=(
                     "All inline parameters declare schema or content."
                     if not parameters_without_schema
