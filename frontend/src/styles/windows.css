@@ -24,6 +24,18 @@
 .desktop .window-controls .window-close:hover { background: #c42b3a; }
 .desktop .window-app-icon svg { width: 1.0625rem; height: 1.0625rem; }
 
+/* Dialog resize handles used to extend four pixels outside the panel. Besides
+   creating measurable horizontal overflow, that could expose a stray scroll
+   range in tightly constrained layouts. Keep the same hit area inside bounds. */
+.desktop .dialog-window .dialog-resize-n { top: 0 !important; }
+.desktop .dialog-window .dialog-resize-e { right: 0 !important; }
+.desktop .dialog-window .dialog-resize-s { bottom: 0 !important; }
+.desktop .dialog-window .dialog-resize-w { left: 0 !important; }
+.desktop .dialog-window .dialog-resize-ne { top: 0 !important; right: 0 !important; }
+.desktop .dialog-window .dialog-resize-nw { top: 0 !important; left: 0 !important; }
+.desktop .dialog-window .dialog-resize-se { right: 0 !important; bottom: 0 !important; }
+.desktop .dialog-window .dialog-resize-sw { bottom: 0 !important; left: 0 !important; }
+
 @media (max-width: 920px) {
   .desktop .desktop-window.mobile-fullscreen,
   .desktop .desktop-window.mobile-fullscreen.maximized {
