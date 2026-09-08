@@ -31,6 +31,12 @@ describe("window shell visual regressions", () => {
     expect(mobile).not.toContain(".window-resize-handle");
   });
 
+  it("keeps dialog resize hitboxes inside the dialog bounds", () => {
+    expect(windows).toContain(".desktop .dialog-window .dialog-resize-e { right: 0 !important; }");
+    expect(windows).toContain(".desktop .dialog-window .dialog-resize-w { left: 0 !important; }");
+    expect(windows).toContain(".desktop .dialog-window .dialog-resize-se { right: 0 !important; bottom: 0 !important; }");
+  });
+
   it("uses dynamic viewport units for the mobile and tablet shell", () => {
     expect(mobile).toContain("width: 100dvw");
     expect(mobile).toContain("height: 100dvh");
