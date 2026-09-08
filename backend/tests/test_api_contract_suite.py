@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import json
+import subprocess
+import sys
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -158,6 +162,29 @@ def test_api_contract_suite_detects_missing_path_parameter_declaration():
     failure = _failed(report, "path-parameters-declared")[0]
     assert failure["severity"] == "error"
     assert "widget_id" in failure["message"]
+
+
+def test_api_contract_suite_resolves_local_ref_path_parameters():
+    contract = _healthy_contract()
+    contract["components"] = {
+        "parameters": {
+            "WidgetId": {
+                "name": "widget_id",
+                "in": "path",
+                "required": True,
+                "schema": {"type": "string", "minLength": 1},
+            }
+        }
+    }
+    operation = contract["paths"]["/api/widgets/{widget_id}"]["get"]
+    operation["parameters"][0] = {"$ref": "#/components/parameters/WidgetId"}
+
+    report = api_test_report(contract)
+
+    assert not _failed(report, "path-parameters-declared")
+    assert not _failed(report, "path-parameters-required")
+    assert not _failed(report, "path-parameters-match-template")
+    assert not _failed(report, "parameter-schema")
 
 
 def test_api_contract_suite_detects_duplicate_parameters_at_same_scope():
@@ -327,14 +354,37 @@ def test_tests_route_enforces_modules_view_permission(monkeypatch):
     assert response.json()["detail"] == "forbidden"
 
 
-def test_contract_suite_never_performs_http_requests(monkeypatch):
+def test_real_application_openapi_has_no_structural_contract_errors(tmp_path):
+    root = Path(__file__).resolve().parents[2]
+    output = tmp_path / "openapi.json"
+    subprocess.run(
+        [sys.executable, str(root / "scripts" / "export_openapi.py"), "--output", str(output)],
+        cwd=root,
+        check=True,
+    )
+    contract = json.loads(output.read_text(encoding="utf-8"))
+
+    report = api_test_report(contract)
+    structural_failures = [
+        item
+        for item in report["results"]
+        if item["status"] == "failed" and item["severity"] == "error"
+    ]
+
+    assert structural_failures == []
+    assert report["summary"]["error_count"] == 0
+
+
+def test_contract_suite_route_never_opens_network_connections(monkeypatch):
     import socket
 
     def forbidden(*_args, **_kwargs):
         raise AssertionError("network access is forbidden in contract tests")
 
     monkeypatch.setattr(socket, "create_connection", forbidden)
+    monkeypatch.setattr(socket, "socket", forbidden)
 
-    report = api_test_report(_healthy_contract())
+    response = TestClient(_application(monkeypatch)).get("/api/modules/api/tests")
 
-    assert report["summary"]["status"] == "ok"
+    assert response.status_code == 200
+    assert response.json()["summary"]["status"] == "ok"
