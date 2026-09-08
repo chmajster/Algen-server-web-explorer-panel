@@ -37,11 +37,13 @@ describe("feature layouts inside resizable desktop windows", () => {
     expect(main.indexOf('import "./styles/window-responsive-followups.css"')).toBeGreaterThan(main.indexOf('import "./styles/ui-review-fixes.css"'));
   });
 
-  it("makes API Explorer summary cards follow the app-window width", () => {
+  it("makes API Explorer summary cards and filters follow the app-window width", () => {
     expect(followups).toContain("@container app-window (max-width: 65.625rem)");
     expect(followups).toContain("@container app-window (max-width: 43.75rem)");
     expect(followups).toContain("@container app-window (max-width: 28.75rem)");
     expect(followups).toContain(".desktop .api-explorer-stats");
+    expect(followups).toContain(".desktop .api-explorer-filters .wn-form-field");
+    expect(followups).toContain("min-width: min(100%, 10rem);");
   });
 
   it("makes Offline Repository Manager forms follow the app-window width", () => {
@@ -101,5 +103,16 @@ describe("feature layouts inside resizable desktop windows", () => {
     expect(followups).toContain(".desktop .monitor-process-tools input");
     expect(followups).toContain("width: min(16.25rem, 100%);");
     expect(followups).toContain("max-width: 100%;");
+  });
+
+  it("makes Package Center job cards follow package-center width", () => {
+    expect(followups).toContain("@container package-center (max-width: 32.5rem)");
+    expect(followups).toContain(".package-job > header");
+    expect(followups).toContain(".package-job-meta");
+  });
+
+  it("stacks DCST detail pairs in compact app windows", () => {
+    expect(followups).toContain("@container app-window (max-width: 34rem)");
+    expect(followups).toContain(".desktop .dcst-detail-list > div");
   });
 });
