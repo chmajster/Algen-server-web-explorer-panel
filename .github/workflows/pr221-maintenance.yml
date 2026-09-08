@@ -30,11 +30,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Remediate frontend audit lock
+      - name: Regenerate frontend lock with security override
         working-directory: frontend
         run: |
+          npm install --package-lock-only
           npm ci
-          npm audit fix --package-lock-only
           npm audit --audit-level=high
       - name: Commit dependency remediation
         run: |
