@@ -279,6 +279,20 @@ def test_api_contract_suite_detects_missing_docs_tags_namespace_and_operation_id
     assert _failed(report, "operation-id")
 
 
+def test_api_contract_suite_handles_malformed_paths_without_crashing():
+    contract = {
+        "openapi": "3.1.0",
+        "info": {"title": "Broken API", "version": "1.0.0"},
+        "paths": ["not", "an", "object"],
+    }
+
+    report = api_test_report(contract)
+
+    assert _failed(report, "paths-object")[0]["severity"] == "error"
+    assert _failed(report, "operations-present")[0]["severity"] == "error"
+    assert report["summary"]["status"] == "error"
+
+
 def test_api_test_results_are_deterministic():
     first = api_test_results(_healthy_contract())
     second = api_test_results(deepcopy(_healthy_contract()))
