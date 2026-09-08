@@ -92,7 +92,13 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   }, []);
   useEffect(() => {
     function click(event: MouseEvent) {
-      if (event.target instanceof Element && event.target.closest(".launcher-context-menu")) return;
+      if (event.target instanceof Element) {
+        if (event.target.closest(".launcher-context-menu")) return;
+        // The Start button owns launcher toggling. Closing here on mousedown would
+        // unmount the launcher before the button's click handler runs, causing the
+        // functional toggle to reopen it immediately.
+        if (event.target.closest(".taskbar-start")) return;
+      }
       if (powerMenuOpen && !powerActionsRef.current?.contains(event.target as Node)) setPowerMenuOpen(false);
       if (!ref.current?.contains(event.target as Node)) onClose();
     }
