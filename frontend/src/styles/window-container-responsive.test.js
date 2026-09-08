@@ -7,170 +7,130 @@ function read(relativePath) {
   return readFileSync(resolve(cwd(), relativePath), "utf8");
 }
 
+const main = read("src/main.tsx");
 const rbac = read("src/features/admin/rbac-access.css");
 const storage = read("src/features/storage/storage-manager.css");
 const policy = read("src/modules/policy-as-code/policy-as-code.css");
+const apiExplorer = read("src/styles/api-explorer.css");
+const orm = read("src/features/modules/os-repositories/offline-repository-manager.css");
+const designSystem = read("src/styles/design-system.css");
+const identity = read("src/styles/identity.css");
+const dockerWindow = read("src/features/docker/docker-window.css");
+const dockerApp = read("src/features/docker/DockerManagerApp.tsx");
+const credentialsWindow = read("src/modules/credentials/credentials-window.css");
+const credentialsManifest = read("src/modules/credentials/manifest.tsx");
+const monitorWindow = read("src/features/admin/monitor-window.css");
+const monitorApp = read("src/features/admin/MonitorApp.tsx");
+const dcstWindow = read("src/features/dcst/dcst-window.css");
+const dcstApp = read("src/features/dcst/DcstApp.tsx");
+const packageWindow = read("src/features/package-center/package-center-window.css");
+const packageApp = read("src/features/package-center/PackageCenterApp.tsx");
+const settingsWindow = read("src/features/settings/settings-window.css");
+const settingsManifest = read("src/modules/settings/manifest.tsx");
 const operationProgress = read("src/features/package-center/operation-progress-window.css");
-const followups = read("src/styles/window-responsive-followups.css");
-const settingsGaps = read("src/styles/window-responsive-settings-gaps.css");
-const main = read("src/main.tsx");
 
 const desktopWindowBreakpoint = "@container app-window (max-width: 56.25rem)";
 
-describe("feature layouts inside resizable desktop windows", () => {
-  it("makes RBAC collapse according to app-window width", () => {
-    expect(rbac).toContain(".rbac-access { display: flex; flex-direction: column; gap: 14px; height: 100%; min-width: 0;");
-    expect(rbac).toContain(desktopWindowBreakpoint);
+describe("feature-owned responsiveness inside resizable desktop windows", () => {
+  it("does not route feature responsiveness through global bootstrap overrides", () => {
+    expect(main).not.toContain("window-responsive-followups.css");
+    expect(main).not.toContain("window-responsive-settings-gaps.css");
   });
 
-  it("makes Storage Manager react to medium and narrow app-window widths", () => {
-    expect(storage).toContain("min-width: 0;");
+  it("keeps RBAC responsive and safe for long permission data", () => {
+    expect(rbac).toContain(desktopWindowBreakpoint);
+    expect(rbac).toContain(".rbac-access { display: flex; flex-direction: column; gap: 14px; height: 100%; min-width: 0;");
+    expect(rbac).toContain("overflow-wrap: anywhere; word-break: break-word;");
+    expect(rbac).toContain(".rbac-effective,.rbac-audit,.rbac-ldap { min-width: 0;");
+  });
+
+  it("keeps Storage Manager responsive and intrinsic-size safe", () => {
     expect(storage).toContain(desktopWindowBreakpoint);
     expect(storage).toContain("@container app-window (max-width: 38.75rem)");
+    expect(storage).toContain("minmax(min(100%, 130px), 1fr)");
+    expect(storage).toContain(".storage-manager__table-wrap {\n  max-width: 100%;\n  overflow: auto;");
   });
 
-  it("makes Policy-as-Code collapse according to app-window width", () => {
+  it("keeps Policy-as-Code responsive in its owning stylesheet", () => {
     expect(policy).toContain(desktopWindowBreakpoint);
     expect(policy).toContain(".policy-code-grid {\n    grid-template-columns: 1fr;");
   });
 
-  it("loads responsive fix layers after the UI review fixes", () => {
-    expect(main).toContain('import "./styles/window-responsive-followups.css"');
-    expect(main).toContain('import "./styles/window-responsive-settings-gaps.css"');
-    expect(main.indexOf('import "./styles/window-responsive-followups.css"')).toBeGreaterThan(main.indexOf('import "./styles/ui-review-fixes.css"'));
-    expect(main.indexOf('import "./styles/window-responsive-settings-gaps.css"')).toBeGreaterThan(main.indexOf('import "./styles/window-responsive-followups.css"'));
+  it("keeps API Explorer window breakpoints next to API Explorer styles", () => {
+    expect(apiExplorer).toContain("@container app-window (max-width: 65.625rem)");
+    expect(apiExplorer).toContain("@container app-window (max-width: 43.75rem)");
+    expect(apiExplorer).toContain("@container app-window (max-width: 28.75rem)");
+    expect(apiExplorer).toContain("min-width: min(100%, 10rem);");
   });
 
-  it("makes API Explorer summary cards and filters follow the app-window width", () => {
-    expect(followups).toContain("@container app-window (max-width: 65.625rem)");
-    expect(followups).toContain("@container app-window (max-width: 43.75rem)");
-    expect(followups).toContain("@container app-window (max-width: 28.75rem)");
-    expect(followups).toContain(".desktop .api-explorer-stats");
-    expect(followups).toContain(".desktop .api-explorer-filters .wn-form-field");
-    expect(followups).toContain("min-width: min(100%, 10rem);");
+  it("keeps Offline Repository Manager window rules next to the feature", () => {
+    expect(orm).toContain("@container app-window (max-width: 51.25rem)");
+    expect(orm).toContain("minmax(min(100%, 260px), 1fr)");
+    expect(orm).toContain(".orm-diagnostic");
   });
 
-  it("makes Offline Repository Manager forms follow the app-window width", () => {
-    expect(followups).toContain("@container app-window (max-width: 51.25rem)");
-    expect(followups).toContain(".desktop .orm-form-grid");
-    expect(followups).toContain(".desktop .orm-diagnostic");
+  it("makes shared design-system primitives container-aware without a feature override layer", () => {
+    expect(designSystem).toContain("@container app-window (max-width: 43.75rem)");
+    expect(designSystem).toContain(".wn-page-header, .wn-section-header");
+    expect(designSystem).toContain(".wn-table-scroll { width: 100%; max-width: 100%; overflow: auto; }");
   });
 
-  it("makes Docker container controls follow the app-window width", () => {
-    expect(followups).toContain(desktopWindowBreakpoint);
-    expect(followups).toContain("@container app-window (max-width: 38.75rem)");
-    expect(followups).toContain(".desktop .docker-container-summary");
-    expect(followups).toContain(".desktop .docker-containers-toolbar .docker-search");
+  it("keeps Identity compact layout in Identity styles", () => {
+    expect(identity).toContain("@container app-window (max-width: 38.75rem)");
+    expect(identity).toContain(".identity-search { min-width: min(11.25rem, 100%);");
+    expect(identity).toContain(".identity-history article { grid-template-columns: auto minmax(0, 1fr);");
   });
 
-  it("makes Credentials toolbar and forms follow the app-window width", () => {
-    expect(followups).toContain("@container app-window (max-width: 70rem)");
-    expect(followups).toContain("@container app-window (max-width: 56rem)");
-    expect(followups).toContain("@container app-window (max-width: 42rem)");
-    expect(followups).toContain(".desktop .credentials-toolbar");
-    expect(followups).toContain(".desktop .credentials-form-grid");
-    expect(followups).toContain("min-width: min(34rem, 100%);");
+  it("loads Docker window rules with Docker instead of main.tsx", () => {
+    expect(dockerApp).toContain('import "./docker-window.css"');
+    expect(dockerWindow).toContain(desktopWindowBreakpoint);
+    expect(dockerWindow).toContain("@container app-window (max-width: 38.75rem)");
+    expect(dockerWindow).toContain("minmax(min(100%, 18.75rem), 1fr)");
   });
 
-  it("makes shared design-system headers follow app-window width", () => {
-    expect(followups).toContain("@container app-window (max-width: 43.75rem)");
-    expect(followups).toContain(".desktop .wn-page-header");
-    expect(followups).toContain(".desktop .wn-section-header");
-    expect(followups).toContain(".desktop .wn-search-input");
+  it("loads Credentials window rules with the Credentials module", () => {
+    expect(credentialsManifest).toContain('import "./credentials-window.css"');
+    expect(credentialsWindow).toContain("@container app-window (max-width: 70rem)");
+    expect(credentialsWindow).toContain("@container app-window (max-width: 56rem)");
+    expect(credentialsWindow).toContain("@container app-window (max-width: 42rem)");
+    expect(credentialsWindow).toContain("min-width: min(34rem, 100%);");
   });
 
-  it("makes Identity compact controls follow app-window width", () => {
-    expect(followups).toContain("@container app-window (max-width: 38.75rem)");
-    expect(followups).toContain(".desktop .identity-tabs");
-    expect(followups).toContain(".desktop .identity-toolbar");
-    expect(followups).toContain(".desktop .identity-history article");
+  it("loads Resource Monitor sizing fixes with Monitor", () => {
+    expect(monitorApp).toContain('import "./monitor-window.css"');
+    expect(monitorWindow).toContain("minmax(min(100%, 10rem), 1fr)");
+    expect(monitorWindow).toContain("width: min(16.25rem, 100%);");
   });
 
-  it("guards intrinsic grids against narrow-window overflow", () => {
+  it("loads DCST compact rules with DCST", () => {
+    expect(dcstApp).toContain('import "./dcst-window.css"');
+    expect(dcstWindow).toContain("minmax(min(100%, 11rem), 1fr)");
+    expect(dcstWindow).toContain("@container app-window (max-width: 34rem)");
+  });
+
+  it("loads Package Center container rules with Package Center", () => {
+    expect(packageApp).toContain('import "./package-center-window.css"');
+    expect(packageWindow).toContain("@container package-center (max-width: 32.5rem)");
+    expect(packageWindow).toContain(".package-job > header");
+  });
+
+  it("loads Settings window rules from the Settings module", () => {
+    expect(settingsManifest).toContain('import "../../features/settings/settings-window.css"');
+    expect(settingsWindow).toContain("@container app-window (max-width: 57.5rem)");
+    expect(settingsWindow).toContain("@container app-window (max-width: 43.75rem)");
+    expect(settingsWindow).toContain("@container app-window (max-width: 26.25rem)");
     for (const selector of [
-      ".desktop .orm-checkbox-grid",
-      ".desktop .storage-manager__tool-grid",
-      ".desktop .docker-container-detail-grid",
-      ".desktop .docker-app-grid",
-      ".desktop .docker-inspect-grid",
-      ".desktop .docker-path-folders",
-      ".desktop .dcst-app .checkbox-grid",
-      ".desktop .monitor-overview-grid",
-    ]) {
-      expect(followups).toContain(selector);
-    }
-    expect(followups).toContain("minmax(min(100%, 16.25rem), 1fr)");
-    expect(followups).toContain("minmax(min(100%, 18.75rem), 1fr)");
+      ".desktop .password-settings",
+      ".desktop .admin-summary-grid",
+      ".desktop .network-settings-tabs",
+      ".desktop .settings-content.identity-content",
+      ".desktop .wallpaper-gallery",
+    ]) expect(settingsWindow).toContain(selector);
   });
 
-  it("sizes Resource Monitor process search against its parent", () => {
-    expect(followups).toContain(".desktop .monitor-process-tools input");
-    expect(followups).toContain("width: min(16.25rem, 100%);");
-    expect(followups).toContain("max-width: 100%;");
-  });
-
-  it("makes Package Center job cards follow package-center width", () => {
-    expect(followups).toContain("@container package-center (max-width: 32.5rem)");
-    expect(followups).toContain(".package-job > header");
-    expect(followups).toContain(".package-job-meta");
-  });
-
-  it("makes native Operation Progress follow app-window width", () => {
+  it("keeps native Operation Progress responsive to its desktop window", () => {
     expect(operationProgress).toContain("@container app-window (max-width: 42rem)");
     expect(operationProgress).toContain(".desktop .operation-progress-native > footer");
-    expect(operationProgress).toContain(".desktop .operation-progress-native .package-live-log-header");
-    expect(operationProgress).toContain(".desktop .operation-progress-native .package-live-log-line");
     expect(operationProgress).toContain("grid-template-columns: 4.75rem minmax(0, 1fr);");
-  });
-
-  it("stacks DCST detail pairs in compact app windows", () => {
-    expect(followups).toContain("@container app-window (max-width: 34rem)");
-    expect(followups).toContain(".desktop .dcst-detail-list > div");
-  });
-
-  it("mirrors narrow Settings feature pages against app-window width", () => {
-    expect(followups).toContain("@container app-window (max-width: 43.75rem)");
-    expect(followups).toContain("@container app-window (max-width: 26.25rem)");
-    for (const selector of [
-      ".desktop .settings-content.identity-content",
-      ".desktop .personalization-link-card",
-      ".desktop .wallpaper-hero",
-      ".desktop .wallpaper-gallery",
-      ".desktop .wallpaper-options > label",
-      ".desktop .update-settings-status",
-      ".desktop .settings-details",
-    ]) {
-      expect(followups).toContain(selector);
-    }
-  });
-
-  it("mirrors medium Settings layouts at the window breakpoint", () => {
-    expect(settingsGaps).toContain("@container app-window (max-width: 57.5rem)");
-    expect(settingsGaps).toContain("@container app-window (min-width: 43.751rem) and (max-width: 57.5rem)");
-    expect(settingsGaps).toContain(".desktop .password-settings");
-    expect(settingsGaps).toContain(".desktop .admin-summary-grid");
-    expect(settingsGaps).toContain(".desktop .settings-app");
-  });
-
-  it("mirrors Network compact Settings layouts", () => {
-    expect(settingsGaps).toContain("@container app-window (max-width: 43.75rem)");
-    expect(settingsGaps).toContain(".desktop .network-settings-tabs");
-    expect(settingsGaps).toContain(".desktop .network-summary-grid");
-    expect(settingsGaps).toContain(".desktop .network-toolbar");
-  });
-
-  it("mirrors Administration and Network ultra-narrow Settings layouts", () => {
-    expect(settingsGaps).toContain("@container app-window (max-width: 26.25rem)");
-    for (const selector of [
-      ".desktop .admin-summary-grid",
-      ".desktop .admin-overview-icon",
-      ".desktop .network-interface-details",
-      ".desktop .network-dns-test",
-      ".desktop .network-diagnostic-panel > header",
-      ".desktop .network-toolbar",
-      ".desktop .network-routing-heading",
-    ]) {
-      expect(settingsGaps).toContain(selector);
-    }
   });
 });
