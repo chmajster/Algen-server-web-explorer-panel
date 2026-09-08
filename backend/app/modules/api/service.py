@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import re
 from typing import Any
 
 
@@ -20,6 +21,30 @@ def _operations(contract: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]
                 continue
             values.append((path, method, operation))
     return sorted(values, key=lambda item: (item[0], HTTP_METHODS.index(item[1])))
+
+
+def _parameter_lists(
+    contract: dict[str, Any],
+    path: str,
+    operation: dict[str, Any],
+) -> list[list[dict[str, Any]]]:
+    path_item = contract.get("paths", {}).get(path, {})
+    values: list[list[dict[str, Any]]] = []
+    for raw in (
+        path_item.get("parameters", []) if isinstance(path_item, dict) else [],
+        operation.get("parameters", []),
+    ):
+        if isinstance(raw, list):
+            values.append([item for item in raw if isinstance(item, dict)])
+    return values
+
+
+def _combined_parameters(
+    contract: dict[str, Any],
+    path: str,
+    operation: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [parameter for values in _parameter_lists(contract, path, operation) for parameter in values]
 
 
 def endpoint_catalog(contract: dict[str, Any]) -> list[dict[str, Any]]:
@@ -205,4 +230,316 @@ def contract_report(contract: dict[str, Any]) -> dict[str, Any]:
     return {
         "summary": summarize_contract(contract),
         "issues": issues,
+    }
+
+
+def _test_result(
+    check: str,
+    passed: bool,
+    *,
+    severity: str = "warning",
+    path: str = "",
+    method: str = "",
+    message: str,
+) -> dict[str, str]:
+    return {
+        "check": check,
+        "status": "passed" if passed else "failed",
+        "severity": severity,
+        "path": path,
+        "method": method,
+        "message": message,
+    }
+
+
+def api_test_results(contract: dict[str, Any]) -> list[dict[str, str]]:
+    """Run read-only structural tests against an OpenAPI document.
+
+    These checks never execute application endpoints and never perform outbound
+    HTTP requests. They validate documentation and contract invariants only.
+    """
+
+    operations = _operations(contract)
+    results: list[dict[str, str]] = []
+    info = contract.get("info", {})
+    paths = contract.get("paths", {})
+
+    results.extend(
+        [
+            _test_result(
+                "openapi-version",
+                bool(str(contract.get("openapi") or "").strip()),
+                severity="error",
+                message="OpenAPI version is declared.",
+            ),
+            _test_result(
+                "api-title",
+                isinstance(info, dict) and bool(str(info.get("title") or "").strip()),
+                message="API title is declared.",
+            ),
+            _test_result(
+                "api-version",
+                isinstance(info, dict) and bool(str(info.get("version") or "").strip()),
+                message="API version is declared.",
+            ),
+            _test_result(
+                "paths-object",
+                isinstance(paths, dict),
+                severity="error",
+                message="OpenAPI paths is an object.",
+            ),
+        ]
+    )
+
+    operation_ids = [
+        str(operation.get("operationId") or "").strip()
+        for _, _, operation in operations
+        if str(operation.get("operationId") or "").strip()
+    ]
+    duplicate_ids = sorted(value for value, count in Counter(operation_ids).items() if count > 1)
+    results.append(
+        _test_result(
+            "unique-operation-ids",
+            not duplicate_ids,
+            severity="error",
+            message=(
+                "All declared operationId values are unique."
+                if not duplicate_ids
+                else f"Duplicate operationId values: {', '.join(duplicate_ids)}"
+            ),
+        )
+    )
+
+    for path, method, operation in operations:
+        scope = {"path": path, "method": method}
+        operation_id = str(operation.get("operationId") or "").strip()
+        tags = operation.get("tags", [])
+        responses = operation.get("responses", {})
+        parameters = _combined_parameters(contract, path, operation)
+        parameter_lists = _parameter_lists(contract, path, operation)
+
+        results.append(
+            _test_result(
+                "operation-id",
+                bool(operation_id),
+                **scope,
+                message="operationId is declared." if operation_id else "operationId is missing.",
+            )
+        )
+        results.append(
+            _test_result(
+                "api-namespace",
+                path.startswith("/api/"),
+                **scope,
+                message="Path is inside /api/." if path.startswith("/api/") else "Path is outside /api/.",
+            )
+        )
+        results.append(
+            _test_result(
+                "operation-tags",
+                isinstance(tags, list) and bool(tags),
+                **scope,
+                message="At least one tag is declared." if isinstance(tags, list) and tags else "No tags are declared.",
+            )
+        )
+        documented = bool(str(operation.get("summary") or "").strip() or str(operation.get("description") or "").strip())
+        results.append(
+            _test_result(
+                "operation-documentation",
+                documented,
+                **scope,
+                message="Summary or description is declared." if documented else "Summary and description are both missing.",
+            )
+        )
+
+        valid_responses = isinstance(responses, dict) and bool(responses)
+        results.append(
+            _test_result(
+                "responses-declared",
+                valid_responses,
+                severity="error",
+                **scope,
+                message="At least one response is declared." if valid_responses else "No responses are declared.",
+            )
+        )
+        response_codes = [str(code) for code in responses] if isinstance(responses, dict) else []
+        has_success = any(code.startswith("2") for code in response_codes)
+        results.append(
+            _test_result(
+                "success-response",
+                has_success,
+                **scope,
+                message="A 2xx response is declared." if has_success else "No 2xx response is declared.",
+            )
+        )
+
+        if isinstance(responses, dict):
+            missing_descriptions = [
+                str(code)
+                for code, response in responses.items()
+                if isinstance(response, dict)
+                and "$ref" not in response
+                and not str(response.get("description") or "").strip()
+            ]
+            results.append(
+                _test_result(
+                    "response-descriptions",
+                    not missing_descriptions,
+                    **scope,
+                    message=(
+                        "All inline responses have descriptions."
+                        if not missing_descriptions
+                        else f"Responses without descriptions: {', '.join(missing_descriptions)}"
+                    ),
+                )
+            )
+
+        read_body_ok = method not in READ_METHODS or "requestBody" not in operation
+        results.append(
+            _test_result(
+                "read-without-request-body",
+                read_body_ok,
+                **scope,
+                message=(
+                    "Read-only method has no request body."
+                    if read_body_ok
+                    else f"{method} should not declare a request body."
+                ),
+            )
+        )
+
+        request_body = operation.get("requestBody")
+        if isinstance(request_body, dict) and "$ref" not in request_body:
+            content = request_body.get("content")
+            has_content = isinstance(content, dict) and bool(content)
+            results.append(
+                _test_result(
+                    "request-body-content",
+                    has_content,
+                    **scope,
+                    message=(
+                        "Inline request body declares content."
+                        if has_content
+                        else "Inline request body does not declare any content type."
+                    ),
+                )
+            )
+
+        placeholders = set(re.findall(r"{([^{}]+)}", path))
+        declared_path_parameters = {
+            str(parameter.get("name") or ""): parameter
+            for parameter in parameters
+            if parameter.get("in") == "path" and str(parameter.get("name") or "").strip()
+        }
+        missing_path_parameters = sorted(placeholders - set(declared_path_parameters))
+        extra_path_parameters = sorted(set(declared_path_parameters) - placeholders)
+
+        results.append(
+            _test_result(
+                "path-parameters-declared",
+                not missing_path_parameters,
+                severity="error",
+                **scope,
+                message=(
+                    "All path placeholders have parameter declarations."
+                    if not missing_path_parameters
+                    else f"Missing path parameters: {', '.join(missing_path_parameters)}"
+                ),
+            )
+        )
+        results.append(
+            _test_result(
+                "path-parameters-match-template",
+                not extra_path_parameters,
+                **scope,
+                message=(
+                    "Declared path parameters match the path template."
+                    if not extra_path_parameters
+                    else f"Path parameters not present in template: {', '.join(extra_path_parameters)}"
+                ),
+            )
+        )
+        non_required_path_parameters = sorted(
+            name
+            for name in placeholders
+            if name in declared_path_parameters and declared_path_parameters[name].get("required") is not True
+        )
+        results.append(
+            _test_result(
+                "path-parameters-required",
+                not non_required_path_parameters,
+                severity="error",
+                **scope,
+                message=(
+                    "All declared path parameters are required."
+                    if not non_required_path_parameters
+                    else f"Path parameters must be required: {', '.join(non_required_path_parameters)}"
+                ),
+            )
+        )
+
+        duplicate_parameters: set[str] = set()
+        for parameter_list in parameter_lists:
+            seen: set[tuple[str, str]] = set()
+            for parameter in parameter_list:
+                key = (str(parameter.get("name") or ""), str(parameter.get("in") or ""))
+                if key in seen and any(key):
+                    duplicate_parameters.add(f"{key[1]}:{key[0]}")
+                seen.add(key)
+        results.append(
+            _test_result(
+                "unique-parameters",
+                not duplicate_parameters,
+                **scope,
+                message=(
+                    "No duplicate parameters are declared at the same scope."
+                    if not duplicate_parameters
+                    else f"Duplicate parameters: {', '.join(sorted(duplicate_parameters))}"
+                ),
+            )
+        )
+
+        parameters_without_schema = sorted(
+            f"{str(parameter.get('in') or '?')}:{str(parameter.get('name') or '?')}"
+            for parameter in parameters
+            if "$ref" not in parameter
+            and not isinstance(parameter.get("schema"), dict)
+            and not isinstance(parameter.get("content"), dict)
+        )
+        results.append(
+            _test_result(
+                "parameter-schema",
+                not parameters_without_schema,
+                **scope,
+                message=(
+                    "All inline parameters declare schema or content."
+                    if not parameters_without_schema
+                    else f"Parameters without schema/content: {', '.join(parameters_without_schema)}"
+                ),
+            )
+        )
+
+    return results
+
+
+def api_test_report(contract: dict[str, Any]) -> dict[str, Any]:
+    results = api_test_results(contract)
+    failed = [item for item in results if item["status"] == "failed"]
+    errors = sum(item["severity"] == "error" for item in failed)
+    warnings = sum(item["severity"] == "warning" for item in failed)
+    total = len(results)
+    passed = total - len(failed)
+    score = round((passed / total) * 100, 1) if total else 100.0
+    status = "error" if errors else "warning" if warnings else "ok"
+    return {
+        "summary": {
+            "status": status,
+            "total": total,
+            "passed": passed,
+            "failed": len(failed),
+            "error_count": errors,
+            "warning_count": warnings,
+            "score": score,
+        },
+        "results": results,
     }
