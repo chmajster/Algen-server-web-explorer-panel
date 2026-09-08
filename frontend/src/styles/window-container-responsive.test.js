@@ -10,6 +10,7 @@ function read(relativePath) {
 const rbac = read("src/features/admin/rbac-access.css");
 const storage = read("src/features/storage/storage-manager.css");
 const policy = read("src/modules/policy-as-code/policy-as-code.css");
+const operationProgress = read("src/features/package-center/operation-progress-window.css");
 const followups = read("src/styles/window-responsive-followups.css");
 const settingsGaps = read("src/styles/window-responsive-settings-gaps.css");
 const main = read("src/main.tsx");
@@ -112,6 +113,14 @@ describe("feature layouts inside resizable desktop windows", () => {
     expect(followups).toContain("@container package-center (max-width: 32.5rem)");
     expect(followups).toContain(".package-job > header");
     expect(followups).toContain(".package-job-meta");
+  });
+
+  it("makes native Operation Progress follow app-window width", () => {
+    expect(operationProgress).toContain("@container app-window (max-width: 42rem)");
+    expect(operationProgress).toContain(".desktop .operation-progress-native > footer");
+    expect(operationProgress).toContain(".desktop .operation-progress-native .package-live-log-header");
+    expect(operationProgress).toContain(".desktop .operation-progress-native .package-live-log-line");
+    expect(operationProgress).toContain("grid-template-columns: 4.75rem minmax(0, 1fr);");
   });
 
   it("stacks DCST detail pairs in compact app windows", () => {
