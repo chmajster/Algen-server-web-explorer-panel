@@ -1,4 +1,4 @@
-.rbac-access { display: flex; flex-direction: column; gap: 14px; height: 100%; min-height: 0; padding: 16px; overflow: auto; }
+.rbac-access { display: flex; flex-direction: column; gap: 14px; height: 100%; min-width: 0; min-height: 0; padding: 16px; overflow: auto; }
 .rbac-tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--border-color, #d9dde5); padding-bottom: 8px; }
 .rbac-tabs button { border: 0; background: transparent; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
 .rbac-tabs button.active { background: var(--surface-active, rgba(127,127,127,.16)); font-weight: 700; }
@@ -38,4 +38,5 @@
 .rbac-simulator { display: grid; grid-template-columns: repeat(5,minmax(120px,1fr)); gap: 9px; align-items: end; }
 .rbac-simulator h3,.rbac-decision { grid-column: 1 / -1; }
 .rbac-decision { display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid currentColor; border-radius: 9px; }
+@container app-window (max-width: 56.25rem) { .rbac-grid { grid-template-columns: 1fr; } .rbac-simulator { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .rbac-grid { grid-template-columns: 1fr; } .rbac-simulator { grid-template-columns: 1fr; } }
