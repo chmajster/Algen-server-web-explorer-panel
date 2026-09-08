@@ -378,11 +378,21 @@ def test_real_application_openapi_has_no_structural_contract_errors(tmp_path):
 def test_contract_suite_route_never_opens_network_connections(monkeypatch):
     import socket
 
+    message = "network access is forbidden in contract tests"
+    real_socket = socket.socket
+
+    class GuardedSocket(real_socket):
+        def connect(self, *_args, **_kwargs):
+            raise AssertionError(message)
+
+        def connect_ex(self, *_args, **_kwargs):
+            raise AssertionError(message)
+
     def forbidden(*_args, **_kwargs):
-        raise AssertionError("network access is forbidden in contract tests")
+        raise AssertionError(message)
 
     monkeypatch.setattr(socket, "create_connection", forbidden)
-    monkeypatch.setattr(socket, "socket", forbidden)
+    monkeypatch.setattr(socket, "socket", GuardedSocket)
 
     response = TestClient(_application(monkeypatch)).get("/api/modules/api/tests")
 
