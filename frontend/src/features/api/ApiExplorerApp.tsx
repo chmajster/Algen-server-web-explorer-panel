@@ -32,19 +32,16 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
   const [tag, setTag] = useState("");
   const [includeDeprecated, setIncludeDeprecated] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [contractError, setContractError] = useState("");
+  const [testError, setTestError] = useState("");
 
-  const refresh = useCallback(async () => {
+  const loadEndpoints = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [contract, tests, page] = await Promise.all([
-        apiExplorerClient.contract(),
-        apiExplorerClient.tests(),
-        apiExplorerClient.endpoints({ search, method, tag, includeDeprecated, limit: 500 }),
-      ]);
-      setReport(contract);
-      setTestReport(tests);
+      const page = await apiExplorerClient.endpoints({ search, method, tag, includeDeprecated, limit: 500 });
       setEndpoints(page.items);
       setTotal(page.total);
     } catch (reason) {
@@ -54,7 +51,39 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
     }
   }, [includeDeprecated, method, search, t, tag]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  const loadDiagnostics = useCallback(async () => {
+    setDiagnosticsLoading(true);
+    setContractError("");
+    setTestError("");
+
+    const [contractResult, testsResult] = await Promise.allSettled([
+      apiExplorerClient.contract(),
+      apiExplorerClient.tests(),
+    ]);
+
+    if (contractResult.status === "fulfilled") {
+      setReport(contractResult.value);
+    } else {
+      const reason = contractResult.reason;
+      setContractError(reason instanceof Error ? reason.message : t("error.generic"));
+    }
+
+    if (testsResult.status === "fulfilled") {
+      setTestReport(testsResult.value);
+    } else {
+      const reason = testsResult.reason;
+      setTestError(reason instanceof Error ? reason.message : t("error.generic"));
+    }
+
+    setDiagnosticsLoading(false);
+  }, [t]);
+
+  const refresh = useCallback(async () => {
+    await Promise.all([loadDiagnostics(), loadEndpoints()]);
+  }, [loadDiagnostics, loadEndpoints]);
+
+  useEffect(() => { void loadDiagnostics(); }, [loadDiagnostics]);
+  useEffect(() => { void loadEndpoints(); }, [loadEndpoints]);
 
   const tags = useMemo(
     () => Object.keys(report?.summary.tag_counts || {}).sort((left, right) => left.localeCompare(right)),
@@ -68,6 +97,7 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
 
   const summary = report?.summary;
   const testSummary = testReport?.summary;
+  const refreshing = loading || diagnosticsLoading;
 
   return <section className="api-explorer-app">
     <header className="wn-page-header">
@@ -79,8 +109,8 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
       <div className="wn-page-header-actions">
         {testSummary && <span className={`wn-status-badge tone-${statusTone(testSummary.status)}`}>Tests: {testSummary.score}%</span>}
         {summary && <span className={`wn-status-badge tone-${statusTone(summary.status)}`}>Contract: {summary.status}</span>}
-        <button type="button" onClick={() => void refresh()} disabled={loading}>
-          <RefreshCw className={loading ? "spin" : ""} aria-hidden="true" />
+        <button type="button" onClick={() => void refresh()} disabled={refreshing}>
+          <RefreshCw className={refreshing ? "spin" : ""} aria-hidden="true" />
           <span>{t("action.refresh")}</span>
         </button>
       </div>
@@ -112,7 +142,8 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
             {testSummary.passed}/{testSummary.total} passed
           </span>}
         </div>
-        {!testReport && loading && <div className="wn-state wn-loading-state is-compact"><span className="wn-spinner" aria-hidden="true" />{t("status.loading")}</div>}
+        {testError && <div className="wn-inline-alert tone-danger" role="alert">API test report unavailable: {testError}</div>}
+        {!testReport && diagnosticsLoading && <div className="wn-state wn-loading-state is-compact"><span className="wn-spinner" aria-hidden="true" />{t("status.loading")}</div>}
         {testReport && failedTests.length === 0 && <div className="wn-inline-alert tone-success api-explorer-health"><CheckCircle2 aria-hidden="true" />All API contract tests passed.</div>}
         {testReport && failedTests.length > 0 && <div className="api-explorer-issues">
           {failedTests.map((result, index) => <div className={`wn-inline-alert tone-${result.severity === "error" ? "danger" : "warning"}`} key={`${result.check}:${result.path}:${result.method}:${index}`}>
@@ -129,7 +160,8 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
             <p>Checks duplicate operation IDs and common structural problems.</p>
           </div>
         </div>
-        {!report && loading && <div className="wn-state wn-loading-state is-compact"><span className="wn-spinner" aria-hidden="true" />{t("status.loading")}</div>}
+        {contractError && <div className="wn-inline-alert tone-danger" role="alert">Contract diagnostics unavailable: {contractError}</div>}
+        {!report && diagnosticsLoading && <div className="wn-state wn-loading-state is-compact"><span className="wn-spinner" aria-hidden="true" />{t("status.loading")}</div>}
         {report && report.issues.length === 0 && <div className="wn-inline-alert tone-success api-explorer-health"><CheckCircle2 aria-hidden="true" />No contract issues detected.</div>}
         {report && report.issues.length > 0 && <div className="api-explorer-issues">
           {report.issues.map((issue, index) => <div className={`wn-inline-alert tone-${issue.severity === "error" ? "danger" : "warning"}`} key={`${issue.code}:${issue.path}:${issue.method}:${index}`}>
@@ -160,7 +192,7 @@ export function ApiExplorerApp({ t }: { t: Translate }) {
           </label>
           <label className="wn-form-field">
             <span>Tag</span>
-            <select aria-label="OpenAPI tag" value={tag} onChange={(event) => setTag(event.target.value)}>
+            <select aria-label="HTTP tag" value={tag} onChange={(event) => setTag(event.target.value)}>
               <option value="">All tags</option>
               {tags.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
