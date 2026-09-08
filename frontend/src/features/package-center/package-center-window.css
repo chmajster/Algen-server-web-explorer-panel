@@ -1,0 +1,8 @@
+/* Package Center rules tied to the package-center container, not the viewport. */
+@container package-center (max-width: 32.5rem) {
+  .package-job > header,
+  .package-job-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
