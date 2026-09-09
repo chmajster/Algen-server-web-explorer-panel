@@ -7,11 +7,15 @@
   bottom: calc(3.6rem + env(safe-area-inset-bottom, 0px));
   z-index: var(--webnas-layer-window-overlays, 3000);
   min-width: 17rem;
-  max-width: min(42rem, calc(100vw - 1rem));
+  max-width: min(42rem, calc(100dvw - 1rem));
+  max-height: min(72dvh, 44rem);
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: .45rem;
   padding: .5rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   transform: translateX(-50%);
   border: 1px solid var(--border-strong);
   border-radius: .8rem;
@@ -54,14 +58,14 @@
 
 @media (max-width: 640px) {
   .taskbar-window-preview {
-    left: max(.5rem, env(safe-area-inset-left));
-    right: max(.5rem, env(safe-area-inset-right));
+    left: max(.5rem, env(safe-area-inset-left, 0px));
+    right: max(.5rem, env(safe-area-inset-right, 0px));
     bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+    min-width: 0;
     transform: none;
     max-width: none;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     max-height: 55dvh;
-    overflow: auto;
   }
   .taskbar-show-desktop { display: none; }
 }
