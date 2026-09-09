@@ -75,7 +75,7 @@ export function CalendarFlyout({
   now: Date;
   locale: string;
   t: Translate;
-  triggerRef: RefObject<HTMLButtonElement>;
+  triggerRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
 }) {
   const today = useMemo(() => startOfDay(now), [now]);
