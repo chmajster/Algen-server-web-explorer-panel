@@ -7936,6 +7936,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/image-converter/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse */
+        get: operations["browse_api_modules_image_converter_browse_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/image-converter/directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Convert Directory */
+        post: operations["convert_directory_api_modules_image_converter_directory_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/image-converter/download/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download */
+        get: operations["download_api_modules_image_converter_download__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/image-converter/formats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Formats */
+        get: operations["formats_api_modules_image_converter_formats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/image-converter/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Convert Upload */
+        post: operations["convert_upload_api_modules_image_converter_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/ldap-manager/connections": {
         parameters: {
             query?: never;
@@ -12782,6 +12867,45 @@ export interface components {
             /** Ip */
             ip: string;
         };
+        /** Body_convert_upload_api_modules_image_converter_upload_post */
+        Body_convert_upload_api_modules_image_converter_upload_post: {
+            /** Files */
+            files: string[];
+            /** Height */
+            height?: number | null;
+            /**
+             * Keep Aspect
+             * @default true
+             */
+            keep_aspect: boolean;
+            /**
+             * Output Format
+             * @default webp
+             */
+            output_format: string;
+            /**
+             * Prefix
+             * @default
+             */
+            prefix: string;
+            /**
+             * Quality
+             * @default 90
+             */
+            quality: number;
+            /**
+             * Strip Metadata
+             * @default true
+             */
+            strip_metadata: boolean;
+            /**
+             * Suffix
+             * @default
+             */
+            suffix: string;
+            /** Width */
+            width?: number | null;
+        };
         /** Body_import_container_filesystem_api_modules_docker_containers_import_post */
         Body_import_container_filesystem_api_modules_docker_containers_import_post: {
             /** Confirmation */
@@ -13795,6 +13919,57 @@ export interface components {
         DiagnosticInput: {
             /** Target */
             target: string;
+        };
+        /** DirectoryConversionRequest */
+        DirectoryConversionRequest: {
+            /**
+             * Format
+             * @default webp
+             */
+            format: string;
+            /** Height */
+            height?: number | null;
+            /**
+             * Keep Aspect
+             * @default true
+             */
+            keep_aspect: boolean;
+            /** Output Directory */
+            output_directory?: string | null;
+            /**
+             * Overwrite Policy
+             * @default rename
+             */
+            overwrite_policy: string;
+            /**
+             * Prefix
+             * @default
+             */
+            prefix: string;
+            /**
+             * Quality
+             * @default 90
+             */
+            quality: number;
+            /**
+             * Recursive
+             * @default false
+             */
+            recursive: boolean;
+            /** Source Directory */
+            source_directory: string;
+            /**
+             * Strip Metadata
+             * @default true
+             */
+            strip_metadata: boolean;
+            /**
+             * Suffix
+             * @default
+             */
+            suffix: string;
+            /** Width */
+            width?: number | null;
         };
         /** DirectoryCreateRequest */
         DirectoryCreateRequest: {
@@ -36437,6 +36612,154 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["HostsManagerSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browse_api_modules_image_converter_browse_get: {
+        parameters: {
+            query?: {
+                path?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_directory_api_modules_image_converter_directory_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryConversionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_api_modules_image_converter_download__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    formats_api_modules_image_converter_formats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    convert_upload_api_modules_image_converter_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_convert_upload_api_modules_image_converter_upload_post"];
             };
         };
         responses: {

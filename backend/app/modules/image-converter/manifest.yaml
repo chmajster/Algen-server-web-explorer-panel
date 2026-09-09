@@ -1,0 +1,51 @@
+id: image-converter
+name: Image Converter
+description: Convert photos from server directories or temporary browser uploads.
+long_description: Native WebNAS image conversion for JPEG, PNG, WebP, AVIF, TIFF and BMP output. Users can browse allowed server directories or upload images temporarily, resize and optimize batches, control metadata and naming, and download temporary results as a ZIP archive.
+category: system_tools
+version: "1.1.0"
+maintainer: WebNAS
+homepage: https://github.com/chmajster/Algen-server-web-explorer-panel
+icon: images
+license: GPL-3.0-or-later
+supported_distributions: [debian, ubuntu, raspbian, fedora, rhel, rocky, almalinux, proxmox]
+supported_architectures: [x86_64, aarch64, armv7l]
+packages: {apt: [], dnf: [], yum: []}
+installations:
+  apt: {type: command, script: install.py, reason: Activate the native Image Converter module.}
+  dnf: {type: command, script: install.py, reason: Activate the native Image Converter module.}
+  yum: {type: command, script: install.py, reason: Activate the native Image Converter module.}
+services: []
+capabilities:
+  install: true
+  update: true
+  uninstall: true
+  configure: false
+  service_control: false
+  reload: false
+  logs: false
+  diagnostics: true
+  backups: false
+  import_export: true
+  healthcheck: true
+  resources: [images, directories, temporary-batches]
+  actions: [browse, convert_directory, convert_upload, download_archive]
+ports: []
+dependencies: []
+conflicts: []
+permissions: [image_converter.view, image_converter.convert]
+config_paths: []
+data_paths: []
+backup_paths: []
+proxmox_safe: true
+requires_reboot: false
+requires_root: false
+configurable: false
+removable: true
+package_less: true
+healthcheck: health.py
+ui: {hidden: false}
+changelog:
+  - Redesigned the converter UI with a source-settings-result workflow, responsive directory browser, upload dropzone, status cards and clearer mobile controls.
+  - Added resizing, optimization presets, metadata stripping, file naming controls, collision policies and size statistics.
+  - Initial Image Converter with allowed-directory conversion and temporary upload batches.
