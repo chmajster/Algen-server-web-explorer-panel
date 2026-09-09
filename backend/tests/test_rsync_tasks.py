@@ -103,7 +103,7 @@ def test_persists_transfer_history(monkeypatch, tmp_path: Path):
     assert loaded.get("alice", task.id).priority == 4
 
 
-def test_running_task_is_queued_after_restart(monkeypatch, tmp_path: Path):
+def test_running_task_is_failed_after_restart(monkeypatch, tmp_path: Path):
     cfg = SimpleNamespace(paths=SimpleNamespace(data_dir=str(tmp_path)), file_tasks=SimpleNamespace(max_parallel=2, max_parallel_per_user=1, log_tail_lines=80))
     monkeypatch.setattr(file_task_manager, "get_config", lambda: cfg)
     monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
@@ -117,9 +117,11 @@ def test_running_task_is_queued_after_restart(monkeypatch, tmp_path: Path):
     restored = loaded.get("alice", task.id)
 
     assert restored is not None
-    assert restored.status == TaskStatus.queued
-    assert restored.started_at is None
-    assert restored.finished_at is None
+    assert restored.status == TaskStatus.failed
+    assert restored.started_at == 123.0
+    assert restored.finished_at is not None
+    assert "restarted" in restored.error_message.lower()
+    assert "explicit retry" in "\n".join(restored.log_tail).lower()
 
 
 def test_retry_creates_new_queued_task(monkeypatch, tmp_path: Path):
@@ -236,3 +238,62 @@ def test_move_removes_source_after_success(monkeypatch, tmp_path: Path):
 
     assert task.status == TaskStatus.completed
     assert removed == [source]
+
+
+class RecordingJobService:
+    def __init__(self) -> None:
+        self.submissions = []
+        self.jobs = {}
+
+    def submit_callable(self, **kwargs):
+        job = SimpleNamespace(id=f"job-{len(self.submissions) + 1}", status=SimpleNamespace(value="queued"))
+        self.submissions.append(kwargs)
+        self.jobs[job.id] = job
+        return job
+
+    def get(self, job_id):
+        return self.jobs.get(job_id)
+
+    def cancel(self, job_id):
+        job = self.jobs.get(job_id)
+        if job is not None:
+            job.status = SimpleNamespace(value="cancelled")
+        return job
+
+
+def test_scheduler_submits_transfer_through_global_job_service(monkeypatch, tmp_path: Path):
+    operations = RecordingJobService()
+    original_schedule = FileTaskManager._schedule
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    manager = FileTaskManager(operations=operations)
+    task = manager.create_transfer("alice", "copy", [str(tmp_path / "a")], str(tmp_path / "b"), priority=5)
+    monkeypatch.setattr(FileTaskManager, "_schedule", original_schedule)
+
+    manager._schedule()
+
+    assert task.status == TaskStatus.running
+    assert len(operations.submissions) == 1
+    submission = operations.submissions[0]
+    assert submission["job_type"] == "file.copy"
+    assert submission["module"] == "files"
+    assert submission["created_by"] == "alice"
+    assert submission["metadata"] == {"file_task_id": task.id, "operation": "copy", "items": 1}
+    assert submission["cancellable"] is True
+    assert submission["retryable"] is False
+
+
+def test_two_managers_claim_same_persisted_transfer_only_once(monkeypatch, tmp_path: Path):
+    first_operations = RecordingJobService()
+    second_operations = RecordingJobService()
+    original_schedule = FileTaskManager._schedule
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    first = FileTaskManager(operations=first_operations)
+    task = first.create_transfer("alice", "move", [str(tmp_path / "a")], str(tmp_path / "b"))
+    second = FileTaskManager(operations=second_operations)
+    monkeypatch.setattr(FileTaskManager, "_schedule", original_schedule)
+
+    first._schedule()
+    second._schedule()
+
+    assert task.status == TaskStatus.running
+    assert len(first_operations.submissions) + len(second_operations.submissions) == 1

@@ -15,6 +15,8 @@ from fastapi import HTTPException
 from ..activity import ActivityCategory, ActivityStatus, record_activity
 from ..config import get_config
 from ..file_ops import run_user_op
+from ..jobs.models import JobPriority, JobStatus
+from ..jobs.service import JobContext, JobService, service as operation_service
 from ..proxmox_guard import assert_path_allowed
 from ..sqlite_utils import ClosingConnection
 from ..update_coordination import coordination_lock, operation_admission, update_blocks_operations
@@ -142,9 +144,12 @@ class FileTask:
 
 
 class FileTaskManager:
-    def __init__(self) -> None:
+    def __init__(self, operations: JobService | None = None) -> None:
         self._tasks: dict[str, FileTask] = {}
         self._lock = threading.RLock()
+        self._operations = operations
+        self._scheduled: set[str] = set()
+        self._operation_jobs: dict[str, str] = {}
         self._db_path = Path(get_config().paths.data_dir) / "transfers.sqlite3"
         self._init_db()
         self._load_tasks()
@@ -190,17 +195,16 @@ class FileTaskManager:
                 payload.setdefault("type", row["type"])
                 payload.setdefault("source_paths", json.loads(row["source_paths"]))
                 payload.setdefault("destination_path", row["destination_path"])
-                payload.setdefault("status", row["status"])
+                payload["status"] = row["status"]
                 payload.setdefault("priority", row["priority"])
                 task = self._task_from_payload(payload)
                 if task.status == TaskStatus.running:
-                    task.status = TaskStatus.queued
-                    task.started_at = None
-                    task.finished_at = None
-                    task.error_message = ""
+                    task.status = TaskStatus.failed
+                    task.finished_at = now()
+                    task.error_message = "Application restarted while transfer was running"
                     task.cancel_requested = False
                     task.pause_requested = False
-                    task.append_log("Task was interrupted by service restart and queued again")
+                    task.append_log("Transfer was interrupted by service restart; explicit retry or resume is required")
                 self._tasks[task.id] = task
             self._persist_all()
 
@@ -293,11 +297,91 @@ class FileTaskManager:
                 pass
 
     def _running_counts(self) -> tuple[int, dict[str, int]]:
-        running = [task for task in self._tasks.values() if task.status == TaskStatus.running]
+        with self._connect() as conn:
+            rows = conn.execute("SELECT username FROM file_tasks WHERE status=?", (TaskStatus.running.value,)).fetchall()
         per_user: dict[str, int] = {}
-        for task in running:
-            per_user[task.username] = per_user.get(task.username, 0) + 1
-        return len(running), per_user
+        for row in rows:
+            username = str(row["username"])
+            per_user[username] = per_user.get(username, 0) + 1
+        return len(rows), per_user
+
+    def _stored_status(self, task_id: str) -> TaskStatus | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT status FROM file_tasks WHERE id=?", (task_id,)).fetchone()
+        return TaskStatus(str(row["status"])) if row else None
+
+    def _job_service(self) -> JobService:
+        if self._operations is None:
+            self._operations = operation_service()
+        return self._operations
+
+    @staticmethod
+    def _job_priority(priority: int) -> JobPriority:
+        if priority > 0:
+            return JobPriority.high
+        if priority < 0:
+            return JobPriority.low
+        return JobPriority.normal
+
+    def _submit_operation(self, task: FileTask) -> None:
+        if task.id in self._scheduled:
+            return
+        self._scheduled.add(task.id)
+        try:
+            operation = self._job_service().submit_callable(
+                job_type=f"file.{task.type}",
+                module="files",
+                created_by=task.username,
+                metadata={"file_task_id": task.id, "operation": task.type, "items": len(task.source_paths)},
+                handler=lambda context, _metadata: self._run_as_operation(task.id, context),
+                retryable=False,
+                cancellable=True,
+                priority=self._job_priority(task.priority),
+                name=f"File {task.type}",
+                description="Persistent file operation",
+            )
+            self._operation_jobs[task.id] = operation.id
+        except Exception:
+            self._scheduled.discard(task.id)
+            self._operation_jobs.pop(task.id, None)
+            raise
+
+    def _run_as_operation(self, task_id: str, context: JobContext) -> dict:
+        try:
+            with self._lock:
+                task = self._tasks.get(task_id)
+            if task is None:
+                raise RuntimeError("File task disappeared before execution")
+            self._run(task, context)
+            if task.status == TaskStatus.completed:
+                return {
+                    "file_task_id": task.id,
+                    "status": task.status.value,
+                    "bytes_transferred": task.bytes_transferred,
+                }
+            if task.status in {TaskStatus.cancelled, TaskStatus.paused}:
+                raise InterruptedError(task.error_message or "File operation cancelled")
+            if task.status == TaskStatus.failed:
+                raise RuntimeError(task.error_message or "File operation failed")
+            raise RuntimeError(f"Unexpected file task status: {task.status.value}")
+        finally:
+            with self._lock:
+                self._scheduled.discard(task_id)
+                self._operation_jobs.pop(task_id, None)
+            self._schedule()
+
+    def _cancel_operation_attempt(self, task_id: str) -> bool:
+        job_id = self._operation_jobs.get(task_id)
+        if not job_id:
+            return False
+        operations = self._job_service()
+        before = operations.get(job_id)
+        queued = bool(before and before.status in {JobStatus.queued, JobStatus.waiting, JobStatus.retrying})
+        try:
+            operations.cancel(job_id)
+        except ValueError:
+            return False
+        return queued
 
     def _schedule(self) -> None:
         with coordination_lock():
@@ -307,7 +391,7 @@ class FileTaskManager:
                 cfg = get_config().file_tasks
                 total_running, per_user = self._running_counts()
                 candidates = sorted(
-                    [task for task in self._tasks.values() if task.status == TaskStatus.queued],
+                    [task for task in self._tasks.values() if task.status == TaskStatus.queued and task.id not in self._scheduled],
                     key=lambda task: (-task.priority, task.created_at),
                 )
                 for task in candidates:
@@ -315,16 +399,26 @@ class FileTaskManager:
                         break
                     if per_user.get(task.username, 0) >= cfg.max_parallel_per_user:
                         continue
-                    total_running += 1
-                    per_user[task.username] = per_user.get(task.username, 0) + 1
+                    if self._stored_status(task.id) != TaskStatus.queued:
+                        continue
                     task.status = TaskStatus.running
                     self._persist(task)
-                    threading.Thread(target=self._run, args=(task,), daemon=True).start()
+                    try:
+                        self._submit_operation(task)
+                    except Exception as exc:  # noqa: BLE001
+                        task.status = TaskStatus.failed
+                        task.finished_at = now()
+                        task.error_message = str(exc) or "Failed to submit file operation"
+                        task.append_log(task.error_message)
+                        self._persist(task)
+                        continue
+                    total_running += 1
+                    per_user[task.username] = per_user.get(task.username, 0) + 1
 
     def schedule_pending(self) -> None:
         self._schedule()
 
-    def _run(self, task: FileTask) -> None:
+    def _run(self, task: FileTask, context: JobContext | None = None) -> None:
         try:
             task.status = TaskStatus.running
             task.started_at = task.started_at or now()
@@ -333,12 +427,22 @@ class FileTaskManager:
             task.cancel_requested = False
             task.pause_requested = False
             self._persist(task)
+            if context is not None:
+                context.update_progress(task.progress_percent or 0, "Starting file operation")
+                context.raise_if_cancelled()
             if task.type in {"copy", "move"}:
-                self._run_rsync(task)
+                self._run_rsync(task, context)
             else:
                 task.result = run_user_op(task.username, task.type, {"path": task.source_paths[0]})
                 task.progress_percent = 100
                 task.status = TaskStatus.completed
+                if context is not None:
+                    context.update_progress(100, "Completed")
+        except InterruptedError as exc:
+            if task.status != TaskStatus.paused:
+                task.status = TaskStatus.cancelled
+                task.error_message = str(exc) or "Transfer cancelled by user"
+                task.append_log(task.error_message)
         except Exception as exc:  # noqa: BLE001
             if task.status not in {TaskStatus.cancelled, TaskStatus.paused}:
                 task.status = TaskStatus.failed
@@ -368,7 +472,7 @@ class FileTaskManager:
                 )
             self._schedule()
 
-    def _run_rsync(self, task: FileTask) -> None:
+    def _run_rsync(self, task: FileTask, context: JobContext | None = None) -> None:
         sources = [Path(source) for source in task.source_paths]
         destination = Path(task.destination_path)
         task.total_bytes, task.files_total = count_sources(sources, task.append_log)
@@ -381,6 +485,8 @@ class FileTaskManager:
         task.process = process
         assert process.stdout is not None
         for raw_line in process.stdout:
+            if context is not None and context.cancellation_requested():
+                task.cancel_requested = True
             if task.cancel_requested or task.pause_requested:
                 terminate_process(process)
                 if task.cancel_requested:
@@ -396,6 +502,8 @@ class FileTaskManager:
                 self._apply_rsync_line(task, line.strip())
             self._update_average_speed(task)
             self._persist(task)
+            if context is not None:
+                context.update_progress(task.progress_percent, task.current_file or f"Transferring {task.files_done}/{task.files_total}")
         exit_code = process.wait()
         task.rsync_exit_code = exit_code
         if task.cancel_requested:
@@ -419,6 +527,8 @@ class FileTaskManager:
         task.files_done = task.files_total
         task.status = TaskStatus.completed
         task.result = {"ok": True}
+        if context is not None:
+            context.update_progress(100, "Completed")
 
     def _update_average_speed(self, task: FileTask) -> None:
         if not task.started_at:
@@ -489,7 +599,8 @@ class FileTaskManager:
         if not task:
             return False
         task.cancel_requested = True
-        if task.status in {TaskStatus.queued, TaskStatus.paused, TaskStatus.failed}:
+        cancelled_before_start = self._cancel_operation_attempt(task.id)
+        if task.status in {TaskStatus.queued, TaskStatus.paused, TaskStatus.failed} or cancelled_before_start:
             if task.type in {"copy", "move"}:
                 cleanup_partial_files(task.username, Path(task.destination_path), task.append_log)
             task.status = TaskStatus.cancelled
@@ -508,6 +619,7 @@ class FileTaskManager:
         if not task:
             return False
         if task.status == TaskStatus.queued:
+            self._cancel_operation_attempt(task.id)
             task.status = TaskStatus.paused
             task.paused_at = now()
             task.error_message = "Transfer paused"
@@ -515,6 +627,7 @@ class FileTaskManager:
             return True
         if task.status == TaskStatus.running:
             task.pause_requested = True
+            self._cancel_operation_attempt(task.id)
             if task.process is not None:
                 terminate_process(task.process)
             self._persist(task)
@@ -565,6 +678,10 @@ class FileTaskManager:
             return False
         task.priority = priority
         self._persist(task)
+        if task.status == TaskStatus.queued and task.id in self._scheduled:
+            self._cancel_operation_attempt(task.id)
+            self._scheduled.discard(task.id)
+            self._operation_jobs.pop(task.id, None)
         self._schedule()
         return True
 
