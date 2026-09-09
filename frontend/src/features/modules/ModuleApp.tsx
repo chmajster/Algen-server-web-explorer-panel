@@ -10,6 +10,7 @@ import { PackageJobDialog } from "../package-center/PackageJobDialog";
 import { ModuleAppShell, ModuleHealthCard, translateServiceState, type ModuleSection } from "./common/ModuleAppShell";
 import { ModuleBackups, ModuleDangerZone, ModuleDiagnostics, ModuleJobProgress, ModuleLogs, ModuleServiceControls } from "./common/ModuleComponents";
 import { ModuleUninstallDialog } from "./common/ModuleUninstallDialog";
+import "./ansible/ansible-window.css";
 
 const SambaModuleApp = lazy(() => import("./samba/SambaModuleApp").then((loaded) => ({ default: loaded.SambaModuleApp })));
 const ManagedModuleApp = lazy(() => import("./ManagedModuleApp").then((loaded) => ({ default: loaded.ManagedModuleApp })));

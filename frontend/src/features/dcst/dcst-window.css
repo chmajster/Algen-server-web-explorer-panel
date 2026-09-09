@@ -1,0 +1,35 @@
+/* DCST rules that depend on the resizable WebNAS application window. */
+.dcst-app .checkbox-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+}
+
+/* Drawers are absolutely positioned inside DCST, so viewport units make their
+ * width unrelated to the actual application window. Keep the preferred widths
+ * proportional to the owning window and cap them at their desktop maxima. */
+.dcst-app .dcst-drawer {
+  width: min(40.625rem, max(32.5rem, 72%));
+  max-width: 100%;
+}
+
+.dcst-app .dcst-details-drawer {
+  width: min(36rem, max(30rem, 64%));
+}
+
+.dcst-app .dcst-object-editor-drawer {
+  width: min(34rem, max(30rem, 62%));
+}
+
+@container app-window (max-width: 34rem) {
+  .dcst-app .dcst-drawer,
+  .dcst-app .dcst-details-drawer,
+  .dcst-app .dcst-object-editor-drawer {
+    width: 100%;
+  }
+
+  .dcst-detail-list > div {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 0.125rem;
+    padding-block: 0.375rem;
+  }
+}

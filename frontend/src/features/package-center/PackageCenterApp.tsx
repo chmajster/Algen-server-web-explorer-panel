@@ -16,6 +16,7 @@ import { usePackageCenter } from "./hooks/usePackageCenter";
 import { canRunPackageAction, getPackageDisplayName, isPackageUpdateAvailable } from "./packageState";
 import type { PackageAction, PackageView } from "./types";
 import "./package-center.css";
+import "./package-center-window.css";
 
 type CredentialAction = { job: AppJob; operation: "cancel" | "retry" } | null;
 const packageViewStorageKey = "webnas_package_center_view";
