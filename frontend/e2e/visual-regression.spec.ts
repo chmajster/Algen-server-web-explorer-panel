@@ -273,7 +273,7 @@ test("File Manager create and rename dialogs remain fully visible on desktop and
   await expectInsideViewport(page, createDialog, 3);
   await expectNoHorizontalOverflow(createDialog, 2);
   await capture(page, "modal-new-folder-desktop");
-  await createDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await createDialog.getByRole("button", { name: "Cancel", exact: true }).filter({ hasText: "Cancel" }).click();
 
   await fileManager.getByLabel("Select Documents").click();
   await fileManager.getByTitle("Rename").click();
@@ -282,7 +282,7 @@ test("File Manager create and rename dialogs remain fully visible on desktop and
   await expectInsideViewport(page, renameDialog, 3);
   await expectNoHorizontalOverflow(renameDialog, 2);
   await capture(page, "modal-rename-desktop");
-  await renameDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await renameDialog.getByRole("button", { name: "Cancel", exact: true }).filter({ hasText: "Cancel" }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expectWindowChromeHealthy(page, fileManager);

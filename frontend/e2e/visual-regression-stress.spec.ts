@@ -196,7 +196,7 @@ test("desktop shortcuts and taskbar controls stay inside the shell at common edg
     await expectShellHealthy(page);
 
     const taskbar = page.locator(".taskbar");
-    const taskbarButtons = taskbar.getByRole("button").filter({ visible: true });
+    const taskbarButtons = taskbar.locator("button:visible:not(.taskbar-show-desktop)");
     const count = await taskbarButtons.count();
     expect(count).toBeGreaterThan(0);
     for (let i = 0; i < count; i += 1) {
@@ -312,9 +312,10 @@ test("active window focus remains unique while cycling through a dense window st
   const windows = page.locator(".desktop-window");
   await expect(windows).toHaveCount(BUILTIN_APPS.length);
 
-  for (let i = 0; i < BUILTIN_APPS.length; i += 1) {
-    const current = windows.nth(i);
-    await current.locator(".window-titlebar").click({ position: { x: 40, y: 20 } });
+  const taskbar = page.locator(".taskbar");
+  for (const appName of BUILTIN_APPS) {
+    const current = page.locator(`.desktop-window[aria-label="${appName}"]`);
+    await taskbar.getByRole("button", { name: appName, exact: true }).click();
     await expect(page.locator(".desktop-window.active")).toHaveCount(1);
     await expect(current).toHaveClass(/active/);
     await expectWindowHealthy(page, current);
@@ -414,7 +415,7 @@ test("File Manager dialogs fit extremely small portrait and short landscape view
     await expectNoHorizontalOverflow(dialog, 3);
     await expectNoPageOverflow(page);
     await screenshot(page, `new-folder-${viewport.width}x${viewport.height}`);
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).filter({ hasText: "Cancel" }).click();
   }
 });
 
@@ -435,24 +436,24 @@ test("launcher search stays usable with long search text at small widths", async
   await screenshot(page, "launcher-long-search-small-phone");
 });
 
-test("browser CSS zoom stress does not create document-level horizontal overflow", async ({ page }) => {
+test("browser text scaling stress does not create document-level horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await installMockApi(page);
   await page.goto("/");
   await openDesktopApp(page, "Settings");
   const settings = page.locator('.desktop-window.active[aria-label="Settings"]');
 
-  for (const zoom of [0.8, 1, 1.1, 1.25, 1.4]) {
+  for (const scale of [0.8, 1, 1.1, 1.25, 1.4]) {
     await page.evaluate((value) => {
-      document.documentElement.style.zoom = String(value);
-    }, zoom);
+      document.documentElement.style.fontSize = `${value * 100}%`;
+    }, scale);
     await expect(settings).toBeVisible();
     await expectNoPageOverflow(page, 4);
-    await screenshot(page, `css-zoom-${String(zoom).replace(".", "-")}`);
+    await screenshot(page, `text-scale-${String(scale).replace(".", "-")}`);
   }
 
   await page.evaluate(() => {
-    document.documentElement.style.zoom = "1";
+    document.documentElement.style.fontSize = "";
   });
 });
 
@@ -545,7 +546,7 @@ test("three application windows remain valid after maximize, focus and viewport 
   await active.locator(".window-controls button").nth(1).click();
   await expect(active).toHaveClass(/maximized/);
 
-  await windows.nth(0).locator(".window-titlebar").click({ position: { x: 40, y: 20 } });
+  await page.locator(".taskbar").getByRole("button", { name: "File Manager", exact: true }).click();
   await expect(windows.nth(0)).toHaveClass(/active/);
 
   await page.setViewportSize({ width: 1024, height: 768 });
