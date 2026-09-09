@@ -90,6 +90,14 @@
   pointer-events: auto;
 }
 
+/* Dialogs rendered inside a resizable desktop window keep their actions usable
+ * without depending on the browser viewport. */
+@container app-window (max-width: 37.5rem) {
+  .desktop .modal-footer > button {
+    flex: 1 1 auto;
+  }
+}
+
 @media (max-width: 920px) {
   .modal-minimized-entry,
   .dialog-restore-tray > .legacy-dialog-restore {
