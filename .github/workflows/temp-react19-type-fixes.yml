@@ -1,0 +1,53 @@
+name: Temporary React 19 type fixes
+
+on:
+  push:
+    branches:
+      - deps/frontend-tooling-refresh
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: deps/frontend-tooling-refresh
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Update React 19 ref typings
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          for name in [
+              'frontend/src/app/Taskbar.tsx',
+              'frontend/src/app/CalendarFlyout.tsx',
+              'frontend/src/features/actions/ActionsCenter.tsx',
+          ]:
+              path = Path(name)
+              text = path.read_text()
+              old = 'RefObject<HTMLButtonElement>'
+              if old not in text:
+                  raise SystemExit(f'missing expected RefObject type in {name}')
+              path.write_text(text.replace(old, 'RefObject<HTMLButtonElement | null>'))
+
+          path = Path('frontend/src/features/package-center/PackageJobDialog.tsx')
+          text = path.read_text()
+          old = 'const copyResetTimer = useRef<number>();'
+          if old not in text:
+              raise SystemExit('missing expected timer ref')
+          path.write_text(text.replace(old, 'const copyResetTimer = useRef<number | undefined>(undefined);'))
+          PY
+      - name: Commit type migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/app/Taskbar.tsx frontend/src/app/CalendarFlyout.tsx frontend/src/features/actions/ActionsCenter.tsx frontend/src/features/package-center/PackageJobDialog.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(frontend): align refs with React 19 types"
+          git push origin HEAD:deps/frontend-tooling-refresh
