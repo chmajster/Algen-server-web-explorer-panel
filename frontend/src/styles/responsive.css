@@ -87,7 +87,7 @@
     bottom: calc(var(--taskbar-height) + 0.375rem);
     left: 0.5rem;
     width: auto;
-    max-height: calc(100vh - var(--taskbar-height) - 0.75rem);
+    max-height: calc(100dvh - var(--taskbar-height) - 0.75rem);
     transform: none;
   }
 
@@ -116,21 +116,21 @@
   .desktop .notification-center {
     right: 0.375rem;
     bottom: calc(var(--taskbar-height) + 0.375rem);
-    width: calc(100vw - 0.75rem);
+    width: calc(100dvw - 0.75rem);
   }
 
   .desktop .actions-center {
     right: 0.375rem;
     bottom: calc(var(--taskbar-height) + 0.375rem);
-    width: min(23rem, calc(100vw - 0.75rem));
-    max-height: calc(100vh - var(--taskbar-height) - 0.75rem);
+    width: min(23rem, calc(100dvw - 0.75rem));
+    max-height: calc(100dvh - var(--taskbar-height) - 0.75rem);
   }
 
   .desktop .calendar-flyout {
     right: 0.375rem;
     bottom: calc(var(--taskbar-height) + 0.375rem);
-    width: min(21.75rem, calc(100vw - 0.75rem));
-    max-height: calc(100vh - var(--taskbar-height) - 0.75rem);
+    width: min(21.75rem, calc(100dvw - 0.75rem));
+    max-height: calc(100dvh - var(--taskbar-height) - 0.75rem);
   }
 }
 
