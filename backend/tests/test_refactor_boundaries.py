@@ -54,6 +54,16 @@ def test_package_center_executes_through_global_job_service():
     assert "JobRunner" not in source
 
 
+def test_file_tasks_execute_through_global_job_service():
+    source = (BACKEND / "services" / "file_task_manager.py").read_text(encoding="utf-8")
+    assert "JobService" in source
+    assert "submit_callable" in source
+    assert "threading.Thread(" not in source
+    assert "coordination_lock" in source
+    assert "Application restarted while transfer was running" in source
+    assert "explicit retry or resume is required" in source
+
+
 def test_plugin_subsystem_does_not_depend_on_apps_internals():
     for path in (BACKEND / "plugins").glob("*.py"):
         source = path.read_text(encoding="utf-8")
