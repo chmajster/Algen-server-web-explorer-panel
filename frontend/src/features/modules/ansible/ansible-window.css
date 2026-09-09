@@ -1,0 +1,10 @@
+/* Ansible layouts that depend on the resizable WebNAS application window. */
+@container app-window (max-width: 43.75rem) {
+  .credential-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .credential-field-grid label.wide {
+    grid-column: auto;
+  }
+}

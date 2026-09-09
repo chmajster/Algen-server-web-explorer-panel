@@ -3,6 +3,7 @@ import { lazy } from "react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 import { lazyView } from "../../app/registry/rendering";
 import "./credentials.css";
+import "./credentials-window.css";
 
 const CredentialsApp = lazy(() => import("./CredentialsApp").then((loaded) => ({ default: loaded.CredentialsApp })));
 
