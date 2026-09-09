@@ -1,7 +1,7 @@
 {
   "name": "webnas-frontend",
   "private": true,
-  "version": "0.1.32",
+  "version": "0.1.33",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -46,5 +46,8 @@
     "typescript": "5.7.2",
     "vite": "8.2.2",
     "vitest": "4.1.11"
+  },
+  "overrides": {
+    "js-yaml": "4.3.2"
   }
 }
