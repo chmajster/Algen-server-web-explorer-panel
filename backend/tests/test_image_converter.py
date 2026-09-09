@@ -8,8 +8,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-image_service_module = importlib.import_module("app.modules.image_converter.service")
 from app.modules.image_converter.service import ImageConverterError, ImageConverterService, convert_image
+
+image_service_module = importlib.import_module("app.modules.image_converter.service")
 
 
 def image_bytes(mode: str = "RGB", color=(120, 30, 200)) -> bytes:
@@ -61,6 +62,21 @@ def test_directory_conversion_preserves_subdirectories_and_avoids_overwrite(tmp_
     assert (output / "one-1.webp").is_file()
     assert (output / "trip" / "two.webp").is_file()
     assert (output / "one.webp").read_bytes() == b"existing"
+
+
+def test_directory_conversion_can_write_to_source_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    source = tmp_path / "photos"
+    source.mkdir()
+    (source / "one.png").write_bytes(image_bytes())
+
+    monkeypatch.setattr(image_service_module, "resolve_user_path", lambda _username, requested: Path(requested))
+    monkeypatch.setattr(image_service_module, "assert_write_allowed", lambda _path: None)
+    service = ImageConverterService(temp_root=tmp_path / "temp")
+
+    result = service.convert_directory("alice", str(source), str(source), "jpeg", 90, False)
+
+    assert len(result["converted"]) == 1
+    assert (source / "one.jpg").is_file()
 
 
 def test_temporary_batch_builds_zip_and_removes_inputs(tmp_path: Path):
