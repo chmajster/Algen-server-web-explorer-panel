@@ -5,7 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from ...identity.permissions import Permission, authorize
 from ...rbac import current_user
 from ...security import SessionUser
-from .service import HTTP_METHODS, contract_report, endpoint_catalog, filter_endpoints, summarize_contract
+from .service import (
+    HTTP_METHODS,
+    api_test_report,
+    contract_report,
+    endpoint_catalog,
+    filter_endpoints,
+    summarize_contract,
+)
 
 
 router = APIRouter(
@@ -67,3 +74,9 @@ def endpoints(
 def contract(request: Request, user: SessionUser = Depends(current_user)):
     _allow(user)
     return contract_report(request.app.openapi())
+
+
+@router.get("/tests")
+def tests(request: Request, user: SessionUser = Depends(current_user)):
+    _allow(user)
+    return api_test_report(request.app.openapi())
