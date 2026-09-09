@@ -14,7 +14,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 try:
     from pillow_heif import register_heif_opener
 except ImportError:  # pragma: no cover
-    register_heif_opener = None
+    pass
 else:
     register_heif_opener()
 
@@ -190,9 +190,14 @@ def convert_image(
     return ConvertedFile(str(source), str(destination), destination.stat().st_size, source_size, width_out, height_out)
 
 
+def _int_metric(item: dict[str, object], key: str) -> int:
+    value = item.get(key, 0)
+    return value if isinstance(value, int) else 0
+
+
 def _summary(converted: list[dict[str, object]], failed: list[dict[str, str]], skipped: list[str]) -> dict[str, object]:
-    source_bytes = sum(int(item.get("source_size", 0)) for item in converted)
-    output_bytes = sum(int(item.get("size", 0)) for item in converted)
+    source_bytes = sum(_int_metric(item, "source_size") for item in converted)
+    output_bytes = sum(_int_metric(item, "size") for item in converted)
     return {
         "converted_count": len(converted),
         "failed_count": len(failed),
