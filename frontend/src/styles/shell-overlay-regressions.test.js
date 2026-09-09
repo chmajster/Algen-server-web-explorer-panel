@@ -20,9 +20,19 @@ describe("shell overlay visual regressions", () => {
     expect(contextMenuHost).toContain("viewport.offsetTop + viewport.height");
   });
 
-  it("uses the visual viewport for context-menu sizing and contains scrolling", () => {
+  it("sizes desktop context menus against the actual visual viewport before clamping", () => {
+    expect(contextMenuHost).toContain("applyVisualViewportConstraints(menu, viewport)");
+    expect(contextMenuHost.indexOf("applyVisualViewportConstraints(menu, viewport)")).toBeLessThan(contextMenuHost.indexOf("menu.getBoundingClientRect()"));
+    expect(contextMenuHost).toContain('menu.style.setProperty("--system-context-visual-max-width"');
+    expect(contextMenuHost).toContain('menu.style.setProperty("--system-context-visual-max-height"');
+    expect(contextMenuCss).toContain("var(--system-context-visual-max-width");
+    expect(contextMenuCss).toContain("var(--system-context-visual-max-height");
+  });
+
+  it("uses dynamic viewport fallbacks for context-menu sizing and contains scrolling", () => {
     expect(contextMenuCss).toContain("calc(100dvw - 1rem)");
-    expect(contextMenuCss).toContain("max-height: min(78dvh, 44rem)");
+    expect(contextMenuCss).toContain("78dvh");
+    expect(contextMenuCss).toContain("44rem");
     expect(contextMenuCss).toContain("overscroll-behavior: contain");
     expect(contextMenuCss).toContain("scrollbar-gutter: stable");
   });
