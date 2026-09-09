@@ -1,0 +1,9 @@
+/* Resource Monitor rules coupled to the resizable WebNAS application window. */
+.monitor-overview-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+}
+
+.monitor-process-tools input {
+  width: min(16.25rem, 100%);
+  max-width: 100%;
+}

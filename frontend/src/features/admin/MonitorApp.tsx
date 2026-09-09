@@ -7,6 +7,7 @@ import { runtimeConnectionState, subscribeRuntimeConnection, subscribeRuntimeEve
 import { pageIsVisible, subscribePageVisibility } from "../../core/runtime/pageVisibility";
 import { Tabs } from "../../components/ui/layout";
 import "../../styles/resource-monitor.css";
+import "./monitor-window.css";
 import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { AlertsPanel, AllMountsPanel, CpuPanel, MemoryPanel, NetworkPanel, OverviewCards, ProcessesPanel, StoragePanel } from "./monitor/MonitorPanels";
 import type { History } from "./monitor/monitorUtils";

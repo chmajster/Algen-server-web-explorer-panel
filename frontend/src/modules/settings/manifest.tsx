@@ -4,6 +4,7 @@ import { lazyView } from "../../app/registry/rendering";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 import type { SettingsCategory } from "../../features/settings/SettingsApp";
 import type { PolicySubject } from "../../features/admin/IdentityApp";
+import "../../features/settings/settings-window.css";
 
 const SettingsApp = lazy(() => import("../../features/settings/SettingsApp").then((loaded) => ({ default: loaded.SettingsAppView })));
 const HttpsSettingsControl = lazy(() => import("../../features/settings/HttpsSettingsControl").then((loaded) => ({ default: loaded.HttpsSettingsControl })));

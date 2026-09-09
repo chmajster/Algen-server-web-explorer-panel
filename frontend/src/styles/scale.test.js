@@ -11,6 +11,10 @@ const responsive = css("responsive.css");
 const modules = css("modules.css");
 const settings = css("settings.css");
 const identity = css("identity.css");
+const fileManager = css("file-manager.css");
+const settingsWindow = read("src/features/settings/settings-window.css");
+const dockerWindow = read("src/features/docker/docker-window.css");
+const packageWindow = read("src/features/package-center/package-center-window.css");
 const desktopSource = read("src/app/DesktopController.tsx");
 const scaleSource = read("src/app/interfaceScale.ts");
 const settingsSource = read("src/features/settings/SettingsApp.tsx");
@@ -107,12 +111,24 @@ describe("global interface scale and typography", () => {
     expect(`${tokens}\n${base}`).not.toMatch(/transform\s*:\s*scale(?:3d|x|y)?\s*\(/i);
   });
 
-  it("uses window container queries for module-level responsive behavior", () => {
-    expect(responsive).toContain("@container app-window");
-    expect(responsive).toContain(".desktop .settings-app");
-    expect(responsive).toContain(".desktop .file-workspace");
-    expect(responsive).toContain(".docker-manager-layout");
-    expect(responsive).toContain(".package-toolbar");
+  it("keeps module-level responsive behavior with feature owners rather than global viewport CSS", () => {
+    for (const selector of [
+      ".desktop .settings-app",
+      ".desktop .file-workspace",
+      ".docker-manager-layout",
+      ".package-toolbar",
+    ]) {
+      expect(responsive).not.toContain(selector);
+    }
+
+    expect(fileManager).toContain("@container app-window");
+    expect(fileManager).toContain(".desktop .file-workspace");
+    expect(settingsWindow).toContain("@container app-window");
+    expect(settingsWindow).toContain(".desktop .settings-app");
+    expect(dockerWindow).toContain("@container app-window");
+    expect(dockerWindow).toContain(".docker-manager-layout");
+    expect(packageWindow).toContain("@container package-center");
+    expect(packageWindow).toContain(".package-toolbar");
   });
 
   it("keeps Hosts Manager dimensions tied to global tokens", () => {
