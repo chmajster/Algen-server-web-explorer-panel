@@ -91,7 +91,7 @@ export function PackageJobWindow({
   const [followLogs, setFollowLogs] = useState(true);
   const [copied, setCopied] = useState(false);
   const log = useRef<HTMLDivElement>(null);
-  const copyResetTimer = useRef<number>();
+  const copyResetTimer = useRef<number | undefined>(undefined);
   const streamRevision = useRef(0);
   const pollSequence = useRef(0);
   const latestAppliedPoll = useRef(0);

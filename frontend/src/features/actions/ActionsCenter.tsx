@@ -42,7 +42,7 @@ export function ActionsCenter({
   actions: BackgroundAction[];
   locale: string;
   t: Translate;
-  triggerRef: RefObject<HTMLButtonElement>;
+  triggerRef: RefObject<HTMLButtonElement | null>;
   onOpen: (action: BackgroundAction) => void;
   onDismiss: (key: string) => void;
   onClose: () => void;

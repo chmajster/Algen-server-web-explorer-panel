@@ -28,8 +28,8 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
   notificationsOpen: boolean;
   actionsOpen: boolean;
   calendarOpen: boolean;
-  actionButtonRef: RefObject<HTMLButtonElement>;
-  clockButtonRef: RefObject<HTMLButtonElement>;
+  actionButtonRef: RefObject<HTMLButtonElement | null>;
+  clockButtonRef: RefObject<HTMLButtonElement | null>;
   t: Translate;
   onToggleLauncher: () => void;
   onToggleNotifications: () => void;
