@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { Download, FolderOpen, Images, Upload, WandSparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileImage, FolderOpen, Gauge, Images, Info, SlidersHorizontal, Upload, WandSparkles, XCircle } from "lucide-react";
 import type { ToastFn } from "../../app/types";
 import { imageConverterClient } from "./api/client";
 import type { ConversionResult, DirectoryBrowser, ImageFormat } from "./api/client";
@@ -29,29 +29,33 @@ export function ImageConverterApp({ homePath, permissions, language, toast }: { 
   const pl = language.toLowerCase().startsWith("pl");
   const tx = {
     title: pl ? "Konwerter obrazów" : "Image Converter",
-    subtitle: pl ? "Konwertuj, skaluj i optymalizuj zdjęcia z katalogu na serwerze albo z plików tymczasowych." : "Convert, resize and optimize images from a server directory or temporary uploads.",
+    subtitle: pl ? "Konwertuj, skaluj i optymalizuj zdjęcia bez opuszczania WebNAS." : "Convert, resize and optimize images without leaving WebNAS.",
+    source: pl ? "Źródło" : "Source",
+    settings: pl ? "Ustawienia konwersji" : "Conversion settings",
+    result: pl ? "Wynik" : "Result",
     server: pl ? "Katalog na serwerze" : "Server directory",
-    upload: pl ? "Pliki tymczasowe" : "Temporary files",
+    upload: pl ? "Pliki z komputera" : "Files from computer",
     current: pl ? "Wybrany katalog" : "Selected directory",
     output: pl ? "Katalog wynikowy" : "Output directory",
-    outputHint: pl ? "Puste pole utworzy katalog converted-FORMAT obok źródeł." : "Leave empty to create a converted-FORMAT directory next to the sources.",
+    outputHint: pl ? "Puste pole utworzy podkatalog converted-FORMAT w wybranym katalogu." : "Leave empty to create a converted-FORMAT subdirectory inside the selected directory.",
     recursive: pl ? "Uwzględnij podkatalogi" : "Include subdirectories",
     images: pl ? "Obrazy" : "Images",
     emptyDirectory: pl ? "W tym katalogu nie ma obsługiwanych obrazów." : "No supported images in this directory.",
     chooseFiles: pl ? "Wybierz zdjęcia" : "Choose images",
-    chooseLocalDirectory: pl ? "Wybierz katalog z komputera" : "Choose local directory",
-    drop: pl ? "Przeciągnij zdjęcia tutaj lub użyj przycisków wyboru." : "Drop images here or use the selection buttons.",
-    selected: pl ? "Wybrano" : "Selected",
+    chooseLocalDirectory: pl ? "Wybierz cały katalog" : "Choose folder",
+    dropTitle: pl ? "Upuść zdjęcia tutaj" : "Drop images here",
+    drop: pl ? "lub wybierz pojedyncze pliki albo cały katalog z komputera" : "or choose individual files or a whole folder from your computer",
+    selected: pl ? "Wybrane pliki" : "Selected files",
     clear: pl ? "Wyczyść" : "Clear",
     format: pl ? "Format wynikowy" : "Output format",
     quality: pl ? "Jakość" : "Quality",
     resize: pl ? "Zmiana rozmiaru" : "Resize",
     width: pl ? "Szerokość" : "Width",
     height: pl ? "Wysokość" : "Height",
-    originalSize: pl ? "Oryginalny rozmiar" : "Original size",
+    originalSize: pl ? "bez zmian" : "unchanged",
     keepAspect: pl ? "Zachowaj proporcje" : "Keep aspect ratio",
     stripMetadata: pl ? "Usuń metadane EXIF/ICC" : "Strip EXIF/ICC metadata",
-    naming: pl ? "Nazwy plików" : "File naming",
+    naming: pl ? "Nazwy i kolizje" : "Names and collisions",
     prefix: pl ? "Prefiks" : "Prefix",
     suffix: pl ? "Sufiks" : "Suffix",
     collision: pl ? "Gdy plik istnieje" : "If output exists",
@@ -62,7 +66,8 @@ export function ImageConverterApp({ homePath, permissions, language, toast }: { 
     balanced: pl ? "Zbalansowany" : "Balanced",
     web: pl ? "WWW / mały plik" : "Web / small file",
     high: pl ? "Wysoka jakość" : "High quality",
-    convert: pl ? "Konwertuj" : "Convert",
+    advanced: pl ? "Opcje zaawansowane" : "Advanced options",
+    convert: pl ? "Rozpocznij konwersję" : "Start conversion",
     converting: pl ? "Konwertowanie…" : "Converting…",
     converted: pl ? "Przekonwertowano" : "Converted",
     failed: pl ? "Błędy" : "Failed",
@@ -70,11 +75,17 @@ export function ImageConverterApp({ homePath, permissions, language, toast }: { 
     download: pl ? "Pobierz ZIP" : "Download ZIP",
     sourceSize: pl ? "Rozmiar wejściowy" : "Input size",
     outputSize: pl ? "Rozmiar wynikowy" : "Output size",
-    saved: pl ? "Różnica" : "Difference",
+    saved: pl ? "Oszczędność" : "Saved",
     noPermission: pl ? "Nie masz uprawnienia do konwersji obrazów." : "You do not have permission to convert images.",
     folderUp: pl ? "Katalog wyżej" : "Parent directory",
     truncated: pl ? "Lista została ograniczona do pierwszych 1000 pozycji." : "The list was limited to the first 1000 entries.",
+    loading: pl ? "Wczytywanie…" : "Loading…",
+    ready: pl ? "Gotowe do konwersji" : "Ready to convert",
+    chooseSource: pl ? "Wybierz źródło, aby rozpocząć" : "Choose a source to begin",
+    details: pl ? "Szczegóły plików" : "File details",
+    failuresDetails: pl ? "Szczegóły błędów" : "Failure details",
   };
+
   const canConvert = permissions.includes("image_converter.convert");
   const [mode, setMode] = useState<InputMode>("server");
   const [formats, setFormats] = useState<ImageFormat[]>([]);
@@ -164,62 +175,81 @@ export function ImageConverterApp({ homePath, permissions, language, toast }: { 
 
   const selectedFormat = formats.find((item) => item.id === format);
   const canRun = canConvert && !busy && (mode === "server" ? Boolean(sourceDirectory) : files.length > 0);
+  const sourceCount = mode === "server" ? (browser?.images.length ?? 0) : files.length;
 
   return <section className="image-converter-app">
-    <header className="image-converter-header"><div><span className="image-converter-eyebrow">WebNAS Tools</span><h2><Images aria-hidden="true" /> {tx.title}</h2><p>{tx.subtitle}</p></div></header>
+    <header className="image-converter-hero">
+      <div className="image-converter-hero-icon"><Images aria-hidden="true" /></div>
+      <div className="image-converter-hero-copy"><span className="image-converter-eyebrow">WebNAS Tools</span><h2>{tx.title}</h2><p>{tx.subtitle}</p></div>
+      <div className={`image-converter-ready ${canRun ? "is-ready" : ""}`}><span className="image-converter-ready-dot" />{canRun ? tx.ready : tx.chooseSource}</div>
+    </header>
 
-    <div className="image-converter-modes" role="tablist">
-      <button className={mode === "server" ? "active" : ""} onClick={() => { setMode("server"); setResult(null); }}><FolderOpen aria-hidden="true" /> {tx.server}</button>
-      <button className={mode === "upload" ? "active" : ""} onClick={() => { setMode("upload"); setResult(null); }}><Upload aria-hidden="true" /> {tx.upload}</button>
+    <div className="image-converter-tabs" role="tablist" aria-label={tx.source}>
+      <button role="tab" aria-selected={mode === "server"} className={mode === "server" ? "active" : ""} onClick={() => { setMode("server"); setResult(null); }}><FolderOpen aria-hidden="true" /><span><strong>{tx.server}</strong><small>{pl ? "Pracuj bezpośrednio na plikach WebNAS" : "Work directly with WebNAS files"}</small></span></button>
+      <button role="tab" aria-selected={mode === "upload"} className={mode === "upload" ? "active" : ""} onClick={() => { setMode("upload"); setResult(null); }}><Upload aria-hidden="true" /><span><strong>{tx.upload}</strong><small>{pl ? "Pliki są przechowywane tylko tymczasowo" : "Files are stored temporarily only"}</small></span></button>
     </div>
 
-    {!canConvert && <div className="image-converter-warning">{tx.noPermission}</div>}
+    {!canConvert && <div className="image-converter-warning"><AlertTriangle aria-hidden="true" /> {tx.noPermission}</div>}
 
     <div className="image-converter-layout">
-      <div className="image-converter-panel">
-        {mode === "server" ? <>
-          <label>{tx.current}<input value={sourceDirectory} onChange={(event) => setSourceDirectory(event.target.value)} onBlur={() => void loadDirectory(sourceDirectory)} /></label>
-          <div className="image-converter-browser">
-            {browser?.parent && <button className="image-converter-folder" onClick={() => void loadDirectory(browser.parent!)}>↰ {tx.folderUp}</button>}
-            {browser?.directories.map((directory) => <button key={directory.path} className="image-converter-folder" onClick={() => void loadDirectory(directory.path)}><FolderOpen aria-hidden="true" /> {directory.name}</button>)}
-            <div className="image-converter-image-list"><strong>{tx.images}: {browser?.images.length ?? 0}</strong>{browser?.images.length ? browser.images.slice(0, 100).map((image) => <div key={image.path}><span>{image.name}</span><small>{formatBytes(image.size)}</small></div>) : <p>{tx.emptyDirectory}</p>}</div>
-            {browser?.truncated && <small>{tx.truncated}</small>}
-          </div>
-          <label>{tx.output}<input value={outputDirectory} onChange={(event) => setOutputDirectory(event.target.value)} placeholder={`${sourceDirectory}/converted-${format}`} /><small>{tx.outputHint}</small></label>
-          <label className="image-converter-check"><input type="checkbox" checked={recursive} onChange={(event) => setRecursive(event.target.checked)} /> {tx.recursive}</label>
-        </> : <>
-          <div className="image-converter-drop" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
-            <Upload aria-hidden="true" /><p>{tx.drop}</p>
-            <div className="image-converter-file-actions">
-              <label className="image-converter-button">{tx.chooseFiles}<input hidden type="file" accept="image/*,.heic,.heif,.avif" multiple onChange={(event) => appendFiles(Array.from(event.target.files || []))} /></label>
-              <button className="image-converter-button" onClick={() => directoryInput.current?.click()}>{tx.chooseLocalDirectory}</button>
-              <input ref={directoryInput} hidden type="file" accept="image/*,.heic,.heif,.avif" multiple onChange={(event) => appendFiles(Array.from(event.target.files || []))} />
+      <main className="image-converter-main">
+        <section className="image-converter-card">
+          <div className="image-converter-card-heading"><div><span className="image-converter-step">1</span><div><h3>{tx.source}</h3><p>{mode === "server" ? tx.server : tx.upload}</p></div></div><span className="image-converter-count"><FileImage aria-hidden="true" /> {sourceCount}</span></div>
+
+          {mode === "server" ? <div className="image-converter-source-content">
+            <label className="image-converter-label">{tx.current}<div className="image-converter-path-row"><input value={sourceDirectory} onChange={(event) => setSourceDirectory(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void loadDirectory(sourceDirectory); }} /><button type="button" onClick={() => void loadDirectory(sourceDirectory)} disabled={busy}><FolderOpen aria-hidden="true" /><span>{busy ? tx.loading : pl ? "Otwórz" : "Open"}</span></button></div></label>
+            <div className="image-converter-browser">
+              <div className="image-converter-browser-toolbar"><strong>{browser?.path || sourceDirectory}</strong>{browser?.parent && <button className="image-converter-up" onClick={() => void loadDirectory(browser.parent!)}>↰ {tx.folderUp}</button>}</div>
+              <div className="image-converter-browser-body">
+                {browser?.directories.map((directory) => <button key={directory.path} className="image-converter-folder" onClick={() => void loadDirectory(directory.path)}><FolderOpen aria-hidden="true" /><span>{directory.name}</span></button>)}
+                <div className="image-converter-image-list"><div className="image-converter-list-title"><strong>{tx.images}</strong><span>{browser?.images.length ?? 0}</span></div>{browser?.images.length ? browser.images.slice(0, 100).map((image) => <div key={image.path}><span><FileImage aria-hidden="true" /> {image.name}</span><small>{formatBytes(image.size)}</small></div>) : <div className="image-converter-empty"><Images aria-hidden="true" /><span>{tx.emptyDirectory}</span></div>}</div>
+                {browser?.truncated && <small className="image-converter-note"><Info aria-hidden="true" /> {tx.truncated}</small>}
+              </div>
             </div>
-          </div>
-          <div className="image-converter-selected"><div><strong>{tx.selected}: {files.length}</strong>{files.length > 0 && <button onClick={() => setFiles([])}>{tx.clear}</button>}</div>{files.slice(0, 20).map((file, index) => <p key={`${file.name}:${file.size}:${index}`}><span>{file.name}</span><small>{formatBytes(file.size)}</small></p>)}{files.length > 20 && <small>+{files.length - 20}</small>}</div>
-        </>}
-      </div>
+            <div className="image-converter-source-footer"><label className="image-converter-label">{tx.output}<input value={outputDirectory} onChange={(event) => setOutputDirectory(event.target.value)} placeholder={`${sourceDirectory}/converted-${format}`} /><small>{tx.outputHint}</small></label><label className="image-converter-toggle"><input type="checkbox" checked={recursive} onChange={(event) => setRecursive(event.target.checked)} /><span className="image-converter-toggle-control" /><span>{tx.recursive}</span></label></div>
+          </div> : <div className="image-converter-source-content">
+            <div className="image-converter-drop" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+              <div className="image-converter-drop-icon"><Upload aria-hidden="true" /></div><strong>{tx.dropTitle}</strong><p>{tx.drop}</p>
+              <div className="image-converter-file-actions">
+                <label className="image-converter-button image-converter-button-primary"><FileImage aria-hidden="true" /> {tx.chooseFiles}<input hidden type="file" accept="image/*,.heic,.heif,.avif" multiple onChange={(event) => appendFiles(Array.from(event.target.files || []))} /></label>
+                <button className="image-converter-button" onClick={() => directoryInput.current?.click()}><FolderOpen aria-hidden="true" /> {tx.chooseLocalDirectory}</button>
+                <input ref={directoryInput} hidden type="file" accept="image/*,.heic,.heif,.avif" multiple onChange={(event) => appendFiles(Array.from(event.target.files || []))} />
+              </div>
+            </div>
+            {files.length > 0 && <div className="image-converter-selected"><div className="image-converter-list-title"><strong>{tx.selected}</strong><div><span>{files.length}</span><button onClick={() => setFiles([])}>{tx.clear}</button></div></div>{files.slice(0, 20).map((file, index) => <p key={`${file.name}:${file.size}:${index}`}><span><FileImage aria-hidden="true" /> {file.name}</span><small>{formatBytes(file.size)}</small></p>)}{files.length > 20 && <small className="image-converter-note">+{files.length - 20}</small>}</div>}
+          </div>}
+        </section>
 
-      <aside className="image-converter-options">
-        <label>{tx.presets}<select defaultValue="" onChange={(event) => { if (event.target.value) applyPreset(event.target.value as "balanced" | "web" | "high"); }}><option value="">—</option><option value="balanced">{tx.balanced}</option><option value="web">{tx.web}</option><option value="high">{tx.high}</option></select></label>
-        <label>{tx.format}<select value={format} onChange={(event) => setFormat(event.target.value)}>{(formats.length ? formats : [{ id: "webp", extension: ".webp", lossy: true }]).map((item) => <option key={item.id} value={item.id}>{item.id.toUpperCase()} ({item.extension})</option>)}</select></label>
-        {selectedFormat?.lossy !== false && <label>{tx.quality}: {quality}<input type="range" min="1" max="100" value={quality} onChange={(event) => setQuality(Number(event.target.value))} /></label>}
+        {result && <section className="image-converter-card image-converter-result">
+          <div className="image-converter-card-heading"><div><span className="image-converter-step image-converter-step-success"><CheckCircle2 aria-hidden="true" /></span><div><h3>{tx.result}</h3><p>{pl ? "Podsumowanie ostatniej konwersji" : "Summary of the latest conversion"}</p></div></div>{result.download_url && <button className="image-converter-download" onClick={() => triggerDownload(result.download_url!)}><Download aria-hidden="true" /> {tx.download}</button>}</div>
+          <div className="image-converter-status-grid"><div className="success"><CheckCircle2 aria-hidden="true" /><span><small>{tx.converted}</small><strong>{result.converted.length}</strong></span></div><div className="warning"><Info aria-hidden="true" /><span><small>{tx.skipped}</small><strong>{result.skipped?.length ?? 0}</strong></span></div><div className="danger"><XCircle aria-hidden="true" /><span><small>{tx.failed}</small><strong>{result.failed.length}</strong></span></div></div>
+          {result.summary && <div className="image-converter-summary"><span><small>{tx.sourceSize}</small><strong>{formatBytes(result.summary.source_bytes)}</strong></span><span><small>{tx.outputSize}</small><strong>{formatBytes(result.summary.output_bytes)}</strong></span><span><small>{tx.saved}</small><strong>{formatBytes(result.summary.saved_bytes)}</strong></span></div>}
+          {result.output_directory && <div className="image-converter-output-path"><FolderOpen aria-hidden="true" /><code>{result.output_directory}</code></div>}
+          {result.converted.length > 0 && <details className="image-converter-details"><summary>{tx.details}</summary>{result.converted.slice(0, 100).map((item) => <p key={item.output}><code>{item.output}</code><span>{item.width}×{item.height} · {formatBytes(item.size)}</span></p>)}</details>}
+          {result.failed.length > 0 && <details className="image-converter-details image-converter-details-danger"><summary>{tx.failuresDetails}</summary>{result.failed.map((failure, index) => <p key={`${failure.source}:${index}`}><code>{failure.source}</code><span>{failure.message}</span></p>)}</details>}
+        </section>}
+      </main>
 
-        <fieldset className="image-converter-fieldset"><legend>{tx.resize}</legend><div className="image-converter-grid2"><label>{tx.width}<input type="number" min="1" max="32768" placeholder={tx.originalSize} value={width || ""} onChange={(event) => setWidth(Number(event.target.value) || 0)} /></label><label>{tx.height}<input type="number" min="1" max="32768" placeholder={tx.originalSize} value={height || ""} onChange={(event) => setHeight(Number(event.target.value) || 0)} /></label></div><label className="image-converter-check"><input type="checkbox" checked={keepAspect} onChange={(event) => setKeepAspect(event.target.checked)} /> {tx.keepAspect}</label></fieldset>
+      <aside className="image-converter-options image-converter-card">
+        <div className="image-converter-card-heading compact"><div><span className="image-converter-step">2</span><div><h3>{tx.settings}</h3><p>{pl ? "Format i optymalizacja" : "Format and optimization"}</p></div></div><SlidersHorizontal aria-hidden="true" /></div>
 
-        <fieldset className="image-converter-fieldset"><legend>{tx.naming}</legend><div className="image-converter-grid2"><label>{tx.prefix}<input maxLength={80} value={prefix} onChange={(event) => setPrefix(event.target.value)} /></label><label>{tx.suffix}<input maxLength={80} value={suffix} onChange={(event) => setSuffix(event.target.value)} /></label></div>{mode === "server" && <label>{tx.collision}<select value={overwritePolicy} onChange={(event) => setOverwritePolicy(event.target.value as OverwritePolicy)}><option value="rename">{tx.rename}</option><option value="skip">{tx.skip}</option><option value="overwrite">{tx.overwrite}</option></select></label>}</fieldset>
+        <label className="image-converter-label">{tx.presets}<select defaultValue="" onChange={(event) => { if (event.target.value) applyPreset(event.target.value as "balanced" | "web" | "high"); }}><option value="">—</option><option value="balanced">{tx.balanced}</option><option value="web">{tx.web}</option><option value="high">{tx.high}</option></select></label>
+        <label className="image-converter-label">{tx.format}<select value={format} onChange={(event) => setFormat(event.target.value)}>{(formats.length ? formats : [{ id: "webp", extension: ".webp", lossy: true }]).map((item) => <option key={item.id} value={item.id}>{item.id.toUpperCase()} ({item.extension})</option>)}</select></label>
+        {selectedFormat?.lossy !== false && <label className="image-converter-label image-converter-quality"><span>{tx.quality}<strong>{quality}%</strong></span><input type="range" min="1" max="100" value={quality} onChange={(event) => setQuality(Number(event.target.value))} /></label>}
 
-        <label className="image-converter-check"><input type="checkbox" checked={stripMetadata} onChange={(event) => setStripMetadata(event.target.checked)} /> {tx.stripMetadata}</label>
+        <details className="image-converter-advanced" open>
+          <summary><Gauge aria-hidden="true" /> {tx.resize}</summary>
+          <div className="image-converter-advanced-body"><div className="image-converter-grid2"><label className="image-converter-label">{tx.width}<input type="number" min="1" max="32768" placeholder={tx.originalSize} value={width || ""} onChange={(event) => setWidth(Number(event.target.value) || 0)} /></label><label className="image-converter-label">{tx.height}<input type="number" min="1" max="32768" placeholder={tx.originalSize} value={height || ""} onChange={(event) => setHeight(Number(event.target.value) || 0)} /></label></div><label className="image-converter-toggle"><input type="checkbox" checked={keepAspect} onChange={(event) => setKeepAspect(event.target.checked)} /><span className="image-converter-toggle-control" /><span>{tx.keepAspect}</span></label></div>
+        </details>
+
+        <details className="image-converter-advanced">
+          <summary><SlidersHorizontal aria-hidden="true" /> {tx.advanced}</summary>
+          <div className="image-converter-advanced-body"><div className="image-converter-grid2"><label className="image-converter-label">{tx.prefix}<input maxLength={80} value={prefix} onChange={(event) => setPrefix(event.target.value)} /></label><label className="image-converter-label">{tx.suffix}<input maxLength={80} value={suffix} onChange={(event) => setSuffix(event.target.value)} /></label></div>{mode === "server" && <label className="image-converter-label">{tx.collision}<select value={overwritePolicy} onChange={(event) => setOverwritePolicy(event.target.value as OverwritePolicy)}><option value="rename">{tx.rename}</option><option value="skip">{tx.skip}</option><option value="overwrite">{tx.overwrite}</option></select></label>}<label className="image-converter-toggle"><input type="checkbox" checked={stripMetadata} onChange={(event) => setStripMetadata(event.target.checked)} /><span className="image-converter-toggle-control" /><span>{tx.stripMetadata}</span></label></div>
+        </details>
+
+        <div className="image-converter-run-summary"><span><FileImage aria-hidden="true" /> {sourceCount} {pl ? "plików" : "files"}</span><span>→</span><strong>{format.toUpperCase()}</strong></div>
         <button className="image-converter-primary" disabled={!canRun} onClick={() => void convert()}><WandSparkles aria-hidden="true" /> {busy ? tx.converting : tx.convert}</button>
       </aside>
     </div>
-
-    {result && <section className="image-converter-result">
-      <div><strong>{tx.converted}: {result.converted.length}</strong><span>{tx.failed}: {result.failed.length}</span><span>{tx.skipped}: {result.skipped?.length ?? 0}</span>{result.output_directory && <code>{result.output_directory}</code>}</div>
-      {result.summary && <div className="image-converter-summary"><span><small>{tx.sourceSize}</small><strong>{formatBytes(result.summary.source_bytes)}</strong></span><span><small>{tx.outputSize}</small><strong>{formatBytes(result.summary.output_bytes)}</strong></span><span><small>{tx.saved}</small><strong>{formatBytes(result.summary.saved_bytes)}</strong></span></div>}
-      {result.converted.length > 0 && <details><summary>{tx.converted}</summary>{result.converted.slice(0, 100).map((item) => <p key={item.output}><code>{item.output}</code> — {item.width}×{item.height}, {formatBytes(item.size)}</p>)}</details>}
-      {result.download_url && <button onClick={() => triggerDownload(result.download_url!)}><Download aria-hidden="true" /> {tx.download}</button>}
-      {result.failed.length > 0 && <details><summary>{tx.failed}</summary>{result.failed.map((failure, index) => <p key={`${failure.source}:${index}`}><code>{failure.source}</code> — {failure.message}</p>)}</details>}
-    </section>}
   </section>;
 }
