@@ -5,16 +5,34 @@ import { WebNAS } from "../app/shell/WebNASShell";
 import type { ManagedContextMenuItem, ManagedContextMenuRequest } from "../app/shell/ContextMenuManager";
 import "./system-context-menu.css";
 
+const VIEWPORT_MARGIN = 8;
+
 function resolvedChildren(item: ManagedContextMenuItem): ManagedContextMenuItem[] {
   if (!item.children) return [];
   return typeof item.children === "function" ? item.children() : item.children;
+}
+
+function visibleViewportBounds() {
+  const viewport = window.visualViewport;
+  if (viewport) {
+    return {
+      left: viewport.offsetLeft,
+      top: viewport.offsetTop,
+      right: viewport.offsetLeft + viewport.width,
+      bottom: viewport.offsetTop + viewport.height,
+    };
+  }
+  const width = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+  const height = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+  return { left: 0, top: 0, right: width, bottom: height };
 }
 
 export function SystemContextMenuHost() {
   const [request, setRequest] = useState<ManagedContextMenuRequest | null>(() => WebNAS.contextMenu.getCurrent());
   const [submenu, setSubmenu] = useState<{ parent: ManagedContextMenuItem; items: ManagedContextMenuItem[] } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: 8, y: 8 });
+  const [position, setPosition] = useState({ x: VIEWPORT_MARGIN, y: VIEWPORT_MARGIN });
+  const mobile = WebNAS.device.isMobile;
 
   useEffect(() => WebNAS.contextMenu.subscribe((next) => {
     setRequest(next);
@@ -23,14 +41,39 @@ export function SystemContextMenuHost() {
 
   useLayoutEffect(() => {
     if (!request) return;
-    const rect = ref.current?.getBoundingClientRect();
-    if (!rect) return;
-    setPosition({
-      x: Math.max(8, Math.min(request.x, window.innerWidth - rect.width - 8)),
-      y: Math.max(8, Math.min(request.y, window.innerHeight - rect.height - 8)),
-    });
+
+    function updatePosition() {
+      if (mobile) return;
+      const rect = ref.current?.getBoundingClientRect();
+      if (!rect) return;
+      const viewport = visibleViewportBounds();
+      const minX = viewport.left + VIEWPORT_MARGIN;
+      const minY = viewport.top + VIEWPORT_MARGIN;
+      const maxX = Math.max(minX, viewport.right - rect.width - VIEWPORT_MARGIN);
+      const maxY = Math.max(minY, viewport.bottom - rect.height - VIEWPORT_MARGIN);
+      const next = {
+        x: Math.max(minX, Math.min(request.x, maxX)),
+        y: Math.max(minY, Math.min(request.y, maxY)),
+      };
+      setPosition((current) => current.x === next.x && current.y === next.y ? current : next);
+    }
+
+    updatePosition();
     ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
-  }, [request, submenu]);
+
+    if (mobile) return;
+    const visualViewport = window.visualViewport;
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("orientationchange", updatePosition);
+    visualViewport?.addEventListener("resize", updatePosition);
+    visualViewport?.addEventListener("scroll", updatePosition);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("orientationchange", updatePosition);
+      visualViewport?.removeEventListener("resize", updatePosition);
+      visualViewport?.removeEventListener("scroll", updatePosition);
+    };
+  }, [request, submenu, mobile]);
 
   useEffect(() => {
     if (!request) return;
@@ -62,7 +105,6 @@ export function SystemContextMenuHost() {
   const items = useMemo(() => submenu?.items ?? request?.items ?? [], [request, submenu]);
   if (!request) return null;
 
-  const mobile = WebNAS.device.isMobile;
   const runItem = (item: ManagedContextMenuItem) => {
     const children = resolvedChildren(item);
     if (children.length) {
