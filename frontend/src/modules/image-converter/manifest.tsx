@@ -8,7 +8,7 @@ const ImageConverterApp = lazy(() => import("./ImageConverterApp").then((loaded)
 const manifest: FrontendModuleManifest = {
   id: "image-converter",
   moduleId: "image-converter",
-  labelKey: "module.imageConverter",
+  labelKey: "Image Converter",
   icon: <Images />,
   category: "tools",
   permission: "image_converter.view",
