@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { Download, FolderOpen, Images, Upload, WandSparkles } from "lucide-react";
 import type { ToastFn } from "../../app/types";
@@ -70,11 +70,11 @@ export function ImageConverterApp({ homePath, permissions, language, toast }: { 
     directoryInput.current?.setAttribute("webkitdirectory", "");
     void imageConverterClient.formats().then(({ formats: available }) => {
       setFormats(available);
-      if (available.length && !available.some((item) => item.id === format)) setFormat(available[0].id);
+      if (available.length) setFormat((current) => available.some((item) => item.id === current) ? current : available[0].id);
     }).catch((error) => toast(String(error), "error"));
-  }, []);
+  }, [toast]);
 
-  async function loadDirectory(path: string) {
+  const loadDirectory = useCallback(async (path: string) => {
     setBusy(true);
     try {
       const next = await imageConverterClient.browse(path);
@@ -86,9 +86,9 @@ export function ImageConverterApp({ homePath, permissions, language, toast }: { 
     } finally {
       setBusy(false);
     }
-  }
+  }, [toast]);
 
-  useEffect(() => { void loadDirectory(homePath); }, [homePath]);
+  useEffect(() => { void loadDirectory(homePath); }, [homePath, loadDirectory]);
 
   function appendFiles(next: File[]) {
     setFiles((current) => {
