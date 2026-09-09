@@ -13,7 +13,7 @@ function formatBytes(value: number | null | undefined, language: Language) {
   return `${new Intl.NumberFormat(language, { maximumFractionDigits: unit ? 1 : 0 }).format(amount)} ${units[unit]}`;
 }
 
-function formatUptime(value: number | null, t: Translate) {
+function formatUptime(value: number | null | undefined, t: Translate) {
   if (value == null || !Number.isFinite(value)) return "—";
   const seconds = Math.max(0, Math.floor(value));
   const days = Math.floor(seconds / 86400);
@@ -24,6 +24,12 @@ function formatUptime(value: number | null, t: Translate) {
   if (hours || days) parts.push(`${hours} ${t("settings.hoursShort")}`);
   parts.push(`${minutes} ${t("settings.minutesShort")}`);
   return parts.join(" ");
+}
+
+function joinedValues(values: string[] | null | undefined, fallback: string) {
+  if (!Array.isArray(values)) return fallback;
+  const text = values.filter((value) => typeof value === "string" && value.trim()).join(", ");
+  return text || fallback;
 }
 
 function HostPanel({ title, icon, children, initiallyOpen = false }: { title: string; icon: ReactNode; children: ReactNode; initiallyOpen?: boolean }) {
@@ -63,6 +69,8 @@ export function HostInformationSection({ language, t }: { language: Language; t:
     return () => { active = false; window.clearInterval(timer); };
   }, [t]);
 
+  const notDetected = t("settings.notDetected");
+
   return <section className="settings-host-information" aria-labelledby="settings-host-title">
     <header><div><h3 id="settings-host-title">{t("settings.hostInformation")}</h3><p>{t("settings.hostInformationHint")}</p></div><button type="button" aria-label={t("settings.refreshHostInformation")} title={t("settings.refreshHostInformation")} disabled={refreshing} onClick={() => void refresh()}><RefreshCw className={refreshing ? "spin" : ""} /></button></header>
     {loading && !data ? <div className="loading-state">{t("status.loading")}</div> : error && !data ? <div className="error-state" role="alert">{error}</div> : data && <div className="settings-host-panels">
@@ -71,15 +79,15 @@ export function HostInformationSection({ language, t }: { language: Language; t:
         [t("settings.operatingSystem"), data.operating_system],
         [t("settings.kernelVersion"), data.kernel_version],
         [t("settings.architecture"), data.architecture],
-        [t("settings.ipAddresses"), data.ip_addresses.join(", ") || t("settings.notDetected")],
+        [t("settings.ipAddresses"), joinedValues(data.ip_addresses, notDetected)],
         [t("settings.systemUptime"), formatUptime(data.uptime_seconds, t)],
       ]} /></HostPanel>
       <HostPanel title={t("settings.hostHardwarePanel")} icon={<Cpu />}><Details rows={[
-        [t("settings.cpuModel"), data.cpu.model || t("settings.notDetected")],
-        [t("settings.physicalCores"), data.cpu.physical_cores ?? "—"],
-        [t("settings.logicalThreads"), data.cpu.logical_threads ?? "—"],
-        [t("settings.totalMemory"), formatBytes(data.memory.total, language)],
-        [t("settings.graphicsProcessors"), data.gpus.join(", ") || t("settings.notDetected")],
+        [t("settings.cpuModel"), data.cpu?.model || notDetected],
+        [t("settings.physicalCores"), data.cpu?.physical_cores ?? "—"],
+        [t("settings.logicalThreads"), data.cpu?.logical_threads ?? "—"],
+        [t("settings.totalMemory"), formatBytes(data.memory?.total, language)],
+        [t("settings.graphicsProcessors"), joinedValues(data.gpus, notDetected)],
       ]} /></HostPanel>
       <HostPanel title={t("settings.hostStoragePanel")} icon={<HardDrive />}><Details rows={[
         [t("settings.applicationVersion"), data.application_version],
