@@ -14,6 +14,7 @@ import "./styles/ui-specialized-consistency.css";
 import "./styles/ui-review-fixes.css";
 import "./styles/mobile-shell.css";
 import "./styles/shell-taskbar.css";
+import "./styles/visual-regressions.css";
 
 function renderBootstrapError(error: unknown) {
   console.error("WebNAS bootstrap failed", error);
@@ -27,11 +28,27 @@ function renderBootstrapError(error: unknown) {
   message.textContent = "WebNAS could not load language resources.";
   const retry = document.createElement("button");
   retry.type = "button";
+  retry.className = "button button-primary boot-retry";
   retry.textContent = "Retry";
   retry.addEventListener("click", () => window.location.reload());
 
   container.append(message, retry);
   root.replaceChildren(container);
+}
+
+function installThemeColorSync() {
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  const root = document.getElementById("root");
+  if (!meta || !root) return;
+
+  const update = () => {
+    const desktop = root.querySelector<HTMLElement>(".desktop");
+    meta.content = desktop?.classList.contains("dark") ? "#20252a" : "#f4f5f6";
+  };
+
+  update();
+  const observer = new MutationObserver(update);
+  observer.observe(root, { attributes: true, attributeFilter: ["class"], childList: true, subtree: true });
 }
 
 export async function bootstrap() {
@@ -42,6 +59,7 @@ export async function bootstrap() {
     renderBootstrapError(error);
     return;
   }
+  installThemeColorSync();
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />
