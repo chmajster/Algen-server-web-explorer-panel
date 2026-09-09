@@ -1,4 +1,54 @@
 /* Package Center rules tied to the package-center container, not the viewport. */
+@container package-center (max-width: 56.25rem) {
+  .package-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .package-search {
+    grid-column: 1 / -1;
+  }
+
+  .package-plan,
+  .package-detail-grid,
+  .package-source-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .package-plan-summary {
+    grid-row: auto;
+  }
+
+  .package-detail-wide,
+  .package-source-form > div,
+  .package-source-form > p {
+    grid-column: auto;
+  }
+
+  .package-history article {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container package-center (max-width: 38.75rem) {
+  .package-toolbar,
+  .package-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .package-search {
+    grid-column: auto;
+  }
+
+  .package-updates {
+    width: 100%;
+  }
+
+  .package-history article,
+  .package-live-job dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @container package-center (max-width: 32.5rem) {
   .package-job > header,
   .package-job-meta {
