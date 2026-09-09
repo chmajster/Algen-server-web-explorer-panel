@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+
+## v0.1.33 — 2026-09-09
+
+- Added the WebNAS shell foundation and desktop/runtime architecture.
+- Unified RBAC with LDAP/AD group synchronization, policies and scoped authorization, including compatibility and security hardening.
+- Routed Docker Engine access through the privileged broker and fixed the Settings policy observer freeze.
+- Added API Explorer with typed frontend integration, read-only OpenAPI diagnostics and structural contract tests, including reusable parameter references and network-isolation coverage.
+
 ## v0.1.32 — 2026-08-31
 
 - Expanded Proxmox Manager with advanced cluster, capacity, placement, storage, backup, replication, HA, migration, network, SDN, cloud-init, policy and orphan-management workflows, plus the matching frontend and operational documentation.

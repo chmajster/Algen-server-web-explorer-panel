@@ -1,0 +1,2 @@
+- Added a read-only API Explorer module with endpoint inventory, filtering and OpenAPI contract diagnostics.
+- Added comprehensive backend coverage for API catalog normalization, diagnostics, RBAC, pagination, filters and validation boundaries.

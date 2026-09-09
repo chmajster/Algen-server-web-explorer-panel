@@ -92,7 +92,10 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
   }, []);
   useEffect(() => {
     function click(event: MouseEvent) {
-      if (event.target instanceof Element && event.target.closest(".launcher-context-menu")) return;
+      if (event.target instanceof Element) {
+        if (event.target.closest(".launcher-context-menu")) return;
+        if (event.target.closest(".taskbar-start")) return;
+      }
       if (powerMenuOpen && !powerActionsRef.current?.contains(event.target as Node)) setPowerMenuOpen(false);
       if (!ref.current?.contains(event.target as Node)) onClose();
     }
@@ -136,8 +139,6 @@ export function AppLauncher({ apps, startPinned, desktopShortcuts, taskbarPinned
       onClose();
     } catch (error) {
       if (isExpectedRestartDisconnect(error)) {
-        // nginx can lose the upstream before the restart endpoint sends its
-        // response. The global connection monitor handles reconnection.
         setPowerMenuOpen(false);
         onClose();
       } else {

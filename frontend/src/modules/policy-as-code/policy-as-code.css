@@ -131,6 +131,24 @@
   overflow-wrap: anywhere;
 }
 
+@container app-window (max-width: 56.25rem) {
+  .policy-code-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-code-list {
+    max-height: 220px;
+  }
+
+  .policy-code-result-list article {
+    grid-template-columns: 1fr auto;
+  }
+
+  .policy-code-result-list small {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 900px) {
   .policy-code-grid {
     grid-template-columns: 1fr;
