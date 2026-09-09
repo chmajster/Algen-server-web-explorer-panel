@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 const read = (path) => readFileSync(resolve(cwd(), path), "utf8");
 const contextMenuHost = read("src/components/SystemContextMenuHost.tsx");
 const contextMenuCss = read("src/components/system-context-menu.css");
+const responsiveCss = read("src/styles/responsive.css");
 const taskbarCss = read("src/styles/shell-taskbar.css");
 
 describe("shell overlay visual regressions", () => {
@@ -41,5 +42,14 @@ describe("shell overlay visual regressions", () => {
     expect(taskbarCss).toContain("env(safe-area-inset-right, 0px)");
     expect(taskbarCss).toContain("grid-template-columns: minmax(0, 1fr)");
     expect(taskbarCss).toContain("max-height: 55dvh");
+  });
+
+  it("uses dynamic viewport units throughout the compact shell breakpoint", () => {
+    expect(responsiveCss).toContain("max-height: calc(100dvh - var(--taskbar-height) - 0.75rem)");
+    expect(responsiveCss).toContain("width: calc(100dvw - 0.75rem)");
+    expect(responsiveCss).toContain("width: min(23rem, calc(100dvw - 0.75rem))");
+    expect(responsiveCss).toContain("width: min(21.75rem, calc(100dvw - 0.75rem))");
+    expect(responsiveCss).not.toContain("100vh");
+    expect(responsiveCss).not.toContain("100vw");
   });
 });
