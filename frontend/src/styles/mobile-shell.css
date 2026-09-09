@@ -16,9 +16,8 @@
     transform: none !important;
   }
 
-  .desktop-window .window-titlebar { min-height: 3rem; touch-action: none; }
-  .desktop-window .window-titlebar [data-window-drag-handle],
-  .desktop-window .window-resize-handle { pointer-events: none !important; display: none !important; }
+  .desktop-window .window-titlebar { min-height: 3rem; touch-action: manipulation; }
+  .desktop-window .resize-handle { pointer-events: none !important; display: none !important; }
   .desktop-window .window-content { min-width: 0; overflow: auto; overscroll-behavior: contain; }
 
   .taskbar {
