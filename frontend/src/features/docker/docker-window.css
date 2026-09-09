@@ -2,6 +2,27 @@
  * Modal/wizard viewport rules stay in docker-manager.css. */
 
 @container app-window (max-width: 56.25rem) {
+  .docker-manager-layout {
+    grid-template-columns: 3.875rem minmax(0, 1fr);
+  }
+
+  .docker-manager-layout > nav button {
+    justify-content: center;
+    padding: 0.625rem;
+  }
+
+  .docker-manager-layout > nav button span {
+    display: none;
+  }
+
+  .docker-metric-grid {
+    grid-template-columns: repeat(2, minmax(7.5rem, 1fr));
+  }
+
+  .docker-dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .docker-container-summary {
     grid-template-columns: repeat(3, minmax(7rem, 1fr));
   }
@@ -22,9 +43,36 @@
 }
 
 @container app-window (max-width: 38.75rem) {
+  .docker-manager-header,
   .docker-containers-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .docker-manager-header {
+    align-items: flex-start;
+  }
+
+  .docker-manager-layout {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .docker-manager-layout > nav {
+    display: flex;
+    min-height: 3.5rem;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .docker-manager-layout > nav button {
+    width: auto;
+    min-width: 2.75rem;
+  }
+
+  .docker-manager-layout > main {
+    padding: 0.625rem;
   }
 
   .docker-containers-header-actions {
