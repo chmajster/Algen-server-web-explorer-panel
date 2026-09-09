@@ -27,6 +27,13 @@ function visibleViewportBounds() {
   return { left: 0, top: 0, right: width, bottom: height };
 }
 
+function applyVisualViewportConstraints(menu: HTMLDivElement, viewport: ReturnType<typeof visibleViewportBounds>) {
+  const width = Math.max(0, viewport.right - viewport.left - (VIEWPORT_MARGIN * 2));
+  const height = Math.max(0, viewport.bottom - viewport.top - (VIEWPORT_MARGIN * 2));
+  menu.style.setProperty("--system-context-visual-max-width", `${width}px`);
+  menu.style.setProperty("--system-context-visual-max-height", `${height}px`);
+}
+
 export function SystemContextMenuHost() {
   const [request, setRequest] = useState<ManagedContextMenuRequest | null>(() => WebNAS.contextMenu.getCurrent());
   const [submenu, setSubmenu] = useState<{ parent: ManagedContextMenuItem; items: ManagedContextMenuItem[] } | null>(null);
@@ -45,9 +52,11 @@ export function SystemContextMenuHost() {
 
     function updatePosition() {
       if (mobile) return;
-      const rect = ref.current?.getBoundingClientRect();
-      if (!rect) return;
+      const menu = ref.current;
+      if (!menu) return;
       const viewport = visibleViewportBounds();
+      applyVisualViewportConstraints(menu, viewport);
+      const rect = menu.getBoundingClientRect();
       const minX = viewport.left + VIEWPORT_MARGIN;
       const minY = viewport.top + VIEWPORT_MARGIN;
       const maxX = Math.max(minX, viewport.right - rect.width - VIEWPORT_MARGIN);

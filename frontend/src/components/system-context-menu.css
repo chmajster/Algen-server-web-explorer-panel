@@ -1,8 +1,8 @@
 .system-context-menu {
   position: fixed;
   z-index: var(--webnas-layer-context-menu, 6000);
-  max-width: min(24rem, calc(100dvw - 1rem));
-  max-height: min(78dvh, 44rem);
+  max-width: min(24rem, calc(100dvw - 1rem), var(--system-context-visual-max-width, calc(100dvw - 1rem)));
+  max-height: min(78dvh, 44rem, var(--system-context-visual-max-height, calc(100dvh - 1rem)));
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
