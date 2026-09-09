@@ -164,7 +164,7 @@ export function ImageConverterApp({ homePath, permissions, language, toast }: { 
         ? await imageConverterClient.convertDirectory({ source_directory: sourceDirectory, output_directory: outputDirectory || undefined, recursive, overwrite_policy: overwritePolicy, ...options })
         : await imageConverterClient.convertUpload(files, options);
       setResult(next);
-      toast(`${tx.converted}: ${next.converted.length}`, "success");
+      toast(`${tx.converted}: ${next.converted.length}`, "ok");
     } catch (error) {
       toast(String(error), "error");
     } finally {
