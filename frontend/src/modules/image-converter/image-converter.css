@@ -9,14 +9,14 @@
 .image-converter-modes button.active { border-color: var(--accent, #5f8cff); background: color-mix(in srgb, var(--accent, #5f8cff) 16%, var(--panel, #171e29)); }
 .image-converter-modes svg, .image-converter-button svg, .image-converter-folder svg, .image-converter-result button svg { width: 16px; height: 16px; }
 .image-converter-warning { padding: 12px 14px; border: 1px solid #8b5f2a; border-radius: 10px; background: rgba(139, 95, 42, .15); }
-.image-converter-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); gap: 16px; align-items: start; }
+.image-converter-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 16px; align-items: start; }
 .image-converter-panel, .image-converter-options, .image-converter-result { border: 1px solid var(--border, #2b3442); border-radius: 14px; background: var(--panel, #151b24); padding: 16px; }
 .image-converter-panel { display: grid; gap: 14px; min-width: 0; }
 .image-converter-panel label, .image-converter-options label { display: grid; gap: 7px; font-weight: 600; }
 .image-converter-panel label small { font-weight: 400; color: var(--muted, #9ba7b7); }
-.image-converter-panel input:not([type="checkbox"]), .image-converter-options select { width: 100%; box-sizing: border-box; border: 1px solid var(--border, #334054); border-radius: 9px; background: var(--input, #0f151e); color: inherit; padding: 10px 11px; }
+.image-converter-panel input:not([type="checkbox"]), .image-converter-options input:not([type="checkbox"]):not([type="range"]), .image-converter-options select { width: 100%; box-sizing: border-box; border: 1px solid var(--border, #334054); border-radius: 9px; background: var(--input, #0f151e); color: inherit; padding: 10px 11px; }
 .image-converter-options input[type="range"] { width: 100%; }
-.image-converter-check { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 8px !important; }
+.image-converter-check { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 8px !important; font-weight: 500 !important; }
 .image-converter-browser { display: grid; gap: 8px; max-height: 390px; overflow: auto; padding: 10px; border: 1px solid var(--border, #2b3442); border-radius: 10px; background: var(--input, #101620); }
 .image-converter-folder { width: 100%; text-align: left; }
 .image-converter-image-list { display: grid; gap: 4px; padding-top: 8px; border-top: 1px solid var(--border, #2b3442); }
@@ -31,6 +31,9 @@
 .image-converter-selected > div { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .image-converter-selected > div button { border: 0; background: transparent; color: var(--accent, #7da0ff); cursor: pointer; }
 .image-converter-options { display: grid; gap: 16px; position: sticky; top: 8px; }
+.image-converter-fieldset { display: grid; gap: 12px; margin: 0; padding: 12px; border: 1px solid var(--border, #334054); border-radius: 10px; }
+.image-converter-fieldset legend { padding: 0 6px; font-size: .85rem; color: var(--muted, #9ba7b7); }
+.image-converter-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .image-converter-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 10px; padding: 11px 14px; font-weight: 700; background: var(--accent, #5f8cff); color: white; cursor: pointer; }
 .image-converter-primary:disabled { opacity: .45; cursor: not-allowed; }
 .image-converter-primary svg { width: 17px; height: 17px; }
@@ -38,4 +41,8 @@
 .image-converter-result > div { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .image-converter-result code { overflow-wrap: anywhere; color: var(--muted, #9ba7b7); }
 .image-converter-result details p { overflow-wrap: anywhere; }
-@media (max-width: 760px) { .image-converter-app { padding: 12px; } .image-converter-layout { grid-template-columns: 1fr; } .image-converter-options { position: static; } }
+.image-converter-summary { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px !important; }
+.image-converter-summary > span { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border, #334054); border-radius: 10px; background: var(--input, #101620); }
+.image-converter-summary small { color: var(--muted, #9ba7b7); }
+@media (max-width: 760px) { .image-converter-app { padding: 12px; } .image-converter-layout { grid-template-columns: 1fr; } .image-converter-options { position: static; } .image-converter-summary { grid-template-columns: 1fr !important; } }
+@media (max-width: 430px) { .image-converter-grid2 { grid-template-columns: 1fr; } }
