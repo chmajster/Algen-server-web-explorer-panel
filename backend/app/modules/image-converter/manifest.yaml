@@ -1,7 +1,7 @@
 id: image-converter
 name: Image Converter
-description: Convert, resize and optimize photos from server directories or temporary browser uploads.
-long_description: Native WebNAS image conversion for JPEG, PNG, WebP, AVIF, TIFF and BMP output. Users can browse allowed server directories or upload images temporarily, resize while preserving aspect ratio, control metadata and output naming, choose collision behavior, convert batches and download temporary results as a ZIP archive.
+description: Convert photos from server directories or temporary browser uploads.
+long_description: Native WebNAS image conversion for JPEG, PNG, WebP, AVIF, TIFF and BMP output. Users can browse allowed server directories or upload images temporarily, resize and optimize batches, control metadata and naming, and download temporary results as a ZIP archive.
 category: system_tools
 version: "1.1.0"
 maintainer: WebNAS
@@ -29,7 +29,7 @@ capabilities:
   import_export: true
   healthcheck: true
   resources: [images, directories, temporary-batches]
-  actions: [browse, convert_directory, convert_upload, download_archive, resize, optimize, rename]
+  actions: [browse, convert_directory, convert_upload, download_archive]
 ports: []
 dependencies: []
 conflicts: []
@@ -46,5 +46,6 @@ package_less: true
 healthcheck: health.py
 ui: {hidden: false}
 changelog:
-  - v1.1.0: Added resizing, aspect-ratio control, EXIF/ICC stripping, filename prefix/suffix, collision policies, presets and conversion size statistics.
-  - v1.0.0: Initial Image Converter with allowed-directory conversion and temporary upload batches.
+  - Redesigned the converter UI with a source-settings-result workflow, responsive directory browser, upload dropzone, status cards and clearer mobile controls.
+  - Added resizing, optimization presets, metadata stripping, file naming controls, collision policies and size statistics.
+  - Initial Image Converter with allowed-directory conversion and temporary upload batches.
