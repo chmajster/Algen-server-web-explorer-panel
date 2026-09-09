@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import NoReturn
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
@@ -23,11 +25,11 @@ class DirectoryConversionRequest(BaseModel):
     recursive: bool = False
 
 
-def _fail(error: ImageConverterError) -> None:
+def _fail(error: ImageConverterError) -> NoReturn:
     status = 422
     if error.code in {"DIRECTORY_NOT_FOUND", "BATCH_NOT_FOUND"}:
         status = 404
-    elif error.code in {"FILE_TOO_LARGE", "TOO_MANY_FILES"}:
+    elif error.code in {"FILE_TOO_LARGE", "TOO_MANY_FILES", "BATCH_TOO_LARGE"}:
         status = 413
     api_error(status, error.code, str(error))
 
