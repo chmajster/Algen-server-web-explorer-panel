@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import NoReturn
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from pydantic import BaseModel, Field
@@ -15,6 +16,28 @@ from .rbac import IMAGE_CONVERTER_CONVERT, IMAGE_CONVERTER_VIEW
 from .service import MAX_BATCH_BYTES, MAX_DIMENSION, MAX_FILE_BYTES, MAX_UPLOAD_FILES, ImageConverterError, service
 
 router = APIRouter(prefix="/api/modules/image-converter", tags=["image-converter"])
+
+PUBLIC_ERROR_MESSAGES: dict[str, str] = {
+    "ANIMATED_IMAGE_UNSUPPORTED": "Animated images are not supported",
+    "BATCH_NOT_FOUND": "Converted temporary files are no longer available",
+    "BATCH_TOO_LARGE": "The temporary upload exceeds the allowed total size",
+    "CONVERSION_FAILED": "None of the uploaded images could be converted",
+    "DIRECTORY_NOT_FOUND": "Selected directory does not exist",
+    "DIRECTORY_UNREADABLE": "Selected directory cannot be read",
+    "FILE_TOO_LARGE": "An uploaded image exceeds the allowed file size",
+    "IMAGE_TOO_LARGE": "An image exceeds the allowed pixel count",
+    "INVALID_BATCH": "Invalid temporary batch identifier",
+    "INVALID_DIMENSION": "Invalid target image dimensions",
+    "INVALID_IMAGE": "An image could not be decoded or converted",
+    "INVALID_OVERWRITE_POLICY": "Invalid overwrite policy",
+    "INVALID_QUALITY": "Invalid image quality value",
+    "NAME_COLLISION": "A unique output filename could not be created",
+    "NO_IMAGES": "No supported images were found",
+    "TOO_MANY_FILES": "Too many images were provided",
+    "UNSUPPORTED_FORMAT": "Unsupported output image format",
+    "UNSUPPORTED_INPUT": "Unsupported input image format",
+    "WRITE_FAILED": "A converted image could not be written",
+}
 
 
 class DirectoryConversionRequest(BaseModel):
@@ -38,7 +61,8 @@ def _fail(error: ImageConverterError) -> NoReturn:
         status = 404
     elif error.code in {"FILE_TOO_LARGE", "TOO_MANY_FILES", "BATCH_TOO_LARGE"}:
         status = 413
-    api_error(status, error.code, str(error))
+    message = PUBLIC_ERROR_MESSAGES.get(error.code, "Image conversion request failed")
+    api_error(status, error.code, message)
 
 
 @router.get("/formats")
@@ -116,15 +140,16 @@ async def convert_upload(
 
 
 @router.get("/download/{batch_id}")
-def download(batch_id: str, user: SessionUser = Depends(current_user)):
+def download(batch_id: UUID, user: SessionUser = Depends(current_user)):
     authorize(user, IMAGE_CONVERTER_CONVERT)
+    canonical_batch_id = batch_id.hex
     try:
-        archive = service.archive(user.username, batch_id)
+        archive = service.archive(user.username, canonical_batch_id)
     except ImageConverterError as error:
         _fail(error)
     return FileResponse(
         path=archive,
         filename="converted-images.zip",
         media_type="application/zip",
-        background=BackgroundTask(service.delete_batch, user.username, batch_id),
+        background=BackgroundTask(service.delete_batch, user.username, canonical_batch_id),
     )
