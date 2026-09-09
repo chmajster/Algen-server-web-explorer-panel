@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import io
 import zipfile
 from pathlib import Path
@@ -7,7 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app.modules.image_converter import service as image_service_module
+image_service_module = importlib.import_module("app.modules.image_converter.service")
 from app.modules.image_converter.service import ImageConverterError, ImageConverterService, convert_image
 
 
