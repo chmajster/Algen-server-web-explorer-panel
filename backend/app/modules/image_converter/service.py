@@ -175,16 +175,14 @@ class ImageConverterService:
             raise ImageConverterError("DIRECTORY_NOT_FOUND", "Selected source directory does not exist")
         output = resolve_user_path(username, output_directory or str(source / f"converted-{fmt}"))
         assert_write_allowed(output)
+        output_inside_source = output != source and output.is_relative_to(source)
         iterator = source.rglob("*") if recursive else source.iterdir()
         candidates: list[Path] = []
         for item in iterator:
             if len(candidates) > MAX_DIRECTORY_FILES:
                 break
-            try:
-                item.relative_to(output)
+            if output_inside_source and item.is_relative_to(output):
                 continue
-            except ValueError:
-                pass
             if item.is_file() and item.suffix.lower() in INPUT_EXTENSIONS:
                 candidates.append(item)
         if len(candidates) > MAX_DIRECTORY_FILES:
