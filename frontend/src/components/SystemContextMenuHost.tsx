@@ -41,6 +41,7 @@ export function SystemContextMenuHost() {
 
   useLayoutEffect(() => {
     if (!request) return;
+    const currentRequest = request;
 
     function updatePosition() {
       if (mobile) return;
@@ -52,8 +53,8 @@ export function SystemContextMenuHost() {
       const maxX = Math.max(minX, viewport.right - rect.width - VIEWPORT_MARGIN);
       const maxY = Math.max(minY, viewport.bottom - rect.height - VIEWPORT_MARGIN);
       const next = {
-        x: Math.max(minX, Math.min(request.x, maxX)),
-        y: Math.max(minY, Math.min(request.y, maxY)),
+        x: Math.max(minX, Math.min(currentRequest.x, maxX)),
+        y: Math.max(minY, Math.min(currentRequest.y, maxY)),
       };
       setPosition((current) => current.x === next.x && current.y === next.y ? current : next);
     }
