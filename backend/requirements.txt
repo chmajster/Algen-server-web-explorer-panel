@@ -11,3 +11,5 @@ itsdangerous==2.2.0
 aiofiles==25.1.0
 httpx==0.28.1
 cryptography==50.0.1
+Pillow==12.3.0
+pillow-heif==1.7.0
