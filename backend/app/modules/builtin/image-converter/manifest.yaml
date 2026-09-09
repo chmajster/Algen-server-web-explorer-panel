@@ -1,0 +1,10 @@
+id: image-converter
+name: Image Converter
+version: 1.0.0
+category: tools
+icon: images
+permissions: [image_converter.view, image_converter.convert]
+routers: [app.modules.image_converter.router:router]
+dependencies: [identity]
+capabilities: [browse, convert-directory, temporary-upload, download-archive]
+menu: [{id: image-converter, label: Image Converter, icon: images, permission: image_converter.view}]
