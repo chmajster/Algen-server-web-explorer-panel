@@ -9,6 +9,8 @@ function read(relativePath) {
 
 const main = read("src/main.tsx");
 const responsive = read("src/styles/responsive.css");
+const dsm = read("src/styles/dsm.css");
+const dialogCompat = read("src/styles/dialog-compat.css");
 const fileManager = read("src/styles/file-manager.css");
 const rbac = read("src/features/admin/rbac-access.css");
 const storage = read("src/features/storage/storage-manager.css");
@@ -17,6 +19,8 @@ const apiExplorer = read("src/styles/api-explorer.css");
 const orm = read("src/features/modules/os-repositories/offline-repository-manager.css");
 const designSystem = read("src/styles/design-system.css");
 const identity = read("src/styles/identity.css");
+const moduleApp = read("src/features/modules/ModuleApp.tsx");
+const ansibleWindow = read("src/features/modules/ansible/ansible-window.css");
 const dockerWindow = read("src/features/docker/docker-window.css");
 const dockerApp = read("src/features/docker/DockerManagerApp.tsx");
 const credentialsWindow = read("src/modules/credentials/credentials-window.css");
@@ -47,11 +51,26 @@ describe("feature-owned responsiveness inside resizable desktop windows", () => 
       ".docker-manager-layout",
       ".file-workspace",
       ".policy-browser",
+      ".credential-field-grid",
+      ".module-form-grid",
+      ".modal-footer > button",
     ]) expect(responsive).not.toContain(selector);
     expect(responsive).toContain(".desktop .taskbar-primary");
     expect(responsive).toContain(".desktop .app-launcher");
     expect(responsive).toContain(".desktop .notification-center");
     expect(responsive).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("keeps shared module forms responsive in DSM", () => {
+    expect(dsm).toContain("@container app-window (max-width: 47.5rem)");
+    expect(dsm).toContain(".module-form-grid");
+    expect(dsm).toContain("grid-template-columns: minmax(0, 1fr)");
+  });
+
+  it("keeps narrow dialog actions with the dialog owner", () => {
+    expect(dialogCompat).toContain("@container app-window (max-width: 37.5rem)");
+    expect(dialogCompat).toContain(".desktop .modal-footer > button");
+    expect(dialogCompat).toContain("flex: 1 1 auto");
   });
 
   it("keeps File Manager responsive to its desktop window", () => {
@@ -108,6 +127,13 @@ describe("feature-owned responsiveness inside resizable desktop windows", () => 
     expect(identity).toContain("@container app-window (max-width: 38.75rem)");
     expect(identity).toContain("min-width: min(11.25rem, 100%)");
     expect(identity).toContain("grid-template-columns: auto minmax(0, 1fr)");
+  });
+
+  it("loads Ansible credential window rules with the module owner", () => {
+    expect(moduleApp).toContain('import "./ansible/ansible-window.css"');
+    expect(ansibleWindow).toContain("@container app-window (max-width: 43.75rem)");
+    expect(ansibleWindow).toContain(".credential-field-grid");
+    expect(ansibleWindow).toContain("grid-template-columns: minmax(0, 1fr)");
   });
 
   it("loads Docker window rules with Docker instead of main.tsx", () => {
