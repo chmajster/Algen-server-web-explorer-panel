@@ -1,0 +1,6 @@
+- Fixed the compact Settings layout so the desktop sidebar is hidden reliably in narrow resizable windows regardless of stylesheet load order.
+- Replaced dark-only fallback colors in Network Tools, Security Center, Firewall Manager and Compliance Manager with the shared light/dark theme tokens.
+- Aligned Desktop Widgets with the canonical WebNAS design tokens and added compatibility aliases for legacy token names so unresolved `var()` references no longer invalidate visual declarations.
+- Changed the phone-width File Manager directory tree from a file-covering overlay into a bounded top pane while preserving the existing tree toggle.
+- Kept simple input and confirmation dialogs content-sized on phones instead of stretching a one-field form across the full mobile workspace.
+- Added focused Vitest and Playwright regression coverage for the visual audit fixes.
