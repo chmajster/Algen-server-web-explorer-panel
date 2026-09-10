@@ -83,21 +83,6 @@
   }
 }
 
-/* Compact taskbar ------------------------------------------------------------ */
-@media (max-width: 360px) {
-  /* The 320-360 px shell cannot fit Start/running-app controls together with
-   * transfer, background-action, notifications, user and clock controls. The
-   * optional status indicators remain available from their applications. */
-  .desktop .system-tray > :where(.transfer-indicator, .actions-indicator) {
-    display: none;
-  }
-
-  .desktop .taskbar-primary,
-  .desktop.taskbar-align-left .taskbar-primary {
-    max-width: 6.125rem;
-  }
-}
-
 /* Touch sizing --------------------------------------------------------------- */
 @media (max-width: 640px) {
   .desktop {
