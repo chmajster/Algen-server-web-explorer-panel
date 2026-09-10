@@ -63,20 +63,20 @@ describe("visual regression corrections", () => {
     expect(compatCss).toContain(".desktop.desktop {");
   });
 
-  it("reacts to resizable application-window width instead of only viewport width", () => {
+  it("reacts to resizable application-window width with cascade-safe selectors", () => {
     for (const breakpoint of [920, 900, 800, 760, 680, 480, 430, 1024, 768]) {
       expect(compatCss).toContain(`@container app-window (max-width: ${breakpoint}px)`);
     }
 
     for (const selector of [
-      ".image-converter-layout",
-      ".alert-manager__summary",
-      ".security-stat-grid",
-      ".dhcp-config-grid",
-      ".cron-fields",
-      ".infra-manager-header",
-      ".ldap-summary-grid",
-      ".auth-mode-grid",
+      ".desktop .image-converter-layout",
+      ".desktop .alert-manager__summary",
+      ".desktop .security-stat-grid",
+      ".desktop .dhcp-config-grid",
+      ".desktop .cron-fields",
+      ".desktop .infra-manager-header",
+      ".desktop .ldap-summary-grid",
+      ".desktop .auth-mode-grid",
     ]) expect(compatCss).toContain(selector);
   });
 
