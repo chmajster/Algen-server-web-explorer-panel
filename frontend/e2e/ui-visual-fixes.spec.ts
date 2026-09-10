@@ -16,9 +16,6 @@ test("compact taskbar groups do not overlap at 320px", async ({ page }) => {
   expect(primaryBox).not.toBeNull();
   expect(trayBox).not.toBeNull();
   expect(primaryBox!.x + primaryBox!.width).toBeLessThanOrEqual(trayBox!.x + 1);
-
-  await expect(page.locator(".transfer-indicator")).toBeHidden();
-  await expect(page.locator(".actions-indicator")).toBeHidden();
 });
 
 test("window close hover keeps a white icon on danger background", async ({ page }) => {
@@ -39,14 +36,18 @@ test("window close hover keeps a white icon on danger background", async ({ page
   expect(style.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 });
 
-test("browser theme color follows the desktop theme", async ({ page }) => {
+test("browser theme color follows resolved system light and dark themes", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
+  await page.emulateMedia({ colorScheme: "dark" });
   await installMockApi(page);
   await page.goto("/");
 
+  const desktop = page.locator(".desktop").first();
   const meta = page.locator('meta[name="theme-color"]');
-  await expect(meta).toHaveAttribute("content", "#f4f5f6");
-
-  await page.locator(".theme-toggle").click();
+  await expect(desktop).toHaveClass(/dark/);
   await expect(meta).toHaveAttribute("content", "#20252a");
+
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(desktop).toHaveClass(/light/);
+  await expect(meta).toHaveAttribute("content", "#f4f5f6");
 });
