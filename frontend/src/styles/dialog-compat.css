@@ -106,3 +106,32 @@
     max-width: calc(100vw - 1rem);
   }
 }
+
+/* The shared Modal intentionally uses fullscreen geometry on narrow devices for
+ * complex applications. Tiny input/confirmation dialogs are different: their
+ * controls should remain grouped and reachable instead of being separated by a
+ * screen-height empty area. :has() lets us retain the existing public Modal API
+ * and size only the simple dialog shapes by their content. */
+@media (max-width: 700px) {
+  .desktop .modal-panel.dialog-window:has(> .modal-body > .input-dialog-form),
+  .desktop .modal-panel.dialog-window:has(> .modal-body > p:only-child) {
+    top: 50% !important;
+    left: 50% !important;
+    width: min(32rem, calc(100dvw - 1rem)) !important;
+    height: auto !important;
+    min-height: 0;
+    max-height: calc(100dvh - var(--taskbar-height) - 1rem) !important;
+    transform: translate(-50%, -50%) !important;
+  }
+
+  .desktop .modal-panel.dialog-window:has(> .modal-body > .input-dialog-form) .modal-body,
+  .desktop .modal-panel.dialog-window:has(> .modal-body > p:only-child) .modal-body {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .desktop .modal-panel.dialog-window:has(> .modal-body > .input-dialog-form) .modal-footer,
+  .desktop .modal-panel.dialog-window:has(> .modal-body > p:only-child) .modal-footer {
+    flex: 0 0 auto;
+  }
+}

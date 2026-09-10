@@ -277,3 +277,24 @@
     width: 100%;
   }
 }
+
+/* The Settings feature stylesheet can be injected before later shared DSM
+ * styles when the module is lazy-loaded. These selectors deliberately carry
+ * one extra structural component so the compact app-window layout wins on
+ * specificity instead of depending on bundle/load order. */
+@container app-window (max-width: 43.75rem) {
+  .desktop .window-content > .settings-app {
+    display: block;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .desktop .window-content > .settings-app > .settings-sidebar {
+    display: none;
+  }
+
+  .desktop .window-content > .settings-app > .settings-main {
+    min-width: 0;
+    overflow: visible;
+  }
+}

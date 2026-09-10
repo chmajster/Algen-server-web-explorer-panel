@@ -96,4 +96,45 @@
   .desktop .upload-progress-dialog dl {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* A phone-width File Manager must never let the initially visible directory
+   * tree cover almost the entire file list. Keep the existing toggle semantics,
+   * but present the tree as a bounded top pane while it is visible. */
+  .desktop .file-workspace:has(> .directory-tree) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(8rem, 34%) minmax(0, 1fr);
+  }
+
+  .desktop .file-workspace:has(> .directory-tree) > .directory-tree {
+    position: relative;
+    z-index: 1;
+    inset: auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    grid-column: 1;
+    grid-row: 1;
+    padding-top: 2.75rem;
+    overflow: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    box-shadow: none;
+  }
+
+  .desktop .file-workspace:has(> .directory-tree) > .file-content {
+    min-width: 0;
+    min-height: 0;
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .desktop .file-workspace:not(:has(> .directory-tree)) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .desktop .file-workspace:not(:has(> .directory-tree)) > .file-content {
+    grid-column: 1;
+    grid-row: 1;
+  }
 }
