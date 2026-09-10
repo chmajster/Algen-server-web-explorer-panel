@@ -1,0 +1,112 @@
+/* Final visual-regression corrections.
+ * Keep this stylesheet last. It intentionally wins over legacy DSM/mobile
+ * normalization until the older presentation layers are consolidated.
+ */
+
+/* Readability ---------------------------------------------------------------- */
+.desktop.desktop {
+  --text-muted: #606d77;
+}
+
+.desktop.desktop.dark {
+  --text-muted: #9ba6ae;
+}
+
+/* Primary actions must follow the selected accent and keep readable white text. */
+#root .desktop :where(.button-primary, button.button-primary) {
+  border-color: color-mix(in srgb, var(--accent) 58%, #000);
+  color: var(--text-on-accent);
+  background: color-mix(in srgb, var(--accent) 62%, #000);
+}
+
+#root .desktop :where(.button-primary, button.button-primary):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 52%, #000);
+  color: var(--text-on-accent);
+  background: color-mix(in srgb, var(--accent) 56%, #000);
+}
+
+/* Selected navigation already has an accent rail/background; use normal text
+ * instead of low-contrast accent-on-accent combinations. */
+#root .desktop :where(
+  .module-navigation button.active,
+  .package-tabs button.active,
+  .docker-manager-layout > nav button.active,
+  .settings-sidebar nav button.active,
+  .logs-source-tree button.active
+) {
+  color: var(--text-primary);
+}
+
+/* Window chrome -------------------------------------------------------------- */
+#root .desktop .window-controls .window-close:hover {
+  border-left-color: color-mix(in srgb, var(--danger) 72%, #000);
+  color: #fff;
+  background: var(--danger);
+}
+
+/* Legacy Network Management dialogs inherited the light DSM button gradient in
+ * dark mode because that selector was missing from the dark override. */
+#root .desktop.dark .network-modal footer button:not(.button-primary):not(.button-danger) {
+  color: var(--text-primary);
+  background: linear-gradient(var(--surface-elevated), var(--surface-secondary));
+}
+
+/* Layering ------------------------------------------------------------------- */
+.desktop .orm-job-drawer {
+  z-index: var(--webnas-layer-modal, 6000);
+}
+
+.connection-status-banner {
+  z-index: var(--webnas-layer-system-critical, 10000);
+}
+
+/* Keep the connection banner from covering window title bars. Its copy is
+ * deliberately one-line so the desktop offset equals the banner height. */
+.connection-status-copy :where(strong, span) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#root:has(.connection-status-banner) .desktop-surface {
+  top: 3.75rem;
+}
+
+@media (max-width: 700px) {
+  .connection-status-banner {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .connection-status-banner dl {
+    display: none;
+  }
+}
+
+/* Touch sizing --------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .desktop {
+    --control-height: 2.75rem;
+  }
+
+  .desktop .launcher-grid :where(.launcher-desktop, .launcher-pin) {
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .desktop .launcher-grid .launcher-desktop {
+    right: 3.375rem;
+  }
+
+  .desktop .launcher-grid :where(.launcher-desktop, .launcher-pin) svg {
+    width: 1rem;
+    height: 1rem;
+  }
+}
+
+/* Bootstrap failure ---------------------------------------------------------- */
+.boot-screen > .boot-retry {
+  min-width: 7rem;
+}
