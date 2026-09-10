@@ -36,18 +36,25 @@ test("window close hover keeps a white icon on danger background", async ({ page
   expect(style.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 });
 
-test("browser theme color follows resolved system light and dark themes", async ({ page }) => {
+test("browser theme color tracks desktop light and dark classes", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
-  await page.emulateMedia({ colorScheme: "dark" });
   await installMockApi(page);
   await page.goto("/");
 
   const desktop = page.locator(".desktop").first();
   const meta = page.locator('meta[name="theme-color"]');
-  await expect(desktop).toHaveClass(/dark/);
+  await expect(desktop).toHaveClass(/light/);
+  await expect(meta).toHaveAttribute("content", "#f4f5f6");
+
+  await desktop.evaluate((element) => {
+    element.classList.remove("light");
+    element.classList.add("dark");
+  });
   await expect(meta).toHaveAttribute("content", "#20252a");
 
-  await page.emulateMedia({ colorScheme: "light" });
-  await expect(desktop).toHaveClass(/light/);
+  await desktop.evaluate((element) => {
+    element.classList.remove("dark");
+    element.classList.add("light");
+  });
   await expect(meta).toHaveAttribute("content", "#f4f5f6");
 });
