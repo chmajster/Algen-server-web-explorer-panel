@@ -42,6 +42,28 @@
   --radius-control: 0.5rem;
   --radius-panel: 0.75rem;
   --radius-flyout: 1rem;
+
+  /* Compatibility aliases for older feature styles. New code should use the
+     canonical semantic tokens below, but keeping these aliases prevents an
+     unresolved var() from invalidating complete declarations in legacy modules. */
+  --surface: var(--surface-elevated);
+  --surface-muted: var(--surface-secondary);
+  --surface-overlay: var(--surface-glass);
+  --surface-canvas: var(--surface-primary);
+  --surface-raised: var(--surface-elevated);
+  --surface-sunken: var(--surface-secondary);
+  --border: var(--border-subtle);
+  --text: var(--text-primary);
+  --radius-lg: var(--radius-large);
+  --shadow-sm: var(--shadow-menu);
+  --shadow-small: var(--shadow-menu);
+  --shadow-medium: var(--shadow-menu);
+  --shadow-large: var(--shadow-window);
+  --shadow-overlay: var(--shadow-menu);
+  --shadow-control: 0 1px 2px color-mix(in srgb, var(--text-primary) 7%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-contrast: var(--text-on-accent);
+  --button-primary-text: var(--text-on-accent);
 }
 
 .desktop.desktop {
