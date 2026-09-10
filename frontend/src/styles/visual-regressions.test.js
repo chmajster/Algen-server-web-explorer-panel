@@ -29,10 +29,9 @@ describe("visual regression corrections", () => {
     expect(css).toContain("z-index: var(--webnas-layer-system-critical, 10000)");
   });
 
-  it("prevents narrow taskbar collisions and restores touch-sized controls", () => {
-    expect(css).toContain("@media (max-width: 360px)");
-    expect(css).toContain(".transfer-indicator, .actions-indicator");
+  it("restores touch-sized controls without hiding taskbar indicators", () => {
     expect(css).toContain("--control-height: 2.75rem");
+    expect(css).not.toContain("display: none;\n  }\n\n  .desktop .taskbar-primary");
   });
 
   it("styles bootstrap retry and synchronizes browser theme chrome", () => {
