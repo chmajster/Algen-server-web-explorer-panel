@@ -42,138 +42,138 @@
 /*
  * Application windows are independently resizable. Responsive feature layouts
  * therefore need to react to .window-content's app-window container, not only
- * to the browser viewport. The original @media rules remain useful for a real
- * narrow viewport; these container equivalents cover narrow windows on desktop.
+ * to the browser viewport. The .desktop prefix intentionally raises selector
+ * specificity above dynamically loaded module CSS that can be appended later.
  */
 @container app-window (max-width: 920px) {
-  .image-converter-layout { grid-template-columns: 1fr; }
-  .image-converter-options { position: static; }
-  .image-converter-source-footer { grid-template-columns: 1fr; align-items: start; }
+  .desktop .image-converter-layout { grid-template-columns: 1fr; }
+  .desktop .image-converter-options { position: static; }
+  .desktop .image-converter-source-footer { grid-template-columns: 1fr; align-items: start; }
 }
 
 @container app-window (max-width: 680px) {
-  .image-converter-app { padding: 12px; gap: 12px; }
-  .image-converter-hero { grid-template-columns: auto minmax(0, 1fr); padding: 15px; }
-  .image-converter-ready { grid-column: 1 / -1; justify-self: start; }
-  .image-converter-tabs { grid-template-columns: 1fr; }
-  .image-converter-card-heading { align-items: flex-start; }
-  .image-converter-status-grid,
-  .image-converter-summary { grid-template-columns: 1fr; }
-  .image-converter-path-row { grid-template-columns: 1fr; }
-  .image-converter-path-row button { width: 100%; }
-  .image-converter-details p { display: grid; gap: 4px; }
+  .desktop .image-converter-app { padding: 12px; gap: 12px; }
+  .desktop .image-converter-hero { grid-template-columns: auto minmax(0, 1fr); padding: 15px; }
+  .desktop .image-converter-ready { grid-column: 1 / -1; justify-self: start; }
+  .desktop .image-converter-tabs { grid-template-columns: 1fr; }
+  .desktop .image-converter-card-heading { align-items: flex-start; }
+  .desktop .image-converter-status-grid,
+  .desktop .image-converter-summary { grid-template-columns: 1fr; }
+  .desktop .image-converter-path-row { grid-template-columns: 1fr; }
+  .desktop .image-converter-path-row button { width: 100%; }
+  .desktop .image-converter-details p { display: grid; gap: 4px; }
 }
 
 @container app-window (max-width: 430px) {
-  .image-converter-grid2 { grid-template-columns: 1fr; }
-  .image-converter-hero-icon { width: 42px; height: 42px; }
-  .image-converter-source-content { padding: 13px; }
-  .image-converter-card-heading { padding: 13px; }
-  .image-converter-download span { display: none; }
+  .desktop .image-converter-grid2 { grid-template-columns: 1fr; }
+  .desktop .image-converter-hero-icon { width: 42px; height: 42px; }
+  .desktop .image-converter-source-content { padding: 13px; }
+  .desktop .image-converter-card-heading { padding: 13px; }
+  .desktop .image-converter-download span { display: none; }
 }
 
 @container app-window (max-width: 900px) {
-  .alert-manager__summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
-  .split-panel { grid-template-columns: 1fr; }
+  .desktop .alert-manager__summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+  .desktop .split-panel { grid-template-columns: 1fr; }
 }
 
 @container app-window (max-width: 800px) {
-  .security-tool-app { padding: 14px; }
-  .security-tool-header { flex-direction: column; }
-  .security-stat-grid { grid-template-columns: 1fr; }
-  .security-form-grid { grid-template-columns: 1fr; }
-  .security-auth-strip { flex-direction: column; align-items: stretch; }
-  .security-section-title { align-items: flex-start; flex-direction: column; }
+  .desktop .security-tool-app { padding: 14px; }
+  .desktop .security-tool-header { flex-direction: column; }
+  .desktop .security-stat-grid { grid-template-columns: 1fr; }
+  .desktop .security-form-grid { grid-template-columns: 1fr; }
+  .desktop .security-auth-strip { flex-direction: column; align-items: stretch; }
+  .desktop .security-section-title { align-items: flex-start; flex-direction: column; }
 
-  .dhcp-header { align-items: flex-start; }
-  .dhcp-header,
-  .dhcp-section-toolbar { flex-direction: column; }
-  .dhcp-header-actions { width: 100%; justify-content: space-between; }
-  .dhcp-content { padding: 12px; }
-  .dhcp-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dhcp-utilization-card { grid-template-columns: 1fr; }
-  .dhcp-form-grid,
-  .dhcp-security,
-  .dhcp-config-grid { grid-template-columns: 1fr; }
-  .dhcp-form-grid .wide { grid-column: auto; }
-  .dhcp-tabs { padding-left: 8px; padding-right: 8px; }
-  .dhcp-toolbar > * { width: 100%; }
-  .dhcp-toolbar input { min-width: 0; }
-  .dhcp-config-actions { align-items: stretch; flex-direction: column; }
-  .dhcp-table-wrap table { min-width: 760px; }
+  .desktop .dhcp-header { align-items: flex-start; }
+  .desktop .dhcp-header,
+  .desktop .dhcp-section-toolbar { flex-direction: column; }
+  .desktop .dhcp-header-actions { width: 100%; justify-content: space-between; }
+  .desktop .dhcp-content { padding: 12px; }
+  .desktop .dhcp-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .desktop .dhcp-utilization-card { grid-template-columns: 1fr; }
+  .desktop .dhcp-form-grid,
+  .desktop .dhcp-security,
+  .desktop .dhcp-config-grid { grid-template-columns: 1fr; }
+  .desktop .dhcp-form-grid .wide { grid-column: auto; }
+  .desktop .dhcp-tabs { padding-left: 8px; padding-right: 8px; }
+  .desktop .dhcp-toolbar > * { width: 100%; }
+  .desktop .dhcp-toolbar input { min-width: 0; }
+  .desktop .dhcp-config-actions { align-items: stretch; flex-direction: column; }
+  .desktop .dhcp-table-wrap table { min-width: 760px; }
 }
 
 @container app-window (max-width: 480px) {
-  .dhcp-metrics { grid-template-columns: 1fr; }
-  .dhcp-header { padding: 14px; }
-  .dhcp-content { padding: 10px; }
-  .dhcp-row-actions { flex-wrap: wrap; }
-  .dhcp-plan > div { grid-template-columns: 1fr; }
+  .desktop .dhcp-metrics { grid-template-columns: 1fr; }
+  .desktop .dhcp-header { padding: 14px; }
+  .desktop .dhcp-content { padding: 10px; }
+  .desktop .dhcp-row-actions { flex-wrap: wrap; }
+  .desktop .dhcp-plan > div { grid-template-columns: 1fr; }
 }
 
 @container app-window (max-width: 760px) {
-  .cron-header { align-items: flex-start; padding: .8rem; }
-  .cron-header p,
-  .cron-header .cron-job-state { display: none; }
-  .cron-stats { grid-template-columns: repeat(2, 1fr); padding: .65rem .8rem; }
-  .cron-tabs { padding: 0 .8rem; overflow-x: auto; }
-  .cron-content { padding: .8rem; }
-  .cron-toolbar { align-items: stretch; flex-wrap: wrap; }
-  .cron-search { flex-basis: 100%; }
-  .cron-toolbar > label:not(.cron-search) { flex: 1; }
-  .cron-toolbar > .button-primary { width: 100%; margin-left: 0; }
-  .cron-table-wrap { overflow: visible; border: 0; background: transparent; }
-  .cron-table-wrap table,
-  .cron-table-wrap tbody { display: grid; gap: .65rem; }
-  .cron-table-wrap thead { display: none; }
-  .cron-table-wrap tr { display: grid; gap: .4rem; padding: .75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-elevated); }
-  .cron-table-wrap td { display: grid; grid-template-columns: 7rem minmax(0, 1fr); padding: 0; border: 0; }
-  .cron-table-wrap td::before { content: attr(data-label); color: var(--text-muted); }
-  .cron-table-wrap td code { max-width: 100%; }
-  .cron-row-actions { flex-wrap: wrap; }
-  .cron-form fieldset { grid-template-columns: 1fr; }
-  .cron-form .span-2 { grid-column: 1; }
-  .cron-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .cron-details { grid-template-columns: 1fr; }
-  .cron-details dl { grid-template-columns: 1fr; }
-  .cron-details section { padding: 1rem 0 0; border-top: 1px solid var(--border-subtle); border-left: 0; }
+  .desktop .cron-header { align-items: flex-start; padding: .8rem; }
+  .desktop .cron-header p,
+  .desktop .cron-header .cron-job-state { display: none; }
+  .desktop .cron-stats { grid-template-columns: repeat(2, 1fr); padding: .65rem .8rem; }
+  .desktop .cron-tabs { padding: 0 .8rem; overflow-x: auto; }
+  .desktop .cron-content { padding: .8rem; }
+  .desktop .cron-toolbar { align-items: stretch; flex-wrap: wrap; }
+  .desktop .cron-search { flex-basis: 100%; }
+  .desktop .cron-toolbar > label:not(.cron-search) { flex: 1; }
+  .desktop .cron-toolbar > .button-primary { width: 100%; margin-left: 0; }
+  .desktop .cron-table-wrap { overflow: visible; border: 0; background: transparent; }
+  .desktop .cron-table-wrap table,
+  .desktop .cron-table-wrap tbody { display: grid; gap: .65rem; }
+  .desktop .cron-table-wrap thead { display: none; }
+  .desktop .cron-table-wrap tr { display: grid; gap: .4rem; padding: .75rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-medium); background: var(--surface-elevated); }
+  .desktop .cron-table-wrap td { display: grid; grid-template-columns: 7rem minmax(0, 1fr); padding: 0; border: 0; }
+  .desktop .cron-table-wrap td::before { content: attr(data-label); color: var(--text-muted); }
+  .desktop .cron-table-wrap td code { max-width: 100%; }
+  .desktop .cron-row-actions { flex-wrap: wrap; }
+  .desktop .cron-form fieldset { grid-template-columns: 1fr; }
+  .desktop .cron-form .span-2 { grid-column: 1; }
+  .desktop .cron-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .desktop .cron-details { grid-template-columns: 1fr; }
+  .desktop .cron-details dl { grid-template-columns: 1fr; }
+  .desktop .cron-details section { padding: 1rem 0 0; border-top: 1px solid var(--border-subtle); border-left: 0; }
 
-  .infra-manager-header { align-items: flex-start; flex-direction: column; }
-  .infra-form,
-  .infra-check-grid { grid-template-columns: 1fr; }
-  .infra-form-wide { grid-column: auto; }
-  .infra-audit-list > div { grid-template-columns: 1fr; }
-  .infra-manager-warning small { max-width: none; margin-left: 0; }
+  .desktop .infra-manager-header { align-items: flex-start; flex-direction: column; }
+  .desktop .infra-form,
+  .desktop .infra-check-grid { grid-template-columns: 1fr; }
+  .desktop .infra-form-wide { grid-column: auto; }
+  .desktop .infra-audit-list > div { grid-template-columns: 1fr; }
+  .desktop .infra-manager-warning small { max-width: none; margin-left: 0; }
 }
 
 @container app-window (max-width: 1024px) {
-  .ldap-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ldap-status-grid { grid-template-columns: 1fr; }
-  .auth-users-table th:nth-child(2),
-  .auth-users-table td:nth-child(2) { display: none; }
+  .desktop .ldap-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .desktop .ldap-status-grid { grid-template-columns: 1fr; }
+  .desktop .auth-users-table th:nth-child(2),
+  .desktop .auth-users-table td:nth-child(2) { display: none; }
 }
 
 @container app-window (max-width: 768px) {
-  .auth-mode-grid,
-  .auth-form-grid,
-  .ldap-form-grid { grid-template-columns: 1fr; }
-  .auth-panel__heading,
-  .ldap-panel__heading,
-  .ldap-hero__top,
-  .ldap-action-bar { align-items: stretch; flex-direction: column; }
-  .auth-panel__heading--actions > button { width: 100%; justify-content: center; }
-  .auth-users-table,
-  .auth-users-table tbody,
-  .auth-users-table tr,
-  .auth-users-table td { display: block; width: 100%; }
-  .auth-users-table thead { display: none; }
-  .auth-users-table tr { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
-  .auth-users-table td { display: flex !important; justify-content: space-between; gap: 12px; border: 0; padding: 5px 0; }
-  .auth-users-table td::before { content: attr(data-label); font-size: var(--font-size-xs); color: var(--text-muted); }
-  .auth-users-table__actions { width: auto; }
-  .ldap-summary-grid { grid-template-columns: 1fr; }
-  .ldap-diagnostic-row { grid-template-columns: 1fr; }
-  .ldap-action-bar__actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
-  .auth-restart-banner { grid-template-columns: 1fr; }
-  .auth-restart-banner__icon { display: none; }
+  .desktop .auth-mode-grid,
+  .desktop .auth-form-grid,
+  .desktop .ldap-form-grid { grid-template-columns: 1fr; }
+  .desktop .auth-panel__heading,
+  .desktop .ldap-panel__heading,
+  .desktop .ldap-hero__top,
+  .desktop .ldap-action-bar { align-items: stretch; flex-direction: column; }
+  .desktop .auth-panel__heading--actions > button { width: 100%; justify-content: center; }
+  .desktop .auth-users-table,
+  .desktop .auth-users-table tbody,
+  .desktop .auth-users-table tr,
+  .desktop .auth-users-table td { display: block; width: 100%; }
+  .desktop .auth-users-table thead { display: none; }
+  .desktop .auth-users-table tr { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
+  .desktop .auth-users-table td { display: flex !important; justify-content: space-between; gap: 12px; border: 0; padding: 5px 0; }
+  .desktop .auth-users-table td::before { content: attr(data-label); font-size: var(--font-size-xs); color: var(--text-muted); }
+  .desktop .auth-users-table__actions { width: auto; }
+  .desktop .ldap-summary-grid { grid-template-columns: 1fr; }
+  .desktop .ldap-diagnostic-row { grid-template-columns: 1fr; }
+  .desktop .ldap-action-bar__actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .desktop .auth-restart-banner { grid-template-columns: 1fr; }
+  .desktop .auth-restart-banner__icon { display: none; }
 }
