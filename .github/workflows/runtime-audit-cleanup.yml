@@ -1,0 +1,69 @@
+name: Runtime audit cleanup
+
+on:
+  push:
+    branches:
+      - fix/runtime-audit-followup
+    paths:
+      - .github/workflows/runtime-audit-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/runtime-audit-followup
+          fetch-depth: 0
+      - name: Repair localization codemod and add language regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          source_path = Path("frontend/src/features/settings/NetworkManagementPanels.tsx")
+          text = source_path.read_text(encoding="utf-8")
+
+          while "networkText(networkText(" in text:
+              text = re.sub(r'networkText\(networkText\(("(?:[^"\\]|\\.)*")\)\)', r'networkText(\1)', text)
+
+          text = text.replace(
+              '  "z": "of"\n} as const;',
+              '  "z": "of",\n  "Most": "Bridge",\n  "Tryb bond": "Bond mode",\n  "Aktywna": "Enabled"\n} as const;',
+          )
+          text = text.replace('<option value="bridge">Most</option>', '<option value="bridge">{networkText("Most")}</option>')
+          text = text.replace('<Field label="Tryb bond">', '<Field label={networkText("Tryb bond")}>')
+          text = text.replace('<Field label="Aktywna">', '<Field label={networkText("Aktywna")}>')
+          text = text.replace(
+              '  const browserEnglish = configured === null && typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("en");\n  return configured === "en-US" || browserEnglish ? NETWORK_COPY_EN[polish] || polish : polish;',
+              '  return configured === "en-US" ? NETWORK_COPY_EN[polish] || polish : polish;',
+          )
+          source_path.write_text(text, encoding="utf-8")
+
+          test_path = Path("frontend/src/features/settings/NetworkManagementPanels.test.tsx")
+          tests = test_path.read_text(encoding="utf-8")
+          tests = tests.replace(
+              '  afterEach(() => vi.restoreAllMocks());',
+              '  afterEach(() => { localStorage.removeItem("webnas_language"); vi.restoreAllMocks(); });',
+          )
+          marker = '\n});\n'
+          if 'localizes management controls in English' not in tests:
+              addition = '''\n\n  it("localizes management controls in English", async () => {\n    localStorage.setItem("webnas_language", "en-US");\n    render(<NetworkSettingsSection isAdmin t={t} />);\n    expect((await screen.findAllByText("nas-one")).length).toBeGreaterThan(0);\n    expect(screen.getByText("networkmanager · writable")).toBeInTheDocument();\n    expect(screen.getByText("Active interfaces")).toBeInTheDocument();\n    fireEvent.click(screen.getByRole("tab", { name: "network.tab.interfaces" }));\n    expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();\n    expect(screen.getByText("Selected interface details")).toBeInTheDocument();\n  });\n'''
+              pos = tests.rfind(marker)
+              if pos < 0:
+                  raise SystemExit("Could not locate describe() terminator")
+              tests = tests[:pos] + addition + tests[pos:]
+          test_path.write_text(tests, encoding="utf-8")
+
+          Path(".github/workflows/runtime-audit-cleanup.yml").unlink()
+          PY
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(network): harden bilingual management copy"
+          git push origin HEAD:fix/runtime-audit-followup
