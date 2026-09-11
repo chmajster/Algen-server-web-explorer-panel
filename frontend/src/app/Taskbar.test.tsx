@@ -73,15 +73,13 @@ describe("Windows-like taskbar", () => {
     expect(events.onWindow).toHaveBeenCalledWith(runningFile, "minimize");
   });
 
-  it("groups unpinned dynamic modules under the Modules menu and keeps pinning available", () => {
+  it("keeps running dynamic modules on the taskbar and also exposes them from the Modules menu", () => {
     const moduleWindow: WindowInstance = { ...runningFile, id: "module-1", app: "module", moduleId: "linux-updates" };
     const events = renderTaskbar({ windows: [moduleWindow], activeId: moduleWindow.id, moduleNames: new Map([["linux-updates", "Aktualizacje systemu"]]) });
 
-    expect(within(screen.getByLabelText("desktop.runningApps")).queryByRole("button", { name: "Aktualizacje systemu" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Moduły" }));
-    const modulesMenu = screen.getByRole("menu", { name: "Moduły" });
-    const moduleButton = within(modulesMenu).getByRole("menuitem", { name: "Aktualizacje systemu" });
-    fireEvent.contextMenu(moduleButton);
+    const directButton = within(screen.getByLabelText("desktop.runningApps")).getByRole("button", { name: "Aktualizacje systemu" });
+    expect(directButton).toHaveClass("running", "active");
+    fireEvent.contextMenu(directButton);
     fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
     expect(events.onToggleModulePin).toHaveBeenCalledWith("linux-updates");
 
