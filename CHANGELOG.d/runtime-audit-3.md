@@ -1,1 +1,2 @@
 Harden browser-persisted UI state, container draft restoration, SSE job streams, and system-command error boundaries so malformed local state, malformed stream frames, polling failures, or command stderr cannot crash affected views or leak raw internal diagnostics.
+Harden persisted Network Mount definitions and service/power/transport failures so corrupt SQLite JSON and privileged command diagnostics degrade safely instead of taking down API reads or exposing internal details.
