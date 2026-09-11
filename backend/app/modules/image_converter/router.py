@@ -68,7 +68,7 @@ def _fail(error: ImageConverterError) -> NoReturn:
 @router.get("/formats")
 def formats(user: SessionUser = Depends(current_user)):
     authorize(user, IMAGE_CONVERTER_VIEW)
-    return {"formats": service.formats()}
+    return {"formats": service.formats(), "limits": service.limits()}
 
 
 @router.get("/browse")
