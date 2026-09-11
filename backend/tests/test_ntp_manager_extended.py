@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from app.modules.ntp_manager.diagnostics import parse_chrony_sources
+from app.modules.ntp_manager.history_retention import prune_history_file
 from app.modules.ntp_manager.models import (
     NtpAllowedNetwork,
     NtpBackend,
@@ -16,6 +18,7 @@ from app.modules.ntp_manager.models import (
     NtpSourcesMutation,
     NtpTimezoneInput,
 )
+from app.modules.ntp_manager.preview import build_config_preview
 from app.modules.ntp_manager.service import NtpService
 from app.privileged_broker.infrastructure_policy import InfrastructurePolicyError, _ntp
 from app.privileged_broker.protocol import BrokerRequest, Operation
@@ -106,6 +109,57 @@ def test_ntp_render_preserves_unmanaged_configuration():
     assert "server distro.pool.example iburst" in rendered
     assert "# BEGIN WEBNAS NTP" in rendered
     assert "server time.example.org iburst" in rendered
+
+
+def test_ntp_config_preview_returns_validation_and_unified_diff():
+    original = "server old.example iburst\n"
+    candidate = "server new.example iburst\n"
+    preview = build_config_preview(
+        original=original,
+        candidate=candidate,
+        path="/etc/chrony/chrony.conf",
+        backend="chrony",
+        validation={"ok": True, "validator": "chronyd -p", "output": ""},
+    )
+    assert preview["ok"] is True
+    assert preview["changed"] is True
+    assert preview["backend"] == "chrony"
+    assert preview["path"] == "/etc/chrony/chrony.conf"
+    assert "-server old.example iburst" in preview["diff"]
+    assert "+server new.example iburst" in preview["diff"]
+    assert preview["diff_truncated"] is False
+
+
+def test_ntp_config_preview_is_empty_when_configuration_is_unchanged():
+    content = "server time.example iburst\n"
+    preview = build_config_preview(
+        original=content,
+        candidate=content,
+        path="/etc/chrony.conf",
+        backend="chrony",
+        validation={"ok": True, "validator": "typed-webnas-validation", "output": ""},
+    )
+    assert preview["changed"] is False
+    assert preview["diff"] == ""
+
+
+def test_ntp_history_retention_prunes_by_age_and_record_limit(tmp_path: Path):
+    now = 2_000_000_000.0
+    history = tmp_path / "history.jsonl"
+    records = [
+        {"timestamp": now - 500, "server": "expired"},
+        {"timestamp": now - 90, "server": "first"},
+        {"timestamp": now - 60, "server": "second"},
+        {"timestamp": now - 30, "server": "third"},
+    ]
+    history.write_text("\n".join(json.dumps(item) for item in records) + "\nnot-json\n", encoding="utf-8")
+
+    result = prune_history_file(history, now=now, retention_seconds=120, max_records=2)
+
+    assert result == {"before": 5, "after": 2, "removed": 3, "rewritten": True}
+    kept = [json.loads(line) for line in history.read_text(encoding="utf-8").splitlines()]
+    assert [item["server"] for item in kept] == ["second", "third"]
+    assert history.stat().st_mode & 0o777 == 0o600
 
 
 def test_ntp_native_parser_maps_chrony_states():

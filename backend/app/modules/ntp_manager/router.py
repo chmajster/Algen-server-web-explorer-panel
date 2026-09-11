@@ -23,6 +23,7 @@ from .models import (
     NtpTimezoneInput,
     ServiceActionInput,
 )
+from .preview import build_config_preview
 from .service import NtpBackend, NtpUnavailable, service
 
 register_infrastructure_permissions()
@@ -172,7 +173,14 @@ def validate_config(payload: NtpConfiguration, user: SessionUser = Depends(curre
     path = _controlled(lambda: instance._config_path(backend))
     original = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
     candidate = _controlled(lambda: instance._render(backend, original, payload))
-    return _controlled(lambda: instance._validate_candidate(backend, candidate))
+    validation = _controlled(lambda: instance._validate_candidate(backend, candidate))
+    return build_config_preview(
+        original=original,
+        candidate=candidate,
+        path=str(path),
+        backend=backend.value,
+        validation=validation,
+    )
 
 
 @router.get("/sources")

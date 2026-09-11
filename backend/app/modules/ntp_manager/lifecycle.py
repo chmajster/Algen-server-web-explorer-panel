@@ -4,6 +4,7 @@ import asyncio
 import logging
 from contextlib import suppress
 
+from .history_retention import prune_history_file
 from .service import service
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,9 @@ _history_task: asyncio.Task[None] | None = None
 async def _history_loop() -> None:
     while True:
         try:
-            await asyncio.to_thread(service().record_history)
+            instance = service()
+            await asyncio.to_thread(instance.record_history)
+            await asyncio.to_thread(prune_history_file, instance.history_path)
         except Exception:  # noqa: BLE001 - telemetry must never break the module runtime.
             logger.exception("NTP history sampling failed")
         await asyncio.sleep(300)
