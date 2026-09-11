@@ -1,0 +1,94 @@
+name: One-shot latent syntax fix 2
+on:
+  push:
+    branches:
+      - fix/exhaustive-runtime-audit-3
+    paths:
+      - .github/workflows/one-shot-latent-syntax-fix-2.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/exhaustive-runtime-audit-3
+          fetch-depth: 0
+      - name: Apply all latent syntax and durable-state fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"marker not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          routing = "backend/app/modules/routing_manager/service.py"
+          replace_once(
+              routing,
+              '''        if not path.exists():\n            raise LookupError("transaction not found")\n        return json.loads(path.read_text(encoding="utf-8"))\n''',
+              '''        if not path.exists():\n            raise LookupError("transaction not found")\n        try:\n            transaction = json.loads(path.read_text(encoding="utf-8"))\n        except (OSError, json.JSONDecodeError) as error:\n            raise LookupError("routing transaction state is unavailable") from error\n        if (\n            not isinstance(transaction, dict)\n            or transaction.get("id") != transaction_id\n            or not isinstance(transaction.get("status"), str)\n            or not isinstance(transaction.get("inverse"), list)\n            or not isinstance(transaction.get("persistent"), dict)\n        ):\n            raise LookupError("routing transaction state is invalid")\n        try:\n            float(transaction.get("expires_at"))\n        except (TypeError, ValueError) as error:\n            raise LookupError("routing transaction state is invalid") from error\n        return transaction\n''',
+          )
+          replace_once(
+              routing,
+              '''        for path in self.transactions_dir.glob("*.json"):\n            try:\n                transaction = json.loads(path.read_text(encoding="utf-8"))\n            except OSError, json.JSONDecodeError:\n                continue\n''',
+              '''        for path in self.transactions_dir.glob("*.json"):\n            try:\n                transaction = self._read_transaction(path.stem)\n            except (LookupError, ValueError):\n                continue\n''',
+          )
+
+          gitops = "backend/app/modules/gitops_manager/service.py"
+          replace_once(
+              gitops,
+              '''        try:\n            data = json.loads(self.settings_path.read_text(encoding="utf-8"))\n        except OSError, json.JSONDecodeError:\n            return {"remote": "", "branch": "main"}\n        return {"remote": str(data.get("remote") or ""), "branch": str(data.get("branch") or "main")}\n''',
+              '''        try:\n            data = json.loads(self.settings_path.read_text(encoding="utf-8"))\n        except (OSError, json.JSONDecodeError):\n            return {"remote": "", "branch": "main"}\n        if not isinstance(data, dict):\n            return {"remote": "", "branch": "main"}\n        return {"remote": str(data.get("remote") or ""), "branch": str(data.get("branch") or "main")}\n''',
+          )
+
+          replace_once(
+              "backend/app/jobs/api.py",
+              '''    except KeyError, ValueError:\n        return False\n''',
+              '''    except (KeyError, ValueError):\n        return False\n''',
+          )
+
+          tests = "backend/tests/test_infrastructure_managers.py"
+          replace_once(
+              tests,
+              'from app.modules.routing_manager.models import PolicyRuleInput, RouteInput\n',
+              'from app.modules.routing_manager.models import PolicyRuleInput, RouteInput\nfrom app.modules.routing_manager.service import RoutingService\n',
+          )
+          p = Path(tests)
+          text = p.read_text(encoding="utf-8")
+          marker = 'def test_privileged_routing_policy_rejects_unbounded_commands():\n'
+          addition = '''def test_gitops_settings_fall_back_for_corrupt_or_wrong_shape(tmp_path: Path):\n    service = object.__new__(GitOpsService)\n    service.root = tmp_path / "repo"\n    service.settings_path = tmp_path / "settings.json"\n\n    service.settings_path.write_text("not-json", encoding="utf-8")\n    assert service.settings() == {"remote": "", "branch": "main"}\n\n    service.settings_path.write_text("[]", encoding="utf-8")\n    assert service.settings() == {"remote": "", "branch": "main"}\n\n\ndef test_routing_transaction_reader_rejects_corrupt_durable_state(tmp_path: Path):\n    service = object.__new__(RoutingService)\n    service.transactions_dir = tmp_path\n    transaction_id = "a" * 32\n    path = tmp_path / f"{transaction_id}.json"\n\n    path.write_text("not-json", encoding="utf-8")\n    with pytest.raises(LookupError, match="state is unavailable"):\n        service._read_transaction(transaction_id)\n\n    path.write_text('{"id": "' + transaction_id + '", "status": "pending_confirmation"}', encoding="utf-8")\n    with pytest.raises(LookupError, match="state is invalid"):\n        service._read_transaction(transaction_id)\n\n\n'''
+          if addition not in text:
+              if marker not in text:
+                  raise SystemExit("routing test marker missing")
+              p.write_text(text.replace(marker, addition + marker, 1), encoding="utf-8")
+
+          ci = ".github/workflows/ci.yml"
+          replace_once(
+              ci,
+              '''      - name: Run Ruff\n        run: python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py\n      - name: Run mypy\n''',
+              '''      - name: Run Ruff\n        run: python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py\n      - name: Compile all backend Python modules\n        run: python -m compileall -q backend/app\n      - name: Run mypy\n''',
+          )
+          PY
+      - name: Verify all backend modules compile
+        run: python -m compileall -q backend/app
+      - name: Run focused regression tests
+        run: |
+          python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+          python -m pytest -q backend/tests/test_infrastructure_managers.py
+      - name: Remove helper workflows and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/one-shot-latent-syntax-fix.yml .github/workflows/one-shot-latent-syntax-fix-2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: repair latent module syntax and durable state handling"
+          git push origin HEAD:fix/exhaustive-runtime-audit-3
