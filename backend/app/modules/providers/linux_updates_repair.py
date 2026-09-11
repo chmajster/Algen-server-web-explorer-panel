@@ -6,7 +6,7 @@ from typing import Any
 from ...package_center.executor import redact
 from ...privileged_broker.runtime import broker_command, broker_required
 from .base import CancelCallback, LogCallback, ProgressCallback
-from .linux_updates import LinuxUpdatesProvider
+from .linux_updates import APT_INST_RE, LinuxUpdatesProvider
 
 
 class LinuxUpdatesRepairProvider(LinuxUpdatesProvider):
@@ -18,6 +18,31 @@ class LinuxUpdatesRepairProvider(LinuxUpdatesProvider):
         super().__init__(module_id)
         if "repair_dpkg" not in self.manifest.capabilities.actions:
             self.manifest.capabilities.actions.append("repair_dpkg")
+
+    def _packages(self) -> list[dict[str, Any]]:
+        if self._manager() != "apt-get":
+            return super()._packages()
+        result = self._run(
+            ["apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade"],
+            timeout=90,
+        )
+        output = self._result(result, "APT could not calculate available updates")
+        packages: list[dict[str, Any]] = []
+        for line in output.splitlines():
+            match = APT_INST_RE.match(line)
+            if not match:
+                continue
+            origin = match.group("origin") or ""
+            packages.append(
+                {
+                    "name": match.group("name"),
+                    "current_version": match.group("current") or "",
+                    "available_version": match.group("version"),
+                    "security": "security" in origin.lower(),
+                    "origin": origin,
+                }
+            )
+        return packages
 
     def _run_dpkg_repair(self) -> Any:
         command = ["dpkg", "--configure", "-a"]
