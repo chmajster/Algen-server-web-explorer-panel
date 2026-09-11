@@ -8,10 +8,9 @@ on:
       - .github/workflows/ntp-generate-contract.yml
       - backend/app/modules/ntp_manager/**
       - backend/app/modules/infrastructure_permissions.py
-      - frontend/src/generated/api-types.ts
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate:
@@ -34,8 +33,14 @@ jobs:
       - name: Generate OpenAPI TypeScript contract
         working-directory: frontend
         run: npm run api:generate
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ntp-api-types
-          path: frontend/src/generated/api-types.ts
-          retention-days: 1
+      - name: Commit generated contract
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/generated/api-types.ts
+          if git diff --cached --quiet; then
+            echo "OpenAPI contract already current"
+            exit 0
+          fi
+          git commit -m "chore(api): regenerate OpenAPI contract"
+          git push origin HEAD:feat/ntp-manager
