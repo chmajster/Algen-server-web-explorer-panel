@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import Thread
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,8 @@ from app import uploads
 
 
 def configure(monkeypatch, tmp_path: Path):
+    uploads._sessions.clear()
+    uploads._orphans_cleaned = False
     monkeypatch.setattr(uploads, "get_config", lambda: SimpleNamespace(security=SimpleNamespace(max_upload_size_mb=20)))
     monkeypatch.setattr(uploads, "resolve_user_path", lambda username, path: Path(path))
     monkeypatch.setattr(uploads, "assert_path_allowed", lambda *args, **kwargs: None)
@@ -52,3 +55,37 @@ def test_upload_session_is_private_to_its_owner(monkeypatch, tmp_path):
         uploads.append_upload("bob", started["upload_id"], 0, b"abc")
     assert error.value.status_code == 403
     uploads.cancel_upload("alice", started["upload_id"])
+
+
+def test_first_upload_operation_cleans_orphans_from_a_previous_process(monkeypatch, tmp_path):
+    configure(monkeypatch, tmp_path)
+    orphan = tmp_path / "stale.upload"
+    orphan.write_bytes(b"partial")
+
+    assert uploads.active_uploads() == []
+
+    assert not orphan.exists()
+
+
+def test_completed_import_runs_without_holding_the_global_session_lock(monkeypatch, tmp_path):
+    configure(monkeypatch, tmp_path)
+    started = uploads.start_upload("alice", "/home/alice", "report.txt", 3)
+    lock_was_available: list[bool] = []
+
+    def complete(_session):
+        def probe():
+            acquired = uploads._lock.acquire(blocking=False)
+            lock_was_available.append(acquired)
+            if acquired:
+                uploads._lock.release()
+
+        thread = Thread(target=probe)
+        thread.start()
+        thread.join()
+
+    monkeypatch.setattr(uploads, "_complete", complete)
+
+    finished = uploads.append_upload("alice", started["upload_id"], 0, b"abc")
+
+    assert finished["completed"] is True
+    assert lock_was_available == [True]
