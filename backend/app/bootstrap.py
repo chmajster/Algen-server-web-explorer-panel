@@ -41,7 +41,6 @@ from .resource_sampler import resource_sampler, resource_sampler_loop
 from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
-from .settings_dynamic_ids import enable_dynamic_app_ids
 from .shell_preferences import router as shell_preferences_router
 from .startup_bootstrap import router as startup_bootstrap_router
 from .tasks import task_store
@@ -176,7 +175,6 @@ def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | 
     configure_logging()
     application_settings = settings or get_config()
     module_registry = registry or build_module_registry()
-    enable_dynamic_app_ids(settings_api, (manifest.id for manifest in module_registry.manifests))
     container = ApplicationContainer(application_settings, module_registry)
     settings_api.collect_dashboard = resource_sampler.dashboard
     app = FastAPI(title="WebNAS", version=__version__, lifespan=application_lifespan)
