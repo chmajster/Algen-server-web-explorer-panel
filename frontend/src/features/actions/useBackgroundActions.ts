@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
+  apiUrl,
   type AnsibleExecution,
   type AnsibleScan,
   type AppJob,
@@ -214,7 +215,7 @@ export function useBackgroundActions({
   useEffect(() => {
     if (!activeAnsibleIds || typeof EventSource === "undefined") return;
     const eventSources = activeAnsibleIds.split("|").map((id) => {
-      const source = new EventSource(`/api/modules/ansible-controller/jobs/${encodeURIComponent(id)}/events`, { withCredentials: true });
+      const source = new EventSource(apiUrl(`/api/modules/ansible-controller/jobs/${encodeURIComponent(id)}/events`), { withCredentials: true });
       const update = (event: MessageEvent) => {
         try {
           const value = JSON.parse(event.data) as { execution?: AnsibleExecution };
@@ -238,7 +239,7 @@ export function useBackgroundActions({
   useEffect(() => {
     if (!activeHostsIds || typeof EventSource === "undefined") return;
     const eventSources = activeHostsIds.split("|").map((id) => {
-      const source = new EventSource(`/api/modules/hosts-manager/operations/${encodeURIComponent(id)}/events`, { withCredentials: true });
+      const source = new EventSource(apiUrl(`/api/modules/hosts-manager/operations/${encodeURIComponent(id)}/events`), { withCredentials: true });
       source.onmessage = (event) => {
         try {
           const operation = JSON.parse(event.data) as HostsManagerOperation;
