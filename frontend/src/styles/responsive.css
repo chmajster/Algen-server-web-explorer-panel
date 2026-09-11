@@ -23,11 +23,13 @@
     display: none;
   }
 
-  .desktop .taskbar-items button span {
+  .desktop .taskbar-items button span,
+  .desktop .taskbar-modules-button > span {
     display: none;
   }
 
-  .desktop .taskbar-items button {
+  .desktop .taskbar-items button,
+  .desktop .taskbar-modules-button {
     width: 2.75rem;
     min-width: 2.75rem;
     padding: 0 0.5625rem;
@@ -186,6 +188,10 @@
 
   .desktop .taskbar-items {
     max-width: 2.875rem;
+  }
+
+  .desktop .taskbar-modules-wrap {
+    display: none;
   }
 
   .desktop .system-tray {
