@@ -1,12 +1,14 @@
 id: ntp-manager
 name: NTP Manager
-version: 1.0.0
-category: network
+version: 2.0.0
+category: system
 icon: clock
-permissions: [ntp.view, ntp.manage, ntp.resync]
+permissions: [ntp.view, ntp.manage, ntp.service.control, ntp.sync, ntp.firewall.manage]
 routers: [app.modules.ntp_manager.router:router]
+startup: app.modules.ntp_manager.lifecycle:startup
+shutdown: app.modules.ntp_manager.lifecycle:shutdown
 dependencies: [identity, package-center]
-capabilities: [status, sources, chrony, systemd-timesyncd, ntpd, resync, backup, rollback]
-system_capabilities: [timedatectl, systemctl]
-actions: [configure, resync, restart]
+capabilities: [status, configuration, client, server, client-server, sources, clients, chrony, systemd-timesyncd, ntpd, sync, timezone, firewall, diagnostics, history, backup, rollback]
+system_capabilities: [timedatectl, systemctl, chronyc, chronyd]
+actions: [configure, validate, sync, service-control, firewall, restore, install-chrony]
 menu: [{id: ntp-manager, label: NTP Manager, icon: clock, permission: ntp.view}]
