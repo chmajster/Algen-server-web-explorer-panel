@@ -9,10 +9,10 @@ const manifest: FrontendModuleManifest = {
   id: "ntp-manager",
   labelKey: "NTP Manager",
   icon: <Clock />,
-  category: "network",
+  category: "system",
   permission: "ntp.view",
-  minWidth: 900,
-  minHeight: 600,
+  minWidth: 980,
+  minHeight: 650,
   render: (context) => lazyView(
     <NtpManagerApp permissions={context.profile.permissions} language={context.profile.language} toast={context.toast} />,
     context.t("status.loading"),
