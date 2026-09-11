@@ -1,3 +1,45 @@
+.desktop .taskbar-items button {
+  max-width: 11.75rem;
+}
+
+@media (max-width: 1400px) {
+  .desktop .taskbar-primary,
+  .desktop.taskbar-align-left .taskbar-primary {
+    left: 0.5rem;
+    max-width: calc(100% - 22rem);
+    transform: none;
+  }
+
+  .desktop .taskbar-items {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .desktop .taskbar-items::-webkit-scrollbar {
+    display: none;
+  }
+
+  .desktop .taskbar-items button span,
+  .desktop .taskbar-modules-button > span {
+    display: none;
+  }
+
+  .desktop .taskbar-items button,
+  .desktop .taskbar-modules-button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    padding: 0 0.5625rem;
+  }
+
+  .desktop .taskbar-user span {
+    display: none;
+  }
+}
+
 @media (max-width: 1100px) {
   .desktop .taskbar-primary,
   .desktop.taskbar-align-left .taskbar-primary {
@@ -146,6 +188,10 @@
 
   .desktop .taskbar-items {
     max-width: 2.875rem;
+  }
+
+  .desktop .taskbar-modules-wrap {
+    display: none;
   }
 
   .desktop .system-tray {
