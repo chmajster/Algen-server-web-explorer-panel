@@ -27,6 +27,7 @@ import {
   resourceSummary,
   type ResourceLimitsDraft,
   type ResourceProfile,
+  type UlimitDraft,
 } from "./create-container/ResourceLimitsSection";
 
 function pairs(value: string, invalidMessage: string): Record<string, string> {
@@ -139,10 +140,10 @@ function readContainerDraft(key?: string): ContainerWizardDraft {
       if (raw.memoryReservationUnit === "MB" || raw.memoryReservationUnit === "GB") safe.memoryReservationUnit = raw.memoryReservationUnit;
       if (raw.shmSizeUnit === "MB" || raw.shmSizeUnit === "GB") safe.shmSizeUnit = raw.shmSizeUnit;
       if (typeof raw.oomKillDisable === "boolean") safe.oomKillDisable = raw.oomKillDisable;
-      if (Array.isArray(raw.ulimits)) safe.ulimits = raw.ulimits.flatMap((entry, index) => {
+      if (Array.isArray(raw.ulimits)) safe.ulimits = raw.ulimits.flatMap<UlimitDraft>((entry, index) => {
         if (!entry || Array.isArray(entry) || typeof entry !== "object") return [];
         const item = entry as Record<string, unknown>;
-        const name = item.name === "nofile" ? "nofile" : item.name === "nproc" ? "nproc" : null;
+        const name: UlimitDraft["name"] | null = item.name === "nofile" ? "nofile" : item.name === "nproc" ? "nproc" : null;
         if (!name || typeof item.soft !== "string" || typeof item.hard !== "string") return [];
         return [{ id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1, name, soft: item.soft, hard: item.hard }];
       }).slice(0, 2);
