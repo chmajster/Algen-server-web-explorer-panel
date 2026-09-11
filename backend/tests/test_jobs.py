@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
+import sqlite3
 
 import pytest
 
@@ -119,3 +120,20 @@ def test_sanitizer_redacts_nested_credentials_and_authorization():
     assert result["metadata"]["credential_id"] == "cred-1"
     assert result["metadata"]["password"] == "[REDACTED]"
     assert "abc.def" not in result["message"]
+
+
+def test_corrupt_persisted_job_json_does_not_break_reads(tmp_path):
+    repository = JobRepository(tmp_path / "jobs.sqlite3")
+    job = repository.create(job_type="demo", module="tests", created_by="alice", metadata={"valid": True})
+    repository.append_log(job.id, "info", "hello", {"valid": True})
+    with sqlite3.connect(repository.path) as connection:
+        connection.execute("UPDATE jobs SET result_json=?, metadata_json=? WHERE id=?", ("{broken", "[]", job.id))
+        connection.execute("UPDATE job_logs SET data_json=? WHERE job_id=?", ("not-json", job.id))
+
+    restored = repository.get(job.id)
+    assert restored is not None
+    assert restored.result == {}
+    assert restored.metadata == {}
+    logs = repository.logs(job.id)
+    assert len(logs) == 1
+    assert logs[0].data == {}
