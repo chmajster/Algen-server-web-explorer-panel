@@ -1,104 +1,322 @@
 # NTP Manager
 
-## Overview
+NTP Manager is the WebNAS-native module for Linux time synchronization. It supports NTP client, NTP server and combined client+server operation while reusing the existing WebNAS module registry, RBAC, Activity Center audit log, Job Queue and privileged broker.
 
-NTP Manager provides WebNAS-native visibility and controlled administration of Linux time synchronization. It detects `chrony`/`chronyd`, `systemd-timesyncd` and optional `ntpd` without assuming one distribution-specific backend.
+## Supported modes
 
-The dashboard now includes a normalized diagnostics layer while preserving its existing status fields. Diagnostics are read-only and do not expand the privileged broker command surface.
+- **Disabled** — WebNAS does not configure active upstream or server access in its managed configuration.
+- **Client** — the host synchronizes from configured external NTP sources.
+- **Server** — the host serves time to explicitly allowed local networks. Server mode requires `chrony`.
+- **Client + Server** — the recommended LAN-server mode. WebNAS synchronizes from upstream sources and serves that time to explicitly allowed local clients.
 
-## Health model
+Server mode never generates `allow all`. At least one explicitly enabled IPv4 or IPv6 CIDR is required.
 
-The dashboard classifies the current state as:
+## Supported backends and distributions
 
-- `healthy` — a supported backend is available, synchronization is active, the service is not failed/inactive, a selected source is visible when source telemetry is available, and absolute offset is not above 100 ms.
-- `degraded` — synchronization exists, but the service/source state or offset quality indicates a problem.
-- `unsynchronized` — an NTP backend exists but the host is not currently synchronized.
-- `unavailable` — no supported NTP backend is available.
+The module detects the installed backend and the correct systemd unit instead of assuming a single service name:
 
-The health value is intended for dashboard/status use. It does not replace backend-specific telemetry.
+- `chrony` / `chronyd` — preferred and required for NTP server mode;
+- `systemd-timesyncd` — client mode only;
+- `ntpd` — supported for legacy client status/source management.
 
-## Backend diagnostics
+The implementation supports the distribution families used by WebNAS, including Debian, Ubuntu, RHEL, Rocky Linux, AlmaLinux, Fedora and SUSE/openSUSE. Chrony installation selects `apt-get`, `dnf`, `yum` or `zypper` through the existing typed privileged package operation.
 
-### chrony
+Common service/configuration paths include:
 
-NTP Manager reads:
+- Debian/Ubuntu: `chrony.service`, `/etc/chrony/chrony.conf`;
+- RHEL/Rocky/Alma/Fedora: `chronyd.service`, `/etc/chrony.conf`;
+- other distributions are detected from available binaries, units and configuration files.
 
-- `chronyc tracking` for reference ID/time, stratum, system time correction, last/RMS offset, frequency, residual frequency, skew, root delay, root dispersion, update interval and leap status;
-- `chronyc -n sources` for selected/candidate/unreachable/falseticker/jittery source state, mode, stratum, poll, reach, last receive age, sample offset and uncertainty;
-- `chronyc -n sourcestats` for sample count, runs, sample span, frequency estimate/skew, estimated offset and standard deviation.
+## Configuration ownership and safety
 
-### systemd-timesyncd
+NTP Manager does not blindly overwrite an existing system configuration. For chrony it prefers a WebNAS-owned drop-in when the base configuration declares a supported `confdir`:
 
-NTP Manager combines the existing `timedatectl` synchronization state with `timedatectl show-timesync --all` to expose the active server/address, server port, poll intervals, maximum root distance and frequency data when supported by the installed systemd version.
+```text
+/etc/chrony/conf.d/webnas.conf
+/etc/chrony.d/webnas.conf
+```
 
-### ntpd
+If a compatible drop-in is not available, WebNAS manages only a bounded block in the existing file:
 
-NTP Manager reads `ntpq -pn` for live peer state, selected peer, stratum, poll, reach, delay, offset and jitter. `ntpq -c rv` supplies system-level stratum, refid, root delay/dispersion, frequency, system jitter, clock wander and leap state.
+```text
+# BEGIN WEBNAS NTP
+...
+# END WEBNAS NTP
+```
 
-Backend command failures are returned as diagnostics warnings where possible instead of discarding all remaining telemetry.
+Unmanaged NTP directives outside the WebNAS block are preserved. The UI reports **Wykryto istniejącą konfigurację NTP** when it sees upstream configuration that WebNAS does not own.
 
-## Status and sources
+Every configuration activation follows this transaction:
 
-The dashboard reports synchronization state, timezone, system time, selected backend/service, service state, selected source, offset, stratum, jitter/dispersion, root delay, frequency and leap status when supported.
+1. validate the typed request;
+2. generate the candidate configuration;
+3. reject unsafe constructs such as `allow all`;
+4. use native `chronyd -p -f` validation when the binary is available;
+5. create a private backup with actor/change metadata;
+6. atomically write the candidate through the privileged broker in production;
+7. restart the detected NTP service;
+8. roll back the previous configuration and restart again if activation fails.
 
-The source table normalizes live data across backends and can show source state, mode, selection, stratum, reach, last receive age, delay, offset and jitter/uncertainty. Existing source management remains unchanged.
+Backups are stored below WebNAS `paths.data_dir/ntp-backups` and can be restored from the NTP Manager UI/API.
 
-NTP source changes are confined to a WebNAS-managed block. Existing distribution-managed lines outside that block are preserved. Before a write, WebNAS stores a private backup under `paths.data_dir/ntp-backups`, writes atomically, restarts the detected service and restores the previous content on failure.
+## Upstream NTP sources
 
-## Privilege boundary
+The Sources tab supports:
 
-In standard installations where `WEBNAS_PRIVILEGED_BROKER=required`, writes to `/etc/chrony/chrony.conf`, `/etc/chrony.conf`, `/etc/systemd/timesyncd.conf` and `/etc/ntp.conf`, NTP service changes and resync are executed by the existing root privileged broker. The broker has fixed file/service allowlists and accepts no arbitrary executable or path.
+- hostname, IPv4 and IPv6 sources;
+- `server` and `pool` chrony directives;
+- enable/disable state;
+- preferred sources (`prefer`);
+- add, edit and delete operations;
+- live source quality and selection state.
 
-Diagnostics commands are read-only and execute through the existing unprivileged NTP service process. No new root broker operation is required.
+Example managed chrony lines:
+
+```text
+server time.cloudflare.com iburst prefer
+pool pool.ntp.org iburst
+```
+
+Source input is parsed and validated as structured data. User input is never concatenated into a shell command.
+
+## NTP server and allowed networks
+
+NTP server mode is available with chrony. Configure clients as explicit IPv4/IPv6 CIDRs:
+
+```text
+allow 192.168.10.0/24
+allow 192.168.20.0/24
+allow 2001:db8::/64
+```
+
+Each network can be enabled/disabled and carries a description in WebNAS configuration state. `allow all` is intentionally prohibited.
+
+### Local stratum
+
+The advanced option **Udostępniaj lokalny czas, gdy upstream NTP jest niedostępny** generates, for example:
+
+```text
+local stratum 10
+```
+
+Use this only when intentionally designing a LAN time hierarchy. A server using local stratum can continue serving time even when it is no longer synchronized to a trustworthy upstream source.
+
+## Firewall
+
+NTP uses **UDP/123**. NTP Manager detects:
+
+- `firewalld`;
+- `ufw`;
+- `nftables`.
+
+The dashboard/server tab reports the port as `open`, `blocked` or `unknown`. WebNAS does not open UDP/123 automatically. The administrator must explicitly invoke **Otwórz UDP/123** and have `ntp.firewall.manage`.
+
+For `firewalld`, WebNAS creates the explicit UDP/123 rule and reloads the firewall. For `ufw`, the WebNAS-created rule is labelled `WebNAS NTP`. An unknown nftables ruleset is treated as unmanaged and is not modified automatically; the operation returns a manual-action status instead of guessing the correct table/chain. Existing firewall rules that WebNAS did not create are never removed when NTP server mode is disabled.
+
+## Synchronization status
+
+For chrony the diagnostics layer parses `chronyc tracking` and exposes structured fields such as:
+
+- Reference ID;
+- Stratum;
+- Reference time;
+- System time;
+- Last offset;
+- RMS offset;
+- Frequency / residual frequency;
+- Root delay / root dispersion;
+- Leap status.
+
+The normal UI presents parsed data. Raw/native details remain secondary diagnostics rather than the primary interface.
+
+## Source states
+
+`chronyc sources -v` is normalized to user-facing states:
+
+| Chrony | WebNAS state | Meaning |
+| --- | --- | --- |
+| `^*` | Synchronizacja | currently selected source |
+| `^+` | Dostępny | valid candidate |
+| `^-` | Nieużywany | valid but not selected |
+| `^?` | Niedostępny | communication unavailable |
+| `^x` | Błędny | falseticker / invalid source |
+| `^~` | Niestabilny | excessive variability |
+
+The source table also exposes stratum, poll, reach, last receive time, offset and available jitter/uncertainty telemetry.
+
+## NTP clients
+
+When chrony is acting as a server, the Clients tab reads `chronyc clients` and exposes:
+
+- client address;
+- reverse-DNS hostname when available;
+- NTP request count;
+- dropped request count when present;
+- last activity data.
+
+Reverse-DNS failure is non-fatal and leaves the hostname blank.
+
+## Test NTP server
+
+The test action performs a real UDP NTP query to port 123 using Python sockets. It does not invoke a shell. The result includes:
+
+- reachability/status;
+- resolved response address;
+- stratum;
+- calculated offset in milliseconds;
+- request/response delay in milliseconds.
+
+Hostnames and IPv4/IPv6 addresses are validated before resolution.
+
+## Force synchronization
+
+**Synchronizuj teraz** is protected by `ntp.sync` and requires an explicit UI confirmation because a step change can affect applications, logs, databases, Kerberos and other time-dependent services.
+
+- chrony: `chronyc makestep` through the typed `Operation.NTP` broker policy;
+- timesyncd/ntpd: controlled service restart.
+
+The operation runs as a Job Queue task and the resulting state is re-read after execution.
+
+## Service control
+
+Start, stop and restart are exposed through `ntp.service.control`. NTP Manager detects the actual unit, including `chrony` versus `chronyd`, and the privileged broker accepts only a fixed allowlist of NTP units/actions.
+
+## Time zone and timedatectl
+
+The Timezone tab reads the installed list from:
+
+```text
+timedatectl list-timezones
+```
+
+Search is available in the UI. A timezone change is accepted only if the requested value exists in that list. Production mutation is performed by the typed NTP broker operation using:
+
+```text
+timedatectl set-timezone <validated-zone>
+```
+
+Status includes timezone, system synchronization state, NTP service state and RTC/local-time metadata available from `timedatectl`.
+
+## Diagnostics
+
+The Diagnostics tab checks at least:
+
+- supported backend detection;
+- service state;
+- synchronization state and selected source;
+- UDP/123 firewall status when server mode is active;
+- conflicting active NTP services (`chronyd` + `systemd-timesyncd`, `chronyd` + `ntpd`, etc.);
+- generated/current configuration validity.
+
+Backend-specific telemetry comes from `chronyc`, `timedatectl` and `ntpq` as appropriate. Failures are surfaced as diagnostic warnings/checks rather than raw shell output.
+
+## History and dashboard widget
+
+NTP Manager stores a lightweight history sample containing:
+
+- timestamp;
+- active source;
+- stratum;
+- offset;
+- synchronized true/false.
+
+Samples are throttled to at most one record per five minutes; there is no per-second polling history.
+
+Users with `ntp.view` also receive an NTP widget on the main WebNAS dashboard showing synchronization, source, stratum, offset, role and current chrony client count. The widget uses the same `/dashboard` endpoint and does not expand privilege.
 
 ## API
 
+The module follows the existing WebNAS module API convention rather than introducing a parallel `/api/system/...` routing style:
+
 ```text
 GET    /api/modules/ntp-manager/dashboard
+GET    /api/modules/ntp-manager/status
+GET    /api/modules/ntp-manager/config
+PUT    /api/modules/ntp-manager/config
+POST   /api/modules/ntp-manager/config/validate
+
 GET    /api/modules/ntp-manager/sources
 POST   /api/modules/ntp-manager/sources
+PUT    /api/modules/ntp-manager/sources/{server}
 DELETE /api/modules/ntp-manager/sources/{server}
-POST   /api/modules/ntp-manager/sources/test
-POST   /api/modules/ntp-manager/resync
+POST   /api/modules/ntp-manager/test
+
+GET    /api/modules/ntp-manager/clients
+POST   /api/modules/ntp-manager/sync
 POST   /api/modules/ntp-manager/service
+
+GET    /api/modules/ntp-manager/timezones
+PUT    /api/modules/ntp-manager/timezone
+GET    /api/modules/ntp-manager/diagnostics
+
+GET    /api/modules/ntp-manager/firewall
+POST   /api/modules/ntp-manager/firewall/open
+
+GET    /api/modules/ntp-manager/backups
+POST   /api/modules/ntp-manager/backups/{backup_id}/restore
+GET    /api/modules/ntp-manager/history
+POST   /api/modules/ntp-manager/chrony/install
 ```
 
-`GET /dashboard` preserves the previous status properties and adds normalized diagnostics fields:
-
-```json
-{
-  "backend": "chrony",
-  "available": true,
-  "synchronized": true,
-  "health": "healthy",
-  "metrics": {},
-  "sources": [],
-  "summary": {
-    "source_count": 0,
-    "selected_count": 0,
-    "reachable_count": 0
-  },
-  "warnings": [],
-  "collected_at": 0
-}
-```
-
-`resync` is executed through Job Queue Manager. Chrony uses `chronyc makestep`; timesyncd/ntpd use a controlled service restart.
+Legacy `/resync` and `/sources/test` endpoints are retained as compatibility aliases while the UI uses `/sync` and `/test`.
 
 ## RBAC
 
-- `ntp.view`
-- `ntp.manage`
-- `ntp.resync`
+Backend authorization is mandatory; hiding controls in the frontend is not considered authorization.
 
-Dashboard diagnostics require only `ntp.view`. Configuration/service changes require explicit confirmation, CSRF and Activity Center audit.
+- `ntp.view` — status, sources, clients, diagnostics, history and backups metadata;
+- `ntp.manage` — configuration, sources, timezone, restore and chrony installation;
+- `ntp.service.control` — start/stop/restart;
+- `ntp.sync` — force synchronization;
+- `ntp.firewall.manage` — open UDP/123; admin-only by default.
 
-## Distribution notes
+`ntp.resync` remains registered only for backward compatibility with existing assignments.
 
-Debian/Ubuntu commonly use `/etc/chrony/chrony.conf`; Fedora/RHEL commonly use `/etc/chrony.conf`. `systemd-timesyncd` is optional and may be masked on systems using chrony. `show-timesync` fields depend on the installed systemd version. If no supported backend is installed, the health model reports `unavailable`; mutating operations still return the controlled `NTP_UNAVAILABLE` response.
+Mutating endpoints use the existing WebNAS CSRF/session dependencies. Administrative operations are recorded in Activity Center with the actor, operation, basic non-sensitive parameters and result context.
+
+## Privileged boundary and command injection protection
+
+Production mutations use the existing root privileged broker. `Operation.NTP` is a typed, allowlisted policy; it is not a generic root shell. The broker:
+
+- resolves binaries only from the fixed system path;
+- runs `subprocess` with `shell=False`;
+- accepts only known NTP systemd units/actions;
+- writes only fixed NTP configuration targets;
+- validates timezone syntax and installed zoneinfo paths;
+- exposes explicit firewall operations instead of arbitrary firewall arguments;
+- applies timeouts and bounded output;
+- rejects unknown actions/parameters.
+
+API models separately validate hostnames, IPv4, IPv6, CIDR and timezone values. Tests cover shell-like source strings, path traversal and unallowlisted broker targets/services.
+
+## Network example
+
+```text
+Internet
+  |
+  v
+time.cloudflare.com / pool.ntp.org
+  |
+  v
+WebNAS
+NTP Client + Server
+  | UDP/123
+  +-----------------------------+
+  |              |              |
+  v              v              v
+Server01       Server02         PC01
+```
 
 ## Troubleshooting
 
-Check the health value first, then inspect service state, selected source, reach, offset, jitter/dispersion and backend warnings. For chrony use `chronyc tracking`, `chronyc sources -n` and `chronyc sourcestats -n`; for ntpd use `ntpq -pn` and `ntpq -c rv`; for timesyncd use `timedatectl show-timesync --all`.
+1. Check NTP Manager → **Przegląd** for backend, service state, synchronization, source, stratum and offset.
+2. Open **Diagnostyka** for service conflicts, firewall state and configuration validation.
+3. For chrony, verify source reachability and state in **Źródła czasu**.
+4. If server mode is enabled, confirm at least one explicit allowed network and verify UDP/123.
+5. If chrony is missing, use **Zainstaluj Chrony** and then configure Client, Server or Client + Server mode.
+6. If WebNAS reports existing unmanaged configuration, review it before deciding which settings should be migrated into the WebNAS-managed block.
+7. Use configuration restore if a deliberate change must be reverted.
 
-The server test performs DNS resolution only. Actual UDP/123 synchronization quality is reported by the active NTP backend.
+## Testing policy
+
+Backend tests mock or isolate system effects and never change the CI machine clock. Coverage includes backend/source parsing, IPv4/IPv6/CIDR/hostname validation, client/server/client+server rendering, rollback-related configuration primitives, RBAC/policy boundaries, command injection cases, timezone validation and service/broker allowlists. Frontend tests cover the main source/server forms, view-only RBAC behavior and the main-dashboard NTP widget.
