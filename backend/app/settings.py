@@ -113,16 +113,18 @@ UPDATE_SOURCE_URL = "https://github.com/chmajster/Algen-server-web-explorer-pane
 class AdminRateLimiter:
     def __init__(self) -> None:
         self._attempts: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
 
     def check(self, key: str) -> None:
         cfg = get_config()
         now = time.time()
-        window = self._attempts[key]
-        while window and window[0] < now - 60:
-            window.popleft()
-        if len(window) >= cfg.security.rate_limit_admin_per_minute:
-            raise HTTPException(429, "Too many administrative operations")
-        window.append(now)
+        with self._lock:
+            window = self._attempts[key]
+            while window and window[0] < now - 60:
+                window.popleft()
+            if len(window) >= cfg.security.rate_limit_admin_per_minute:
+                raise HTTPException(429, "Too many administrative operations")
+            window.append(now)
 
 
 admin_rate_limiter = AdminRateLimiter()
@@ -612,7 +614,9 @@ def _run(args: list[str], *, input_text: str | None = None) -> subprocess.Comple
     if result is None:
         result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=60, check=False)
     if result.returncode != 0:
-        raise HTTPException(400, result.stderr.strip() or "System command failed")
+        command = Path(args[0]).name if args else "unknown"
+        logger.warning("settings_admin_command_failed command=%s returncode=%s", command, result.returncode)
+        raise HTTPException(400, "System command failed")
     return result
 
 
@@ -2017,11 +2021,11 @@ def _shutdown_worker(generation: int) -> None:
                         _shutdown_state["state"] = "waiting_for_transfers"
                     continue
                 _run([_tool("systemctl"), "poweroff"])
-        except Exception as exc:
-            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        except Exception:
+            logger.exception("shutdown_system_failed generation=%s", generation)
             with _shutdown_lock:
                 if generation == _shutdown_generation:
-                    _shutdown_state.update(state="failed", error=str(detail), blocker_count=0)
+                    _shutdown_state.update(state="failed", error="System shutdown failed", blocker_count=0)
             return
         return
 

@@ -1058,7 +1058,12 @@ class HostRegistryService:
 
     def _settings_locked(self, connection: sqlite3.Connection) -> dict[str, Any]:
         rows = connection.execute("SELECT key,value_json,updated_at,updated_by FROM hosts_manager_settings").fetchall()
-        values = {str(row["key"]): json.loads(row["value_json"]) for row in rows}
+        values: dict[str, Any] = {}
+        for row in rows:
+            try:
+                values[str(row["key"])] = json.loads(row["value_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
         defaults = HostsManagerSettingsUpdate().model_dump(mode="json")
         updated = max(rows, key=lambda row: float(row["updated_at"])) if rows else None
         return defaults | values | {

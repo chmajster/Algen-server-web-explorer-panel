@@ -137,10 +137,10 @@ class DhcpProvider(ModuleProvider):
             api_error(400, "MODULE_ACTION_NOT_SUPPORTED", "Unsupported DHCP action")
         reference = str(payload.get("input_ref") or "")
         staged: dict[str, Any] = {}
-        if reference:
-            staged = service().read_input(reference)
         object_id = str(payload.get("object_id") or "")
         try:
+            if reference:
+                staged = service().read_input(reference)
             if cancelled():
                 raise InterruptedError("DHCP operation cancelled before execution")
             progress(10, "Validate typed DHCP operation")
