@@ -47,6 +47,10 @@ class ManagedGroupConflictError(ValueError):
     pass
 
 
+class ManagedGroupHierarchyError(ManagedGroupConflictError):
+    pass
+
+
 class ManagedGroupProtectedError(ValueError):
     pass
 
@@ -589,16 +593,16 @@ class HostRegistryService:
                 raise ManagedGroupProtectedError("APMID environment groups can be changed only through APMID or environment settings")
             if payload.parent_id:
                 if payload.parent_id == item_id:
-                    raise ManagedGroupConflictError("group cannot be its own parent")
+                    raise ManagedGroupHierarchyError("group cannot be its own parent")
                 visited = {item_id}
                 ancestor_id = payload.parent_id
                 while ancestor_id:
                     if ancestor_id in visited:
-                        raise ManagedGroupConflictError("group hierarchy cannot contain a cycle")
+                        raise ManagedGroupHierarchyError("group hierarchy cannot contain a cycle")
                     visited.add(ancestor_id)
                     ancestor = connection.execute("SELECT parent_id FROM groups WHERE id=?", (ancestor_id,)).fetchone()
                     if ancestor is None:
-                        raise ManagedGroupConflictError("parent group does not exist")
+                        raise ManagedGroupHierarchyError("parent group does not exist")
                     ancestor_id = str(ancestor["parent_id"]) if ancestor["parent_id"] else ""
             conflict = connection.execute(
                 "SELECT id FROM groups WHERE name=? COLLATE NOCASE AND id<>?",
@@ -622,7 +626,7 @@ class HostRegistryService:
             ).fetchone():
                 raise ManagedGroupProtectedError("APMID environment groups cannot be deleted manually")
             if connection.execute("SELECT 1 FROM groups WHERE parent_id=? LIMIT 1", (group_id,)).fetchone():
-                raise ManagedGroupConflictError("group cannot be deleted while it has child groups")
+                raise ManagedGroupHierarchyError("group cannot be deleted while it has child groups")
             return bool(connection.execute("DELETE FROM groups WHERE id=?", (group_id,)).rowcount)
 
     @staticmethod

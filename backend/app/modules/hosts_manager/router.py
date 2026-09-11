@@ -47,6 +47,7 @@ from .service import (
     SCHEMA_VERSION,
     ApmidInUseError,
     ManagedGroupConflictError,
+    ManagedGroupHierarchyError,
     ManagedGroupProtectedError,
     registry,
     stable_id,
@@ -478,6 +479,8 @@ def groups(user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAG
 def create_group(payload: GroupInput, user: SessionUser = Depends(require_permission(Permission.HOSTS_MANAGER_HOSTS_MANAGE))):
     try:
         item = _service().save_group(payload, user.username)
+    except ManagedGroupHierarchyError as error:
+        api_error(409, "GROUP_HIERARCHY_CONFLICT", str(error))
     except ManagedGroupConflictError as error:
         api_error(409, "GROUP_NAME_CONFLICT", str(error))
     _activity(user.username, "group_create", item["id"])
@@ -490,6 +493,8 @@ def update_group(group_id: str, payload: GroupInput, user: SessionUser = Depends
         item = _service().save_group(payload, user.username, group_id)
     except ManagedGroupProtectedError as error:
         api_error(409, "MANAGED_GROUP_PROTECTED", str(error))
+    except ManagedGroupHierarchyError as error:
+        api_error(409, "GROUP_HIERARCHY_CONFLICT", str(error))
     except ManagedGroupConflictError as error:
         api_error(409, "GROUP_NAME_CONFLICT", str(error))
     _activity(user.username, "group_update", group_id)
@@ -502,8 +507,8 @@ def delete_group(group_id: str, user: SessionUser = Depends(require_permission(P
         removed = _service().delete_group(group_id)
     except ManagedGroupProtectedError as error:
         api_error(409, "MANAGED_GROUP_PROTECTED", str(error))
-    except ManagedGroupConflictError as error:
-        api_error(409, "GROUP_IN_USE", str(error))
+    except ManagedGroupHierarchyError as error:
+        api_error(409, "GROUP_HIERARCHY_CONFLICT", str(error))
     if removed:
         _activity(user.username, "group_delete", group_id)
     return {"ok": removed}
