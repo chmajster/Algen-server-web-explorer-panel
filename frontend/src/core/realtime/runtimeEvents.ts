@@ -1,5 +1,4 @@
 import { apiUrl } from "../api/transport";
-import { apiUrl } from "../api/transport";
 
 export type RuntimeEvent = {
   type: string;

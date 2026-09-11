@@ -1,4 +1,3 @@
-import { apiUrl } from "../../core/api/transport";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,

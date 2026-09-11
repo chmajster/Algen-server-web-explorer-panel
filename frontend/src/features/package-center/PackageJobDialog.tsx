@@ -1,4 +1,3 @@
-import { apiUrl } from "../../core/api/transport";
 import { CheckCircle2, CircleX, ClipboardCopy, Download, LoaderCircle, Pause, Play } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, apiUrl, type AppJob } from "../../api";
