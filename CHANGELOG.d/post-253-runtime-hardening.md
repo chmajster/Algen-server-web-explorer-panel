@@ -1,0 +1,3 @@
+- Serialize administrative rate-limit window updates and stop exposing raw system-command or shutdown exception details to API clients.
+- Make Hosts Manager settings tolerate corrupt persisted JSON and fall back to validated defaults.
+- Normalize invalid DHCP staged input, guarantee staged-input cleanup on failure, and remove the DHCP service/provider circular import.
