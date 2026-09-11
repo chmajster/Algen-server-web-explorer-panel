@@ -1,0 +1,1 @@
+Harden browser-persisted UI state, container draft restoration, SSE job streams, and system-command error boundaries so malformed local state, malformed stream frames, polling failures, or command stderr cannot crash affected views or leak raw internal diagnostics.
