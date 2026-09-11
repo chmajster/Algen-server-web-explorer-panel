@@ -24,51 +24,27 @@ jobs:
 
           api_test = Path("frontend/src/api.test.ts")
           text = api_test.read_text(encoding="utf-8")
-          old = '''  it("uses the public no-cache health check and treats only server errors as unavailable", async () => {
-    const controller = new AbortController();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: false, status: 401, statusText: "Unauthorized" })
-      .mockResolvedValueOnce({ ok: false, status: 503, statusText: "Service Unavailable" });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(api.health(controller.signal)).resolves.toEqual({ status: "ok", service: "webnas" });
-    await expect(api.health(controller.signal)).rejects.toMatchObject({ status: 503 });
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/health", expect.objectContaining({
-      cache: "no-store", credentials: "include", signal: controller.signal,
-    }));
-  });'''
-          new = '''  it("uses the public no-cache health check and rejects every non-2xx response", async () => {
-    const controller = new AbortController();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: false, status: 401, statusText: "Unauthorized", text: async () => "Unauthorized" })
-      .mockResolvedValueOnce({ ok: false, status: 503, statusText: "Service Unavailable", text: async () => "Service Unavailable" });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(api.health(controller.signal)).rejects.toMatchObject({ status: 401 });
-    await expect(api.health(controller.signal)).rejects.toMatchObject({ status: 503 });
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/health", expect.objectContaining({
-      cache: "no-store", credentials: "include", signal: controller.signal,
-    }));
-  });'''
-          if old not in text:
-              raise SystemExit("health regression test block not found")
-          api_test.write_text(text.replace(old, new, 1), encoding="utf-8")
+          replacements = {
+              'it("uses the public no-cache health check and treats only server errors as unavailable", async () => {': 'it("uses the public no-cache health check and rejects every non-2xx response", async () => {',
+              '.mockResolvedValueOnce({ ok: false, status: 401, statusText: "Unauthorized" })': '.mockResolvedValueOnce({ ok: false, status: 401, statusText: "Unauthorized", text: async () => "Unauthorized" })',
+              '.mockResolvedValueOnce({ ok: false, status: 503, statusText: "Service Unavailable" });': '.mockResolvedValueOnce({ ok: false, status: 503, statusText: "Service Unavailable", text: async () => "Service Unavailable" });',
+              'await expect(api.health(controller.signal)).resolves.toEqual({ status: "ok", service: "webnas" });': 'await expect(api.health(controller.signal)).rejects.toMatchObject({ status: 401 });',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"api test fragment not found: {old}")
+              text = text.replace(old, new, 1)
+          api_test.write_text(text, encoding="utf-8")
 
           network_test = Path("frontend/src/features/settings/NetworkManagementPanels.test.tsx")
           text = network_test.read_text(encoding="utf-8")
-          old = '''    fireEvent.click(screen.getByRole("tab", { name: "network.tab.interfaces" }));
-    expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();
-    expect(screen.getByText("Selected interface details")).toBeInTheDocument();'''
-          new = '''    fireEvent.click(screen.getByRole("tab", { name: "network.tab.interfaces" }));
-    expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByText("eth0"));
-    expect(screen.getByText("Selected interface details")).toBeInTheDocument();'''
-          if old not in text:
-              raise SystemExit("network localization test block not found")
-          network_test.write_text(text.replace(old, new, 1), encoding="utf-8")
+          anchor = '    expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();\n    expect(screen.getByText("Selected interface details")).toBeInTheDocument();'
+          replacement = '    expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();\n    fireEvent.click(screen.getByText("eth0"));\n    expect(screen.getByText("Selected interface details")).toBeInTheDocument();'
+          if anchor not in text:
+              raise SystemExit("network localization test fragment not found")
+          network_test.write_text(text.replace(anchor, replacement, 1), encoding="utf-8")
           PY
           git diff --check
-          git rm .github/workflows/one-shot-fix-pr242-tests.yml
       - name: Commit test corrections
         shell: bash
         run: |
