@@ -33,9 +33,28 @@ class UploadSession:
 
 _sessions: dict[str, UploadSession] = {}
 _lock = RLock()
+_orphans_cleaned = False
+
+
+def _cleanup_orphans_once() -> None:
+    global _orphans_cleaned
+    with _lock:
+        if _orphans_cleaned:
+            return
+        _orphans_cleaned = True
+        known = {session.temporary for session in _sessions.values()}
+    try:
+        for temporary in ensure_temp_dir().glob("*.upload"):
+            if temporary not in known:
+                temporary.unlink(missing_ok=True)
+    except OSError:
+        # Cleanup is best effort. A failed cleanup must not make File Manager
+        # unavailable; the normal expiry path gets another chance later.
+        return
 
 
 def start_upload(username: str, destination_dir: str, filename: str, size: int) -> dict:
+    _cleanup_orphans_once()
     _cleanup_expired()
     limit = get_config().security.max_upload_size_mb * 1024 * 1024
     if size < 0 or size > limit:
@@ -45,18 +64,23 @@ def start_upload(username: str, destination_dir: str, filename: str, size: int) 
     destination = resolve_user_path(username, str(directory / safe_name))
     assert_path_allowed(destination, "upload", include_parent=True)
     assert_write_allowed(destination)
+    completed_session: UploadSession | None = None
     with operation_admission():
         temporary = ensure_temp_dir() / f"{uuid4().hex}.upload"
         temporary.touch(mode=0o600, exist_ok=False)
         upload_id = uuid4().hex
         with _lock:
-            _sessions[upload_id] = UploadSession(username=username, destination=destination, temporary=temporary, size=size, created_at=time.time())
-        if size == 0:
-            _complete(upload_id, _sessions[upload_id])
+            session = UploadSession(username=username, destination=destination, temporary=temporary, size=size, created_at=time.time())
+            _sessions[upload_id] = session
+            if size == 0:
+                completed_session = _sessions.pop(upload_id)
+        if completed_session is not None:
+            _complete(completed_session)
     return {"upload_id": upload_id, "offset": 0, "size": size, "path": str(destination), "completed": size == 0}
 
 
 def active_uploads() -> list[dict]:
+    _cleanup_orphans_once()
     _cleanup_expired()
     with _lock:
         sessions = list(_sessions.items())
@@ -76,8 +100,10 @@ def active_uploads() -> list[dict]:
 
 
 def append_upload(username: str, upload_id: str, offset: int, chunk: bytes) -> dict:
+    _cleanup_orphans_once()
     if len(chunk) > MAX_CHUNK_SIZE:
         raise HTTPException(413, "Upload chunk is too large")
+    completed_session: UploadSession | None = None
     with _lock:
         session = _owned_session(username, upload_id)
         if offset != session.received:
@@ -89,12 +115,17 @@ def append_upload(username: str, upload_id: str, offset: int, chunk: bytes) -> d
         session.received += len(chunk)
         completed = session.received == session.size
         received = session.received
+        size = session.size
+        path = str(session.destination)
         if completed:
-            _complete(upload_id, session)
-    return {"upload_id": upload_id, "offset": received, "size": session.size, "path": str(session.destination), "completed": completed}
+            completed_session = _sessions.pop(upload_id)
+    if completed_session is not None:
+        _complete(completed_session)
+    return {"upload_id": upload_id, "offset": received, "size": size, "path": path, "completed": completed}
 
 
 def cancel_upload(username: str, upload_id: str) -> None:
+    _cleanup_orphans_once()
     with _lock:
         session = _owned_session(username, upload_id)
         _sessions.pop(upload_id, None)
@@ -110,14 +141,13 @@ def _owned_session(username: str, upload_id: str) -> UploadSession:
     return session
 
 
-def _complete(upload_id: str, session: UploadSession) -> None:
+def _complete(session: UploadSession) -> None:
     try:
         account = pwd.getpwnam(session.username)
         os.chown(session.temporary, account.pw_uid, account.pw_gid)
         os.chmod(session.temporary, 0o600)
         run_user_op(session.username, "import_upload", {"tmp": str(session.temporary), "dst": str(session.destination)})
     finally:
-        _sessions.pop(upload_id, None)
         session.temporary.unlink(missing_ok=True)
 
 
