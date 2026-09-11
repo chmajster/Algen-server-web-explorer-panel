@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, downloadUrl, type FileItem, type LocalDisk, type SambaConfig, type SambaShare, type SettingsMe, type SettingsPatch, type Task } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
 import type { ToastFn, Translate } from "../../app/types";
+import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { ConfirmDialog, InputDialog, Modal } from "../../components/Modal";
 import { UploadProgressDialog } from "../transfers/UploadProgressDialog";
@@ -107,10 +108,13 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
   const [sharedPaths, setSharedPaths] = useState<Map<string, SambaShare>>(new Map());
   const [sambaRemoval, setSambaRemoval] = useState<SambaShare | null>(null);
   const [treeVisible, setTreeVisible] = useState(() => localStorage.getItem(`${storagePrefix}_tree`) !== "hidden");
-  const [treeWidth, setTreeWidth] = useState(() => Number(localStorage.getItem(`${storagePrefix}_tree_width`) || 238));
+  const [treeWidth, setTreeWidth] = useState(() => readStoredNumber(localStorage.getItem(`${storagePrefix}_tree_width`), 238, 180, 420));
   const [compact, setCompact] = useState(() => settings ? preferences.file_compact_rows : localStorage.getItem(`${storagePrefix}_compact`) === "true");
-  const [view, setView] = useState<ViewMode>(() => settings ? (preferences.file_default_view === "grid" ? "medium" : preferences.file_default_view) : (localStorage.getItem(`${storagePrefix}_view`) as ViewMode) || "list");
-  const [hiddenColumns, setHiddenColumns] = useState<Set<SortField>>(() => new Set(JSON.parse(localStorage.getItem(`${storagePrefix}_hidden_columns`) || "[]")));
+  const [view, setView] = useState<ViewMode>(() => settings ? (preferences.file_default_view === "grid" ? "medium" : preferences.file_default_view) : readStoredEnum(localStorage.getItem(`${storagePrefix}_view`), ["list", "medium", "large"] as const, "list"));
+  const [hiddenColumns, setHiddenColumns] = useState<Set<SortField>>(() => {
+    const valid = new Set<SortField>(columns.map((column) => column.id));
+    return new Set(parseStoredStringArray(localStorage.getItem(`${storagePrefix}_hidden_columns`), columns.length).filter((item): item is SortField => valid.has(item as SortField)));
+  });
   const [widths, setWidths] = useState<Record<SortField, number>>(() => ({ name: 300, size: 100, type: 110, owner: 110, group: 110, permissions: 120, modified: 180 }));
   const [context, setContext] = useState<ContextState | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);

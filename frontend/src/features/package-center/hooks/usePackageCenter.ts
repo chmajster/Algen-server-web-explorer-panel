@@ -74,11 +74,16 @@ export function usePackageCenter(t: Translate, { canManageSources = true }: { ca
     const events = activeIds.split("|").map((id) => {
       const source = new EventSource(apiUrl(`/api/apps/jobs/${encodeURIComponent(id)}/events`), { withCredentials: true });
       source.onmessage = (event) => {
-        const job = JSON.parse(event.data) as AppJob;
-        setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
-        if (["completed", "failed", "cancelled"].includes(job.status)) {
-          void refreshModule(job.module_id);
-          void refresh(true);
+        try {
+          const job = JSON.parse(event.data) as AppJob;
+          if (!job || typeof job.id !== "string" || typeof job.status !== "string" || typeof job.module_id !== "string") return;
+          setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
+          if (["completed", "failed", "cancelled"].includes(job.status)) {
+            void refreshModule(job.module_id);
+            void refresh(true);
+          }
+        } catch {
+          // Ignore one malformed stream frame; the durable polling fallback remains available.
         }
       };
       source.onerror = () => {

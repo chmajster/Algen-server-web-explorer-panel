@@ -100,8 +100,55 @@ type ContainerWizardDraft = {
 function readContainerDraft(key?: string): ContainerWizardDraft {
   if (!key) return {};
   try {
-    const value = JSON.parse(sessionStorage.getItem(key) || "{}") as ContainerWizardDraft;
-    return value && typeof value === "object" ? value : {};
+    const parsed = JSON.parse(sessionStorage.getItem(key) || "{}") as unknown;
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return {};
+    const source = parsed as Record<string, unknown>;
+    const draft: ContainerWizardDraft = {};
+    const assign = draft as unknown as Record<string, unknown>;
+    const stringKeys = [
+      "name", "image", "network", "ports", "environment", "memory", "memorySwap", "cpus", "pids", "hostname", "entrypoint",
+      "workingDir", "containerUser", "networkAliases", "labels", "healthPort", "healthPath", "composeProject", "composeContent", "composeEnvironment",
+    ] as const;
+    for (const field of stringKeys) if (typeof source[field] === "string") assign[field] = source[field];
+    const booleanKeys = ["limitsEnabled", "readOnly", "init", "autoStart", "composeMode", "composeAutoStart"] as const;
+    for (const field of booleanKeys) if (typeof source[field] === "boolean") assign[field] = source[field];
+    if (["no", "always", "unless-stopped", "on-failure"].includes(String(source.restartPolicy))) draft.restartPolicy = source.restartPolicy as ContainerWizardDraft["restartPolicy"];
+    if (["none", "http", "tcp"].includes(String(source.healthType))) draft.healthType = source.healthType as ContainerWizardDraft["healthType"];
+    if (["unlimited", "minimal", "light", "standard", "performance", "custom"].includes(String(source.resourceProfile))) draft.resourceProfile = source.resourceProfile as ResourceProfile;
+    if (Array.isArray(source.mounts)) {
+      draft.mounts = source.mounts.flatMap((raw, index): MountRow[] => {
+        if (!raw || Array.isArray(raw) || typeof raw !== "object") return [];
+        const item = raw as Record<string, unknown>;
+        const type = item.type === "volume" || item.type === "tmpfs" ? item.type : "bind";
+        return [{
+          id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1, type,
+          source: typeof item.source === "string" ? item.source : "", target: typeof item.target === "string" ? item.target : "",
+          readOnly: item.readOnly === true, tmpfsSizeMb: typeof item.tmpfsSizeMb === "string" ? item.tmpfsSizeMb : "",
+        }];
+      }).slice(0, 200);
+    }
+    if (source.resourceLimits && !Array.isArray(source.resourceLimits) && typeof source.resourceLimits === "object") {
+      const raw = source.resourceLimits as Record<string, unknown>;
+      const safe = resourceLimitsFromPayload();
+      const stringFields = ["cpus", "cpuShares", "cpusetCpus", "cpuPeriod", "cpuQuota", "memory", "memorySwap", "memoryReservation", "memorySwappiness", "shmSize", "pids", "blkioWeight", "oomScoreAdj"] as const;
+      for (const field of stringFields) if (typeof raw[field] === "string") safe[field] = raw[field];
+      if (["low", "normal", "high", "custom"].includes(String(raw.cpuSharesPreset))) safe.cpuSharesPreset = raw.cpuSharesPreset as ResourceLimitsDraft["cpuSharesPreset"];
+      if (["low", "normal", "high", "custom"].includes(String(raw.blkioPreset))) safe.blkioPreset = raw.blkioPreset as ResourceLimitsDraft["blkioPreset"];
+      if (raw.memoryUnit === "MB" || raw.memoryUnit === "GB") safe.memoryUnit = raw.memoryUnit;
+      if (raw.memorySwapUnit === "MB" || raw.memorySwapUnit === "GB") safe.memorySwapUnit = raw.memorySwapUnit;
+      if (raw.memoryReservationUnit === "MB" || raw.memoryReservationUnit === "GB") safe.memoryReservationUnit = raw.memoryReservationUnit;
+      if (raw.shmSizeUnit === "MB" || raw.shmSizeUnit === "GB") safe.shmSizeUnit = raw.shmSizeUnit;
+      if (typeof raw.oomKillDisable === "boolean") safe.oomKillDisable = raw.oomKillDisable;
+      if (Array.isArray(raw.ulimits)) safe.ulimits = raw.ulimits.flatMap((entry, index) => {
+        if (!entry || Array.isArray(entry) || typeof entry !== "object") return [];
+        const item = entry as Record<string, unknown>;
+        if (item.name !== "nofile" && item.name !== "nproc") return [];
+        if (typeof item.soft !== "string" || typeof item.hard !== "string") return [];
+        return [{ id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1, name: item.name, soft: item.soft, hard: item.hard }];
+      }).slice(0, 2);
+      draft.resourceLimits = safe;
+    }
+    return draft;
   } catch {
     return {};
   }

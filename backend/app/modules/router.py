@@ -476,7 +476,8 @@ def samba_firewall_open(payload: ModuleAdminRequest, user: SessionUser = Depends
     for command in commands:
         result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False, shell=False)
         if result.returncode != 0:
-            api_error(500, "FIREWALL_UPDATE_FAILED", result.stderr.strip() or "Could not update firewall")
+            logger.warning("module_firewall command failed command=%s returncode=%s", command[0].rsplit("/", 1)[-1], result.returncode)
+            api_error(500, "FIREWALL_UPDATE_FAILED", "Could not update firewall")
     logger.info("module_firewall actor=%s module=samba action=open_ports", user.username)
     record_activity(ActivityCategory.module, "firewall_open", user.username, target="samba", source="modules")
     return {"ok": True, "plan": commands}

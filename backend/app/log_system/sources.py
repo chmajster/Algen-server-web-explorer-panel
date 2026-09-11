@@ -195,7 +195,7 @@ def journal_entries(
     if code != 0:
         if "permission" in stderr.casefold() or "access" in stderr.casefold():
             raise HTTPException(403, "The WebNAS service cannot read this journal")
-        raise HTTPException(502, stderr.strip() or "journalctl could not read logs")
+        raise HTTPException(502, "journalctl could not read logs")
     return [entry for entry in (parse_journal_record(line) for line in stdout.splitlines()) if entry]
 
 
@@ -207,7 +207,7 @@ def dmesg_entries(limit: int) -> list[LogEntry]:
     if code != 0:
         code, stdout, stderr = run_bounded([executable, "--time-format", "iso"], timeout=8)
     if code != 0:
-        raise HTTPException(403 if "permission" in stderr.casefold() else 502, stderr or "dmesg could not be read")
+        raise HTTPException(403 if "permission" in stderr.casefold() else 502, "dmesg permission denied" if "permission" in stderr.casefold() else "dmesg could not be read")
     return [entry for entry in (parse_dmesg_record(line) for line in stdout.splitlines()) if entry][-limit:][::-1]
 
 
@@ -243,7 +243,7 @@ def container_entries(source: str, limit: int, since: float | None, until: float
     args.append(target)
     code, stdout, stderr = run_bounded(args, timeout=15)
     if code != 0:
-        raise HTTPException(502, stderr or "Container logs could not be read")
+        raise HTTPException(502, "Container logs could not be read")
     entries: list[LogEntry] = []
     output = stdout if not stderr else f"{stdout}\n{stderr}"
     for index, line in enumerate(reversed(output.splitlines())):
