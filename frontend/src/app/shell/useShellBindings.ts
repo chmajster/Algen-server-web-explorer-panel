@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 import type { SettingsMe } from "../../api";
 import { apps } from "../registry/builtinModules";
-import type { AppId, Toast, Translate, WindowInstance } from "../types";
+import type { AppId, Toast, Translate } from "../types";
 import type { ViewportMetrics, WindowAction, WindowState } from "../windowState";
 import { WebNAS } from "./WebNASShell";
-import { shellPreferencesClient, type PersistedShellWindow } from "./preferences";
 import type { ShellEvent } from "./managers";
 
 type Setter = Dispatch<SetStateAction<boolean>>;
@@ -32,80 +31,22 @@ type Bindings = {
   restartSystem: () => void;
 };
 
-function persistedWindow(item: WindowInstance): PersistedShellWindow {
-  return {
-    id: item.id,
-    app: item.app,
-    x: Math.round(item.rect.x),
-    y: Math.round(item.rect.y),
-    width: Math.round(item.rect.width),
-    height: Math.round(item.rect.height),
-    minimized: item.minimized,
-    maximized: Boolean(item.restoreRect),
-    restore_x: item.restoreRect ? Math.round(item.restoreRect.x) : null,
-    restore_y: item.restoreRect ? Math.round(item.restoreRect.y) : null,
-    restore_width: item.restoreRect ? Math.round(item.restoreRect.width) : null,
-    restore_height: item.restoreRect ? Math.round(item.restoreRect.height) : null,
-    initial_path: item.initialPath ?? null,
-    module_id: item.moduleId ?? null,
-  };
-}
-
-function restoredWindows(items: PersistedShellWindow[], canUseApp: (app: AppId) => boolean): WindowState {
-  const windows: WindowInstance[] = items
-    .filter((item) => canUseApp(item.app))
-    .map((item, index) => ({
-      id: item.id,
-      app: item.app,
-      rect: { x: item.x, y: item.y, width: item.width, height: item.height },
-      restoreRect: item.maximized && item.restore_x != null && item.restore_y != null && item.restore_width != null && item.restore_height != null
-        ? { x: item.restore_x, y: item.restore_y, width: item.restore_width, height: item.restore_height }
-        : undefined,
-      minimized: item.minimized,
-      zIndex: 11 + index,
-      initialPath: item.initial_path ?? undefined,
-      moduleId: item.module_id ?? undefined,
-    }));
-  const active = [...windows].filter((item) => !item.minimized).sort((a, b) => b.zIndex - a.zIndex)[0]?.id || "";
-  return { windows, activeId: active, counter: windows.length, topZ: 10 + windows.length };
-}
-
 export function useShellBindings(bindings: Bindings) {
   const {
     state, viewport, dispatch, profile, t, toasts, pinned, startPinned, canUseApp, openApp,
     togglePin, toggleStartPin, setLauncherOpen, setNotificationsOpen, setActionsOpen,
     setCalendarOpen, setShutdownOpen, signOut, restartApplication, restartSystem,
   } = bindings;
-  const [backendReady, setBackendReady] = useState(false);
-  const saveTimer = useRef<number | null>(null);
-  const restoredOnce = useRef(false);
   const toastIds = useRef(new Set<number>());
 
   const permittedApps = useMemo(() => apps.filter((app) => !app.hidden && canUseApp(app.id)), [canUseApp]);
 
-  useEffect(() => {
-    let active = true;
-    void shellPreferencesClient.get().then((preferences) => {
-      if (!active) return;
-      if (!restoredOnce.current && profile.startup_windows === "last" && preferences.windows.length > 0) {
-        restoredOnce.current = true;
-        dispatch({ type: "hydrate", state: restoredWindows(preferences.windows, canUseApp) });
-      }
-      setBackendReady(true);
-    }).catch(() => { if (active) setBackendReady(true); });
-    return () => { active = false; };
-  }, [canUseApp, dispatch, profile.startup_windows]);
-
+  // Window state is owned by DesktopController. Keeping a second persisted copy in
+  // shell preferences caused a late backend hydrate to overwrite the current tab's
+  // session/local state after reload.
   useEffect(() => {
     WebNAS.window.bind(state, viewport);
-    if (!backendReady || profile.startup_windows !== "last") return;
-    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      saveTimer.current = null;
-      void shellPreferencesClient.patch({ windows: state.windows.map(persistedWindow) }).catch(() => undefined);
-    }, 300);
-    return () => { if (saveTimer.current !== null) window.clearTimeout(saveTimer.current); };
-  }, [backendReady, profile.startup_windows, state, viewport]);
+  }, [state, viewport]);
 
   useEffect(() => WebNAS.window.subscribe((event: ShellEvent) => {
     if (event.type === "dispatch") dispatch(event.detail as WindowAction);
