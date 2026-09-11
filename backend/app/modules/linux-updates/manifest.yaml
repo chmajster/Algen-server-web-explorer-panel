@@ -25,7 +25,7 @@ capabilities:
   backups: false
   healthcheck: true
   resources: [packages, security, repositories, history, reboot]
-  actions: [refresh, repair_dpkg, upgrade_all, upgrade_security, repository_add, repository_update, repository_enable, repository_disable, repository_delete]
+  actions: [refresh, upgrade_all, upgrade_security, repository_add, repository_update, repository_enable, repository_disable, repository_delete]
 permissions: [package_management]
 proxmox_safe: false
 requires_root: true
