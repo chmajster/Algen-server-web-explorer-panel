@@ -26,7 +26,7 @@ import { cronClient } from "./modules/cron/api/client";
 import { dhcpClient } from "./modules/dhcp/api/client";
 
 export * from "./core/api/contracts";
-export { ApiError, login, logout, me, onAuthenticationInvalidated, resetAuthenticationState, setApiBaseUrl } from "./core/api/transport";
+export { ApiError, apiUrl, login, logout, me, onAuthenticationInvalidated, resetAuthenticationState, setApiBaseUrl } from "./core/api/transport";
 export { alertsClient } from "./modules/alerts/api/client";
 export type { AlertDashboard, AlertItem, AlertRule, AlertRuleInput, AlertSeverity, AlertSink, AlertSinkInput, AlertSinkType, AlertState } from "./modules/alerts/api/client";
 export { downloadUrl } from "./modules/files/api/client";

@@ -1,4 +1,4 @@
-import { ApiError, request } from "../../../core/api/transport";
+import { rawRequest, request } from "../../../core/api/transport";
 import type { LogBoot, LogContainer, LogEntriesResponse, LogEntry, LogQuery, LogSavedView, LogService, LogSourcesResponse, SystemLogs } from "../../../core/api/contracts";
 
 export const logsClient = {
@@ -22,17 +22,7 @@ export const logsClient = {
   updateLogSavedView: (id: string, payload: Omit<LogSavedView, "id" | "builtin">) => request<LogSavedView>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteLogSavedView: (id: string) => request<{ ok: boolean }>(`/api/logs/saved-views/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
   exportLogs: async (payload: LogQuery & { format: "txt" | "json" | "jsonl" | "csv"; limit?: number }) => {
-    const headers = new Headers({ "Content-Type": "application/json" });
-    const res = await fetch("/api/logs/export", { method: "POST", body: JSON.stringify(payload), headers, credentials: "include" });
-    if (!res.ok) {
-      const body = await res.text();
-      let message = body || res.statusText;
-      try {
-        const parsed = JSON.parse(body) as { detail?: string | { message?: string } };
-        message = typeof parsed.detail === "string" ? parsed.detail : parsed.detail?.message || message;
-      } catch { /* plain responses retain their original text */ }
-      throw new ApiError(message, res.status);
-    }
+    const res = await rawRequest("/api/logs/export", { method: "POST", body: JSON.stringify(payload) });
     const disposition = res.headers.get("content-disposition") || "";
     return { blob: await res.blob(), filename: disposition.match(/filename="([^"]+)"/)?.[1] || `webnas-logs.${payload.format}`, truncated: res.headers.get("x-webnas-truncated") === "true" };
   }

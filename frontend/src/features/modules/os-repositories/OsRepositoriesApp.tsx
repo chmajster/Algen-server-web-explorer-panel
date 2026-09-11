@@ -1,3 +1,4 @@
+import { apiUrl } from "../../../core/api/transport";
 import { Archive, CircleAlert, Eye, FileText, KeyRound, ListFilter, PackageOpen, Plus, RefreshCw, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type HostsManagerGroup, type HostsManagerHost, type ModuleStatus, type OsRepository, type OsRepositoryAssignment, type OsRepositoryChannel, type OsRepositoryDashboard, type OsRepositoryJob, type OsRepositoryKey, type OsRepositoryPackage, type OsRepositorySnapshot } from "../../../api";
@@ -194,7 +195,7 @@ function AssignmentDialog({ repositories, t, toast, onClose, onSaved }: { reposi
 
 function JobDialog({ id, t, onClose }: { id: string; t: Translate; onClose: () => void }) {
   const [job, setJob] = useState<(OsRepositoryJob & { logs?: Array<{ id: number; stream: string; line: string }> }) | null>(null);
-  useEffect(() => { let active = true; const load = () => api.osRepositoryJob(id).then((value) => { if (active) setJob(value); }); void load(); const polling = window.setInterval(() => void load(), 3000); let stream: EventSource | null = null; try { stream = new EventSource(`/api/modules/os-repositories/jobs/${encodeURIComponent(id)}/events`); stream.onmessage = (event) => { if (active) setJob(JSON.parse(event.data) as typeof job); }; } catch { /* polling remains active */ } return () => { active = false; window.clearInterval(polling); stream?.close(); }; }, [id]);
+  useEffect(() => { let active = true; const load = () => api.osRepositoryJob(id).then((value) => { if (active) setJob(value); }); void load(); const polling = window.setInterval(() => void load(), 3000); let stream: EventSource | null = null; try { stream = new EventSource(apiUrl(`/api/modules/os-repositories/jobs/${encodeURIComponent(id)}/events`), { withCredentials: true }); stream.onmessage = (event) => { if (active) setJob(JSON.parse(event.data) as typeof job); }; } catch { /* polling remains active */ } return () => { active = false; window.clearInterval(polling); stream?.close(); }; }, [id]);
   return <Modal wide title={t("osRepositories.jobDetails")} closeLabel={t("action.close")} onClose={onClose} footer={<button onClick={onClose}>{t("action.close")}</button>}><div className="osr-job-summary"><strong>{job?.status || t("common.loading")}</strong><span>{job?.stage}</span><progress max="100" value={job?.progress || 0} /></div><pre className="osr-live-log" aria-live="polite">{job?.logs?.map((line) => `[${line.stream}] ${line.line}`).join("\n") || t("osRepositories.noLogs")}</pre></Modal>;
 }
 

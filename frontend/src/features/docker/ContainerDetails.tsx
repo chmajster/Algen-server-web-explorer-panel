@@ -1,3 +1,4 @@
+import { apiUrl } from "../../core/api/transport";
 import {
   ArrowLeft,
   Boxes,
@@ -370,7 +371,7 @@ export function ContainerDetails({
 
   useEffect(() => {
     if (tab !== "logs" || loading || error || !liveLogs) return;
-    const source = new EventSource(`/api/modules/docker/containers/${encodeURIComponent(target)}/logs/stream?tail=0`);
+    const source = new EventSource(apiUrl(`/api/modules/docker/containers/${encodeURIComponent(target)}/logs/stream?tail=0`), { withCredentials: true });
     source.onmessage = (event) => {
       try {
         const value = JSON.parse(event.data) as { line?: string };

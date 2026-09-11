@@ -1,3 +1,5 @@
+import { apiUrl } from "../api/transport";
+
 export type RuntimeEvent = {
   type: string;
   revision: number;
@@ -64,7 +66,7 @@ function connect() {
     return;
   }
   setState("connecting");
-  const next = new EventSource("/api/events", { withCredentials: true });
+  const next = new EventSource(apiUrl("/api/events"), { withCredentials: true });
   source = next;
   next.onopen = () => {
     if (source !== next) return;

@@ -1,3 +1,4 @@
+import { apiUrl } from "../../../core/api/transport";
 import { confirmDialog } from "../../../components/DialogService";
 import {
   AlertTriangle,
@@ -561,7 +562,7 @@ function Hosts({
             {operatingSystems.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
-        <a className="button" href="/api/modules/hosts-manager/hosts-export.csv" download>{t("hosts.list.exportCsv")}</a>
+        <a className="button" href={apiUrl("/api/modules/hosts-manager/hosts-export.csv")} download>{t("hosts.list.exportCsv")}</a>
         {canManage && selectedIds.length > 0 && <button type="button" onClick={() => void bulkDisable()}>{t("hosts.bulk.disable")} ({selectedIds.length})</button>}
         <button type="button" onClick={() => setCards((value) => !value)}>
           {t(cards ? "hosts.view.list" : "hosts.view.cards")}
@@ -2497,7 +2498,7 @@ function Inventory({
         </div>
         <a
           className="button"
-          href="/api/modules/hosts-manager/inventory/export"
+          href={apiUrl("/api/modules/hosts-manager/inventory/export")}
         >
           {t("hosts.inventory.export")}
         </a>

@@ -288,14 +288,14 @@ async def save_upload(username: str, dest_dir: str, upload: UploadFile) -> dict:
     tmp = tmp_dir / f"{uuid4().hex}.upload"
     limit = cfg.security.max_upload_size_mb * 1024 * 1024
     size = 0
-    with tmp.open("wb") as handle:
-        while chunk := await upload.read(1024 * 1024):
-            size += len(chunk)
-            if size > limit:
-                tmp.unlink(missing_ok=True)
-                raise HTTPException(413, "Upload is too large")
-            handle.write(chunk)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
+        with os.fdopen(fd, "wb") as handle:
+            while chunk := await upload.read(1024 * 1024):
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(413, "Upload is too large")
+                handle.write(chunk)
         if current_process_can_impersonate():
             pw = pwd.getpwnam(username)
             os.chown(tmp, pw.pw_uid, pw.pw_gid)
