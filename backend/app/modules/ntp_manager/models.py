@@ -79,8 +79,8 @@ class NtpSourcesMutation(StrictModel):
 
     @model_validator(mode="after")
     def validate_sources(self) -> "NtpSourcesMutation":
-        keys = [(item.kind.value, item.server) for item in self.sources]
-        if len(keys) != len(set(keys)):
+        servers = [item.server for item in self.sources]
+        if len(servers) != len(set(servers)):
             raise ValueError("duplicate NTP sources are not allowed")
         return self
 
@@ -105,8 +105,8 @@ class NtpConfiguration(StrictModel):
 
     @model_validator(mode="after")
     def validate_configuration(self) -> "NtpConfiguration":
-        source_keys = [(item.kind.value, item.server) for item in self.sources]
-        if len(source_keys) != len(set(source_keys)):
+        servers = [item.server for item in self.sources]
+        if len(servers) != len(set(servers)):
             raise ValueError("duplicate NTP sources are not allowed")
         networks = [item.cidr for item in self.allowed_networks]
         if len(networks) != len(set(networks)):
