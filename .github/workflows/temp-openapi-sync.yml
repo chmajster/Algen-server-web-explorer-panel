@@ -1,0 +1,56 @@
+name: Temporary OpenAPI contract sync
+
+on:
+  push:
+    branches:
+      - fix/application-regression-audit
+
+permissions:
+  contents: write
+
+jobs:
+  sync-openapi:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend runtime
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Regenerate OpenAPI TypeScript contract
+        working-directory: frontend
+        run: npm run api:generate
+
+      - name: Commit generated contract and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/temp-openapi-sync.yml
+          git add frontend/src/generated/api-types.ts
+          git commit -m 'chore: refresh OpenAPI contract'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
