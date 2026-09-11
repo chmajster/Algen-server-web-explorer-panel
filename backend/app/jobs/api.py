@@ -23,7 +23,7 @@ def _user(request: Request) -> SessionUser:
 def _allowed(user: SessionUser, permission: str) -> bool:
     try:
         return has_permission(user.username, permission)
-    except KeyError, ValueError:
+    except (KeyError, ValueError):
         return False
 
 

@@ -21,6 +21,7 @@ from app.modules.ntp_manager.diagnostics import (
 from app.modules.ntp_manager.models import NtpBackend, NtpSourceInput
 from app.modules.ntp_manager.service import NtpService
 from app.modules.routing_manager.models import PolicyRuleInput, RouteInput
+from app.modules.routing_manager.service import RoutingService
 from app.privileged_broker.infrastructure_policy import InfrastructurePolicyError, _validate_ip_args
 
 
@@ -168,6 +169,33 @@ def test_routing_models_validate_families_and_policy_rules():
         RouteInput(destination="10.10.0.0/24", gateway="2001:db8::1")
     rule = PolicyRuleInput(source="10.10.0.0/24", destination="all", table="100", family=4)
     assert rule.table == "100"
+
+
+def test_gitops_settings_fall_back_for_corrupt_or_wrong_shape(tmp_path: Path):
+    service = object.__new__(GitOpsService)
+    service.root = tmp_path / "repo"
+    service.settings_path = tmp_path / "settings.json"
+
+    service.settings_path.write_text("not-json", encoding="utf-8")
+    assert service.settings() == {"remote": "", "branch": "main"}
+
+    service.settings_path.write_text("[]", encoding="utf-8")
+    assert service.settings() == {"remote": "", "branch": "main"}
+
+
+def test_routing_transaction_reader_rejects_corrupt_durable_state(tmp_path: Path):
+    service = object.__new__(RoutingService)
+    service.transactions_dir = tmp_path
+    transaction_id = "a" * 32
+    path = tmp_path / f"{transaction_id}.json"
+
+    path.write_text("not-json", encoding="utf-8")
+    with pytest.raises(LookupError, match="state is unavailable"):
+        service._read_transaction(transaction_id)
+
+    path.write_text('{"id": "' + transaction_id + '", "status": "pending_confirmation"}', encoding="utf-8")
+    with pytest.raises(LookupError, match="state is invalid"):
+        service._read_transaction(transaction_id)
 
 
 def test_privileged_routing_policy_rejects_unbounded_commands():
