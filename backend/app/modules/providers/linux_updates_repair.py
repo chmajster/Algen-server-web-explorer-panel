@@ -4,6 +4,7 @@ import shutil
 from typing import Any
 
 from ...package_center.executor import redact
+from ...privileged_broker.runtime import broker_command, broker_required
 from .base import CancelCallback, LogCallback, ProgressCallback
 from .linux_updates import LinuxUpdatesProvider
 
@@ -17,6 +18,23 @@ class LinuxUpdatesRepairProvider(LinuxUpdatesProvider):
         super().__init__(module_id)
         if "repair_dpkg" not in self.manifest.capabilities.actions:
             self.manifest.capabilities.actions.append("repair_dpkg")
+
+    def _run_dpkg_repair(self) -> Any:
+        command = ["dpkg", "--configure", "-a"]
+        if broker_required():
+            result = broker_command(
+                command,
+                timeout=3600,
+                actor="linux-updates-dpkg-repair",
+            )
+            if result is None:
+                raise RuntimeError("Privileged broker rejected dpkg recovery")
+            return result
+        return self._run(
+            command,
+            timeout=3600,
+            env={"DEBIAN_FRONTEND": "noninteractive"},
+        )
 
     def manage(
         self,
@@ -39,9 +57,8 @@ class LinuxUpdatesRepairProvider(LinuxUpdatesProvider):
         if cancelled():
             raise InterruptedError("DPKG repair cancelled before execution")
 
-        command = ["dpkg", "--configure", "-a"]
         log("stdout", "Running dpkg --configure -a")
-        result = self._run(command, timeout=3600, env={"DEBIAN_FRONTEND": "noninteractive"})
+        result = self._run_dpkg_repair()
 
         for line in (result.stdout + "\n" + result.stderr).splitlines()[-500:]:
             if line.strip():
