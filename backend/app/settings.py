@@ -21,7 +21,7 @@ from . import __version__
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import AfterValidator, BaseModel, Field, ValidationError, field_validator
+from pydantic import AfterValidator, BaseModel, Field, ValidationError, WithJsonSchema, field_validator
 
 from .activity import ActivityCategory, record_activity
 from .audit import logger
@@ -155,7 +155,31 @@ def _validate_pinned_app_id(value: str) -> str:
     return value
 
 
-PinnedAppId = Annotated[str, AfterValidator(_validate_pinned_app_id)]
+CORE_PINNED_APP_IDS = (
+    "files",
+    "transfers",
+    "activity",
+    "identity",
+    "users",
+    "groups",
+    "mounts",
+    "samba",
+    "services",
+    "store",
+    "logs",
+    "settings",
+    "monitor",
+    "modules",
+    "access",
+    "containers",
+    "ansible",
+    "module",
+)
+PinnedAppId = Annotated[
+    str,
+    AfterValidator(_validate_pinned_app_id),
+    WithJsonSchema({"type": "string", "enum": list(CORE_PINNED_APP_IDS)}),
+]
 InterfaceFont = Literal["system", "segoe", "arial", "verdana", "tahoma", "georgia", "monospace"]
 DEFAULT_PINNED_APPS: list[PinnedAppId] = ["files", "transfers", "monitor", "settings"]
 
