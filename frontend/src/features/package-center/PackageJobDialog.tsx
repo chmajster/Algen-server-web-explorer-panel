@@ -1,6 +1,6 @@
 import { CheckCircle2, CircleX, ClipboardCopy, Download, LoaderCircle, Pause, Play } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { api, type AppJob } from "../../api";
+import { api, apiUrl, type AppJob } from "../../api";
 import type { Translate } from "../../app/types";
 import { Modal } from "../../components/Modal";
 import { requestOperationWindow } from "./operationWindow";
@@ -140,7 +140,7 @@ export function PackageJobWindow({
     }
 
     const source = new EventSource(
-      `/api/apps/jobs/${encodeURIComponent(trackedId)}/events`,
+      apiUrl(`/api/apps/jobs/${encodeURIComponent(trackedId)}/events`),
       { withCredentials: true },
     );
 
