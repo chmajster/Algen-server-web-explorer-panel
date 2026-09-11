@@ -46,7 +46,8 @@
 .image-converter-button:focus-visible,
 .image-converter-download:focus-visible,
 .image-converter-primary:focus-visible,
-.image-converter-list-title button:focus-visible {
+.image-converter-list-title button:focus-visible,
+.image-converter-remove:focus-visible {
   outline: 2px solid var(--accent, #5f8cff);
   outline-offset: 2px;
 }
@@ -64,7 +65,7 @@
   min-height: 150px;
   box-sizing: border-box;
   padding: 30px 16px;
-  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease, box-shadow .16s ease;
 }
 
 .image-converter-drop:hover {
@@ -72,9 +73,22 @@
   background: color-mix(in srgb, var(--accent, #5f8cff) 7%, var(--input, #101620));
 }
 
+.image-converter-drop.is-dragging {
+  border-color: var(--accent, #5f8cff);
+  background: color-mix(in srgb, var(--accent, #5f8cff) 12%, var(--input, #101620));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #5f8cff) 34%, transparent), 0 8px 24px color-mix(in srgb, var(--accent, #5f8cff) 10%, transparent);
+  transform: translateY(-1px);
+}
+
 .image-converter-drop-icon {
   width: 48px;
   height: 48px;
+}
+
+.image-converter-limit-note {
+  color: var(--muted, #9ba7b7);
+  font-size: .72rem;
+  line-height: 1.35;
 }
 
 .image-converter-browser-body {
@@ -83,6 +97,52 @@
 
 .image-converter-folder {
   transition: background-color .14s ease, border-color .14s ease;
+}
+
+.image-converter-selection-meta {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-converter-selection-meta small {
+  color: var(--muted, #9ba7b7);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.image-converter-selected-actions {
+  display: inline-flex !important;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  min-width: auto !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.image-converter-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted, #9ba7b7);
+  cursor: pointer;
+  transition: color .14s ease, background-color .14s ease;
+}
+
+.image-converter-remove:hover {
+  color: #e38b8b;
+  background: rgba(217, 104, 104, .11);
+}
+
+.image-converter-remove svg {
+  width: 15px !important;
+  height: 15px !important;
 }
 
 .image-converter-primary {
@@ -200,5 +260,13 @@
   .image-converter-drop {
     min-height: 136px;
     padding: 24px 14px;
+  }
+
+  .image-converter-selected p {
+    align-items: flex-start;
+  }
+
+  .image-converter-selected-actions {
+    gap: 4px;
   }
 }
