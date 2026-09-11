@@ -34,6 +34,19 @@ describe("runtime audit regressions", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("does not declare apiUrl more than once in a module", () => {
+    const offenders = sources
+      .filter(({ text }) => (text.match(/\bapiUrl\b/g) || []).length > 0)
+      .filter(({ text }) => {
+        const imported = [...text.matchAll(/import\s*\{([^}]*)\}\s*from\s*["'][^"']+["'];/g)]
+          .flatMap((match) => match[1].split(",").map((name) => name.trim().replace(/^type\s+/, "")))
+          .filter((name) => name === "apiUrl").length;
+        return imported > 1;
+      })
+      .map(({ path }) => path);
+    expect(offenders).toEqual([]);
+  });
+
   it("keeps API URL resolution inside transport without a self-import", () => {
     const transport = source("src/core/api/transport.ts");
     expect(transport).toContain("export function apiUrl(path: string) { return targetUrl(path); }");
