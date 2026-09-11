@@ -49,7 +49,7 @@ describe("network management settings", () => {
     vi.spyOn(api, "rollbackNetworkTransaction").mockResolvedValue({ ...transaction, state: "rolled_back" });
     vi.spyOn(api, "networkTransactionStatus").mockResolvedValue(transaction);
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { localStorage.removeItem("webnas_language"); vi.restoreAllMocks(); });
 
   it("shows all five areas and provider summary", async () => {
     render(<NetworkSettingsSection isAdmin t={t} />);
@@ -191,4 +191,16 @@ describe("network management settings", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 600));
     expect(api.networkTransactionStatus).toHaveBeenCalledTimes(calls);
   });
+
+  it("localizes management controls in English", async () => {
+    localStorage.setItem("webnas_language", "en-US");
+    render(<NetworkSettingsSection isAdmin t={t} />);
+    expect((await screen.findAllByText("nas-one")).length).toBeGreaterThan(0);
+    expect(screen.getByText("networkmanager · writable")).toBeInTheDocument();
+    expect(screen.getByText("Active interfaces")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "network.tab.interfaces" }));
+    expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();
+    expect(screen.getByText("Selected interface details")).toBeInTheDocument();
+  });
+
 });
