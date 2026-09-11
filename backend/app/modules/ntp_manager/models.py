@@ -73,6 +73,18 @@ class NtpSourceInput(StrictModel):
         return validate_host(value)
 
 
+class NtpSourcesMutation(StrictModel):
+    sources: list[NtpSourceInput] = Field(default_factory=list, max_length=64)
+    confirm: bool = False
+
+    @model_validator(mode="after")
+    def validate_sources(self) -> "NtpSourcesMutation":
+        keys = [(item.kind.value, item.server) for item in self.sources]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate NTP sources are not allowed")
+        return self
+
+
 class NtpAllowedNetwork(StrictModel):
     cidr: str = Field(min_length=3, max_length=64)
     description: str = Field(default="", max_length=200)
