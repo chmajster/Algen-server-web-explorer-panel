@@ -459,3 +459,21 @@ def test_mount_reports_failure_when_kernel_never_registers_it(monkeypatch):
 
     assert verified.returncode == 1
     assert "did not register" in verified.stderr
+
+
+def test_corrupt_persisted_mount_json_degrades_to_safe_defaults(tmp_path, monkeypatch):
+    monkeypatch.setattr(network_mounts, "credentials_path", lambda mount_id: tmp_path / f"{mount_id}.cred")
+    monkeypatch.setattr(network_mounts, "missing_packages", lambda mount_type: [])
+    monkeypatch.setattr(network_mounts, "recent_jobs", lambda mount_id: [])
+    monkeypatch.setattr(network_mounts, "actual_mount", lambda path: None)
+    row = {
+        "id": "bad-json", "name": "bad", "type": "smb", "remote": "//nas/share",
+        "mount_point": "/mnt/webnas/mnt/bad", "owner": "alice", "read_only": 1, "persistent": 0,
+        "manual_intervention": 0, "config_json": "[]", "allowed_users_json": '{"bad":true}',
+        "allowed_groups_json": "{", "missing_packages_json": "[]", "migration_status": "ready",
+        "status": "unmounted", "last_error": "",
+    }
+    value = network_mounts.row_to_mount(row)
+    assert value["config"] == {"has_secret": False}
+    assert value["allowed_users"] == []
+    assert value["allowed_groups"] == []

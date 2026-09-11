@@ -91,6 +91,7 @@ def save_transport_settings(payload: TransportSettings, request: Request, user: 
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "nginx reload failed")
     except Exception as error:
+        logger.warning("transport_settings_apply_failed actor=%s error=%s", user.username, type(error).__name__)
         if previous_state is None:
             state_path.unlink(missing_ok=True)
         else:
@@ -107,7 +108,7 @@ def save_transport_settings(payload: TransportSettings, request: Request, user: 
                 user.username,
                 rollback_error,
             )
-        raise HTTPException(400, f"Could not apply transport settings: {error}") from error
+        raise HTTPException(400, "Could not apply transport settings") from error
 
     logger.info(
         "transport_settings_updated actor=%s https=%s cert=%s",

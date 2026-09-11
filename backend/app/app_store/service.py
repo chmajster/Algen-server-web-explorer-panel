@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 from fastapi import HTTPException
 
+from ..audit import logger
 from ..privileged_broker.runtime import broker_required, systemd_action
 from ..proxmox_guard import safe_mode_active
 
@@ -62,4 +63,5 @@ def run_service(app_id: str, action: str) -> None:
             executable = shutil.which("systemctl") or "systemctl"
             result = subprocess.run([executable, action, service], capture_output=True, text=True, timeout=600, check=False, shell=False)
         if result.returncode != 0:
-            raise HTTPException(400, result.stderr.strip() or result.stdout.strip() or f"systemctl {action} failed")
+            logger.warning("app_service_action_failed app=%s action=%s service=%s returncode=%s", app_id, action, service, result.returncode)
+            raise HTTPException(400, f"systemctl {action} failed")

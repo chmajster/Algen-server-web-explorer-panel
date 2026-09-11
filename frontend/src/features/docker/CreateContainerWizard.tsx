@@ -142,9 +142,9 @@ function readContainerDraft(key?: string): ContainerWizardDraft {
       if (Array.isArray(raw.ulimits)) safe.ulimits = raw.ulimits.flatMap((entry, index) => {
         if (!entry || Array.isArray(entry) || typeof entry !== "object") return [];
         const item = entry as Record<string, unknown>;
-        if (item.name !== "nofile" && item.name !== "nproc") return [];
-        if (typeof item.soft !== "string" || typeof item.hard !== "string") return [];
-        return [{ id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1, name: item.name, soft: item.soft, hard: item.hard }];
+        const name = item.name === "nofile" ? "nofile" : item.name === "nproc" ? "nproc" : null;
+        if (!name || typeof item.soft !== "string" || typeof item.hard !== "string") return [];
+        return [{ id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1, name, soft: item.soft, hard: item.hard }];
       }).slice(0, 2);
       draft.resourceLimits = safe;
     }

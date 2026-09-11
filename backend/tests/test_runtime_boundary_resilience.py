@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+from app import power_control
 from app.log_system import api as logs_api
 from app.log_system import sources as log_sources
 
@@ -42,3 +43,18 @@ def test_journal_failure_does_not_expose_raw_stderr(monkeypatch):
         )
     assert error.value.status_code == 502
     assert error.value.detail == "journalctl could not read logs"
+
+
+def test_power_schedule_failure_does_not_expose_system_stderr(monkeypatch):
+    monkeypatch.setattr(power_control, "broker_required", lambda: False)
+    monkeypatch.setattr(power_control.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        power_control.subprocess,
+        "run",
+        lambda *args, **kwargs: power_control.subprocess.CompletedProcess(args[0], 1, "", "token=abc path=/srv/private"),
+    )
+    with pytest.raises(HTTPException) as error:
+        power_control._schedule_systemctl("host-restart", "reboot")
+    assert error.value.status_code == 500
+    assert error.value.detail == "Could not schedule host-restart"
+    assert "token=abc" not in str(error.value.detail)

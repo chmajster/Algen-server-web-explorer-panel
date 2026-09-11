@@ -141,7 +141,7 @@ def _schedule_systemctl(action: str, *arguments: str) -> dict[str, str | bool]:
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         logger.exception("power_action_schedule_failed action=%s", action)
-        raise HTTPException(500, f"Could not schedule {action}: {error}") from error
+        raise HTTPException(500, f"Could not schedule {action}") from error
 
     if result.returncode != 0:
         message = _command_error(result)
@@ -151,7 +151,7 @@ def _schedule_systemctl(action: str, *arguments: str) -> dict[str, str | bool]:
             result.returncode,
             message,
         )
-        raise HTTPException(500, message)
+        raise HTTPException(500, f"Could not schedule {action}")
 
     return {"ok": True, "scheduled": True, "mode": mode, "unit": unit if systemd_run else ""}
 
