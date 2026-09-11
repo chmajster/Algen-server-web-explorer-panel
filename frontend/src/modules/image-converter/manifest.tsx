@@ -2,6 +2,7 @@ import { Images } from "lucide-react";
 import { lazy } from "react";
 import type { FrontendModuleManifest } from "../../app/registry/moduleRegistry";
 import { lazyView } from "../../app/registry/rendering";
+import "./image-converter-responsive.css";
 
 const ImageConverterApp = lazy(() => import("./ImageConverterApp").then((loaded) => ({ default: loaded.ImageConverterApp })));
 
