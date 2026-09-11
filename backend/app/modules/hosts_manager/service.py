@@ -522,7 +522,12 @@ class HostRegistryService:
     def _settings_value(self, key: str, default: Any) -> Any:
         with self.connect() as connection:
             row = connection.execute("SELECT value_json FROM hosts_manager_settings WHERE key=?", (key,)).fetchone()
-        return json.loads(row["value_json"]) if row else default
+        if not row:
+            return default
+        try:
+            return json.loads(row["value_json"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return default
 
     def save_host(self, payload: HostInput, actor: str, host_id: str | None = None, *, source: str = "manual") -> dict[str, Any]:
         now, item_id, value = time.time(), host_id or stable_id(), payload.model_dump(mode="json")

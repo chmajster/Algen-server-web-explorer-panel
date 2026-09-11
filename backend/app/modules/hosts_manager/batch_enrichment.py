@@ -181,7 +181,10 @@ class HostRegistryService(BaseHostRegistryService):
                 "SELECT value_json FROM hosts_manager_settings WHERE key=?",
                 ("heartbeat_interval_seconds",),
             ).fetchone()
-            heartbeat_interval = int(json.loads(setting["value_json"])) if setting else 30
+            try:
+                heartbeat_interval = int(json.loads(setting["value_json"])) if setting else 30
+            except (TypeError, ValueError, json.JSONDecodeError):
+                heartbeat_interval = 30
 
         enriched: list[dict[str, Any]] = []
         for source_item in items:
