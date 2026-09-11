@@ -11,21 +11,38 @@ export function ShellStateController() {
   const state = useRef<ShellPreferences>(defaultShellPreferences);
   const timers = useRef(new Map<string, number>());
   const hydrated = useRef(false);
+  const pending = useRef<ShellPreferencesPatch>({});
 
   useEffect(() => {
     let active = true;
+    const flushPending = (base: ShellPreferences) => {
+      const queued = pending.current;
+      pending.current = {};
+      state.current = { ...base, ...queued };
+      hydrated.current = true;
+      if (Object.keys(queued).length === 0) return;
+      void shellPreferencesClient.patch(queued).then((value) => {
+        if (active) state.current = normalized(value);
+      }).catch(() => undefined);
+    };
+
     void shellPreferencesClient.get().then((value) => {
       if (!active) return;
-      state.current = normalized(value);
-      hydrated.current = true;
-    }).catch(() => { hydrated.current = true; });
+      flushPending(normalized(value));
+    }).catch(() => {
+      if (!active) return;
+      flushPending(state.current);
+    });
     return () => { active = false; };
   }, []);
 
   useEffect(() => {
     const update = (key: keyof ShellPreferences, patch: ShellPreferencesPatch) => {
       state.current = { ...state.current, ...patch };
-      if (!hydrated.current) return;
+      if (!hydrated.current) {
+        pending.current = { ...pending.current, ...patch };
+        return;
+      }
       const existing = timers.current.get(key);
       if (existing !== undefined) window.clearTimeout(existing);
       timers.current.set(key, window.setTimeout(() => {
