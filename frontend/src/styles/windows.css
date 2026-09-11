@@ -10,6 +10,15 @@
   transition: opacity .12s ease, transform .12s ease, box-shadow .12s ease;
 }
 .desktop .window-content { min-width: 0; min-height: 0; container: app-window / inline-size; }
+.desktop .window-content > .image-converter-app {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  align-content: start;
+}
 .desktop .desktop-window.inactive { border-top-color: var(--border-strong); box-shadow: 0 0.375rem 1rem rgb(20 35 48 / 16%); }
 .desktop .desktop-window.inactive .window-titlebar { color: var(--text-secondary); background: var(--surface-secondary); }
 .desktop .desktop-window.active { border-color: var(--border-strong); border-top-color: var(--accent); }
