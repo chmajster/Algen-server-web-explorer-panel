@@ -72,6 +72,24 @@ def test_convert_image_rejects_invalid_dimension(tmp_path: Path):
     assert error.value.code == "INVALID_DIMENSION"
 
 
+def test_convert_image_preserves_metadata_without_reintroducing_orientation(tmp_path: Path):
+    source = tmp_path / "rotated.jpg"
+    exif = Image.Exif()
+    exif[274] = 6
+    exif[315] = "WebNAS"
+    Image.new("RGB", (40, 20), (30, 80, 140)).save(source, "JPEG", exif=exif)
+    output = tmp_path / "out.jpg"
+
+    result = convert_image(source, output, "jpeg", 90, strip_metadata=False)
+
+    assert (result.width, result.height) == (20, 40)
+    with Image.open(output) as converted:
+        converted_exif = converted.getexif()
+        assert converted.size == (20, 40)
+        assert converted_exif.get(274) is None
+        assert converted_exif.get(315) == "WebNAS"
+
+
 def test_directory_conversion_preserves_subdirectories_and_avoids_overwrite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     source = tmp_path / "photos"
     nested = source / "trip"
@@ -108,6 +126,26 @@ def test_directory_conversion_can_write_to_source_directory(tmp_path: Path, monk
 
     assert len(result["converted"]) == 1
     assert (source / "one.jpg").is_file()
+
+
+def test_directory_conversion_can_atomically_overwrite_source_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    source = tmp_path / "photos"
+    source.mkdir()
+    original = source / "one.png"
+    original.write_bytes(image_bytes(size=(64, 32)))
+
+    monkeypatch.setattr(image_service_module, "resolve_user_path", lambda _username, requested: Path(requested))
+    monkeypatch.setattr(image_service_module, "assert_write_allowed", lambda _path: None)
+    service = ImageConverterService(temp_root=tmp_path / "temp")
+
+    result = service.convert_directory("alice", str(source), str(source), "png", 90, False, width=32, overwrite_policy="overwrite")
+
+    assert len(result["converted"]) == 1
+    assert not result["failed"]
+    with Image.open(original) as converted:
+        assert converted.size == (32, 16)
+        converted.verify()
+    assert not list(source.glob(".*.tmp"))
 
 
 def test_directory_conversion_supports_prefix_suffix_and_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -151,6 +189,46 @@ def test_directory_conversion_can_overwrite_existing_output(tmp_path: Path, monk
 
     assert len(result["converted"]) == 1
     assert existing.read_bytes() != b"old"
+
+
+def test_browse_ignores_symlinks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    source = tmp_path / "photos"
+    outside = tmp_path / "outside.png"
+    source.mkdir()
+    outside.write_bytes(image_bytes())
+    link = source / "linked.png"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks are not available on this platform")
+
+    monkeypatch.setattr(image_service_module, "resolve_user_path", lambda _username, requested: Path(requested or source))
+    service = ImageConverterService(temp_root=tmp_path / "temp")
+
+    result = service.browse("alice", str(source))
+
+    assert result["images"] == []
+
+
+def test_service_exposes_frontend_limits():
+    service = ImageConverterService()
+
+    limits = service.limits()
+
+    assert limits["max_upload_files"] == 100
+    assert limits["max_file_bytes"] == 50 * 1024 * 1024
+    assert limits["max_batch_bytes"] == 500 * 1024 * 1024
+    assert limits["max_dimension"] == 32_768
+
+
+def test_formats_only_expose_available_encoders():
+    service = ImageConverterService()
+
+    formats = service.formats()
+
+    assert formats
+    Image.init()
+    assert all(image_service_module.OUTPUT_FORMATS[item["id"]][0] in Image.SAVE for item in formats)
 
 
 def test_temporary_batch_builds_zip_and_removes_inputs(tmp_path: Path):

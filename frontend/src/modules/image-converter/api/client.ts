@@ -1,6 +1,14 @@
 import { request } from "../../../core/api/transport";
 
 export type ImageFormat = { id: string; extension: string; lossy: boolean };
+export type ImageConverterLimits = {
+  max_upload_files: number;
+  max_directory_files: number;
+  max_file_bytes: number;
+  max_batch_bytes: number;
+  max_pixels: number;
+  max_dimension: number;
+};
 export type BrowserEntry = { name: string; path: string };
 export type BrowserImage = BrowserEntry & { size: number };
 export type DirectoryBrowser = {
@@ -41,7 +49,7 @@ export type ConversionOptions = {
 };
 
 export const imageConverterClient = {
-  formats: () => request<{ formats: ImageFormat[] }>("/api/modules/image-converter/formats"),
+  formats: () => request<{ formats: ImageFormat[]; limits: ImageConverterLimits }>("/api/modules/image-converter/formats"),
   browse: (path?: string) => request<DirectoryBrowser>(`/api/modules/image-converter/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   convertDirectory: (payload: ConversionOptions & { source_directory: string; output_directory?: string; recursive: boolean; overwrite_policy: "rename" | "skip" | "overwrite" }) => request<ConversionResult>("/api/modules/image-converter/directory", {
     method: "POST",
