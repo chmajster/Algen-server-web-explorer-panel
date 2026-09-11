@@ -1,0 +1,133 @@
+name: One-shot runtime audit 3
+on:
+  push:
+    branches: [fix/exhaustive-runtime-audit-3]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/exhaustive-runtime-audit-3
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Apply verified fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected one match in {path}, got {text.count(old)} for {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Shared defensive parsing for browser persistence.
+          Path('frontend/src/core/persistence.ts').write_text('''export function parseStoredStringArray(raw: string | null, maxItems = 100): string[] {\n  if (!raw) return [];\n  try {\n    const parsed = JSON.parse(raw) as unknown;\n    if (!Array.isArray(parsed)) return [];\n    return parsed.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, maxItems);\n  } catch {\n    return [];\n  }\n}\n\nexport function readStoredEnum<T extends string>(raw: string | null, allowed: readonly T[], fallback: T): T {\n  return raw !== null && allowed.includes(raw as T) ? raw as T : fallback;\n}\n\nexport function readStoredNumber(raw: string | null, fallback: number, minimum: number, maximum: number): number {\n  if (raw === null || raw.trim() === "") return fallback;\n  const parsed = Number(raw);\n  if (!Number.isFinite(parsed)) return fallback;\n  return Math.max(minimum, Math.min(maximum, parsed));\n}\n''')
+
+          Path('frontend/src/core/persistence.test.ts').write_text('''import { describe, expect, it } from "vitest";\nimport { parseStoredStringArray, readStoredEnum, readStoredNumber } from "./persistence";\n\ndescribe("persistent UI state boundaries", () => {\n  it("rejects malformed and wrong-shaped string arrays", () => {\n    expect(parseStoredStringArray("{" )).toEqual([]);\n    expect(parseStoredStringArray('{"path":"/tmp"}')).toEqual([]);\n    expect(parseStoredStringArray('["/a", 7, "", "/b"]')).toEqual(["/a", "/b"]);\n  });\n\n  it("rejects unknown enum values", () => {\n    expect(readStoredEnum("broken", ["list", "medium", "large"] as const, "list")).toBe("list");\n    expect(readStoredEnum("medium", ["list", "medium", "large"] as const, "list")).toBe("medium");\n  });\n\n  it("clamps finite persisted numbers and rejects NaN/infinity", () => {\n    expect(readStoredNumber("999", 238, 180, 420)).toBe(420);\n    expect(readStoredNumber("-10", 238, 180, 420)).toBe(180);\n    expect(readStoredNumber("NaN", 238, 180, 420)).toBe(238);\n    expect(readStoredNumber("Infinity", 238, 180, 420)).toBe(238);\n  });\n});\n''')
+
+          # Directory tree: malformed/wrong-shaped persisted expansion state and dangling drag timer.
+          replace_once('frontend/src/features/files/DirectoryTree.tsx',
+              'import type { Translate } from "../../app/types";\n',
+              'import type { Translate } from "../../app/types";\nimport { parseStoredStringArray } from "../../core/persistence";\n')
+          replace_once('frontend/src/features/files/DirectoryTree.tsx',
+              '    const expanded = JSON.parse(localStorage.getItem(storageKey) || "[]") as string[];\n',
+              '    const expanded = parseStoredStringArray(localStorage.getItem(storageKey), 20);\n')
+          replace_once('frontend/src/features/files/DirectoryTree.tsx',
+              '  useEffect(() => {\n    const expanded = Object.entries(tree).filter(([, value]) => value.open).map(([path]) => path);\n    localStorage.setItem(storageKey, JSON.stringify(expanded));\n  }, [tree]);\n',
+              '  useEffect(() => {\n    const expanded = Object.entries(tree).filter(([, value]) => value.open).map(([path]) => path);\n    localStorage.setItem(storageKey, JSON.stringify(expanded));\n  }, [tree]);\n  useEffect(() => () => {\n    if (expandTimer.current !== null) window.clearTimeout(expandTimer.current);\n  }, []);\n')
+
+          # File Manager: validate persisted view, tree width and hidden columns.
+          replace_once('frontend/src/features/files/FileManager.tsx',
+              'import type { ToastFn, Translate } from "../../app/types";\n',
+              'import type { ToastFn, Translate } from "../../app/types";\nimport { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";\n')
+          replace_once('frontend/src/features/files/FileManager.tsx',
+              '  const [treeWidth, setTreeWidth] = useState(() => Number(localStorage.getItem(`${storagePrefix}_tree_width`) || 238));\n',
+              '  const [treeWidth, setTreeWidth] = useState(() => readStoredNumber(localStorage.getItem(`${storagePrefix}_tree_width`), 238, 180, 420));\n')
+          replace_once('frontend/src/features/files/FileManager.tsx',
+              '  const [view, setView] = useState<ViewMode>(() => settings ? (preferences.file_default_view === "grid" ? "medium" : preferences.file_default_view) : (localStorage.getItem(`${storagePrefix}_view`) as ViewMode) || "list");\n  const [hiddenColumns, setHiddenColumns] = useState<Set<SortField>>(() => new Set(JSON.parse(localStorage.getItem(`${storagePrefix}_hidden_columns`) || "[]")));\n',
+              '  const [view, setView] = useState<ViewMode>(() => settings ? (preferences.file_default_view === "grid" ? "medium" : preferences.file_default_view) : readStoredEnum(localStorage.getItem(`${storagePrefix}_view`), ["list", "medium", "large"] as const, "list"));\n  const [hiddenColumns, setHiddenColumns] = useState<Set<SortField>>(() => {\n    const valid = new Set<SortField>(columns.map((column) => column.id));\n    return new Set(parseStoredStringArray(localStorage.getItem(`${storagePrefix}_hidden_columns`), columns.length).filter((item): item is SortField => valid.has(item as SortField)));\n  });\n')
+
+          # Transfers: persisted arbitrary string could hide every transfer.
+          replace_once('frontend/src/features/transfers/TransferCenter.tsx',
+              'import type { UploadControls } from "./useUploadManager";\n',
+              'import type { UploadControls } from "./useUploadManager";\nimport { readStoredEnum } from "../../core/persistence";\n')
+          replace_once('frontend/src/features/transfers/TransferCenter.tsx',
+              '  const [filter, setFilter] = useState<TransferFilter>(() => settings.transfer_remember_filter ? (localStorage.getItem(filterKey) as TransferFilter) || "all" : "all");\n',
+              '  const [filter, setFilter] = useState<TransferFilter>(() => settings.transfer_remember_filter ? readStoredEnum(localStorage.getItem(filterKey), ["all", "active", "completed", "failed"] as const, "all") : "all");\n')
+
+          # Logs: valid JSON of the wrong type used to crash history.map/history.filter.
+          replace_once('frontend/src/features/logs/LogsApp.tsx',
+              'import type { ToastFn, Translate } from "../../app/types";\n',
+              'import type { ToastFn, Translate } from "../../app/types";\nimport { parseStoredStringArray } from "../../core/persistence";\n')
+          replace_once('frontend/src/features/logs/LogsApp.tsx',
+              '  const [history, setHistory] = useState<string[]>(() => {\n    try { return JSON.parse(localStorage.getItem("webnas.log-search-history") || "[]") as string[]; } catch { return []; }\n  });\n',
+              '  const [history, setHistory] = useState<string[]>(() => parseStoredStringArray(localStorage.getItem("webnas.log-search-history"), 12));\n')
+
+          # Container wizard: reject valid JSON with hostile/wrong field shapes before string/array methods run.
+          old = '''function readContainerDraft(key?: string): ContainerWizardDraft {\n  if (!key) return {};\n  try {\n    const value = JSON.parse(sessionStorage.getItem(key) || "{}") as ContainerWizardDraft;\n    return value && typeof value === "object" ? value : {};\n  } catch {\n    return {};\n  }\n}\n'''
+          new = '''function readContainerDraft(key?: string): ContainerWizardDraft {\n  if (!key) return {};\n  try {\n    const parsed = JSON.parse(sessionStorage.getItem(key) || "{}") as unknown;\n    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return {};\n    const source = parsed as Record<string, unknown>;\n    const draft: ContainerWizardDraft = {};\n    const assign = draft as unknown as Record<string, unknown>;\n    const stringKeys = [\n      "name", "image", "network", "ports", "environment", "memory", "memorySwap", "cpus", "pids", "hostname", "entrypoint",\n      "workingDir", "containerUser", "networkAliases", "labels", "healthPort", "healthPath", "composeProject", "composeContent", "composeEnvironment",\n    ] as const;\n    for (const field of stringKeys) if (typeof source[field] === "string") assign[field] = source[field];\n    const booleanKeys = ["limitsEnabled", "readOnly", "init", "autoStart", "composeMode", "composeAutoStart"] as const;\n    for (const field of booleanKeys) if (typeof source[field] === "boolean") assign[field] = source[field];\n    if (["no", "always", "unless-stopped", "on-failure"].includes(String(source.restartPolicy))) draft.restartPolicy = source.restartPolicy as ContainerWizardDraft["restartPolicy"];\n    if (["none", "http", "tcp"].includes(String(source.healthType))) draft.healthType = source.healthType as ContainerWizardDraft["healthType"];\n    if (["unlimited", "minimal", "light", "standard", "performance", "custom"].includes(String(source.resourceProfile))) draft.resourceProfile = source.resourceProfile as ResourceProfile;\n    if (Array.isArray(source.mounts)) {\n      draft.mounts = source.mounts.flatMap((raw, index): MountRow[] => {\n        if (!raw || Array.isArray(raw) || typeof raw !== "object") return [];\n        const item = raw as Record<string, unknown>;\n        const type = item.type === "volume" || item.type === "tmpfs" ? item.type : "bind";\n        return [{\n          id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1, type,\n          source: typeof item.source === "string" ? item.source : "", target: typeof item.target === "string" ? item.target : "",\n          readOnly: item.readOnly === true, tmpfsSizeMb: typeof item.tmpfsSizeMb === "string" ? item.tmpfsSizeMb : "",\n        }];\n      }).slice(0, 200);\n    }\n    if (source.resourceLimits && !Array.isArray(source.resourceLimits) && typeof source.resourceLimits === "object") {\n      const raw = source.resourceLimits as Record<string, unknown>;\n      const safe = resourceLimitsFromPayload();\n      const stringFields = ["cpus", "cpuShares", "cpusetCpus", "cpuPeriod", "cpuQuota", "memory", "memorySwap", "memoryReservation", "memorySwappiness", "shmSize", "pids", "blkioWeight", "oomScoreAdj"] as const;\n      for (const field of stringFields) if (typeof raw[field] === "string") safe[field] = raw[field];\n      if (["low", "normal", "high", "custom"].includes(String(raw.cpuSharesPreset))) safe.cpuSharesPreset = raw.cpuSharesPreset as ResourceLimitsDraft["cpuSharesPreset"];\n      if (["low", "normal", "high", "custom"].includes(String(raw.blkioPreset))) safe.blkioPreset = raw.blkioPreset as ResourceLimitsDraft["blkioPreset"];\n      if (raw.memoryUnit === "MB" || raw.memoryUnit === "GB") safe.memoryUnit = raw.memoryUnit;\n      if (raw.memorySwapUnit === "MB" || raw.memorySwapUnit === "GB") safe.memorySwapUnit = raw.memorySwapUnit;\n      if (raw.memoryReservationUnit === "MB" || raw.memoryReservationUnit === "GB") safe.memoryReservationUnit = raw.memoryReservationUnit;\n      if (raw.shmSizeUnit === "MB" || raw.shmSizeUnit === "GB") safe.shmSizeUnit = raw.shmSizeUnit;\n      if (typeof raw.oomKillDisable === "boolean") safe.oomKillDisable = raw.oomKillDisable;\n      if (Array.isArray(raw.ulimits)) safe.ulimits = raw.ulimits.flatMap((entry, index) => {\n        if (!entry || Array.isArray(entry) || typeof entry !== "object") return [];\n        const item = entry as Record<string, unknown>;\n        if (item.name !== "nofile" && item.name !== "nproc") return [];\n        if (typeof item.soft !== "string" || typeof item.hard !== "string") return [];\n        return [{ id: Number.isFinite(Number(item.id)) ? Number(item.id) : index + 1, name: item.name, soft: item.soft, hard: item.hard }];\n      }).slice(0, 2);\n      draft.resourceLimits = safe;\n    }\n    return draft;\n  } catch {\n    return {};\n  }\n}\n'''
+          replace_once('frontend/src/features/docker/CreateContainerWizard.tsx', old, new)
+
+          # Package Center SSE: one malformed frame must not throw out of the browser event callback.
+          replace_once('frontend/src/features/package-center/hooks/usePackageCenter.ts',
+              '''      source.onmessage = (event) => {\n        const job = JSON.parse(event.data) as AppJob;\n        setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);\n        if (["completed", "failed", "cancelled"].includes(job.status)) {\n          void refreshModule(job.module_id);\n          void refresh(true);\n        }\n      };\n''',
+              '''      source.onmessage = (event) => {\n        try {\n          const job = JSON.parse(event.data) as AppJob;\n          if (!job || typeof job.id !== "string" || typeof job.status !== "string" || typeof job.module_id !== "string") return;\n          setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);\n          if (["completed", "failed", "cancelled"].includes(job.status)) {\n            void refreshModule(job.module_id);\n            void refresh(true);\n          }\n        } catch {\n          // Ignore one malformed stream frame; the durable polling fallback remains available.\n        }\n      };\n''')
+
+          # Samba SSE has the same uncaught JSON boundary.
+          replace_once('frontend/src/features/modules/samba/SambaModuleApp.tsx',
+              'source.onmessage = (event) => { const next = JSON.parse(event.data) as ModuleJob; setJob(next);',
+              'source.onmessage = (event) => { try { const next = JSON.parse(event.data) as ModuleJob; if (!next || typeof next.id !== "string" || typeof next.status !== "string") return; setJob(next);')
+          replace_once('frontend/src/features/modules/samba/SambaModuleApp.tsx',
+              'if (next.status === "failed") toast(next.error || t("module.jobFailed"), "error", "admin"); }; source.onerror = () => source.close();',
+              'if (next.status === "failed") toast(next.error || t("module.jobFailed"), "error", "admin"); } catch { /* isolate malformed stream frames */ } }; source.onerror = () => source.close();')
+
+          # API boundary: never return raw system command stderr to clients.
+          replace_once('backend/app/modules/router.py',
+              '            api_error(500, "FIREWALL_UPDATE_FAILED", result.stderr.strip() or "Could not update firewall")\n',
+              '            logger.warning("module_firewall command failed command=%s returncode=%s", command[0].rsplit("/", 1)[-1], result.returncode)\n            api_error(500, "FIREWALL_UPDATE_FAILED", "Could not update firewall")\n')
+          replace_once('backend/app/log_system/api.py',
+              '    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else stderr}\n\n\n@router.get("/services/{unit}")',
+              '    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else "systemctl could not list services"}\n\n\n@router.get("/services/{unit}")')
+          replace_once('backend/app/log_system/api.py',
+              '    if code != 0:\n        raise HTTPException(404, stderr or "Systemd unit was not found")\n',
+              '    if code != 0:\n        raise HTTPException(404, "Systemd unit was not found")\n')
+          replace_once('backend/app/log_system/api.py',
+              '    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else stderr}\n\n\n@router.get("/fields")',
+              '    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else "docker could not list containers"}\n\n\n@router.get("/fields")')
+          replace_once('backend/app/log_system/sources.py',
+              '        raise HTTPException(502, stderr.strip() or "journalctl could not read logs")\n',
+              '        raise HTTPException(502, "journalctl could not read logs")\n')
+          replace_once('backend/app/log_system/sources.py',
+              '        raise HTTPException(403 if "permission" in stderr.casefold() else 502, stderr or "dmesg could not be read")\n',
+              '        raise HTTPException(403 if "permission" in stderr.casefold() else 502, "dmesg permission denied" if "permission" in stderr.casefold() else "dmesg could not be read")\n')
+          replace_once('backend/app/log_system/sources.py',
+              '        raise HTTPException(502, stderr or "Container logs could not be read")\n',
+              '        raise HTTPException(502, "Container logs could not be read")\n')
+
+          # Regression tests for command-detail disclosure boundaries.
+          Path('backend/tests/test_runtime_boundary_resilience.py').write_text('''from types import SimpleNamespace\n\nimport pytest\nfrom fastapi import HTTPException\n\nfrom app.log_system import api as logs_api\nfrom app.log_system import sources as log_sources\n\n\ndef _user():\n    return SimpleNamespace(username="auditor")\n\n\ndef test_log_service_failure_does_not_expose_systemctl_stderr(monkeypatch):\n    monkeypatch.setattr(logs_api, "authorize", lambda *args, **kwargs: None)\n    monkeypatch.setattr(logs_api.shutil, "which", lambda name: f"/usr/bin/{name}")\n    monkeypatch.setattr(logs_api, "run_bounded", lambda *args, **kwargs: (1, "", "secret path=/srv/private token=abc"))\n    with pytest.raises(HTTPException) as error:\n        logs_api.log_service("ssh.service", _user())\n    assert error.value.status_code == 404\n    assert "secret" not in str(error.value.detail)\n    assert "/srv/private" not in str(error.value.detail)\n\n\ndef test_log_lists_do_not_expose_command_stderr(monkeypatch):\n    monkeypatch.setattr(logs_api, "authorize", lambda *args, **kwargs: None)\n    monkeypatch.setattr(logs_api.shutil, "which", lambda name: f"/usr/bin/{name}")\n    monkeypatch.setattr(logs_api, "run_bounded", lambda *args, **kwargs: (1, "", "token=abc /srv/private"))\n    services = logs_api.log_services(_user())\n    containers = logs_api.log_containers(_user())\n    assert services["error"] == "systemctl could not list services"\n    assert containers["error"] == "docker could not list containers"\n\n\ndef test_journal_failure_does_not_expose_raw_stderr(monkeypatch):\n    monkeypatch.setattr(log_sources.shutil, "which", lambda name: f"/usr/bin/{name}")\n    monkeypatch.setattr(log_sources, "run_bounded", lambda *args, **kwargs: (1, "", "token=abc /srv/private"))\n    with pytest.raises(HTTPException) as error:\n        log_sources.journal_entries(\n            "journal", limit=10, priority=[], unit="", pid=None, uid=None, identifier="", transport="", hostname="", device="",\n            username="", group="", boot_id="", since=None, until=None, continuation={}, direction="older",\n        )\n    assert error.value.status_code == 502\n    assert error.value.detail == "journalctl could not read logs"\n''')
+          PY
+      - name: Verify patch markers
+        run: |
+          test -f frontend/src/core/persistence.ts
+          test -f backend/tests/test_runtime_boundary_resilience.py
+          ! grep -F 'const expanded = JSON.parse(localStorage.getItem(storageKey)' frontend/src/features/files/DirectoryTree.tsx
+          ! grep -F 'new Set(JSON.parse(localStorage.getItem(`${storagePrefix}_hidden_columns`)' frontend/src/features/files/FileManager.tsx
+          ! grep -F 'result.stderr.strip() or "Could not update firewall"' backend/app/modules/router.py
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-runtime-audit-3.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: harden runtime persistence and error boundaries'
+          git push origin HEAD:fix/exhaustive-runtime-audit-3
