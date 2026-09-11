@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -19,6 +20,8 @@ _MAX_CONFIG = 512 * 1024
 _NTP_TARGETS = {
     "chrony_debian": Path("/etc/chrony/chrony.conf"),
     "chrony_rhel": Path("/etc/chrony.conf"),
+    "chrony_debian_webnas": Path("/etc/chrony/conf.d/webnas.conf"),
+    "chrony_rhel_webnas": Path("/etc/chrony.d/webnas.conf"),
     "timesyncd": Path("/etc/systemd/timesyncd.conf"),
     "ntpd": Path("/etc/ntp.conf"),
 }
@@ -28,6 +31,7 @@ _INTERFACE_RE = re.compile(r"^[A-Za-z0-9_.:@-]{1,64}$")
 _TABLE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _SAFE_IP_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:/@+-]{1,128}$")
 _SESSION_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+_TIMEZONE_RE = re.compile(r"^(?:UTC|[A-Za-z0-9_+.-]+(?:/[A-Za-z0-9_+.-]+)+)$")
 
 
 class InfrastructurePolicyError(ValueError):
@@ -81,6 +85,25 @@ def _atomic_write(target: Path, content: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _firewall_status() -> dict[str, Any]:
+    if shutil.which("firewall-cmd", path=_SAFE_PATH):
+        state, _stdout, _stderr = _run([_tool("firewall-cmd"), "--state"], 10)
+        if state == 0:
+            code, stdout, _stderr = _run([_tool("firewall-cmd"), "--query-port=123/udp"], 10)
+            return {"backend": "firewalld", "status": "open" if code == 0 and stdout.strip() == "yes" else "blocked", "managed_by_webnas": False}
+    if shutil.which("ufw", path=_SAFE_PATH):
+        code, stdout, _stderr = _run([_tool("ufw"), "status"], 10)
+        if code == 0:
+            open_port = any("123/udp" in line and "ALLOW" in line for line in stdout.splitlines())
+            return {"backend": "ufw", "status": "open" if open_port else "blocked", "managed_by_webnas": "WebNAS NTP" in stdout}
+    if shutil.which("nft", path=_SAFE_PATH):
+        code, stdout, _stderr = _run([_tool("nft"), "list", "ruleset"], 15)
+        if code == 0:
+            open_port = bool(re.search(r"udp\s+dport\s+123\b.*\baccept\b", stdout))
+            return {"backend": "nftables", "status": "open" if open_port else "blocked", "managed_by_webnas": "webnas-ntp" in stdout}
+    return {"backend": "none", "status": "unknown", "managed_by_webnas": False}
+
+
 def _ntp(request: BrokerRequest) -> BrokerResponse:
     payload = request.payload
     action = payload.get("action")
@@ -113,6 +136,46 @@ def _ntp(request: BrokerRequest) -> BrokerResponse:
         else:
             raise InfrastructurePolicyError("NTP resync backend is not allowlisted")
         return _response(request, code, stdout, stderr, "NTP_RESYNC_FAILED" if code else None)
+    if action == "timezone":
+        if set(payload) != {"action", "timezone"}:
+            raise InfrastructurePolicyError("unsupported NTP timezone parameters")
+        timezone = str(payload.get("timezone") or "")
+        if not _TIMEZONE_RE.fullmatch(timezone) or ".." in timezone:
+            raise InfrastructurePolicyError("invalid timezone")
+        zone_root = Path("/usr/share/zoneinfo").resolve(strict=False)
+        zone_path = (zone_root / timezone).resolve(strict=False)
+        if timezone != "UTC" and (not zone_path.is_relative_to(zone_root) or not zone_path.is_file()):
+            raise InfrastructurePolicyError("timezone is not installed")
+        code, stdout, stderr = _run([_tool("timedatectl"), "set-timezone", timezone], 30)
+        return _response(request, code, stdout, stderr, "NTP_TIMEZONE_FAILED" if code else None)
+    if action == "firewall_status":
+        if set(payload) != {"action"}:
+            raise InfrastructurePolicyError("unsupported NTP firewall status parameters")
+        return _response(request, 0, json.dumps(_firewall_status(), separators=(",", ":")))
+    if action == "firewall_open":
+        if set(payload) != {"action"}:
+            raise InfrastructurePolicyError("unsupported NTP firewall parameters")
+        status = _firewall_status()
+        if status["status"] == "open":
+            return _response(request, 0, json.dumps(status, separators=(",", ":")))
+        if status["backend"] == "firewalld":
+            code, stdout, stderr = _run([_tool("firewall-cmd"), "--permanent", "--add-port=123/udp"], 30)
+            if code == 0:
+                code, reload_out, reload_err = _run([_tool("firewall-cmd"), "--reload"], 30)
+                stdout += reload_out
+                stderr += reload_err
+            return _response(request, code, stdout, stderr, "NTP_FIREWALL_FAILED" if code else None)
+        if status["backend"] == "ufw":
+            code, stdout, stderr = _run([_tool("ufw"), "allow", "123/udp", "comment", "WebNAS NTP"], 30)
+            return _response(request, code, stdout, stderr, "NTP_FIREWALL_FAILED" if code else None)
+        if status["backend"] == "nftables":
+            return _response(
+                request,
+                2,
+                stderr="nftables ruleset is unmanaged; WebNAS will not modify an unknown chain automatically",
+                error_code="NTP_FIREWALL_MANUAL_REQUIRED",
+            )
+        return _response(request, 2, stderr="no supported firewall backend detected", error_code="NTP_FIREWALL_UNAVAILABLE")
     raise InfrastructurePolicyError("unsupported NTP operation")
 
 
