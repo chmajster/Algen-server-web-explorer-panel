@@ -69,11 +69,16 @@ function clearReadCaches() {
   seededGets.clear();
 }
 
+function targetUrl(url: string) {
+  return apiBaseUrl && url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
+}
+
 export function setApiBaseUrl(baseUrl: string) {
   apiBaseUrl = baseUrl.replace(/\/+$/, "");
   clearReadCaches();
 }
 export function apiAt(baseUrl: string, path: string) { return baseUrl ? `${baseUrl.replace(/\/+$/, "")}${path}` : path; }
+export function apiUrl(path: string) { return targetUrl(path); }
 export function healthWebSocketUrl() {
   const pageUrl = typeof window !== "undefined" ? window.location.href : "http://localhost/";
   const target = new URL(apiAt(apiBaseUrl, "/api/health/ws"), pageUrl);
@@ -187,14 +192,18 @@ export function errorFromResponse(body: string, status: number, statusText: stri
   return new ApiError(enrichErrorMessage(message, status, code, details), status, code, field, details);
 }
 
-async function send<T>(url: string, options: RequestInit, token = ""): Promise<T> {
+async function sendResponse(url: string, options: RequestInit, token = ""): Promise<Response> {
   const headers = new Headers(options.headers);
   if (options.body instanceof Blob) headers.set("Content-Type", "application/octet-stream");
   else if (options.body !== undefined && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (token) headers.set("x-csrf-token", token);
-  const target = apiBaseUrl && url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
-  const response = await fetch(target, { ...options, headers, credentials: "include" });
+  const response = await fetch(targetUrl(url), { ...options, headers, credentials: "include" });
   if (!response.ok) throw errorFromResponse(await response.text(), response.status, response.statusText);
+  return response;
+}
+
+async function send<T>(url: string, options: RequestInit, token = ""): Promise<T> {
+  const response = await sendResponse(url, options, token);
   return response.json() as Promise<T>;
 }
 
@@ -274,18 +283,23 @@ function isInvalidCsrfError(error: unknown): error is ApiError {
     && (error.code === "INVALID_CSRF_TOKEN" || error.message === "Invalid CSRF token");
 }
 
-async function executeRequest<T>(url: string, options: RequestInit, method: string): Promise<T> {
+async function executeRawRequest(url: string, options: RequestInit, method: string): Promise<Response> {
   const requiresCsrf = MUTATING_METHODS.has(method) && url !== "/api/auth/login";
   if (requiresCsrf && !csrfToken) await synchronizeSession();
   const generation = sessionGeneration;
   try {
-    return await send<T>(url, options, requiresCsrf ? csrfToken : "");
+    return await sendResponse(url, options, requiresCsrf ? csrfToken : "");
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) { clearAuthenticationState(generation); throw error; }
     if (!requiresCsrf || !isInvalidCsrfError(error) || !isReplayableBody(options.body)) throw error;
     await synchronizeSession(true);
-    return send<T>(url, options, csrfToken);
+    return sendResponse(url, options, csrfToken);
   }
+}
+
+async function executeRequest<T>(url: string, options: RequestInit, method: string): Promise<T> {
+  const response = await executeRawRequest(url, options, method);
+  return response.json() as Promise<T>;
 }
 
 function getDedupeKey(url: string, options: RequestInit, method: string) {
@@ -311,17 +325,19 @@ export function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   return pending;
 }
 
+export function rawRequest(url: string, options: RequestInit = {}): Promise<Response> {
+  const method = (options.method || "GET").toUpperCase();
+  return executeRawRequest(url, options, method);
+}
+
 export async function health(signal?: AbortSignal): Promise<HealthStatus> {
-  const target = apiBaseUrl ? `${apiBaseUrl}/api/health` : "/api/health";
-  const response = await fetch(target, { cache: "no-store", credentials: "include", headers: { Accept: "application/json" }, signal });
-  if (response.status >= 500) throw new ApiError(response.statusText || "Backend health check failed", response.status);
-  if (!response.ok) return { status: "ok", service: "webnas" };
+  const response = await fetch(targetUrl("/api/health"), { cache: "no-store", credentials: "include", headers: { Accept: "application/json" }, signal });
+  if (!response.ok) throw errorFromResponse(await response.text(), response.status, response.statusText);
   return response.json() as Promise<HealthStatus>;
 }
 
 export async function enrollmentScript(url: string, token: string): Promise<Blob> {
-  const target = apiBaseUrl && url.startsWith("/") ? `${apiBaseUrl}${url}` : url;
-  const response = await fetch(target, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  const response = await fetch(targetUrl(url), { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!response.ok) throw new ApiError("Enrollment script is unavailable", response.status);
   return response.blob();
 }
