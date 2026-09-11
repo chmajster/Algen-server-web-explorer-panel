@@ -14,6 +14,14 @@ from ..sqlite_utils import ClosingConnection
 from .models import ACTIVE_STATUSES, Job, JobLogEntry, JobPage, JobPriority, JobStatus
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    try:
+        decoded = json.loads(value or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
 class JobRepository:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -119,10 +127,10 @@ class JobRepository:
             retry_count=int(row["retry_count"] or 0),
             max_retries=int(value("max_retries", 0) or 0),
             timeout=value("timeout"),
-            result=json.loads(row["result_json"] or "{}"),
+            result=_json_object(row["result_json"]),
             error=str(row["error"] or ""),
             message=str(row["message"] or ""),
-            metadata=json.loads(row["metadata_json"] or "{}"),
+            metadata=_json_object(row["metadata_json"]),
             retryable=bool(row["retryable"]),
             cancellable=bool(row["cancellable"]),
             cancel_requested=bool(row["cancel_requested"]),
@@ -322,7 +330,7 @@ class JobRepository:
                 created_at=float(row["created_at"]),
                 level=str(row["level"]),
                 message=str(row["message"]),
-                data=json.loads(row["data_json"] or "{}"),
+                data=_json_object(row["data_json"]),
             )
             for row in rows
         ]

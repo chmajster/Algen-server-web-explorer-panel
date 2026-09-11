@@ -297,3 +297,23 @@ def test_two_managers_claim_same_persisted_transfer_only_once(monkeypatch, tmp_p
 
     assert task.status == TaskStatus.running
     assert len(first_operations.submissions) + len(second_operations.submissions) == 1
+
+
+def test_corrupt_persisted_transfer_does_not_break_manager_startup(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(FileTaskManager, "_schedule", lambda self: None)
+    manager = FileTaskManager()
+    healthy = manager.create_transfer("alice", "copy", [str(tmp_path / "healthy")], str(tmp_path / "target"))
+    with manager._connect() as conn:
+        conn.execute(
+            "INSERT INTO file_tasks (id,username,type,source_paths,destination_path,status,priority,payload) VALUES (?,?,?,?,?,?,?,?)",
+            ("broken-task", "alice", "copy", "not-json", str(tmp_path / "broken-target"), "queued", 0, "{broken"),
+        )
+
+    loaded = FileTaskManager()
+
+    assert loaded.get("alice", healthy.id) is not None
+    broken = loaded.get("alice", "broken-task")
+    assert broken is not None
+    assert broken.status == TaskStatus.failed
+    assert broken.error_message == "Stored transfer state is corrupted"
+    assert "could not be restored" in "\n".join(broken.log_tail).lower()

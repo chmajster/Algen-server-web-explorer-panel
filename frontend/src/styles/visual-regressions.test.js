@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const css = readFileSync(resolve(cwd(), "src/styles/visual-regressions.css"), "utf8");
 const compatCss = readFileSync(resolve(cwd(), "src/styles/legacy-window-compat.css"), "utf8");
+const windowsCss = readFileSync(resolve(cwd(), "src/styles/windows.css"), "utf8");
 const main = readFileSync(resolve(cwd(), "src/main.tsx"), "utf8");
 const packageJson = JSON.parse(readFileSync(resolve(cwd(), "package.json"), "utf8"));
 
@@ -78,6 +79,15 @@ describe("visual regression corrections", () => {
       ".desktop .ldap-summary-grid",
       ".desktop .auth-mode-grid",
     ]) expect(compatCss).toContain(selector);
+  });
+
+  it("keeps the image converter scrollable inside a resized desktop window", () => {
+    expect(windowsCss).toContain(".desktop .window-content > .image-converter-app {");
+    expect(windowsCss).toContain("height: 100%");
+    expect(windowsCss).toContain("min-height: 0");
+    expect(windowsCss).toContain("overflow-y: auto");
+    expect(windowsCss).toContain("overflow-x: hidden");
+    expect(windowsCss).toContain("overscroll-behavior: contain");
   });
 
   it("lets the Playwright configuration control CI reporters", () => {

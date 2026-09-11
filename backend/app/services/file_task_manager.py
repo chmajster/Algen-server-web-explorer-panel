@@ -184,20 +184,40 @@ class FileTaskManager:
 
     def _load_tasks(self) -> None:
         with self._connect() as conn:
-            rows = conn.execute("SELECT payload,username,type,source_paths,destination_path,status,priority FROM file_tasks").fetchall()
+            rows = conn.execute("SELECT id,payload,username,type,source_paths,destination_path,status,priority FROM file_tasks").fetchall()
         with self._lock:
             for row in rows:
-                payload = json.loads(row["payload"])
-                # Older WebNAS versions omitted these required fields from the
-                # JSON payload. The normalized table columns are the migration
-                # source of truth and let upgrades start without losing history.
-                payload.setdefault("username", row["username"])
-                payload.setdefault("type", row["type"])
-                payload.setdefault("source_paths", json.loads(row["source_paths"]))
-                payload.setdefault("destination_path", row["destination_path"])
-                payload["status"] = row["status"]
-                payload.setdefault("priority", row["priority"])
-                task = self._task_from_payload(payload)
+                try:
+                    payload = json.loads(row["payload"])
+                    if not isinstance(payload, dict):
+                        raise ValueError("stored transfer payload is not an object")
+                    source_paths = json.loads(row["source_paths"])
+                    if not isinstance(source_paths, list):
+                        raise ValueError("stored transfer sources are not a list")
+                    # Older WebNAS versions omitted required fields from the JSON
+                    # payload. The normalized table columns are the migration source
+                    # of truth and let upgrades start without losing history.
+                    payload.setdefault("id", row["id"])
+                    payload.setdefault("username", row["username"])
+                    payload.setdefault("type", row["type"])
+                    payload.setdefault("source_paths", source_paths)
+                    payload.setdefault("destination_path", row["destination_path"])
+                    payload["status"] = row["status"]
+                    payload.setdefault("priority", row["priority"])
+                    task = self._task_from_payload(payload)
+                except (json.JSONDecodeError, TypeError, ValueError, KeyError, AttributeError):
+                    task = FileTask(
+                        id=str(row["id"]),
+                        username=str(row["username"]),
+                        type=str(row["type"]),
+                        source_paths=[],
+                        destination_path=str(row["destination_path"] or ""),
+                        status=TaskStatus.failed,
+                        priority=row["priority"] if isinstance(row["priority"], int) else 0,
+                        finished_at=now(),
+                        error_message="Stored transfer state is corrupted",
+                    )
+                    task.append_log("Stored transfer state could not be restored; create a new transfer to retry")
                 if task.status == TaskStatus.running:
                     task.status = TaskStatus.failed
                     task.finished_at = now()

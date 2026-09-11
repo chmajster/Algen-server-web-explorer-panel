@@ -413,3 +413,27 @@ def test_update_progress_returns_persistent_state_and_bounded_log(monkeypatch, t
     assert result["pid"] == 123
     assert result["exit_code"] == 0
     assert result["lines"] == ["prepare", "install", "complete"]
+
+
+def test_unexpected_auto_update_error_is_sanitized(monkeypatch):
+    written = []
+    state = settings._default_auto_update_state()
+    monkeypatch.setattr(settings, "read_update_request", lambda: {})
+    monkeypatch.setattr(settings, "_read_auto_update_state", lambda: dict(state))
+    monkeypatch.setattr(settings, "_write_auto_update_state", lambda value: written.append(dict(value)) or value)
+
+    def fail_status():
+        raise RuntimeError("secret token=abc123 path=/srv/private")
+
+    monkeypatch.setattr(settings, "_update_status", fail_status)
+
+    result = settings._run_auto_update_once(actor="alice")
+    assert result == {"ok": False, "error": "Update operation failed"}
+    assert written[-1]["last_error"] == "Update operation failed"
+    assert "abc123" not in json.dumps(written)
+    assert "/srv/private" not in json.dumps(written)
+
+    with pytest.raises(settings.HTTPException) as exc:
+        settings._run_auto_update_once(actor="alice", force=True)
+    assert exc.value.status_code == 500
+    assert exc.value.detail == "Update operation failed"
