@@ -1,0 +1,93 @@
+name: One-shot post-253 code fix
+on:
+  push:
+    branches:
+      - fix/post-253-runtime-hardening
+    paths:
+      - .github/workflows/one-shot-post253-codefix.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/post-253-runtime-hardening
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Apply fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"replacement marker missing: {path}: {old[:80]!r}")
+              target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace(
+              "backend/app/settings.py",
+              '        self._attempts: dict[str, deque[float]] = defaultdict(deque)\n\n    def check(self, key: str) -> None:\n        cfg = get_config()\n        now = time.time()\n        window = self._attempts[key]\n        while window and window[0] < now - 60:\n            window.popleft()\n        if len(window) >= cfg.security.rate_limit_admin_per_minute:\n            raise HTTPException(429, "Too many administrative operations")\n        window.append(now)\n',
+              '        self._attempts: dict[str, deque[float]] = defaultdict(deque)\n        self._lock = threading.Lock()\n\n    def check(self, key: str) -> None:\n        cfg = get_config()\n        now = time.time()\n        with self._lock:\n            window = self._attempts[key]\n            while window and window[0] < now - 60:\n                window.popleft()\n            if len(window) >= cfg.security.rate_limit_admin_per_minute:\n                raise HTTPException(429, "Too many administrative operations")\n            window.append(now)\n',
+          )
+          replace(
+              "backend/app/settings.py",
+              '    if result.returncode != 0:\n        raise HTTPException(400, result.stderr.strip() or "System command failed")\n    return result\n',
+              '    if result.returncode != 0:\n        command = Path(args[0]).name if args else "unknown"\n        logger.warning("settings_admin_command_failed command=%s returncode=%s", command, result.returncode)\n        raise HTTPException(400, "System command failed")\n    return result\n',
+          )
+          replace(
+              "backend/app/settings.py",
+              '        except Exception as exc:\n            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)\n            with _shutdown_lock:\n                if generation == _shutdown_generation:\n                    _shutdown_state.update(state="failed", error=str(detail), blocker_count=0)\n            return\n',
+              '        except Exception:\n            logger.exception("shutdown_system_failed generation=%s", generation)\n            with _shutdown_lock:\n                if generation == _shutdown_generation:\n                    _shutdown_state.update(state="failed", error="System shutdown failed", blocker_count=0)\n            return\n',
+          )
+          replace(
+              "backend/app/modules/hosts_manager/service.py",
+              '        values = {str(row["key"]): json.loads(row["value_json"]) for row in rows}\n        defaults = HostsManagerSettingsUpdate().model_dump(mode="json")\n',
+              '        values: dict[str, Any] = {}\n        for row in rows:\n            try:\n                values[str(row["key"])] = json.loads(row["value_json"])\n            except (TypeError, ValueError, json.JSONDecodeError):\n                continue\n        defaults = HostsManagerSettingsUpdate().model_dump(mode="json")\n',
+          )
+          replace(
+              "backend/app/modules/dhcp/service.py",
+              'from ..providers.public import upsert_dns_record\n',
+              '',
+          )
+          replace(
+              "backend/app/modules/dhcp/service.py",
+              '        path = self.inputs_root / f"{reference}.json"\n        payload = json.loads(path.read_text(encoding="utf-8"))\n        if not isinstance(payload, dict):\n            raise ValueError("invalid staged DHCP payload")\n        return payload\n',
+              '        path = self.inputs_root / f"{reference}.json"\n        try:\n            payload = json.loads(path.read_text(encoding="utf-8"))\n        except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:\n            raise ValueError("invalid staged DHCP payload") from error\n        if not isinstance(payload, dict):\n            raise ValueError("invalid staged DHCP payload")\n        return payload\n',
+          )
+          replace(
+              "backend/app/modules/dhcp/service.py",
+              '                return upsert_dns_record(module_id, reservation.hostname, reservation.ipv4_address)\n',
+              '                from ..providers.public import upsert_dns_record\n\n                return upsert_dns_record(module_id, reservation.hostname, reservation.ipv4_address)\n',
+          )
+          replace(
+              "backend/app/modules/providers/dhcp.py",
+              '        staged: dict[str, Any] = {}\n        if reference:\n            staged = service().read_input(reference)\n        object_id = str(payload.get("object_id") or "")\n        try:\n            if cancelled():\n',
+              '        staged: dict[str, Any] = {}\n        object_id = str(payload.get("object_id") or "")\n        try:\n            if reference:\n                staged = service().read_input(reference)\n            if cancelled():\n',
+          )
+          PY
+      - name: Install backend test dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Verify fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/app
+          python -m ruff check backend/app/settings.py backend/app/modules/hosts_manager/service.py backend/app/modules/dhcp/service.py backend/app/modules/providers/dhcp.py backend/tests/test_post253_runtime_hardening.py
+          python -m mypy
+          python -m pytest -q backend/tests/test_post253_runtime_hardening.py backend/tests/test_persisted_json_resilience.py
+      - name: Commit fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/settings.py backend/app/modules/hosts_manager/service.py backend/app/modules/dhcp/service.py backend/app/modules/providers/dhcp.py
+          git commit -m "fix: harden admin and staged runtime boundaries"
+          git push origin HEAD:fix/post-253-runtime-hardening
