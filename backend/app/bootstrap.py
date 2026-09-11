@@ -40,6 +40,7 @@ from .resource_sampler import resource_sampler, resource_sampler_loop
 from .runtime_events import router as runtime_events_router
 from .runtime_events import watch_update_progress
 from .security import SessionUser, get_session_user
+from .settings_pin_schema import enable_dynamic_application_ids
 from .shell_preferences import router as shell_preferences_router
 from .startup_bootstrap import router as startup_bootstrap_router
 from .tasks import task_store
@@ -50,6 +51,10 @@ from .uploads import active_uploads
 
 BUILTIN_MODULES = Path(__file__).resolve().parent / "modules" / "builtin"
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+# Desktop application manifests are discovered dynamically. Keep the settings
+# request schema equally dynamic while retaining strict identifier validation.
+enable_dynamic_application_ids(settings_api.UserSettings, settings_api.MePatch)
 
 
 @dataclass(frozen=True, slots=True)
