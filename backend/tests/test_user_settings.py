@@ -111,12 +111,12 @@ def test_old_settings_file_keeps_valid_fields_and_repairs_invalid_fields(monkeyp
         ("file_page_size", 20),
         ("notification_limit", 0),
         ("wallpaper", "javascript:alert(1)"),
-        ("pinned_apps", ["files", "unknown-app"]),
+        ("pinned_apps", ["files", "../../unsafe"]),
         ("pinned_apps", ["files", "files"]),
         ("pinned_modules", ["linux-updates", "linux-updates"]),
         ("pinned_modules", ["../../invalid"]),
         ("start_pinned_apps", ["files", "files"]),
-        ("desktop_shortcut_apps", ["unknown-app"]),
+        ("desktop_shortcut_apps", ["Invalid App"]),
     ],
 )
 def test_patch_rejects_invalid_preferences(field, value):

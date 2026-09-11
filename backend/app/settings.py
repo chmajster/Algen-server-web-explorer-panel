@@ -15,13 +15,13 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from . import __version__
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import AfterValidator, BaseModel, Field, ValidationError, field_validator
 
 from .activity import ActivityCategory, record_activity
 from .audit import logger
@@ -149,26 +149,13 @@ DEFAULT_DESKTOP_WIDGETS = [
     DesktopWidget(id="alerts", x=7, y=2, width=3, height=2),
 ]
 
-PinnedAppId = Literal[
-    "files",
-    "transfers",
-    "activity",
-    "identity",
-    "users",
-    "groups",
-    "mounts",
-    "samba",
-    "services",
-    "store",
-    "logs",
-    "settings",
-    "monitor",
-    "modules",
-    "access",
-    "containers",
-    "ansible",
-    "module",
-]
+def _validate_pinned_app_id(value: str) -> str:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", value):
+        raise ValueError("pinned application identifiers are invalid")
+    return value
+
+
+PinnedAppId = Annotated[str, AfterValidator(_validate_pinned_app_id)]
 InterfaceFont = Literal["system", "segoe", "arial", "verdana", "tahoma", "georgia", "monospace"]
 DEFAULT_PINNED_APPS: list[PinnedAppId] = ["files", "transfers", "monitor", "settings"]
 
