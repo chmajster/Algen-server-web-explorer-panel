@@ -90,7 +90,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
     const rank = new Map(order.map((key, index) => [key, index]));
     return [...baseItems].sort((a, b) => (rank.get(a.key) ?? 10000) - (rank.get(b.key) ?? 10000));
   }, [baseItems, order]);
-  const taskbarItems = useMemo(() => visibleItems.filter((item) => !item.moduleId || pinnedModules.has(item.moduleId)), [pinnedModules, visibleItems]);
+  const taskbarItems = visibleItems;
   const installedModules = useMemo(() => [...moduleNames.entries()].sort(([leftId, leftName], [rightId, rightName]) => {
     const pinDelta = Number(pinnedModules.has(rightId)) - Number(pinnedModules.has(leftId));
     return pinDelta || leftName.localeCompare(rightName, profile.language);
