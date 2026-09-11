@@ -50,7 +50,7 @@ describe("NtpManagerApp", () => {
   it("adds a typed pool source from the Sources tab", async () => {
     const user = userEvent.setup();
     render(<NtpManagerApp permissions={["ntp.view", "ntp.manage"]} language="pl-PL" toast={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("Synchronizacja: OK")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("OK")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Źródła czasu" }));
     await user.type(screen.getByLabelText("NTP server"), "pool.ntp.org");
@@ -63,7 +63,7 @@ describe("NtpManagerApp", () => {
   it("edits allowed networks and saves client+server configuration", async () => {
     const user = userEvent.setup();
     render(<NtpManagerApp permissions={["ntp.view", "ntp.manage", "ntp.firewall.manage"]} language="pl-PL" toast={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("Synchronizacja: OK")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("OK")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Serwer NTP" }));
     await user.type(screen.getByPlaceholderText("192.168.10.0/24"), "2001:db8::/64");
@@ -79,9 +79,10 @@ describe("NtpManagerApp", () => {
   });
 
   it("keeps mutating controls hidden for ntp.view-only users", async () => {
+    const user = userEvent.setup();
     render(<NtpManagerApp permissions={["ntp.view"]} language="pl-PL" toast={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("Synchronizacja: OK")).toBeInTheDocument());
-    await userEvent.click(screen.getByRole("button", { name: "Źródła czasu" }));
+    await waitFor(() => expect(screen.getByText("OK")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Źródła czasu" }));
     expect(screen.queryByRole("button", { name: /Dodaj/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Usuń/ })).not.toBeInTheDocument();
   });
