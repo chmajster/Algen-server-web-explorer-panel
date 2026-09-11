@@ -13,6 +13,11 @@ class LinuxUpdatesRepairProvider(LinuxUpdatesProvider):
 
     allowed_tools = {*LinuxUpdatesProvider.allowed_tools, "dpkg"}
 
+    def __init__(self, module_id: str) -> None:
+        super().__init__(module_id)
+        if "repair_dpkg" not in self.manifest.capabilities.actions:
+            self.manifest.capabilities.actions.append("repair_dpkg")
+
     def manage(
         self,
         operation: str,
