@@ -174,9 +174,9 @@ def _registry_router(registry: ModuleRegistry) -> APIRouter:
 def create_app(settings: AppConfig | None = None, *, registry: ModuleRegistry | None = None, mount_frontend: bool = True) -> FastAPI:
     """Composition root. Dependencies may be replaced without importing business internals."""
     configure_logging()
-    enable_dynamic_app_ids(settings_api)
     application_settings = settings or get_config()
     module_registry = registry or build_module_registry()
+    enable_dynamic_app_ids(settings_api, (manifest.id for manifest in module_registry.manifests))
     container = ApplicationContainer(application_settings, module_registry)
     settings_api.collect_dashboard = resource_sampler.dashboard
     app = FastAPI(title="WebNAS", version=__version__, lifespan=application_lifespan)
