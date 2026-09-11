@@ -5,12 +5,13 @@ import os
 import sqlite3
 import threading
 from pathlib import Path
+from typing import Any
 
 from ..sqlite_utils import ClosingConnection
 from .models import PluginTrust, StorePlugin
 
 
-def _json_list(value: object) -> list:
+def _json_list(value: object) -> list[Any]:
     try:
         decoded = json.loads(str(value or "[]"))
     except (TypeError, ValueError, json.JSONDecodeError):
