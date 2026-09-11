@@ -73,7 +73,7 @@ def _probe(command: list[str], *, accepted_codes: set[int]) -> subprocess.Comple
 
 def _apt_upgrade_packages() -> list[str]:
     result = _probe(
-        ["apt-get", "-s", "-o", "Debug::NoLocking=1", "dist-upgrade"],
+        ["apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade"],
         accepted_codes={0},
     )
     packages: list[str] = []

@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import shutil
+from typing import Any
+
+from ...package_center.executor import redact
+from ...privileged_broker.runtime import broker_command, broker_required
+from .base import CancelCallback, LogCallback, ProgressCallback
+from .linux_updates import APT_INST_RE, LinuxUpdatesProvider
+
+
+class LinuxUpdatesRepairProvider(LinuxUpdatesProvider):
+    """Extend Linux system updates with recovery for interrupted dpkg runs."""
+
+    allowed_tools = {*LinuxUpdatesProvider.allowed_tools, "dpkg"}
+
+    def __init__(self, module_id: str) -> None:
+        super().__init__(module_id)
+        if "repair_dpkg" not in self.manifest.capabilities.actions:
+            self.manifest.capabilities.actions.append("repair_dpkg")
+
+    def _packages(self) -> list[dict[str, Any]]:
+        if self._manager() != "apt-get":
+            return super()._packages()
+        result = self._run(
+            ["apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade"],
+            timeout=90,
+        )
+        output = self._result(result, "APT could not calculate available updates")
+        packages: list[dict[str, Any]] = []
+        for line in output.splitlines():
+            match = APT_INST_RE.match(line)
+            if not match:
+                continue
+            origin = match.group("origin") or ""
+            packages.append(
+                {
+                    "name": match.group("name"),
+                    "current_version": match.group("current") or "",
+                    "available_version": match.group("version"),
+                    "security": "security" in origin.lower(),
+                    "origin": origin,
+                }
+            )
+        return packages
+
+    def _run_dpkg_repair(self) -> Any:
+        command = ["dpkg", "--configure", "-a"]
+        if broker_required():
+            result = broker_command(
+                command,
+                timeout=3600,
+                actor="linux-updates-dpkg-repair",
+            )
+            if result is None:
+                raise RuntimeError("Privileged broker rejected dpkg recovery")
+            return result
+        return self._run(
+            command,
+            timeout=3600,
+            env={"DEBIAN_FRONTEND": "noninteractive"},
+        )
+
+    def manage(
+        self,
+        operation: str,
+        payload: dict[str, Any],
+        actor: str,
+        log: LogCallback,
+        progress: ProgressCallback,
+        cancelled: CancelCallback,
+    ) -> dict[str, Any]:
+        if operation != "repair_dpkg":
+            return super().manage(operation, payload, actor, log, progress, cancelled)
+
+        if self._manager() != "apt-get":
+            raise RuntimeError("DPKG repair is available only on APT-based systems")
+        if not shutil.which("dpkg"):
+            raise RuntimeError("dpkg executable is unavailable")
+
+        progress(10, "Preparing dpkg repair")
+        if cancelled():
+            raise InterruptedError("DPKG repair cancelled before execution")
+
+        log("stdout", "Running dpkg --configure -a")
+        result = self._run_dpkg_repair()
+
+        for line in (result.stdout + "\n" + result.stderr).splitlines()[-500:]:
+            if line.strip():
+                log("stdout" if result.returncode == 0 else "stderr", redact(line))
+
+        self._result(result, "DPKG repair failed")
+        progress(95, "DPKG configuration completed")
+        return {
+            "operation": operation,
+            "command": "dpkg --configure -a",
+            "repaired": True,
+            "reboot_required": self._reboot_required(),
+        }

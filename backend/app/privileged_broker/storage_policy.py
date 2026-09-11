@@ -57,6 +57,17 @@ def _storage_probe(payload: dict[str, Any], runner: base.Runner) -> base.Command
     return runner([executable, *args], None, float(timeout_raw))
 
 
+def _dpkg_repair(payload: dict[str, Any], runner: base.Runner) -> base.CommandResult:
+    if set(payload) - {"tool", "args", "timeout"}:
+        raise base.PolicyError("unsupported dpkg recovery parameters")
+    if payload.get("tool") != "dpkg" or payload.get("args") != ["--configure", "-a"]:
+        raise base.PolicyError("unsupported dpkg recovery operation")
+    timeout_raw = payload.get("timeout", 1800)
+    if not isinstance(timeout_raw, (int, float)) or isinstance(timeout_raw, bool) or not 1 <= float(timeout_raw) <= 3600:
+        raise base.PolicyError("invalid package timeout")
+    return runner([base._resolve_tool("dpkg"), "--configure", "-a"], None, float(timeout_raw))
+
+
 def dispatch(request: BrokerRequest, *, runner: base.Runner | None = None) -> BrokerResponse:
     if request.operation == Operation.FILE_WORKER:
         return file_worker_dispatch(request)
@@ -64,6 +75,15 @@ def dispatch(request: BrokerRequest, *, runner: base.Runner | None = None) -> Br
         return docker_dispatch(request, runner=runner)
     if request.operation == Operation.DOCKER_GRACEFUL_STOP:
         return docker_stop_dispatch(request, runner=runner)
+    if request.operation == Operation.PACKAGE and request.payload.get("tool") == "dpkg" and request.payload.get("args") == ["--configure", "-a"]:
+        selected_runner = runner or base._default_runner
+        try:
+            result = _dpkg_repair(request.payload, selected_runner)
+        except base.PolicyError as error:
+            return _failure(request, error, policy=True)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            return _failure(request, error, policy=False)
+        return _result(request, result)
     if request.operation != Operation.STORAGE_PROBE:
         return extended_dispatch(request, runner=runner)
 
