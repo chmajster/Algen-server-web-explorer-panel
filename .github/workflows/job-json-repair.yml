@@ -1,0 +1,51 @@
+name: Harden persisted job JSON
+
+on:
+  push:
+    branches: [fix/runtime-integrity-audit-2]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/runtime-integrity-audit-2
+      - name: Patch job repository
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/app/jobs/repository.py')
+          text = path.read_text(encoding='utf-8')
+          needle = 'from .models import ACTIVE_STATUSES, Job, JobLogEntry, JobPage, JobPriority, JobStatus\n\n\nclass JobRepository:'
+          replacement = '''from .models import ACTIVE_STATUSES, Job, JobLogEntry, JobPage, JobPriority, JobStatus\n\n\ndef _json_object(value: Any) -> dict[str, Any]:\n    try:\n        decoded = json.loads(value or "{}")\n    except (TypeError, ValueError, json.JSONDecodeError):\n        return {}\n    return decoded if isinstance(decoded, dict) else {}\n\n\nclass JobRepository:'''
+          if needle not in text:
+              raise SystemExit('job repository insertion point missing')
+          text = text.replace(needle, replacement, 1)
+          text = text.replace('result=json.loads(row["result_json"] or "{}"),', 'result=_json_object(row["result_json"]),', 1)
+          text = text.replace('metadata=json.loads(row["metadata_json"] or "{}"),', 'metadata=_json_object(row["metadata_json"]),', 1)
+          text = text.replace('data=json.loads(row["data_json"] or "{}"),', 'data=_json_object(row["data_json"]),', 1)
+          path.write_text(text, encoding='utf-8')
+
+          tests = Path('backend/tests/test_jobs.py')
+          text = tests.read_text(encoding='utf-8')
+          if 'import sqlite3\n' not in text:
+              text = text.replace('from concurrent.futures import Future, ThreadPoolExecutor\n\n', 'from concurrent.futures import Future, ThreadPoolExecutor\nimport sqlite3\n\n', 1)
+          if 'test_corrupt_persisted_job_json_does_not_break_reads' not in text:
+              text += '''\n\ndef test_corrupt_persisted_job_json_does_not_break_reads(tmp_path):\n    repository = JobRepository(tmp_path / "jobs.sqlite3")\n    job = repository.create(job_type="demo", module="tests", created_by="alice", metadata={"valid": True})\n    repository.append_log(job.id, "info", "hello", {"valid": True})\n    with sqlite3.connect(repository.path) as connection:\n        connection.execute("UPDATE jobs SET result_json=?, metadata_json=? WHERE id=?", ("{broken", "[]", job.id))\n        connection.execute("UPDATE job_logs SET data_json=? WHERE job_id=?", ("not-json", job.id))\n\n    restored = repository.get(job.id)\n    assert restored is not None\n    assert restored.result == {}\n    assert restored.metadata == {}\n    logs = repository.logs(job.id)\n    assert len(logs) == 1\n    assert logs[0].data == {}\n'''
+          tests.write_text(text, encoding='utf-8')
+
+          Path('.github/workflows/job-json-repair.yml').unlink()
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: tolerate corrupt persisted job JSON"
+          git push origin HEAD:fix/runtime-integrity-audit-2
