@@ -13,6 +13,7 @@ from .docker_stop_behavior import install_docker_stop_behavior
 from .infrastructure import ApiConnectionProvider, CommandProvider
 from .home_assistant import HomeAssistantProvider
 from .linux_updates import LinuxUpdatesProvider
+from .linux_updates_repair import LinuxUpdatesRepairProvider
 from .os_repositories import OsRepositoriesProvider
 from .samba import SambaProvider, parse_smb_conf
 
@@ -25,7 +26,7 @@ del install_docker_stop_behavior
 def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
     providers = {
         "samba": SambaProvider,
-        "linux-updates": LinuxUpdatesProvider,
+        "linux-updates": LinuxUpdatesRepairProvider,
         "docker": DockerProvider,
         "pihole": PiHoleProvider,
         "adguard-home": AdGuardHomeProvider,
@@ -47,4 +48,4 @@ def get_provider(module_id: str, actor: str = "root") -> ModuleProvider:
     return ModuleProvider(module_id)
 
 
-__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApiConnectionProvider", "ApmidProvider", "CronProvider", "DhcpProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "MariaDBProvider", "ModuleProvider", "OsRepositoriesProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider", "parse_smb_conf"]
+__all__ = ["AdGuardHomeProvider", "AnsibleControllerProvider", "ApiConnectionProvider", "ApmidProvider", "CronProvider", "DhcpProvider", "DockerProvider", "HomeAssistantProvider", "LinuxUpdatesProvider", "LinuxUpdatesRepairProvider", "MariaDBProvider", "ModuleProvider", "OsRepositoriesProvider", "PiHoleProvider", "PostgreSQLProvider", "RedisProvider", "SambaProvider", "get_provider", "parse_smb_conf"]
