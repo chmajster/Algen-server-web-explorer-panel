@@ -1,4 +1,4 @@
-import { request } from "../../../core/api/transport";
+import { apiUrl, request } from "../../../core/api/transport";
 import type { FileItem, FileListResponse, TextFileResponse } from "../../../core/api/contracts";
 
 export const filesClient = {
@@ -37,5 +37,5 @@ export const filesClient = {
 } as const;
 
 export function downloadUrl(path: string) {
-  return `/api/files/download?path=${encodeURIComponent(path)}`;
+  return apiUrl(`/api/files/download?path=${encodeURIComponent(path)}`);
 }

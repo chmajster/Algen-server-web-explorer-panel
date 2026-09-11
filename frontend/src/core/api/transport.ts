@@ -1,3 +1,4 @@
+import { apiUrl } from "./transport";
 export type HealthStatus = {
   status: "ok";
   service: string;

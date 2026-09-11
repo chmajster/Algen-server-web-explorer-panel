@@ -1,3 +1,4 @@
+import { apiUrl } from "../../core/api/transport";
 import { promptDialog } from "../../components/DialogService";
 import {
   AlertCircle, Archive, BookMarked, Box, ChevronRight, CirclePause, CirclePlay, Clock3,
@@ -173,7 +174,7 @@ export function LogsApp({ permissions, t, toast }: { permissions: string[]; t: T
     if (filters.group) params.set("group", filters.group);
     if (filters.boot_id) params.set("boot_id", filters.boot_id);
     if (filters.container_id) params.set("container_id", filters.container_id);
-    return `/api/logs/stream?${params}`;
+    return apiUrl(`/api/logs/stream?${params}`);
   }, [filters, query, source]);
 
   useEffect(() => {

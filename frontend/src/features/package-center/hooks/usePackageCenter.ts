@@ -1,3 +1,4 @@
+import { apiUrl } from "../../../core/api/transport";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, apiUrl, type AppJob, type ModuleSummary, type PackageHistoryItem, type PackageSource } from "../../../api";
 import type { Translate } from "../../../app/types";
