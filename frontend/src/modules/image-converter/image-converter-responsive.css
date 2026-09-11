@@ -1,0 +1,204 @@
+/* Responsive and interaction polish for the Image Converter workspace. */
+
+.image-converter-app {
+  gap: 14px;
+  padding: 18px;
+}
+
+.image-converter-hero {
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.image-converter-hero-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+}
+
+.image-converter-hero-copy h2 {
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+.image-converter-tabs {
+  gap: 8px;
+}
+
+.image-converter-tabs button {
+  min-height: 60px;
+  padding: 11px 13px;
+}
+
+.image-converter-tabs button:hover,
+.image-converter-path-row button:hover:not(:disabled),
+.image-converter-up:hover,
+.image-converter-button:hover,
+.image-converter-download:hover {
+  border-color: color-mix(in srgb, var(--accent, #5f8cff) 58%, var(--border, #334054));
+  background: color-mix(in srgb, var(--accent, #5f8cff) 8%, var(--panel, #171e29));
+}
+
+.image-converter-tabs button:focus-visible,
+.image-converter-path-row button:focus-visible,
+.image-converter-up:focus-visible,
+.image-converter-folder:focus-visible,
+.image-converter-button:focus-visible,
+.image-converter-download:focus-visible,
+.image-converter-primary:focus-visible,
+.image-converter-list-title button:focus-visible {
+  outline: 2px solid var(--accent, #5f8cff);
+  outline-offset: 2px;
+}
+
+.image-converter-card-heading {
+  padding: 13px 15px;
+}
+
+.image-converter-source-content {
+  gap: 13px;
+  padding: 15px;
+}
+
+.image-converter-drop {
+  min-height: 150px;
+  box-sizing: border-box;
+  padding: 30px 16px;
+  transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+}
+
+.image-converter-drop:hover {
+  border-color: color-mix(in srgb, var(--accent, #5f8cff) 60%, var(--border, #42506a));
+  background: color-mix(in srgb, var(--accent, #5f8cff) 7%, var(--input, #101620));
+}
+
+.image-converter-drop-icon {
+  width: 48px;
+  height: 48px;
+}
+
+.image-converter-browser-body {
+  max-height: min(38vh, 360px);
+}
+
+.image-converter-folder {
+  transition: background-color .14s ease, border-color .14s ease;
+}
+
+.image-converter-primary {
+  transition: transform .14s ease, filter .14s ease, box-shadow .14s ease;
+}
+
+.image-converter-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.image-converter-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+@media (min-width: 921px) {
+  .image-converter-options {
+    max-height: calc(100vh - 52px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .image-converter-primary {
+    position: sticky;
+    bottom: 12px;
+    z-index: 2;
+  }
+}
+
+/* Keep the settings panel visible in the common 860-920 px desktop window size.
+   The base stylesheet switches to one column at 920 px, which pushes all settings
+   below the fold in a short WebNAS window. */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .image-converter-app {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .image-converter-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(276px, 300px);
+    gap: 12px;
+    align-items: start;
+  }
+
+  .image-converter-options {
+    position: sticky;
+    top: 6px;
+    gap: 11px;
+    max-height: calc(100vh - 44px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-bottom: 12px;
+  }
+
+  .image-converter-options > .image-converter-label,
+  .image-converter-options > .image-converter-quality,
+  .image-converter-options > .image-converter-advanced,
+  .image-converter-options > .image-converter-run-summary,
+  .image-converter-options > .image-converter-primary {
+    margin-inline: 12px;
+  }
+
+  .image-converter-source-footer {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .image-converter-primary {
+    position: sticky;
+    bottom: 10px;
+    z-index: 2;
+  }
+
+  .image-converter-hero {
+    padding: 14px 16px;
+  }
+
+  .image-converter-ready {
+    padding: 7px 10px;
+    font-size: .78rem;
+  }
+
+  .image-converter-tabs button {
+    min-height: 56px;
+    padding: 10px 12px;
+  }
+
+  .image-converter-card-heading {
+    padding: 12px 13px;
+  }
+
+  .image-converter-source-content {
+    gap: 11px;
+    padding: 13px;
+  }
+
+  .image-converter-drop {
+    min-height: 140px;
+    padding: 24px 14px;
+  }
+
+  .image-converter-browser-body {
+    max-height: min(34vh, 300px);
+  }
+}
+
+@media (max-width: 760px) {
+  .image-converter-app {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .image-converter-drop {
+    min-height: 136px;
+    padding: 24px 14px;
+  }
+}
