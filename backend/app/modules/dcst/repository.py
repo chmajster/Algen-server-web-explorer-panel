@@ -14,6 +14,13 @@ from ...config import get_config
 SCHEMA_VERSION = 1
 
 
+def _json_or_default(value: Any, default: Any) -> Any:
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+
+
 class DcstRepository:
     def __init__(self, path: Path | None = None) -> None:
         root = (path.parent if path else Path(get_config().paths.data_dir) / "dcst").resolve(strict=False)
@@ -89,7 +96,7 @@ class DcstRepository:
         for row in rows:
             item = dict(row)
             for field in ("before_json", "after_json", "provider_response_json"):
-                item[field[:-5]] = json.loads(item.pop(field) or "{}")
+                item[field[:-5]] = _json_or_default(item.pop(field), {})
             result.append(item)
         return result
 
@@ -254,7 +261,7 @@ class DcstRepository:
     def state(self, key: str, default: Any = None) -> Any:
         with self.connect() as connection:
             row = connection.execute("SELECT value_json FROM dcst_state WHERE key=?", (key,)).fetchone()
-        return json.loads(row["value_json"]) if row else default
+        return _json_or_default(row["value_json"], default) if row else default
 
     def set_state(self, key: str, value: Any) -> None:
         with self.connect() as connection:

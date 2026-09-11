@@ -27,6 +27,14 @@ DEFAULT_CONTAINER_POLICY = {
 }
 
 
+def _json_dict(value: Any) -> dict[str, Any]:
+    try:
+        decoded = json.loads(value or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
 class DockerManagerStore:
     """Private metadata, credentials and bounded telemetry for Containers Manager."""
 
@@ -332,7 +340,7 @@ class DockerManagerStore:
     def list_artifacts(self, kind: str | None = None) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute("SELECT * FROM artifacts WHERE kind=? ORDER BY created_at DESC", (kind,)).fetchall() if kind else connection.execute("SELECT * FROM artifacts ORDER BY created_at DESC").fetchall()
-        return [{**dict(row), "metadata": json.loads(row["metadata"])} for row in rows]
+        return [{**dict(row), "metadata": _json_dict(row["metadata"])} for row in rows]
 
     def artifact(self, artifact_id: str) -> tuple[Path, dict[str, Any]]:
         if not ARTIFACT_RE.fullmatch(artifact_id):

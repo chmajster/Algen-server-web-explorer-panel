@@ -18,7 +18,11 @@ def read_state(app_id: str) -> dict:
     path = app_state_path(app_id)
     if not path.exists():
         return {"installed": False, "history": []}
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"installed": False, "history": []}
+    return value if isinstance(value, dict) else {"installed": False, "history": []}
 
 
 def write_state(app_id: str, state: dict) -> None:

@@ -38,6 +38,14 @@ def stable_id() -> str:
     return secrets.token_hex(16)
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    try:
+        decoded = json.loads(value or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
 class ClosingConnection(sqlite3.Connection):
     """SQLite transaction context that also releases the database handle."""
 
@@ -721,7 +729,7 @@ class AnsibleRepository:
     def setting(self, key: str) -> dict[str, Any]:
         with self._lock, self.connect() as connection:
             row = connection.execute("SELECT config_json FROM controller_settings WHERE key=? AND active=1", (key,)).fetchone()
-        return json.loads(row["config_json"]) if row else {}
+        return _json_object(row["config_json"]) if row else {}
 
     def save_setting(self, key: str, value: dict[str, Any], actor: str) -> dict[str, Any]:
         now = time.time()

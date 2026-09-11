@@ -5,9 +5,18 @@ import os
 import sqlite3
 import threading
 from pathlib import Path
+from typing import Any
 
 from ..sqlite_utils import ClosingConnection
 from .models import PluginTrust, StorePlugin
+
+
+def _json_list(value: object) -> list[Any]:
+    try:
+        decoded = json.loads(str(value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return decoded if isinstance(decoded, list) else []
 
 
 class PluginRepository:
@@ -52,8 +61,8 @@ class PluginRepository:
     def _plugin(row: sqlite3.Row) -> StorePlugin:
         raw = dict(row)
         raw["enabled"] = bool(raw["enabled"])
-        raw["capabilities"] = json.loads(raw.pop("capabilities_json") or "[]")
-        raw["permissions"] = json.loads(raw.pop("permissions_json") or "[]")
+        raw["capabilities"] = _json_list(raw.pop("capabilities_json"))
+        raw["permissions"] = _json_list(raw.pop("permissions_json"))
         return StorePlugin.model_validate(raw)
 
     def list(self) -> list[StorePlugin]:
