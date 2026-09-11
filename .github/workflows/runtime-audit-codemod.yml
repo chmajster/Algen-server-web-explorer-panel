@@ -1,0 +1,99 @@
+name: Runtime audit codemod
+
+on:
+  push:
+    branches:
+      - fix/runtime-audit-followup
+    paths:
+      - .github/workflows/runtime-audit-codemod.yml
+
+permissions:
+  contents: write
+
+jobs:
+  codemod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/runtime-audit-followup
+          fetch-depth: 0
+      - name: Route direct API URLs through shared base URL
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          root = Path("frontend/src")
+          transport = root / "core/api/transport.ts"
+
+          def import_path(path: Path) -> str:
+              rel = os.path.relpath(transport.with_suffix(""), path.parent).replace(os.sep, "/")
+              return rel if rel.startswith(".") else f"./{rel}"
+
+          def ensure_api_url_import(path: Path, text: str) -> str:
+              if "apiUrl(" not in text or re.search(r'import\s*\{[^}]*\bapiUrl\b[^}]*\}\s*from\s*["\'][^"\']*core/api/transport["\']', text):
+                  return text
+              line = f'import {{ apiUrl }} from "{import_path(path)}";\n'
+              return line + text
+
+          event_pattern = re.compile(
+              r'new EventSource\((?P<url>`/api[^`]+`|"/api[^"]+"|\'/api[^\']+\')'
+              r'(?:\s*,\s*\{\s*withCredentials\s*:\s*true\s*\})?\)'
+          )
+          jsx_template_href = re.compile(r'href=\{(?P<url>`/api[^`]+`)\}')
+          jsx_static_href = re.compile(r'href=(?P<quote>["\'])(?P<url>/api[^"\']+)(?P=quote)')
+
+          changed = []
+          for path in root.rglob("*"):
+              if path.suffix not in {".ts", ".tsx"} or ".test." in path.name:
+                  continue
+              text = path.read_text(encoding="utf-8")
+              original = text
+              text = event_pattern.sub(lambda m: f'new EventSource(apiUrl({m.group("url")}), {{ withCredentials: true }})', text)
+              text = jsx_template_href.sub(lambda m: f'href={{apiUrl({m.group("url")})}}', text)
+              text = jsx_static_href.sub(lambda m: f'href={{apiUrl("{m.group("url")}")}}', text)
+              text = text.replace('return `/api/logs/stream?${params}`;', 'return apiUrl(`/api/logs/stream?${params}`);')
+              if path.as_posix().endswith("modules/files/api/client.ts"):
+                  text = text.replace('import { request } from "../../../core/api/transport";', 'import { apiUrl, request } from "../../../core/api/transport";')
+                  text = text.replace('return `/api/files/download?path=${encodeURIComponent(path)}`;', 'return apiUrl(`/api/files/download?path=${encodeURIComponent(path)}`);')
+              text = ensure_api_url_import(path, text)
+              if text != original:
+                  path.write_text(text, encoding="utf-8")
+                  changed.append(path.as_posix())
+
+          print("Changed direct-origin files:")
+          for item in changed:
+              print(f"  {item}")
+
+          network = Path("frontend/src/features/settings/NetworkManagementPanels.tsx").read_text(encoding="utf-8")
+          print("NETWORK_POLISH_LINES_BEGIN")
+          for number, line in enumerate(network.splitlines(), 1):
+              if re.search(r"[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]", line):
+                  print(f"{number}: {line}")
+          print("NETWORK_POLISH_LINES_END")
+
+          forbidden = []
+          for path in root.rglob("*"):
+              if path.suffix not in {".ts", ".tsx"} or ".test." in path.name:
+                  continue
+              text = path.read_text(encoding="utf-8")
+              if re.search(r'new EventSource\((`|"|\')/api', text):
+                  forbidden.append(f"EventSource:{path}")
+              if re.search(r'href=(?:\{|["\'])(?:`|"|\')?/api', text):
+                  forbidden.append(f"href:{path}")
+          if forbidden:
+              raise SystemExit("Direct-origin API URL patterns remain: " + ", ".join(forbidden))
+          PY
+      - name: Commit codemod changes
+        run: |
+          if git diff --quiet; then
+            echo "No codemod changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src
+          git commit -m "fix(frontend): route realtime and download URLs through API base"
+          git push origin HEAD:fix/runtime-audit-followup
