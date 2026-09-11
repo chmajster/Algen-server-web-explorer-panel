@@ -200,6 +200,7 @@ describe("network management settings", () => {
     expect(screen.getByText("Active interfaces")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "network.tab.interfaces" }));
     expect(screen.getByRole("button", { name: /Create/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("eth0"));
     expect(screen.getByText("Selected interface details")).toBeInTheDocument();
   });
 
