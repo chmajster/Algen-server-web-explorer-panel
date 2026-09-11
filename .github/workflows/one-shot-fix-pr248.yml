@@ -1,0 +1,48 @@
+name: One-shot PR248 dynamic-id repair
+
+on:
+  push:
+    branches:
+      - fix/application-regression-audit
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/application-regression-audit
+          fetch-depth: 0
+      - name: Remove runtime Pydantic model mutation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/app/bootstrap.py")
+          text = path.read_text(encoding="utf-8")
+          import_line = "from .settings_dynamic_ids import enable_dynamic_app_ids\n"
+          call_line = "    enable_dynamic_app_ids(settings_api, (manifest.id for manifest in module_registry.manifests))\n"
+          if import_line not in text:
+              raise SystemExit("dynamic-id import not found")
+          if call_line not in text:
+              raise SystemExit("dynamic-id call not found")
+          text = text.replace(import_line, "", 1).replace(call_line, "", 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+          git rm backend/app/settings_dynamic_ids.py backend/tests/test_settings_dynamic_ids.py
+          git diff --check
+      - name: Commit dynamic-id repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/bootstrap.py
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "fix(settings): remove runtime model mutation"
+          git push origin HEAD:fix/application-regression-audit
