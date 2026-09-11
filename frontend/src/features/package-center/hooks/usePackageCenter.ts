@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type AppJob, type ModuleSummary, type PackageHistoryItem, type PackageSource } from "../../../api";
+import { api, apiUrl, type AppJob, type ModuleSummary, type PackageHistoryItem, type PackageSource } from "../../../api";
 import type { Translate } from "../../../app/types";
 import { useRefreshOnConnectionRestored } from "../../connection/ConnectionStatusMonitor";
 import type { PackageTab } from "../types";
@@ -72,7 +72,7 @@ export function usePackageCenter(t: Translate, { canManageSources = true }: { ca
       fallback = window.setInterval(poll, 2500);
     };
     const events = activeIds.split("|").map((id) => {
-      const source = new EventSource(`/api/apps/jobs/${encodeURIComponent(id)}/events`);
+      const source = new EventSource(apiUrl(`/api/apps/jobs/${encodeURIComponent(id)}/events`), { withCredentials: true });
       source.onmessage = (event) => {
         const job = JSON.parse(event.data) as AppJob;
         setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
