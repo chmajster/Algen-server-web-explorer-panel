@@ -17,7 +17,6 @@ from uuid import uuid4
 from ...config import get_config
 from ...package_center.executor import redact
 from ..hosts_manager.public import ConnectionType, HostInput, find_host, registry as hosts_registry
-from ..providers.public import upsert_dns_record
 from .models import (
     DhcpBackend,
     DhcpConfiguration,
@@ -111,7 +110,10 @@ class DhcpService:
         if not reference or not all(character in "0123456789abcdef" for character in reference) or len(reference) != 32:
             raise ValueError("invalid staged DHCP input reference")
         path = self.inputs_root / f"{reference}.json"
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError("invalid staged DHCP payload") from error
         if not isinstance(payload, dict):
             raise ValueError("invalid staged DHCP payload")
         return payload
@@ -677,6 +679,8 @@ class DhcpService:
         errors: list[str] = []
         for module_id in providers:
             try:
+                from ..providers.public import upsert_dns_record
+
                 return upsert_dns_record(module_id, reservation.hostname, reservation.ipv4_address)
             except Exception as error:  # noqa: BLE001 - optional integration must not break DHCP.
                 errors.append(redact(str(error))[:500])
