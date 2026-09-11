@@ -5,6 +5,8 @@ category: system
 icon: clock
 permissions: [ntp.view, ntp.manage, ntp.service.control, ntp.sync, ntp.firewall.manage]
 routers: [app.modules.ntp_manager.router:router]
+startup: app.modules.ntp_manager.lifecycle:startup
+shutdown: app.modules.ntp_manager.lifecycle:shutdown
 dependencies: [identity, package-center]
 capabilities: [status, configuration, client, server, client-server, sources, clients, chrony, systemd-timesyncd, ntpd, sync, timezone, firewall, diagnostics, history, backup, rollback]
 system_capabilities: [timedatectl, systemctl, chronyc, chronyd]
