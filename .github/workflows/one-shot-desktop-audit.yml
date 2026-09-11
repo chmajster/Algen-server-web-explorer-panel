@@ -1,0 +1,57 @@
+name: One-shot desktop audit repair
+
+on:
+  push:
+    branches: [fix/post-merge-bug-audit]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/post-merge-bug-audit
+          fetch-depth: 0
+      - name: Repair desktop drag persistence
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/app/DesktopWorkspace.tsx')
+          t = p.read_text(encoding='utf-8')
+
+          old = '  const drag = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);\n  const longPress = useRef<number | null>(null);'
+          new = '  const drag = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);\n  const dragEntries = useRef<ShellDesktopEntry[] | null>(null);\n  const longPress = useRef<number | null>(null);'
+          assert old in t
+          t = t.replace(old, new, 1)
+
+          anchor = '  }, []);\n\n  const entries = useMemo(() => {'
+          replacement = '  }, []);\n\n  useEffect(() => () => {\n    if (longPress.current !== null) window.clearTimeout(longPress.current);\n  }, []);\n\n  const entries = useMemo(() => {'
+          assert anchor in t
+          t = t.replace(anchor, replacement, 1)
+
+          old = '    drag.current = { id: entry.id, offsetX: event.clientX - itemRect.left, offsetY: event.clientY - itemRect.top };\n    event.currentTarget.setPointerCapture(event.pointerId);'
+          new = '    drag.current = { id: entry.id, offsetX: event.clientX - itemRect.left, offsetY: event.clientY - itemRect.top };\n    dragEntries.current = null;\n    event.currentTarget.setPointerCapture(event.pointerId);'
+          assert old in t
+          t = t.replace(old, new, 1)
+
+          old = '    setPreferences((current) => current ? { ...current, desktop_entries: current.desktop_entries.map((item) => item.id === active.id ? { ...item, position: { x, y } } : item) } : current);\n  };\n  const endDrag = () => {\n    const active = drag.current; drag.current = null;\n    if (!active || !preferences) return;\n    persistEntries(preferences.desktop_entries);\n  };'
+          new = '    setPreferences((current) => {\n      if (!current) return current;\n      const nextEntries = current.desktop_entries.map((item) => item.id === active.id ? { ...item, position: { x, y } } : item);\n      dragEntries.current = nextEntries;\n      return { ...current, desktop_entries: nextEntries };\n    });\n  };\n  const endDrag = () => {\n    const active = drag.current;\n    const nextEntries = dragEntries.current;\n    drag.current = null;\n    dragEntries.current = null;\n    if (!active) return;\n    if (nextEntries) persistEntries(nextEntries);\n    else if (preferences) persistEntries(preferences.desktop_entries);\n  };'
+          assert old in t
+          t = t.replace(old, new, 1)
+
+          p.write_text(t, encoding='utf-8')
+          PY
+          git diff --check
+          git rm .github/workflows/one-shot-desktop-audit.yml
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/app/DesktopWorkspace.tsx
+          git commit -m "fix(desktop): persist latest drag position"
+          git push origin HEAD:fix/post-merge-bug-audit
