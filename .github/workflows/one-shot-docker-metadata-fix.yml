@@ -1,0 +1,50 @@
+name: One-shot Docker metadata fix
+on:
+  push:
+    branches:
+      - fix/exhaustive-runtime-audit-3
+    paths:
+      - .github/workflows/one-shot-docker-metadata-fix.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/exhaustive-runtime-audit-3
+      - name: Patch and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          storage = Path('backend/app/modules/docker_manager/storage.py')
+          text = storage.read_text(encoding='utf-8')
+          old = '        metadata = {**dict(row), "metadata": json.loads(row["metadata"])}\n'
+          new = '        metadata = {**dict(row), "metadata": _json_dict(row["metadata"])}\n'
+          if old not in text:
+              raise SystemExit('Docker artifact metadata marker missing')
+          storage.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          tests = Path('backend/tests/test_persisted_json_resilience.py')
+          text = tests.read_text(encoding='utf-8')
+          old = '    assert store.list_artifacts()[0]["metadata"] == {}\n\n\n'
+          new = '    assert store.list_artifacts()[0]["metadata"] == {}\n    artifact_path, artifact_metadata = store.artifact(created["id"])\n    assert artifact_path == artifact\n    assert artifact_metadata["metadata"] == {}\n\n\n'
+          if old not in text:
+              raise SystemExit('Docker artifact test marker missing')
+          tests.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python -m compileall -q backend/app
+          python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+          python -m pytest -q backend/tests/test_persisted_json_resilience.py backend/tests/test_backend_source_syntax.py
+      - name: Commit code changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/modules/docker_manager/storage.py backend/tests/test_persisted_json_resilience.py
+          git commit -m "fix: isolate corrupt Docker artifact metadata"
+          git push origin HEAD:fix/exhaustive-runtime-audit-3
