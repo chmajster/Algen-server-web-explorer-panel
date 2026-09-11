@@ -13,7 +13,7 @@ const handlers = () => ({
 
 function renderTaskbar(overrides: { pinned?: Set<"files" | "monitor">; pinnedModules?: Set<string>; moduleNames?: Map<string, string>; windows?: WindowInstance[]; activeId?: string; calendarOpen?: boolean } = {}) {
   const events = handlers();
-  render(<Taskbar apps={apps.filter((app) => ["files", "monitor", "settings", "module"].includes(app.id))} pinned={overrides.pinned || new Set(["monitor"])} pinnedModules={overrides.pinnedModules || new Set()} moduleNames={overrides.moduleNames || new Map()} windows={overrides.windows || [runningFile]} activeId={overrides.activeId ?? runningFile.id} profile={settingsFixture()} resolvedTheme="light" clockText="12:00" dateText="17.07.2026" clockDateTime="2026-07-17T12:00:00.000Z" activeTransfers={0} activeActions={3} launcherOpen={false} notificationsOpen={false} actionsOpen={false} calendarOpen={overrides.calendarOpen || false} actionButtonRef={createRef<HTMLButtonElement>()} clockButtonRef={createRef<HTMLButtonElement>()} t={(key) => key} {...events} />);
+  render(<Taskbar apps={apps.filter((app) => ["files", "monitor", "settings", "module", "store"].includes(app.id))} pinned={overrides.pinned || new Set(["monitor"])} pinnedModules={overrides.pinnedModules || new Set()} moduleNames={overrides.moduleNames || new Map()} windows={overrides.windows || [runningFile]} activeId={overrides.activeId ?? runningFile.id} profile={settingsFixture()} resolvedTheme="light" clockText="12:00" dateText="17.07.2026" clockDateTime="2026-07-17T12:00:00.000Z" activeTransfers={0} activeActions={3} launcherOpen={false} notificationsOpen={false} actionsOpen={false} calendarOpen={overrides.calendarOpen || false} actionButtonRef={createRef<HTMLButtonElement>()} clockButtonRef={createRef<HTMLButtonElement>()} t={(key) => key} {...events} />);
   return events;
 }
 
@@ -73,16 +73,37 @@ describe("Windows-like taskbar", () => {
     expect(events.onWindow).toHaveBeenCalledWith(runningFile, "minimize");
   });
 
-  it("pins a specific dynamic module and keeps it as a separate taskbar launcher", () => {
+  it("groups unpinned dynamic modules under the Modules menu and keeps pinning available", () => {
     const moduleWindow: WindowInstance = { ...runningFile, id: "module-1", app: "module", moduleId: "linux-updates" };
     const events = renderTaskbar({ windows: [moduleWindow], activeId: moduleWindow.id, moduleNames: new Map([["linux-updates", "Aktualizacje systemu"]]) });
 
-    fireEvent.contextMenu(screen.getByRole("button", { name: "Aktualizacje systemu" }));
+    expect(within(screen.getByLabelText("desktop.runningApps")).queryByRole("button", { name: "Aktualizacje systemu" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Moduły" }));
+    const modulesMenu = screen.getByRole("menu", { name: "Moduły" });
+    const moduleButton = within(modulesMenu).getByRole("menuitem", { name: "Aktualizacje systemu" });
+    fireEvent.contextMenu(moduleButton);
     fireEvent.click(screen.getByRole("menuitem", { name: "taskbar.pinToTaskbar" }));
     expect(events.onToggleModulePin).toHaveBeenCalledWith("linux-updates");
 
-    fireEvent.click(screen.getByRole("button", { name: "Aktualizacje systemu" }));
+    fireEvent.click(screen.getByRole("button", { name: "Moduły" }));
+    fireEvent.click(within(screen.getByRole("menu", { name: "Moduły" })).getByRole("menuitem", { name: "Aktualizacje systemu" }));
     expect(events.onModule).toHaveBeenCalledWith("linux-updates");
+  });
+
+  it("keeps pinned dynamic modules as separate taskbar launchers", () => {
+    renderTaskbar({ pinnedModules: new Set(["linux-updates"]), moduleNames: new Map([["linux-updates", "Aktualizacje systemu"]]) });
+    const runningApps = within(screen.getByLabelText("desktop.runningApps"));
+    expect(runningApps.getByRole("button", { name: "Aktualizacje systemu" })).toHaveClass("pinned");
+  });
+
+  it("lists installed modules even when they are not running and exposes Module Center", () => {
+    const events = renderTaskbar({ moduleNames: new Map([["ntp-manager", "NTP Manager"], ["linux-updates", "Linux system updates"]]) });
+    fireEvent.click(screen.getByRole("button", { name: "Moduły" }));
+    const menu = screen.getByRole("menu", { name: "Moduły" });
+    expect(within(menu).getByRole("menuitem", { name: "NTP Manager" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Linux system updates" })).toBeInTheDocument();
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "app.store" }));
+    expect(events.onApp).toHaveBeenCalledWith("store");
   });
 
   it("exposes the clock as an accessible calendar trigger with a consistent datetime", () => {
