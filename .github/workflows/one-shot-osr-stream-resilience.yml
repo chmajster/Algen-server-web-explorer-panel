@@ -1,0 +1,35 @@
+name: One-shot OS repository stream resilience
+on:
+  push:
+    branches: [fix/exhaustive-runtime-audit-3]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/exhaustive-runtime-audit-3
+      - name: Harden job dialog stream and polling
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/features/modules/os-repositories/OsRepositoriesApp.tsx')
+          text = p.read_text()
+          old = 'const load = () => api.osRepositoryJob(id).then((value) => { if (active) setJob(value); }); void load(); const polling = window.setInterval(() => void load(), 3000); let stream: EventSource | null = null; try { stream = new EventSource(apiUrl(`/api/modules/os-repositories/jobs/${encodeURIComponent(id)}/events`), { withCredentials: true }); stream.onmessage = (event) => { if (active) setJob(JSON.parse(event.data) as typeof job); }; } catch { /* polling remains active */ }'
+          new = 'const load = () => api.osRepositoryJob(id).then((value) => { if (active) setJob(value); }).catch(() => undefined); void load(); const polling = window.setInterval(() => void load(), 3000); let stream: EventSource | null = null; try { stream = new EventSource(apiUrl(`/api/modules/os-repositories/jobs/${encodeURIComponent(id)}/events`), { withCredentials: true }); stream.onmessage = (event) => { if (!active) return; try { const next = JSON.parse(event.data) as typeof job; if (next && typeof next.id === "string" && typeof next.status === "string") setJob(next); } catch { /* isolate malformed stream frames; polling remains active */ } }; } catch { /* polling remains active */ }'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one OS repositories JobDialog stream block, got {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          ! grep -F 'setJob(JSON.parse(event.data)' frontend/src/features/modules/os-repositories/OsRepositoriesApp.tsx
+      - name: Commit
+        run: |
+          rm .github/workflows/one-shot-osr-stream-resilience.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: isolate OS repository job stream failures'
+          git push origin HEAD:fix/exhaustive-runtime-audit-3
