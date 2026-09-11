@@ -125,6 +125,16 @@ export type NtpDiagnostics = NtpStatus & {
   checks?: NtpDiagnosticCheck[];
 };
 
+function sourcePayload(source: NtpSource) {
+  return {
+    server: source.server,
+    kind: source.kind || "server",
+    prefer: Boolean(source.prefer),
+    enabled: source.enabled !== false,
+    confirm: false,
+  };
+}
+
 export const ntpManagerClient = {
   dashboard: () => request<NtpDiagnostics>("/api/modules/ntp-manager/dashboard"),
   status: () => request<NtpStatus>("/api/modules/ntp-manager/status"),
@@ -140,6 +150,11 @@ export const ntpManagerClient = {
       body: JSON.stringify({ configuration, confirm: true }),
     }),
   sources: () => request<{ items: NtpSource[] }>("/api/modules/ntp-manager/sources"),
+  replaceSources: (sources: NtpSource[]) =>
+    request("/api/modules/ntp-manager/sources", {
+      method: "PUT",
+      body: JSON.stringify({ sources: sources.map(sourcePayload), confirm: true }),
+    }),
   add: (server: string, kind: NtpSourceKind = "server", prefer = false) =>
     request("/api/modules/ntp-manager/sources", {
       method: "POST",
@@ -148,13 +163,7 @@ export const ntpManagerClient = {
   update: (original: string, source: NtpSource) =>
     request(`/api/modules/ntp-manager/sources/${encodeURIComponent(original)}`, {
       method: "PUT",
-      body: JSON.stringify({
-        server: source.server,
-        kind: source.kind || "server",
-        prefer: Boolean(source.prefer),
-        enabled: source.enabled !== false,
-        confirm: true,
-      }),
+      body: JSON.stringify({ ...sourcePayload(source), confirm: true }),
     }),
   remove: (server: string) =>
     request(`/api/modules/ntp-manager/sources/${encodeURIComponent(server)}?confirm=true`, {
