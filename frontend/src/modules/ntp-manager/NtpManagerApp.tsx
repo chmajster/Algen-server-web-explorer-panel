@@ -54,7 +54,7 @@ function stateLabel(state?: string) {
 }
 
 function sourceKey(source: Pick<NtpSource, "server" | "kind">) {
-  return `${source.kind || "server"}:${source.server}`;
+  return source.server;
 }
 
 export function NtpManagerApp({ permissions, toast }: Props) {
