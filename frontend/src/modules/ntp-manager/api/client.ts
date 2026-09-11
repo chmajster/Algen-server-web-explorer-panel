@@ -72,6 +72,17 @@ export type NtpConfiguration = {
   unmanaged_config_detected: boolean;
 };
 
+export type NtpConfigPreview = {
+  ok: boolean;
+  validator: string;
+  output: string;
+  backend: string;
+  path: string;
+  changed: boolean;
+  diff: string;
+  diff_truncated: boolean;
+};
+
 export type NtpClient = {
   address: string;
   hostname: string;
@@ -140,7 +151,7 @@ export const ntpManagerClient = {
   status: () => request<NtpStatus>("/api/modules/ntp-manager/status"),
   config: () => request<NtpConfiguration>("/api/modules/ntp-manager/config"),
   validateConfig: (configuration: Omit<NtpConfiguration, "backend" | "managed_path" | "unmanaged_config_detected">) =>
-    request("/api/modules/ntp-manager/config/validate", {
+    request<NtpConfigPreview>("/api/modules/ntp-manager/config/validate", {
       method: "POST",
       body: JSON.stringify(configuration),
     }),
