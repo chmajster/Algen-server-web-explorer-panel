@@ -11,37 +11,227 @@ permissions:
   contents: write
 
 jobs:
-  inspect-network-copy:
+  localize-network-management:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: fix/runtime-audit-followup
           fetch-depth: 0
-      - name: List Network Management UI copy
+      - name: Localize Network Management and remove temporary workflow
         run: |
           python - <<'PY'
           from pathlib import Path
+          import json
           import re
 
           path = Path("frontend/src/features/settings/NetworkManagementPanels.tsx")
           text = path.read_text(encoding="utf-8")
-          values = set()
 
-          for match in re.finditer(r'(?P<q>["\'])(?P<value>.*?)(?P=q)', text):
-              value = match.group("value").strip()
-              if not value or value.startswith(("network-", "api/", "/api/", "ipv", "active-", "balance-", "layer", "button", "dialog", "presentation")):
-                  continue
-              if re.search(r'[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]', value) and (" " in value or re.search(r'[ĄĆĘŁŃÓŚŹŻąćęłńóśźż]', value)):
-                  values.add(value)
+          translations = {
+              "Zamknij": "Close",
+              "Edytuj interfejs": "Edit interface",
+              "Nowy interfejs": "New interface",
+              "Łącze": "Link",
+              "Rodzaj": "Type",
+              "Fizyczny": "Physical",
+              "Nazwa": "Name",
+              "Uruchamiaj automatycznie": "Start automatically",
+              "Interfejs nadrzędny": "Parent interface",
+              "Wybierz": "Select",
+              "Porty składowe": "Member ports",
+              "Interfejs primary": "Primary interface",
+              "Automatycznie": "Automatically",
+              "Metoda": "Method",
+              "Wyłączone": "Disabled",
+              "Ręcznie": "Manually",
+              "Adresy CIDR (po przecinku)": "CIDR addresses (comma-separated)",
+              "Brama": "Gateway",
+              "Metryka": "Metric",
+              "DNS (po przecinku)": "DNS (comma-separated)",
+              "Domeny wyszukiwania": "Search domains",
+              "Trasa domyślna": "Default route",
+              "Ignoruj automatyczne trasy": "Ignore automatic routes",
+              "Ignoruj automatyczne DNS": "Ignore automatic DNS",
+              "Anuluj": "Cancel",
+              "Przejdź do planu": "Continue to plan",
+              "Aktywne interfejsy": "Active interfaces",
+              "Brama domyślna": "Default gateway",
+              "Brak": "None",
+              "serwerów": "servers",
+              "Konfiguruj interfejsy": "Configure interfaces",
+              "Konfiguruj DNS": "Configure DNS",
+              "Dodaj trasę": "Add route",
+              "Testuj łączność": "Test connectivity",
+              "Tryb tylko do odczytu": "Read-only mode",
+              "Nie wykryto jednoznacznego, obsługiwanego menedżera sieci.": "No unambiguous supported network manager was detected.",
+              "Stan efektywny": "Effective state",
+              "Aktualna konfiguracja odczytana z systemu.": "Current configuration read from the system.",
+              "Domyślna trasa IPv4": "Default IPv4 route",
+              "Domyślna trasa IPv6": "Default IPv6 route",
+              "Łączność podstawowa": "Basic connectivity",
+              "aktywny": "active",
+              "niedostępny": "unavailable",
+              "gotowa": "ready",
+              "ograniczona": "limited",
+              "Automatyczny rollback": "Automatic rollback",
+              "brak oczekującej zmiany": "no pending change",
+              "aktywny do": "active until",
+              "Konfiguracja DNS": "DNS configuration",
+              "Serwery globalne i domeny wyszukiwania.": "Global servers and search domains.",
+              "Serwery DNS": "DNS servers",
+              "Serwery": "Servers",
+              "Usuń serwer DNS": "Remove DNS server",
+              "Dodaj serwer DNS": "Add DNS server",
+              "Domeny": "Domains",
+              "Utwórz": "Create",
+              "Edytuj": "Edit",
+              "Usuń": "Delete",
+              "Rozłącz": "Disconnect",
+              "Połącz": "Connect",
+              "Stan": "State",
+              "Adresy": "Addresses",
+              "Konfiguracja": "Configuration",
+              "systemowy": "system",
+              "fizyczny": "physical",
+              "zarządzana": "managed",
+              "aktywna": "active",
+              "Szczegóły wybranego interfejsu": "Selected interface details",
+              "tak": "yes",
+              "nie": "no",
+              "Prędkość / duplex": "Speed / duplex",
+              "Adresowanie": "Addressing",
+              "stan aktywny": "active state",
+              "Nadrzędny": "Parent",
+              "Członkowie": "Members",
+              "Edytuj trasę": "Edit route",
+              "Nowa trasa statyczna": "New static route",
+              "Rodzina": "Family",
+              "Cel": "Destination",
+              "Brama / typ": "Gateway / type",
+              "Interfejs": "Interface",
+              "Tabela": "Table",
+              "Adres źródłowy": "Source address",
+              "Odtwarzaj po starcie": "Restore at startup",
+              "Trasy zarządzane": "Managed routes",
+              "Trwałe trasy zapisane przez panel.": "Persistent routes saved by the panel.",
+              "Włącz trasę": "Enable route",
+              "Akcje": "Actions",
+              "Brak zarządzanych tras.": "No managed routes.",
+              "Pełna aktywna tablica routingu": "Full active routing table",
+              "Edytuj regułę ruchu": "Edit traffic rule",
+              "Nowa reguła ruchu": "New traffic rule",
+              "Kierunek": "Direction",
+              "Wychodzący": "Outbound",
+              "Przychodzący": "Inbound",
+              "Protokół": "Protocol",
+              "Dowolny": "Any",
+              "Gwarantowane (kbit/s)": "Guaranteed (kbit/s)",
+              "Maksymalne (kbit/s)": "Maximum (kbit/s)",
+              "Źródło CIDR": "Source CIDR",
+              "Cel CIDR": "Destination CIDR",
+              "Port źródłowy": "Source port",
+              "Port docelowy": "Destination port",
+              "Priorytet": "Priority",
+              "Reguła aktywna": "Rule enabled",
+              "Dodaj regułę": "Add rule",
+              "Brak narzędzia tc.": "The tc tool is unavailable.",
+              "Filtr": "Filter",
+              "Minimum": "Minimum",
+              "Maksimum": "Maximum",
+              "Włącz regułę": "Enable rule",
+              "Brak reguł kontroli ruchu.": "No traffic control rules.",
+              "Podgląd planu zmian": "Change plan preview",
+              "Plan gotowy": "Plan ready",
+              "Zmiana wysokiego ryzyka": "High-risk change",
+              "Brak trwałego mechanizmu rollbacku systemd. Zastosowanie planu jest zablokowane.": "A persistent systemd rollback mechanism is unavailable. Applying the plan is blocked.",
+              "Stan przed i po": "Before and after",
+              "Polecenia": "Commands",
+              "Zmiana stanu zarządzanego": "Managed state change",
+              "Wpisz dokładnie": "Enter exactly",
+              "Stosowanie…": "Applying…",
+              "Zastosuj plan": "Apply plan",
+              "Konfiguracja zachowana": "Configuration kept",
+              "Przywrócono poprzednią konfigurację": "Previous configuration restored",
+              "Nie udało się potwierdzić przed upływem czasu": "Confirmation timed out",
+              "Trwa przywracanie poprzedniej konfiguracji": "Restoring previous configuration",
+              "Wysyłanie potwierdzenia": "Sending confirmation",
+              "Utracono połączenie — trwa ponowne łączenie": "Connection lost — reconnecting",
+              "Oczekiwanie na potwierdzenie": "Waiting for confirmation",
+              "Nowa konfiguracja sieci oczekuje na potwierdzenie. Automatyczne przywrócenie za": "The new network configuration is awaiting confirmation. Automatic rollback in",
+              "Przywróć teraz": "Restore now",
+              "Zachowaj konfigurację": "Keep configuration",
+              "zapis dostępny": "writable",
+              "tylko odczyt": "read-only",
+              "Odśwież": "Refresh",
+              "Brak uprawnienia do modyfikacji konfiguracji sieci.": "You do not have permission to modify network configuration.",
+              "Automatyczny rollback po": "Automatic rollback after",
+              "z": "of",
+          }
 
-          for match in re.finditer(r'>([^<{][^<]*?)<', text):
-              value = re.sub(r'\s+', ' ', match.group(1)).strip()
-              if value and re.search(r'[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]', value):
-                  values.add(value)
+          # Mixed JSX/template copy is localized explicitly before static text conversion.
+          replacements = {
+              'aria-label={`Usuń serwer DNS ${index + 1}`}': 'aria-label={`${networkText("Usuń serwer DNS")} ${index + 1}`}',
+              'aria-label={`Włącz trasę ${route.name}`}': 'aria-label={`${networkText("Włącz trasę")} ${route.name}`}',
+              'aria-label={`Włącz regułę ${rule.name}`}': 'aria-label={`${networkText("Włącz regułę")} ${rule.name}`}',
+              '>z {state.interfaces.length}<': '>{networkText("z")} {state.interfaces.length}<',
+              '>{dnsServers.length} serwerów<': '>{dnsServers.length} {networkText("serwerów")}<',
+              '`aktywny do ${new Date(state.transaction.deadline * 1000).toLocaleTimeString()}`': '`${networkText("aktywny do")} ${new Date(state.transaction.deadline * 1000).toLocaleTimeString()}`',
+              '`Nowa konfiguracja sieci oczekuje na potwierdzenie. Automatyczne przywrócenie za ${countdown}`': '`${networkText("Nowa konfiguracja sieci oczekuje na potwierdzenie. Automatyczne przywrócenie za")} ${countdown}`',
+              '<summary>Pełna aktywna tablica routingu ({state.routing.routes.length})</summary>': '<summary>{networkText("Pełna aktywna tablica routingu")} ({state.routing.routes.length})</summary>',
+              '<summary>Polecenia ({plan.commands.length})</summary>': '<summary>{networkText("Polecenia")} ({plan.commands.length})</summary>',
+              '<p>Cel: {plan.target}. Automatyczny rollback po {plan.rollback_seconds} s.</p>': '<p>{networkText("Cel")}: {plan.target}. {networkText("Automatyczny rollback po")} {plan.rollback_seconds} s.</p>',
+              '<Field label={`Wpisz dokładnie: ${plan.required_phrase}`}>': '<Field label={`${networkText("Wpisz dokładnie")}: ${plan.required_phrase}`}>',
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
 
-          print("NETWORK_UI_COPY_BEGIN")
-          for value in sorted(values, key=str.casefold):
-              print(value)
-          print("NETWORK_UI_COPY_END")
+          placeholders = {}
+          def placeholder(value: str) -> str:
+              token = f"__WEBNAS_NETWORK_COPY_{len(placeholders)}__"
+              placeholders[token] = value
+              return token
+
+          # JSX attributes with static UI copy.
+          for pl in sorted(translations, key=len, reverse=True):
+              escaped = re.escape(pl)
+              token = placeholder(pl)
+              text = re.sub(
+                  rf'\b(title|label|aria-label|placeholder)=(?P<q>["\']){escaped}(?P=q)',
+                  lambda m: f'{m.group(1)}={{networkText({token})}}',
+                  text,
+              )
+
+          # Plain JSX text nodes.
+          for pl in sorted(translations, key=len, reverse=True):
+              escaped = re.escape(pl)
+              token = placeholder(pl)
+              text = re.sub(rf'>{escaped}<', f'>{{networkText({token})}}<', text)
+
+          # Remaining quoted UI literals in expressions and ternaries.
+          for pl in sorted(translations, key=len, reverse=True):
+              escaped = re.escape(pl)
+              token = placeholder(pl)
+              text = re.sub(rf'(?P<q>["\']){escaped}(?P=q)', f'networkText({token})', text)
+
+          for token, value in placeholders.items():
+              text = text.replace(token, json.dumps(value, ensure_ascii=False))
+
+          marker = 'import type { Translate } from "../../app/types";\n'
+          if "function networkText(" not in text:
+              copy_json = json.dumps(translations, ensure_ascii=False, indent=2)
+              helper = f'''\nconst NETWORK_COPY_EN: Record<string, string> = {copy_json} as const;\n\nfunction networkText(polish: string) {{\n  const configured = typeof localStorage !== "undefined" ? localStorage.getItem("webnas_language") : null;\n  const browserEnglish = configured === null && typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("en");\n  return configured === "en-US" || browserEnglish ? NETWORK_COPY_EN[polish] || polish : polish;\n}}\n'''
+              text = text.replace(marker, marker + helper)
+
+          path.write_text(text, encoding="utf-8")
+
+          # Ensure the temporary automation never lands in the finished PR.
+          Path(".github/workflows/runtime-audit-codemod.yml").unlink()
           PY
+      - name: Commit localization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(network): localize management controls"
+          git push origin HEAD:fix/runtime-audit-followup
