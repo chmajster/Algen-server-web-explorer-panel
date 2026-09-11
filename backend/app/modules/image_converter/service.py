@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import tempfile
 import time
@@ -56,11 +57,17 @@ class ConvertedFile:
     height: int
 
 
+def _format_supported(fmt: str) -> bool:
+    Image.init()
+    pillow_format = OUTPUT_FORMATS[fmt][0]
+    return pillow_format in Image.SAVE
+
+
 def _normalise_format(value: str) -> str:
     fmt = value.strip().lower()
     if fmt == "jpg":
         fmt = "jpeg"
-    if fmt not in OUTPUT_FORMATS:
+    if fmt not in OUTPUT_FORMATS or not _format_supported(fmt):
         raise ImageConverterError("UNSUPPORTED_FORMAT", f"Unsupported output format: {value}")
     return fmt
 
@@ -151,6 +158,7 @@ def convert_image(
     fmt = _normalise_format(output_format)
     quality = _normalise_quality(quality)
     pillow_format, _extension, lossy = OUTPUT_FORMATS[fmt]
+
     try:
         source_size = source.stat().st_size
         with Image.open(source) as opened:
@@ -158,15 +166,23 @@ def convert_image(
                 raise ImageConverterError("IMAGE_TOO_LARGE", f"Image exceeds {MAX_PIXELS:,} pixels")
             if getattr(opened, "is_animated", False) and getattr(opened, "n_frames", 1) > 1:
                 raise ImageConverterError("ANIMATED_IMAGE_UNSUPPORTED", "Animated images are not supported")
-            original_exif = opened.info.get("exif")
+
             original_icc = opened.info.get("icc_profile")
             image = ImageOps.exif_transpose(opened)
+            preserved_exif: bytes | None = None
+            if not strip_metadata:
+                exif = image.getexif()
+                exif.pop(274, None)  # Orientation was already applied by exif_transpose.
+                if exif:
+                    preserved_exif = exif.tobytes()
+
             image = _resize(image, width, height, keep_aspect)
             if fmt in {"jpeg", "bmp"}:
                 image = _flatten_alpha(image)
             elif image.mode not in {"RGB", "RGBA", "L", "LA"}:
                 image = image.convert("RGBA" if "transparency" in image.info else "RGB")
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            width_out, height_out = image.size
+
             options: dict[str, object] = {}
             if lossy:
                 options["quality"] = quality
@@ -177,16 +193,28 @@ def convert_image(
             elif fmt == "tiff":
                 options["compression"] = "tiff_deflate"
             if not strip_metadata:
-                if original_exif and fmt in {"jpeg", "png", "webp", "tiff"}:
-                    options["exif"] = original_exif
+                if preserved_exif and fmt in {"jpeg", "png", "webp", "tiff"}:
+                    options["exif"] = preserved_exif
                 if original_icc and fmt in {"jpeg", "png", "webp", "tiff"}:
                     options["icc_profile"] = original_icc
-            image.save(destination, pillow_format, **options)
-            width_out, height_out = image.size
+
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
+            try:
+                image.save(temporary, pillow_format, **options)
+                os.replace(temporary, destination)
+            except (OSError, ValueError, KeyError) as exc:
+                raise ImageConverterError("WRITE_FAILED", f"Cannot write converted image {destination.name}") from exc
+            finally:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
     except ImageConverterError:
         raise
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise ImageConverterError("INVALID_IMAGE", f"Cannot decode or convert {source.name}") from exc
+
     return ConvertedFile(str(source), str(destination), destination.stat().st_size, source_size, width_out, height_out)
 
 
@@ -213,7 +241,21 @@ class ImageConverterService:
         self.temp_root = temp_root or Path(tempfile.gettempdir()) / "webnas-image-converter"
 
     def formats(self) -> list[dict[str, object]]:
-        return [{"id": key, "extension": extension, "lossy": lossy} for key, (_pillow, extension, lossy) in OUTPUT_FORMATS.items()]
+        return [
+            {"id": key, "extension": extension, "lossy": lossy}
+            for key, (_pillow, extension, lossy) in OUTPUT_FORMATS.items()
+            if _format_supported(key)
+        ]
+
+    def limits(self) -> dict[str, int]:
+        return {
+            "max_upload_files": MAX_UPLOAD_FILES,
+            "max_directory_files": MAX_DIRECTORY_FILES,
+            "max_file_bytes": MAX_FILE_BYTES,
+            "max_batch_bytes": MAX_BATCH_BYTES,
+            "max_pixels": MAX_PIXELS,
+            "max_dimension": MAX_DIMENSION,
+        }
 
     def browse(self, username: str, path: str | None) -> dict[str, object]:
         target = resolve_user_path(username, path)
@@ -226,14 +268,19 @@ class ImageConverterService:
         except OSError as exc:
             raise ImageConverterError("DIRECTORY_UNREADABLE", "Selected directory cannot be read") from exc
         for child in children[:1000]:
-            if child.is_dir():
-                directories.append({"name": child.name, "path": str(child)})
-            elif child.is_file() and child.suffix.lower() in INPUT_EXTENSIONS:
-                try:
-                    size = child.stat().st_size
-                except OSError:
-                    size = 0
-                images.append({"name": child.name, "path": str(child), "size": size})
+            try:
+                if child.is_symlink():
+                    continue
+                if child.is_dir():
+                    directories.append({"name": child.name, "path": str(child)})
+                elif child.is_file() and child.suffix.lower() in INPUT_EXTENSIONS:
+                    try:
+                        size = child.stat().st_size
+                    except OSError:
+                        size = 0
+                    images.append({"name": child.name, "path": str(child), "size": size})
+            except OSError:
+                continue
         parent: str | None = None
         try:
             parent_path = resolve_user_path(username, str(target.parent))
@@ -277,10 +324,15 @@ class ImageConverterService:
         for item in iterator:
             if len(candidates) > MAX_DIRECTORY_FILES:
                 break
-            if output_inside_source and item.is_relative_to(output):
+            try:
+                if item.is_symlink():
+                    continue
+                if output_inside_source and item.is_relative_to(output):
+                    continue
+                if item.is_file() and item.suffix.lower() in INPUT_EXTENSIONS:
+                    candidates.append(item)
+            except OSError:
                 continue
-            if item.is_file() and item.suffix.lower() in INPUT_EXTENSIONS:
-                candidates.append(item)
         if len(candidates) > MAX_DIRECTORY_FILES:
             raise ImageConverterError("TOO_MANY_FILES", f"A directory conversion is limited to {MAX_DIRECTORY_FILES} images")
         if not candidates:
@@ -297,8 +349,10 @@ class ImageConverterService:
                 skipped.append(str(source_file))
                 continue
             try:
-                assert_write_allowed(target)
-                converted.append(asdict(convert_image(source_file, target, fmt, quality, width=width, height=height, keep_aspect=keep_aspect, strip_metadata=strip_metadata)))
+                safe_source = resolve_user_path(username, str(source_file))
+                safe_target = resolve_user_path(username, str(target))
+                assert_write_allowed(safe_target)
+                converted.append(asdict(convert_image(safe_source, safe_target, fmt, quality, width=width, height=height, keep_aspect=keep_aspect, strip_metadata=strip_metadata)))
             except ImageConverterError as exc:
                 failed.append({"source": str(source_file), "code": exc.code, "message": str(exc)})
             except OSError as exc:
