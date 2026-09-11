@@ -21,9 +21,7 @@ export function ShellStateController() {
       state.current = { ...base, ...queued };
       hydrated.current = true;
       if (Object.keys(queued).length === 0) return;
-      void shellPreferencesClient.patch(queued).then((value) => {
-        if (active) state.current = normalized(value);
-      }).catch(() => undefined);
+      void shellPreferencesClient.patch(queued).catch(() => undefined);
     };
 
     void shellPreferencesClient.get().then((value) => {
@@ -37,17 +35,18 @@ export function ShellStateController() {
   }, []);
 
   useEffect(() => {
+    const scheduledTimers = timers.current;
     const update = (key: keyof ShellPreferences, patch: ShellPreferencesPatch) => {
       state.current = { ...state.current, ...patch };
       if (!hydrated.current) {
         pending.current = { ...pending.current, ...patch };
         return;
       }
-      const existing = timers.current.get(key);
+      const existing = scheduledTimers.get(key);
       if (existing !== undefined) window.clearTimeout(existing);
-      timers.current.set(key, window.setTimeout(() => {
-        timers.current.delete(key);
-        void shellPreferencesClient.patch(patch).then((value) => { state.current = normalized(value); }).catch(() => undefined);
+      scheduledTimers.set(key, window.setTimeout(() => {
+        scheduledTimers.delete(key);
+        void shellPreferencesClient.patch(patch).catch(() => undefined);
       }, 200));
     };
 
@@ -94,8 +93,8 @@ export function ShellStateController() {
     return () => {
       taskbar(); start(); desktop(); notifications();
       window.removeEventListener("orientationchange", orientation);
-      for (const timer of timers.current.values()) window.clearTimeout(timer);
-      timers.current.clear();
+      for (const timer of scheduledTimers.values()) window.clearTimeout(timer);
+      scheduledTimers.clear();
     };
   }, []);
 

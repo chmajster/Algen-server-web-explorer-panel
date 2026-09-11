@@ -6,9 +6,11 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
+from ...audit import logger
 from ..proxmox_manager.public import ProxmoxApiClient, active_connections, api_client
 
 _MANAGED_COMMENT = "DCST:"
+_PROVIDER_ERROR = "Proxmox API request failed"
 
 
 def provider_name(value: str) -> str:
@@ -37,7 +39,8 @@ class ProxmoxFirewallProvider:
                 ipsets = ctx.client.get("cluster/firewall/ipset") or []
                 results.append({"connection_id": ctx.connection["id"], "name": ctx.connection["name"], "ok": True, "enabled": bool(options.get("enable", 0)), "rules": len(rules), "ipsets": len(ipsets)})
             except Exception as error:  # noqa: BLE001
-                results.append({"connection_id": ctx.connection["id"], "name": ctx.connection["name"], "ok": False, "error": str(error)})
+                logger.warning("DCST Proxmox status failed for connection %s: %s", ctx.connection.get("id"), type(error).__name__)
+                results.append({"connection_id": ctx.connection["id"], "name": ctx.connection["name"], "ok": False, "error": _PROVIDER_ERROR})
         return {"ok": bool(results) and all(item["ok"] for item in results), "connections": results}
 
     def test(self) -> dict[str, Any]:
@@ -61,7 +64,8 @@ class ProxmoxFirewallProvider:
                         ctx.client.get(f"nodes/{node}/firewall/log?limit=1")
                         checks["logs"] = True
             except Exception as exc:  # noqa: BLE001
-                error = str(exc)
+                logger.warning("DCST Proxmox connection test failed for connection %s: %s", ctx.connection.get("id"), type(exc).__name__)
+                error = _PROVIDER_ERROR
             results.append({"connection_id": ctx.connection["id"], "name": ctx.connection["name"], "checks": checks, "ok": all(checks.values()), "error": error})
         return {"ok": bool(results) and all(item["ok"] for item in results), "connections": results}
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from .audit import logger
 from .auth import user_home
 from .config import AppConfig, get_config
 
@@ -231,7 +232,8 @@ def diagnostic(username: str) -> dict:
 
         allowed = [str(path) for path in allowed_roots(username)]
     except Exception as exc:
-        allowed = [f"unavailable: {exc}"]
+        logger.warning("Unable to resolve effective Proxmox roots for user %s: %s", username, type(exc).__name__)
+        allowed = ["unavailable"]
     return {
         "is_proxmox": status.is_proxmox,
         "safe_mode_enabled": active,

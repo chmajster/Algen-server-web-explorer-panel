@@ -73,6 +73,41 @@ def test_shell_preferences_reject_unsafe_identifiers_and_nul_targets():
         )
 
 
+def test_shell_preferences_reject_unsafe_scheme_with_leading_whitespace():
+    with pytest.raises(ValidationError):
+        shell.DesktopEntry(
+            id="url:one",
+            kind="url",
+            name="bad",
+            target=" \tjavascript:alert(1)",
+            position=shell.Point(x=0, y=0),
+        )
+
+
+def test_shell_preferences_reject_duplicate_desktop_entry_ids():
+    entries = [
+        shell.DesktopEntry(id="file:one", kind="file", name="one", target="/tmp/one", position=shell.Point(x=0, y=0)),
+        shell.DesktopEntry(id="file:one", kind="file", name="two", target="/tmp/two", position=shell.Point(x=8, y=8)),
+    ]
+    with pytest.raises(ValidationError):
+        shell.ShellPreferences(desktop_entries=entries)
+    with pytest.raises(ValidationError):
+        shell.ShellPreferencesPatch(desktop_entries=entries)
+
+
+def test_shell_preferences_reject_self_parenting_desktop_entry():
+    entry = shell.DesktopEntry(
+        id="folder:one",
+        kind="folder",
+        name="folder",
+        target="",
+        parent_id="folder:one",
+        position=shell.Point(x=0, y=0),
+    )
+    with pytest.raises(ValidationError):
+        shell.ShellPreferences(desktop_entries=[entry])
+
+
 def test_shell_preferences_bounds_desktop_and_window_state():
     with pytest.raises(ValidationError):
         shell.Point(x=-1, y=0)

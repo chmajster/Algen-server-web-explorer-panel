@@ -50,7 +50,8 @@ class DesktopEntry(BaseModel):
     def safe_target(cls, value: str) -> str:
         if "\x00" in value:
             raise ValueError("invalid target")
-        if value.lower().startswith(("javascript:", "data:text/html", "vbscript:")):
+        normalized = value.lstrip().lower()
+        if normalized.startswith(("javascript:", "data:text/html", "vbscript:")):
             raise ValueError("unsafe shortcut target")
         return value
 
@@ -86,6 +87,15 @@ class WindowState(BaseModel):
     module_id: str | None = Field(default=None, max_length=80)
 
 
+def _validate_desktop_entries(values: list[DesktopEntry]) -> list[DesktopEntry]:
+    identifiers = [item.id for item in values]
+    if len(identifiers) != len(set(identifiers)):
+        raise ValueError("duplicate desktop entry identifiers")
+    if any(item.parent_id == item.id for item in values):
+        raise ValueError("desktop entry cannot be its own parent")
+    return values
+
+
 class ShellPreferences(BaseModel):
     version: int = Field(default=1, ge=1, le=100)
     desktop: dict = Field(default_factory=dict)
@@ -98,6 +108,11 @@ class ShellPreferences(BaseModel):
     widgets: list[WidgetState] = Field(default_factory=list, max_length=64)
     notifications: dict = Field(default_factory=dict)
     mobile: dict = Field(default_factory=dict)
+
+    @field_validator("desktop_entries")
+    @classmethod
+    def valid_desktop_entries(cls, values: list[DesktopEntry]) -> list[DesktopEntry]:
+        return _validate_desktop_entries(values)
 
     @field_validator("taskbar_order", "start_order", "start_hidden")
     @classmethod
@@ -128,6 +143,13 @@ class ShellPreferencesPatch(BaseModel):
     widgets: list[WidgetState] | None = Field(default=None, max_length=64)
     notifications: dict | None = None
     mobile: dict | None = None
+
+    @field_validator("desktop_entries")
+    @classmethod
+    def valid_desktop_entries(cls, values: list[DesktopEntry] | None) -> list[DesktopEntry] | None:
+        if values is None:
+            return None
+        return _validate_desktop_entries(values)
 
     @field_validator("taskbar_order", "start_order", "start_hidden")
     @classmethod
@@ -182,9 +204,6 @@ def _load(username: str) -> ShellPreferences:
     path = _path(username)
     candidate = path
     if not candidate.exists():
-        # Only migrate the historical file name when the username was already a
-        # filesystem-safe, non-truncated value. Sanitized legacy names could be
-        # shared by different identities and must never be reused implicitly.
         legacy = _legacy_path(username)
         if username == _safe_username(username) and len(username) <= 96 and legacy.exists():
             candidate = legacy
