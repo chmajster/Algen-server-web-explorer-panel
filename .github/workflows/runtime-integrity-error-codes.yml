@@ -1,0 +1,73 @@
+name: Refine hierarchy error mapping
+
+on:
+  push:
+    branches: [fix/runtime-integrity-audit-2]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/runtime-integrity-audit-2
+      - name: Refine hierarchy conflicts
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          service = Path('backend/app/modules/hosts_manager/service.py')
+          text = service.read_text(encoding='utf-8')
+          text = text.replace(
+              'class ManagedGroupConflictError(ValueError):\n    pass\n\n\nclass ManagedGroupProtectedError(ValueError):',
+              'class ManagedGroupConflictError(ValueError):\n    pass\n\n\nclass ManagedGroupHierarchyError(ManagedGroupConflictError):\n    pass\n\n\nclass ManagedGroupProtectedError(ValueError):',
+              1,
+          )
+          for old, new in (
+              ('raise ManagedGroupConflictError("group cannot be its own parent")', 'raise ManagedGroupHierarchyError("group cannot be its own parent")'),
+              ('raise ManagedGroupConflictError("group hierarchy cannot contain a cycle")', 'raise ManagedGroupHierarchyError("group hierarchy cannot contain a cycle")'),
+              ('raise ManagedGroupConflictError("parent group does not exist")', 'raise ManagedGroupHierarchyError("parent group does not exist")'),
+              ('raise ManagedGroupConflictError("group cannot be deleted while it has child groups")', 'raise ManagedGroupHierarchyError("group cannot be deleted while it has child groups")'),
+          ):
+              if old not in text:
+                  raise SystemExit(f'missing service snippet: {old}')
+              text = text.replace(old, new, 1)
+          service.write_text(text, encoding='utf-8')
+
+          router = Path('backend/app/modules/hosts_manager/router.py')
+          text = router.read_text(encoding='utf-8')
+          text = text.replace(
+              '    ManagedGroupConflictError,\n    ManagedGroupProtectedError,',
+              '    ManagedGroupConflictError,\n    ManagedGroupHierarchyError,\n    ManagedGroupProtectedError,',
+              1,
+          )
+          text = text.replace(
+              '    except ManagedGroupConflictError as error:\n        api_error(409, "GROUP_NAME_CONFLICT", str(error))\n    _activity(user.username, "group_create", item["id"])',
+              '    except ManagedGroupHierarchyError as error:\n        api_error(409, "GROUP_HIERARCHY_CONFLICT", str(error))\n    except ManagedGroupConflictError as error:\n        api_error(409, "GROUP_NAME_CONFLICT", str(error))\n    _activity(user.username, "group_create", item["id"])',
+              1,
+          )
+          text = text.replace(
+              '    except ManagedGroupConflictError as error:\n        api_error(409, "GROUP_NAME_CONFLICT", str(error))\n    _activity(user.username, "group_update", group_id)',
+              '    except ManagedGroupHierarchyError as error:\n        api_error(409, "GROUP_HIERARCHY_CONFLICT", str(error))\n    except ManagedGroupConflictError as error:\n        api_error(409, "GROUP_NAME_CONFLICT", str(error))\n    _activity(user.username, "group_update", group_id)',
+              1,
+          )
+          text = text.replace(
+              '    except ManagedGroupConflictError as error:\n        api_error(409, "GROUP_IN_USE", str(error))\n    if removed:',
+              '    except ManagedGroupHierarchyError as error:\n        api_error(409, "GROUP_HIERARCHY_CONFLICT", str(error))\n    if removed:',
+              1,
+          )
+          router.write_text(text, encoding='utf-8')
+
+          Path('.github/workflows/runtime-integrity-error-codes.yml').unlink()
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: distinguish group hierarchy conflicts"
+          git push origin HEAD:fix/runtime-integrity-audit-2
