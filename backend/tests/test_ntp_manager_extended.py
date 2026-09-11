@@ -13,6 +13,7 @@ from app.modules.ntp_manager.models import (
     NtpMode,
     NtpSourceInput,
     NtpSourceKind,
+    NtpSourcesMutation,
     NtpTimezoneInput,
 )
 from app.modules.ntp_manager.service import NtpService
@@ -27,6 +28,25 @@ def test_ntp_source_validation_accepts_hostname_ipv4_ipv6_and_rejects_injection(
     for value in ("pool.ntp.org;id", "$(id)", "../../etc/passwd", "host name", "0.0.0.0", "ff02::1"):
         with pytest.raises(ValidationError):
             NtpSourceInput(server=value)
+
+
+def test_ntp_ordered_sources_preserve_order_and_reject_duplicates():
+    mutation = NtpSourcesMutation(
+        sources=[
+            NtpSourceInput(server="time.cloudflare.com"),
+            NtpSourceInput(server="pool.ntp.org", kind=NtpSourceKind.pool, enabled=False),
+        ],
+        confirm=True,
+    )
+    assert [item.server for item in mutation.sources] == ["time.cloudflare.com", "pool.ntp.org"]
+    assert mutation.sources[1].enabled is False
+    with pytest.raises(ValidationError):
+        NtpSourcesMutation(
+            sources=[
+                NtpSourceInput(server="time.cloudflare.com"),
+                NtpSourceInput(server="time.cloudflare.com"),
+            ]
+        )
 
 
 def test_ntp_allowed_network_validation_supports_ipv4_and_ipv6():
