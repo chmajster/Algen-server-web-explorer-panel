@@ -68,13 +68,6 @@ jobs:
               if marker not in text:
                   raise SystemExit("routing test marker missing")
               p.write_text(text.replace(marker, addition + marker, 1), encoding="utf-8")
-
-          ci = ".github/workflows/ci.yml"
-          replace_once(
-              ci,
-              '''      - name: Run Ruff\n        run: python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py\n      - name: Run mypy\n''',
-              '''      - name: Run Ruff\n        run: python -m ruff check backend scripts/export_openapi.py scripts/rollback_release.py\n      - name: Compile all backend Python modules\n        run: python -m compileall -q backend/app\n      - name: Run mypy\n''',
-          )
           PY
       - name: Verify all backend modules compile
         run: python -m compileall -q backend/app
@@ -82,13 +75,12 @@ jobs:
         run: |
           python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
           python -m pytest -q backend/tests/test_infrastructure_managers.py
-      - name: Remove helper workflows and commit
+      - name: Commit code changes
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/one-shot-latent-syntax-fix.yml .github/workflows/one-shot-latent-syntax-fix-2.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add backend/app/modules/routing_manager/service.py backend/app/modules/gitops_manager/service.py backend/app/jobs/api.py backend/tests/test_infrastructure_managers.py
           git commit -m "fix: repair latent module syntax and durable state handling"
           git push origin HEAD:fix/exhaustive-runtime-audit-3
