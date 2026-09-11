@@ -4,7 +4,7 @@ from typing import Callable, TypeVar
 from fastapi import APIRouter, Depends, Query, Request
 
 from ..activity import ActivityCategory, ActivityStatus, record_activity
-from ..security import SessionUser, get_session_user
+from ..security import SessionUser, get_session_user, invalidate_user_sessions
 from .exceptions import identity_error
 from .models import AdminCredential, GroupCreateRequest, GroupMemberRequest, GroupPatchRequest, GroupPolicyRequest, PasswordChangeRequest, Role, UserCreateRequest, UserDeleteRequest, UserPatchRequest, UserPolicyRequest, UserQuotaRequest
 from .permissions import PERMISSION_REGISTRY, Permission, ROLE_PERMISSIONS, authorize, require_permission
@@ -111,6 +111,7 @@ def identity_user_unlock(username: str, payload: AdminCredential, request: Reque
 @router.post("/api/admin/users/{username}/change-password")
 def identity_user_password(username: str, payload: PasswordChangeRequest, request: Request, user: SessionUser = Depends(require_permission(Permission.USERS_CHANGE_PASSWORD))):
     _execute("user_password_change", user.username, username, lambda: service().change_user_password(username, payload.new_password, payload.force_change, user.username))
+    invalidate_user_sessions(username)
     return {"ok": True}
 
 
