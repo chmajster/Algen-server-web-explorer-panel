@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -17,6 +18,7 @@ from .models import (
     NtpFirewallInput,
     NtpRestoreInput,
     NtpSourceInput,
+    NtpSourcesMutation,
     NtpTestInput,
     NtpTimezoneInput,
     ServiceActionInput,
@@ -39,21 +41,61 @@ def _activity(actor: str, action: str, target: str = "", details: dict[str, Any]
     )
 
 
-def _controlled(operation):
+def _controlled(
+    operation: Callable[[], Any],
+    *,
+    actor: str | None = None,
+    action: str | None = None,
+    target: str = "",
+    details: dict[str, Any] | None = None,
+):
     try:
         return operation()
     except NtpUnavailable:
+        if actor and action:
+            _activity(actor, action, target, details, failed=True)
         api_error(503, "NTP_UNAVAILABLE", "NTP backend is unavailable")
     except FileNotFoundError:
+        if actor and action:
+            _activity(actor, action, target, details, failed=True)
         api_error(404, "NTP_NOT_FOUND", "NTP resource was not found")
     except PermissionError:
+        if actor and action:
+            _activity(actor, action, target, details, failed=True)
         api_error(503, "NTP_PERMISSION_DENIED", "NTP operation is not permitted")
     except (OSError, RuntimeError):
+        if actor and action:
+            _activity(actor, action, target, details, failed=True)
         api_error(502, "NTP_OPERATION_FAILED", "NTP operation failed")
     except ValueError:
+        if actor and action:
+            _activity(actor, action, target, details, failed=True)
         api_error(422, "NTP_VALIDATION_FAILED", "NTP request is invalid")
     except Exception:  # fail closed at the HTTP boundary; never expose exception details
+        if actor and action:
+            _activity(actor, action, target, details, failed=True)
         api_error(500, "NTP_INTERNAL_ERROR", "NTP operation failed")
+
+
+def _require_confirmation(
+    confirmed: bool,
+    user: SessionUser,
+    action: str,
+    message: str,
+    *,
+    target: str = "",
+    details: dict[str, Any] | None = None,
+) -> None:
+    if confirmed:
+        return
+    _activity(
+        user.username,
+        action,
+        target,
+        {**(details or {}), "reason": "confirmation_required"},
+        failed=True,
+    )
+    api_error(422, "CONFIRMATION_REQUIRED", message)
 
 
 def _managed_sources() -> list[NtpSourceInput]:
@@ -71,7 +113,6 @@ def _dashboard_payload() -> dict[str, Any]:
     diagnostics = collect_diagnostics(instance)
     clients = instance.clients()
     firewall = instance.firewall_status()
-    instance.record_history()
     return {
         **diagnostics["status"],
         "health": diagnostics["health"],
@@ -105,18 +146,19 @@ def config(user: SessionUser = Depends(current_user)):
 @router.put("/config")
 def update_config(payload: NtpConfigurationMutation, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
-    if not payload.confirm:
-        api_error(422, "CONFIRMATION_REQUIRED", "NTP configuration changes require confirmation")
-    result = _controlled(lambda: service().apply_configuration(payload.configuration, actor=user.username))
-    _activity(
-        user.username,
-        "ntp_config_update",
-        details={
-            "mode": payload.configuration.mode.value,
-            "sources": len(payload.configuration.sources),
-            "allowed_networks": len(payload.configuration.allowed_networks),
-        },
+    details = {
+        "mode": payload.configuration.mode.value,
+        "sources": len(payload.configuration.sources),
+        "allowed_networks": len(payload.configuration.allowed_networks),
+    }
+    _require_confirmation(payload.confirm, user, "ntp_config_update", "NTP configuration changes require confirmation", details=details)
+    result = _controlled(
+        lambda: service().apply_configuration(payload.configuration, actor=user.username),
+        actor=user.username,
+        action="ntp_config_update",
+        details=details,
     )
+    _activity(user.username, "ntp_config_update", details=details)
     return result
 
 
@@ -139,24 +181,46 @@ def sources(user: SessionUser = Depends(current_user)):
     return _controlled(lambda: {"items": service().sources()})
 
 
+@router.put("/sources")
+def replace_sources(payload: NtpSourcesMutation, user: SessionUser = Depends(mutating_user)):
+    authorize(user, "ntp.manage")
+    details = {"count": len(payload.sources), "order": [item.server for item in payload.sources]}
+    _require_confirmation(payload.confirm, user, "ntp_sources_replace", "NTP source changes require confirmation", details=details)
+    sources = [item.model_copy(update={"confirm": False}) for item in payload.sources]
+    result = _controlled(
+        lambda: service().save_sources(sources, actor=user.username),
+        actor=user.username,
+        action="ntp_sources_replace",
+        details=details,
+    )
+    _activity(user.username, "ntp_sources_replace", details=details)
+    return result
+
+
 @router.post("/sources")
 def add_source(payload: NtpSourceInput, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
-    if not payload.confirm:
-        api_error(422, "CONFIRMATION_REQUIRED", "NTP configuration changes require confirmation")
+    details = {"kind": payload.kind.value, "prefer": payload.prefer, "enabled": payload.enabled}
+    _require_confirmation(payload.confirm, user, "ntp_source_add", "NTP configuration changes require confirmation", target=payload.server, details=details)
     current = _controlled(_managed_sources)
     if (payload.kind, payload.server) not in {(item.kind, item.server) for item in current}:
         current.append(payload.model_copy(update={"confirm": False}))
-    result = _controlled(lambda: service().save_sources(current, actor=user.username))
-    _activity(user.username, "ntp_source_add", payload.server, {"kind": payload.kind.value, "prefer": payload.prefer})
+    result = _controlled(
+        lambda: service().save_sources(current, actor=user.username),
+        actor=user.username,
+        action="ntp_source_add",
+        target=payload.server,
+        details=details,
+    )
+    _activity(user.username, "ntp_source_add", payload.server, details)
     return result
 
 
 @router.put("/sources/{server}")
 def update_source(server: str, payload: NtpSourceInput, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
-    if not payload.confirm:
-        api_error(422, "CONFIRMATION_REQUIRED", "NTP configuration changes require confirmation")
+    details = {"new_server": payload.server, "kind": payload.kind.value, "prefer": payload.prefer, "enabled": payload.enabled}
+    _require_confirmation(payload.confirm, user, "ntp_source_update", "NTP configuration changes require confirmation", target=server, details=details)
     current = _controlled(_managed_sources)
     replaced = False
     next_items: list[NtpSourceInput] = []
@@ -167,19 +231,30 @@ def update_source(server: str, payload: NtpSourceInput, user: SessionUser = Depe
         else:
             next_items.append(item)
     if not replaced:
+        _activity(user.username, "ntp_source_update", server, {**details, "reason": "source_not_found"}, failed=True)
         api_error(404, "NTP_SOURCE_NOT_FOUND", "NTP source was not found")
-    result = _controlled(lambda: service().save_sources(next_items, actor=user.username))
-    _activity(user.username, "ntp_source_update", server, {"new_server": payload.server, "kind": payload.kind.value})
+    result = _controlled(
+        lambda: service().save_sources(next_items, actor=user.username),
+        actor=user.username,
+        action="ntp_source_update",
+        target=server,
+        details=details,
+    )
+    _activity(user.username, "ntp_source_update", server, details)
     return result
 
 
 @router.delete("/sources/{server}")
 def delete_source(server: str, confirm: bool = False, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
-    if not confirm:
-        api_error(422, "CONFIRMATION_REQUIRED", "NTP configuration changes require confirmation")
+    _require_confirmation(confirm, user, "ntp_source_remove", "NTP configuration changes require confirmation", target=server)
     current = [item for item in _controlled(_managed_sources) if item.server != server]
-    result = _controlled(lambda: service().save_sources(current, actor=user.username))
+    result = _controlled(
+        lambda: service().save_sources(current, actor=user.username),
+        actor=user.username,
+        action="ntp_source_remove",
+        target=server,
+    )
     _activity(user.username, "ntp_source_remove", server)
     return result
 
@@ -206,7 +281,11 @@ def clients(user: SessionUser = Depends(current_user)):
 @router.post("/sync")
 def synchronize(user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.sync")
-    job = _controlled(lambda: service().enqueue_resync(user.username))
+    job = _controlled(
+        lambda: service().enqueue_resync(user.username),
+        actor=user.username,
+        action="ntp_synchronization_forced",
+    )
     _activity(user.username, "ntp_synchronization_forced", details={"job_id": job.id})
     return job
 
@@ -214,7 +293,11 @@ def synchronize(user: SessionUser = Depends(mutating_user)):
 @router.post("/resync")
 def resync_compat(user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.sync")
-    job = _controlled(lambda: service().enqueue_resync(user.username))
+    job = _controlled(
+        lambda: service().enqueue_resync(user.username),
+        actor=user.username,
+        action="ntp_synchronization_forced",
+    )
     _activity(user.username, "ntp_synchronization_forced", details={"job_id": job.id})
     return job
 
@@ -222,10 +305,14 @@ def resync_compat(user: SessionUser = Depends(mutating_user)):
 @router.post("/service")
 def service_action(payload: ServiceActionInput, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.service.control")
-    if not payload.confirm:
-        api_error(422, "CONFIRMATION_REQUIRED", "NTP service changes require confirmation")
-    result = _controlled(lambda: service().service_action(payload.action, actor=user.username))
-    _activity(user.username, f"ntp_service_{payload.action}")
+    action = f"ntp_service_{payload.action}"
+    _require_confirmation(payload.confirm, user, action, "NTP service changes require confirmation")
+    result = _controlled(
+        lambda: service().service_action(payload.action, actor=user.username),
+        actor=user.username,
+        action=action,
+    )
+    _activity(user.username, action)
     return result
 
 
@@ -242,9 +329,13 @@ def timezones(search: str = Query("", max_length=128), user: SessionUser = Depen
 @router.put("/timezone")
 def set_timezone(payload: NtpTimezoneInput, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
-    if not payload.confirm:
-        api_error(422, "CONFIRMATION_REQUIRED", "Timezone changes require confirmation")
-    result = _controlled(lambda: service().set_timezone(payload.timezone, actor=user.username))
+    _require_confirmation(payload.confirm, user, "ntp_timezone_changed", "Timezone changes require confirmation", target=payload.timezone)
+    result = _controlled(
+        lambda: service().set_timezone(payload.timezone, actor=user.username),
+        actor=user.username,
+        action="ntp_timezone_changed",
+        target=payload.timezone,
+    )
     _activity(user.username, "ntp_timezone_changed", payload.timezone)
     return result
 
@@ -266,9 +357,12 @@ def firewall_status(user: SessionUser = Depends(current_user)):
 @router.post("/firewall/open")
 def firewall_open(payload: NtpFirewallInput, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.firewall.manage")
-    if not payload.confirm:
-        api_error(422, "CONFIRMATION_REQUIRED", "Opening UDP/123 requires confirmation")
-    result = _controlled(lambda: service().open_firewall(actor=user.username))
+    _require_confirmation(payload.confirm, user, "ntp_firewall_udp_123_open", "Opening UDP/123 requires confirmation")
+    result = _controlled(
+        lambda: service().open_firewall(actor=user.username),
+        actor=user.username,
+        action="ntp_firewall_udp_123_open",
+    )
     _activity(user.username, "ntp_firewall_udp_123_open")
     return result
 
@@ -282,9 +376,13 @@ def backups(user: SessionUser = Depends(current_user)):
 @router.post("/backups/{backup_id}/restore")
 def restore_backup(backup_id: str, payload: NtpRestoreInput, user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
-    if not payload.confirm:
-        api_error(422, "CONFIRMATION_REQUIRED", "NTP configuration restore requires confirmation")
-    result = _controlled(lambda: service().restore_backup(backup_id, actor=user.username))
+    _require_confirmation(payload.confirm, user, "ntp_configuration_restored", "NTP configuration restore requires confirmation", target=backup_id)
+    result = _controlled(
+        lambda: service().restore_backup(backup_id, actor=user.username),
+        actor=user.username,
+        action="ntp_configuration_restored",
+        target=backup_id,
+    )
     _activity(user.username, "ntp_configuration_restored", backup_id)
     return result
 
@@ -299,6 +397,10 @@ def history(limit: int = Query(200, ge=1, le=2000), user: SessionUser = Depends(
 @router.post("/chrony/install")
 def install_chrony(user: SessionUser = Depends(mutating_user)):
     authorize(user, "ntp.manage")
-    result = _controlled(lambda: service().install_chrony(actor=user.username))
+    result = _controlled(
+        lambda: service().install_chrony(actor=user.username),
+        actor=user.username,
+        action="ntp_chrony_installed",
+    )
     _activity(user.username, "ntp_chrony_installed", details=result)
     return result
