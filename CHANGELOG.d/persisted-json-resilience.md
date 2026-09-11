@@ -1,0 +1,1 @@
+- Harden persisted JSON reads in DCST, Docker Manager, Ansible Controller, Hosts Manager, App Store, and Plugin Store so one corrupt record does not break an entire module or endpoint.
