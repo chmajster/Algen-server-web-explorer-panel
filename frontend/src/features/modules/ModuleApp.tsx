@@ -14,6 +14,7 @@ import "./ansible/ansible-window.css";
 
 const SambaModuleApp = lazy(() => import("./samba/SambaModuleApp").then((loaded) => ({ default: loaded.SambaModuleApp })));
 const ManagedModuleApp = lazy(() => import("./ManagedModuleApp").then((loaded) => ({ default: loaded.ManagedModuleApp })));
+const LinuxUpdatesApp = lazy(() => import("./LinuxUpdatesApp").then((loaded) => ({ default: loaded.LinuxUpdatesApp })));
 const DockerManagerApp = lazy(() => import("../docker/DockerManagerApp").then((loaded) => ({ default: loaded.DockerManagerApp })));
 const AnsibleControllerApp = lazy(() => import("./ansible/AnsibleControllerApp").then((loaded) => ({ default: loaded.AnsibleControllerApp })));
 const HostsManagerApp = lazy(() => import("./hosts/HostsManagerApp").then((loaded) => ({ default: loaded.HostsManagerApp })));
@@ -36,7 +37,8 @@ export function ModuleApp({ moduleId, initialPath, deepLink, draftKey, permissio
   else if (moduleId === "os-repositories") content = <OsRepositoriesHubApp permissions={permissions} t={t} toast={toast} />;
   else if (moduleId === "cron") content = <CronManagerApp permissions={permissions} t={t} toast={toast} />;
   else if (moduleId === "dhcp") content = <DhcpManagerApp permissions={permissions} t={t} toast={toast} />;
-  else if (["linux-updates", "pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"].includes(moduleId)) content = <ManagedModuleApp moduleId={moduleId} permissions={permissions} t={t} toast={toast} />;
+  else if (moduleId === "linux-updates") content = <LinuxUpdatesApp permissions={permissions} t={t} toast={toast} />;
+  else if (["pihole", "adguard-home", "postgresql", "mariadb", "redis", "home-assistant"].includes(moduleId)) content = <ManagedModuleApp moduleId={moduleId} permissions={permissions} t={t} toast={toast} />;
   else content = <GenericModuleApp moduleId={moduleId} t={t} toast={toast} />;
   return <>{content}{deepLink?.type === "package-job" && <PackageJobDialog jobId={deepLink.jobId || deepLink.id} moduleName={moduleId} t={t} onClose={() => onDeepLinkClose?.()} />}</>;
 }
