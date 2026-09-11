@@ -113,3 +113,19 @@ def test_blocks_unsafe_rsync_extra_args(monkeypatch):
 
     with pytest.raises(HTTPException):
         rsync_tasks.build_rsync_command([Path("/home/testuser/a")], Path("/home/testuser/b"))
+
+
+def test_diagnostic_does_not_expose_allowed_roots_exception(monkeypatch):
+    cfg = proxmox_cfg(proxmox={"safe_mode": False})
+    monkeypatch.setattr(proxmox_guard, "get_config", lambda: cfg)
+
+    def fail_allowed_roots(_username: str):
+        raise RuntimeError("secret filesystem detail /srv/private")
+
+    monkeypatch.setattr(path_policy, "allowed_roots", fail_allowed_roots)
+
+    result = proxmox_guard.diagnostic("alice")
+
+    assert result["allowed_roots_effective"] == ["unavailable"]
+    assert "secret filesystem detail" not in str(result)
+    assert "/srv/private" not in str(result)
