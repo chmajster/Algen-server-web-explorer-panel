@@ -44,12 +44,17 @@ export function DesktopWorkspace({ apps, modules, appIds, moduleIds, home, uploa
   const [selectionRect, setSelectionRect] = useState<SelectionRect>(null);
   const selectionOrigin = useRef<{ x: number; y: number } | null>(null);
   const drag = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const dragEntries = useRef<ShellDesktopEntry[] | null>(null);
   const longPress = useRef<number | null>(null);
 
   useEffect(() => {
     let active = true;
     void shellPreferencesClient.get().then((value) => { if (active) setPreferences(value); }).catch(() => undefined);
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => () => {
+    if (longPress.current !== null) window.clearTimeout(longPress.current);
   }, []);
 
   const entries = useMemo(() => {
@@ -215,6 +220,7 @@ export function DesktopWorkspace({ apps, modules, appIds, moduleIds, home, uploa
     if (event.button !== 0) return;
     const itemRect = event.currentTarget.getBoundingClientRect();
     drag.current = { id: entry.id, offsetX: event.clientX - itemRect.left, offsetY: event.clientY - itemRect.top };
+    dragEntries.current = null;
     event.currentTarget.setPointerCapture(event.pointerId);
     if (!selected.has(entry.id)) setSelected(new Set([entry.id]));
   };
@@ -224,12 +230,21 @@ export function DesktopWorkspace({ apps, modules, appIds, moduleIds, home, uploa
     const root = rootRef.current.getBoundingClientRect();
     const x = snap(event.clientX - root.left - active.offsetX, GRID_X);
     const y = snap(event.clientY - root.top - active.offsetY, GRID_Y);
-    setPreferences((current) => current ? { ...current, desktop_entries: current.desktop_entries.map((item) => item.id === active.id ? { ...item, position: { x, y } } : item) } : current);
+    setPreferences((current) => {
+      if (!current) return current;
+      const nextEntries = current.desktop_entries.map((item) => item.id === active.id ? { ...item, position: { x, y } } : item);
+      dragEntries.current = nextEntries;
+      return { ...current, desktop_entries: nextEntries };
+    });
   };
   const endDrag = () => {
-    const active = drag.current; drag.current = null;
-    if (!active || !preferences) return;
-    persistEntries(preferences.desktop_entries);
+    const active = drag.current;
+    const nextEntries = dragEntries.current;
+    drag.current = null;
+    dragEntries.current = null;
+    if (!active) return;
+    if (nextEntries) persistEntries(nextEntries);
+    else if (preferences) persistEntries(preferences.desktop_entries);
   };
 
   const iconFor = (entry: ShellDesktopEntry) => {
