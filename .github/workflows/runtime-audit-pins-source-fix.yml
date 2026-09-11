@@ -1,0 +1,70 @@
+name: Runtime audit source pin fix
+
+on:
+  push:
+    branches:
+      - fix/runtime-audit-followup
+    paths:
+      - .github/workflows/runtime-audit-pins-source-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-source-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/runtime-audit-followup
+          fetch-depth: 0
+      - name: Move dynamic app ID validation into settings model definition
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          settings = Path("backend/app/settings.py")
+          text = settings.read_text(encoding="utf-8")
+          text = text.replace("from typing import Literal", "from typing import Annotated, Literal")
+          text = text.replace(
+              "from pydantic import BaseModel, Field, ValidationError, field_validator",
+              "from pydantic import AfterValidator, BaseModel, Field, ValidationError, field_validator",
+          )
+          pattern = re.compile(r"PinnedAppId = Literal\[\n.*?\n\]\nInterfaceFont =", re.S)
+          replacement = '''def _validate_pinned_app_id(value: str) -> str:\n    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", value):\n        raise ValueError("pinned application identifiers are invalid")\n    return value\n\n\nPinnedAppId = Annotated[str, AfterValidator(_validate_pinned_app_id)]\nInterfaceFont ='''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit("PinnedAppId Literal block was not found exactly once")
+          settings.write_text(text, encoding="utf-8")
+
+          bootstrap = Path("backend/app/bootstrap.py")
+          text = bootstrap.read_text(encoding="utf-8")
+          text = text.replace("from .settings_pin_schema import enable_dynamic_application_ids\n", "")
+          text = text.replace(
+              "\n# Desktop application manifests are discovered dynamically. Keep the settings\n"
+              "# request schema equally dynamic while retaining strict identifier validation.\n"
+              "enable_dynamic_application_ids(settings_api.UserSettings, settings_api.MePatch)\n",
+              "",
+          )
+          bootstrap.write_text(text, encoding="utf-8")
+
+          pin_tests = Path("backend/tests/test_settings_pin_schema.py")
+          pin_tests.write_text('''import pytest\nfrom pydantic import ValidationError\n\nfrom app import settings\n\n\ndef test_dynamic_registry_application_ids_are_valid_desktop_pins():\n    patch = settings.MePatch(\n        pinned_apps=["files", "cron", "image-converter"],\n        start_pinned_apps=["cron"],\n        desktop_shortcut_apps=["image-converter"],\n    )\n\n    assert patch.pinned_apps == ["files", "cron", "image-converter"]\n    assert patch.start_pinned_apps == ["cron"]\n    assert patch.desktop_shortcut_apps == ["image-converter"]\n\n\ndef test_dynamic_registry_application_ids_remain_strictly_validated():\n    with pytest.raises(ValidationError):\n        settings.MePatch(pinned_apps=["files", "../../etc/passwd"])\n    with pytest.raises(ValidationError):\n        settings.MePatch(desktop_shortcut_apps=["Invalid App"])\n    with pytest.raises(ValidationError):\n        settings.MePatch(start_pinned_apps=["cron", "cron"])\n''', encoding="utf-8")
+
+          user_tests = Path("backend/tests/test_user_settings.py")
+          text = user_tests.read_text(encoding="utf-8")
+          text = text.replace('(\"pinned_apps\", [\"files\", \"unknown-app\"]),', '(\"pinned_apps\", [\"files\", \"../../unsafe\"]),')
+          text = text.replace('(\"desktop_shortcut_apps\", [\"unknown-app\"]),', '(\"desktop_shortcut_apps\", [\"Invalid App\"]),')
+          user_tests.write_text(text, encoding="utf-8")
+
+          Path("backend/app/settings_pin_schema.py").unlink()
+          Path(".github/workflows/runtime-audit-pins-source-fix.yml").unlink()
+          PY
+      - name: Commit source-level validation fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(settings): define dynamic app IDs in request schema"
+          git push origin HEAD:fix/runtime-audit-followup
