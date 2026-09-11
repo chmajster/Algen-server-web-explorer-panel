@@ -1,7 +1,8 @@
-import { Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Check, Cpu, Grip, HardDrive, MemoryStick, Move, Network, PinOff, Settings2 } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Check, Clock, Cpu, Grip, HardDrive, MemoryStick, Move, Network, PinOff, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DesktopWidget, type DesktopWidgetId, type ModuleSummary, type ResourceDashboard, type SettingsMe, type SettingsPatch, type Task } from "../../api";
 import type { Toast, Translate } from "../../app/types";
+import { ntpManagerClient, type NtpDiagnostics } from "../../modules/ntp-manager/api/client";
 
 const IDS: DesktopWidgetId[] = ["cpu", "ram", "disks", "transfers", "services", "alerts"];
 
@@ -9,6 +10,7 @@ export function DesktopWidgets({ profile, tasks, toasts, t, onSettingsChange }: 
   const [layout, setLayout] = useState(profile.desktop_widgets);
   const [resources, setResources] = useState<ResourceDashboard | null>(null);
   const [modules, setModules] = useState<ModuleSummary[]>([]);
+  const [ntp, setNtp] = useState<NtpDiagnostics | null>(null);
   const [editing, setEditing] = useState(false);
   const board = useRef<HTMLDivElement>(null);
   const layoutRef = useRef(layout);
@@ -20,6 +22,11 @@ export function DesktopWidgets({ profile, tasks, toasts, t, onSettingsChange }: 
     try { setResources(await api.resources()); } catch { /* Monitoring application surfaces connectivity details. */ }
     if (profile.permissions.includes("modules.view")) {
       try { setModules(await api.modules()); } catch { /* A widget must not interrupt the desktop. */ }
+    }
+    if (profile.permissions.includes("ntp.view")) {
+      try { setNtp(await ntpManagerClient.dashboard()); } catch { setNtp(null); }
+    } else {
+      setNtp(null);
     }
   }, [profile.permissions, profile.widgets_enabled]);
   useEffect(() => { void refresh(); const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 5000); return () => window.clearInterval(timer); }, [refresh]);
@@ -50,6 +57,7 @@ export function DesktopWidgets({ profile, tasks, toasts, t, onSettingsChange }: 
     return <div className="widget-list">{alerts.slice(-5).reverse().map((alert) => <div key={alert.id}><AlertTriangle /><span>{alert.text}</span><b>{alert.severity}</b></div>)}{!alerts.length && <span>{t("widgets.noAlerts")}</span>}</div>;
   }
   const visibleCount = layout.filter((item) => item.visible).length;
+  const ntpRow = Math.max(1, ...layout.filter((item) => item.visible).map((item) => item.y + item.height + 1));
   return <section className={`desktop-widget-layer ${editing ? "editing" : ""}`} aria-label={t("widgets.title")}>
     <button className={`widget-edit-toggle ${editing ? "is-active" : ""}`} type="button" aria-pressed={editing} onClick={() => setEditing((value) => !value)}>{editing ? <Check /> : <Settings2 />}{editing ? t("widgets.finish") : t("widgets.customize")}</button>
     {editing && <aside className="widget-picker" aria-label={t("widgets.visibility")}>
@@ -72,10 +80,25 @@ export function DesktopWidgets({ profile, tasks, toasts, t, onSettingsChange }: 
       <header onPointerDown={(event) => begin(event, item, "move")}><span>{icon(item.id)}{t(`widgets.${item.id}`)}</span>{editing && <><Grip /><button type="button" title={t("widgets.hide")} onClick={() => patchWidget(item.id, { visible: false })}><PinOff /></button></>}</header>
       <div className="widget-content">{content(item.id)}</div>
       {editing && <><div className="widget-keyboard-controls"><button title={t("widgets.left")} onClick={() => nudge(item, -1, 0)}><ArrowLeft /></button><button title={t("widgets.right")} onClick={() => nudge(item, 1, 0)}><ArrowRight /></button><button title={t("widgets.up")} onClick={() => nudge(item, 0, -1)}><ArrowUp /></button><button title={t("widgets.down")} onClick={() => nudge(item, 0, 1)}><ArrowDown /></button></div><button className="widget-resize-handle" type="button" title={t("widgets.resize")} onPointerDown={(event) => begin(event, item, "resize")}><Move /></button></>}
-    </article>)}</div>
+    </article>)}
+      {profile.permissions.includes("ntp.view") && <article className="desktop-widget" data-testid="ntp-dashboard-widget" style={{ gridColumn: "1 / span 4", gridRow: `${ntpRow} / span 2` }}>
+        <header><span><Clock />NTP</span></header>
+        <div className="widget-content">
+          <strong>{ntp?.synchronized ? "Synchronizacja: OK" : "Synchronizacja: brak"}</strong>
+          <div className="widget-list">
+            <div><span>Źródło</span><b>{ntp?.source || "—"}</b></div>
+            <div><span>Stratum</span><b>{ntp?.stratum ?? "—"}</b></div>
+            <div><span>Offset</span><b>{ntp?.offset || "—"}</b></div>
+            <div><span>Tryb</span><b>{ntpRole(ntp?.role)}</b></div>
+            <div><span>Klienci</span><b>{ntp?.summary.client_count ?? 0}</b></div>
+          </div>
+        </div>
+      </article>}
+    </div>
   </section>;
 }
 
 function Meter({ value }: { value: number }) { return <div className="widget-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value)}><span style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div>; }
 function bytes(value?: number) { if (!value) return "0 B"; const units = ["B", "KiB", "MiB", "GiB", "TiB"]; const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024))); return `${(value / 1024 ** index).toFixed(index > 2 ? 1 : 0)} ${units[index]}`; }
 function icon(id: DesktopWidgetId) { return id === "cpu" ? <Cpu /> : id === "ram" ? <MemoryStick /> : id === "disks" ? <HardDrive /> : id === "transfers" ? <Network /> : id === "services" ? <Activity /> : <Bell />; }
+function ntpRole(role?: string) { return role === "client_server" ? "Client + Server" : role === "client" ? "Client" : role === "server" ? "Server" : "Disabled"; }
