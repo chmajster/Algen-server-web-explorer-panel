@@ -346,9 +346,12 @@ class RoutingService:
             or not isinstance(transaction.get("persistent"), dict)
         ):
             raise LookupError("routing transaction state is invalid")
+        expires_at = transaction.get("expires_at")
+        if not isinstance(expires_at, (int, float, str)):
+            raise LookupError("routing transaction state is invalid")
         try:
-            float(transaction.get("expires_at"))
-        except (TypeError, ValueError) as error:
+            float(expires_at)
+        except ValueError as error:
             raise LookupError("routing transaction state is invalid") from error
         return transaction
 
