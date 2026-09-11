@@ -854,3 +854,22 @@ def test_facts_are_allowlisted_and_machine_id_is_hashed(tmp_path: Path):
     assert facts["system"] == "Linux"
     assert facts["machine_id_hash"] != "raw-id"
     assert "password" not in json.dumps(facts) and "arbitrary" not in facts
+
+
+def test_group_hierarchy_rejects_orphans_cycles_and_parent_deletion(tmp_path: Path):
+    store = service(tmp_path)
+    with pytest.raises(ManagedGroupConflictError, match="parent group does not exist"):
+        store.save_group(GroupInput(name="orphan", parent_id="f" * 32), "admin")
+
+    parent = store.save_group(GroupInput(name="parent"), "admin")
+    child = store.save_group(GroupInput(name="child", parent_id=parent["id"]), "admin")
+
+    with pytest.raises(ManagedGroupConflictError, match="own parent"):
+        store.save_group(GroupInput(name="parent", parent_id=parent["id"]), "admin", parent["id"])
+    with pytest.raises(ManagedGroupConflictError, match="cycle"):
+        store.save_group(GroupInput(name="parent", parent_id=child["id"]), "admin", parent["id"])
+    with pytest.raises(ManagedGroupConflictError, match="child groups"):
+        store.delete_group(parent["id"])
+
+    assert store.delete_group(child["id"]) is True
+    assert store.delete_group(parent["id"]) is True

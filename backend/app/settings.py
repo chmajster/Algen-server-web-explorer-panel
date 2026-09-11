@@ -1396,11 +1396,13 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
                 raise
             return {"ok": False, "error": str(exc.detail)}
         except Exception as exc:  # noqa: BLE001
-            state.update({"last_error": str(exc), "next_check": now + 3600})
+            public_error = "Update operation failed"
+            logger.warning("Auto-update failed for actor %s: %s", actor, type(exc).__name__)
+            state.update({"last_error": public_error, "next_check": now + 3600})
             _write_auto_update_state(state)
             if force:
-                raise HTTPException(500, str(exc)) from exc
-            return {"ok": False, "error": str(exc)}
+                raise HTTPException(500, public_error) from exc
+            return {"ok": False, "error": public_error}
 
 
 def start_auto_update_scheduler() -> None:

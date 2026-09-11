@@ -502,6 +502,8 @@ def delete_group(group_id: str, user: SessionUser = Depends(require_permission(P
         removed = _service().delete_group(group_id)
     except ManagedGroupProtectedError as error:
         api_error(409, "MANAGED_GROUP_PROTECTED", str(error))
+    except ManagedGroupConflictError as error:
+        api_error(409, "GROUP_IN_USE", str(error))
     if removed:
         _activity(user.username, "group_delete", group_id)
     return {"ok": removed}
