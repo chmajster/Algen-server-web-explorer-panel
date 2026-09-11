@@ -53,6 +53,10 @@ function stateLabel(state?: string) {
   } as Record<string, string>)[state || ""] || state || "Skonfigurowany";
 }
 
+function sourceKey(source: Pick<NtpSource, "server" | "kind">) {
+  return `${source.kind || "server"}:${source.server}`;
+}
+
 export function NtpManagerApp({ permissions, toast }: Props) {
   const [tab, setTab] = useState<Tab>("overview");
   const [diagnostics, setDiagnostics] = useState<NtpDiagnostics | null>(null);
@@ -67,6 +71,8 @@ export function NtpManagerApp({ permissions, toast }: Props) {
   const [server, setServer] = useState("");
   const [sourceKind, setSourceKind] = useState<NtpSourceKind>("server");
   const [preferSource, setPreferSource] = useState(false);
+  const [editingSource, setEditingSource] = useState<string | null>(null);
+  const [sourceDraft, setSourceDraft] = useState<NtpSource | null>(null);
   const [network, setNetwork] = useState("");
   const [networkDescription, setNetworkDescription] = useState("");
   const [testResult, setTestResult] = useState("");
@@ -87,13 +93,21 @@ export function NtpManagerApp({ permissions, toast }: Props) {
         ntpManagerClient.history().catch(() => ({ items: [], total: 0 })),
         ntpManagerClient.backups().catch(() => ({ items: [] })),
       ]);
+      const managedKeys = new Set(nextConfig.sources.map(sourceKey));
+      const mergedSources = nextConfig.sources.map((configured) => {
+        const live = nextDiagnostics.sources.find((item) => item.server === configured.server);
+        return { ...live, ...configured };
+      });
+      mergedSources.push(...nextDiagnostics.sources.filter((item) => !managedKeys.has(sourceKey(item))));
       setDiagnostics(nextDiagnostics);
-      setSources(nextDiagnostics.sources);
+      setSources(mergedSources);
       setConfiguration(nextConfig);
       setDraft(nextConfig);
       setClients(nextClients.items);
       setHistory(nextHistory.items);
       setBackups(nextBackups.items);
+      setEditingSource(null);
+      setSourceDraft(null);
     } catch (error) {
       toast(error instanceof Error ? error.message : "NTP error", "error", "admin", "ntp-manager");
     } finally {
@@ -142,6 +156,43 @@ export function NtpManagerApp({ permissions, toast }: Props) {
     } catch (error) {
       setTestResult(error instanceof Error ? error.message : "Test NTP failed");
     }
+  }
+
+  function managedSource(source: NtpSource) {
+    return configuration?.sources.some((item) => sourceKey(item) === sourceKey(source)) ?? false;
+  }
+
+  function beginSourceEdit(source: NtpSource) {
+    setEditingSource(sourceKey(source));
+    setSourceDraft({ ...source, kind: source.kind || "server", enabled: source.enabled !== false });
+  }
+
+  async function saveSourceEdit() {
+    if (!editingSource || !sourceDraft) return;
+    const original = configuration?.sources.find((item) => sourceKey(item) === editingSource);
+    if (!original) return;
+    await runAction(() => ntpManagerClient.update(original.server, sourceDraft), "Zaktualizowano źródło NTP");
+  }
+
+  async function toggleSource(source: NtpSource) {
+    const configured = configuration?.sources.find((item) => sourceKey(item) === sourceKey(source));
+    if (!configured) return;
+    const enabled = configured.enabled === false;
+    await runAction(
+      () => ntpManagerClient.update(configured.server, { ...configured, enabled }),
+      enabled ? "Włączono źródło NTP" : "Wyłączono źródło NTP",
+    );
+  }
+
+  async function moveSource(source: NtpSource, delta: -1 | 1) {
+    if (!configuration) return;
+    const ordered = [...configuration.sources];
+    const index = ordered.findIndex((item) => sourceKey(item) === sourceKey(source));
+    const nextIndex = index + delta;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return;
+    const [item] = ordered.splice(index, 1);
+    ordered.splice(nextIndex, 0, item);
+    await runAction(() => ntpManagerClient.replaceSources(ordered), "Zmieniono kolejność źródeł NTP");
   }
 
   function addNetwork() {
@@ -238,7 +289,7 @@ export function NtpManagerApp({ permissions, toast }: Props) {
           {canManage && (
             <div className="infra-manager-toolbar">
               <input aria-label="NTP server" placeholder="time.cloudflare.com" value={server} onChange={(event) => setServer(event.target.value)} />
-              <select value={sourceKind} onChange={(event) => setSourceKind(event.target.value as NtpSourceKind)}>
+              <select aria-label="Typ nowego źródła NTP" value={sourceKind} onChange={(event) => setSourceKind(event.target.value as NtpSourceKind)}>
                 <option value="server">server</option><option value="pool">pool</option>
               </select>
               <label><input type="checkbox" checked={preferSource} onChange={(event) => setPreferSource(event.target.checked)} /> Preferowane</label>
@@ -247,13 +298,34 @@ export function NtpManagerApp({ permissions, toast }: Props) {
           )}
           {testResult && <div className="infra-manager-toolbar"><span>{testResult}</span></div>}
           <div className="infra-table-wrap">
-            <table className="infra-table"><thead><tr><th>Serwer</th><th>Status</th><th>Typ</th><th>Stratum</th><th>Poll</th><th>Reach</th><th>Last RX</th><th>Offset</th><th>Akcje</th></tr></thead>
-              <tbody>{sources.map((source) => (
-                <tr key={`${source.server}-${source.kind || source.mode || "source"}`}>
-                  <td>{source.server}</td><td>{stateLabel(source.state)}</td><td>{source.kind || source.mode || "server"}</td><td>{source.stratum ?? "—"}</td><td>{source.poll ?? "—"}</td><td>{source.reach ?? "—"}</td><td>{source.last_rx || "—"}</td><td>{source.offset || "—"}</td>
-                  <td><div className="infra-row-actions"><button type="button" onClick={() => void testServer(source.server)}>Test</button>{canManage && <button type="button" onClick={async () => { if (await confirmDialog(`Usunąć ${source.server}?`, (key) => key)) void runAction(() => ntpManagerClient.remove(source.server)); }}><Trash2 /> Usuń</button>}</div></td>
-                </tr>
-              ))}</tbody>
+            <table className="infra-table"><thead><tr><th>Serwer</th><th>Status</th><th>Typ</th><th>Włączone</th><th>Preferowane</th><th>Stratum</th><th>Poll</th><th>Reach</th><th>Last RX</th><th>Offset</th><th>Akcje</th></tr></thead>
+              <tbody>{sources.map((source, index) => {
+                const managed = managedSource(source);
+                const configuredIndex = configuration?.sources.findIndex((item) => sourceKey(item) === sourceKey(source)) ?? -1;
+                const editing = editingSource === sourceKey(source) && sourceDraft;
+                return (
+                  <tr key={`${source.server}-${source.kind || source.mode || "source"}`}>
+                    <td>{editing ? <input aria-label="Edytuj serwer NTP" value={sourceDraft.server} onChange={(event) => setSourceDraft({ ...sourceDraft, server: event.target.value })} /> : source.server}</td>
+                    <td>{managed ? stateLabel(source.state) : `${stateLabel(source.state)} (zewnętrzne)`}</td>
+                    <td>{editing ? <select aria-label="Edytuj typ źródła NTP" value={sourceDraft.kind || "server"} onChange={(event) => setSourceDraft({ ...sourceDraft, kind: event.target.value as NtpSourceKind })}><option value="server">server</option><option value="pool">pool</option></select> : source.kind || source.mode || "server"}</td>
+                    <td>{editing ? <input aria-label="Źródło NTP włączone" type="checkbox" checked={sourceDraft.enabled !== false} onChange={(event) => setSourceDraft({ ...sourceDraft, enabled: event.target.checked })} /> : source.enabled === false ? "Nie" : managed ? "Tak" : "—"}</td>
+                    <td>{editing ? <input aria-label="Źródło NTP preferowane" type="checkbox" checked={Boolean(sourceDraft.prefer)} onChange={(event) => setSourceDraft({ ...sourceDraft, prefer: event.target.checked })} /> : source.prefer ? "Tak" : "Nie"}</td>
+                    <td>{source.stratum ?? "—"}</td><td>{source.poll ?? "—"}</td><td>{source.reach ?? "—"}</td><td>{source.last_rx || "—"}</td><td>{source.offset || "—"}</td>
+                    <td><div className="infra-row-actions">
+                      <button type="button" onClick={() => void testServer(source.server)}>Test</button>
+                      {canManage && managed && editing && <><button type="button" onClick={() => void saveSourceEdit()} disabled={!sourceDraft.server.trim()}>Zapisz</button><button type="button" onClick={() => { setEditingSource(null); setSourceDraft(null); }}>Anuluj</button></>}
+                      {canManage && managed && !editing && <>
+                        <button type="button" onClick={() => beginSourceEdit(source)}>Edytuj</button>
+                        <button type="button" onClick={() => void toggleSource(source)}>{source.enabled === false ? "Włącz" : "Wyłącz"}</button>
+                        <button type="button" aria-label={`Przesuń ${source.server} w górę`} disabled={configuredIndex <= 0} onClick={() => void moveSource(source, -1)}>↑</button>
+                        <button type="button" aria-label={`Przesuń ${source.server} w dół`} disabled={configuredIndex < 0 || configuredIndex >= (configuration?.sources.length ?? 0) - 1} onClick={() => void moveSource(source, 1)}>↓</button>
+                        <button type="button" onClick={async () => { if (await confirmDialog(`Usunąć ${source.server}?`, (key) => key)) void runAction(() => ntpManagerClient.remove(source.server)); }}><Trash2 /> Usuń</button>
+                      </>}
+                      {canManage && !managed && <span title="Źródło spoza bloku zarządzanego przez WebNAS">Tylko odczyt</span>}
+                    </div></td>
+                  </tr>
+                );
+              })}</tbody>
             </table>
           </div>
         </>
