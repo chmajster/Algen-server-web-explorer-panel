@@ -217,7 +217,7 @@ jobs:
           set -euo pipefail
           python -m compileall -q backend/app
           python -m ruff check backend/app/settings.py backend/app/modules/hosts_manager/service.py backend/app/modules/dhcp/service.py backend/app/modules/providers/dhcp.py backend/tests/test_post253_runtime_hardening.py
-          python -m mypy backend/app
+          python -m mypy
           cd backend
           pytest -q tests/test_post253_runtime_hardening.py tests/test_persisted_json_resilience.py
       - name: Commit fixes
