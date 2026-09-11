@@ -1,0 +1,60 @@
+name: Runtime audit import cleanup
+
+on:
+  push:
+    branches:
+      - fix/runtime-audit-followup
+    paths:
+      - .github/workflows/runtime-audit-import-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/runtime-audit-followup
+          fetch-depth: 0
+      - name: Remove duplicate apiUrl imports
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          fixes = {
+              "frontend/src/core/realtime/runtimeEvents.ts": (
+                  'import { apiUrl } from "../api/transport";\nimport { apiUrl } from "../api/transport";\n',
+                  'import { apiUrl } from "../api/transport";\n',
+              ),
+              "frontend/src/features/actions/useBackgroundActions.ts": (
+                  'import { apiUrl } from "../../core/api/transport";\n',
+                  '',
+              ),
+              "frontend/src/features/package-center/PackageJobDialog.tsx": (
+                  'import { apiUrl } from "../../core/api/transport";\n',
+                  '',
+              ),
+              "frontend/src/features/package-center/hooks/usePackageCenter.ts": (
+                  'import { apiUrl } from "../../../core/api/transport";\n',
+                  '',
+              ),
+          }
+
+          for filename, (old, new) in fixes.items():
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"expected duplicate import pattern missing in {filename}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          Path(".github/workflows/runtime-audit-import-cleanup.yml").unlink()
+          PY
+      - name: Commit import cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(frontend): remove duplicate API URL imports"
+          git push origin HEAD:fix/runtime-audit-followup
