@@ -10,7 +10,7 @@ vi.mock("../../components/DialogService", () => ({ confirmDialog: vi.fn() }));
 vi.mock("./api/client", () => ({
   ntpManagerClient: {
     dashboard: vi.fn(), config: vi.fn(), clients: vi.fn(), history: vi.fn(), backups: vi.fn(),
-    timezones: vi.fn(), add: vi.fn(), remove: vi.fn(), test: vi.fn(), saveConfig: vi.fn(),
+    timezones: vi.fn(), add: vi.fn(), update: vi.fn(), replaceSources: vi.fn(), remove: vi.fn(), test: vi.fn(), saveConfig: vi.fn(),
     sync: vi.fn(), service: vi.fn(), setTimezone: vi.fn(), diagnostics: vi.fn(), openFirewall: vi.fn(),
     restoreBackup: vi.fn(), installChrony: vi.fn(),
   },
@@ -20,16 +20,23 @@ const dashboard = {
   backend: "chrony", available: true, role: "client_server" as const, synchronized: true, timezone: "Europe/Warsaw", system_time: 1,
   source: "192.0.2.1", offset: "+0.7 ms", stratum: 3, reachability: "", jitter: "1 ms", service: "chronyd", service_state: "active", enabled: true,
   health: "healthy" as const, metrics: {},
-  sources: [{ server: "192.0.2.1", selected: true, state: "selected", stratum: 3, reach: 377, kind: "server" as const, enabled: true }],
-  summary: { source_count: 1, selected_count: 1, reachable_count: 1, client_count: 1 },
+  sources: [
+    { server: "192.0.2.1", selected: true, state: "selected", stratum: 3, reach: 377, kind: "server" as const, enabled: true },
+    { server: "pool.ntp.org", selected: false, state: "candidate", stratum: 2, reach: 377, kind: "pool" as const, enabled: true },
+    { server: "distro.pool.example", selected: false, state: "candidate", stratum: 2, reach: 377, kind: "server" as const },
+  ],
+  summary: { source_count: 3, selected_count: 1, reachable_count: 3, client_count: 1 },
   firewall: { backend: "firewalld", status: "open" as const, managed_by_webnas: false }, warnings: [], collected_at: 1,
 };
 
 const config = {
   mode: "client_server" as const,
-  sources: [{ server: "192.0.2.1", kind: "server" as const, prefer: true, enabled: true }],
+  sources: [
+    { server: "192.0.2.1", kind: "server" as const, prefer: true, enabled: true },
+    { server: "pool.ntp.org", kind: "pool" as const, prefer: false, enabled: true },
+  ],
   allowed_networks: [{ cidr: "192.168.10.0/24", description: "Servers", enabled: true }],
-  local_time_when_unsynced: false, local_stratum: 10, backend: "chrony", managed_path: "/etc/chrony/conf.d/webnas.conf", unmanaged_config_detected: false,
+  local_time_when_unsynced: false, local_stratum: 10, backend: "chrony", managed_path: "/etc/chrony/conf.d/webnas.conf", unmanaged_config_detected: true,
 };
 
 function setupMocks() {
@@ -40,6 +47,8 @@ function setupMocks() {
   vi.mocked(ntpManagerClient.backups).mockResolvedValue({ items: [] });
   vi.mocked(ntpManagerClient.timezones).mockResolvedValue({ items: ["Europe/Warsaw", "UTC"], total: 2 });
   vi.mocked(ntpManagerClient.add).mockResolvedValue({});
+  vi.mocked(ntpManagerClient.update).mockResolvedValue({});
+  vi.mocked(ntpManagerClient.replaceSources).mockResolvedValue({});
   vi.mocked(ntpManagerClient.saveConfig).mockResolvedValue({});
   vi.mocked(confirmDialog).mockResolvedValue(true);
 }
@@ -53,11 +62,45 @@ describe("NtpManagerApp", () => {
     await waitFor(() => expect(screen.getByText("OK")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Źródła czasu" }));
-    await user.type(screen.getByLabelText("NTP server"), "pool.ntp.org");
-    fireEvent.change(screen.getByDisplayValue("server"), { target: { value: "pool" } });
+    await user.type(screen.getByLabelText("NTP server"), "pool2.ntp.org");
+    fireEvent.change(screen.getByLabelText("Typ nowego źródła NTP"), { target: { value: "pool" } });
     await user.click(screen.getByRole("button", { name: /Dodaj/ }));
 
-    await waitFor(() => expect(ntpManagerClient.add).toHaveBeenCalledWith("pool.ntp.org", "pool", false));
+    await waitFor(() => expect(ntpManagerClient.add).toHaveBeenCalledWith("pool2.ntp.org", "pool", false));
+  });
+
+  it("edits, disables and reorders only WebNAS-managed sources", async () => {
+    const user = userEvent.setup();
+    render(<NtpManagerApp permissions={["ntp.view", "ntp.manage"]} language="pl-PL" toast={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("OK")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Źródła czasu" }));
+
+    expect(screen.getByText("Dostępny (zewnętrzne)")).toBeInTheDocument();
+    expect(screen.getByText("Tylko odczyt")).toBeInTheDocument();
+
+    const editButtons = screen.getAllByRole("button", { name: "Edytuj" });
+    await user.click(editButtons[0]);
+    const serverInput = screen.getByLabelText("Edytuj serwer NTP");
+    await user.clear(serverInput);
+    await user.type(serverInput, "time.cloudflare.com");
+    await user.click(screen.getByLabelText("Źródło NTP preferowane"));
+    await user.click(screen.getByRole("button", { name: "Zapisz" }));
+    await waitFor(() => expect(ntpManagerClient.update).toHaveBeenCalledWith("192.0.2.1", expect.objectContaining({
+      server: "time.cloudflare.com",
+      kind: "server",
+      prefer: false,
+      enabled: true,
+    })));
+
+    const disableButtons = screen.getAllByRole("button", { name: "Wyłącz" });
+    await user.click(disableButtons[0]);
+    await waitFor(() => expect(ntpManagerClient.update).toHaveBeenCalledWith("192.0.2.1", expect.objectContaining({ enabled: false })));
+
+    await user.click(screen.getByRole("button", { name: "Przesuń 192.0.2.1 w dół" }));
+    await waitFor(() => expect(ntpManagerClient.replaceSources).toHaveBeenCalledWith([
+      expect.objectContaining({ server: "pool.ntp.org" }),
+      expect.objectContaining({ server: "192.0.2.1" }),
+    ]));
   });
 
   it("edits allowed networks and saves client+server configuration", async () => {
@@ -85,5 +128,6 @@ describe("NtpManagerApp", () => {
     await user.click(screen.getByRole("button", { name: "Źródła czasu" }));
     expect(screen.queryByRole("button", { name: /Dodaj/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Usuń/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edytuj" })).not.toBeInTheDocument();
   });
 });
