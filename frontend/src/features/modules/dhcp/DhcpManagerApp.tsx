@@ -49,10 +49,10 @@ export function DhcpManagerApp({ permissions, t, toast }: { permissions: string[
   useEffect(() => { const timer = window.setInterval(() => { if (!document.hidden && section === "leases") void loadLeases(); }, 5000); return () => window.clearInterval(timer); }, [section, leaseSearch, leaseSubnet, leaseState]);
   useEffect(() => { if (section === "leases") void loadLeases(); else if (section === "diagnostics") void loadDiagnostics(); else if (section === "backups") void loadBackups(); else if (section === "logs") void loadLogs(); }, [section]);
 
-  async function loadLeases(filters: Partial<{ search: string; subnet_id: string; state: string }> = {}) { try { setLeases((await api.dhcpLeases({ search: filters.search ?? leaseSearch, subnet_id: filters.subnet_id ?? leaseSubnet, state: filters.state ?? leaseState })).items); } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } }
-  async function loadDiagnostics() { try { setDiagnostics((await api.dhcpDiagnostics()).items); } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } }
-  async function loadBackups() { try { setBackups((await api.dhcpBackups()).items); } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } }
-  async function loadLogs() { try { setLogs((await api.dhcpLogs({ search: logSearch, level: logLevel, since: logSince, limit: 400 })).lines); } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } }
+  async function loadLeases(filters: Partial<{ search: string; subnet_id: string; state: string }> = {}) { try { setLeases((await api.dhcpLeases({ search: filters.search ?? leaseSearch, subnet_id: filters.subnet_id ?? leaseSubnet, state: filters.state ?? leaseState })).items); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } }
+  async function loadDiagnostics() { try { setDiagnostics((await api.dhcpDiagnostics()).items); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } }
+  async function loadBackups() { try { setBackups((await api.dhcpBackups()).items); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } }
+  async function loadLogs() { try { setLogs((await api.dhcpLogs({ search: logSearch, level: logLevel, since: logSince, limit: 400 })).lines); setError(""); } catch (reason) { setError(reason instanceof Error ? reason.message : t("error.generic")); } }
   function queued(response: { job: AppJob }) { setActiveJob(response.job); toast("DHCP operation queued", "ok", "admin", "dhcp"); }
 
   const selectedSubnet = useMemo(() => new Map(subnets.map((item) => [item.id, item])), [subnets]);
