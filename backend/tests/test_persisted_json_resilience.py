@@ -29,6 +29,9 @@ def test_docker_artifact_corrupt_metadata_isolated(tmp_path):
     with store._connect() as connection:
         connection.execute("UPDATE artifacts SET metadata='{' WHERE id=?", (created["id"],))
     assert store.list_artifacts()[0]["metadata"] == {}
+    artifact_path, artifact_metadata = store.artifact(created["id"])
+    assert artifact_path == artifact
+    assert artifact_metadata["metadata"] == {}
 
 
 def test_ansible_corrupt_setting_falls_back_to_empty_object(tmp_path):
