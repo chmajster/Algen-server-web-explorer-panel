@@ -52,12 +52,14 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
   onLogout: () => void;
 }) {
   const [sessionOpen, setSessionOpen] = useState(false);
+  const [modulesOpen, setModulesOpen] = useState(false);
   const [context, setContext] = useState<TaskbarContext | null>(null);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [order, setOrder] = useState<string[]>([]);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(() => WebNAS.notification.unread());
   const sessionRef = useRef<HTMLDivElement>(null);
+  const modulesRef = useRef<HTMLDivElement>(null);
   const previewCloseTimer = useRef<number | null>(null);
 
   const baseItems = useMemo(() => {
@@ -88,7 +90,19 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
     const rank = new Map(order.map((key, index) => [key, index]));
     return [...baseItems].sort((a, b) => (rank.get(a.key) ?? 10000) - (rank.get(b.key) ?? 10000));
   }, [baseItems, order]);
+  const taskbarItems = useMemo(() => visibleItems.filter((item) => !item.moduleId || pinnedModules.has(item.moduleId)), [pinnedModules, visibleItems]);
+  const installedModules = useMemo(() => [...moduleNames.entries()].sort(([leftId, leftName], [rightId, rightName]) => {
+    const pinDelta = Number(pinnedModules.has(rightId)) - Number(pinnedModules.has(leftId));
+    return pinDelta || leftName.localeCompare(rightName, profile.language);
+  }), [moduleNames, pinnedModules, profile.language]);
+  const moduleApp = apps.find((app) => app.id === "module");
+  const storeApp = apps.find((app) => app.id === "store" && !app.hidden);
   const activeWindow = windows.find((item) => item.id === activeId);
+  const moduleWindows = windows.filter((item) => item.app === "module" && Boolean(item.moduleId));
+  const modulesRunning = moduleWindows.length > 0;
+  const modulesActive = activeWindow?.app === "module" && !activeWindow.minimized;
+  const modulesMinimized = modulesRunning && moduleWindows.every((item) => item.minimized);
+  const modulesLabel = profile.language === "pl-PL" ? "Moduły" : "Modules";
 
   useEffect(() => {
     let active = true;
@@ -97,18 +111,23 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
   }, []);
   useEffect(() => WebNAS.notification.subscribe(() => setNotificationCount(WebNAS.notification.unread())), []);
   useEffect(() => {
-    function close(event: MouseEvent) { if (!sessionRef.current?.contains(event.target as Node)) setSessionOpen(false); }
-    function key(event: KeyboardEvent) { if (event.key === "Escape") { setSessionOpen(false); setPreviewKey(null); } }
+    function close(event: MouseEvent) {
+      if (!sessionRef.current?.contains(event.target as Node)) setSessionOpen(false);
+      if (!modulesRef.current?.contains(event.target as Node)) setModulesOpen(false);
+    }
+    function key(event: KeyboardEvent) {
+      if (event.key === "Escape") { setSessionOpen(false); setModulesOpen(false); setPreviewKey(null); }
+    }
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", key);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key); };
   }, []);
   useEffect(() => {
     if (!launcherOpen && !notificationsOpen && !actionsOpen && !calendarOpen) return;
-    setSessionOpen(false); setContext(null); setPreviewKey(null);
+    setSessionOpen(false); setModulesOpen(false); setContext(null); setPreviewKey(null);
   }, [actionsOpen, calendarOpen, launcherOpen, notificationsOpen]);
 
-  function openContext(value: TaskbarContext) { onOpenLocalPanel(); setSessionOpen(false); setPreviewKey(null); setContext(value); }
+  function openContext(value: TaskbarContext) { onOpenLocalPanel(); setSessionOpen(false); setModulesOpen(false); setPreviewKey(null); setContext(value); }
   function moduleLabel(moduleId: string) { return moduleNames.get(moduleId) || moduleId.split("-").map((part) => part ? part[0].toUpperCase() + part.slice(1) : part).join(" "); }
   function appMenu(app: AppDefinition, moduleId?: string): ContextMenuItem[] {
     const appWindows = windows.filter((item) => item.app === app.id && (!moduleId || item.moduleId === moduleId)).sort((left, right) => right.zIndex - left.zIndex);
@@ -140,7 +159,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
   }
   function reorder(from: string, to: string) {
     if (from === to) return;
-    const keys = visibleItems.map((item) => item.key);
+    const keys = taskbarItems.map((item) => item.key);
     const fromIndex = keys.indexOf(from); const toIndex = keys.indexOf(to);
     if (fromIndex < 0 || toIndex < 0) return;
     keys.splice(toIndex, 0, keys.splice(fromIndex, 1)[0]);
@@ -162,7 +181,7 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
     <div className="taskbar-primary">
       <button className={`taskbar-start ${launcherOpen ? "active" : ""}`} type="button" title={t("desktop.mainMenu")} aria-label={t("desktop.mainMenu")} aria-expanded={launcherOpen} onClick={onToggleLauncher}><LayoutGrid /></button>
       <div className="taskbar-items" aria-label={t("desktop.runningApps")}>
-        {visibleItems.map(({ key, app, moduleId }) => {
+        {taskbarItems.map(({ key, app, moduleId }) => {
           const appWindows = windows.filter((item) => item.app === app.id && (!moduleId || item.moduleId === moduleId));
           const running = appWindows.length > 0;
           const active = activeWindow?.app === app.id && (!moduleId || activeWindow.moduleId === moduleId) && !activeWindow.minimized;
@@ -177,17 +196,37 @@ export function Taskbar({ apps, pinned, pinnedModules, moduleNames, windows, act
           </button>;
         })}
       </div>
+      {moduleApp && installedModules.length > 0 && <div ref={modulesRef} className="taskbar-modules-wrap">
+        <button className={`taskbar-modules-button ${modulesOpen ? "open" : ""} ${modulesActive ? "active" : ""} ${modulesRunning ? "running" : ""} ${modulesMinimized ? "minimized" : ""}`} type="button" title={modulesLabel} aria-label={modulesLabel} aria-expanded={modulesOpen} aria-controls="taskbar-modules-menu" onClick={() => { setSessionOpen(false); setContext(null); setPreviewKey(null); if (!modulesOpen) onOpenLocalPanel(); setModulesOpen((value) => !value); }}>
+          {moduleApp.icon}<span>{modulesLabel}</span>{modulesRunning && <i aria-hidden="true" />}
+        </button>
+        {modulesOpen && <div id="taskbar-modules-menu" className="taskbar-modules-menu" role="menu" aria-label={modulesLabel}>
+          <header><strong>{modulesLabel}</strong><small>{installedModules.length}</small></header>
+          <div className="taskbar-modules-list">
+            {installedModules.map(([moduleId, label]) => {
+              const currentWindows = windows.filter((item) => item.app === "module" && item.moduleId === moduleId);
+              const running = currentWindows.length > 0;
+              const active = activeWindow?.app === "module" && activeWindow.moduleId === moduleId && !activeWindow.minimized;
+              const isPinned = pinnedModules.has(moduleId);
+              return <button key={moduleId} type="button" role="menuitem" className={`${active ? "active" : ""} ${running ? "running" : ""} ${isPinned ? "pinned" : ""}`} title={label} aria-label={label} onClick={() => { onModule(moduleId); setModulesOpen(false); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openContext({ x: event.clientX, y: event.clientY, app: moduleApp, moduleId, portalTarget: event.currentTarget.closest(".taskbar")?.parentElement ?? null }); }}>
+                <span className="taskbar-module-icon">{moduleApp.icon}</span><span className="taskbar-module-label">{label}</span><span className="taskbar-module-meta">{running && <i aria-hidden="true" />}{isPinned && <Pin aria-hidden="true" />}</span>
+              </button>;
+            })}
+          </div>
+          {storeApp && <footer><button type="button" role="menuitem" onClick={() => { onApp(storeApp.id); setModulesOpen(false); }}>{storeApp.icon}<span>{t(storeApp.labelKey)}</span></button></footer>}
+        </div>}
+      </div>}
     </div>
     <div className="system-tray">
       {profile.show_transfer_indicator && <button className="transfer-indicator" type="button" title={t("transfers.title")} aria-label={`${t("transfers.title")}: ${activeTransfers}`} onClick={() => onApp("transfers")}><Clock3 />{activeTransfers > 0 && <b>{activeTransfers}</b>}</button>}
-      {profile.show_background_actions_indicator && <button ref={actionButtonRef} className={`actions-indicator ${actionsOpen ? "active" : ""}`} type="button" title={t("actions.title")} aria-label={`${t("actions.title")}: ${activeActions}`} aria-expanded={actionsOpen} aria-controls="actions-center" onClick={() => { setSessionOpen(false); setContext(null); onToggleActions(); }}><ListTodo />{activeActions > 0 && <b>{activeActions > 99 ? "99+" : activeActions}</b>}</button>}
-      {profile.show_notifications && <button className={notificationsOpen ? "active" : ""} type="button" title={t("desktop.notifications")} aria-label={t("desktop.notifications")} aria-expanded={notificationsOpen} onClick={onToggleNotifications}><Bell />{notificationCount > 0 && <b>{notificationCount > 99 ? "99+" : notificationCount}</b>}</button>}
+      {profile.show_background_actions_indicator && <button ref={actionButtonRef} className={`actions-indicator ${actionsOpen ? "active" : ""}`} type="button" title={t("actions.title")} aria-label={`${t("actions.title")}: ${activeActions}`} aria-expanded={actionsOpen} aria-controls="actions-center" onClick={() => { setSessionOpen(false); setModulesOpen(false); setContext(null); onToggleActions(); }}><ListTodo />{activeActions > 0 && <b>{activeActions > 99 ? "99+" : activeActions}</b>}</button>}
+      {profile.show_notifications && <button className={notificationsOpen ? "active" : ""} type="button" title={t("desktop.notifications")} aria-label={t("desktop.notifications")} aria-expanded={notificationsOpen} onClick={() => { setModulesOpen(false); onToggleNotifications(); }}><Bell />{notificationCount > 0 && <b>{notificationCount > 99 ? "99+" : notificationCount}</b>}</button>}
       <button className="theme-toggle" type="button" title={t("notify.theme")} aria-label={t("notify.theme")} onClick={onToggleTheme}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</button>
       <div ref={sessionRef} className="session-menu-wrap">
-        <button className={`taskbar-user ${sessionOpen ? "active" : ""}`} type="button" aria-label={t("desktop.sessionMenu")} aria-expanded={sessionOpen} onClick={() => { setContext(null); if (!sessionOpen) onOpenLocalPanel(); setSessionOpen((value) => !value); }}><UserRound /><span>{profile.username}</span><ChevronUp /></button>
+        <button className={`taskbar-user ${sessionOpen ? "active" : ""}`} type="button" aria-label={t("desktop.sessionMenu")} aria-expanded={sessionOpen} onClick={() => { setModulesOpen(false); setContext(null); if (!sessionOpen) onOpenLocalPanel(); setSessionOpen((value) => !value); }}><UserRound /><span>{profile.username}</span><ChevronUp /></button>
         {sessionOpen && <div className="session-menu" role="menu"><header><UserRound /><span><strong>{profile.username}</strong><small>{profile.is_admin ? t("desktop.administrator") : t("desktop.standardUser")}</small></span></header>{onShutdown && <button type="button" role="menuitem" onClick={onShutdown}><Power />{t("shutdown.button")}</button>}<button type="button" role="menuitem" onClick={onLogout}><LogOut />{t("notify.logout")}</button></div>}
       </div>
-      <button ref={clockButtonRef} className={`system-clock ${calendarOpen ? "active" : ""}`} type="button" title={t("calendar.open")} aria-label={t("calendar.open")} aria-expanded={calendarOpen} aria-controls="calendar-flyout" onClick={() => { setSessionOpen(false); setContext(null); onToggleCalendar(); }}><time dateTime={clockDateTime}><span>{clockText}</span><small>{dateText}</small></time></button>
+      <button ref={clockButtonRef} className={`system-clock ${calendarOpen ? "active" : ""}`} type="button" title={t("calendar.open")} aria-label={t("calendar.open")} aria-expanded={calendarOpen} aria-controls="calendar-flyout" onClick={() => { setSessionOpen(false); setModulesOpen(false); setContext(null); onToggleCalendar(); }}><time dateTime={clockDateTime}><span>{clockText}</span><small>{dateText}</small></time></button>
       <button className="taskbar-show-desktop" type="button" title="Pokaż pulpit" aria-label="Pokaż pulpit" onClick={() => WebNAS.window.showDesktop()} />
     </div>
     {previewItem && previewWindows.length > 0 && <div className="taskbar-window-preview" onMouseEnter={() => showPreview(previewItem.key)} onMouseLeave={schedulePreviewClose}>
