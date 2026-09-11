@@ -8731,6 +8731,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/ntp-manager/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backups */
+        get: operations["backups_api_modules_ntp_manager_backups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/backups/{backup_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Backup */
+        post: operations["restore_backup_api_modules_ntp_manager_backups__backup_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/chrony/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install Chrony */
+        post: operations["install_chrony_api_modules_ntp_manager_chrony_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Clients */
+        get: operations["clients_api_modules_ntp_manager_clients_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Config */
+        get: operations["config_api_modules_ntp_manager_config_get"];
+        /** Update Config */
+        put: operations["update_config_api_modules_ntp_manager_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/config/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Config */
+        post: operations["validate_config_api_modules_ntp_manager_config_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/ntp-manager/dashboard": {
         parameters: {
             query?: never;
@@ -8748,6 +8851,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/modules/ntp-manager/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Diagnostics */
+        get: operations["diagnostics_api_modules_ntp_manager_diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/firewall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Firewall Status */
+        get: operations["firewall_status_api_modules_ntp_manager_firewall_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/firewall/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Firewall Open */
+        post: operations["firewall_open_api_modules_ntp_manager_firewall_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** History */
+        get: operations["history_api_modules_ntp_manager_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/modules/ntp-manager/resync": {
         parameters: {
             query?: never;
@@ -8757,8 +8928,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Resync */
-        post: operations["resync_api_modules_ntp_manager_resync_post"];
+        /** Resync Compat */
+        post: operations["resync_compat_api_modules_ntp_manager_resync_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8791,7 +8962,8 @@ export interface paths {
         };
         /** Sources */
         get: operations["sources_api_modules_ntp_manager_sources_get"];
-        put?: never;
+        /** Replace Sources */
+        put: operations["replace_sources_api_modules_ntp_manager_sources_put"];
         /** Add Source */
         post: operations["add_source_api_modules_ntp_manager_sources_post"];
         delete?: never;
@@ -8809,8 +8981,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Test Source */
-        post: operations["test_source_api_modules_ntp_manager_sources_test_post"];
+        /** Test Source Compat */
+        post: operations["test_source_compat_api_modules_ntp_manager_sources_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8825,10 +8997,96 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /** Update Source */
+        put: operations["update_source_api_modules_ntp_manager_sources__server__put"];
         post?: never;
         /** Delete Source */
         delete: operations["delete_source_api_modules_ntp_manager_sources__server__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_modules_ntp_manager_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synchronize */
+        post: operations["synchronize_api_modules_ntp_manager_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Source */
+        post: operations["test_source_api_modules_ntp_manager_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/timezone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Timezone */
+        put: operations["set_timezone_api_modules_ntp_manager_timezone_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/modules/ntp-manager/timezones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Timezones */
+        get: operations["timezones_api_modules_ntp_manager_timezones_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -16192,6 +16450,70 @@ export interface components {
              */
             timeout_seconds: number;
         };
+        /** NtpAllowedNetwork */
+        NtpAllowedNetwork: {
+            /** Cidr */
+            cidr: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /** NtpConfiguration */
+        NtpConfiguration: {
+            /** Allowed Networks */
+            allowed_networks?: components["schemas"]["NtpAllowedNetwork"][];
+            /**
+             * Local Stratum
+             * @default 10
+             */
+            local_stratum: number;
+            /**
+             * Local Time When Unsynced
+             * @default false
+             */
+            local_time_when_unsynced: boolean;
+            /** @default client */
+            mode: components["schemas"]["NtpMode"];
+            /** Sources */
+            sources?: components["schemas"]["NtpSourceInput"][];
+        };
+        /** NtpConfigurationMutation */
+        NtpConfigurationMutation: {
+            configuration: components["schemas"]["NtpConfiguration"];
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** NtpFirewallInput */
+        NtpFirewallInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /**
+         * NtpMode
+         * @enum {string}
+         */
+        NtpMode: "disabled" | "client" | "server" | "client_server";
+        /** NtpRestoreInput */
+        NtpRestoreInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
         /** NtpSourceInput */
         NtpSourceInput: {
             /**
@@ -16204,6 +16526,8 @@ export interface components {
              * @default true
              */
             enabled: boolean;
+            /** @default server */
+            kind: components["schemas"]["NtpSourceKind"];
             /**
              * Prefer
              * @default false
@@ -16211,6 +16535,36 @@ export interface components {
             prefer: boolean;
             /** Server */
             server: string;
+        };
+        /**
+         * NtpSourceKind
+         * @enum {string}
+         */
+        NtpSourceKind: "server" | "pool";
+        /** NtpSourcesMutation */
+        NtpSourcesMutation: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Sources */
+            sources?: components["schemas"]["NtpSourceInput"][];
+        };
+        /** NtpTestInput */
+        NtpTestInput: {
+            /** Server */
+            server: string;
+        };
+        /** NtpTimezoneInput */
+        NtpTimezoneInput: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Timezone */
+            timezone: string;
         };
         /**
          * OfflineBundleType
@@ -19381,8 +19735,11 @@ export interface components {
         };
         /** ServiceActionInput */
         app__modules__ntp_manager__models__ServiceActionInput: {
-            /** Action */
-            action: string;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "start" | "stop" | "restart";
             /**
              * Confirm
              * @default false
@@ -38469,6 +38826,187 @@ export interface operations {
             };
         };
     };
+    backups_api_modules_ntp_manager_backups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    restore_backup_api_modules_ntp_manager_backups__backup_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                backup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NtpRestoreInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    install_chrony_api_modules_ntp_manager_chrony_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    clients_api_modules_ntp_manager_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    config_api_modules_ntp_manager_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_config_api_modules_ntp_manager_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NtpConfigurationMutation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_config_api_modules_ntp_manager_config_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NtpConfiguration"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dashboard_api_modules_ntp_manager_dashboard_get: {
         parameters: {
             query?: never;
@@ -38489,7 +39027,111 @@ export interface operations {
             };
         };
     };
-    resync_api_modules_ntp_manager_resync_post: {
+    diagnostics_api_modules_ntp_manager_diagnostics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    firewall_status_api_modules_ntp_manager_firewall_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    firewall_open_api_modules_ntp_manager_firewall_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NtpFirewallInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    history_api_modules_ntp_manager_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resync_compat_api_modules_ntp_manager_resync_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -38562,6 +39204,39 @@ export interface operations {
             };
         };
     };
+    replace_sources_api_modules_ntp_manager_sources_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NtpSourcesMutation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     add_source_api_modules_ntp_manager_sources_post: {
         parameters: {
             query?: never;
@@ -38595,11 +39270,46 @@ export interface operations {
             };
         };
     };
-    test_source_api_modules_ntp_manager_sources_test_post: {
+    test_source_compat_api_modules_ntp_manager_sources_test_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NtpSourceInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_source_api_modules_ntp_manager_sources__server__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server: string;
+            };
             cookie?: never;
         };
         requestBody: {
@@ -38637,6 +39347,143 @@ export interface operations {
             path: {
                 server: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_modules_ntp_manager_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    synchronize_api_modules_ntp_manager_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    test_source_api_modules_ntp_manager_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NtpTestInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_timezone_api_modules_ntp_manager_timezone_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NtpTimezoneInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    timezones_api_modules_ntp_manager_timezones_get: {
+        parameters: {
+            query?: {
+                search?: string;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
