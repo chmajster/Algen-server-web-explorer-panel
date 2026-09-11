@@ -167,7 +167,7 @@ def log_services(user: SessionUser = Depends(_current_user)):
         parts = line.split(None, 4)
         if len(parts) >= 4 and UNIT_RE.fullmatch(parts[0]):
             items.append({"unit": parts[0], "load": parts[1], "active": parts[2], "sub": parts[3], "description": parts[4] if len(parts) > 4 else ""})
-    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else stderr}
+    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else "systemctl could not list services"}
 
 
 @router.get("/services/{unit}")
@@ -181,7 +181,7 @@ def log_service(unit: str, user: SessionUser = Depends(_current_user)):
     properties = "Id,Description,ActiveState,SubState,MainPID,ActiveEnterTimestamp"
     code, stdout, stderr = run_bounded([systemctl, "show", unit, f"--property={properties}", "--no-pager"], timeout=8)
     if code != 0:
-        raise HTTPException(404, stderr or "Systemd unit was not found")
+        raise HTTPException(404, "Systemd unit was not found")
     values = dict(line.split("=", 1) for line in stdout.splitlines() if "=" in line)
     recent = query_entries(user, source=f"service:{unit}", limit=20)
     return {"unit": unit, "description": values.get("Description", ""), "active": values.get("ActiveState", ""), "sub": values.get("SubState", ""), "pid": _int(values.get("MainPID")), "started_at": values.get("ActiveEnterTimestamp", ""), "entries": recent["items"]}
@@ -203,7 +203,7 @@ def log_containers(user: SessionUser = Depends(_current_user)):
         identifier, name = str(value.get("ID") or ""), str(value.get("Names") or "")
         if CONTAINER_RE.fullmatch(identifier) and CONTAINER_RE.fullmatch(name):
             items.append({"id": identifier, "name": name, "image": str(value.get("Image") or ""), "state": str(value.get("State") or ""), "status": str(value.get("Status") or "")})
-    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else stderr}
+    return {"items": items, "status": "available" if code == 0 else "error", "error": "" if code == 0 else "docker could not list containers"}
 
 
 @router.get("/fields")

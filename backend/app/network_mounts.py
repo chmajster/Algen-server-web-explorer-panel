@@ -559,15 +559,31 @@ def _active_job(jobs: list[dict]) -> bool:
     return any(job["status"] in {"queued", "running"} for job in jobs)
 
 
+def _persisted_json_object(value: object) -> dict:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _persisted_string_list(value: object) -> list[str]:
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return [item for item in parsed if isinstance(item, str)] if isinstance(parsed, list) else []
+
+
 def row_to_mount(row: sqlite3.Row, *, reconcile: bool = True) -> dict:
     data = dict(row)
     data["read_only"] = bool(data["read_only"])
     data["persistent"] = bool(data["persistent"])
     data["manual_intervention"] = bool(data.get("manual_intervention", 0))
-    data["config"] = json.loads(data.pop("config_json") or "{}")
+    data["config"] = _persisted_json_object(data.pop("config_json", "{}"))
     data["config"]["has_secret"] = credentials_path(data["id"]).exists()
-    data["allowed_users"] = json.loads(data.pop("allowed_users_json") or "[]")
-    data["allowed_groups"] = json.loads(data.pop("allowed_groups_json") or "[]")
+    data["allowed_users"] = _persisted_string_list(data.pop("allowed_users_json", "[]"))
+    data["allowed_groups"] = _persisted_string_list(data.pop("allowed_groups_json", "[]"))
     data["missing_packages"] = missing_packages(data["type"])
     data.pop("missing_packages_json", None)
     jobs = recent_jobs(data["id"])
@@ -790,7 +806,8 @@ def write_systemd_units(mount: dict) -> None:
             actor="network-mounts",
         )
         if result.returncode != 0:
-            raise HTTPException(400, result.stderr.strip() or "Could not install persistent mount unit")
+            logger.warning("network_mount_unit_apply_failed mount=%s returncode=%s", mount["id"], result.returncode)
+            raise HTTPException(400, "Could not install persistent mount unit")
         return
     target = systemd_dir()
     target.mkdir(parents=True, exist_ok=True)
@@ -811,7 +828,8 @@ def remove_systemd_units(mount: dict) -> None:
             actor="network-mounts",
         )
         if result.returncode != 0:
-            raise HTTPException(400, result.stderr.strip() or "Could not remove persistent mount unit")
+            logger.warning("network_mount_unit_remove_failed mount=%s returncode=%s", mount["id"], result.returncode)
+            raise HTTPException(400, "Could not remove persistent mount unit")
         return
     target = systemd_dir()
     names = [*_unit_names(mount), f"webnas-mount-{mount['id']}.mount", f"webnas-mount-{mount['id']}.automount"]

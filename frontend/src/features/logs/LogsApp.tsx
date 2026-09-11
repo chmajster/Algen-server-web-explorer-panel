@@ -11,6 +11,7 @@ import {
   type LogService, type LogSourceGroup, type LogSourcesResponse,
 } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { parseStoredStringArray } from "../../core/persistence";
 import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 
 type ViewMode = "compact" | "table";
@@ -55,9 +56,7 @@ export function LogsApp({ permissions, t, toast }: { permissions: string[]; t: T
   const [source, setSource] = useState(permissions.includes("logs.view_system") ? "journal" : "activity-own");
   const [queryDraft, setQueryDraft] = useState("");
   const [query, setQuery] = useState("");
-  const [history, setHistory] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("webnas.log-search-history") || "[]") as string[]; } catch { return []; }
-  });
+  const [history, setHistory] = useState<string[]>(() => parseStoredStringArray(localStorage.getItem("webnas.log-search-history"), 12));
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [range, setRange] = useState<RangeValue>("1h");
   const [rangeAnchor, setRangeAnchor] = useState(() => Date.now() / 1000);

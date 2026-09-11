@@ -4,12 +4,13 @@ import { api, type SettingsMe, type Task } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
 import { formatDate, formatSize } from "../files/utils";
 import type { UploadControls } from "./useUploadManager";
+import { readStoredEnum } from "../../core/persistence";
 
 type TransferFilter = "all" | "active" | "completed" | "failed";
 
 export function TransferCenter({ tasks, settings, selectedTaskId, t, toast, uploadControls, onSelectedTaskClose }: { tasks: Task[]; settings: SettingsMe; selectedTaskId?: string; t: Translate; toast: ToastFn; uploadControls: UploadControls; onSelectedTaskClose?: () => void }) {
   const filterKey = `webnas_transfer_filter_${settings.username}`;
-  const [filter, setFilter] = useState<TransferFilter>(() => settings.transfer_remember_filter ? (localStorage.getItem(filterKey) as TransferFilter) || "all" : "all");
+  const [filter, setFilter] = useState<TransferFilter>(() => settings.transfer_remember_filter ? readStoredEnum(localStorage.getItem(filterKey), ["all", "active", "completed", "failed"] as const, "all") : "all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [highlighted, setHighlighted] = useState("");

@@ -349,7 +349,7 @@ class DockerManagerStore:
             row = connection.execute("SELECT * FROM artifacts WHERE id=?", (artifact_id,)).fetchone()
         if not row:
             api_error(404, "ARTIFACT_NOT_FOUND", "Artifact not found")
-        metadata = {**dict(row), "metadata": json.loads(row["metadata"])}
+        metadata = {**dict(row), "metadata": _json_dict(row["metadata"])}
         path = self.artifacts_dir / str(row["filename"])
         digest = hashlib.sha256()
         if path.is_file():

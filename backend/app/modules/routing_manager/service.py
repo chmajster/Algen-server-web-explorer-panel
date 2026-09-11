@@ -334,7 +334,26 @@ class RoutingService:
         path = self._transaction_path(transaction_id)
         if not path.exists():
             raise LookupError("transaction not found")
-        return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            transaction = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise LookupError("routing transaction state is unavailable") from error
+        if (
+            not isinstance(transaction, dict)
+            or transaction.get("id") != transaction_id
+            or not isinstance(transaction.get("status"), str)
+            or not isinstance(transaction.get("inverse"), list)
+            or not isinstance(transaction.get("persistent"), dict)
+        ):
+            raise LookupError("routing transaction state is invalid")
+        expires_at = transaction.get("expires_at")
+        if not isinstance(expires_at, (int, float, str)):
+            raise LookupError("routing transaction state is invalid")
+        try:
+            float(expires_at)
+        except ValueError as error:
+            raise LookupError("routing transaction state is invalid") from error
+        return transaction
 
     def apply_job(self, context: JobContext, metadata: dict[str, Any]) -> dict[str, Any]:
         action = str(metadata["action"])
@@ -452,8 +471,8 @@ class RoutingService:
     def reconcile_transactions(self) -> None:
         for path in self.transactions_dir.glob("*.json"):
             try:
-                transaction = json.loads(path.read_text(encoding="utf-8"))
-            except OSError, json.JSONDecodeError:
+                transaction = self._read_transaction(path.stem)
+            except (LookupError, ValueError):
                 continue
             if transaction.get("status") != "pending_confirmation":
                 continue

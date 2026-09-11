@@ -81,7 +81,9 @@ class GitOpsService:
             return {"remote": "", "branch": "main"}
         try:
             data = json.loads(self.settings_path.read_text(encoding="utf-8"))
-        except OSError, json.JSONDecodeError:
+        except (OSError, json.JSONDecodeError):
+            return {"remote": "", "branch": "main"}
+        if not isinstance(data, dict):
             return {"remote": "", "branch": "main"}
         return {"remote": str(data.get("remote") or ""), "branch": str(data.get("branch") or "main")}
 
