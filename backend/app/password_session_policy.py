@@ -26,7 +26,7 @@ async def password_change_session_policy(
     ):
         try:
             user = get_session_user(request)
-        except Exception:  # The endpoint already enforced authentication.
+        except Exception:  # noqa: BLE001 - endpoint already enforced authentication.
             return response
         invalidate_user_sessions(user.username)
     return response
