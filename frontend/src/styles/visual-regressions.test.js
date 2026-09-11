@@ -4,12 +4,13 @@ import { cwd } from "node:process";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync(resolve(cwd(), "src/styles/visual-regressions.css"), "utf8");
+const compatCss = readFileSync(resolve(cwd(), "src/styles/legacy-window-compat.css"), "utf8");
 const main = readFileSync(resolve(cwd(), "src/main.tsx"), "utf8");
 const packageJson = JSON.parse(readFileSync(resolve(cwd(), "package.json"), "utf8"));
 
 describe("visual regression corrections", () => {
-  it("keeps the final correction layer last", () => {
-    expect(main).toContain('import "./styles/shell-taskbar.css";\nimport "./styles/visual-regressions.css";');
+  it("keeps compatibility corrections after the regular visual regression layer", () => {
+    expect(main).toContain('import "./styles/visual-regressions.css";\nimport "./styles/legacy-window-compat.css";');
   });
 
   it("uses selected accent colors without low-contrast primary button fills", () => {
@@ -38,6 +39,45 @@ describe("visual regression corrections", () => {
     expect(main).toContain('retry.className = "button button-primary boot-retry"');
     expect(main).toContain("installThemeColorSync");
     expect(main).toContain('meta.content = desktop?.classList.contains("dark") ? "#20252a" : "#f4f5f6"');
+  });
+
+  it("maps legacy feature tokens to canonical theme and accent tokens", () => {
+    const aliases = [
+      "--panel: var(--surface-elevated)",
+      "--input: var(--surface-secondary)",
+      "--muted: var(--text-secondary)",
+      "--input-bg: var(--surface-secondary)",
+      "--border-color: var(--border-subtle)",
+      "--surface-1: var(--surface-elevated)",
+      "--surface-2: var(--surface-secondary)",
+      "--accent-color: var(--accent)",
+      "--background: var(--surface-primary)",
+      "--panel-bg: var(--surface-elevated)",
+      "--window-bg: var(--surface-elevated)",
+      "--success-color: var(--success)",
+      "--warning-color: var(--warning)",
+      "--danger-color: var(--danger)",
+    ];
+
+    for (const alias of aliases) expect(compatCss).toContain(alias);
+    expect(compatCss).toContain(".desktop.desktop {");
+  });
+
+  it("reacts to resizable application-window width with cascade-safe selectors", () => {
+    for (const breakpoint of [920, 900, 800, 760, 680, 480, 430, 1024, 768]) {
+      expect(compatCss).toContain(`@container app-window (max-width: ${breakpoint}px)`);
+    }
+
+    for (const selector of [
+      ".desktop .image-converter-layout",
+      ".desktop .alert-manager__summary",
+      ".desktop .security-stat-grid",
+      ".desktop .dhcp-config-grid",
+      ".desktop .cron-fields",
+      ".desktop .infra-manager-header",
+      ".desktop .ldap-summary-grid",
+      ".desktop .auth-mode-grid",
+    ]) expect(compatCss).toContain(selector);
   });
 
   it("lets the Playwright configuration control CI reporters", () => {

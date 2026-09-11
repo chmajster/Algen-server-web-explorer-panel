@@ -15,6 +15,7 @@ import "./styles/ui-review-fixes.css";
 import "./styles/mobile-shell.css";
 import "./styles/shell-taskbar.css";
 import "./styles/visual-regressions.css";
+import "./styles/legacy-window-compat.css";
 
 function renderBootstrapError(error: unknown) {
   console.error("WebNAS bootstrap failed", error);
