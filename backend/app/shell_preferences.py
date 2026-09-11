@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import tempfile
@@ -157,21 +158,45 @@ def _root() -> Path:
     return path
 
 
-def _path(username: str) -> Path:
+def _safe_username(username: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", username)[:96]
+    if not safe:
+        raise HTTPException(400, "Invalid username")
+    return safe
+
+
+def _legacy_path(username: str) -> Path:
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", username)[:128]
     if not safe:
         raise HTTPException(400, "Invalid username")
     return _root() / f"{safe}.json"
 
 
+def _path(username: str) -> Path:
+    safe = _safe_username(username)
+    digest = hashlib.sha256(username.encode("utf-8")).hexdigest()[:16]
+    return _root() / f"{safe}-{digest}.json"
+
+
 def _load(username: str) -> ShellPreferences:
     path = _path(username)
-    if not path.exists():
-        return ShellPreferences()
+    candidate = path
+    if not candidate.exists():
+        # Only migrate the historical file name when the username was already a
+        # filesystem-safe, non-truncated value. Sanitized legacy names could be
+        # shared by different identities and must never be reused implicitly.
+        legacy = _legacy_path(username)
+        if username == _safe_username(username) and len(username) <= 96 and legacy.exists():
+            candidate = legacy
+        else:
+            return ShellPreferences()
     try:
-        return ShellPreferences.model_validate_json(path.read_text(encoding="utf-8"))
+        value = ShellPreferences.model_validate_json(candidate.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ShellPreferences()
+    if candidate != path:
+        _save(username, value)
+    return value
 
 
 def _save(username: str, value: ShellPreferences) -> None:
