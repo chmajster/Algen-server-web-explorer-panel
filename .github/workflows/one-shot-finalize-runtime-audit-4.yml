@@ -1,0 +1,120 @@
+name: One-shot finalize runtime audit 4
+
+on:
+  push:
+    branches: [fix/exhaustive-runtime-audit-4]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/exhaustive-runtime-audit-4
+      - name: Apply final audit fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def load(path): return Path(path).read_text(encoding="utf-8")
+          def save(path, text): Path(path).write_text(text, encoding="utf-8")
+          def add_after(path, anchor, statement):
+              text = load(path)
+              if statement not in text:
+                  if anchor not in text: raise SystemExit(f"missing anchor in {path}: {anchor}")
+                  text = text.replace(anchor, anchor + "\n" + statement, 1)
+                  save(path, text)
+
+          desktop = "frontend/src/app/DesktopController.tsx"
+          add_after(desktop, 'import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";', 'import { readStorageValue, removeStorageValue, storageKeys, writeStorageValue } from "../core/persistence";')
+          text = load(desktop)
+          text = text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(").replace("localStorage.removeItem(", "removeStorageValue(")
+          text = re.sub(r'sessionStorage\.getItem\(([^()\n]+)\)', r'readStorageValue(\1, "session")', text)
+          text = text.replace('sessionStorage.setItem(sessionWindowKey, serialized)', 'writeStorageValue(sessionWindowKey, serialized, "session")')
+          text = re.sub(r'sessionStorage\.removeItem\(([^()\n]+)\)', r'removeStorageValue(\1, "session")', text)
+          text = text.replace('Object.keys(sessionStorage)', 'storageKeys("session")')
+          save(desktop, text)
+
+          transport = "frontend/src/core/api/transport.ts"
+          text = load(transport)
+          imp = 'import { readStorageValue, removeStorageValue } from "../persistence";'
+          if imp not in text: text = imp + "\n\n" + text
+          text = text.replace('if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
+          text = text.replace('localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
+          text = text.replace('const configured = localStorage.getItem("webnas_language");', 'const configured = readStorageValue("webnas_language");')
+          save(transport, text)
+
+          file_manager = "frontend/src/features/files/FileManager.tsx"
+          text = load(file_manager)
+          text = text.replace('import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";', 'import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(").replace("localStorage.removeItem(", "removeStorageValue(")
+          save(file_manager, text)
+
+          logs = "frontend/src/features/logs/LogsApp.tsx"
+          text = load(logs)
+          text = text.replace('import { parseStoredStringArray } from "../../core/persistence";', 'import { parseStoredStringArray, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(").replace("localStorage.removeItem(", "removeStorageValue(")
+          save(logs, text)
+
+          package = "frontend/src/features/package-center/PackageCenterApp.tsx"
+          add_after(package, 'import type { ToastFn, Translate } from "../../app/types";', 'import { readStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = load(package).replace("window.localStorage.getItem(", "readStorageValue(").replace("window.localStorage.setItem(", "writeStorageValue(")
+          save(package, text)
+
+          docker_manager = "frontend/src/features/docker/DockerManagerApp.tsx"
+          add_after(docker_manager, 'import type { ToastFn, Translate } from "../../app/types";', 'import { readStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = load(docker_manager).replace('sessionStorage.getItem(`${draftKey}:section`)', 'readStorageValue(`${draftKey}:section`, "session")').replace('sessionStorage.setItem(`${draftKey}:section`, section)', 'writeStorageValue(`${draftKey}:section`, section, "session")')
+          save(docker_manager, text)
+
+          containers = "frontend/src/features/docker/ContainersList.tsx"
+          add_after(containers, 'import type { ToastFn, Translate } from "../../app/types";', 'import { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = load(containers)
+          text = text.replace('sessionStorage.getItem(wizardDraftKey)', 'readStorageValue(wizardDraftKey, "session")').replace('sessionStorage.setItem(wizardDraftKey, "{}")', 'writeStorageValue(wizardDraftKey, "{}", "session")').replace('sessionStorage.setItem(wizardDraftKey, JSON.stringify(draft))', 'writeStorageValue(wizardDraftKey, JSON.stringify(draft), "session")').replace('sessionStorage.removeItem(wizardDraftKey)', 'removeStorageValue(wizardDraftKey, "session")')
+          save(containers, text)
+
+          wizard = "frontend/src/features/docker/CreateContainerWizard.tsx"
+          add_after(wizard, 'import type { ToastFn, Translate } from "../../app/types";', 'import { readStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = load(wizard).replace('sessionStorage.getItem(key)', 'readStorageValue(key, "session")').replace('sessionStorage.setItem(draftKey, JSON.stringify(value))', 'writeStorageValue(draftKey, JSON.stringify(value), "session")')
+          save(wizard, text)
+
+          network = "frontend/src/features/settings/NetworkManagementPanels.tsx"
+          add_after(network, 'import type { Translate } from "../../app/types";', 'import { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = load(network).replace('localStorage.getItem("webnas_language")', 'readStorageValue("webnas_language")').replace('sessionStorage.getItem(NETWORK_TRANSACTION_KEY)', 'readStorageValue(NETWORK_TRANSACTION_KEY, "session")').replace('sessionStorage.setItem(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction))', 'writeStorageValue(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction), "session")').replace('sessionStorage.removeItem(NETWORK_TRANSACTION_KEY)', 'removeStorageValue(NETWORK_TRANSACTION_KEY, "session")')
+          save(network, text)
+
+          settings = "frontend/src/features/settings/SettingsApp.tsx"
+          text = load(settings).replace('const categoryLabel = (item: SettingsCategory) => item === "authentication" ? "PAM / LDAP" : t(`settings.category.${item}`);', 'const categoryLabel = useCallback((item: SettingsCategory) => item === "authentication" ? "PAM / LDAP" : t(`settings.category.${item}`), [t]);').replace('settings.language, t])', 'settings.language, categoryLabel])')
+          save(settings, text)
+
+          regression = "frontend/src/core/api/runtime-audit-regressions.test.js"
+          text = load(regression).replace("expect(network).toContain('localStorage.getItem(\"webnas_language\")');", "expect(network).toContain('readStorageValue(\"webnas_language\")');")
+          marker = 'does not access Web Storage directly outside the persistence boundary'
+          if marker not in text:
+              test = '''\n\n  it("does not access Web Storage directly outside the persistence boundary", () => {\n    const offenders = sources\n      .filter(({ path }) => !path.endsWith("/core/persistence.ts"))\n      .filter(({ text }) => /(?:window\\.)?(?:localStorage|sessionStorage)\\s*\\./.test(text))\n      .map(({ path }) => path);\n    expect(offenders).toEqual([]);\n  });'''
+              text = text.replace('\n});\n', test + '\n});\n')
+          save(regression, text)
+
+          Path("CHANGELOG.d/runtime-audit-4.md").write_text("""# Runtime audit 4\n\n## Fixed\n\n- Hardened Docker package rollback state parsing and rejected malformed/wrong-shaped rollback state before package-manager commands are built.\n- Fixed partial Docker installation rollback so packages introduced by a failed operation are removed even when some Docker packages were already installed.\n- Hardened persisted job restoration: corrupt/unknown statuses now degrade to `failed`, unknown priorities to `normal`, and dependency-state reads no longer crash scheduling.\n- Hardened App Store manifests: unreadable, invalid YAML, and non-object manifests cannot crash the catalog; direct lookup returns a controlled error and catalog enumeration skips broken entries.\n- Added safe browser storage helpers for local/session reads, writes, removals, and key enumeration. `SecurityError` and `QuotaExceededError` no longer crash application startup or persisted UI state.\n- Migrated bootstrap language/theme/update reload state, Desktop windows/recent apps/legacy pins, File Manager preferences, Directory Tree state, Transfer Center filters, log history, Package Center view, Docker drafts/sections, network transactions, and API error-language lookup to the safe storage boundary.\n- Fixed Settings search memoization so translated category labels refresh with the translation callback instead of using a stale closure.\n\n## Regression coverage\n\n- Added Docker rollback tests for malformed state and partial rollback.\n- Added job repository tests for corrupt persisted status/priority values.\n- Added App Store tests for invalid and wrong-shaped manifests.\n- Added persistence tests for blocked Web Storage reads and failed writes/removals.\n- Added a frontend source regression test forbidding direct Web Storage access outside `core/persistence.ts`.\n""", encoding="utf-8")
+
+          offenders = []
+          for path in Path("frontend/src").rglob("*"):
+              if path.suffix not in {".ts", ".tsx"} or ".test." in path.name or path.as_posix().endswith("frontend/src/core/persistence.ts"):
+                  continue
+              text = path.read_text(encoding="utf-8")
+              if re.search(r'(?:window\.)?(?:localStorage|sessionStorage)\s*\.', text): offenders.append(str(path))
+          if offenders: raise SystemExit("direct Web Storage access remains:\n" + "\n".join(offenders))
+          PY
+      - name: Validate backend syntax
+        run: python -m compileall -q backend/app backend/tests
+      - name: Commit fixes
+        run: |
+          git config user.name "webnas-ci"
+          git config user.email "webnas-ci@users.noreply.github.com"
+          git add backend frontend CHANGELOG.d
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: complete runtime persistence audit"
+          git push origin HEAD:fix/exhaustive-runtime-audit-4
