@@ -1,3 +1,5 @@
+import { readStorageValue, removeStorageValue } from "../persistence";
+
 export type HealthStatus = {
   status: "ok";
   service: string;
@@ -62,7 +64,7 @@ let sessionSync: Promise<AuthSession> | null = null;
 let bootstrapSync: Promise<AuthSession> | null = null;
 let apiBaseUrl = "";
 
-if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
+removeStorageValue("webnas_csrf");
 
 function clearReadCaches() {
   inFlightGets.clear();
@@ -93,7 +95,7 @@ function clearAuthenticationState(expectedGeneration?: number, notify = true) {
   sessionSync = null;
   bootstrapSync = null;
   clearReadCaches();
-  if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");
+  removeStorageValue("webnas_csrf");
   if (notify) authenticationInvalidatedListeners.forEach((listener) => listener());
 }
 
@@ -112,7 +114,7 @@ function diagnosticValue(details: Record<string, unknown> | undefined, key: stri
 
 function currentErrorLanguage(): ErrorLanguage {
   if (typeof localStorage !== "undefined") {
-    const configured = localStorage.getItem("webnas_language");
+    const configured = readStorageValue("webnas_language");
     if (configured === "en-US" || configured === "pl-PL") return configured;
   }
   if (typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("en")) return "en-US";

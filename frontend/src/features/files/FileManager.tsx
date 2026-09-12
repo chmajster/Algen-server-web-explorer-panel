@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, downloadUrl, type FileItem, type LocalDisk, type SambaConfig, type SambaShare, type SettingsMe, type SettingsPatch, type Task } from "../../api";
 import { defaultUserPreferences } from "../../app/defaultSettings";
 import type { ToastFn, Translate } from "../../app/types";
-import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";
+import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { ConfirmDialog, InputDialog, Modal } from "../../components/Modal";
 import { UploadProgressDialog } from "../transfers/UploadProgressDialog";
@@ -87,7 +87,7 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
 }) {
   const preferences = settings || ({ ...defaultUserPreferences, username: "", uid: 0, gid: 0, groups: [], home: homePath, shell: "", gecos: "", is_admin: isAdmin, role: isAdmin ? "admin" : "user", role_source: "fallback", permissions: isAdmin ? ["modules.view", "modules.operate"] : ["apps.files"] } satisfies SettingsMe);
   const storagePrefix = settings ? `webnas_file_explorer_${settings.username}` : "webnas_file_explorer";
-  const requestedFirstPath = initialPath || (preferences.file_remember_last_path ? localStorage.getItem(`${storagePrefix}_path`) : "") || homePath || "";
+  const requestedFirstPath = initialPath || (preferences.file_remember_last_path ? readStorageValue(`${storagePrefix}_path`) : "") || homePath || "";
   const firstPath = !requestedFirstPath || requestedFirstPath === "/" || requestedFirstPath === "~" ? homePath : requestedFirstPath;
   const [history, setHistory] = useState({ entries: [firstPath], index: 0 });
   const path = history.entries[history.index] || "";
@@ -107,13 +107,13 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
   const [localDisksInitialized, setLocalDisksInitialized] = useState(false);
   const [sharedPaths, setSharedPaths] = useState<Map<string, SambaShare>>(new Map());
   const [sambaRemoval, setSambaRemoval] = useState<SambaShare | null>(null);
-  const [treeVisible, setTreeVisible] = useState(() => localStorage.getItem(`${storagePrefix}_tree`) !== "hidden");
-  const [treeWidth, setTreeWidth] = useState(() => readStoredNumber(localStorage.getItem(`${storagePrefix}_tree_width`), 238, 180, 420));
-  const [compact, setCompact] = useState(() => settings ? preferences.file_compact_rows : localStorage.getItem(`${storagePrefix}_compact`) === "true");
-  const [view, setView] = useState<ViewMode>(() => settings ? (preferences.file_default_view === "grid" ? "medium" : preferences.file_default_view) : readStoredEnum(localStorage.getItem(`${storagePrefix}_view`), ["list", "medium", "large"] as const, "list"));
+  const [treeVisible, setTreeVisible] = useState(() => readStorageValue(`${storagePrefix}_tree`) !== "hidden");
+  const [treeWidth, setTreeWidth] = useState(() => readStoredNumber(readStorageValue(`${storagePrefix}_tree_width`), 238, 180, 420));
+  const [compact, setCompact] = useState(() => settings ? preferences.file_compact_rows : readStorageValue(`${storagePrefix}_compact`) === "true");
+  const [view, setView] = useState<ViewMode>(() => settings ? (preferences.file_default_view === "grid" ? "medium" : preferences.file_default_view) : readStoredEnum(readStorageValue(`${storagePrefix}_view`), ["list", "medium", "large"] as const, "list"));
   const [hiddenColumns, setHiddenColumns] = useState<Set<SortField>>(() => {
     const valid = new Set<SortField>(columns.map((column) => column.id));
-    return new Set(parseStoredStringArray(localStorage.getItem(`${storagePrefix}_hidden_columns`), columns.length).filter((item): item is SortField => valid.has(item as SortField)));
+    return new Set(parseStoredStringArray(readStorageValue(`${storagePrefix}_hidden_columns`), columns.length).filter((item): item is SortField => valid.has(item as SortField)));
   });
   const [widths, setWidths] = useState<Record<SortField, number>>(() => ({ name: 300, size: 100, type: 110, owner: 110, group: 110, permissions: 120, modified: 180 }));
   const [context, setContext] = useState<ContextState | null>(null);
@@ -143,8 +143,8 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
       setItems(data.items);
       setMeta({ total: data.total_items, pages: data.total_pages, page: data.page, parent: data.parent_path, canWrite: data.can_write, canDelete: data.can_delete });
       setSelection(new Set());
-      if (preferences.file_remember_last_path) localStorage.setItem(`${storagePrefix}_path`, data.current_path);
-      else localStorage.removeItem(`${storagePrefix}_path`);
+      if (preferences.file_remember_last_path) writeStorageValue(`${storagePrefix}_path`, data.current_path);
+      else removeStorageValue(`${storagePrefix}_path`);
     } catch (error) {
       if (id !== requestId.current) return;
       setLoadError(error instanceof Error ? error.message : t("files.loadError"));
@@ -203,19 +203,19 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
     const completed = tasks.some((task) => ["copy", "move", "delete", "upload"].includes(task.type) && ["completed", "failed"].includes(task.status) && (task.finished_at || 0) * 1000 > Date.now() - 2500);
     if (completed) void load();
   }, [load, tasks]);
-  useEffect(() => { localStorage.setItem(`${storagePrefix}_view`, view); }, [storagePrefix, view]);
-  useEffect(() => { localStorage.setItem(`${storagePrefix}_compact`, String(compact)); }, [compact, storagePrefix]);
-  useEffect(() => { localStorage.setItem(`${storagePrefix}_tree`, treeVisible ? "visible" : "hidden"); }, [storagePrefix, treeVisible]);
-  useEffect(() => { localStorage.setItem(`${storagePrefix}_hidden_columns`, JSON.stringify([...hiddenColumns])); }, [hiddenColumns, storagePrefix]);
+  useEffect(() => { writeStorageValue(`${storagePrefix}_view`, view); }, [storagePrefix, view]);
+  useEffect(() => { writeStorageValue(`${storagePrefix}_compact`, String(compact)); }, [compact, storagePrefix]);
+  useEffect(() => { writeStorageValue(`${storagePrefix}_tree`, treeVisible ? "visible" : "hidden"); }, [storagePrefix, treeVisible]);
+  useEffect(() => { writeStorageValue(`${storagePrefix}_hidden_columns`, JSON.stringify([...hiddenColumns])); }, [hiddenColumns, storagePrefix]);
 
   function changeView(next: ViewMode) {
     setView(next);
-    localStorage.setItem(`${storagePrefix}_view`, next);
+    writeStorageValue(`${storagePrefix}_view`, next);
     if (onSettingsChange) void onSettingsChange({ file_default_view: next === "medium" ? "grid" : next });
   }
   function changeCompact(next: boolean) {
     setCompact(next);
-    localStorage.setItem(`${storagePrefix}_compact`, String(next));
+    writeStorageValue(`${storagePrefix}_compact`, String(next));
     if (onSettingsChange) void onSettingsChange({ file_compact_rows: next });
   }
 
@@ -432,7 +432,7 @@ export function FileManager({ homePath, initialPath, settings, tasks, isAdmin, t
     <div className="file-workspace" style={{ gridTemplateColumns: treeVisible ? `${treeWidth}px 5px minmax(0, 1fr)` : "0 0 minmax(0, 1fr)" }}>
       <button className="tree-mobile-toggle" title={t("files.directoryTree")} onClick={() => setTreeVisible((value) => !value)}><Menu /></button>
       {treeVisible && <DirectoryTree currentPath={path} homePath={homePath} localDisks={localDisks} mounts={mounts} t={t} onOpen={openPath} onDropItems={confirmDrop} />}
-      {treeVisible && <div className="tree-resizer" onPointerDown={(event) => { const startX = event.clientX; const start = treeWidth; let finalWidth = start; const move = (next: PointerEvent) => { finalWidth = Math.max(180, Math.min(420, start + next.clientX - startX)); setTreeWidth(finalWidth); }; const up = () => { localStorage.setItem(`${storagePrefix}_tree_width`, String(finalWidth)); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} />}
+      {treeVisible && <div className="tree-resizer" onPointerDown={(event) => { const startX = event.clientX; const start = treeWidth; let finalWidth = start; const move = (next: PointerEvent) => { finalWidth = Math.max(180, Math.min(420, start + next.clientX - startX)); setTreeWidth(finalWidth); }; const up = () => { writeStorageValue(`${storagePrefix}_tree_width`, String(finalWidth)); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }} />}
       <main className={`file-content ${compact ? "compact" : ""} ${externalDragActive ? "external-drag-active" : ""}`} tabIndex={0} onContextMenu={(event) => { if ((event.target as HTMLElement).closest(".file-entry")) return; event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, item: null }); }} onDragEnterCapture={externalDragEnter} onDragOverCapture={externalDragOver} onDragLeaveCapture={externalDragLeave} onDropCapture={externalDrop}>
         {externalDragActive && <div className="external-upload-overlay" role="status"><Upload aria-hidden="true" /><strong>{t("files.dropUpload")}</strong></div>}
         {loadError ? <div className="error-state"><strong>{t("status.error")}</strong><span>{loadError}</span><div className="error-actions"><button onClick={() => openPath(homePath)}><House />{t("files.goHome")}</button><button onClick={() => void load()}>{t("action.retry")}</button></div></div>

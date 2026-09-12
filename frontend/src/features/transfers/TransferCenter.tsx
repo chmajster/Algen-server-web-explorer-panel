@@ -2,15 +2,15 @@ import { ChevronDown, ChevronUp, Pause, Play, RotateCcw, Trash2, X } from "lucid
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type SettingsMe, type Task } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { readStoredEnum, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";
 import { formatDate, formatSize } from "../files/utils";
 import type { UploadControls } from "./useUploadManager";
-import { readStoredEnum } from "../../core/persistence";
 
 type TransferFilter = "all" | "active" | "completed" | "failed";
 
 export function TransferCenter({ tasks, settings, selectedTaskId, t, toast, uploadControls, onSelectedTaskClose }: { tasks: Task[]; settings: SettingsMe; selectedTaskId?: string; t: Translate; toast: ToastFn; uploadControls: UploadControls; onSelectedTaskClose?: () => void }) {
   const filterKey = `webnas_transfer_filter_${settings.username}`;
-  const [filter, setFilter] = useState<TransferFilter>(() => settings.transfer_remember_filter ? readStoredEnum(localStorage.getItem(filterKey), ["all", "active", "completed", "failed"] as const, "all") : "all");
+  const [filter, setFilter] = useState<TransferFilter>(() => settings.transfer_remember_filter ? readStoredEnum(readStorageValue(filterKey), ["all", "active", "completed", "failed"] as const, "all") : "all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [highlighted, setHighlighted] = useState("");
@@ -40,8 +40,8 @@ export function TransferCenter({ tasks, settings, selectedTaskId, t, toast, uplo
   }, [selectedTaskId, tasks]);
   function changeFilter(value: TransferFilter) {
     setFilter(value);
-    if (settings.transfer_remember_filter) localStorage.setItem(filterKey, value);
-    else localStorage.removeItem(filterKey);
+    if (settings.transfer_remember_filter) writeStorageValue(filterKey, value);
+    else removeStorageValue(filterKey);
   }
   return <section className="transfer-center">
     <header className="feature-header"><div><h2>{t("transfers.title")}</h2><p>{t("transfers.subtitle")}</p></div><button disabled={!completed.length} onClick={() => setHidden(new Set(completed))}><Trash2 />{t("transfers.clearCompleted")}</button></header>

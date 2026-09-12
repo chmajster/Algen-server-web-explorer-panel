@@ -22,6 +22,20 @@ def _json_object(value: Any) -> dict[str, Any]:
     return decoded if isinstance(decoded, dict) else {}
 
 
+def _job_status(value: Any) -> JobStatus:
+    try:
+        return JobStatus(str(value))
+    except (TypeError, ValueError):
+        return JobStatus.failed
+
+
+def _job_priority(value: Any) -> JobPriority:
+    try:
+        return JobPriority(str(value))
+    except (TypeError, ValueError):
+        return JobPriority.normal
+
+
 class JobRepository:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -113,8 +127,8 @@ class JobRepository:
             module=str(row["module"]),
             name=str(value("name", "") or ""),
             description=str(value("description", "") or ""),
-            status=JobStatus(str(row["status"])),
-            priority=JobPriority(str(value("priority", "normal"))),
+            status=_job_status(row["status"]),
+            priority=_job_priority(value("priority", "normal")),
             progress=row["progress"],
             current_step=str(value("current_step", "") or ""),
             total_steps=value("total_steps"),
@@ -299,7 +313,7 @@ class JobRepository:
                 "SELECT j.status FROM job_dependencies d JOIN jobs j ON j.id=d.depends_on_job_id WHERE d.job_id=?",
                 (job_id,),
             ).fetchall()
-        return [JobStatus(str(row["status"])) for row in rows]
+        return [_job_status(row["status"]) for row in rows]
 
     def dependents(self, job_id: str) -> builtins.list[str]:
         with self._connect() as connection:

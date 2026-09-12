@@ -23,6 +23,7 @@ import {
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, type DockerContainer, type DockerContainerAction, type DockerResourceLimits, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";
 import { ContextMenu, type ContextMenuItem } from "../../components/ContextMenu";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { ContainerDetails, type DetailTab } from "./ContainerDetails";
@@ -298,15 +299,15 @@ export function ContainersList({
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const fallbackDraftId = useId();
   const wizardDraftKey = draftKey || `docker:create-container:${fallbackDraftId}`;
-  const [wizard, setWizard] = useState(() => Boolean(sessionStorage.getItem(wizardDraftKey)));
+  const [wizard, setWizard] = useState(() => Boolean(readStorageValue(wizardDraftKey, "session")));
   const [importFile, setImportFile] = useState<File | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const [dialog, setDialog] = useState<{
     target: string;
     action: "remove" | "backup" | "export" | "rename" | "import" | "stop" | "kill";
   } | null>(null);
-  function openWizard() { if (!sessionStorage.getItem(wizardDraftKey)) sessionStorage.setItem(wizardDraftKey, "{}"); setWizard(true); }
-  function closeWizard() { sessionStorage.removeItem(wizardDraftKey); setWizard(false); }
+  function openWizard() { if (!readStorageValue(wizardDraftKey, "session")) writeStorageValue(wizardDraftKey, "{}", "session"); setWizard(true); }
+  function closeWizard() { removeStorageValue(wizardDraftKey, "session"); setWizard(false); }
   async function openDuplicateWizard(row: DockerContainer, target: string) {
     setMenu(null);
     try {
@@ -316,7 +317,7 @@ export function ContainersList({
       ]);
       const draft = duplicateDraft(details, row);
       if (compose) Object.assign(draft, duplicateComposeFields(compose.content));
-      sessionStorage.setItem(wizardDraftKey, JSON.stringify(draft));
+      writeStorageValue(wizardDraftKey, JSON.stringify(draft), "session");
       setWizard(true);
     } catch (reason) {
       toast(errorMessage(reason, t), "error", "admin");

@@ -2,6 +2,7 @@ import { confirmDialog } from "../components/DialogService";
 import { Bell, Package, ShieldCheck, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";
+import { readStorageValue, removeStorageValue, storageKeys, writeStorageValue } from "../core/persistence";
 import { AppIcon } from "../components/AppIcon";
 import { ConnectionRefreshScope } from "../features/connection/ConnectionStatusMonitor";
 import type { UploadControls } from "../features/transfers/useUploadManager";
@@ -81,7 +82,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const legacyPinnedKey = `webnas_pinned_apps_${user.username}`;
   const [pinned, setPinned] = useState<Set<AppId>>(() => {
     try {
-      const legacy = localStorage.getItem(legacyPinnedKey);
+      const legacy = readStorageValue(legacyPinnedKey);
       const values = legacy ? JSON.parse(legacy) as unknown : profile.pinned_apps;
       return new Set(Array.isArray(values) ? values.filter((value): value is AppId => typeof value === "string" && apps.some((app) => app.id === value)) : profile.pinned_apps);
     } catch { return new Set(profile.pinned_apps); }
@@ -92,7 +93,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [desktopModuleShortcuts, setDesktopModuleShortcuts] = useState<Set<string>>(() => new Set(profile.desktop_shortcut_modules));
   const [recentApps, setRecentApps] = useState<RecentApp[]>(() => {
     try {
-      const value = JSON.parse(localStorage.getItem(recentAppsKey) || "[]") as unknown;
+      const value = JSON.parse(readStorageValue(recentAppsKey) || "[]") as unknown;
       return Array.isArray(value) ? value.filter((item): item is RecentApp => Boolean(item && typeof item === "object" && "id" in item && "usedAt" in item && typeof item.id === "string" && typeof item.usedAt === "number" && apps.some((app) => app.id === item.id))).slice(0, 8) : [];
     } catch { return []; }
   });
@@ -101,7 +102,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   const [apmidResolved, setApmidResolved] = useState(false);
   const [cronAvailable, setCronAvailable] = useState(false);
   const [cronResolved, setCronResolved] = useState(false);
-  const migrateLegacyPins = useRef(localStorage.getItem(legacyPinnedKey) !== null);
+  const migrateLegacyPins = useRef(readStorageValue(legacyPinnedKey) !== null);
   const scaleMigrationAttempt = useRef("");
   const [clock, setClock] = useState(new Date());
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -131,8 +132,8 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   useEffect(() => { windowStateRef.current = state; }, [state]);
 
   useEffect(() => {
-    const sessionState = sessionStorage.getItem(sessionWindowKey);
-    const restoredState = restoreWindowState(sessionState || (profile.startup_windows === "last" ? localStorage.getItem(storageKey) : null), initialViewportMetrics.current);
+    const sessionState = readStorageValue(sessionWindowKey, "session");
+    const restoredState = restoreWindowState(sessionState || (profile.startup_windows === "last" ? readStorageValue(storageKey) : null), initialViewportMetrics.current);
     const windows = restoredState.windows.filter((item) => canUseApp(item.app));
     dispatch({ type: "hydrate", state: { ...restoredState, windows, activeId: windows.some((item) => item.id === restoredState.activeId) ? restoredState.activeId : "" } });
     setWindowsHydrated(true);
@@ -140,15 +141,15 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
   useEffect(() => {
     if (!windowsHydrated) return;
     const serialized = JSON.stringify(state);
-    sessionStorage.setItem(sessionWindowKey, serialized);
-    if (profile.startup_windows === "last") localStorage.setItem(storageKey, serialized);
+    writeStorageValue(sessionWindowKey, serialized, "session");
+    if (profile.startup_windows === "last") writeStorageValue(storageKey, serialized);
   }, [profile.startup_windows, sessionWindowKey, state, storageKey, windowsHydrated]);
   useEffect(() => {
     const persistCurrentWindows = () => {
       if (!windowsHydrated) return;
       const serialized = JSON.stringify(windowStateRef.current);
-      sessionStorage.setItem(sessionWindowKey, serialized);
-      if (profile.startup_windows === "last") localStorage.setItem(storageKey, serialized);
+      writeStorageValue(sessionWindowKey, serialized, "session");
+      if (profile.startup_windows === "last") writeStorageValue(storageKey, serialized);
     };
     const persistWhenHidden = () => { if (document.visibilityState === "hidden") persistCurrentWindows(); };
     window.addEventListener("pagehide", persistCurrentWindows);
@@ -165,7 +166,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     migrateLegacyPins.current = false;
     setStartPinned(new Set(pinned));
     setDesktopShortcuts(new Set(pinned));
-    void onSettingsChange({ pinned_apps: [...pinned], start_pinned_apps: [...pinned], desktop_shortcut_apps: [...pinned] }).then(() => localStorage.removeItem(legacyPinnedKey)).catch(() => undefined);
+    void onSettingsChange({ pinned_apps: [...pinned], start_pinned_apps: [...pinned], desktop_shortcut_apps: [...pinned] }).then(() => removeStorageValue(legacyPinnedKey)).catch(() => undefined);
   }, [legacyPinnedKey, onSettingsChange, pinned]);
   useEffect(() => {
     const migrationKey = `${profile.interface_scale}:${profile.larger_text}`;
@@ -251,7 +252,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     const usedAt = Date.now();
     setRecentApps((current) => {
       const next = [{ id: app, usedAt }, ...current.filter((item) => item.id !== app)].slice(0, 8);
-      localStorage.setItem(recentAppsKey, JSON.stringify(next));
+      writeStorageValue(recentAppsKey, JSON.stringify(next));
       return next;
     });
     dispatch({ type: "open", app, initialPath, moduleId, viewport });
@@ -445,10 +446,10 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     const next = new Set(pinned);
     if (next.has(app)) next.delete(app); else next.add(app);
     setPinned(next);
-    localStorage.setItem(legacyPinnedKey, JSON.stringify([...next]));
-    void onSettingsChange({ pinned_apps: [...next] }).then(() => localStorage.removeItem(legacyPinnedKey)).catch((error: unknown) => {
+    writeStorageValue(legacyPinnedKey, JSON.stringify([...next]));
+    void onSettingsChange({ pinned_apps: [...next] }).then(() => removeStorageValue(legacyPinnedKey)).catch((error: unknown) => {
       setPinned(previous);
-      localStorage.setItem(legacyPinnedKey, JSON.stringify([...previous]));
+      writeStorageValue(legacyPinnedKey, JSON.stringify([...previous]));
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
     });
   }
@@ -493,7 +494,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
       toast(error instanceof Error ? error.message : t("error.generic"), "error");
     });
   }
-  function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); sessionStorage.removeItem(sessionWindowKey); void logout().finally(onLoggedOut); }
+  function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; storageKeys("session").filter((key) => key.startsWith(draftPrefix)).forEach((key) => removeStorageValue(key, "session")); removeStorageValue(sessionWindowKey, "session"); void logout().finally(onLoggedOut); }
   function restartSystem() {
     setLauncherOpen(false);
     void api.restartSystem().catch((error: unknown) => toast(error instanceof Error ? error.message : t("error.generic"), "error"));
@@ -533,7 +534,7 @@ export function Desktop({ user, profile, language, theme, tasks, uploadControls,
     return () => { active = false; window.clearInterval(elapsedTimer); window.clearInterval(probeTimer); };
   }, [applicationRestarting]);
   function moduleDirty(item: WindowInstance, dirty: boolean) { setDirtyWindows((current) => { const next = new Set(current); if (dirty) next.add(item.id); else next.delete(item.id); return next; }); }
-  async function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !(await confirmDialog(t("module.unsavedClose"), t))) return; const draftPrefix = `webnas_window_draft_${user.username}_${item.id}`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
+  async function closeWindow(item: WindowInstance) { if (dirtyWindows.has(item.id) && !(await confirmDialog(t("module.unsavedClose"), t))) return; const draftPrefix = `webnas_window_draft_${user.username}_${item.id}`; storageKeys("session").filter((key) => key.startsWith(draftPrefix)).forEach((key) => removeStorageValue(key, "session")); setDirtyWindows((current) => { const next = new Set(current); next.delete(item.id); return next; }); dispatch({ type: "close", id: item.id }); }
   function taskbarWindow(item: WindowInstance, action: TaskbarWindowAction) {
     if (action === "close") closeWindow(item);
     else if (action === "focus") dispatch({ type: "focus", id: item.id });

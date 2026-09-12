@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { SystemContextMenuHost } from "./components/SystemContextMenuHost";
+import { readStorageValue } from "./core/persistence";
 import { detectLanguage, loadLanguageWithFallback } from "./i18n";
 import "./styles/app.css";
 import "./styles/design-system.css";
@@ -53,7 +54,7 @@ function installThemeColorSync() {
 }
 
 export async function bootstrap() {
-  const preferredLanguage = detectLanguage(localStorage.getItem("webnas_language"));
+  const preferredLanguage = detectLanguage(readStorageValue("webnas_language"));
   try {
     await loadLanguageWithFallback(preferredLanguage);
   } catch (error) {

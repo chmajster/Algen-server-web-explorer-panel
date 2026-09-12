@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type DockerContainerCreate, type DockerHostResources, type ModuleJob } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { readStorageValue, writeStorageValue } from "../../core/persistence";
 import { errorMessage } from "./shared";
 import { ConfigRow, ConfigSection, KeyValueRows } from "./create-container/CompactConfig";
 import {
@@ -101,7 +102,7 @@ type ContainerWizardDraft = {
 function readContainerDraft(key?: string): ContainerWizardDraft {
   if (!key) return {};
   try {
-    const parsed = JSON.parse(sessionStorage.getItem(key) || "{}") as unknown;
+    const parsed = JSON.parse(readStorageValue(key, "session") || "{}") as unknown;
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return {};
     const source = parsed as Record<string, unknown>;
     const draft: ContainerWizardDraft = {};
@@ -365,7 +366,7 @@ export function CreateContainerWizard({
       containerUser, networkAliases, restartPolicy, labels, healthType, healthPort, healthPath, readOnly, init, autoStart,
       composeMode, composeProject, composeContent, composeEnvironment, composeAutoStart,
     };
-    sessionStorage.setItem(draftKey, JSON.stringify(value));
+    writeStorageValue(draftKey, JSON.stringify(value), "session");
   }, [autoStart, composeAutoStart, composeContent, composeEnvironment, composeMode, composeProject, containerUser, draftKey, entrypoint, environment, healthPath, healthPort, healthType, hostname, image, init, labels, limitsEnabled, mounts, name, network, networkAliases, ports, readOnly, resourceLimits, resourceProfile, restartPolicy, workingDir]);
 
   useEffect(() => {

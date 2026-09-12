@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Folder, HardDrive, LoaderCircle, Network, Us
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type FileItem, type LocalDisk, type NetworkMountRoot } from "../../api";
 import type { Translate } from "../../app/types";
-import { parseStoredStringArray } from "../../core/persistence";
+import { parseStoredStringArray, readStorageValue, writeStorageValue } from "../../core/persistence";
 
 type NodeState = { children: FileItem[]; open: boolean; loading: boolean; error?: string };
 type TreeState = Record<string, NodeState>;
@@ -34,7 +34,7 @@ export function DirectoryTree({ currentPath, homePath, localDisks, mounts, t, on
   }, [t, tree]);
 
   useEffect(() => {
-    const expanded = parseStoredStringArray(localStorage.getItem(storageKey), 20);
+    const expanded = parseStoredStringArray(readStorageValue(storageKey), 20);
     const roots = [...new Set([homePath, ...localDisks.map((disk) => disk.mount_point), ...mounts.map((mount) => mount.mount_point), ...expanded])].filter(Boolean).slice(0, 20);
     roots.forEach((path) => { if (expanded.includes(path) || path === homePath) void load(path); });
     // Initial restoration is intentionally run once per root set.
@@ -42,7 +42,7 @@ export function DirectoryTree({ currentPath, homePath, localDisks, mounts, t, on
   }, [homePath, localDisks.map((disk) => disk.mount_point).join("|"), mounts.map((mount) => mount.mount_point).join("|")]);
   useEffect(() => {
     const expanded = Object.entries(tree).filter(([, value]) => value.open).map(([path]) => path);
-    localStorage.setItem(storageKey, JSON.stringify(expanded));
+    writeStorageValue(storageKey, JSON.stringify(expanded));
   }, [tree]);
   useEffect(() => () => {
     if (expandTimer.current !== null) window.clearTimeout(expandTimer.current);

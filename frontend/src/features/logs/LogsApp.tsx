@@ -11,7 +11,7 @@ import {
   type LogService, type LogSourceGroup, type LogSourcesResponse,
 } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
-import { parseStoredStringArray } from "../../core/persistence";
+import { parseStoredStringArray, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";
 import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 
 type ViewMode = "compact" | "table";
@@ -56,7 +56,7 @@ export function LogsApp({ permissions, t, toast }: { permissions: string[]; t: T
   const [source, setSource] = useState(permissions.includes("logs.view_system") ? "journal" : "activity-own");
   const [queryDraft, setQueryDraft] = useState("");
   const [query, setQuery] = useState("");
-  const [history, setHistory] = useState<string[]>(() => parseStoredStringArray(localStorage.getItem("webnas.log-search-history"), 12));
+  const [history, setHistory] = useState<string[]>(() => parseStoredStringArray(readStorageValue("webnas.log-search-history"), 12));
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [range, setRange] = useState<RangeValue>("1h");
   const [rangeAnchor, setRangeAnchor] = useState(() => Date.now() / 1000);
@@ -221,7 +221,7 @@ export function LogsApp({ permissions, t, toast }: { permissions: string[]; t: T
   function rememberSearch() {
     if (!query) return;
     const next = [query, ...history.filter((item) => item !== query)].slice(0, 12);
-    setHistory(next); localStorage.setItem("webnas.log-search-history", JSON.stringify(next));
+    setHistory(next); writeStorageValue("webnas.log-search-history", JSON.stringify(next));
   }
   function clearFilters() { setFilters(emptyFilters); setRange("1h"); }
   function onlyErrors() { setFilters((current) => ({ ...current, priority: [0, 1, 2, 3] })); }
@@ -275,7 +275,7 @@ export function LogsApp({ permissions, t, toast }: { permissions: string[]; t: T
       <header className="logs-toolbar">
         <div className="logs-toolbar-group logs-toolbar-search-group">
           {sidebarCollapsed && <button type="button" className="logs-icon-button" aria-label={t("logs.expandSources")} title={t("logs.expandSources")} onClick={() => setSidebarCollapsed(false)}><PanelLeftOpen /></button>}
-          <label className="logs-search"><Search aria-hidden="true" /><input ref={searchRef} value={queryDraft} list="logs-search-history" aria-label={t("logs.search")} placeholder={t("logs.searchPlaceholder")} onChange={(event) => setQueryDraft(event.target.value)} onBlur={rememberSearch} /><datalist id="logs-search-history">{history.map((item) => <option key={item}>{item}</option>)}</datalist>{queryDraft ? <button type="button" title={t("action.clear")} aria-label={t("action.clear")} onClick={() => setQueryDraft("")}><X /></button> : history.length > 0 && <button type="button" title={t("logs.clearHistory")} aria-label={t("logs.clearHistory")} onClick={() => { setHistory([]); localStorage.removeItem("webnas.log-search-history"); }}><Trash2 /></button>}</label>
+          <label className="logs-search"><Search aria-hidden="true" /><input ref={searchRef} value={queryDraft} list="logs-search-history" aria-label={t("logs.search")} placeholder={t("logs.searchPlaceholder")} onChange={(event) => setQueryDraft(event.target.value)} onBlur={rememberSearch} /><datalist id="logs-search-history">{history.map((item) => <option key={item}>{item}</option>)}</datalist>{queryDraft ? <button type="button" title={t("action.clear")} aria-label={t("action.clear")} onClick={() => setQueryDraft("")}><X /></button> : history.length > 0 && <button type="button" title={t("logs.clearHistory")} aria-label={t("logs.clearHistory")} onClick={() => { setHistory([]); removeStorageValue("webnas.log-search-history"); }}><Trash2 /></button>}</label>
         </div>
         <div className="logs-toolbar-group logs-toolbar-context-group">
           <select aria-label={t("logs.timeRange")} value={range} onChange={(event) => setRange(event.target.value as RangeValue)}>{["5m", "15m", "1h", "6h", "24h", "7d", "all", "custom"].map((value) => <option key={value} value={value}>{t(`logs.range.${value}`)}</option>)}</select>

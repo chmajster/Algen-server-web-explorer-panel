@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from app import apps
+from app.app_store import service as app_store_service
 from app.config import get_config
 from app.package_center import jobs as package_jobs
 from app.package_center import service as package_service
@@ -166,3 +167,28 @@ def test_store_plugin_generates_codex_instructions():
 
     assert "Codex task" in validated.codex_instructions
     assert "https://github.com/example/algen-demo-plugin" in validated.codex_instructions
+
+
+def test_invalid_app_manifest_is_reported_as_controlled_error(monkeypatch, tmp_path):
+    module_dir = tmp_path / "broken"
+    module_dir.mkdir()
+    (module_dir / "manifest.yaml").write_text("- not\n- an\n- object\n", encoding="utf-8")
+    monkeypatch.setattr(app_store_service, "MODULES_DIR", tmp_path)
+
+    with pytest.raises(HTTPException) as exc:
+        app_store_service.load_manifest("broken")
+
+    assert exc.value.status_code == 422
+    assert "manifest" in str(exc.value.detail).lower()
+
+
+def test_invalid_manifest_does_not_break_app_store_listing(monkeypatch, tmp_path):
+    good = tmp_path / "good"
+    broken = tmp_path / "broken"
+    good.mkdir()
+    broken.mkdir()
+    (good / "manifest.yaml").write_text("name: Good\n", encoding="utf-8")
+    (broken / "manifest.yaml").write_text("{broken", encoding="utf-8")
+    monkeypatch.setattr(app_store_service, "MODULES_DIR", tmp_path)
+
+    assert app_store_service.all_manifests() == [{"name": "Good", "id": "good"}]

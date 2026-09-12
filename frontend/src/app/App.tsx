@@ -1,6 +1,7 @@
 import { HardDrive } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, logout, me, onAuthenticationInvalidated, type SettingsMe, type SettingsPatch, type Task, type UpdateCompletionNotice, type UpdateProgress, type UserPreferences } from "../api";
+import { readStoredEnum, readStorageValue, writeStorageValue } from "../core/persistence";
 import { detectLanguage, loadLanguageWithFallback, type Language, translate } from "../i18n";
 import { pageIsVisible, subscribePageVisibility } from "../core/runtime/pageVisibility";
 import { runtimeConnectionState, subscribeRuntimeConnection, subscribeRuntimeEvent, type RuntimeConnectionState } from "../core/realtime/runtimeEvents";
@@ -103,8 +104,8 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   const [authStatus, setAuthStatus] = useState<"checking" | "authenticated" | "anonymous">("checking");
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<SettingsMe | null>(null);
-  const [language, setLanguage] = useState<Language>(() => detectLanguage(localStorage.getItem("webnas_language")));
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem("webnas_theme") as Theme) || "system");
+  const [language, setLanguage] = useState<Language>(() => detectLanguage(readStorageValue("webnas_language")));
+  const [theme, setTheme] = useState<Theme>(() => readStoredEnum(readStorageValue("webnas_theme"), ["light", "dark", "system"] as const, "system"));
   const [tasks, setTasks] = useState<Task[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
@@ -140,7 +141,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
     void loadLanguageWithFallback(requested).then((loaded) => {
       if (activationRevision !== languageActivationRevision.current) return;
       setLanguage(loaded);
-      if (persist) localStorage.setItem("webnas_language", loaded);
+      if (persist) writeStorageValue("webnas_language", loaded);
     }).catch(() => undefined);
   }, []);
 
@@ -271,8 +272,8 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
   useEffect(() => {
     if (updateProgress?.state !== "completed" || window.location.pathname !== "/update-status") return;
     const updateId = updateProgress.id || updateProgress.commit_revision || String(updateProgress.finished_at || "completed");
-    if (sessionStorage.getItem(COMPLETED_UPDATE_RELOAD_KEY) === updateId) return;
-    sessionStorage.setItem(COMPLETED_UPDATE_RELOAD_KEY, updateId);
+    if (readStorageValue(COMPLETED_UPDATE_RELOAD_KEY, "session") === updateId) return;
+    writeStorageValue(COMPLETED_UPDATE_RELOAD_KEY, updateId, "session");
     window.history.replaceState({}, "", "/");
     reloadPage();
   }, [reloadPage, updateProgress]);
@@ -307,7 +308,7 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
         return next;
       });
       if (patch.language && settingRevisions.current.language === revision) activateLanguage(saved.language);
-      if (patch.theme && settingRevisions.current.theme === revision) { setTheme(saved.theme); localStorage.setItem("webnas_theme", saved.theme); }
+      if (patch.theme && settingRevisions.current.theme === revision) { setTheme(saved.theme); writeStorageValue("webnas_theme", saved.theme); }
     } catch (error) {
       setProfile((current) => {
         if (!current) return current;

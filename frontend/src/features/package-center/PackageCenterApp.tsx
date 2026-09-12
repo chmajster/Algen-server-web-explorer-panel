@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Boxes } from "lucide-react";
 import { api, type AppJob, type DockerEngineAction, type ModuleSummary } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { readStorageValue, writeStorageValue } from "../../core/persistence";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { PackageActionDialog } from "./PackageActionDialog";
 import { PackageDetails } from "./PackageDetails";
@@ -25,7 +26,7 @@ const defaultPackagePermissions = ["modules.install", "modules.update", "modules
 export function PackageCenterApp({ selectedJobId, permissions = defaultPackagePermissions, desktopShortcutModules = new Set<string>(), t, toast, onOpenModule, onToggleDesktopShortcut, onSelectedJobClose }: { selectedJobId?: string; permissions?: readonly string[]; desktopShortcutModules?: ReadonlySet<string>; t: Translate; toast: ToastFn; onOpenModule?: (moduleId: string) => void; onToggleDesktopShortcut?: (moduleId: string) => void; onSelectedJobClose?: () => void }) {
   const canManageSources = permissions.includes("modules.install");
   const state = usePackageCenter(t, { canManageSources });
-  const [view, setView] = useState<PackageView>(() => window.localStorage.getItem(packageViewStorageKey) === "list" ? "list" : "grid");
+  const [view, setView] = useState<PackageView>(() => readStorageValue(packageViewStorageKey) === "list" ? "list" : "grid");
   const [selected, setSelected] = useState<ModuleSummary | null>(null);
   const [action, setAction] = useState<{ item: ModuleSummary; action: PackageAction } | null>(null);
   const [liveJob, setLiveJob] = useState<{ job: AppJob; name: string } | null>(null);
@@ -89,7 +90,7 @@ export function PackageCenterApp({ selectedJobId, permissions = defaultPackagePe
 
   function selectView(nextView: PackageView) {
     setView(nextView);
-    window.localStorage.setItem(packageViewStorageKey, nextView);
+    writeStorageValue(packageViewStorageKey, nextView);
   }
 
   const catalogTab = ["all", "installed", "updates"].includes(state.tab);

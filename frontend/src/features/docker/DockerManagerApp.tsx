@@ -22,6 +22,7 @@ import {
   type ModuleJob,
 } from "../../api";
 import type { ToastFn, Translate } from "../../app/types";
+import { readStorageValue, writeStorageValue } from "../../core/persistence";
 import { AdminActionDialog } from "../admin/AdminActionDialog";
 import { useRefreshOnConnectionRestored } from "../connection/ConnectionStatusMonitor";
 import { PackageJobDialog } from "../package-center/PackageJobDialog";
@@ -68,7 +69,7 @@ export function DockerManagerApp({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [section, setSection] = useState<Section>(() => {
-    const saved = draftKey ? sessionStorage.getItem(`${draftKey}:section`) : null;
+    const saved = draftKey ? readStorageValue(`${draftKey}:section`, "session") : null;
     const valid: Section[] = ["dashboard", "containers", "images", "apps", "compose", "volumes", "networks", "registries", "events", "backups", "engine", "diagnostics"];
     return valid.includes(saved as Section) ? saved as Section : "dashboard";
   });
@@ -87,7 +88,7 @@ export function DockerManagerApp({
     (permission: string) => permissions.includes(permission),
     [permissions],
   );
-  useEffect(() => { if (draftKey) sessionStorage.setItem(`${draftKey}:section`, section); }, [draftKey, section]);
+  useEffect(() => { if (draftKey) writeStorageValue(`${draftKey}:section`, section, "session"); }, [draftKey, section]);
   const load = useCallback(async () => {
     loadInProgress.current = true;
     const initialLoad = !dashboardLoaded.current;
