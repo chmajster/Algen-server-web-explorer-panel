@@ -137,3 +137,18 @@ def test_corrupt_persisted_job_json_does_not_break_reads(tmp_path):
     logs = repository.logs(job.id)
     assert len(logs) == 1
     assert logs[0].data == {}
+
+
+def test_corrupt_persisted_job_enums_degrade_safely(tmp_path):
+    repository = JobRepository(tmp_path / "jobs.sqlite3")
+    dependency = repository.create(job_type="dependency", module="tests", created_by="alice")
+    child = repository.create(job_type="child", module="tests", created_by="alice", status=JobStatus.waiting)
+    repository.add_dependencies(child.id, [dependency.id])
+    with sqlite3.connect(repository.path) as connection:
+        connection.execute("UPDATE jobs SET status=?, priority=? WHERE id=?", ("future-status", "impossible", dependency.id))
+
+    restored = repository.get(dependency.id)
+    assert restored is not None
+    assert restored.status == JobStatus.failed
+    assert restored.priority.value == "normal"
+    assert repository.dependency_states(child.id) == [JobStatus.failed]
