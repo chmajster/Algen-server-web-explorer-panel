@@ -71,8 +71,16 @@ class CronRepository:
     def _job(row: sqlite3.Row) -> CronJob:
         try:
             environment = json.loads(row["environment_json"])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, json.JSONDecodeError):
             environment = []
+        if not isinstance(environment, list):
+            environment = []
+        safe_environment: list[CronEnvironmentVariable] = []
+        for item in environment:
+            try:
+                safe_environment.append(CronEnvironmentVariable.model_validate(item))
+            except (TypeError, ValueError):
+                continue
         enabled = bool(row["enabled"])
         return CronJob(
             id=str(row["id"]),
@@ -82,7 +90,7 @@ class CronRepository:
             schedule=str(row["schedule"]),
             command=str(row["command"]),
             working_directory=row["working_directory"],
-            environment=[CronEnvironmentVariable.model_validate(item) for item in environment],
+            environment=safe_environment,
             timeout_seconds=row["timeout_seconds"],
             enabled=enabled,
             status=CronJobStatus.enabled if enabled else CronJobStatus.disabled,
@@ -178,8 +186,9 @@ class CronRepository:
         for row in rows:
             item = dict(row)
             try:
-                item["details"] = json.loads(item.pop("details_json"))
-            except (TypeError, ValueError):
-                item["details"] = {}
+                details = json.loads(item.pop("details_json"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                details = {}
+            item["details"] = details if isinstance(details, dict) else {}
             result.append(item)
         return result

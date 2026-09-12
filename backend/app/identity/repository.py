@@ -214,9 +214,16 @@ class IdentityRepository:
         for row in rows:
             try:
                 previous = json.loads(row["previous_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                previous = {}
+            try:
                 current = json.loads(row["current_json"] or "{}")
-            except ValueError:
-                previous, current = {}, {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                current = {}
+            if not isinstance(previous, dict):
+                previous = {}
+            if not isinstance(current, dict):
+                current = {}
             result.append(PermissionChange(id=row["id"], created_at=row["created_at"], actor=row["actor"], subject_type=row["subject_type"], subject=row["subject"], action=row["action"], previous=previous, current=current, status=row["status"], error_code=row["error_code"]))
         return result
 

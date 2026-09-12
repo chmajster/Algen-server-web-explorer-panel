@@ -503,16 +503,22 @@ def _wallpaper_items(username: str) -> list[dict]:
         metadata_path = path.with_suffix(".json")
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
-        except (OSError, ValueError):
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            metadata = {}
+        if not isinstance(metadata, dict):
             metadata = {}
         stat = path.stat()
+        try:
+            created_at = int(metadata.get("created_at") or stat.st_mtime)
+        except (TypeError, ValueError, OverflowError):
+            created_at = int(stat.st_mtime)
         items.append(
             {
                 "id": path.stem,
                 "name": str(metadata.get("name") or path.name),
                 "url": f"/api/settings/wallpapers/{path.stem}",
                 "size": stat.st_size,
-                "created_at": int(metadata.get("created_at") or stat.st_mtime),
+                "created_at": created_at,
             }
         )
     return sorted(items, key=lambda item: item["created_at"], reverse=True)
@@ -522,8 +528,12 @@ def _read_settings(username: str) -> dict:
     path = _settings_path(username)
     if not path.exists():
         return {}
-    with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _write_settings(username: str, data: dict) -> None:
@@ -685,7 +695,9 @@ def _read_auto_update_state() -> dict:
         return _default_auto_update_state()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return _default_auto_update_state()
+    if not isinstance(data, dict):
         return _default_auto_update_state()
     return {**_default_auto_update_state(), **data}
 
@@ -703,7 +715,8 @@ def _write_auto_update_state(data: dict) -> dict:
 def _git_output(args: list[str], *, timeout: int = 20) -> str:
     result = subprocess.run([_tool("git"), *args], cwd=_repo_root(), capture_output=True, text=True, timeout=timeout, check=False)
     if result.returncode != 0:
-        raise HTTPException(400, result.stderr.strip() or "Git command failed")
+        logger.warning("settings_git_command_failed action=%s returncode=%s", args[0] if args else "unknown", result.returncode)
+        raise HTTPException(400, "Git command failed")
     return result.stdout.strip()
 
 
@@ -831,7 +844,8 @@ def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: boo
         try:
             result = update_service(update_config=update_config, npm_audit_fix=npm_audit_fix, actor=actor)
         except RuntimeError as error:
-            raise HTTPException(503, str(error)) from error
+            logger.warning("webnas_update_service_start_failed error_type=%s", type(error).__name__)
+            raise HTTPException(503, "Could not start the WebNAS update service") from error
         _audit(actor, "download_update", f"unit={result['unit']} pid={result.get('pid') or 'pending'}")
         return {"ok": True, "pid": result.get("pid"), "unit": result["unit"], "log": result.get("log", "")}
     settings_dir = _auto_update_path().parent
@@ -843,7 +857,8 @@ def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: boo
         check=False,
     )
     if download.returncode != 0:
-        raise HTTPException(503, download.stderr.decode("utf-8", errors="replace").strip() or "Could not download the current WebNAS installer")
+        logger.warning("webnas_update_installer_download_failed returncode=%s", download.returncode)
+        raise HTTPException(503, "Could not download the current WebNAS installer")
     if not download.stdout.startswith(b"#!/usr/bin/env bash"):
         raise HTTPException(503, "Downloaded WebNAS installer is invalid")
     with tempfile.NamedTemporaryFile(dir=settings_dir, prefix=".update-install-", suffix=".tmp", delete=False) as handle:
@@ -905,11 +920,11 @@ def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: boo
         check=False,
     )
     if launch.returncode != 0:
-        message = launch.stderr.strip() or launch.stdout.strip() or "Could not start the durable update service"
+        logger.warning("webnas_update_systemd_launch_failed returncode=%s", launch.returncode)
         _write_json_atomic(
             progress_path, {"running": False, "exit_code": -1, "started_at": started_at, "finished_at": time.time(), "pid": None, "unit": unit_name}
         )
-        raise HTTPException(503, message)
+        raise HTTPException(503, "Could not start the durable update service")
     pid: int | None = None
     for _ in range(20):
         try:
@@ -1121,7 +1136,11 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
             npm_audit_fix=bool(request_state.get("npm_audit_fix")),
         )
     except Exception as error:  # noqa: BLE001 - failure is persisted for restart-safe status.
-        message = str(error.detail) if isinstance(error, HTTPException) else str(error)
+        if isinstance(error, HTTPException) and isinstance(error.detail, str):
+            message = error.detail
+        else:
+            logger.exception("webnas_update_prepare_failed")
+            message = "Aktualizacja nie powiodła się."
         with coordination_lock():
             latest = read_update_request()
             if latest.get("id") == request_state.get("id"):

@@ -1143,6 +1143,8 @@ class DockerProvider(PrivateBackupProvider):
         for path in sorted(history_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
             try:
                 item = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(item, dict):
+                    continue
                 item.pop("content", None)
                 item.pop("environment", None)
                 result.append(item)

@@ -466,7 +466,11 @@ class SecretsManagerService:
         result: list[dict[str, Any]] = []
         for row in rows:
             item = dict(row)
-            item["details"] = json.loads(str(item.pop("details_json") or "{}"))
+            try:
+                details = json.loads(str(item.pop("details_json") or "{}"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                details = {}
+            item["details"] = details if isinstance(details, dict) else {}
             result.append(item)
         return result
 

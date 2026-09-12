@@ -401,10 +401,15 @@ function terminalTransaction(transaction: NetworkTransaction) {
   return ["confirmed", "rolled_back", "failed"].includes(transaction.status || transaction.state);
 }
 
-function loadStoredTransaction(): NetworkTransaction | null {
+export function loadStoredTransaction(): NetworkTransaction | null {
   try {
-    const value = JSON.parse(sessionStorage.getItem(NETWORK_TRANSACTION_KEY) || "null") as NetworkTransaction | null;
-    return value?.id && value.deadline ? value : null;
+    const value = JSON.parse(sessionStorage.getItem(NETWORK_TRANSACTION_KEY) || "null") as unknown;
+    if (!value || Array.isArray(value) || typeof value !== "object") return null;
+    const candidate = value as Record<string, unknown>;
+    if (typeof candidate.id !== "string" || !candidate.id.trim()) return null;
+    if (typeof candidate.deadline !== "number" || !Number.isFinite(candidate.deadline)) return null;
+    if (candidate.deadline_at != null && (typeof candidate.deadline_at !== "number" || !Number.isFinite(candidate.deadline_at))) return null;
+    return candidate as unknown as NetworkTransaction;
   } catch {
     return null;
   }
