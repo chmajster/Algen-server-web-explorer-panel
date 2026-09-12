@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "./persistence";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, removeStorageValue, writeStorageValue } from "./persistence";
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("persistent UI state boundaries", () => {
   it("rejects malformed and wrong-shaped string arrays", () => {
@@ -18,5 +20,20 @@ describe("persistent UI state boundaries", () => {
     expect(readStoredNumber("-10", 238, 180, 420)).toBe(180);
     expect(readStoredNumber("NaN", 238, 180, 420)).toBe(238);
     expect(readStoredNumber("Infinity", 238, 180, 420)).toBe(238);
+  });
+
+  it("degrades safely when browser storage reads are blocked", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new DOMException("blocked", "SecurityError"); });
+    expect(readStorageValue("webnas_theme")).toBeNull();
+    expect(readStorageValue("webnas_theme", "session")).toBeNull();
+  });
+
+  it("degrades safely when browser storage writes or removals fail", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => { throw new DOMException("blocked", "SecurityError"); });
+    expect(writeStorageValue("webnas_theme", "dark")).toBe(false);
+    expect(writeStorageValue("webnas_theme", "dark", "session")).toBe(false);
+    expect(removeStorageValue("webnas_theme")).toBe(false);
+    expect(removeStorageValue("webnas_theme", "session")).toBe(false);
   });
 });
