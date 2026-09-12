@@ -39,6 +39,21 @@ export function removeStorageValue(key: string, scope: StorageScope = "local"): 
   }
 }
 
+export function storageKeys(scope: StorageScope = "local"): string[] {
+  try {
+    const storage = browserStorage(scope);
+    if (!storage) return [];
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key !== null) keys.push(key);
+    }
+    return keys;
+  } catch {
+    return [];
+  }
+}
+
 export function parseStoredStringArray(raw: string | null, maxItems = 100): string[] {
   if (!raw) return [];
   try {
