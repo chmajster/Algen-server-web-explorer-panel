@@ -1,0 +1,2 @@
+- Harden persisted user settings, wallpaper metadata, auto-update state, Identity/Cron/Secrets/Docker history data and Network Management session state against malformed or wrong-shaped JSON.
+- Stop returning raw Git, Samba and WebNAS update process diagnostics to clients while retaining diagnostic context in server-side logs.

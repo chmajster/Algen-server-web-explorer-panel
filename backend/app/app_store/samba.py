@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from ..audit import logger
 from ..path_policy import resolve_user_path
 from ..config import get_config
 from ..privileged_broker.runtime import (
@@ -53,8 +54,9 @@ def _run(args: list[str], *, input_text: str | None = None, timeout: int = 600) 
     if result is None:
         result = subprocess.run(args, input=input_text, capture_output=True, text=True, timeout=timeout, check=False, shell=False)
     if result.returncode != 0:
-        output = result.stderr.strip() or result.stdout.strip()
-        raise HTTPException(400, output or f"{Path(args[0]).name} failed with exit code {result.returncode}")
+        command = Path(args[0]).name if args else "samba"
+        logger.warning("samba_command_failed command=%s returncode=%s", command, result.returncode)
+        raise HTTPException(400, "Samba command failed")
     return result
 
 
