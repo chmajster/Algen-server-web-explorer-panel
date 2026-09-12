@@ -1,3 +1,44 @@
+export type StorageScope = "local" | "session";
+
+function browserStorage(scope: StorageScope): Storage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return scope === "local" ? window.localStorage : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function readStorageValue(key: string, scope: StorageScope = "local"): string | null {
+  try {
+    return browserStorage(scope)?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeStorageValue(key: string, value: string, scope: StorageScope = "local"): boolean {
+  try {
+    const storage = browserStorage(scope);
+    if (!storage) return false;
+    storage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function removeStorageValue(key: string, scope: StorageScope = "local"): boolean {
+  try {
+    const storage = browserStorage(scope);
+    if (!storage) return false;
+    storage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parseStoredStringArray(raw: string | null, maxItems = 100): string[] {
   if (!raw) return [];
   try {
