@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, removeStorageValue, writeStorageValue } from "./persistence";
+import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, removeStorageValue, storageKeys, writeStorageValue } from "./persistence";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -35,5 +35,16 @@ describe("persistent UI state boundaries", () => {
     expect(writeStorageValue("webnas_theme", "dark", "session")).toBe(false);
     expect(removeStorageValue("webnas_theme")).toBe(false);
     expect(removeStorageValue("webnas_theme", "session")).toBe(false);
+  });
+
+  it("enumerates storage keys and isolates enumeration failures", () => {
+    localStorage.setItem("webnas-test-key-a", "1");
+    localStorage.setItem("webnas-test-key-b", "2");
+    expect(storageKeys()).toEqual(expect.arrayContaining(["webnas-test-key-a", "webnas-test-key-b"]));
+    localStorage.removeItem("webnas-test-key-a");
+    localStorage.removeItem("webnas-test-key-b");
+    vi.spyOn(Storage.prototype, "key").mockImplementation(() => { throw new DOMException("blocked", "SecurityError"); });
+    expect(storageKeys()).toEqual([]);
+    expect(storageKeys("session")).toEqual([]);
   });
 });
