@@ -13,3 +13,4 @@
 - Added Activity Feed coverage for corrupted persisted enum values.
 - Added Package Center coverage for malformed and wrong-shaped job/source JSON.
 - Added typed-shape regression coverage for Ansible Controller and OS Repositories persisted JSON decoders.
+- Added a source-contract regression test that keeps the audited persisted-state paths on their typed defensive decoders.
