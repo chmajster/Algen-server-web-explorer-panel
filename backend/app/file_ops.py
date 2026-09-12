@@ -117,7 +117,10 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
         result = subprocess.run(cmd, input=stdin_payload, capture_output=True, text=True, timeout=timeout, check=False)
         if result.returncode != 0:
             raise _worker_http_error(result.stderr)
-        return json.loads(result.stdout or "{}")
+        try:
+            return json.loads(result.stdout or "{}")
+        except json.JSONDecodeError as error:
+            raise HTTPException(500, "File worker returned an invalid response") from error
 
     try:
         response = BrokerClient(timeout=timeout + 5.0).require(

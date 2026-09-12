@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import tempfile
 import threading
@@ -159,9 +160,19 @@ class FileTaskManager:
         try:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError:
-            self._db_path = Path(tempfile.gettempdir()) / "webnas" / "transfers.sqlite3"
-            self._db_path.parent.mkdir(parents=True, exist_ok=True)
+            uid = os.getuid() if hasattr(os, "getuid") else os.getpid()
+            fallback_root = Path(tempfile.gettempdir()) / f"webnas-{uid}"
+            fallback_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                os.chmod(fallback_root, 0o700)
+            except OSError:
+                pass
+            self._db_path = fallback_root / "transfers.sqlite3"
         conn = sqlite3.connect(self._db_path, factory=ClosingConnection)
+        try:
+            os.chmod(self._db_path, 0o600)
+        except OSError:
+            pass
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -328,7 +339,12 @@ class FileTaskManager:
     def _stored_status(self, task_id: str) -> TaskStatus | None:
         with self._connect() as conn:
             row = conn.execute("SELECT status FROM file_tasks WHERE id=?", (task_id,)).fetchone()
-        return TaskStatus(str(row["status"])) if row else None
+        if not row:
+            return None
+        try:
+            return TaskStatus(str(row["status"]))
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def _job_service(self) -> JobService:
         if self._operations is None:

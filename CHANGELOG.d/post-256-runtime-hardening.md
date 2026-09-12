@@ -1,0 +1,2 @@
+- Harden transfer persistence fallback permissions and tolerate corrupted stored statuses.
+- Revalidate partial-transfer cleanup paths and normalize malformed local file-worker responses.
