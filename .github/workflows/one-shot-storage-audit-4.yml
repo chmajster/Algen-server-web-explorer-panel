@@ -34,46 +34,79 @@ jobs:
               return text.replace(old, new, 1)
 
           def desktop(text: str) -> str:
-              text = require(text, 'import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";', 'import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";\nimport { readStorageValue, removeStorageValue, writeStorageValue } from "../core/persistence";')
+              old_import = 'import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";'
+              new_import = old_import + '\nimport { readStorageValue, removeStorageValue, storageKeys, writeStorageValue } from "../core/persistence";'
+              if 'from "../core/persistence"' not in text:
+                  text = require(text, old_import, new_import)
+              elif 'storageKeys' not in text.split('\n', 30)[0:30]:
+                  text = text.replace('import { readStorageValue, removeStorageValue, writeStorageValue } from "../core/persistence";', 'import { readStorageValue, removeStorageValue, storageKeys, writeStorageValue } from "../core/persistence";')
               text = text.replace("localStorage.getItem(", "readStorageValue(")
               text = text.replace("localStorage.setItem(", "writeStorageValue(")
               text = text.replace("localStorage.removeItem(", "removeStorageValue(")
               text = text.replace("sessionStorage.getItem(sessionWindowKey)", 'readStorageValue(sessionWindowKey, "session")')
               text = text.replace("sessionStorage.setItem(sessionWindowKey, serialized)", 'writeStorageValue(sessionWindowKey, serialized, "session")')
+              old_signout = 'function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); sessionStorage.removeItem(sessionWindowKey); void logout().finally(onLoggedOut); }'
+              new_signout = 'function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; storageKeys("session").filter((key) => key.startsWith(draftPrefix)).forEach((key) => removeStorageValue(key, "session")); removeStorageValue(sessionWindowKey, "session"); void logout().finally(onLoggedOut); }'
+              if old_signout in text:
+                  text = text.replace(old_signout, new_signout, 1)
               return text
           edit("frontend/src/app/DesktopController.tsx", desktop)
 
           def file_manager(text: str) -> str:
-              text = require(text, 'import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";', 'import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, writeStorageValue } from "../../core/persistence";')
-              return text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(")
+              old = 'import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";'
+              new = 'import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";'
+              if 'readStorageValue' not in text.split('\n', 30)[0:30]:
+                  text = require(text, old, new)
+              text = text.replace("localStorage.getItem(", "readStorageValue(")
+              text = text.replace("localStorage.setItem(", "writeStorageValue(")
+              text = text.replace("localStorage.removeItem(", "removeStorageValue(")
+              return text
           edit("frontend/src/features/files/FileManager.tsx", file_manager)
 
           def logs(text: str) -> str:
-              text = require(text, 'import { parseStoredStringArray } from "../../core/persistence";', 'import { parseStoredStringArray, readStorageValue, writeStorageValue } from "../../core/persistence";')
-              return text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(")
+              old = 'import { parseStoredStringArray } from "../../core/persistence";'
+              new = 'import { parseStoredStringArray, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";'
+              if 'readStorageValue' not in text.split('\n', 30)[0:30]:
+                  text = require(text, old, new)
+              text = text.replace("localStorage.getItem(", "readStorageValue(")
+              text = text.replace("localStorage.setItem(", "writeStorageValue(")
+              text = text.replace("localStorage.removeItem(", "removeStorageValue(")
+              return text
           edit("frontend/src/features/logs/LogsApp.tsx", logs)
 
           def package_center(text: str) -> str:
-              text = require(text, 'import type { ToastFn, Translate } from "../../app/types";', 'import type { ToastFn, Translate } from "../../app/types";\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";')
-              return text.replace("window.localStorage.getItem(", "readStorageValue(").replace("window.localStorage.setItem(", "writeStorageValue(")
+              old = 'import type { ToastFn, Translate } from "../../app/types";'
+              new = old + '\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";'
+              if 'from "../../core/persistence"' not in text:
+                  text = require(text, old, new)
+              text = text.replace("window.localStorage.getItem(", "readStorageValue(")
+              text = text.replace("window.localStorage.setItem(", "writeStorageValue(")
+              return text
           edit("frontend/src/features/package-center/PackageCenterApp.tsx", package_center)
 
           def transport(text: str) -> str:
               if 'from "../persistence"' not in text:
                   text = 'import { removeStorageValue } from "../persistence";\n\n' + text
               text = text.replace('if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
+              text = text.replace('localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
               return text
           edit("frontend/src/core/api/transport.ts", transport)
 
           def docker_manager(text: str) -> str:
-              text = require(text, 'import type { ToastFn, Translate } from "../../app/types";', 'import type { ToastFn, Translate } from "../../app/types";\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";')
+              old = 'import type { ToastFn, Translate } from "../../app/types";'
+              new = old + '\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";'
+              if 'from "../../core/persistence"' not in text:
+                  text = require(text, old, new)
               text = text.replace('sessionStorage.getItem(`${draftKey}:section`)', 'readStorageValue(`${draftKey}:section`, "session")')
               text = text.replace('sessionStorage.setItem(`${draftKey}:section`, section)', 'writeStorageValue(`${draftKey}:section`, section, "session")')
               return text
           edit("frontend/src/features/docker/DockerManagerApp.tsx", docker_manager)
 
           def containers(text: str) -> str:
-              text = require(text, 'import type { ToastFn, Translate } from "../../app/types";', 'import type { ToastFn, Translate } from "../../app/types";\nimport { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+              old = 'import type { ToastFn, Translate } from "../../app/types";'
+              new = old + '\nimport { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";'
+              if 'from "../../core/persistence"' not in text:
+                  text = require(text, old, new)
               text = text.replace("sessionStorage.getItem(wizardDraftKey)", 'readStorageValue(wizardDraftKey, "session")')
               text = text.replace('sessionStorage.setItem(wizardDraftKey, "{}")', 'writeStorageValue(wizardDraftKey, "{}", "session")')
               text = text.replace("sessionStorage.setItem(wizardDraftKey, JSON.stringify(draft))", 'writeStorageValue(wizardDraftKey, JSON.stringify(draft), "session")')
@@ -82,11 +115,31 @@ jobs:
           edit("frontend/src/features/docker/ContainersList.tsx", containers)
 
           def create_container(text: str) -> str:
-              text = require(text, 'import type { ToastFn, Translate } from "../../app/types";', 'import type { ToastFn, Translate } from "../../app/types";\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";')
+              old = 'import type { ToastFn, Translate } from "../../app/types";'
+              new = old + '\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";'
+              if 'from "../../core/persistence"' not in text:
+                  text = require(text, old, new)
               text = text.replace("sessionStorage.getItem(key)", 'readStorageValue(key, "session")')
               text = text.replace("sessionStorage.setItem(draftKey, JSON.stringify(value))", 'writeStorageValue(draftKey, JSON.stringify(value), "session")')
               return text
           edit("frontend/src/features/docker/CreateContainerWizard.tsx", create_container)
+
+          def network_management(text: str) -> str:
+              old = 'import type { Translate } from "../../app/types";'
+              new = old + '\nimport { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";'
+              if 'from "../../core/persistence"' not in text:
+                  text = require(text, old, new)
+              text = text.replace('localStorage.getItem("webnas_language")', 'readStorageValue("webnas_language")')
+              text = text.replace('sessionStorage.getItem(NETWORK_TRANSACTION_KEY)', 'readStorageValue(NETWORK_TRANSACTION_KEY, "session")')
+              text = text.replace('sessionStorage.setItem(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction))', 'writeStorageValue(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction), "session")')
+              text = text.replace('sessionStorage.removeItem(NETWORK_TRANSACTION_KEY)', 'removeStorageValue(NETWORK_TRANSACTION_KEY, "session")')
+              return text
+          edit("frontend/src/features/settings/NetworkManagementPanels.tsx", network_management)
+
+          def regression_test(text: str) -> str:
+              text = text.replace("expect(network).toContain('localStorage.getItem(\"webnas_language\")');", "expect(network).toContain('readStorageValue(\"webnas_language\")');")
+              return text
+          edit("frontend/src/core/api/runtime-audit-regressions.test.js", regression_test)
           PY
       - name: Ensure production code has no direct Web Storage access
         run: |
