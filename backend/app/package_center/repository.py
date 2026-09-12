@@ -14,6 +14,18 @@ from .detached_updates import detached_update_session, read_update_state, update
 from .models import PackageJobStatus, PackagePlan, PackageSourceInput
 
 
+def _json_value(value: Any, default: Any) -> Any:
+    try:
+        decoded = json.loads(value or json.dumps(default))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+    if isinstance(default, dict):
+        return decoded if isinstance(decoded, dict) else default
+    if isinstance(default, list):
+        return decoded if isinstance(decoded, list) else default
+    return decoded
+
+
 class PackageRepository:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or Path(get_config().paths.data_dir) / "package-center.sqlite3"
@@ -72,9 +84,9 @@ class PackageRepository:
         result = dict(row)
         result["cancellation_requested"] = bool(result["cancellation_requested"])
         result["requires_reboot"] = bool(result["requires_reboot"])
-        result["plan"] = json.loads(result.pop("plan_json") or "{}")
-        result["warnings"] = json.loads(result.pop("warnings_json", "[]") or "[]")
-        result["result"] = json.loads(result.pop("result_json", "{}") or "{}")
+        result["plan"] = _json_value(result.pop("plan_json"), {})
+        result["warnings"] = _json_value(result.pop("warnings_json", "[]"), [])
+        result["result"] = _json_value(result.pop("result_json", "{}"), {})
         result["cancellable"] = not (result["status"] == PackageJobStatus.running.value and detached_update_session(result["plan"]))
         result["log_tail"] = logs or []
         requested_operation = result["plan"].get("payload", {}).get("operation")
@@ -214,7 +226,7 @@ class PackageRepository:
     def _source(row: sqlite3.Row) -> dict:
         result = dict(row)
         result["enabled"] = bool(result["enabled"])
-        result["metadata"] = json.loads(result.pop("metadata_json") or "{}")
+        result["metadata"] = _json_value(result.pop("metadata_json"), {})
         return result
 
     def list_sources(self) -> list[dict]:

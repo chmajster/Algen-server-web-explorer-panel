@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -121,3 +122,15 @@ def test_failed_pam_login_records_metadata_without_the_password(monkeypatch):
     assert captured[0][1]["status"] == ActivityStatus.failure
     assert captured[0][1]["details"] == {"client": "192.0.2.15", "status_code": 401, "provider": "pam"}
     assert "do-not-store" not in repr(captured)
+
+
+def test_activity_corrupt_persisted_enums_do_not_break_listing(tmp_path: Path):
+    repository = ActivityRepository(tmp_path / "activity-corrupt.sqlite3")
+    event = repository.add(actor="alice", category=ActivityCategory.file, action="mkdir")
+    with sqlite3.connect(repository.path) as connection:
+        connection.execute("UPDATE activity_events SET category=?, status=? WHERE id=?", ("future-category", "future-status", event.id))
+
+    items, total = repository.list()
+    assert total == 1
+    assert items[0].category == ActivityCategory.module
+    assert items[0].status == ActivityStatus.info

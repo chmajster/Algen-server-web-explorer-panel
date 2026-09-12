@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -735,3 +736,20 @@ def test_package_reinstall_route_uses_update_permission(monkeypatch):
 
     assert result == {"action": "reinstall"}
     assert checked == [Permission.MODULES_UPDATE]
+
+
+def test_package_repository_corrupt_persisted_json_isolated(tmp_path):
+    repository = PackageRepository(tmp_path / "corrupt-package-center.sqlite3")
+    created = repository.create_job(plan(), "alice")
+    source = repository.create_source(PackageSourceInput(name="demo", github_url="https://github.com/example/demo"))
+    with sqlite3.connect(repository.path) as connection:
+        connection.execute("UPDATE package_jobs SET plan_json=?, warnings_json=?, result_json=? WHERE id=?", ("[]", "{}", "{broken", created["id"]))
+        connection.execute("UPDATE package_sources SET metadata_json=? WHERE id=?", ("[]", source["id"]))
+
+    restored = repository.get_job(created["id"])
+    assert restored is not None
+    assert restored["plan"] == {}
+    assert restored["warnings"] == []
+    assert restored["result"] == {}
+    assert restored["operation"] == restored["action"]
+    assert repository.list_sources()[0]["metadata"] == {}

@@ -90,6 +90,20 @@ def sanitize_details(details: Mapping[str, Any] | None) -> dict[str, Any]:
     return {"truncated": True}
 
 
+def _activity_category(value: Any) -> ActivityCategory:
+    try:
+        return ActivityCategory(str(value))
+    except (TypeError, ValueError):
+        return ActivityCategory.module
+
+
+def _activity_status(value: Any) -> ActivityStatus:
+    try:
+        return ActivityStatus(str(value))
+    except (TypeError, ValueError):
+        return ActivityStatus.info
+
+
 class ActivityRepository:
     def __init__(self, path: Path, *, max_events: int = _MAX_EVENTS) -> None:
         self.path = path
@@ -141,10 +155,10 @@ class ActivityRepository:
             id=row["id"],
             created_at=row["created_at"],
             actor=row["actor"],
-            category=row["category"],
+            category=_activity_category(row["category"]),
             action=row["action"],
             target=row["target"],
-            status=row["status"],
+            status=_activity_status(row["status"]),
             summary=row["summary"],
             details=details if isinstance(details, dict) else {},
             source=row["source"],
