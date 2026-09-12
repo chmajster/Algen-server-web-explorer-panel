@@ -1,0 +1,112 @@
+name: One-shot storage audit 4
+
+on:
+  push:
+    branches: [fix/exhaustive-runtime-audit-4]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/exhaustive-runtime-audit-4
+      - name: Patch remaining direct browser storage access
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def edit(path: str, transform) -> None:
+              target = Path(path)
+              before = target.read_text(encoding="utf-8")
+              after = transform(before)
+              if before != after:
+                  target.write_text(after, encoding="utf-8")
+
+          def require(text: str, old: str, new: str) -> str:
+              if new in text:
+                  return text
+              if old not in text:
+                  raise SystemExit(f"missing expected fragment: {old[:100]!r}")
+              return text.replace(old, new, 1)
+
+          def desktop(text: str) -> str:
+              text = require(text, 'import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";', 'import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";\nimport { readStorageValue, removeStorageValue, writeStorageValue } from "../core/persistence";')
+              text = text.replace("localStorage.getItem(", "readStorageValue(")
+              text = text.replace("localStorage.setItem(", "writeStorageValue(")
+              text = text.replace("localStorage.removeItem(", "removeStorageValue(")
+              text = text.replace("sessionStorage.getItem(sessionWindowKey)", 'readStorageValue(sessionWindowKey, "session")')
+              text = text.replace("sessionStorage.setItem(sessionWindowKey, serialized)", 'writeStorageValue(sessionWindowKey, serialized, "session")')
+              return text
+          edit("frontend/src/app/DesktopController.tsx", desktop)
+
+          def file_manager(text: str) -> str:
+              text = require(text, 'import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";', 'import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, writeStorageValue } from "../../core/persistence";')
+              return text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(")
+          edit("frontend/src/features/files/FileManager.tsx", file_manager)
+
+          def logs(text: str) -> str:
+              text = require(text, 'import { parseStoredStringArray } from "../../core/persistence";', 'import { parseStoredStringArray, readStorageValue, writeStorageValue } from "../../core/persistence";')
+              return text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(")
+          edit("frontend/src/features/logs/LogsApp.tsx", logs)
+
+          def package_center(text: str) -> str:
+              text = require(text, 'import type { ToastFn, Translate } from "../../app/types";', 'import type { ToastFn, Translate } from "../../app/types";\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";')
+              return text.replace("window.localStorage.getItem(", "readStorageValue(").replace("window.localStorage.setItem(", "writeStorageValue(")
+          edit("frontend/src/features/package-center/PackageCenterApp.tsx", package_center)
+
+          def transport(text: str) -> str:
+              if 'from "../persistence"' not in text:
+                  text = 'import { removeStorageValue } from "../persistence";\n\n' + text
+              text = text.replace('if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
+              return text
+          edit("frontend/src/core/api/transport.ts", transport)
+
+          def docker_manager(text: str) -> str:
+              text = require(text, 'import type { ToastFn, Translate } from "../../app/types";', 'import type { ToastFn, Translate } from "../../app/types";\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";')
+              text = text.replace('sessionStorage.getItem(`${draftKey}:section`)', 'readStorageValue(`${draftKey}:section`, "session")')
+              text = text.replace('sessionStorage.setItem(`${draftKey}:section`, section)', 'writeStorageValue(`${draftKey}:section`, section, "session")')
+              return text
+          edit("frontend/src/features/docker/DockerManagerApp.tsx", docker_manager)
+
+          def containers(text: str) -> str:
+              text = require(text, 'import type { ToastFn, Translate } from "../../app/types";', 'import type { ToastFn, Translate } from "../../app/types";\nimport { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+              text = text.replace("sessionStorage.getItem(wizardDraftKey)", 'readStorageValue(wizardDraftKey, "session")')
+              text = text.replace('sessionStorage.setItem(wizardDraftKey, "{}")', 'writeStorageValue(wizardDraftKey, "{}", "session")')
+              text = text.replace("sessionStorage.setItem(wizardDraftKey, JSON.stringify(draft))", 'writeStorageValue(wizardDraftKey, JSON.stringify(draft), "session")')
+              text = text.replace("sessionStorage.removeItem(wizardDraftKey)", 'removeStorageValue(wizardDraftKey, "session")')
+              return text
+          edit("frontend/src/features/docker/ContainersList.tsx", containers)
+
+          def create_container(text: str) -> str:
+              text = require(text, 'import type { ToastFn, Translate } from "../../app/types";', 'import type { ToastFn, Translate } from "../../app/types";\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";')
+              text = text.replace("sessionStorage.getItem(key)", 'readStorageValue(key, "session")')
+              text = text.replace("sessionStorage.setItem(draftKey, JSON.stringify(value))", 'writeStorageValue(draftKey, JSON.stringify(value), "session")')
+              return text
+          edit("frontend/src/features/docker/CreateContainerWizard.tsx", create_container)
+          PY
+      - name: Ensure production code has no direct Web Storage access
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          violations = []
+          for path in Path("frontend/src").rglob("*"):
+              if path.suffix not in {".ts", ".tsx"} or ".test." in path.name:
+                  continue
+              text = path.read_text(encoding="utf-8")
+              if "localStorage." in text or "sessionStorage." in text or "window.localStorage." in text or "window.sessionStorage." in text:
+                  violations.append(str(path))
+          if violations:
+              raise SystemExit("direct Web Storage access remains:\n" + "\n".join(violations))
+          PY
+      - name: Commit storage hardening
+        run: |
+          git config user.name "webnas-ci"
+          git config user.email "webnas-ci@users.noreply.github.com"
+          git add frontend
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: isolate browser storage failures"
+          git push origin HEAD:fix/exhaustive-runtime-audit-4
