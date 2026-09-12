@@ -1,0 +1,342 @@
+name: One-shot post-254 persistence hardening
+on:
+  push:
+    branches:
+      - fix/post-254-persistence-hardening
+    paths:
+      - .github/workflows/one-shot-post254-hardening.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/post-254-persistence-hardening
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Apply fixes and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"replacement marker missing: {path}: {old[:100]!r}")
+              target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace(
+              "backend/app/settings.py",
+              '''        try:\n            metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}\n        except (OSError, ValueError):\n            metadata = {}\n        stat = path.stat()\n        items.append(\n            {\n                "id": path.stem,\n                "name": str(metadata.get("name") or path.name),\n                "url": f"/api/settings/wallpapers/{path.stem}",\n                "size": stat.st_size,\n                "created_at": int(metadata.get("created_at") or stat.st_mtime),\n            }\n        )\n''',
+              '''        try:\n            metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}\n        except (OSError, TypeError, ValueError, json.JSONDecodeError):\n            metadata = {}\n        if not isinstance(metadata, dict):\n            metadata = {}\n        stat = path.stat()\n        try:\n            created_at = int(metadata.get("created_at") or stat.st_mtime)\n        except (TypeError, ValueError, OverflowError):\n            created_at = int(stat.st_mtime)\n        items.append(\n            {\n                "id": path.stem,\n                "name": str(metadata.get("name") or path.name),\n                "url": f"/api/settings/wallpapers/{path.stem}",\n                "size": stat.st_size,\n                "created_at": created_at,\n            }\n        )\n''',
+          )
+          replace(
+              "backend/app/settings.py",
+              '''def _read_settings(username: str) -> dict:\n    path = _settings_path(username)\n    if not path.exists():\n        return {}\n    with path.open("r", encoding="utf-8") as handle:\n        return json.load(handle)\n''',
+              '''def _read_settings(username: str) -> dict:\n    path = _settings_path(username)\n    if not path.exists():\n        return {}\n    try:\n        with path.open("r", encoding="utf-8") as handle:\n            value = json.load(handle)\n    except (OSError, TypeError, ValueError, json.JSONDecodeError):\n        return {}\n    return value if isinstance(value, dict) else {}\n''',
+          )
+          replace(
+              "backend/app/settings.py",
+              '''    try:\n        data = json.loads(path.read_text(encoding="utf-8"))\n    except (OSError, json.JSONDecodeError):\n        return _default_auto_update_state()\n    return {**_default_auto_update_state(), **data}\n''',
+              '''    try:\n        data = json.loads(path.read_text(encoding="utf-8"))\n    except (OSError, TypeError, ValueError, json.JSONDecodeError):\n        return _default_auto_update_state()\n    if not isinstance(data, dict):\n        return _default_auto_update_state()\n    return {**_default_auto_update_state(), **data}\n''',
+          )
+          replace(
+              "backend/app/settings.py",
+              '''    if result.returncode != 0:\n        raise HTTPException(400, result.stderr.strip() or "Git command failed")\n    return result.stdout.strip()\n''',
+              '''    if result.returncode != 0:\n        logger.warning("settings_git_command_failed action=%s returncode=%s", args[0] if args else "unknown", result.returncode)\n        raise HTTPException(400, "Git command failed")\n    return result.stdout.strip()\n''',
+          )
+          replace(
+              "backend/app/settings.py",
+              '''        except RuntimeError as error:\n            raise HTTPException(503, str(error)) from error\n''',
+              '''        except RuntimeError as error:\n            logger.warning("webnas_update_service_start_failed error_type=%s", type(error).__name__)\n            raise HTTPException(503, "Could not start the WebNAS update service") from error\n''',
+          )
+          replace(
+              "backend/app/settings.py",
+              '''    if download.returncode != 0:\n        raise HTTPException(503, download.stderr.decode("utf-8", errors="replace").strip() or "Could not download the current WebNAS installer")\n''',
+              '''    if download.returncode != 0:\n        logger.warning("webnas_update_installer_download_failed returncode=%s", download.returncode)\n        raise HTTPException(503, "Could not download the current WebNAS installer")\n''',
+          )
+          replace(
+              "backend/app/settings.py",
+              '''    if launch.returncode != 0:\n        message = launch.stderr.strip() or launch.stdout.strip() or "Could not start the durable update service"\n        _write_json_atomic(\n            progress_path, {"running": False, "exit_code": -1, "started_at": started_at, "finished_at": time.time(), "pid": None, "unit": unit_name}\n        )\n        raise HTTPException(503, message)\n''',
+              '''    if launch.returncode != 0:\n        logger.warning("webnas_update_systemd_launch_failed returncode=%s", launch.returncode)\n        _write_json_atomic(\n            progress_path, {"running": False, "exit_code": -1, "started_at": started_at, "finished_at": time.time(), "pid": None, "unit": unit_name}\n        )\n        raise HTTPException(503, "Could not start the durable update service")\n''',
+          )
+          replace(
+              "backend/app/settings.py",
+              '''    except Exception as error:  # noqa: BLE001 - failure is persisted for restart-safe status.\n        message = str(error.detail) if isinstance(error, HTTPException) else str(error)\n        with coordination_lock():\n''',
+              '''    except Exception as error:  # noqa: BLE001 - failure is persisted for restart-safe status.\n        if isinstance(error, HTTPException) and isinstance(error.detail, str):\n            message = error.detail\n        else:\n            logger.exception("webnas_update_prepare_failed")\n            message = "Aktualizacja nie powiodła się."\n        with coordination_lock():\n''',
+          )
+
+          replace(
+              "backend/app/app_store/samba.py",
+              '''from fastapi import HTTPException\n\nfrom ..path_policy import resolve_user_path\n''',
+              '''from fastapi import HTTPException\n\nfrom ..audit import logger\nfrom ..path_policy import resolve_user_path\n''',
+          )
+          replace(
+              "backend/app/app_store/samba.py",
+              '''    if result.returncode != 0:\n        output = result.stderr.strip() or result.stdout.strip()\n        raise HTTPException(400, output or f"{Path(args[0]).name} failed with exit code {result.returncode}")\n    return result\n''',
+              '''    if result.returncode != 0:\n        command = Path(args[0]).name if args else "samba"\n        logger.warning("samba_command_failed command=%s returncode=%s", command, result.returncode)\n        raise HTTPException(400, "Samba command failed")\n    return result\n''',
+          )
+
+          replace(
+              "backend/app/identity/repository.py",
+              '''        for row in rows:\n            try:\n                previous = json.loads(row["previous_json"] or "{}")\n                current = json.loads(row["current_json"] or "{}")\n            except ValueError:\n                previous, current = {}, {}\n            result.append(PermissionChange(id=row["id"], created_at=row["created_at"], actor=row["actor"], subject_type=row["subject_type"], subject=row["subject"], action=row["action"], previous=previous, current=current, status=row["status"], error_code=row["error_code"]))\n''',
+              '''        for row in rows:\n            try:\n                previous = json.loads(row["previous_json"] or "{}")\n            except (TypeError, ValueError, json.JSONDecodeError):\n                previous = {}\n            try:\n                current = json.loads(row["current_json"] or "{}")\n            except (TypeError, ValueError, json.JSONDecodeError):\n                current = {}\n            if not isinstance(previous, dict):\n                previous = {}\n            if not isinstance(current, dict):\n                current = {}\n            result.append(PermissionChange(id=row["id"], created_at=row["created_at"], actor=row["actor"], subject_type=row["subject_type"], subject=row["subject"], action=row["action"], previous=previous, current=current, status=row["status"], error_code=row["error_code"]))\n''',
+          )
+
+          replace(
+              "backend/app/modules/cron/repository.py",
+              '''        try:\n            environment = json.loads(row["environment_json"])\n        except (TypeError, ValueError):\n            environment = []\n        enabled = bool(row["enabled"])\n        return CronJob(\n''',
+              '''        try:\n            environment = json.loads(row["environment_json"])\n        except (TypeError, ValueError, json.JSONDecodeError):\n            environment = []\n        if not isinstance(environment, list):\n            environment = []\n        safe_environment: list[CronEnvironmentVariable] = []\n        for item in environment:\n            try:\n                safe_environment.append(CronEnvironmentVariable.model_validate(item))\n            except (TypeError, ValueError):\n                continue\n        enabled = bool(row["enabled"])\n        return CronJob(\n''',
+          )
+          replace(
+              "backend/app/modules/cron/repository.py",
+              '''            environment=[CronEnvironmentVariable.model_validate(item) for item in environment],\n''',
+              '''            environment=safe_environment,\n''',
+          )
+          replace(
+              "backend/app/modules/cron/repository.py",
+              '''            try:\n                item["details"] = json.loads(item.pop("details_json"))\n            except (TypeError, ValueError):\n                item["details"] = {}\n            result.append(item)\n''',
+              '''            try:\n                details = json.loads(item.pop("details_json"))\n            except (TypeError, ValueError, json.JSONDecodeError):\n                details = {}\n            item["details"] = details if isinstance(details, dict) else {}\n            result.append(item)\n''',
+          )
+
+          replace(
+              "backend/app/modules/secrets_manager/service.py",
+              '''        for row in rows:\n            item = dict(row)\n            item["details"] = json.loads(str(item.pop("details_json") or "{}"))\n            result.append(item)\n        return result\n''',
+              '''        for row in rows:\n            item = dict(row)\n            try:\n                details = json.loads(str(item.pop("details_json") or "{}"))\n            except (TypeError, ValueError, json.JSONDecodeError):\n                details = {}\n            item["details"] = details if isinstance(details, dict) else {}\n            result.append(item)\n        return result\n''',
+          )
+
+          replace(
+              "backend/app/modules/providers/docker.py",
+              '''                item = json.loads(path.read_text(encoding="utf-8"))\n                item.pop("content", None)\n                item.pop("environment", None)\n                result.append(item)\n''',
+              '''                item = json.loads(path.read_text(encoding="utf-8"))\n                if not isinstance(item, dict):\n                    continue\n                item.pop("content", None)\n                item.pop("environment", None)\n                result.append(item)\n''',
+          )
+
+          replace(
+              "frontend/src/features/settings/NetworkManagementPanels.tsx",
+              '''function loadStoredTransaction(): NetworkTransaction | null {\n  try {\n    const value = JSON.parse(sessionStorage.getItem(NETWORK_TRANSACTION_KEY) || "null") as NetworkTransaction | null;\n    return value?.id && value.deadline ? value : null;\n  } catch {\n    return null;\n  }\n}\n''',
+              '''export function loadStoredTransaction(): NetworkTransaction | null {\n  try {\n    const value = JSON.parse(sessionStorage.getItem(NETWORK_TRANSACTION_KEY) || "null") as unknown;\n    if (!value || Array.isArray(value) || typeof value !== "object") return null;\n    const candidate = value as Record<string, unknown>;\n    if (typeof candidate.id !== "string" || !candidate.id.trim()) return null;\n    if (typeof candidate.deadline !== "number" || !Number.isFinite(candidate.deadline)) return null;\n    if (candidate.deadline_at != null && (typeof candidate.deadline_at !== "number" || !Number.isFinite(candidate.deadline_at))) return null;\n    return candidate as unknown as NetworkTransaction;\n  } catch {\n    return null;\n  }\n}\n''',
+          )
+          PY
+
+          cat > backend/tests/test_post254_persistence_hardening.py <<'PY'
+          from __future__ import annotations
+
+          import importlib
+          import json
+          import subprocess
+          import time
+          from pathlib import Path
+          from types import SimpleNamespace
+
+          import pytest
+          from fastapi import HTTPException
+
+          from app import settings
+          from app.app_store import samba
+          from app.identity.repository import IdentityRepository
+          from app.modules.cron.repository import CronRepository
+          from app.modules.providers.docker import DockerProvider
+          from app.modules.secrets_manager.models import SecretInput
+          from app.modules.secrets_manager.service import SecretsManagerService
+
+          secrets_module = importlib.import_module("app.modules.secrets_manager.service")
+
+
+          def _settings_config(tmp_path: Path):
+              return SimpleNamespace(paths=SimpleNamespace(data_dir=str(tmp_path), log_dir=str(tmp_path / "logs")))
+
+
+          def test_user_settings_wrong_shape_or_malformed_json_degrades_to_defaults(monkeypatch, tmp_path):
+              monkeypatch.setattr(settings, "get_config", lambda: _settings_config(tmp_path))
+              path = settings._settings_path("alice")
+              path.write_text("[]", encoding="utf-8")
+              assert settings._read_settings("alice") == {}
+              path.write_text("{", encoding="utf-8")
+              assert settings._read_settings("alice") == {}
+
+
+          def test_wallpaper_metadata_wrong_shape_and_bad_timestamp_do_not_break_gallery(monkeypatch, tmp_path):
+              monkeypatch.setattr(settings, "get_config", lambda: _settings_config(tmp_path))
+              wallpaper_id = "a" * 32
+              directory = settings._wallpaper_directory("alice")
+              image = directory / f"{wallpaper_id}.png"
+              image.write_bytes(b"png")
+              metadata = directory / f"{wallpaper_id}.json"
+              metadata.write_text("[]", encoding="utf-8")
+              assert settings._wallpaper_items("alice")[0]["name"] == image.name
+              metadata.write_text(json.dumps({"name": "safe.png", "created_at": []}), encoding="utf-8")
+              item = settings._wallpaper_items("alice")[0]
+              assert item["name"] == "safe.png"
+              assert isinstance(item["created_at"], int)
+
+
+          def test_auto_update_wrong_shape_json_degrades_to_default(monkeypatch, tmp_path):
+              path = tmp_path / "auto_update.json"
+              path.write_text("[]", encoding="utf-8")
+              monkeypatch.setattr(settings, "_auto_update_path", lambda: path)
+              assert settings._read_auto_update_state() == settings._default_auto_update_state()
+
+
+          def test_git_output_does_not_expose_stderr(monkeypatch, tmp_path):
+              monkeypatch.setattr(settings, "_tool", lambda name: name)
+              monkeypatch.setattr(settings, "_repo_root", lambda: tmp_path)
+              monkeypatch.setattr(
+                  settings.subprocess,
+                  "run",
+                  lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "SECRET /root/token"),
+              )
+              with pytest.raises(HTTPException) as caught:
+                  settings._git_output(["ls-remote", "origin"])
+              assert caught.value.detail == "Git command failed"
+              assert "SECRET" not in str(caught.value.detail)
+
+
+          def test_broker_update_failure_does_not_expose_runtime_error(monkeypatch):
+              monkeypatch.setattr(settings, "broker_required", lambda: True)
+              monkeypatch.setattr(settings, "update_service", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("SECRET /root/private")))
+              with pytest.raises(HTTPException) as caught:
+                  settings._start_update_process(False, actor="admin")
+              assert caught.value.status_code == 503
+              assert caught.value.detail == "Could not start the WebNAS update service"
+
+
+          def test_samba_command_failure_does_not_expose_stderr(monkeypatch):
+              monkeypatch.setattr(samba, "broker_required", lambda: False)
+              monkeypatch.setattr(
+                  samba.subprocess,
+                  "run",
+                  lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "SECRET smb.conf path"),
+              )
+              with pytest.raises(HTTPException) as caught:
+                  samba._run(["testparm", "-s"])
+              assert caught.value.detail == "Samba command failed"
+              assert "SECRET" not in str(caught.value.detail)
+
+
+          def test_identity_change_wrong_shape_json_is_safely_normalized(tmp_path):
+              repository = IdentityRepository(tmp_path / "identity.sqlite3", legacy_path=tmp_path / "missing.json")
+              with repository.connect() as connection:
+                  connection.execute(
+                      "INSERT INTO permission_changes(created_at,actor,subject_type,subject,action,previous_json,current_json,status,error_code) VALUES(?,?,?,?,?,?,?,?,?)",
+                      (time.time(), "admin", "user", "alice", "test", "[]", '"wrong"', "success", ""),
+                  )
+              change = repository.changes(limit=1)[0]
+              assert change.previous == {}
+              assert change.current == {}
+
+
+          def test_cron_corrupt_environment_and_history_json_do_not_break_reads(tmp_path):
+              repository = CronRepository(tmp_path / "cron.sqlite3")
+              now = time.time()
+              with repository.connect() as connection:
+                  connection.execute(
+                      "INSERT INTO cron_jobs(id,name,description,username,schedule,command,working_directory,environment_json,timeout_seconds,enabled,created_at,updated_at,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      ("job-1", "Job", "", "root", "* * * * *", "/bin/true", None, "{}", None, 1, now, now, "admin", "admin"),
+                  )
+                  connection.execute(
+                      "INSERT INTO cron_history(job_id,action,actor,details_json,created_at) VALUES(?,?,?,?,?)",
+                      ("job-1", "test", "admin", "[]", now),
+                  )
+              assert repository.list()[0].environment == []
+              assert repository.history("job-1")[0]["details"] == {}
+
+
+          def test_secrets_audit_corrupt_or_wrong_shape_json_does_not_break_reads(monkeypatch, tmp_path):
+              monkeypatch.setattr(secrets_module, "get_config", lambda: SimpleNamespace(paths=SimpleNamespace(data_dir=str(tmp_path / "data"))))
+              root = tmp_path / "data"
+              service = SecretsManagerService(
+                  path=root / "secrets-manager" / "secrets.sqlite3",
+                  key_path=root / "secrets" / "secrets-manager.key",
+                  hosts_path=root / "missing-hosts.sqlite3",
+                  hosts_key_path=root / "secrets" / "hosts-manager.key",
+                  webhooks_path=root / "missing-webhooks.sqlite3",
+              )
+              item = service.save(SecretInput(name="demo", type="generic_secret", secret="value"), "admin")
+              with service.connect() as connection:
+                  connection.execute(
+                      "INSERT INTO secret_audit(id,secret_id,action,consumer_module,purpose,actor,details_json,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                      ("audit-bad", item["id"], "test", "", "", "admin", "[]", time.time()),
+                  )
+              assert service.audit(secret_id=item["id"], limit=1)[0]["details"] == {}
+              with service.connect() as connection:
+                  connection.execute("UPDATE secret_audit SET details_json='{' WHERE id='audit-bad'")
+              assert service.audit(secret_id=item["id"], limit=1)[0]["details"] == {}
+
+
+          def test_docker_compose_history_skips_valid_non_object_json(tmp_path):
+              class FakeProvider:
+                  compose_dir = tmp_path
+
+                  def get_compose(self, project: str):
+                      return {"project": project}
+
+              history = tmp_path / "demo" / "history"
+              history.mkdir(parents=True)
+              (history / "bad.json").write_text("[]", encoding="utf-8")
+              assert DockerProvider.compose_history(FakeProvider(), "demo") == []
+          PY
+
+          cat > frontend/src/features/settings/NetworkManagementPanels.persistence.test.ts <<'TS'
+          import { beforeEach, describe, expect, it } from "vitest";
+
+          import { loadStoredTransaction } from "./NetworkManagementPanels";
+
+          const key = "webnas_network_transaction";
+
+          describe("network transaction persistence", () => {
+            beforeEach(() => sessionStorage.clear());
+
+            it("rejects malformed and wrong-shaped persisted transactions", () => {
+              sessionStorage.setItem(key, "{");
+              expect(loadStoredTransaction()).toBeNull();
+              sessionStorage.setItem(key, JSON.stringify([]));
+              expect(loadStoredTransaction()).toBeNull();
+              sessionStorage.setItem(key, JSON.stringify({ id: "tx-1", deadline: "soon" }));
+              expect(loadStoredTransaction()).toBeNull();
+              sessionStorage.setItem(key, JSON.stringify({ id: "tx-1", deadline: 123, deadline_at: Number.NaN }));
+              expect(loadStoredTransaction()).toBeNull();
+            });
+
+            it("restores a transaction only when its countdown fields are finite", () => {
+              const transaction = { id: "tx-1", provider: "network", state: "pending_confirmation", started_at: 1, deadline: 123, deadline_at: 120, rollback_unit: null, target: "eth0" };
+              sessionStorage.setItem(key, JSON.stringify(transaction));
+              expect(loadStoredTransaction()).toMatchObject({ id: "tx-1", deadline: 123, deadline_at: 120 });
+            });
+          });
+          TS
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r backend/requirements-dev.txt
+          npm --prefix frontend ci
+      - name: Verify fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/app
+          python -m ruff check backend/app/settings.py backend/app/app_store/samba.py backend/app/identity/repository.py backend/app/modules/cron/repository.py backend/app/modules/secrets_manager/service.py backend/app/modules/providers/docker.py backend/tests/test_post254_persistence_hardening.py
+          python -m mypy
+          python -m pytest -q backend/tests/test_post254_persistence_hardening.py backend/tests/test_user_settings.py backend/tests/test_identity.py backend/tests/test_cron_manager.py backend/tests/test_secrets_manager.py
+          npm --prefix frontend run typecheck
+          npm --prefix frontend test -- --run src/features/settings/NetworkManagementPanels.persistence.test.ts
+      - name: Commit fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/settings.py backend/app/app_store/samba.py backend/app/identity/repository.py backend/app/modules/cron/repository.py backend/app/modules/secrets_manager/service.py backend/app/modules/providers/docker.py backend/tests/test_post254_persistence_hardening.py frontend/src/features/settings/NetworkManagementPanels.tsx frontend/src/features/settings/NetworkManagementPanels.persistence.test.ts
+          git commit -m "fix: harden persisted state and runtime errors"
+          git push origin HEAD:fix/post-254-persistence-hardening
