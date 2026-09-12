@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import yaml
 from fastapi import HTTPException
@@ -15,17 +16,35 @@ from ..proxmox_guard import safe_mode_active
 MODULES_DIR = Path(__file__).resolve().parents[1] / "modules"
 
 
-def load_manifest(app_id: str) -> dict:
+def _read_manifest(path: Path) -> dict[str, Any]:
+    try:
+        value = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, UnicodeError, yaml.YAMLError) as error:
+        raise ValueError("App module manifest is invalid") from error
+    if not isinstance(value, dict):
+        raise ValueError("App module manifest must be an object")
+    return value
+
+
+def load_manifest(app_id: str) -> dict[str, Any]:
     path = MODULES_DIR / app_id / "manifest.yaml"
     if not path.exists():
         raise HTTPException(404, "App module not found")
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        return _read_manifest(path)
+    except ValueError as error:
+        logger.warning("app_manifest_invalid app=%s path=%s", app_id, path)
+        raise HTTPException(422, str(error)) from error
 
 
-def all_manifests() -> list[dict]:
-    result = []
+def all_manifests() -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
     for path in sorted(MODULES_DIR.glob("*/manifest.yaml")):
-        manifest = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        try:
+            manifest = _read_manifest(path)
+        except ValueError:
+            logger.warning("app_manifest_invalid app=%s path=%s", path.parent.name, path)
+            continue
         manifest["id"] = path.parent.name
         result.append(manifest)
     return result
