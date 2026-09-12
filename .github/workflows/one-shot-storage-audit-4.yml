@@ -14,152 +14,190 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: fix/exhaustive-runtime-audit-4
-      - name: Patch remaining direct browser storage access
+
+      - name: Patch confirmed runtime regressions
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          def edit(path: str, transform) -> None:
-              target = Path(path)
-              before = target.read_text(encoding="utf-8")
-              after = transform(before)
-              if before != after:
-                  target.write_text(after, encoding="utf-8")
+          def read(path: str) -> str:
+              return Path(path).read_text(encoding="utf-8")
 
-          def require(text: str, old: str, new: str) -> str:
-              if new in text:
-                  return text
+          def write(path: str, text: str) -> None:
+              Path(path).write_text(text, encoding="utf-8")
+
+          def add_import(path: str, anchor: str, statement: str) -> None:
+              text = read(path)
+              if statement in text:
+                  return
+              if anchor not in text:
+                  raise SystemExit(f"missing import anchor in {path}: {anchor}")
+              write(path, text.replace(anchor, anchor + "\n" + statement, 1))
+
+          def replace(path: str, old: str, new: str, required: bool = False) -> None:
+              text = read(path)
               if old not in text:
-                  raise SystemExit(f"missing expected fragment: {old[:100]!r}")
-              return text.replace(old, new, 1)
+                  if required and new not in text:
+                      raise SystemExit(f"missing expected fragment in {path}: {old[:120]!r}")
+                  return
+              write(path, text.replace(old, new))
 
-          def desktop(text: str) -> str:
-              old_import = 'import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";'
-              new_import = old_import + '\nimport { readStorageValue, removeStorageValue, storageKeys, writeStorageValue } from "../core/persistence";'
-              if 'from "../core/persistence"' not in text:
-                  text = require(text, old_import, new_import)
-              elif 'storageKeys' not in text.split('\n', 30)[0:30]:
-                  text = text.replace('import { readStorageValue, removeStorageValue, writeStorageValue } from "../core/persistence";', 'import { readStorageValue, removeStorageValue, storageKeys, writeStorageValue } from "../core/persistence";')
-              text = text.replace("localStorage.getItem(", "readStorageValue(")
-              text = text.replace("localStorage.setItem(", "writeStorageValue(")
-              text = text.replace("localStorage.removeItem(", "removeStorageValue(")
-              text = text.replace("sessionStorage.getItem(sessionWindowKey)", 'readStorageValue(sessionWindowKey, "session")')
-              text = text.replace("sessionStorage.setItem(sessionWindowKey, serialized)", 'writeStorageValue(sessionWindowKey, serialized, "session")')
-              old_signout = 'function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); sessionStorage.removeItem(sessionWindowKey); void logout().finally(onLoggedOut); }'
-              new_signout = 'function signOut() { const draftPrefix = `webnas_window_draft_${user.username}_`; storageKeys("session").filter((key) => key.startsWith(draftPrefix)).forEach((key) => removeStorageValue(key, "session")); removeStorageValue(sessionWindowKey, "session"); void logout().finally(onLoggedOut); }'
-              if old_signout in text:
-                  text = text.replace(old_signout, new_signout, 1)
-              return text
-          edit("frontend/src/app/DesktopController.tsx", desktop)
+          # Desktop/session persistence must not crash when browser storage is disabled.
+          desktop = "frontend/src/app/DesktopController.tsx"
+          add_import(
+              desktop,
+              'import { api, ApiError, logout, type AppJob, type SettingsMe, type SettingsPatch, type Task } from "../api";',
+              'import { readStorageValue, removeStorageValue, storageKeys, writeStorageValue } from "../core/persistence";',
+          )
+          text = read(desktop)
+          text = text.replace("localStorage.getItem(", "readStorageValue(")
+          text = text.replace("localStorage.setItem(", "writeStorageValue(")
+          text = text.replace("localStorage.removeItem(", "removeStorageValue(")
+          text = text.replace("sessionStorage.getItem(sessionWindowKey)", 'readStorageValue(sessionWindowKey, "session")')
+          text = text.replace("sessionStorage.setItem(sessionWindowKey, serialized)", 'writeStorageValue(sessionWindowKey, serialized, "session")')
+          text = text.replace(
+              'Object.keys(sessionStorage).filter((key) => key.startsWith(draftPrefix)).forEach((key) => sessionStorage.removeItem(key)); sessionStorage.removeItem(sessionWindowKey);',
+              'storageKeys("session").filter((key) => key.startsWith(draftPrefix)).forEach((key) => removeStorageValue(key, "session")); removeStorageValue(sessionWindowKey, "session");',
+          )
+          write(desktop, text)
 
-          def file_manager(text: str) -> str:
-              old = 'import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";'
-              new = 'import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";'
-              if 'readStorageValue' not in text.split('\n', 30)[0:30]:
-                  text = require(text, old, new)
-              text = text.replace("localStorage.getItem(", "readStorageValue(")
-              text = text.replace("localStorage.setItem(", "writeStorageValue(")
-              text = text.replace("localStorage.removeItem(", "removeStorageValue(")
-              return text
-          edit("frontend/src/features/files/FileManager.tsx", file_manager)
+          # API transport also reads language while formatting errors and clears a legacy CSRF key.
+          transport = "frontend/src/core/api/transport.ts"
+          text = read(transport)
+          import_line = 'import { readStorageValue, removeStorageValue } from "../persistence";'
+          if import_line not in text:
+              text = import_line + "\n\n" + text
+          text = text.replace('if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
+          text = text.replace('localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
+          text = text.replace('const configured = localStorage.getItem("webnas_language");', 'const configured = readStorageValue("webnas_language");')
+          write(transport, text)
 
-          def logs(text: str) -> str:
-              old = 'import { parseStoredStringArray } from "../../core/persistence";'
-              new = 'import { parseStoredStringArray, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";'
-              if 'readStorageValue' not in text.split('\n', 30)[0:30]:
-                  text = require(text, old, new)
-              text = text.replace("localStorage.getItem(", "readStorageValue(")
-              text = text.replace("localStorage.setItem(", "writeStorageValue(")
-              text = text.replace("localStorage.removeItem(", "removeStorageValue(")
-              return text
-          edit("frontend/src/features/logs/LogsApp.tsx", logs)
+          # File Manager persisted preferences.
+          file_manager = "frontend/src/features/files/FileManager.tsx"
+          text = read(file_manager)
+          text = text.replace(
+              'import { parseStoredStringArray, readStoredEnum, readStoredNumber } from "../../core/persistence";',
+              'import { parseStoredStringArray, readStoredEnum, readStoredNumber, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";',
+          )
+          text = text.replace("localStorage.getItem(", "readStorageValue(")
+          text = text.replace("localStorage.setItem(", "writeStorageValue(")
+          text = text.replace("localStorage.removeItem(", "removeStorageValue(")
+          write(file_manager, text)
 
-          def package_center(text: str) -> str:
-              old = 'import type { ToastFn, Translate } from "../../app/types";'
-              new = old + '\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";'
-              if 'from "../../core/persistence"' not in text:
-                  text = require(text, old, new)
-              text = text.replace("window.localStorage.getItem(", "readStorageValue(")
-              text = text.replace("window.localStorage.setItem(", "writeStorageValue(")
-              return text
-          edit("frontend/src/features/package-center/PackageCenterApp.tsx", package_center)
+          # Log search history.
+          logs = "frontend/src/features/logs/LogsApp.tsx"
+          text = read(logs)
+          text = text.replace(
+              'import { parseStoredStringArray } from "../../core/persistence";',
+              'import { parseStoredStringArray, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";',
+          )
+          text = text.replace("localStorage.getItem(", "readStorageValue(")
+          text = text.replace("localStorage.setItem(", "writeStorageValue(")
+          text = text.replace("localStorage.removeItem(", "removeStorageValue(")
+          write(logs, text)
 
-          def transport(text: str) -> str:
-              if 'from "../persistence"' not in text:
-                  text = 'import { removeStorageValue } from "../persistence";\n\n' + text
-              text = text.replace('if (typeof localStorage !== "undefined") localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
-              text = text.replace('localStorage.removeItem("webnas_csrf");', 'removeStorageValue("webnas_csrf");')
-              return text
-          edit("frontend/src/core/api/transport.ts", transport)
+          # Package Center view preference.
+          package_center = "frontend/src/features/package-center/PackageCenterApp.tsx"
+          add_import(package_center, 'import type { ToastFn, Translate } from "../../app/types";', 'import { readStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = read(package_center).replace("window.localStorage.getItem(", "readStorageValue(").replace("window.localStorage.setItem(", "writeStorageValue(")
+          write(package_center, text)
 
-          def docker_manager(text: str) -> str:
-              old = 'import type { ToastFn, Translate } from "../../app/types";'
-              new = old + '\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";'
-              if 'from "../../core/persistence"' not in text:
-                  text = require(text, old, new)
-              text = text.replace('sessionStorage.getItem(`${draftKey}:section`)', 'readStorageValue(`${draftKey}:section`, "session")')
-              text = text.replace('sessionStorage.setItem(`${draftKey}:section`, section)', 'writeStorageValue(`${draftKey}:section`, section, "session")')
-              return text
-          edit("frontend/src/features/docker/DockerManagerApp.tsx", docker_manager)
+          # Docker window and create-container draft persistence.
+          docker_manager = "frontend/src/features/docker/DockerManagerApp.tsx"
+          add_import(docker_manager, 'import type { ToastFn, Translate } from "../../app/types";', 'import { readStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = read(docker_manager)
+          text = text.replace('sessionStorage.getItem(`${draftKey}:section`)', 'readStorageValue(`${draftKey}:section`, "session")')
+          text = text.replace('sessionStorage.setItem(`${draftKey}:section`, section)', 'writeStorageValue(`${draftKey}:section`, section, "session")')
+          write(docker_manager, text)
 
-          def containers(text: str) -> str:
-              old = 'import type { ToastFn, Translate } from "../../app/types";'
-              new = old + '\nimport { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";'
-              if 'from "../../core/persistence"' not in text:
-                  text = require(text, old, new)
-              text = text.replace("sessionStorage.getItem(wizardDraftKey)", 'readStorageValue(wizardDraftKey, "session")')
-              text = text.replace('sessionStorage.setItem(wizardDraftKey, "{}")', 'writeStorageValue(wizardDraftKey, "{}", "session")')
-              text = text.replace("sessionStorage.setItem(wizardDraftKey, JSON.stringify(draft))", 'writeStorageValue(wizardDraftKey, JSON.stringify(draft), "session")')
-              text = text.replace("sessionStorage.removeItem(wizardDraftKey)", 'removeStorageValue(wizardDraftKey, "session")')
-              return text
-          edit("frontend/src/features/docker/ContainersList.tsx", containers)
+          containers = "frontend/src/features/docker/ContainersList.tsx"
+          add_import(containers, 'import type { ToastFn, Translate } from "../../app/types";', 'import { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = read(containers)
+          text = text.replace("sessionStorage.getItem(wizardDraftKey)", 'readStorageValue(wizardDraftKey, "session")')
+          text = text.replace('sessionStorage.setItem(wizardDraftKey, "{}")', 'writeStorageValue(wizardDraftKey, "{}", "session")')
+          text = text.replace("sessionStorage.setItem(wizardDraftKey, JSON.stringify(draft))", 'writeStorageValue(wizardDraftKey, JSON.stringify(draft), "session")')
+          text = text.replace("sessionStorage.removeItem(wizardDraftKey)", 'removeStorageValue(wizardDraftKey, "session")')
+          write(containers, text)
 
-          def create_container(text: str) -> str:
-              old = 'import type { ToastFn, Translate } from "../../app/types";'
-              new = old + '\nimport { readStorageValue, writeStorageValue } from "../../core/persistence";'
-              if 'from "../../core/persistence"' not in text:
-                  text = require(text, old, new)
-              text = text.replace("sessionStorage.getItem(key)", 'readStorageValue(key, "session")')
-              text = text.replace("sessionStorage.setItem(draftKey, JSON.stringify(value))", 'writeStorageValue(draftKey, JSON.stringify(value), "session")')
-              return text
-          edit("frontend/src/features/docker/CreateContainerWizard.tsx", create_container)
+          wizard = "frontend/src/features/docker/CreateContainerWizard.tsx"
+          add_import(wizard, 'import type { ToastFn, Translate } from "../../app/types";', 'import { readStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = read(wizard)
+          text = text.replace("sessionStorage.getItem(key)", 'readStorageValue(key, "session")')
+          text = text.replace("sessionStorage.setItem(draftKey, JSON.stringify(value))", 'writeStorageValue(draftKey, JSON.stringify(value), "session")')
+          write(wizard, text)
 
-          def network_management(text: str) -> str:
-              old = 'import type { Translate } from "../../app/types";'
-              new = old + '\nimport { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";'
-              if 'from "../../core/persistence"' not in text:
-                  text = require(text, old, new)
-              text = text.replace('localStorage.getItem("webnas_language")', 'readStorageValue("webnas_language")')
-              text = text.replace('sessionStorage.getItem(NETWORK_TRANSACTION_KEY)', 'readStorageValue(NETWORK_TRANSACTION_KEY, "session")')
-              text = text.replace('sessionStorage.setItem(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction))', 'writeStorageValue(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction), "session")')
-              text = text.replace('sessionStorage.removeItem(NETWORK_TRANSACTION_KEY)', 'removeStorageValue(NETWORK_TRANSACTION_KEY, "session")')
-              return text
-          edit("frontend/src/features/settings/NetworkManagementPanels.tsx", network_management)
+          # Network transaction restore and language lookup.
+          network = "frontend/src/features/settings/NetworkManagementPanels.tsx"
+          add_import(network, 'import type { Translate } from "../../app/types";', 'import { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = read(network)
+          text = text.replace('localStorage.getItem("webnas_language")', 'readStorageValue("webnas_language")')
+          text = text.replace('sessionStorage.getItem(NETWORK_TRANSACTION_KEY)', 'readStorageValue(NETWORK_TRANSACTION_KEY, "session")')
+          text = text.replace('sessionStorage.setItem(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction))', 'writeStorageValue(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction), "session")')
+          text = text.replace('sessionStorage.removeItem(NETWORK_TRANSACTION_KEY)', 'removeStorageValue(NETWORK_TRANSACTION_KEY, "session")')
+          write(network, text)
 
-          def regression_test(text: str) -> str:
-              text = text.replace("expect(network).toContain('localStorage.getItem(\"webnas_language\")');", "expect(network).toContain('readStorageValue(\"webnas_language\")');")
-              return text
-          edit("frontend/src/core/api/runtime-audit-regressions.test.js", regression_test)
+          # Transfer Center and Directory Tree were fixed earlier; make the migration idempotent.
+          transfer = "frontend/src/features/transfers/TransferCenter.tsx"
+          text = read(transfer)
+          if 'readStorageValue' not in text:
+              text = text.replace('import { readStoredEnum } from "../../core/persistence";', 'import { readStoredEnum, readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(").replace("localStorage.removeItem(", "removeStorageValue(")
+          write(transfer, text)
+
+          directory = "frontend/src/features/files/DirectoryTree.tsx"
+          text = read(directory)
+          if 'readStorageValue' not in text:
+              text = text.replace('import { parseStoredStringArray } from "../../core/persistence";', 'import { parseStoredStringArray, readStorageValue, writeStorageValue } from "../../core/persistence";')
+          text = text.replace("localStorage.getItem(", "readStorageValue(").replace("localStorage.setItem(", "writeStorageValue(")
+          write(directory, text)
+
+          # Fix a real stale-memo dependency in Settings search labels.
+          settings = "frontend/src/features/settings/SettingsApp.tsx"
+          text = read(settings)
+          text = text.replace(
+              'const categoryLabel = (item: SettingsCategory) => item === "authentication" ? "PAM / LDAP" : t(`settings.category.${item}`);',
+              'const categoryLabel = useCallback((item: SettingsCategory) => item === "authentication" ? "PAM / LDAP" : t(`settings.category.${item}`), [t]);',
+          )
+          text = text.replace('settings.language, t])', 'settings.language, categoryLabel])')
+          write(settings, text)
+
+          # Permanent regression gate: production code must use the safe storage boundary.
+          regression = "frontend/src/core/api/runtime-audit-regressions.test.js"
+          text = read(regression)
+          text = text.replace("expect(network).toContain('localStorage.getItem(\"webnas_language\")');", "expect(network).toContain('readStorageValue(\"webnas_language\")');")
+          marker = 'it("does not access Web Storage directly outside the persistence boundary", () => {'
+          if marker not in text:
+              insert = '''\n\n  it("does not access Web Storage directly outside the persistence boundary", () => {\n    const offenders = sources\n      .filter(({ path }) => !path.endsWith("/core/persistence.ts"))\n      .filter(({ text }) => /(?:window\\.)?(?:localStorage|sessionStorage)\\s*\\./.test(text))\n      .map(({ path }) => path);\n    expect(offenders).toEqual([]);\n  });'''
+              text = text.replace('\n});\n', insert + '\n});\n')
+          write(regression, text)
+
+          changelog = Path("CHANGELOG.d/runtime-audit-4.md")
+          changelog.write_text("""# Runtime audit 4\n\n## Fixed\n\n- Hardened Docker package rollback state parsing. Invalid or wrong-shaped persisted rollback state now fails closed instead of constructing unsafe package-manager arguments.\n- Fixed Docker package rollback after partial upgrades so packages introduced by a failed installation are removed even when other Docker packages existed before the operation.\n- Hardened persisted job restoration: unknown/corrupt job statuses degrade to `failed`, unknown priorities to `normal`, and dependency status reads no longer crash the scheduler.\n- Hardened App Store manifest loading. Invalid YAML, unreadable files, and non-object manifests no longer crash the complete application catalog; malformed entries are skipped while direct lookup returns a controlled HTTP error.\n- Added a shared safe Web Storage boundary for local/session storage reads, writes, removals, and key enumeration. Browser `SecurityError`/`QuotaExceededError` conditions no longer crash application bootstrap or UI modules.\n- Migrated bootstrap language/theme/update-reload persistence, Desktop window/session state, recent apps and legacy pins, File Manager preferences, Directory Tree state, Transfer Center filters, log search history, Package Center view mode, Docker draft/section state, network transaction state, and API error-language lookup to the safe storage boundary.\n- Fixed Settings search memoization so translated category labels cannot become stale when the translation callback changes.\n\n## Regression coverage\n\n- Added Docker rollback tests for malformed state and partial-install rollback behavior.\n- Added job repository tests for corrupt persisted status/priority values.\n- Added App Store tests for invalid and wrong-shaped manifests.\n- Added persistence tests for blocked browser storage reads and failed writes/removals.\n- Added a frontend source regression gate that forbids direct Web Storage access outside `core/persistence.ts`.\n""", encoding="utf-8")
           PY
+
       - name: Ensure production code has no direct Web Storage access
         run: |
           python - <<'PY'
           from pathlib import Path
           violations = []
           for path in Path("frontend/src").rglob("*"):
-              if path.suffix not in {".ts", ".tsx"} or ".test." in path.name:
+              if path.suffix not in {".ts", ".tsx"} or ".test." in path.name or path.as_posix().endswith("frontend/src/core/persistence.ts"):
                   continue
               text = path.read_text(encoding="utf-8")
-              if "localStorage." in text or "sessionStorage." in text or "window.localStorage." in text or "window.sessionStorage." in text:
+              if any(token in text for token in ("localStorage.", "sessionStorage.", "window.localStorage.", "window.sessionStorage.")):
                   violations.append(str(path))
           if violations:
               raise SystemExit("direct Web Storage access remains:\n" + "\n".join(violations))
           PY
-      - name: Commit storage hardening
+
+      - name: Validate backend syntax
+        run: python -m compileall -q backend/app backend/tests
+
+      - name: Commit audit fixes
         run: |
           git config user.name "webnas-ci"
           git config user.email "webnas-ci@users.noreply.github.com"
-          git add frontend
+          git add backend frontend CHANGELOG.d
           git diff --cached --quiet && exit 0
-          git commit -m "fix: isolate browser storage failures"
+          git commit -m "fix: complete runtime persistence audit"
           git push origin HEAD:fix/exhaustive-runtime-audit-4
