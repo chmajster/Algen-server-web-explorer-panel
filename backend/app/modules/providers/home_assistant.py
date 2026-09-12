@@ -41,7 +41,7 @@ class HomeAssistantProvider(ApiConnectionProvider):
             return None
         try:
             payload = json.loads(result.stdout)
-            return payload[0] if isinstance(payload, list) and payload else None
+            return payload[0] if isinstance(payload, list) and payload and isinstance(payload[0], dict) else None
         except (json.JSONDecodeError, IndexError):
             return None
 

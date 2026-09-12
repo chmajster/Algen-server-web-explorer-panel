@@ -50,7 +50,11 @@ class LdapAuthenticationRepository:
             return fallback
         try:
             parsed = json.loads(str(value))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return fallback
+        if isinstance(fallback, list) and not isinstance(parsed, list):
+            return fallback
+        if isinstance(fallback, dict) and not isinstance(parsed, dict):
             return fallback
         return parsed
 
