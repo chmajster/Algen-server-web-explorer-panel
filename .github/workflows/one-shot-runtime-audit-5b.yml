@@ -1,0 +1,32 @@
+name: Runtime audit 5 patcher
+
+on:
+  push:
+    branches:
+      - fix/runtime-audit-5
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/runtime-audit-5
+      - name: Apply patcher
+        run: python scripts/runtime_audit_5_patch.py
+      - name: Validate targeted regressions
+        run: |
+          python -m compileall -q backend/app backend/tests
+          cd backend
+          pytest -q tests/test_activity.py tests/test_package_center.py tests/test_persisted_json_resilience.py
+      - name: Commit fixes
+        run: |
+          git config user.name webnas-ci
+          git config user.email webnas-ci@users.noreply.github.com
+          git add backend CHANGELOG.d/runtime-audit-5.md
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: harden remaining persisted runtime payloads"
+          git push origin HEAD:fix/runtime-audit-5
