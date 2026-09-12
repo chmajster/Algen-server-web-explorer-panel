@@ -145,7 +145,9 @@ def build_rsync_command(source_paths: list[Path], destination: Path) -> list[str
 
 
 def cleanup_partial_files(username: str, destination: Path, on_error: Callable[[str], None]) -> None:
+    assert_path_allowed(destination, "partial-cleanup", include_parent=True)
     partial_dir = destination / ".webnas-partial" if destination.is_dir() else destination.parent / ".webnas-partial"
+    assert_path_allowed(partial_dir, "partial-cleanup", include_parent=True)
     if not partial_dir.exists():
         return
     result = subprocess.run(
