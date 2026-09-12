@@ -10,7 +10,6 @@ from ..package_center.models import PackageAction
 from ..security import SessionUser, get_session_user, require_csrf
 from .models import AdminAction, SambaApplyRequest, SambaPassword, SambaSecuredApplyRequest, SambaServiceAction, SambaUserAction
 from .samba import _run, preview_samba_config, read_samba_config, samba_status_payload, samba_users_payload
-from .state import read_state
 
 
 router = APIRouter(prefix="/api/apps")
@@ -110,7 +109,7 @@ def samba_user_disable(payload: SambaUserAction, user: SessionUser = Depends(_cu
 def get_config_app(app_id: str, user: SessionUser = Depends(_current_user)):
     authorize(user, Permission.MODULES_VIEW)
     if app_id != "samba":
-        return read_state(app_id).get("config") or {}
+        raise HTTPException(404, "Unsupported app module")
     return read_samba_config().model_dump()
 
 

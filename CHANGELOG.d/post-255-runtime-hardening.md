@@ -1,0 +1,2 @@
+- Prevent App Store state path traversal and reject unsupported generic app configuration lookups.
+- Validate Home Assistant Docker inspect payloads and preserve expected list/dict shapes for LDAP Authentication and Webhook Manager persisted JSON.

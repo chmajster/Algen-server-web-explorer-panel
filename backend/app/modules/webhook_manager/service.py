@@ -128,9 +128,14 @@ class WebhookManagerService:
     @staticmethod
     def _decode_json(value: Any, fallback: Any) -> Any:
         try:
-            return json.loads(str(value or ""))
+            parsed = json.loads(str(value or ""))
         except (TypeError, ValueError, json.JSONDecodeError):
             return fallback
+        if isinstance(fallback, list) and not isinstance(parsed, list):
+            return fallback
+        if isinstance(fallback, dict) and not isinstance(parsed, dict):
+            return fallback
+        return parsed
 
     def _metadata(self, row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         item = dict(row)
