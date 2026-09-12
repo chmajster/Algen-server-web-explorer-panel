@@ -13,6 +13,7 @@ import {
   type NetworkTransaction,
 } from "../../api";
 import type { Translate } from "../../app/types";
+import { readStorageValue, removeStorageValue, writeStorageValue } from "../../core/persistence";
 
 const NETWORK_COPY_EN: Record<string, string> = {
   "Zamknij": "Close",
@@ -159,7 +160,7 @@ const NETWORK_COPY_EN: Record<string, string> = {
 } as const;
 
 function networkText(polish: string) {
-  const configured = typeof localStorage !== "undefined" ? localStorage.getItem("webnas_language") : null;
+  const configured = typeof localStorage !== "undefined" ? readStorageValue("webnas_language") : null;
   return configured === "en-US" ? NETWORK_COPY_EN[polish] || polish : polish;
 }
 
@@ -403,7 +404,7 @@ function terminalTransaction(transaction: NetworkTransaction) {
 
 export function loadStoredTransaction(): NetworkTransaction | null {
   try {
-    const value = JSON.parse(sessionStorage.getItem(NETWORK_TRANSACTION_KEY) || "null") as unknown;
+    const value = JSON.parse(readStorageValue(NETWORK_TRANSACTION_KEY, "session") || "null") as unknown;
     if (!value || Array.isArray(value) || typeof value !== "object") return null;
     const candidate = value as Record<string, unknown>;
     if (typeof candidate.id !== "string" || !candidate.id.trim()) return null;
@@ -417,8 +418,8 @@ export function loadStoredTransaction(): NetworkTransaction | null {
 
 function storeTransaction(transaction: NetworkTransaction | null) {
   try {
-    if (transaction && !terminalTransaction(transaction)) sessionStorage.setItem(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction));
-    else sessionStorage.removeItem(NETWORK_TRANSACTION_KEY);
+    if (transaction && !terminalTransaction(transaction)) writeStorageValue(NETWORK_TRANSACTION_KEY, JSON.stringify(transaction), "session");
+    else removeStorageValue(NETWORK_TRANSACTION_KEY, "session");
   } catch {
     // The system timer remains authoritative when browser storage is unavailable.
   }

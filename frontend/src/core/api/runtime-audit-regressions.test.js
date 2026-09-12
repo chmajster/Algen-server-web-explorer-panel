@@ -62,7 +62,15 @@ describe("runtime audit regressions", () => {
   it("keeps network-management localization calls single-layered", () => {
     const network = source("src/features/settings/NetworkManagementPanels.tsx");
     expect(network).toContain('"Konfiguracja zachowana": "Configuration kept"');
-    expect(network).toContain('localStorage.getItem("webnas_language")');
+    expect(network).toContain('readStorageValue("webnas_language")');
     expect(network).not.toContain("networkText(networkText(");
+  });
+
+  it("does not access Web Storage directly outside the persistence boundary", () => {
+    const offenders = sources
+      .filter(({ path }) => !path.endsWith("/core/persistence.ts"))
+      .filter(({ text }) => /(?:window\.)?(?:localStorage|sessionStorage)\s*\./.test(text))
+      .map(({ path }) => path);
+    expect(offenders).toEqual([]);
   });
 });

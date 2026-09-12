@@ -529,9 +529,9 @@ export function SettingsAppView({ settings, initialSection = "system", initialPo
     if (item === "policies") return settings.is_admin || settings.permissions.includes("access.view");
     return settings.is_admin || !["identity", "networkResources", "updates", "authentication", "administration"].includes(item);
   }), [networkVisible, settings.is_admin, settings.permissions]);
-  const categoryLabel = (item: SettingsCategory) => item === "authentication" ? "PAM / LDAP" : t(`settings.category.${item}`);
+  const categoryLabel = useCallback((item: SettingsCategory) => item === "authentication" ? "PAM / LDAP" : t(`settings.category.${item}`), [t]);
   const normalizedQuery = query.trim().toLocaleLowerCase(settings.language);
-  const searchResults = useMemo(() => normalizedQuery ? categories.flatMap((item) => categorySettings[item].map((key) => ({ category: item, key, label: t(`settings.${key}`) })).filter((entry) => entry.label.toLocaleLowerCase(settings.language).includes(normalizedQuery) || categoryLabel(item).toLocaleLowerCase(settings.language).includes(normalizedQuery))) : [], [categories, normalizedQuery, settings.language, t]);
+  const searchResults = useMemo(() => normalizedQuery ? categories.flatMap((item) => categorySettings[item].map((key) => ({ category: item, key, label: t(`settings.${key}`) })).filter((entry) => entry.label.toLocaleLowerCase(settings.language).includes(normalizedQuery) || categoryLabel(item).toLocaleLowerCase(settings.language).includes(normalizedQuery))) : [], [categories, normalizedQuery, settings.language, categoryLabel]);
 
   useEffect(() => () => { if (saveStatusTimer.current) window.clearTimeout(saveStatusTimer.current); }, []);
   useEffect(() => {
