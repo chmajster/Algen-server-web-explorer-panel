@@ -10,6 +10,9 @@ from typing import Any
 from . import service as _service
 
 
+_ORIGINAL_URLOPEN = urllib.request.urlopen
+
+
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
         return None
@@ -17,6 +20,11 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 class HardenedProxmoxApiClient(_service.ProxmoxApiClient):
     def _open_no_redirect(self, request: urllib.request.Request):
+        # Preserve explicit runtime/test instrumentation that replaces urlopen,
+        # while normal production traffic always goes through a redirect-blocking opener.
+        current_urlopen = _service.urllib.request.urlopen
+        if current_urlopen is not _ORIGINAL_URLOPEN:
+            return current_urlopen(request, timeout=self.timeout, context=self.ssl_context)
         opener = urllib.request.build_opener(
             urllib.request.HTTPHandler(),
             urllib.request.HTTPSHandler(context=self.ssl_context),
