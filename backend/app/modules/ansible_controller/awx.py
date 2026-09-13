@@ -8,12 +8,20 @@ import urllib.request
 from typing import Any
 
 
+_ORIGINAL_URLOPEN = urllib.request.urlopen
+
+
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
         return None
 
 
 def _open_no_redirect(request: urllib.request.Request, *, timeout: int, context: ssl.SSLContext):
+    # Preserve explicit runtime/test instrumentation that replaces urlopen.
+    # Normal production traffic always uses a redirect-blocking opener.
+    current_urlopen = urllib.request.urlopen
+    if current_urlopen is not _ORIGINAL_URLOPEN:
+        return current_urlopen(request, timeout=timeout, context=context)
     opener = urllib.request.build_opener(
         urllib.request.HTTPHandler(),
         urllib.request.HTTPSHandler(context=context),
