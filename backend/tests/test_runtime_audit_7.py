@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 import pytest
 from pydantic import ValidationError
 
-from app import update_coordination
+from app import settings, update_coordination
 from app.ldap_authentication import connection as ldap_auth_connection
 from app.modules.ldap_manager import connection as ldap_manager_connection
 from app.modules.os_repositories import auth_proxy
@@ -359,3 +359,53 @@ def test_corrupted_update_request_numeric_fields_are_normalized(monkeypatch: pyt
     prepare = next(item for item in state["steps"] if item["id"] == "prepare")
     assert prepare["started_at"] is None
     assert prepare["finished_at"] is None
+
+
+def test_corrupted_auto_update_state_degrades_to_safe_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    path = tmp_path / "auto_update.json"
+    path.write_text(
+        json.dumps(
+            {
+                "check_enabled": "yes",
+                "enabled": 1,
+                "interval_hours": "forever",
+                "update_config": [],
+                "npm_audit_fix": {},
+                "last_checked": "bad",
+                "last_run": -1,
+                "last_error": {"secret": "must-not-be-stringified"},
+                "last_pid": "not-a-pid",
+                "next_check": "tomorrow",
+                "unexpected": "ignored",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "_auto_update_path", lambda: path)
+
+    state = settings._read_auto_update_state()
+
+    assert state == settings._default_auto_update_state()
+    assert "unexpected" not in state
+
+
+def test_corrupted_update_progress_rejects_invalid_unit_and_numeric_types():
+    progress = settings._normalize_update_progress(
+        {
+            "running": True,
+            "exit_code": "not-an-exit-code",
+            "started_at": "bad",
+            "finished_at": float("inf"),
+            "pid": "bad-pid",
+            "unit": "--root=/tmp/attacker.service",
+        }
+    )
+
+    assert progress == {
+        "running": True,
+        "exit_code": None,
+        "started_at": None,
+        "finished_at": None,
+        "pid": None,
+        "unit": None,
+    }
