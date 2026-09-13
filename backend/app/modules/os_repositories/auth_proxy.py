@@ -31,26 +31,20 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
         self._pinned_address = address
 
     def connect(self) -> None:
-        self.sock = socket.create_connection(
-            (self._pinned_address, self.port),
-            self.timeout,
-            self.source_address,
-        )
+        self.sock = socket.create_connection((self._pinned_address, self.port), self.timeout)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
-        super().__init__(hostname, port, timeout=timeout, context=ssl.create_default_context())
+        context = ssl.create_default_context()
+        super().__init__(hostname, port, timeout=timeout, context=context)
         self._pinned_address = address
+        self._tls_context = context
 
     def connect(self) -> None:
-        raw = socket.create_connection(
-            (self._pinned_address, self.port),
-            self.timeout,
-            self.source_address,
-        )
+        raw = socket.create_connection((self._pinned_address, self.port), self.timeout)
         try:
-            self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
+            self.sock = self._tls_context.wrap_socket(raw, server_hostname=self.host)
         except Exception:
             raw.close()
             raise
