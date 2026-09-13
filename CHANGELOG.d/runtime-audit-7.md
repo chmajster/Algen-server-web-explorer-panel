@@ -23,6 +23,10 @@
 - Persisted automatic-update policy now accepts only typed, bounded values for booleans, interval, timestamps, PID and error text. Malformed but syntactically valid `auto_update.json` values no longer escape into scheduler `float()`/`int()` conversions or poison later state writes.
 - Persisted update-process state now normalizes `running`, exit code, timestamps and PID before recovery. Invalid values in `update_progress.json` degrade to safe defaults rather than crashing the update status endpoint.
 - Persisted update-process unit names are validated before being passed to `systemctl`; malformed option-like values such as `--root=...` are discarded instead of being interpreted as systemctl arguments.
+- AWX authenticated API requests now disable HTTP redirects, preventing a 30x response from forwarding the configured bearer token to another origin.
+- Proxmox Manager installs a hardened API client that disables redirects for login, API-token and ticket/cookie authenticated requests, preventing Proxmox credentials from being forwarded to a redirect target.
+- Persisted App Store state now normalizes the shared `installed`, `history`, and mutable `changes` fields. Type-corrupted JSON can no longer make Samba/App Store mutation paths fail on list operations while unrelated app-specific state is preserved.
+- HTTPS transport configuration now treats type-corrupted `deployment.json.active_port` values as an unavailable standard gateway instead of allowing `TypeError`/`OverflowError` to escape from the settings endpoint.
 
 ## Regression coverage
 
@@ -35,3 +39,5 @@
 - Added LDAP Authentication and LDAP Manager regressions proving their `ldap3` candidate address lists contain the policy-checked numeric address, the original hostname remains available for TLS semantics, and automatic referrals are disabled.
 - Added corrupted update-request coverage proving invalid numeric/timestamp fields and acknowledgement-list types degrade to safe defaults instead of escaping into update recovery logic.
 - Added automatic-update policy coverage proving wrong JSON types and unknown fields fall back to defaults, and update-progress coverage proving malformed numeric fields and option-like systemd unit names are rejected.
+- Added authenticated redirect regressions for AWX and Proxmox Manager, including verification that the hardened Proxmox client is installed into the service module.
+- Added App Store corruption coverage for wrong shared-state types and transport-gateway coverage proving malformed deployment port values return a controlled 409 response instead of crashing.
