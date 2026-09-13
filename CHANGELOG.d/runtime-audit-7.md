@@ -15,6 +15,9 @@
 - Shared module API providers no longer follow redirects outside the validated module API origin; non-2xx responses are returned as stable module API failures.
 - Docker Registry browsing now uses a pinned transport installed on `DockerProvider`: registry DNS is resolved and policy-checked once, then TCP connects to that exact numeric address while HTTP Host and HTTPS SNI/certificate validation retain the configured registry hostname.
 - Docker Registry authentication and custom CA handling continue to work through the pinned transport without following redirects, closing the loopback/link-local DNS-rebinding gap that existed between `_assert_safe_registry_url()` and HTTPX connection establishment.
+- LDAP Authentication now connects only to the exact addresses returned by its safety-checked DNS lookup while retaining the configured hostname for LDAPS/StartTLS certificate verification, closing the DNS-rebinding/TOCTOU gap between validation and `ldap3` connection establishment.
+- LDAP Manager uses the same pinned-address policy for administrative directory operations, so its post-validation transport cannot silently resolve the hostname to a different target.
+- LDAP Authentication and LDAP Manager now disable automatic LDAP referrals and referral credential forwarding. A directory response can no longer redirect an authenticated connection to an arbitrary referral host with the configured bind/user credentials.
 
 ## Regression coverage
 
@@ -24,3 +27,4 @@
 - Added mirror transport coverage proving the original hostname is retained for HTTP semantics while the TCP connection uses the already-validated numeric address.
 - Added shared module API transport coverage proving a request uses the exact private address returned by the validation lookup.
 - Added Docker Registry transport coverage proving the provider patch is installed and registry TCP connections use the exact address returned by policy validation while preserving the hostname for HTTP/TLS semantics.
+- Added LDAP Authentication and LDAP Manager regressions proving their `ldap3` candidate address lists contain the policy-checked numeric address, the original hostname remains available for TLS semantics, and automatic referrals are disabled.
