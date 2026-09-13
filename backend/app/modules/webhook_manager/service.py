@@ -6,6 +6,7 @@ import hmac
 import http.client
 import ipaddress
 import json
+import math
 import os
 import queue
 import socket
@@ -140,9 +141,10 @@ class WebhookManagerService:
     @staticmethod
     def _safe_float(value: Any, fallback: float = 0.0) -> float:
         try:
-            return float(value)
+            converted = float(value)
         except (TypeError, ValueError, OverflowError):
             return fallback
+        return converted if math.isfinite(converted) else fallback
 
     def _metadata(self, row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         item = dict(row)
@@ -370,11 +372,12 @@ class WebhookManagerService:
     def dashboard(self) -> dict[str, Any]:
         since = time.time() - 86400
         with self.connect() as connection:
-            enabled = int(connection.execute("SELECT COUNT(*) FROM webhooks WHERE enabled=1").fetchone()[0])
+            webhook_rows = connection.execute("SELECT * FROM webhooks WHERE enabled=1").fetchall()
             rows = connection.execute(
                 "SELECT status,COUNT(*) AS amount FROM deliveries WHERE created_at>=? GROUP BY status",
                 (since,),
             ).fetchall()
+        enabled = sum(1 for row in webhook_rows if self._metadata(row)["enabled"])
         counts = {str(row["status"]): int(row["amount"]) for row in rows}
         return {
             "enabled_webhooks": enabled,
