@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import socket
-import time
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -10,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.os_repositories import auth_proxy
+from app.modules.providers.infrastructure import ApiConnectionProvider
 from app.modules.webhook_manager.models import WebhookInput
 from app.modules.webhook_manager.service import WebhookManagerService
 
@@ -151,3 +151,41 @@ def test_authenticated_mirror_connection_uses_validated_address(monkeypatch: pyt
 
     assert connection.host == "mirror.example.invalid"
     assert calls == [(('203.0.113.10', 80), 7)]
+
+
+def test_module_api_request_uses_address_from_private_dns_validation(monkeypatch: pytest.MonkeyPatch):
+    provider = ApiConnectionProvider("runtime-audit")
+    monkeypatch.setattr(provider, "connection", lambda: {"base_url": "http://api.internal"})
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.20.30.40", 80))],
+    )
+    selected: list[str] = []
+
+    class Response:
+        status = 200
+
+        def read(self, _amount: int = -1) -> bytes:
+            return b"{}"
+
+    class Connection:
+        def request(self, method: str, path: str, body=None, headers=None) -> None:
+            assert method == "GET"
+            assert path == "/health"
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    def pinned_connection(parsed, address: str, timeout: int):
+        selected.append(address)
+        assert parsed.hostname == "api.internal"
+        return cast(Any, Connection())
+
+    monkeypatch.setattr(provider, "_connection", pinned_connection)
+
+    assert provider._request("/health") == {}
+    assert selected == ["10.20.30.40"]
