@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import contextlib
 import http.client
+import socket
+import ssl
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import SplitResult, urljoin, urlsplit
 
 from .security import validate_mirror_url
 
-_HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade"}
+_HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "trailers", "transfer-encoding", "upgrade"}
 
 
 class _ProxyServer(ThreadingHTTPServer):
@@ -21,6 +23,40 @@ class _ProxyServer(ThreadingHTTPServer):
         self.authorization = authorization
         self.allow_private_network = allow_private_network
         self.allow_private_http = allow_private_http
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
+        super().__init__(hostname, port, timeout=timeout)
+        self._pinned_address = address
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection((self._pinned_address, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
+        context = ssl.create_default_context()
+        super().__init__(hostname, port, timeout=timeout, context=context)
+        self._pinned_address = address
+        self._tls_context = context
+
+    def connect(self) -> None:
+        raw = socket.create_connection((self._pinned_address, self.port), self.timeout)
+        try:
+            self.sock = self._tls_context.wrap_socket(raw, server_hostname=self.host)
+        except Exception:
+            raw.close()
+            raise
+
+
+def _connection_for(parsed: SplitResult, address: str, *, timeout: float = 60) -> http.client.HTTPConnection:
+    if not parsed.hostname:
+        raise ValueError("mirror target has no hostname")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if parsed.scheme == "https":
+        return _PinnedHTTPSConnection(parsed.hostname, port, address, timeout=timeout)
+    return _PinnedHTTPConnection(parsed.hostname, port, address, timeout=timeout)
 
 
 class _ProxyHandler(BaseHTTPRequestHandler):
@@ -41,7 +77,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         original_origin = _origin(self.server.source_url)
         try:
             for _ in range(6):
-                validate_mirror_url(
+                addresses = validate_mirror_url(
                     target,
                     allow_private_network=self.server.allow_private_network,
                     allow_private_http=self.server.allow_private_http,
@@ -49,8 +85,6 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 parsed = urlsplit(target)
                 if not parsed.hostname:
                     raise ValueError("mirror target has no hostname")
-                connection_type = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
-                connection = connection_type(parsed.hostname, parsed.port, timeout=60)
                 headers = {"User-Agent": "WebNAS repository mirror proxy/1"}
                 if self.headers.get("Range"):
                     headers["Range"] = self.headers["Range"]
@@ -59,8 +93,25 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 path = parsed.path or "/"
                 if parsed.query:
                     path += f"?{parsed.query}"
-                connection.request("HEAD" if head_only else "GET", path, headers=headers)
-                response = connection.getresponse()
+
+                connection: http.client.HTTPConnection | None = None
+                response: http.client.HTTPResponse | None = None
+                last_error: OSError | http.client.HTTPException | None = None
+                for address in addresses:
+                    candidate = _connection_for(parsed, address)
+                    try:
+                        candidate.request("HEAD" if head_only else "GET", path, headers=headers)
+                        response = candidate.getresponse()
+                        connection = candidate
+                        break
+                    except (OSError, http.client.HTTPException) as error:
+                        last_error = error
+                        candidate.close()
+                if response is None or connection is None:
+                    if last_error is not None:
+                        raise last_error
+                    raise OSError("mirror target has no validated address")
+
                 if response.status in {301, 302, 303, 307, 308} and response.getheader("Location"):
                     target = urljoin(target, response.getheader("Location") or "")
                     response.read()

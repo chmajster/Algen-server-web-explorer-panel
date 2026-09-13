@@ -1,11 +1,92 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 WebhookMethod = Literal["POST", "PUT", "PATCH"]
 WebhookAuth = Literal["none", "bearer", "basic", "api_key_header", "secret_header"]
+
+HTTP_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+CUSTOM_HEADER_FORBIDDEN = {
+    "authorization",
+    "connection",
+    "content-length",
+    "content-type",
+    "cookie",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "user-agent",
+    "x-webnas-delivery",
+    "x-webnas-event",
+    "x-webnas-signature",
+    "x-webnas-timestamp",
+}
+AUTH_HEADER_FORBIDDEN = {
+    "connection",
+    "content-length",
+    "content-type",
+    "cookie",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "user-agent",
+    "x-webnas-delivery",
+    "x-webnas-event",
+    "x-webnas-signature",
+    "x-webnas-timestamp",
+}
+
+
+def _valid_header_name(value: str) -> bool:
+    return bool(HTTP_HEADER_NAME_RE.fullmatch(value))
+
+
+def _valid_header_value(value: str) -> bool:
+    return all((ord(character) >= 32 or character == "\t") and ord(character) != 127 for character in value)
+
+
+def normalize_custom_headers(values: dict[str, str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    seen: set[str] = set()
+    for raw_name, raw_value in values.items():
+        name = str(raw_name).strip()
+        value = str(raw_value).strip()
+        normalized = name.casefold()
+        if not name or not _valid_header_name(name):
+            raise ValueError("invalid webhook header name")
+        if normalized in CUSTOM_HEADER_FORBIDDEN:
+            raise ValueError(f"header {raw_name!r} is managed or forbidden")
+        if normalized in seen:
+            raise ValueError(f"duplicate webhook header {raw_name!r}")
+        if not _valid_header_value(value):
+            raise ValueError("invalid webhook header value")
+        if len(name) > 128 or len(value) > 4096:
+            raise ValueError("webhook header is too large")
+        seen.add(normalized)
+        result[name] = value
+    return result
+
+
+def normalize_auth_header_name(value: str) -> str:
+    value = str(value).strip()
+    if not value or not _valid_header_name(value):
+        raise ValueError("invalid authentication header name")
+    if value.casefold() in AUTH_HEADER_FORBIDDEN:
+        raise ValueError("unsupported authentication header")
+    return value
 
 
 class WebhookInput(BaseModel):
@@ -45,29 +126,12 @@ class WebhookInput(BaseModel):
     @field_validator("headers")
     @classmethod
     def safe_headers(cls, values: dict[str, str]) -> dict[str, str]:
-        forbidden = {"authorization", "cookie", "host", "content-length", "transfer-encoding", "x-webnas-signature"}
-        result: dict[str, str] = {}
-        for raw_name, raw_value in values.items():
-            name = raw_name.strip()
-            value = raw_value.strip()
-            if not name or name.lower() in forbidden:
-                raise ValueError(f"header {raw_name!r} is managed or forbidden")
-            if any(character in name for character in "\r\n:") or any(character in value for character in "\r\n\x00"):
-                raise ValueError("invalid webhook header")
-            if len(name) > 128 or len(value) > 4096:
-                raise ValueError("webhook header is too large")
-            result[name] = value
-        return result
+        return normalize_custom_headers(values)
 
     @field_validator("auth_header_name")
     @classmethod
     def safe_auth_header(cls, value: str) -> str:
-        value = value.strip()
-        if not value or any(character in value for character in "\r\n:"):
-            raise ValueError("invalid authentication header name")
-        if value.lower() in {"host", "content-length", "cookie"}:
-            raise ValueError("unsupported authentication header")
-        return value
+        return normalize_auth_header_name(value)
 
 
 class WebhookDeleteInput(BaseModel):

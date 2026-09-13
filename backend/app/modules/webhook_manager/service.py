@@ -24,7 +24,7 @@ from ...core.events import bus
 from ..ansible_controller.public_security import redact, redact_text
 from ..secrets_manager.public import secret_metadata, verified_secret
 from .events import event_types, on_event_registered, register_event_type
-from .models import WebhookInput
+from .models import WebhookInput, normalize_auth_header_name, normalize_custom_headers
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -137,26 +137,62 @@ class WebhookManagerService:
             return fallback
         return parsed
 
+    @staticmethod
+    def _safe_float(value: Any, fallback: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError, OverflowError):
+            return fallback
+
     def _metadata(self, row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         item = dict(row)
-        return {
-            "id": str(item["id"]),
-            "name": str(item["name"]),
+        created_at = self._safe_float(item.get("created_at"))
+        updated_at = self._safe_float(item.get("updated_at"))
+        raw = {
+            "name": str(item.get("name") or ""),
             "description": str(item.get("description") or ""),
             "enabled": bool(item.get("enabled", 1)),
-            "url": str(item["url"]),
-            "method": str(item["method"]),
+            "url": str(item.get("url") or ""),
+            "method": str(item.get("method") or ""),
             "events": self._decode_json(item.get("events_json"), []),
-            "timeout_seconds": float(item.get("timeout_seconds") or 10),
-            "max_attempts": int(item.get("max_attempts") or 1),
+            "timeout_seconds": item.get("timeout_seconds"),
+            "max_attempts": item.get("max_attempts"),
             "headers": self._decode_json(item.get("headers_json"), {}),
             "auth_type": str(item.get("auth_type") or "none"),
             "secret_id": item.get("secret_id"),
             "auth_header_name": str(item.get("auth_header_name") or "X-API-Key"),
             "signing_secret_id": item.get("signing_secret_id"),
             "allow_private_networks": bool(item.get("allow_private_networks")),
-            "created_at": float(item.get("created_at") or 0),
-            "updated_at": float(item.get("updated_at") or 0),
+        }
+        try:
+            validated = WebhookInput.model_validate(raw).model_dump(mode="python")
+        except (TypeError, ValueError):
+            return {
+                "id": str(item.get("id") or ""),
+                "name": str(item.get("name") or "Invalid webhook")[:160],
+                "description": str(item.get("description") or "")[:2000],
+                "enabled": False,
+                "url": str(item.get("url") or "")[:4096],
+                "method": "POST",
+                "events": [],
+                "timeout_seconds": 10.0,
+                "max_attempts": 1,
+                "headers": {},
+                "auth_type": "none",
+                "secret_id": None,
+                "auth_header_name": "X-API-Key",
+                "signing_secret_id": None,
+                "allow_private_networks": False,
+                "created_at": created_at,
+                "updated_at": updated_at,
+                "configuration_valid": False,
+            }
+        return {
+            "id": str(item.get("id") or ""),
+            **validated,
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "configuration_valid": True,
         }
 
     def webhooks(self) -> list[dict[str, Any]]:
@@ -248,7 +284,7 @@ class WebhookManagerService:
         item_id = webhook_id or _id()
         with self._lock, self.connect() as connection:
             old = connection.execute("SELECT created_at,created_by FROM webhooks WHERE id=?", (item_id,)).fetchone()
-            created_at = float(old["created_at"]) if old else now
+            created_at = self._safe_float(old["created_at"], now) if old else now
             created_by = str(old["created_by"]) if old else actor
             try:
                 connection.execute(
@@ -369,7 +405,12 @@ class WebhookManagerService:
         timestamp: int,
         body: bytes,
     ) -> dict[str, str]:
-        headers = {str(key): str(value) for key, value in dict(webhook.get("headers") or {}).items()}
+        try:
+            headers = normalize_custom_headers(
+                {str(key): str(value) for key, value in dict(webhook.get("headers") or {}).items()}
+            )
+        except (TypeError, ValueError) as error:
+            raise WebhookValidationError("persisted webhook headers are invalid") from error
         headers.update(
             {
                 "Content-Type": "application/json",
@@ -394,7 +435,13 @@ class WebhookManagerService:
                 ).decode("ascii")
                 headers["Authorization"] = f"Basic {token}"
             elif auth_type in {"api_key_header", "secret_header"}:
-                headers[str(webhook.get("auth_header_name") or "X-API-Key")] = credential["secret"]
+                try:
+                    auth_header_name = normalize_auth_header_name(
+                        str(webhook.get("auth_header_name") or "X-API-Key")
+                    )
+                except ValueError as error:
+                    raise WebhookValidationError("persisted webhook authentication header is invalid") from error
+                headers[auth_header_name] = credential["secret"]
             else:
                 raise WebhookValidationError("unsupported webhook authentication type")
         if webhook.get("signing_secret_id"):
@@ -538,6 +585,18 @@ class WebhookManagerService:
             str(webhook["url"]),
             allow_private=bool(webhook.get("allow_private_networks")),
         )
+        method = str(webhook.get("method") or "")
+        if method not in {"POST", "PUT", "PATCH"}:
+            raise WebhookValidationError("persisted webhook method is invalid")
+        raw_timeout = webhook.get("timeout_seconds")
+        if raw_timeout is None:
+            raise WebhookValidationError("persisted webhook timeout is invalid")
+        try:
+            timeout = float(raw_timeout)
+        except (TypeError, ValueError) as error:
+            raise WebhookValidationError("persisted webhook timeout is invalid") from error
+        if not 1.0 <= timeout <= 60.0:
+            raise WebhookValidationError("persisted webhook timeout is invalid")
         timestamp = int(time.time())
         body = self._canonical_payload(event_id, event_type, timestamp, payload)
         headers = self._headers(
@@ -555,10 +614,10 @@ class WebhookManagerService:
         try:
             status_code, preview = self._pinned_request(
                 validation=validation,
-                method=str(webhook["method"]),
+                method=method,
                 headers=headers,
                 body=body,
-                timeout=float(webhook["timeout_seconds"]),
+                timeout=timeout,
             )
             success = 200 <= status_code < 300
             if not success:
@@ -691,12 +750,11 @@ class WebhookManagerService:
 
     def shutdown(self) -> None:
         self._stop.set()
-        try:
-            self._queue.put_nowait(None)
-        except queue.Full:
-            pass
-        if self._worker and self._worker.is_alive():
-            self._worker.join(timeout=3)
+        worker = self._worker
+        if worker and worker.is_alive():
+            worker.join(timeout=3)
+        if worker is not None and not worker.is_alive():
+            self._worker = None
         for unsubscribe in tuple(self._unsubscribers.values()):
             unsubscribe()
         self._unsubscribers.clear()
