@@ -137,10 +137,17 @@ class WebhookManagerService:
             return fallback
         return parsed
 
+    @staticmethod
+    def _safe_float(value: Any, fallback: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError, OverflowError):
+            return fallback
+
     def _metadata(self, row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         item = dict(row)
-        created_at = float(item.get("created_at") or 0)
-        updated_at = float(item.get("updated_at") or 0)
+        created_at = self._safe_float(item.get("created_at"))
+        updated_at = self._safe_float(item.get("updated_at"))
         raw = {
             "name": str(item.get("name") or ""),
             "description": str(item.get("description") or ""),
@@ -277,7 +284,7 @@ class WebhookManagerService:
         item_id = webhook_id or _id()
         with self._lock, self.connect() as connection:
             old = connection.execute("SELECT created_at,created_by FROM webhooks WHERE id=?", (item_id,)).fetchone()
-            created_at = float(old["created_at"]) if old else now
+            created_at = self._safe_float(old["created_at"], now) if old else now
             created_by = str(old["created_by"]) if old else actor
             try:
                 connection.execute(
@@ -581,8 +588,11 @@ class WebhookManagerService:
         method = str(webhook.get("method") or "")
         if method not in {"POST", "PUT", "PATCH"}:
             raise WebhookValidationError("persisted webhook method is invalid")
+        raw_timeout = webhook.get("timeout_seconds")
+        if raw_timeout is None:
+            raise WebhookValidationError("persisted webhook timeout is invalid")
         try:
-            timeout = float(webhook.get("timeout_seconds"))
+            timeout = float(raw_timeout)
         except (TypeError, ValueError) as error:
             raise WebhookValidationError("persisted webhook timeout is invalid") from error
         if not 1.0 <= timeout <= 60.0:
@@ -740,9 +750,11 @@ class WebhookManagerService:
 
     def shutdown(self) -> None:
         self._stop.set()
-        if self._worker and self._worker.is_alive():
-            self._worker.join(timeout=3)
-        self._worker = None
+        worker = self._worker
+        if worker and worker.is_alive():
+            worker.join(timeout=3)
+        if worker is not None and not worker.is_alive():
+            self._worker = None
         for unsubscribe in tuple(self._unsubscribers.values()):
             unsubscribe()
         self._unsubscribers.clear()
