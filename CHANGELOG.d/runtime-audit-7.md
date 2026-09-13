@@ -13,6 +13,8 @@
 - OS Repositories proxy hop-by-hop response filtering now recognizes both the standard `Trailer` field and legacy `Trailers` spelling.
 - Shared module API providers now connect directly to the private/loopback IP addresses returned by URL validation instead of resolving the hostname again during transport, closing a DNS-rebinding/TOCTOU gap.
 - Shared module API providers no longer follow redirects outside the validated module API origin; non-2xx responses are returned as stable module API failures.
+- Docker Registry browsing now uses a pinned transport installed on `DockerProvider`: registry DNS is resolved and policy-checked once, then TCP connects to that exact numeric address while HTTP Host and HTTPS SNI/certificate validation retain the configured registry hostname.
+- Docker Registry authentication and custom CA handling continue to work through the pinned transport without following redirects, closing the loopback/link-local DNS-rebinding gap that existed between `_assert_safe_registry_url()` and HTTPX connection establishment.
 
 ## Regression coverage
 
@@ -21,3 +23,4 @@
 - Added worker lifecycle coverage proving shutdown does not enqueue a stale stop sentinel, a subsequent startup creates a live worker, and a timed-out join does not permit a second worker.
 - Added mirror transport coverage proving the original hostname is retained for HTTP semantics while the TCP connection uses the already-validated numeric address.
 - Added shared module API transport coverage proving a request uses the exact private address returned by the validation lookup.
+- Added Docker Registry transport coverage proving the provider patch is installed and registry TCP connections use the exact address returned by policy validation while preserving the hostname for HTTP/TLS semantics.
