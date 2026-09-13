@@ -43,3 +43,7 @@
 - Added automatic-update policy coverage proving wrong JSON types and unknown fields fall back to defaults, and update-progress coverage proving malformed numeric fields and option-like systemd unit names are rejected.
 - Added authenticated redirect regressions for AWX, Proxmox Manager, Alert Manager and Hosts Manager Agent, including verification that the hardened Proxmox client is installed into the service module.
 - Added App Store corruption coverage for wrong shared-state types and transport-gateway coverage proving malformed deployment port values return a controlled 409 response instead of crashing.
+
+## Verification
+
+Final exact-SHA verification for `ad3f4cccc5a7bc5f8e46fde14ee1cf4cb4d2cb74` completed successfully before this verification note was added: Automated tests, CodeQL, Dependency Review, LDAP integration, Real stack E2E and Installation smoke test all passed. Automated tests included backend unit/integration, Ruff, mypy, Bandit, architecture checks, dependency audit, frontend lint/type/OpenAPI/Vitest/build/bundle checks and Playwright E2E.
