@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import socket
+import ssl
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+import httpx
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app import settings, update_coordination
@@ -15,7 +18,7 @@ from app.modules.ldap_manager import connection as ldap_manager_connection
 from app.modules.os_repositories import auth_proxy
 from app.modules.providers import DockerProvider
 from app.modules.providers import docker_registry_transport
-from app.modules.providers.infrastructure import ApiConnectionProvider
+from app.modules.providers.infrastructure import MAX_API_RESPONSE, ApiConnectionProvider
 from app.modules.webhook_manager.models import WebhookInput
 from app.modules.webhook_manager.service import WebhookManagerService
 
@@ -87,8 +90,8 @@ def test_corrupted_persisted_webhook_is_disabled_before_delivery(tmp_path: Path)
                 "X-API-Key",
                 None,
                 0,
-                "not-a-timestamp",
-                "also-not-a-timestamp",
+                "nan",
+                "inf",
                 "admin",
                 "admin",
             ),
@@ -102,6 +105,7 @@ def test_corrupted_persisted_webhook_is_disabled_before_delivery(tmp_path: Path)
     assert item["method"] == "POST"
     assert item["created_at"] == 0.0
     assert item["updated_at"] == 0.0
+    assert service.dashboard()["enabled_webhooks"] == 0
 
 
 def test_webhook_shutdown_does_not_enqueue_stale_stop_sentinel(tmp_path: Path):
@@ -156,12 +160,20 @@ def test_authenticated_mirror_connection_uses_validated_address(monkeypatch: pyt
     connection.connect()
 
     assert connection.host == "mirror.example.invalid"
-    assert calls == [(('203.0.113.10', 80), 7)]
+    assert calls == [(("203.0.113.10", 80), 7)]
+
+    tls_connection = auth_proxy._connection_for(
+        urlsplit("https://mirror.example.invalid/repository"),
+        "203.0.113.10",
+        timeout=7,
+    )
+    assert isinstance(tls_connection, auth_proxy._PinnedHTTPSConnection)
+    assert tls_connection._tls_context.minimum_version >= ssl.TLSVersion.TLSv1_2
 
 
 def test_module_api_request_uses_address_from_private_dns_validation(monkeypatch: pytest.MonkeyPatch):
     provider = object.__new__(ApiConnectionProvider)
-    monkeypatch.setattr(provider, "connection", lambda: {"base_url": "http://api.internal"})
+    monkeypatch.setattr(provider, "connection", lambda: {"base_url": "http://api.internal/pihole"})
     monkeypatch.setattr(
         socket,
         "getaddrinfo",
@@ -178,7 +190,7 @@ def test_module_api_request_uses_address_from_private_dns_validation(monkeypatch
     class Connection:
         def request(self, method: str, path: str, body=None, headers=None) -> None:
             assert method == "GET"
-            assert path == "/health"
+            assert path == "/pihole/health"
 
         def getresponse(self) -> Response:
             return Response()
@@ -197,6 +209,40 @@ def test_module_api_request_uses_address_from_private_dns_validation(monkeypatch
     assert selected == ["10.20.30.40"]
 
 
+def test_module_api_non_2xx_response_read_is_bounded(monkeypatch: pytest.MonkeyPatch):
+    provider = object.__new__(ApiConnectionProvider)
+    monkeypatch.setattr(provider, "connection", lambda: {"base_url": "http://api.internal"})
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.20.30.40", 80))],
+    )
+    reads: list[int] = []
+
+    class Response:
+        status = 500
+
+        def read(self, amount: int = -1) -> bytes:
+            reads.append(amount)
+            return b"error"
+
+    class Connection:
+        def request(self, method: str, path: str, body=None, headers=None) -> None:
+            return None
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(provider, "_connection", lambda *_args, **_kwargs: cast(Any, Connection()))
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        provider._request("/health")
+    assert reads == [MAX_API_RESPONSE + 1]
+
+
 def test_docker_registry_transport_is_installed_and_pins_validated_address(monkeypatch: pytest.MonkeyPatch):
     assert DockerProvider._registry_fetch_json.__module__ == docker_registry_transport.__name__
     monkeypatch.setattr(
@@ -211,6 +257,14 @@ def test_docker_registry_transport_is_installed_and_pins_validated_address(monke
     )
     assert parsed.hostname == "registry.example"
     assert addresses == ["8.8.8.8"]
+
+    parsed_tls, tls_addresses = docker_registry_transport._validated_target(
+        "https://registry.example/v2/_catalog",
+        "registry.example:443",
+        True,
+    )
+    assert parsed_tls.hostname == "registry.example"
+    assert tls_addresses == ["8.8.8.8"]
 
     calls: list[tuple[str, int]] = []
 
@@ -232,6 +286,93 @@ def test_docker_registry_transport_is_installed_and_pins_validated_address(monke
     connection.connect()
     assert connection.host == "registry.example"
     assert calls == [("8.8.8.8", 80)]
+
+
+def test_docker_registry_transport_uses_connect_timeout_and_final_failure_type(monkeypatch: pytest.MonkeyPatch):
+    parsed = urlsplit("http://registry.example/v2/_catalog")
+    monkeypatch.setattr(
+        docker_registry_transport,
+        "_validated_target",
+        lambda *_args, **_kwargs: (parsed, ["8.8.8.8", "1.1.1.1"]),
+    )
+    timeouts: list[float] = []
+    encodings: list[str] = []
+
+    class FailingConnection:
+        def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
+            self.address = address
+            timeouts.append(timeout)
+
+        def request(self, method: str, target: str, body=None, headers=None) -> None:
+            encodings.append(headers["Accept-Encoding"])
+            if self.address == "8.8.8.8":
+                raise socket.timeout("first address timed out")
+            raise OSError("second address refused")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(docker_registry_transport, "_PinnedHTTPConnection", FailingConnection)
+    transport = docker_registry_transport._PinnedRegistryTransport(
+        expected_host="registry.example",
+        require_tls=False,
+        verify=True,
+        response_limit=1024,
+    )
+    request = httpx.Request(
+        "GET",
+        "http://registry.example/v2/_catalog",
+        extensions={"timeout": {"connect": 8.0}},
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        transport.handle_request(request)
+    assert timeouts == [8.0, 8.0]
+    assert encodings == ["identity", "identity"]
+
+
+def test_docker_registry_transport_rejects_compressed_response_before_decode(monkeypatch: pytest.MonkeyPatch):
+    parsed = urlsplit("http://registry.example/v2/_catalog")
+    monkeypatch.setattr(
+        docker_registry_transport,
+        "_validated_target",
+        lambda *_args, **_kwargs: (parsed, ["8.8.8.8"]),
+    )
+
+    class Response:
+        status = 200
+
+        def getheaders(self):
+            return [("Content-Encoding", "gzip")]
+
+        def read(self, amount: int = -1) -> bytes:
+            raise AssertionError("compressed response body must not be read")
+
+    class Connection:
+        def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
+            return None
+
+        def request(self, method: str, target: str, body=None, headers=None) -> None:
+            assert headers["Accept-Encoding"] == "identity"
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(docker_registry_transport, "_PinnedHTTPConnection", Connection)
+    transport = docker_registry_transport._PinnedRegistryTransport(
+        expected_host="registry.example",
+        require_tls=False,
+        verify=True,
+        response_limit=1024,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        transport.handle_request(httpx.Request("GET", "http://registry.example/v2/_catalog"))
+    assert error.value.status_code == 502
+    assert error.value.detail["code"] == "UNSUPPORTED_REGISTRY_ENCODING"
 
 
 def test_ldap_authentication_pins_validated_addresses_and_disables_referrals(monkeypatch: pytest.MonkeyPatch):
