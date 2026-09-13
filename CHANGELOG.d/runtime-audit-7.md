@@ -20,6 +20,9 @@
 - LDAP Authentication and LDAP Manager now disable automatic LDAP referrals and referral credential forwarding. A directory response can no longer redirect an authenticated connection to an arbitrary referral host with the configured bind/user credentials.
 - Persisted update-request state now normalizes timestamps, progress, log offsets, step timestamps, and acknowledgement lists before use. Syntactically valid but type-corrupted `update_request.json` data can no longer crash update progress recovery or scheduler paths through unchecked `float()`/`int()` conversions.
 - Update-request writes pass through the same normalization boundary as reads, preventing malformed in-memory state from being persisted back into the durable update coordinator.
+- Persisted automatic-update policy now accepts only typed, bounded values for booleans, interval, timestamps, PID and error text. Malformed but syntactically valid `auto_update.json` values no longer escape into scheduler `float()`/`int()` conversions or poison later state writes.
+- Persisted update-process state now normalizes `running`, exit code, timestamps and PID before recovery. Invalid values in `update_progress.json` degrade to safe defaults rather than crashing the update status endpoint.
+- Persisted update-process unit names are validated before being passed to `systemctl`; malformed option-like values such as `--root=...` are discarded instead of being interpreted as systemctl arguments.
 
 ## Regression coverage
 
@@ -31,3 +34,4 @@
 - Added Docker Registry transport coverage proving the provider patch is installed and registry TCP connections use the exact address returned by policy validation while preserving the hostname for HTTP/TLS semantics.
 - Added LDAP Authentication and LDAP Manager regressions proving their `ldap3` candidate address lists contain the policy-checked numeric address, the original hostname remains available for TLS semantics, and automatic referrals are disabled.
 - Added corrupted update-request coverage proving invalid numeric/timestamp fields and acknowledgement-list types degrade to safe defaults instead of escaping into update recovery logic.
+- Added automatic-update policy coverage proving wrong JSON types and unknown fields fall back to defaults, and update-progress coverage proving malformed numeric fields and option-like systemd unit names are rejected.
