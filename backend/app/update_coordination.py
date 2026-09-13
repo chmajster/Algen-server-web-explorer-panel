@@ -61,6 +61,28 @@ def _redact_update_text(value: str) -> str:
     return re.sub(r"(?i)(https?://[^/\s:@]+:)[^@\s/]+@", r"\1***@", text)
 
 
+def _safe_nonnegative_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if number < 0 or number != number or number in {float("inf"), float("-inf")}:
+        return None
+    return number
+
+
+def _safe_nonnegative_int(value: Any, *, default: int = 0) -> int:
+    if value is None or isinstance(value, bool):
+        return default
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return max(0, number)
+
+
 def default_update_steps() -> list[dict[str, Any]]:
     return [
         {"id": step_id, "status": "pending", "message": "", "started_at": None, "finished_at": None, "error": None}
@@ -80,8 +102,8 @@ def _normalize_steps(value: Any) -> list[dict[str, Any]]:
             {
                 "status": status if status in UPDATE_STEP_STATUSES else "pending",
                 "message": _redact_update_text(str(legacy.get("message") or ""))[:1000],
-                "started_at": legacy.get("started_at"),
-                "finished_at": legacy.get("finished_at"),
+                "started_at": _safe_nonnegative_float(legacy.get("started_at")),
+                "finished_at": _safe_nonnegative_float(legacy.get("finished_at")),
                 "error": _redact_update_text(str(legacy.get("error") or ""))[:4000] or None,
             }
         )
@@ -154,6 +176,19 @@ def default_update_request() -> dict[str, Any]:
     }
 
 
+def _normalize_update_request(value: Mapping[str, Any]) -> dict[str, Any]:
+    state = {**default_update_request(), **dict(value)}
+    state["steps"] = _normalize_steps(state.get("steps"))
+    for key in ("requested_at", "started_at", "finished_at", "commit_date", "updated_at"):
+        state[key] = _safe_nonnegative_float(state.get(key))
+    state["progress"] = min(100, _safe_nonnegative_int(state.get("progress")))
+    state["log_offset"] = _safe_nonnegative_int(state.get("log_offset"))
+    state["message"] = _redact_update_text(str(state.get("message") or ""))[:1000]
+    acknowledged = state.get("acknowledged_users")
+    state["acknowledged_users"] = [str(item)[:256] for item in acknowledged[:1000]] if isinstance(acknowledged, list) else []
+    return state
+
+
 def read_update_request() -> dict[str, Any]:
     path = update_request_path()
     if not path.exists():
@@ -164,14 +199,11 @@ def read_update_request() -> dict[str, Any]:
         return default_update_request()
     if not isinstance(value, dict):
         return default_update_request()
-    state = {**default_update_request(), **value}
-    state["steps"] = _normalize_steps(value.get("steps"))
-    return state
+    return _normalize_update_request(value)
 
 
 def write_update_request(value: Mapping[str, Any]) -> dict[str, Any]:
-    state = {**default_update_request(), **dict(value)}
-    state["steps"] = _normalize_steps(state.get("steps"))
+    state = _normalize_update_request(value)
     state["updated_at"] = time.time()
     path = update_request_path()
     temporary = path.with_suffix(".tmp")
