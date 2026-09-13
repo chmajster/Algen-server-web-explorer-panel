@@ -40,6 +40,7 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
         context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         super().__init__(hostname, port, timeout=timeout, context=context)
         self._pinned_address = address
         self._tls_context = context
@@ -280,14 +281,16 @@ class ApiConnectionProvider(PrivateBackupProvider):
             api_error(400, "INVALID_API_PATH", "Invalid module API path")
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         request_headers = {"Accept": "application/json", "Content-Type": "application/json", **(headers or {})}
+        base_path = parsed.path.rstrip("/")
+        request_target = f"{base_path}{path}" if base_path else path
         last_error: OSError | http.client.HTTPException | None = None
         for address in addresses:
             connection = self._connection(parsed, address, timeout)
             try:
-                connection.request(method, path, body=data, headers=request_headers)
+                connection.request(method, request_target, body=data, headers=request_headers)
                 response = connection.getresponse()
                 if not 200 <= response.status < 300:
-                    response.read()
+                    response.read(MAX_API_RESPONSE + 1)
                     raise RuntimeError(f"Module API returned HTTP {response.status}")
                 content = response.read(MAX_API_RESPONSE + 1)
                 if len(content) > MAX_API_RESPONSE:
