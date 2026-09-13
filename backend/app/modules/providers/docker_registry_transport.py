@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from ...json_limits import loads_with_depth_limit
 from ...package_center.models import api_error
 
 
@@ -246,7 +247,7 @@ def install_docker_registry_transport(provider_cls: type[Any]) -> None:
                         payload: dict[str, Any] = {}
                     else:
                         try:
-                            decoded = json.loads(body.decode("utf-8"))
+                            decoded = loads_with_depth_limit(body.decode("utf-8"))
                         except (ValueError, RecursionError):
                             if 200 <= response.status_code < 300:
                                 api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")

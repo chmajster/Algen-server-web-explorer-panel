@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import http.client
-import json
 import ssl
 import urllib.error
 import urllib.parse
@@ -9,6 +8,7 @@ import urllib.request
 from contextlib import suppress
 from typing import Any
 
+from ...json_limits import loads_with_depth_limit
 from . import service as _service
 
 
@@ -23,7 +23,7 @@ def _read_json(response: Any, limit: int) -> Any:
     body = response.read(limit + 1)
     if len(body) > limit:
         raise _ResponseTooLarge("Proxmox response exceeded the safety limit")
-    return json.loads(body.decode("utf-8"))
+    return loads_with_depth_limit(body.decode("utf-8"))
 
 
 def _login_header(value: object) -> str | None:

@@ -12,8 +12,12 @@
 - Błąd odczytu opcjonalnej treści błędu Proxmoxa nie maskuje już pierwotnego statusu HTTP. Strumienie odpowiedzi błędów są zamykane także przy wyjątku parsera lub odczytu.
 - Logowanie Proxmox odrzuca bilety i tokeny CSRF o błędnym typie, puste lub zawierające znaki niedozwolone w nagłówkach. Nie zamienia już dowolnych obiektów JSON na poświadczenia tekstowe.
 
+- Odpowiedzi JSON Registry i Proxmox mają jawny limit 128 poziomów zagnieżdżenia, sprawdzany przed dekodowaniem. Ochrona nie zależy od limitu rekurencji parsera konkretnej wersji Pythona; nawiasy w łańcuchach i znaki ucieczki nie zawyżają głębokości.
+
 ## Testy regresyjne
 
-`backend/tests/test_runtime_audit_9.py` dodaje 71 przypadków obejmujących powielone nagłówki, brak odczytu niebezpiecznej treści, limity TLS i timeoutów, rzeczywiste limity parsera JSON, zachowanie statusu HTTP, zamykanie strumieni, granice rozmiaru odpowiedzi i walidację tokenów.
+`backend/tests/test_runtime_audit_9.py` dodaje 71 przypadków obejmujących powielone nagłówki, brak odczytu niebezpiecznej treści, limity TLS i timeoutów, limity parsera i zagnieżdżenia JSON, zachowanie statusu HTTP, zamykanie strumieni, granice rozmiaru odpowiedzi i walidację tokenów.
+
+`backend/tests/test_json_limits.py` dodaje 40 przypadków sprawdzających dokładne granice zagnieżdżenia, odrzucenie danych przed uruchomieniem dekodera, nawiasy i znaki ucieczki w łańcuchach, szerokie listy oraz zachowanie walidacji składni.
 
 Poprawki dotyczą potwierdzonych przypadków w wymienionych modułach; nie stanowią deklaracji braku wszystkich błędów w całym projekcie.
