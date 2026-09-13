@@ -156,7 +156,7 @@ def test_authenticated_mirror_connection_uses_validated_address(monkeypatch: pyt
 
 
 def test_module_api_request_uses_address_from_private_dns_validation(monkeypatch: pytest.MonkeyPatch):
-    provider = ApiConnectionProvider("runtime-audit")
+    provider = object.__new__(ApiConnectionProvider)
     monkeypatch.setattr(provider, "connection", lambda: {"base_url": "http://api.internal"})
     monkeypatch.setattr(
         socket,
