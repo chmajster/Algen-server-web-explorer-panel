@@ -220,8 +220,8 @@ def run_update(directory: Path, session_id: str, command: list[str]) -> int:
             output.write(f"WebNAS detached Linux update finished with exit code {return_code}.\n")
             output.flush()
             os.fsync(output.fileno())
-    except Exception as error:
-        _write_state(directory, {**state, "status": "failed", "finished_at": time.time(), "exit_code": 1, "error": str(error)[:500]})
+    except Exception:
+        _write_state(directory, {**state, "status": "failed", "finished_at": time.time(), "exit_code": 1, "error": "Linux update worker failed"})
         raise
     final_status = "completed" if return_code == 0 else "failed"
     _write_state(
