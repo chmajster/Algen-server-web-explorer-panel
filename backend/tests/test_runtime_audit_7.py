@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import socket
 from pathlib import Path
 from typing import Any, cast
@@ -8,6 +9,7 @@ from urllib.parse import urlsplit
 import pytest
 from pydantic import ValidationError
 
+from app import update_coordination
 from app.ldap_authentication import connection as ldap_auth_connection
 from app.modules.ldap_manager import connection as ldap_manager_connection
 from app.modules.os_repositories import auth_proxy
@@ -313,3 +315,47 @@ def test_ldap_manager_pins_validated_addresses_and_disables_referrals(monkeypatc
     assert captured["kwargs"]["auto_referrals"] is False
     assert captured["opened"] is True
     assert captured["bound"] is True
+
+
+def test_corrupted_update_request_numeric_fields_are_normalized(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    path = tmp_path / "update_request.json"
+    path.write_text(
+        json.dumps(
+            {
+                "id": "audit-update",
+                "state": "running",
+                "requested_at": "not-a-time",
+                "started_at": {"bad": True},
+                "finished_at": float("inf"),
+                "commit_date": -1,
+                "updated_at": "nan",
+                "progress": "not-a-number",
+                "log_offset": "bad-offset",
+                "acknowledged_users": "admin",
+                "steps": [
+                    {
+                        "id": "prepare",
+                        "status": "running",
+                        "started_at": "bad",
+                        "finished_at": {},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(update_coordination, "update_request_path", lambda: path)
+
+    state = update_coordination.read_update_request()
+
+    assert state["requested_at"] is None
+    assert state["started_at"] is None
+    assert state["finished_at"] is None
+    assert state["commit_date"] is None
+    assert state["updated_at"] is None
+    assert state["progress"] == 0
+    assert state["log_offset"] == 0
+    assert state["acknowledged_users"] == []
+    prepare = next(item for item in state["steps"] if item["id"] == "prepare")
+    assert prepare["started_at"] is None
+    assert prepare["finished_at"] is None
