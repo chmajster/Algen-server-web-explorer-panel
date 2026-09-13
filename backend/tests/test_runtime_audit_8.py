@@ -12,6 +12,7 @@ from app import transport_settings
 from app.alerts import delivery as alert_delivery
 from app.app_store import state as app_state
 from app.modules.ansible_controller import awx
+from app.modules.hosts_manager import agent as hosts_agent
 from app.modules.proxmox_manager import ProxmoxApiClient
 from app.modules.proxmox_manager import secure_client as proxmox_secure
 
@@ -32,6 +33,11 @@ def test_proxmox_manager_installs_hardened_client_and_disables_redirects() -> No
 
 def test_alert_webhook_transport_disables_redirects() -> None:
     handler = alert_delivery._NoRedirectHandler()
+    assert handler.redirect_request(None, None, 302, "Found", {}, "https://attacker.example/") is None
+
+
+def test_hosts_manager_agent_transport_disables_redirects() -> None:
+    handler = hosts_agent._NoRedirectHandler()
     assert handler.redirect_request(None, None, 302, "Found", {}, "https://attacker.example/") is None
 
 
