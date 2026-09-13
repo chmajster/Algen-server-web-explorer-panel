@@ -49,22 +49,29 @@ def _tls_context(verify: bool | ssl.SSLContext) -> ssl.SSLContext:
     if isinstance(verify, ssl.SSLContext):
         return verify
     if verify:
-        return ssl.create_default_context()
+        context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        return context
     return ssl._create_unverified_context()  # nosec B323 - mirrors explicit registry TLS opt-out
+
+
+def _effective_port(parsed: urllib.parse.SplitResult) -> int:
+    return parsed.port or (443 if parsed.scheme == "https" else 80)
 
 
 def _validated_target(url: str, expected_host: str, require_tls: bool) -> tuple[urllib.parse.SplitResult, list[str]]:
     try:
         parsed = urllib.parse.urlsplit(url)
         expected = urllib.parse.urlsplit(f"https://{expected_host}")
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        port = _effective_port(parsed)
+        expected_port = expected.port or (443 if parsed.scheme == "https" else 80)
     except ValueError:
         api_error(400, "UNSAFE_REGISTRY_URL", "Registry URL is not allowed")
     if (
         parsed.scheme not in {"http", "https"}
         or (require_tls and parsed.scheme != "https")
-        or parsed.hostname != expected.hostname
-        or parsed.port != expected.port
+        or (parsed.hostname or "").lower().rstrip(".") != (expected.hostname or "").lower().rstrip(".")
+        or port != expected_port
         or parsed.username is not None
         or parsed.password is not None
         or not parsed.hostname
@@ -92,6 +99,20 @@ def _validated_target(url: str, expected_host: str, require_tls: bool) -> tuple[
     return parsed, addresses
 
 
+def _connect_timeout(request: httpx.Request, fallback: float = 20.0) -> float:
+    timeout = request.extensions.get("timeout")
+    if isinstance(timeout, dict):
+        value = timeout.get("connect")
+        if value is not None:
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError, OverflowError):
+                return fallback
+            if parsed > 0:
+                return parsed
+    return fallback
+
+
 class _PinnedRegistryTransport(httpx.BaseTransport):
     def __init__(
         self,
@@ -111,14 +132,17 @@ class _PinnedRegistryTransport(httpx.BaseTransport):
         hostname = parsed.hostname
         if not hostname:
             api_error(400, "UNSAFE_REGISTRY_URL", "Registry URL is not allowed")
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        port = _effective_port(parsed)
         target = parsed.path or "/"
         if parsed.query:
             target += f"?{parsed.query}"
         body = request.read()
         request_headers = {name: value for name, value in request.headers.multi_items()}
+        # Do not let HTTPX advertise gzip/br/deflate here: constructing a Response
+        # from a compressed body may decode it before the post-decode size guard.
+        request_headers["Accept-Encoding"] = "identity"
+        connect_timeout = _connect_timeout(request)
         last_error: BaseException | None = None
-        timed_out = False
         for address in addresses:
             connection: http.client.HTTPConnection
             if parsed.scheme == "https":
@@ -126,31 +150,41 @@ class _PinnedRegistryTransport(httpx.BaseTransport):
                     hostname,
                     port,
                     address,
-                    timeout=20.0,
+                    timeout=connect_timeout,
                     context=_tls_context(self.verify),
                 )
             else:
-                connection = _PinnedHTTPConnection(hostname, port, address, timeout=20.0)
+                connection = _PinnedHTTPConnection(hostname, port, address, timeout=connect_timeout)
             try:
                 connection.request(request.method, target, body=body, headers=request_headers)
                 response = connection.getresponse()
+                response_headers = response.getheaders()
+                content_encoding = next(
+                    (value for name, value in response_headers if name.lower() == "content-encoding"),
+                    "",
+                ).strip().lower()
+                if content_encoding and content_encoding != "identity":
+                    api_error(
+                        502,
+                        "UNSUPPORTED_REGISTRY_ENCODING",
+                        "Registry returned an unsupported compressed response",
+                    )
                 response_body = response.read(self.response_limit + 1)
                 if len(response_body) > self.response_limit:
                     api_error(502, "REGISTRY_RESPONSE_TOO_LARGE", "Registry response exceeded the safety limit")
                 return httpx.Response(
                     status_code=int(response.status),
-                    headers=response.getheaders(),
+                    headers=response_headers,
                     content=response_body,
                     request=request,
                 )
             except (TimeoutError, socket.timeout) as error:
-                timed_out = True
                 last_error = error
             except (OSError, ssl.SSLError, http.client.HTTPException) as error:
                 last_error = error
             finally:
                 connection.close()
-        if timed_out and last_error is not None:
+        if isinstance(last_error, (TimeoutError, socket.timeout)):
             raise httpx.TimeoutException("Registry request timed out", request=request) from last_error
         raise httpx.ConnectError("Registry connection failed", request=request) from last_error
 
@@ -191,7 +225,7 @@ def install_docker_registry_transport(provider_cls: type[Any]) -> None:
                     "GET",
                     url,
                     auth=auth,
-                    headers={"Accept": "application/json", **(headers or {})},
+                    headers={"Accept": "application/json", "Accept-Encoding": "identity", **(headers or {})},
                 ) as response:
                     body = bytearray()
                     for chunk in response.iter_bytes():
