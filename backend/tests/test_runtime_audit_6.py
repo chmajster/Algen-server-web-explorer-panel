@@ -108,6 +108,17 @@ def test_network_tool_boundary_keeps_rate_limits_but_hides_command_diagnostics(m
     assert status == 429
     assert detail["message"] == "network diagnostic rate limit exceeded"
 
+    status, detail = _detail(
+        lambda: network_tools_router._run(
+            user,
+            "route-lookup",
+            lambda: _raise(NetworkToolError("kernel rate limit detail: SECRET_RATE_DIAGNOSTIC")),
+        )
+    )
+    assert status == 422
+    assert detail == {"code": "NETWORK_TOOL_FAILED", "message": "Network diagnostic failed"}
+    assert "SECRET_RATE_DIAGNOSTIC" not in str(detail)
+
 
 def test_dns_endpoint_replaces_raw_tool_error(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(network_tools_router, "_allow", lambda *args, **kwargs: None)
