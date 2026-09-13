@@ -8,6 +8,8 @@ from urllib.parse import urlsplit
 import pytest
 from pydantic import ValidationError
 
+from app.ldap_authentication import connection as ldap_auth_connection
+from app.modules.ldap_manager import connection as ldap_manager_connection
 from app.modules.os_repositories import auth_proxy
 from app.modules.providers import DockerProvider
 from app.modules.providers import docker_registry_transport
@@ -228,3 +230,86 @@ def test_docker_registry_transport_is_installed_and_pins_validated_address(monke
     connection.connect()
     assert connection.host == "registry.example"
     assert calls == [("8.8.8.8", 80)]
+
+
+def test_ldap_authentication_pins_validated_addresses_and_disables_referrals(monkeypatch: pytest.MonkeyPatch):
+    endpoint = ldap_auth_connection.LdapEndpoint("ldap.example.test", 636)
+    monkeypatch.setattr(ldap_auth_connection, "resolve_host", lambda _endpoint: ["10.10.10.20"])
+    captured: dict[str, Any] = {}
+
+    class FakeConnection:
+        def __init__(self, server, **kwargs):
+            captured["server"] = server
+            captured["kwargs"] = kwargs
+
+        def open(self) -> None:
+            captured["opened"] = True
+
+        def start_tls(self) -> None:
+            captured["start_tls"] = True
+
+        def bind(self) -> None:
+            captured["bound"] = True
+
+    monkeypatch.setattr(ldap_auth_connection, "Connection", FakeConnection)
+    connection = ldap_auth_connection.connect(
+        {"security_mode": "ldaps", "verify_tls": False},
+        endpoint,
+        user="cn=service,dc=example,dc=test",
+        password="secret",
+    )
+
+    server = captured["server"]
+    assert connection is not None
+    assert server.host == "ldap.example.test"
+    assert server.allowed_referral_hosts == []
+    assert server.candidate_addresses()[0][4][0] == "10.10.10.20"
+    assert captured["kwargs"]["auto_referrals"] is False
+    assert captured["opened"] is True
+    assert captured["bound"] is True
+
+
+def test_ldap_manager_pins_validated_addresses_and_disables_referrals(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(ldap_manager_connection, "_bind_password", lambda *_args, **_kwargs: "secret")
+    monkeypatch.setattr(
+        ldap_manager_connection.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("10.20.30.40", 389))],
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeConnection:
+        def __init__(self, server, **kwargs):
+            captured["server"] = server
+            captured["kwargs"] = kwargs
+
+        def open(self) -> None:
+            captured["opened"] = True
+
+        def start_tls(self) -> None:
+            captured["start_tls"] = True
+
+        def bind(self) -> None:
+            captured["bound"] = True
+
+        def unbind(self) -> None:
+            return None
+
+    monkeypatch.setattr(ldap_manager_connection, "Connection", FakeConnection)
+    bound = ldap_manager_connection.bind(
+        {
+            "servers": [{"host": "ldap.example.test", "port": 389}],
+            "bind_dn": "cn=service,dc=example,dc=test",
+            "security_mode": "plain",
+            "verify_tls": False,
+        }
+    )
+
+    server = captured["server"]
+    assert bound.endpoint == "ldap.example.test:389"
+    assert server.host == "ldap.example.test"
+    assert server.allowed_referral_hosts == []
+    assert server.candidate_addresses()[0][4][0] == "10.20.30.40"
+    assert captured["kwargs"]["auto_referrals"] is False
+    assert captured["opened"] is True
+    assert captured["bound"] is True
