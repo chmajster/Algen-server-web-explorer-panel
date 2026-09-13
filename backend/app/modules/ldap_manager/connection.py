@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import ipaddress
 import logging
 import socket
 import ssl
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from ldap3 import ALL, Connection, Server, Tls
@@ -45,6 +47,23 @@ def _bind_password(config: dict[str, Any], purpose: str) -> str:
     return value
 
 
+def _pin_server_addresses(server: Server, port: int, addresses: list[str]) -> None:
+    if not addresses:
+        raise socket.gaierror("LDAP host resolved without usable addresses")
+    address_info: list[list[Any]] = []
+    for raw in addresses:
+        address = ipaddress.ip_address(raw)
+        if address.version == 6:
+            sockaddr: tuple[Any, ...] = (str(address), port, 0, 0)
+            family = socket.AF_INET6
+        else:
+            sockaddr = (str(address), port)
+            family = socket.AF_INET
+        address_info.append([family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", sockaddr, None, None])
+    setattr(server, "_address_info", address_info)
+    setattr(server, "_address_info_resolved_time", datetime.now())
+
+
 def bind(config: dict[str, Any], *, purpose: str = "ldap-manager-operation", get_info: Any = ALL) -> BoundDirectory:
     password = _bind_password(config, purpose)
     servers = sorted(config.get("servers") or [], key=lambda item: (int(item.get("priority") or 10), str(item.get("host") or "")))
@@ -57,10 +76,12 @@ def bind(config: dict[str, Any], *, purpose: str = "ldap-manager-operation", get
         port = int(item.get("port") or 389)
         endpoint = f"{host}:{port}"
         try:
-            # Resolve before handing the hostname to ldap3 so link-local or
-            # metadata addresses hidden behind DNS are rejected as well.
+            addresses: list[str] = []
             for answer in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
-                assert_safe_target(str(answer[4][0]).split("%", 1)[0])
+                address = str(answer[4][0]).split("%", 1)[0]
+                assert_safe_target(address)
+                if address not in addresses:
+                    addresses.append(address)
             tls = Tls(
                 validate=ssl.CERT_REQUIRED if bool(config.get("verify_tls", True)) else ssl.CERT_NONE,
                 ca_certs_data=str(config.get("ca_certificate") or "") or None,
@@ -72,13 +93,16 @@ def bind(config: dict[str, Any], *, purpose: str = "ldap-manager-operation", get
                 tls=tls,
                 connect_timeout=max(1, int(float(config.get("connect_timeout") or 5.0))),
                 get_info=get_info,
+                allowed_referral_hosts=[],
             )
+            _pin_server_addresses(server, port, addresses)
             connection = Connection(
                 server,
                 user=str(config.get("bind_dn") or ""),
                 password=password,
                 receive_timeout=max(1, int(float(config.get("operation_timeout") or 15.0))),
                 raise_exceptions=True,
+                auto_referrals=False,
             )
             connection.open()
             if config.get("security_mode") == "starttls":
