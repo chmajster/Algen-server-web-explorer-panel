@@ -18,6 +18,8 @@
 - LDAP Authentication now connects only to the exact addresses returned by its safety-checked DNS lookup while retaining the configured hostname for LDAPS/StartTLS certificate verification, closing the DNS-rebinding/TOCTOU gap between validation and `ldap3` connection establishment.
 - LDAP Manager uses the same pinned-address policy for administrative directory operations, so its post-validation transport cannot silently resolve the hostname to a different target.
 - LDAP Authentication and LDAP Manager now disable automatic LDAP referrals and referral credential forwarding. A directory response can no longer redirect an authenticated connection to an arbitrary referral host with the configured bind/user credentials.
+- Persisted update-request state now normalizes timestamps, progress, log offsets, step timestamps, and acknowledgement lists before use. Syntactically valid but type-corrupted `update_request.json` data can no longer crash update progress recovery or scheduler paths through unchecked `float()`/`int()` conversions.
+- Update-request writes pass through the same normalization boundary as reads, preventing malformed in-memory state from being persisted back into the durable update coordinator.
 
 ## Regression coverage
 
@@ -28,3 +30,4 @@
 - Added shared module API transport coverage proving a request uses the exact private address returned by the validation lookup.
 - Added Docker Registry transport coverage proving the provider patch is installed and registry TCP connections use the exact address returned by policy validation while preserving the hostname for HTTP/TLS semantics.
 - Added LDAP Authentication and LDAP Manager regressions proving their `ldap3` candidate address lists contain the policy-checked numeric address, the original hostname remains available for TLS semantics, and automatic referrals are disabled.
+- Added corrupted update-request coverage proving invalid numeric/timestamp fields and acknowledgement-list types degrade to safe defaults instead of escaping into update recovery logic.
