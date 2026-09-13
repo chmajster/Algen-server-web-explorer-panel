@@ -1,0 +1,21 @@
+name: Recovery development snapshot
+on:
+  push:
+    branches: [feat/update-version-recovery-20260914]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.repository == 'chmajster/Algen-server-web-explorer-panel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: git archive HEAD -o recovery-source.tar
+      - uses: actions/upload-artifact@v7
+        with:
+          name: recovery-source
+          path: recovery-source.tar
+          retention-days: 1
