@@ -20,12 +20,12 @@ def _controlled(operation):
         return operation()
     except GitOpsUnavailable as error:
         api_error(503, "GITOPS_UNAVAILABLE", str(error))
-    except GitOpsConflict as error:
-        api_error(409, "GITOPS_CONFLICT", str(error))
+    except GitOpsConflict:
+        api_error(409, "GITOPS_CONFLICT", "GitOps operation encountered a repository conflict")
     except ValueError as error:
         api_error(422, "GITOPS_VALIDATION_FAILED", str(error))
-    except RuntimeError as error:
-        api_error(502, "GITOPS_OPERATION_FAILED", str(error))
+    except RuntimeError:
+        api_error(502, "GITOPS_OPERATION_FAILED", "GitOps operation failed")
 
 
 def _audit(actor: str, action: str, target: str = "") -> None:

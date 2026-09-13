@@ -16,10 +16,10 @@ router = APIRouter(prefix="/api/modules/login-history", tags=["login-history"])
 def _controlled(operation):
     try:
         return operation()
-    except LoginHistoryUnavailable as error:
-        api_error(503, "LOGIN_HISTORY_UNAVAILABLE", str(error))
-    except RuntimeError as error:
-        api_error(502, "LOGIN_HISTORY_OPERATION_FAILED", str(error))
+    except LoginHistoryUnavailable:
+        api_error(503, "LOGIN_HISTORY_UNAVAILABLE", "Login history backend is unavailable")
+    except RuntimeError:
+        api_error(502, "LOGIN_HISTORY_OPERATION_FAILED", "Login history operation failed")
 
 
 @router.get("/overview")

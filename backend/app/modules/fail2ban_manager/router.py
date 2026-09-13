@@ -39,7 +39,7 @@ def _controlled(operation):
     except Fail2BanUnavailable as error:
         api_error(503, "FAIL2BAN_UNAVAILABLE", str(error))
     except Fail2BanCommandError as error:
-        api_error(502, "FAIL2BAN_COMMAND_FAILED", str(error), command=error.command, output=error.output)
+        api_error(502, "FAIL2BAN_COMMAND_FAILED", str(error), command=error.command)
     except ValueError as error:
         api_error(422, "FAIL2BAN_VALIDATION_FAILED", str(error))
 

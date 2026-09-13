@@ -20,6 +20,6 @@ class RpmRepositoryAdapter(RepositoryAdapter):
                 self.link_package(package, package_dir / Path(package["relative_path"]).name)
             result = run_tool(["createrepo_c", "--database", str(target)], timeout=300)
             if result.returncode:
-                raise RuntimeError(f"createrepo_c failed for {architecture}: {result.stderr}")
+                raise RuntimeError(f"createrepo_c failed for {architecture}")
             metadata.append(target / "repodata" / "repomd.xml")
         return metadata

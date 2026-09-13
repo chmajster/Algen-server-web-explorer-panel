@@ -12,6 +12,8 @@ from .service import NetworkToolError, service
 
 
 router = APIRouter(prefix="/api/modules/network-tools", tags=["network-tools"])
+_PUBLIC_NETWORK_ERRORS = {"dig is required for this DNS record type", "iproute2 is unavailable"}
+_RATE_NETWORK_ERRORS = {"network diagnostic rate limit exceeded", "too many concurrent network diagnostics"}
 
 
 def _allow(user: SessionUser, permission: str) -> None:
@@ -22,7 +24,10 @@ def _run(user: SessionUser, action: str, callback):  # type: ignore[no-untyped-d
     try:
         return service().execute(user.username, action, callback)
     except NetworkToolError as error:
-        api_error(429 if "rate limit" in str(error) or "concurrent" in str(error) else 422, "NETWORK_TOOL_FAILED", str(error))
+        message = str(error)
+        if message in _RATE_NETWORK_ERRORS:
+            api_error(429, "NETWORK_TOOL_FAILED", message)
+        api_error(422, "NETWORK_TOOL_FAILED", message if message in _PUBLIC_NETWORK_ERRORS else "Network diagnostic failed")
 
 
 @router.get("/overview")
@@ -46,7 +51,10 @@ def traceroute(payload: TargetRequest, user: SessionUser = Depends(mutating_user
 @router.post("/dns")
 def dns(payload: DnsLookupRequest, user: SessionUser = Depends(mutating_user)):
     _allow(user, NETWORK_TOOLS_DNS)
-    return _run(user, "dns", lambda: service().dns_lookup(payload))
+    result = _run(user, "dns", lambda: service().dns_lookup(payload))
+    if isinstance(result, dict) and result.get("error"):
+        result = {**result, "error": "DNS lookup failed"}
+    return result
 
 
 @router.post("/reverse-dns")
