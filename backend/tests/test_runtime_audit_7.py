@@ -9,6 +9,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.os_repositories import auth_proxy
+from app.modules.providers import DockerProvider
+from app.modules.providers import docker_registry_transport
 from app.modules.providers.infrastructure import ApiConnectionProvider
 from app.modules.webhook_manager.models import WebhookInput
 from app.modules.webhook_manager.service import WebhookManagerService
@@ -189,3 +191,40 @@ def test_module_api_request_uses_address_from_private_dns_validation(monkeypatch
 
     assert provider._request("/health") == {}
     assert selected == ["10.20.30.40"]
+
+
+def test_docker_registry_transport_is_installed_and_pins_validated_address(monkeypatch: pytest.MonkeyPatch):
+    assert DockerProvider._registry_fetch_json.__module__ == docker_registry_transport.__name__
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 80))],
+    )
+    parsed, addresses = docker_registry_transport._validated_target(
+        "http://registry.example/v2/_catalog",
+        "registry.example",
+        False,
+    )
+    assert parsed.hostname == "registry.example"
+    assert addresses == ["8.8.8.8"]
+
+    calls: list[tuple[str, int]] = []
+
+    class FakeSocket:
+        def close(self) -> None:
+            return None
+
+    def create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+        calls.append(address)
+        return FakeSocket()
+
+    monkeypatch.setattr(socket, "create_connection", create_connection)
+    connection = docker_registry_transport._PinnedHTTPConnection(
+        "registry.example",
+        80,
+        addresses[0],
+        timeout=8,
+    )
+    connection.connect()
+    assert connection.host == "registry.example"
+    assert calls == [("8.8.8.8", 80)]
