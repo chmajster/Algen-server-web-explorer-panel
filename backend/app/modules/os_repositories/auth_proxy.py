@@ -37,6 +37,7 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
         context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         super().__init__(hostname, port, timeout=timeout, context=context)
         self._pinned_address = address
         self._tls_context = context
