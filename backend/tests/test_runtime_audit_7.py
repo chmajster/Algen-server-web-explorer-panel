@@ -3,6 +3,7 @@ from __future__ import annotations
 import socket
 import time
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 import pytest
@@ -55,7 +56,6 @@ def test_webhook_rejects_unsafe_auth_header_names(name):
 
 def test_corrupted_persisted_webhook_is_disabled_before_delivery(tmp_path: Path):
     service = WebhookManagerService(tmp_path / "webhooks.sqlite3")
-    now = time.time()
     with service.connect() as connection:
         connection.execute(
             """
@@ -81,8 +81,8 @@ def test_corrupted_persisted_webhook_is_disabled_before_delivery(tmp_path: Path)
                 "X-API-Key",
                 None,
                 0,
-                now,
-                now,
+                "not-a-timestamp",
+                "also-not-a-timestamp",
                 "admin",
                 "admin",
             ),
@@ -94,6 +94,8 @@ def test_corrupted_persisted_webhook_is_disabled_before_delivery(tmp_path: Path)
     assert item["configuration_valid"] is False
     assert item["headers"] == {}
     assert item["method"] == "POST"
+    assert item["created_at"] == 0.0
+    assert item["updated_at"] == 0.0
 
 
 def test_webhook_shutdown_does_not_enqueue_stale_stop_sentinel(tmp_path: Path):
@@ -107,6 +109,25 @@ def test_webhook_shutdown_does_not_enqueue_stale_stop_sentinel(tmp_path: Path):
     assert service._worker is not None
     assert service._worker.is_alive()
     service.shutdown()
+
+
+def test_webhook_shutdown_keeps_worker_reference_when_join_times_out(tmp_path: Path):
+    service = WebhookManagerService(tmp_path / "webhooks.sqlite3")
+
+    class BusyWorker:
+        def is_alive(self) -> bool:
+            return True
+
+        def join(self, timeout: float | None = None) -> None:
+            assert timeout == 3
+
+    worker = BusyWorker()
+    service._worker = cast(Any, worker)
+    service.shutdown()
+
+    assert service._worker is worker
+    service.startup()
+    assert service._worker is worker
 
 
 def test_authenticated_mirror_connection_uses_validated_address(monkeypatch: pytest.MonkeyPatch):
