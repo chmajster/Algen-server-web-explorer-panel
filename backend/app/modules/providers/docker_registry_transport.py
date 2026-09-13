@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import math
 import socket
 import ssl
 import urllib.parse
@@ -50,9 +51,11 @@ def _tls_context(verify: bool | ssl.SSLContext) -> ssl.SSLContext:
         return verify
     if verify:
         context = ssl.create_default_context()
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        return context
-    return ssl._create_unverified_context()  # nosec B323 - mirrors explicit registry TLS opt-out
+    else:
+        context = ssl._create_unverified_context()  # nosec B323 - explicit certificate verification opt-out
+    # Disabling certificate verification must not enable obsolete TLS protocols.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
 
 
 def _effective_port(parsed: urllib.parse.SplitResult) -> int:
@@ -108,7 +111,7 @@ def _connect_timeout(request: httpx.Request, fallback: float = 20.0) -> float:
                 parsed = float(value)
             except (TypeError, ValueError, OverflowError):
                 return fallback
-            if parsed > 0:
+            if math.isfinite(parsed) and parsed > 0:
                 return parsed
     return fallback
 
@@ -137,7 +140,10 @@ class _PinnedRegistryTransport(httpx.BaseTransport):
         if parsed.query:
             target += f"?{parsed.query}"
         body = request.read()
-        request_headers = {name: value for name, value in request.headers.multi_items()}
+        request_headers = {
+            name: value for name, value in request.headers.multi_items()
+            if name.lower() != "accept-encoding"
+        }
         # Do not let HTTPX advertise gzip/br/deflate here: constructing a Response
         # from a compressed body may decode it before the post-decode size guard.
         request_headers["Accept-Encoding"] = "identity"
@@ -159,11 +165,14 @@ class _PinnedRegistryTransport(httpx.BaseTransport):
                 connection.request(request.method, target, body=body, headers=request_headers)
                 response = connection.getresponse()
                 response_headers = response.getheaders()
-                content_encoding = next(
-                    (value for name, value in response_headers if name.lower() == "content-encoding"),
-                    "",
-                ).strip().lower()
-                if content_encoding and content_encoding != "identity":
+                # HTTPX processes every repeated header and comma-separated coding.
+                # Inspect the same complete set before reading or decoding any body.
+                content_encodings = [
+                    coding.strip().lower()
+                    for name, value in response_headers if name.lower() == "content-encoding"
+                    for coding in value.split(",") if coding.strip()
+                ]
+                if any(coding != "identity" for coding in content_encodings):
                     api_error(
                         502,
                         "UNSUPPORTED_REGISTRY_ENCODING",
@@ -238,7 +247,7 @@ def install_docker_registry_transport(provider_cls: type[Any]) -> None:
                     else:
                         try:
                             decoded = json.loads(body.decode("utf-8"))
-                        except (UnicodeDecodeError, json.JSONDecodeError):
+                        except (ValueError, RecursionError):
                             if 200 <= response.status_code < 300:
                                 api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
                             decoded = {}

@@ -1,16 +1,48 @@
 from __future__ import annotations
 
+import http.client
 import json
 import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import suppress
 from typing import Any
 
 from . import service as _service
 
 
 _ORIGINAL_URLOPEN = urllib.request.urlopen
+
+
+class _ResponseTooLarge(ValueError):
+    pass
+
+
+def _read_json(response: Any, limit: int) -> Any:
+    body = response.read(limit + 1)
+    if len(body) > limit:
+        raise _ResponseTooLarge("Proxmox response exceeded the safety limit")
+    return json.loads(body.decode("utf-8"))
+
+
+def _login_header(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    if any(ord(character) < 32 or ord(character) > 126 for character in value):
+        return None
+    return value
+
+
+def _http_failure_detail(error: urllib.error.HTTPError) -> str:
+    try:
+        return _service._http_failure_detail(error)
+    except (OSError, http.client.HTTPException, RecursionError):
+        # Optional diagnostics must not replace the original HTTP status.
+        return ""
+    finally:
+        with suppress(OSError, http.client.HTTPException):
+            error.close()
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -32,6 +64,22 @@ class HardenedProxmoxApiClient(_service.ProxmoxApiClient):
         )
         return opener.open(request, timeout=self.timeout)
 
+    def _invalid_response_error(self, stage: str, error: BaseException) -> _service.ProxmoxApiError:
+        operation = "login" if stage == "login" else "API request"
+        reason = (
+            "Proxmox response exceeded the safety limit"
+            if isinstance(error, _ResponseTooLarge)
+            else f"Invalid {stage} response: {type(error).__name__}"
+        )
+        hint = "Verify that the configured address and port expose the Proxmox API rather than another web service."
+        return _service.ProxmoxApiError(
+            _service._failure_message(operation, self.endpoint, stage, reason, hint),
+            stage=stage,
+            endpoint=self.endpoint,
+            reason=reason,
+            hint=hint,
+        )
+
     def _login(self) -> None:
         encoded = urllib.parse.urlencode({"username": self.username, "password": self.secret}).encode()
         request = urllib.request.Request(
@@ -42,9 +90,9 @@ class HardenedProxmoxApiClient(_service.ProxmoxApiClient):
         )
         try:
             with self._open_no_redirect(request) as response:
-                payload = json.loads(response.read(1024 * 1024).decode("utf-8"))
+                payload = _read_json(response, 1024 * 1024)
         except urllib.error.HTTPError as error:
-            detail = _service._http_failure_detail(error)
+            detail = _http_failure_detail(error)
             reason = f"HTTP {error.code}" + (f": {detail}" if detail else "")
             hint = _service._http_failure_hint(error.code)
             raise _service.ProxmoxApiError(
@@ -64,18 +112,12 @@ class HardenedProxmoxApiClient(_service.ProxmoxApiClient):
                 reason=reason,
                 hint=hint,
             ) from error
-        except (ValueError, UnicodeDecodeError) as error:
-            reason = f"Invalid login response: {type(error).__name__}: {_service._safe_error_text(error)}"
-            hint = "Verify that the configured address and port expose the Proxmox API rather than another web service."
-            raise _service.ProxmoxApiError(
-                _service._failure_message("login", self.endpoint, "login", reason, hint),
-                stage="login",
-                endpoint=self.endpoint,
-                reason=reason,
-                hint=hint,
-            ) from error
+        except (ValueError, RecursionError, http.client.HTTPException) as error:
+            raise self._invalid_response_error("login", error) from error
         data = payload.get("data") if isinstance(payload, dict) else None
-        if not isinstance(data, dict) or not data.get("ticket") or not data.get("CSRFPreventionToken"):
+        ticket = _login_header(data.get("ticket")) if isinstance(data, dict) else None
+        csrf_token = _login_header(data.get("CSRFPreventionToken")) if isinstance(data, dict) else None
+        if ticket is None or csrf_token is None:
             reason = "Proxmox login returned an invalid response without a ticket and CSRF token"
             hint = "Verify the endpoint, reverse proxy configuration, and Proxmox authentication service."
             raise _service.ProxmoxApiError(
@@ -85,8 +127,8 @@ class HardenedProxmoxApiClient(_service.ProxmoxApiClient):
                 reason=reason,
                 hint=hint,
             )
-        self.ticket = str(data["ticket"])
-        self.csrf_token = str(data["CSRFPreventionToken"])
+        self.ticket = ticket
+        self.csrf_token = csrf_token
 
     def request(self, method: str, path: str, data: dict[str, Any] | None = None) -> Any:
         encoded = urllib.parse.urlencode(data or {}, doseq=True).encode() if method != "GET" else None
@@ -103,9 +145,9 @@ class HardenedProxmoxApiClient(_service.ProxmoxApiClient):
         request = urllib.request.Request(url, data=encoded, method=method, headers=headers)
         try:
             with self._open_no_redirect(request) as response:
-                payload = json.loads(response.read(4 * 1024 * 1024).decode("utf-8"))
+                payload = _read_json(response, 4 * 1024 * 1024)
         except urllib.error.HTTPError as error:
-            detail = _service._http_failure_detail(error)
+            detail = _http_failure_detail(error)
             reason = f"HTTP {error.code}" + (f": {detail}" if detail else "")
             hint = _service._http_failure_hint(error.code)
             raise _service.ProxmoxApiError(
@@ -125,6 +167,8 @@ class HardenedProxmoxApiClient(_service.ProxmoxApiClient):
                 reason=reason,
                 hint=hint,
             ) from error
+        except (ValueError, RecursionError, http.client.HTTPException) as error:
+            raise self._invalid_response_error("api", error) from error
         if not isinstance(payload, dict) or "data" not in payload:
             reason = "Proxmox API returned a response without the expected data field"
             hint = "Verify that the configured address and port expose a compatible Proxmox API endpoint."
