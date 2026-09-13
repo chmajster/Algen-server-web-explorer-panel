@@ -11,6 +11,21 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 2
+_JSON_LIST_FIELDS = {"architectures_json", "resolved_addresses_json", "rules_json", "warnings_json", "dependencies_json", "conflicts_json"}
+_JSON_OBJECT_FIELDS = {"definition_json", "details_json", "value_json"}
+
+
+def _decode_json_field(key: str, value: Any) -> Any:
+    default: Any = [] if key in _JSON_LIST_FIELDS else {} if key in _JSON_OBJECT_FIELDS else None
+    try:
+        decoded = json.loads(value or json.dumps(default))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+    if isinstance(default, list):
+        return decoded if isinstance(decoded, list) else []
+    if isinstance(default, dict):
+        return decoded if isinstance(decoded, dict) else {}
+    return decoded
 
 
 def object_id() -> str:
@@ -120,7 +135,7 @@ class RepositoryStore:
         result = dict(row)
         for key in list(result):
             if key.endswith("_json"):
-                result[key.removesuffix("_json")] = json.loads(result.pop(key) or "null")
+                result[key.removesuffix("_json")] = _decode_json_field(key, result.pop(key))
         for key in ("active", "allow_private_network", "allow_private_http", "signed", "blocked", "archived", "secret_configured", "cancel_requested"):
             if key in result:
                 result[key] = bool(result[key])

@@ -46,6 +46,14 @@ def _json_object(value: Any) -> dict[str, Any]:
     return decoded if isinstance(decoded, dict) else {}
 
 
+def _json_list(value: Any) -> list[Any]:
+    try:
+        decoded = json.loads(value or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return decoded if isinstance(decoded, list) else []
+
+
 class ClosingConnection(sqlite3.Connection):
     """SQLite transaction context that also releases the database handle."""
 
@@ -257,12 +265,11 @@ class AnsibleRepository:
         if row is None:
             return None
         result = dict(row)
+        list_columns = {"tags_json", "host_ids_json", "group_ids_json", "credential_ids_json", "skip_tags_json", "warnings_json"}
         for column, target in JSON_COLUMNS.items():
             if column in result:
-                try:
-                    result[target] = json.loads(result.pop(column) or "{}")
-                except (TypeError, ValueError):
-                    result[target] = [] if column.endswith("ids_json") or column in {"tags_json", "skip_tags_json", "warnings_json"} else {}
+                raw = result.pop(column)
+                result[target] = _json_list(raw) if column in list_columns else _json_object(raw)
         for key in ("active", "managed_user_created", "sync_before_run", "allow_submodules", "check_mode", "diff_mode", "confirmation_required"):
             if key in result:
                 result[key] = bool(result[key])
@@ -363,7 +370,7 @@ class AnsibleRepository:
             if not changed:
                 return None
             result = dict(row)
-            result["tags"] = json.loads(result.pop("tags_json") or "[]")
+            result["tags"] = _json_list(result.pop("tags_json"))
             return result
 
     def delete_host(self, host_id: str, actor: str) -> bool:

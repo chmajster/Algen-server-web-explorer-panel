@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import sqlite3
+
 from app.app_store import state as app_state
 from app.modules.ansible_controller.repository import AnsibleRepository
 from app.modules.dcst.repository import DcstRepository
 from app.modules.docker_manager.storage import DockerManagerStore
 from app.modules.hosts_manager.batch_enrichment import HostRegistryService as BatchHostRegistryService
 from app.modules.hosts_manager.models import HostInput
+from app.modules.os_repositories.repository import RepositoryStore
 from app.plugins.models import StorePlugin
 from app.plugins.repository import PluginRepository
 
@@ -74,3 +77,29 @@ def test_plugin_corrupt_json_lists_do_not_break_repository(tmp_path):
     assert plugin is not None
     assert plugin.capabilities == []
     assert plugin.permissions == []
+
+
+def _row(sql: str):
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    try:
+        row = connection.execute(sql).fetchone()
+        assert row is not None
+        return row
+    finally:
+        connection.close()
+
+
+def test_ansible_wrong_shaped_json_fields_use_typed_defaults():
+    decoded = AnsibleRepository._decode(_row("SELECT '{}' AS tags_json, '[]' AS config_json, 1 AS active"))
+    assert decoded is not None
+    assert decoded["tags"] == []
+    assert decoded["config"] == {}
+
+
+def test_os_repository_json_decoder_isolates_corrupt_and_wrong_shapes():
+    decoded = RepositoryStore.row(_row("SELECT '{}' AS warnings_json, '[]' AS value_json, '{broken' AS details_json"))
+    assert decoded is not None
+    assert decoded["warnings"] == []
+    assert decoded["value"] == {}
+    assert decoded["details"] == {}
