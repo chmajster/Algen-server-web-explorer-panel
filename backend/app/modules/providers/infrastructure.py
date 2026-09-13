@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
-import secrets
+import ssl
 import subprocess
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,32 @@ from .base import ModuleProvider
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/+,-]{0,255}$")
 SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
+MAX_API_RESPONSE = 2 * 1024 * 1024
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
+        super().__init__(hostname, port, timeout=timeout)
+        self._pinned_address = address
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection((self._pinned_address, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
+        context = ssl.create_default_context()
+        super().__init__(hostname, port, timeout=timeout, context=context)
+        self._pinned_address = address
+        self._tls_context = context
+
+    def connect(self) -> None:
+        raw = socket.create_connection((self._pinned_address, self.port), self.timeout)
+        try:
+            self.sock = self._tls_context.wrap_socket(raw, server_hostname=self.host)
+        except Exception:
+            raw.close()
+            raise
 
 
 class CommandProvider(ModuleProvider):
@@ -197,19 +223,29 @@ class ApiConnectionProvider(PrivateBackupProvider):
         return "http://127.0.0.1"
 
     @staticmethod
-    def _validate_base_url(value: str) -> str:
+    def _validated_base_target(value: str) -> tuple[str, urllib.parse.SplitResult, list[str]]:
         if len(value) > 300:
             api_error(422, "INVALID_API_URL", "API URL is too long")
-        parsed = urllib.parse.urlsplit(value.rstrip("/"))
+        normalized = value.rstrip("/")
+        parsed = urllib.parse.urlsplit(normalized)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             api_error(422, "INVALID_API_URL", "API URL must be an HTTP(S) origin without credentials, query or fragment")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
         try:
-            addresses = {item[4][0] for item in socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)}
-        except OSError as error:
+            addresses = sorted({
+                str(ipaddress.ip_address(item[4][0]))
+                for item in socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+            })
+        except (OSError, ValueError) as error:
             raise HTTPConnectionError("API host cannot be resolved") from error
         if not addresses or any(not (ipaddress.ip_address(address).is_private or ipaddress.ip_address(address).is_loopback) for address in addresses):
             api_error(422, "API_HOST_NOT_PRIVATE", "Module APIs must resolve only to private or loopback addresses")
-        return value.rstrip("/")
+        return normalized, parsed, addresses
+
+    @classmethod
+    def _validate_base_url(cls, value: str) -> str:
+        normalized, _, _ = cls._validated_base_target(value)
+        return normalized
 
     def save_connection(self, base_url: str, username: str, secret: str | None) -> dict[str, Any]:
         current = self.connection()
@@ -228,23 +264,44 @@ class ApiConnectionProvider(PrivateBackupProvider):
         os.chmod(self.connection_path, 0o600)
         return self.public_connection()
 
+    @staticmethod
+    def _connection(parsed: urllib.parse.SplitResult, address: str, timeout: int) -> http.client.HTTPConnection:
+        if not parsed.hostname:
+            raise RuntimeError("Module API hostname is unavailable")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if parsed.scheme == "https":
+            return _PinnedHTTPSConnection(parsed.hostname, port, address, timeout=timeout)
+        return _PinnedHTTPConnection(parsed.hostname, port, address, timeout=timeout)
+
     def _request(self, path: str, *, method: str = "GET", payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None, timeout: int = 10) -> Any:
         config = self.connection()
-        base = self._validate_base_url(str(config.get("base_url") or self.default_base_url()))
+        _, parsed, addresses = self._validated_base_target(str(config.get("base_url") or self.default_base_url()))
         if not path.startswith("/") or ".." in path:
             api_error(400, "INVALID_API_PATH", "Invalid module API path")
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request(base + path, data=data, method=method, headers={"Accept": "application/json", "Content-Type": "application/json", **(headers or {})})
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
-                content = response.read(2 * 1024 * 1024 + 1)
-        except urllib.error.HTTPError as error:
-            raise RuntimeError(f"Module API returned HTTP {error.code}") from error
-        except urllib.error.URLError as error:
-            raise RuntimeError("Module API is unavailable") from error
-        if len(content) > 2 * 1024 * 1024:
-            raise RuntimeError("Module API response exceeds 2 MiB")
-        return json.loads(content.decode("utf-8")) if content else {}
+        request_headers = {"Accept": "application/json", "Content-Type": "application/json", **(headers or {})}
+        last_error: OSError | http.client.HTTPException | None = None
+        for address in addresses:
+            connection = self._connection(parsed, address, timeout)
+            try:
+                connection.request(method, path, body=data, headers=request_headers)
+                response = connection.getresponse()
+                if not 200 <= response.status < 300:
+                    response.read()
+                    raise RuntimeError(f"Module API returned HTTP {response.status}")
+                content = response.read(MAX_API_RESPONSE + 1)
+                if len(content) > MAX_API_RESPONSE:
+                    raise RuntimeError("Module API response exceeds 2 MiB")
+                return json.loads(content.decode("utf-8")) if content else {}
+            except RuntimeError:
+                raise
+            except (OSError, http.client.HTTPException) as error:
+                last_error = error
+            finally:
+                connection.close()
+        if last_error is not None:
+            raise RuntimeError("Module API is unavailable") from last_error
+        raise RuntimeError("Module API is unavailable")
 
 
 class HTTPConnectionError(RuntimeError):
