@@ -13,6 +13,7 @@ from .service import NetworkToolError, service
 
 router = APIRouter(prefix="/api/modules/network-tools", tags=["network-tools"])
 _PUBLIC_NETWORK_ERRORS = {"dig is required for this DNS record type", "iproute2 is unavailable"}
+_RATE_NETWORK_ERRORS = {"network diagnostic rate limit exceeded", "too many concurrent network diagnostics"}
 
 
 def _allow(user: SessionUser, permission: str) -> None:
@@ -24,7 +25,7 @@ def _run(user: SessionUser, action: str, callback):  # type: ignore[no-untyped-d
         return service().execute(user.username, action, callback)
     except NetworkToolError as error:
         message = str(error)
-        if "rate limit" in message or "concurrent" in message:
+        if message in _RATE_NETWORK_ERRORS:
             api_error(429, "NETWORK_TOOL_FAILED", message)
         api_error(422, "NETWORK_TOOL_FAILED", message if message in _PUBLIC_NETWORK_ERRORS else "Network diagnostic failed")
 
