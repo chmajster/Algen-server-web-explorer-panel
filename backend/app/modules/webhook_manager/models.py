@@ -58,6 +58,37 @@ def _valid_header_value(value: str) -> bool:
     return all((ord(character) >= 32 or character == "\t") and ord(character) != 127 for character in value)
 
 
+def normalize_custom_headers(values: dict[str, str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    seen: set[str] = set()
+    for raw_name, raw_value in values.items():
+        name = str(raw_name).strip()
+        value = str(raw_value).strip()
+        normalized = name.casefold()
+        if not name or not _valid_header_name(name):
+            raise ValueError("invalid webhook header name")
+        if normalized in CUSTOM_HEADER_FORBIDDEN:
+            raise ValueError(f"header {raw_name!r} is managed or forbidden")
+        if normalized in seen:
+            raise ValueError(f"duplicate webhook header {raw_name!r}")
+        if not _valid_header_value(value):
+            raise ValueError("invalid webhook header value")
+        if len(name) > 128 or len(value) > 4096:
+            raise ValueError("webhook header is too large")
+        seen.add(normalized)
+        result[name] = value
+    return result
+
+
+def normalize_auth_header_name(value: str) -> str:
+    value = str(value).strip()
+    if not value or not _valid_header_name(value):
+        raise ValueError("invalid authentication header name")
+    if value.casefold() in AUTH_HEADER_FORBIDDEN:
+        raise ValueError("unsupported authentication header")
+    return value
+
+
 class WebhookInput(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str = Field(default="", max_length=2000)
@@ -95,35 +126,12 @@ class WebhookInput(BaseModel):
     @field_validator("headers")
     @classmethod
     def safe_headers(cls, values: dict[str, str]) -> dict[str, str]:
-        result: dict[str, str] = {}
-        seen: set[str] = set()
-        for raw_name, raw_value in values.items():
-            name = raw_name.strip()
-            value = raw_value.strip()
-            normalized = name.casefold()
-            if not name or not _valid_header_name(name):
-                raise ValueError("invalid webhook header name")
-            if normalized in CUSTOM_HEADER_FORBIDDEN:
-                raise ValueError(f"header {raw_name!r} is managed or forbidden")
-            if normalized in seen:
-                raise ValueError(f"duplicate webhook header {raw_name!r}")
-            if not _valid_header_value(value):
-                raise ValueError("invalid webhook header value")
-            if len(name) > 128 or len(value) > 4096:
-                raise ValueError("webhook header is too large")
-            seen.add(normalized)
-            result[name] = value
-        return result
+        return normalize_custom_headers(values)
 
     @field_validator("auth_header_name")
     @classmethod
     def safe_auth_header(cls, value: str) -> str:
-        value = value.strip()
-        if not value or not _valid_header_name(value):
-            raise ValueError("invalid authentication header name")
-        if value.casefold() in AUTH_HEADER_FORBIDDEN:
-            raise ValueError("unsupported authentication header")
-        return value
+        return normalize_auth_header_name(value)
 
 
 class WebhookDeleteInput(BaseModel):
