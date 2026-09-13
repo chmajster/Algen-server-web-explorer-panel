@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app import transport_settings
+from app.alerts import delivery as alert_delivery
 from app.app_store import state as app_state
 from app.modules.ansible_controller import awx
 from app.modules.proxmox_manager import ProxmoxApiClient
@@ -26,6 +27,11 @@ def test_proxmox_manager_installs_hardened_client_and_disables_redirects() -> No
     assert ProxmoxApiClient is proxmox_secure.HardenedProxmoxApiClient
 
     handler = proxmox_secure._NoRedirectHandler()
+    assert handler.redirect_request(None, None, 302, "Found", {}, "https://attacker.example/") is None
+
+
+def test_alert_webhook_transport_disables_redirects() -> None:
+    handler = alert_delivery._NoRedirectHandler()
     assert handler.redirect_request(None, None, 302, "Found", {}, "https://attacker.example/") is None
 
 
