@@ -15,6 +15,20 @@ class DeliveryError(RuntimeError):
     pass
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+def _open_no_redirect(request: urllib.request.Request, *, timeout: int):
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPHandler(),
+        urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+        _NoRedirectHandler(),
+    )
+    return opener.open(request, timeout=timeout)
+
+
 def safe_payload(alert: dict[str, Any]) -> dict[str, Any]:
     return redact(
         {
@@ -71,7 +85,7 @@ def _deliver_webhook(sink: dict[str, Any], payload: dict[str, Any], *, ntfy: boo
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with _open_no_redirect(request, timeout=15) as response:
             if not 200 <= int(response.status) < 300:
                 raise DeliveryError(f"notification webhook returned HTTP {response.status}")
     except DeliveryError:
