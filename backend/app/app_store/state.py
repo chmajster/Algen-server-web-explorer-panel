@@ -22,6 +22,19 @@ def app_state_path(app_id: str) -> Path:
     return path
 
 
+def _normalize_state(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {"installed": False, "history": []}
+    state = dict(value)
+    if not isinstance(state.get("installed"), bool):
+        state["installed"] = False
+    if not isinstance(state.get("history"), list):
+        state["history"] = []
+    if "changes" in state and not isinstance(state.get("changes"), list):
+        state["changes"] = []
+    return state
+
+
 def read_state(app_id: str) -> dict:
     path = app_state_path(app_id)
     if not path.exists():
@@ -30,11 +43,11 @@ def read_state(app_id: str) -> dict:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         return {"installed": False, "history": []}
-    return value if isinstance(value, dict) else {"installed": False, "history": []}
+    return _normalize_state(value)
 
 
 def write_state(app_id: str, state: dict) -> None:
     path = app_state_path(app_id)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps(_normalize_state(state), indent=2), encoding="utf-8")
     tmp.replace(path)
