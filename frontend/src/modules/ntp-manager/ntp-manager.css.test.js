@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { URL } from "node:url";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const css = readFileSync(new URL("./ntp-manager.css", import.meta.url), "utf8");
+const css = readFileSync(resolve("src/modules/ntp-manager/ntp-manager.css"), "utf8");
 
 describe("NTP window layout contract", () => {
   it("uses the module width instead of only the browser viewport", () => {
