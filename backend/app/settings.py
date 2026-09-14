@@ -293,7 +293,7 @@ class MePatch(BaseModel):
     show_background_actions_indicator: bool | None = None
     window_transparency: bool | None = None
     animations_enabled: bool | None = None
-    clock_show_seconds: bool | None = None
+    clock_show_seconds: bool = False
     date_format: Literal["locale", "short", "long", "iso"] | None = None
     time_format: Literal["12", "24"] | None = None
     interface_scale: int | None = Field(default=None, ge=50, le=200)
@@ -692,6 +692,8 @@ def _default_auto_update_state() -> dict:
 def _safe_persisted_number(value: object) -> float | None:
     if value is None or isinstance(value, bool):
         return None
+    if not isinstance(value, (str, int, float)):
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError):
@@ -703,6 +705,8 @@ def _safe_persisted_number(value: object) -> float | None:
 
 def _safe_persisted_int(value: object, *, minimum: int | None = None, maximum: int | None = None) -> int | None:
     if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, (str, int, float)):
         return None
     try:
         number = int(value)
@@ -1188,7 +1192,7 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
             message = "Aktualizacja nie powiodła się."
         with coordination_lock():
             latest = read_update_request()
-            if latest.get("id") == request_state.get("id"):
+            if latest.get("id") == request_state.get("id") and latest.get("state") in {"preparing", "running"}:
                 failed_step = str(latest.get("phase") or "prepare")
                 fail_update_step(failed_step if failed_step in UPDATE_STEPS else "prepare", message or "Aktualizacja nie powiodła się.")
                 latest = read_update_request()
