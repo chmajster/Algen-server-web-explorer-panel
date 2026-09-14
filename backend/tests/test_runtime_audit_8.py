@@ -16,6 +16,7 @@ from app.modules.ansible_controller import awx
 from app.modules.hosts_manager import agent as hosts_agent
 from app.modules.ldap_manager.repository import LdapManagerRepository
 from app.modules.proxmox_manager import ProxmoxApiClient
+from app.modules.proxmox_manager import inventory as proxmox_inventory
 from app.modules.proxmox_manager import secure_client as proxmox_secure
 
 
@@ -154,3 +155,64 @@ def test_ldap_authentication_corrupted_persisted_state_does_not_break_settings(t
     assert settings["group_cache_ttl_seconds"] == 300
     assert settings["servers"] == [{"id": "good", "host": "ldap2.example", "port": 636, "priority": 5, "enabled": True}]
     assert mappings[0]["priority"] == 100
+
+
+def test_proxmox_inventory_malformed_metrics_degrade_without_crashing() -> None:
+    class Client:
+        def get(self, path: str):
+            if path == "nodes":
+                return [{"node": "pve1", "status": "online", "uptime": "bad", "cpu": "nan", "maxcpu": {}}]
+            if path == "nodes/pve1/status":
+                return {
+                    "uptime": "bad",
+                    "cpu": "nan",
+                    "cpuinfo": {"cpus": "not-int"},
+                    "memory": {"used": "bad", "total": "inf"},
+                    "rootfs": {"used": "bad", "total": "nan"},
+                    "loadavg": "not-a-list",
+                }
+            if path == "nodes/pve1/storage":
+                return [
+                    {
+                        "storage": "local",
+                        "total": "bad",
+                        "used": "nan",
+                        "avail": "nope",
+                        "active": "0",
+                        "shared": "false",
+                        "enabled": "0",
+                    }
+                ]
+            raise AssertionError(path)
+
+    client = Client()
+
+    class Manager:
+        def connections(self, *, active_only: bool = False):
+            assert active_only is True
+            return [{"id": "connection", "name": "PVE"}]
+
+        def _client(self, _connection):
+            return client
+
+        def _resources(self, _connection, _client=None):
+            return []
+
+    manager = Manager()
+    node = proxmox_inventory.list_nodes(manager)["nodes"][0]
+    storage = proxmox_inventory.list_storage(manager)["storage"][0]
+
+    assert node["uptime"] == 0
+    assert node["cpu"] == 0.0
+    assert node["maxcpu"] == 0
+    assert node["mem"] == 0
+    assert node["maxmem"] == 0
+    assert node["storage_used"] == 0
+    assert node["storage_total"] == 0
+    assert node["load_average"] == []
+    assert storage["total"] == 0
+    assert storage["used"] == 0
+    assert storage["free"] == 0
+    assert storage["status"] == "unavailable"
+    assert storage["shared"] is False
+    assert storage["enabled"] is False
