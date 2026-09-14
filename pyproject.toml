@@ -59,13 +59,6 @@ disallow_untyped_defs = false
 warn_unused_ignores = false
 allow_redefinition = true
 
-# Persisted JSON is intentionally accepted as `object` and converted under
-# explicit runtime TypeError/ValueError/OverflowError guards. Mypy 2.3 does not
-# model those guarded built-in int()/float() coercions for arbitrary JSON input.
-[[tool.mypy.overrides]]
-module = "app.settings"
-disable_error_code = ["arg-type", "call-overload"]
-
 [tool.pytest.ini_options]
 pythonpath = ["backend"]
 testpaths = ["backend/tests"]

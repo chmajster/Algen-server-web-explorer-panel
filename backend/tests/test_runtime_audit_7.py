@@ -267,8 +267,12 @@ def test_docker_registry_transport_is_installed_and_pins_validated_address(monke
     assert tls_addresses == ["8.8.8.8"]
 
     calls: list[tuple[str, int]] = []
+    socket_timeouts: list[float] = []
 
     class FakeSocket:
+        def settimeout(self, value: float) -> None:
+            socket_timeouts.append(value)
+
         def close(self) -> None:
             return None
 
@@ -286,6 +290,7 @@ def test_docker_registry_transport_is_installed_and_pins_validated_address(monke
     connection.connect()
     assert connection.host == "registry.example"
     assert calls == [("8.8.8.8", 80)]
+    assert socket_timeouts == [8]
 
 
 def test_docker_registry_transport_uses_connect_timeout_and_final_failure_type(monkeypatch: pytest.MonkeyPatch):

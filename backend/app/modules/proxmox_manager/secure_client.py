@@ -23,6 +23,9 @@ def _read_json(response: Any, limit: int) -> Any:
     body = response.read(limit + 1)
     if len(body) > limit:
         raise _ResponseTooLarge("Proxmox response exceeded the safety limit")
+    remaining = getattr(response, "length", None)
+    if remaining is not None and remaining > 0:
+        raise http.client.IncompleteRead(body, remaining)
     return loads_with_depth_limit(body.decode("utf-8"))
 
 

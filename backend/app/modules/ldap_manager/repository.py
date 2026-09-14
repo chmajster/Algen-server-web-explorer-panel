@@ -111,12 +111,15 @@ class LdapManagerRepository:
 
     @classmethod
     def _public(cls, row: sqlite3.Row, *, include_secret_id: bool = False) -> dict[str, Any]:
+        security_mode = str(row["security_mode"])
+        if security_mode not in {"ldap", "starttls", "ldaps"}:
+            security_mode = "starttls"
         value = {
             "id": str(row["id"]),
             "name": str(row["name"]),
             "directory_type": str(row["directory_type"]),
             "servers": cls._decode_servers(row["servers_json"]),
-            "security_mode": str(row["security_mode"]),
+            "security_mode": security_mode,
             "verify_tls": _safe_bool(row["verify_tls"], True),
             "ca_certificate": str(row["ca_certificate"]),
             "base_dn": str(row["base_dn"]),
@@ -152,9 +155,9 @@ class LdapManagerRepository:
             existing = self.get(connection_id, include_secret_id=True)
         secret_id = str(existing.get("bind_secret_id") or "") if existing else ""
         if payload.clear_bind_password:
-            if secret_id:
-                secrets_service().delete(secret_id, actor)
-                secret_id = ""
+            # Clearing cannot satisfy the mandatory-secret invariant. Reject it
+            # before touching the independent secrets database.
+            raise ValueError("LDAP Manager connection requires its own bind password")
         elif payload.bind_password:
             saved = secrets_service().save(
                 SecretInput(

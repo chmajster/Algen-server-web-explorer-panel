@@ -761,6 +761,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/system/updates/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Updates Recover */
+        post: operations["admin_updates_recover_api_admin_system_updates_recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/system/updates/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Update Versions */
+        get: operations["admin_update_versions_api_admin_system_updates_versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/transfers": {
         parameters: {
             query?: never;
@@ -18822,6 +18856,13 @@ export interface components {
              */
             detailed_steps: boolean;
         };
+        /** UpdateRecoveryAction */
+        UpdateRecoveryAction: {
+            /** Failed Update Id */
+            failed_update_id?: string | null;
+            /** Revision */
+            revision: string;
+        };
         /** UploadStartRequest */
         UploadStartRequest: {
             /** Filename */
@@ -21384,6 +21425,59 @@ export interface operations {
         };
     };
     admin_updates_progress_api_admin_system_updates_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_updates_recover_api_admin_system_updates_recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRecoveryAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_update_versions_api_admin_system_updates_versions_get: {
         parameters: {
             query?: never;
             header?: never;

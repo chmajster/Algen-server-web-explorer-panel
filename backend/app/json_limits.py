@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 
 MAX_JSON_DEPTH = 128
+
+
+def _finite_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("JSON response contains a non-finite number")
+    return number
 
 
 def loads_with_depth_limit(text: str, *, max_depth: int = MAX_JSON_DEPTH) -> Any:
@@ -36,4 +44,4 @@ def loads_with_depth_limit(text: str, *, max_depth: int = MAX_JSON_DEPTH) -> Any
                 raise ValueError("JSON response exceeded the nesting limit")
         elif character in "]}":
             depth -= 1
-    return json.loads(text)
+    return json.loads(text, parse_float=_finite_float, parse_constant=_finite_float)

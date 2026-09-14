@@ -16,6 +16,7 @@ import type {
   UpdateStart,
   UpdateStatus,
   UpdateStep,
+  UpdateVersion,
 } from "../../../core/api/contracts";
 
 function nullableNumber(value: unknown): number | null {
@@ -185,6 +186,26 @@ function normalizeCompletion(value: unknown): UpdateCompletionNotice | null {
 }
 
 export const updatesClient = {
+  updateVersions: async (): Promise<UpdateVersion[]> => {
+    const value = asRecord(await request<unknown>("/api/admin/system/updates/versions"));
+    return asArray(value.versions).map((item): UpdateVersion => {
+      const source = asRecord(item);
+      return {
+        revision: asString(source.revision),
+        name: asString(source.name),
+        kind: source.kind === "tag" ? "tag" : "commit",
+        published_at: typeof source.published_at === "string" ? source.published_at : null,
+      };
+    }).filter((item) => /^[0-9a-f]{40}$/.test(item.revision));
+  },
+
+  recoverUpdate: async (revision: string, failedUpdateId: string | null) => normalizeStart(
+    await request<unknown>("/api/admin/system/updates/recover", {
+      method: "POST",
+      body: JSON.stringify({ revision, failed_update_id: failedUpdateId }),
+    }),
+  ),
+
   checkUpdates: async () => normalizeStatus(
     await request<unknown>("/api/admin/system/updates/check"),
   ),

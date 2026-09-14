@@ -200,6 +200,11 @@ class _PinnedRegistryTransport(httpx.BaseTransport):
                 response_body = response.read(self.response_limit + 1)
                 if len(response_body) > self.response_limit:
                     api_error(502, "REGISTRY_RESPONSE_TOO_LARGE", "Registry response exceeded the safety limit")
+                remaining = getattr(response, "length", None)
+                if remaining is not None and remaining > 0:
+                    # A bounded HTTPResponse.read() does not itself reject early EOF.
+                    response.close()
+                    raise http.client.IncompleteRead(response_body, remaining)
                 return httpx.Response(
                     status_code=int(response.status),
                     headers=response_headers,
@@ -271,7 +276,9 @@ def install_docker_registry_transport(provider_cls: type[Any]) -> None:
                                 api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
                             decoded = {}
                         if not isinstance(decoded, dict):
-                            api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
+                            if 200 <= response.status_code < 300:
+                                api_error(502, "INVALID_REGISTRY_RESPONSE", "Registry returned an invalid response")
+                            decoded = {}
                         payload = decoded
                     return response.status_code, payload, response_headers
         except httpx.TimeoutException:

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from . import __version__
+from .update_versions import repository_versions
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -387,6 +388,13 @@ class ServiceAction(BaseModel):
 class UpdateAction(AdminSessionAction):
     update_config: bool = False
     npm_audit_fix: bool = False
+
+
+class UpdateRecoveryAction(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    revision: str = Field(min_length=40, max_length=40, pattern=r"^[0-9a-f]{40}$")
+    failed_update_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class UpdateCompletionAck(BaseModel):
@@ -888,10 +896,15 @@ def _update_status() -> dict:
     }
 
 
-def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: bool = False) -> dict:
+def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: bool = False, revision: str | None = None) -> dict:
+    if revision is not None and (not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision)):
+        raise HTTPException(400, "Invalid recovery revision")
     if broker_required():
         try:
-            result = update_service(update_config=update_config, npm_audit_fix=npm_audit_fix, actor=actor)
+            result = update_service(
+                update_config=update_config, npm_audit_fix=npm_audit_fix, actor=actor,
+                revision=revision,
+            )
         except RuntimeError as error:
             logger.warning("webnas_update_service_start_failed error_type=%s", type(error).__name__)
             raise HTTPException(503, "Could not start the WebNAS update service") from error
@@ -920,6 +933,8 @@ def _start_update_process(update_config: bool, *, actor: str, npm_audit_fix: boo
         if temporary.exists():
             temporary.unlink()
     command = [_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
+    if revision is not None:
+        command.extend(["--revision", revision])
     if update_config:
         command.append("--update-config")
     if npm_audit_fix:
@@ -1060,8 +1075,15 @@ def _safe_blockers(blockers: list[dict]) -> list[dict]:
     ]
 
 
-def _request_update(*, actor: str, update_config: bool, status: dict | None = None, npm_audit_fix: bool = False) -> dict:
+def _request_update(
+    *, actor: str, update_config: bool, status: dict | None = None, npm_audit_fix: bool = False,
+    install_revision: str | None = None, failed_update_id: str | None = None,
+) -> dict:
+    if install_revision is not None and (not isinstance(install_revision, str) or not re.fullmatch(r"[0-9a-f]{40}", install_revision)):
+        raise HTTPException(400, "Invalid recovery revision")
     status = status or _update_status()
+    if install_revision is not None and (status.get("remote") != install_revision or update_config or npm_audit_fix):
+        raise HTTPException(400, "Invalid recovery options")
     now = time.time()
     log_path = Path(get_config().paths.log_dir) / "update.log"
     try:
@@ -1070,6 +1092,12 @@ def _request_update(*, actor: str, update_config: bool, status: dict | None = No
         log_offset = 0
     with coordination_lock():
         current = read_update_request()
+        if install_revision is not None:
+            # Compare-and-start under the admission lock: a stale browser must
+            # never overwrite a newer update or re-use an already handled failure.
+            progress = _update_progress()
+            if progress.get("state") != "failed" or progress.get("running") or (progress.get("id") or None) != failed_update_id:
+                raise HTTPException(409, {"code": "UPDATE_RECOVERY_STALE", "message": "Stan aktualizacji zmienił się. Odśwież status przed ponowną próbą."})
         if current.get("state") in {"waiting", "preparing", "running"}:
             blockers = _safe_blockers(active_operations()) if current.get("state") == "waiting" else []
             raise HTTPException(
@@ -1094,6 +1122,8 @@ def _request_update(*, actor: str, update_config: bool, status: dict | None = No
                 "finished_at": None,
                 "update_config": update_config,
                 "npm_audit_fix": npm_audit_fix,
+                "install_revision": install_revision,
+                "recovery_of": failed_update_id if install_revision is not None else None,
                 "previous_version": status.get("installed_version"),
                 "target_version": status.get("available_version"),
                 "current_version": status.get("installed_version"),
@@ -1183,6 +1213,7 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
             bool(request_state.get("update_config")),
             actor=str(request_state.get("actor") or "system"),
             npm_audit_fix=bool(request_state.get("npm_audit_fix")),
+            **({"revision": request_state["install_revision"]} if request_state.get("install_revision") is not None else {}),
         )
     except Exception as error:  # noqa: BLE001 - failure is persisted for restart-safe status.
         if isinstance(error, HTTPException) and isinstance(error.detail, str):
@@ -2188,6 +2219,32 @@ def admin_updates_download(payload: UpdateAction, request: Request, user: Sessio
     if not status.get("update_available") and not payload.npm_audit_fix:
         return {"ok": True, "updated": False, "status": status, **_record_up_to_date(actor=user.username, status=status)}
     return {"ok": True, "updated": True, "status": status, **_request_update(actor=user.username, update_config=payload.update_config, status=status, npm_audit_fix=payload.npm_audit_fix)}
+
+
+@router.get("/api/admin/system/updates/versions")
+def admin_update_versions(user: SessionUser = Depends(_current_user)):
+    authorize(user, "updates.apply")
+    return {"versions": repository_versions(), "source_url": UPDATE_SOURCE_URL}
+
+
+@router.post("/api/admin/system/updates/recover")
+def admin_updates_recover(payload: UpdateRecoveryAction, request: Request, user: SessionUser = Depends(_current_user)):
+    _require_admin_session(user, request, "recover_update", "updates.apply")
+    selected = next((item for item in repository_versions() if item["revision"] == payload.revision), None)
+    if selected is None:
+        raise HTTPException(400, "Wybrana wersja nie jest dostępna na liście wersji repozytorium. Odśwież listę.")
+    status = {
+        "installed_version": _installed_publication_version(),
+        "available_version": selected["name"] if selected["kind"] == "tag" else payload.revision[:12],
+        "remote": payload.revision,
+        "available": True,
+    }
+    result = _request_update(
+        actor=user.username, update_config=False, status=status,
+        install_revision=payload.revision, failed_update_id=payload.failed_update_id,
+    )
+    _audit(user.username, "recover_update", f"revision={payload.revision} update_id={result.get('id')}")
+    return {"ok": result.get("state") != "failed", "updated": True, **result}
 
 
 @router.get("/api/admin/system/updates/progress")

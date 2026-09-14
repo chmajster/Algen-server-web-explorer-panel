@@ -169,6 +169,7 @@ export type HostInfo = {
   gpus: string[];
   storage: UsageMetric & { path: string } | null;
 };
+export type UpdateVersion = { revision: string; name: string; kind: "tag" | "commit"; published_at: string | null };
 export type UpdateStatus = { branch: string; local: string; remote: string; installed_version?: string | null; available_version?: string | null; update_available: boolean; available?: boolean; error?: string; source?: string; source_url?: string; released_at?: number | null; checked_at?: number };
 export type UpdateBlocker = { id: string; type: string; status: "queued" | "running"; started_at: number | null; progress: number | null; description: string };
 export type UpdateStepStatus = "pending" | "running" | "success" | "failed" | "skipped";
