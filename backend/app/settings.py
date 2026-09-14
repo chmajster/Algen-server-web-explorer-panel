@@ -293,7 +293,7 @@ class MePatch(BaseModel):
     show_background_actions_indicator: bool | None = None
     window_transparency: bool | None = None
     animations_enabled: bool | None = None
-    clock_show_seconds: bool = False
+    clock_show_seconds: bool | None = None
     date_format: Literal["locale", "short", "long", "iso"] | None = None
     time_format: Literal["12", "24"] | None = None
     interface_scale: int | None = Field(default=None, ge=50, le=200)
@@ -1192,7 +1192,7 @@ def _process_waiting_update(request_id: str | None = None) -> dict:
             message = "Aktualizacja nie powiodła się."
         with coordination_lock():
             latest = read_update_request()
-            if latest.get("id") == request_state.get("id") and latest.get("state") in {"preparing", "running"}:
+            if latest.get("id") == request_state.get("id"):
                 failed_step = str(latest.get("phase") or "prepare")
                 fail_update_step(failed_step if failed_step in UPDATE_STEPS else "prepare", message or "Aktualizacja nie powiodła się.")
                 latest = read_update_request()
