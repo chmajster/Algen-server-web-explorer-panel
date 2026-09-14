@@ -125,11 +125,15 @@ def update_service(
     npm_audit_fix: bool,
     actor: str,
     client: BrokerClient | None = None,
+    revision: str | None = None,
 ) -> dict[str, Any]:
     selected = client or BrokerClient()
+    options: dict[str, Any] = {"update_config": update_config, "npm_audit_fix": npm_audit_fix}
+    if revision is not None:
+        options["revision"] = revision
     response = selected.require(
         Operation.UPDATE_SERVICE,
-        {"update_config": update_config, "npm_audit_fix": npm_audit_fix},
+        options,
         actor=actor,
     )
     try:

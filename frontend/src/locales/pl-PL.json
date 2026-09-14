@@ -3885,5 +3885,20 @@
   "hosts.credentials.field.gitUser": "Użytkownik Git",
   "hosts.credentials.field.optional": "Pole opcjonalne.",
   "hosts.credentials.wolNoSecret": "Wake-on-LAN nie wymaga sekretu.",
-  "hosts.credentials.wolNoSecretHint": "Adres MAC i parametry WOL są konfigurowane w profilu zasilania hosta."
+  "hosts.credentials.wolNoSecretHint": "Adres MAC i parametry WOL są konfigurowane w profilu zasilania hosta.",
+  "updateRecovery.title": "Zainstaluj wybraną wersję z repozytorium",
+  "updateRecovery.description": "Wybierz tag lub jedną z ostatnich rewizji gałęzi main. Instalacja zachowa istniejący plik config.yaml i dane aplikacji.",
+  "updateRecovery.warning": "Starsza wersja może być niezgodna z aktualną konfiguracją lub bazą danych. Instalacja nie cofa migracji danych. Przed obniżeniem wersji wykonaj kopię zapasową danych.",
+  "updateRecovery.confirm": "Zainstalować wersję {version}? Config.yaml zostanie zachowany. Usługa może zostać zrestartowana. Starsza wersja może być niezgodna z danymi; migracje nie zostaną cofnięte.",
+  "updateRecovery.loading": "Pobieranie wersji z repozytorium…",
+  "updateRecovery.loadError": "Nie można pobrać listy wersji.",
+  "updateRecovery.empty": "Repozytorium nie zwróciło dostępnych wersji.",
+  "updateRecovery.version": "Wersja do zainstalowania",
+  "updateRecovery.choose": "Wybierz wersję…",
+  "updateRecovery.refresh": "Odśwież listę wersji",
+  "updateRecovery.install": "Zainstaluj tę wersję",
+  "updateRecovery.starting": "Uruchamianie instalacji…",
+  "updateRecovery.installError": "Nie udało się uruchomić instalacji wybranej wersji.",
+  "updateRecovery.kind.tag": "Tag",
+  "updateRecovery.kind.commit": "Rewizja main"
 }
