@@ -38,6 +38,9 @@ export function syncPresentation(data: NtpDiagnostics): { title: string; detail:
   if (data.role === "disabled") return {
     title: "Synchronizacja wyłączona", detail: "Wybierz tryb pracy, aby korzystać z klienta lub serwera czasu NTP.", tone: "neutral", target: "server", action: "Wybierz tryb pracy",
   };
+  if (data.role === "server") return {
+    title: "Serwer NTP aktywny", detail: "Host pracuje wyłącznie jako serwer czasu. Synchronizacja ze źródłem zewnętrznym nie jest wymagana w tym trybie.", tone: data.health === "degraded" ? "warning" : "success", target: "clients", action: "Zobacz klientów",
+  };
   if (data.synchronized) return {
     title: "Czas zsynchronizowany", detail: data.health === "degraded" ? "Zegar jest zsynchronizowany, ale diagnostyka wykryła ostrzeżenia." : "Zegar systemowy korzysta z zewnętrznego źródła czasu.", tone: data.health === "degraded" ? "warning" : "success", target: "diagnostics", action: "Zobacz diagnostykę",
   };
