@@ -10,11 +10,15 @@
 - LDAP Manager rejects an impossible bind-password clear operation before modifying the independent secrets store. A rejected settings update no longer deletes the working bind credential and leaves a dangling secret reference.
 - LDAP Manager normalizes an unknown persisted security mode to StartTLS instead of allowing the connection code to silently fall through to a plaintext bind. Valid configured LDAP, StartTLS and LDAPS modes remain unchanged.
 
+- Shared module API URL validation now returns `INVALID_API_URL`/422 for malformed hostnames, invalid IPv6 syntax, nonnumeric/out-of-range ports and port zero before DNS or configuration writes.
+- LDAP Authentication rejects unsafe DNS answers as an endpoint connection failure, allowing the normal failover loop to try the next independently validated server. If every endpoint is unsafe it returns the controlled LDAP connection failure without opening a socket.
+
 ## Regression coverage
 
 - Added `backend/tests/test_runtime_audit_10.py` with 59 cases covering actual standard-library HTTP parsing over controlled socket doubles, HTTP/HTTPS timeout separation, truncated responses, authentication challenge preservation, non-finite JSON, LDAP credential preservation, corrupted transport mode and the mypy configuration guard.
+- Added 12 cases in `backend/tests/test_runtime_audit_review_followups.py` covering invalid URL/port rejection, valid prefixes/ports, safe LDAP failover and the all-unsafe case. Nine failed on the previous code and passed after these fixes.
 - Retained and repaired the existing validated-address pinning regression in `backend/tests/test_runtime_audit_7.py`.
-- A targeted local run of audits 7-10, JSON limits, LDAP Manager and the Proxmox manager/operations/advanced suites passed 242 tests on Python 3.13.5. The local environment is not the pinned production environment; complete Python 3.14 repository CI on the final PR head remains authoritative.
+- A targeted local run of audits 7-10, review follow-ups, JSON limits, LDAP Authentication/Manager and the Proxmox manager/operations/advanced suites passed 276 tests on Python 3.13.5. The local environment is not the pinned production environment; complete Python 3.14 repository CI on the final PR head remains authoritative.
 
 ## Integration
 

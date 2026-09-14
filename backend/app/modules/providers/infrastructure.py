@@ -228,10 +228,16 @@ class ApiConnectionProvider(PrivateBackupProvider):
         if len(value) > 300:
             api_error(422, "INVALID_API_URL", "API URL is too long")
         normalized = value.rstrip("/")
-        parsed = urllib.parse.urlsplit(normalized)
+        try:
+            parsed = urllib.parse.urlsplit(normalized)
+            configured_port = parsed.port
+        except ValueError:
+            api_error(422, "INVALID_API_URL", "API URL has an invalid hostname or port")
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             api_error(422, "INVALID_API_URL", "API URL must be an HTTP(S) origin without credentials, query or fragment")
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if configured_port == 0:
+            api_error(422, "INVALID_API_URL", "API port must be between 1 and 65535")
+        port = configured_port or (443 if parsed.scheme == "https" else 80)
         try:
             addresses = sorted({
                 str(ipaddress.ip_address(item[4][0]))

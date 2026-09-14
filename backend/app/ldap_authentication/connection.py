@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from ldap3 import NONE, Connection, Server, Tls
+from ldap3.core.exceptions import LDAPSocketOpenError
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +155,12 @@ def connect(
     password: str,
     get_info: Any = NONE,
 ) -> Connection:
-    addresses = resolve_host(endpoint)
+    try:
+        addresses = resolve_host(endpoint)
+    except ValueError as error:
+        # Reject this endpoint before creating a socket, but let authentication
+        # failover proceed to other independently validated directory servers.
+        raise LDAPSocketOpenError("LDAP server resolved to a disallowed target") from error
     server = Server(
         endpoint.host,
         port=endpoint.port,
