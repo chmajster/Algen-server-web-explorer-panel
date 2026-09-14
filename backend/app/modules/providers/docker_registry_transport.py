@@ -19,9 +19,12 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
     def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
         super().__init__(hostname, port, timeout=timeout)
         self._pinned_address = address
+        self._connect_timeout = timeout
+        self._read_timeout = timeout
 
     def connect(self) -> None:
-        self.sock = socket.create_connection((self._pinned_address, self.port), self.timeout)
+        self.sock = socket.create_connection((self._pinned_address, self.port), self._connect_timeout)
+        self.sock.settimeout(self._read_timeout)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
@@ -36,12 +39,15 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     ) -> None:
         super().__init__(hostname, port, timeout=timeout, context=context)
         self._pinned_address = address
+        self._connect_timeout = timeout
+        self._read_timeout = timeout
         self._tls_context = context
 
     def connect(self) -> None:
-        raw = socket.create_connection((self._pinned_address, self.port), self.timeout)
+        raw = socket.create_connection((self._pinned_address, self.port), self._connect_timeout)
         try:
             self.sock = self._tls_context.wrap_socket(raw, server_hostname=self.host)
+            self.sock.settimeout(self._read_timeout)
         except Exception:
             raw.close()
             raise
@@ -103,10 +109,10 @@ def _validated_target(url: str, expected_host: str, require_tls: bool) -> tuple[
     return parsed, addresses
 
 
-def _connect_timeout(request: httpx.Request, fallback: float = 20.0) -> float:
+def _timeout_value(request: httpx.Request, key: str, fallback: float) -> float:
     timeout = request.extensions.get("timeout")
     if isinstance(timeout, dict):
-        value = timeout.get("connect")
+        value = timeout.get(key)
         if value is not None:
             try:
                 parsed = float(value)
@@ -115,6 +121,14 @@ def _connect_timeout(request: httpx.Request, fallback: float = 20.0) -> float:
             if math.isfinite(parsed) and parsed > 0:
                 return parsed
     return fallback
+
+
+def _connect_timeout(request: httpx.Request, fallback: float = 20.0) -> float:
+    return _timeout_value(request, "connect", fallback)
+
+
+def _read_timeout(request: httpx.Request, fallback: float = 20.0) -> float:
+    return _timeout_value(request, "read", fallback)
 
 
 class _PinnedRegistryTransport(httpx.BaseTransport):
@@ -149,6 +163,7 @@ class _PinnedRegistryTransport(httpx.BaseTransport):
         # from a compressed body may decode it before the post-decode size guard.
         request_headers["Accept-Encoding"] = "identity"
         connect_timeout = _connect_timeout(request)
+        read_timeout = _read_timeout(request)
         last_error: BaseException | None = None
         for address in addresses:
             connection: http.client.HTTPConnection
@@ -162,6 +177,9 @@ class _PinnedRegistryTransport(httpx.BaseTransport):
                 )
             else:
                 connection = _PinnedHTTPConnection(hostname, port, address, timeout=connect_timeout)
+            # Keep the constructor signature stable for test/instrumentation hooks,
+            # but switch the real socket to the configured read timeout after connect.
+            setattr(connection, "_read_timeout", read_timeout)
             try:
                 connection.request(request.method, target, body=body, headers=request_headers)
                 response = connection.getresponse()
