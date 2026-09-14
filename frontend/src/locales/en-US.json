@@ -3885,5 +3885,20 @@
   "hosts.credentials.field.gitUser": "Git username",
   "hosts.credentials.field.optional": "Optional field.",
   "hosts.credentials.wolNoSecret": "Wake-on-LAN does not require a secret.",
-  "hosts.credentials.wolNoSecretHint": "The MAC address and WOL parameters are configured in the host power profile."
+  "hosts.credentials.wolNoSecretHint": "The MAC address and WOL parameters are configured in the host power profile.",
+  "updateRecovery.title": "Install a selected repository version",
+  "updateRecovery.description": "Select a tag or one of the recent main branch revisions. Installation preserves the existing config.yaml and application data.",
+  "updateRecovery.warning": "An older version may be incompatible with the current configuration or database. Installation does not reverse data migrations. Back up your data before downgrading.",
+  "updateRecovery.confirm": "Install version {version}? Config.yaml will be preserved. The service may restart. An older version may be incompatible with your data; migrations will not be reversed.",
+  "updateRecovery.loading": "Loading repository versions…",
+  "updateRecovery.loadError": "Could not load repository versions.",
+  "updateRecovery.empty": "The repository returned no available versions.",
+  "updateRecovery.version": "Version to install",
+  "updateRecovery.choose": "Select a version…",
+  "updateRecovery.refresh": "Refresh version list",
+  "updateRecovery.install": "Install this version",
+  "updateRecovery.starting": "Starting installation…",
+  "updateRecovery.installError": "Could not start installation of the selected version.",
+  "updateRecovery.kind.tag": "Tag",
+  "updateRecovery.kind.commit": "Main revision"
 }

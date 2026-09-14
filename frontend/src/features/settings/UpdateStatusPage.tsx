@@ -18,10 +18,12 @@ import type {
   UpdateBlocker,
   UpdateCompletionNotice,
   UpdateProgress,
+  UpdateStart,
   UpdateStep,
 } from "../../api";
 import { request } from "../../core/api/transport";
 import type { Translate } from "../../app/types";
+import { UpdateVersionRecovery } from "./UpdateVersionRecovery";
 
 function timestamp(value: number | null | undefined) {
   return value ? new Date(value * 1000).toLocaleString() : "—";
@@ -112,6 +114,7 @@ export function UpdateStatusPage({
   canRetry = true,
   t,
   onRetry,
+  onRecoveryStarted,
   onReturn,
   onLogin,
 }: {
@@ -120,6 +123,7 @@ export function UpdateStatusPage({
   canRetry?: boolean;
   t: Translate;
   onRetry: () => void;
+  onRecoveryStarted?: (value: UpdateStart) => void;
   onReturn: () => void;
   onLogin: () => void;
 }) {
@@ -364,6 +368,16 @@ export function UpdateStatusPage({
             <pre ref={logRef}>{logContent}</pre>
           </section>
         </details>
+
+        {failed && canRetry && (
+          <UpdateVersionRecovery
+            key={value.id || "legacy-failure"}
+            failedUpdateId={value.id || null}
+            disconnected={connectionError}
+            t={t}
+            onStarted={onRecoveryStarted}
+          />
+        )}
 
         <footer className="update-status-footer">
           <p>
