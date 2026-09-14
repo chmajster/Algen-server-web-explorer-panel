@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import urllib.parse
 from typing import Any, cast
@@ -11,6 +12,44 @@ from .service import PROVIDER, ProxmoxApiError, ProxmoxManagerService
 _DISK_KEY = re.compile(r"^(?:ide|sata|scsi|virtio)\d+$")
 _NET_KEY = re.compile(r"^net\d+$")
 _BACKUP_VMID = re.compile(r"vzdump-(?:qemu|lxc)-(\d+)-")
+
+
+def _safe_int(value: object, default: int = 0, *, minimum: int | None = None) -> int:
+    if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return default
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if minimum is not None and number < minimum:
+        return default
+    return number
+
+
+def _safe_float(value: object, default: float = 0.0, *, minimum: float | None = None) -> float:
+    if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if not math.isfinite(number) or (minimum is not None and number < minimum):
+        return default
+    return number
+
+
+def _safe_bool(value: object, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"1", "true", "yes", "on", "online"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "offline"}:
+            return False
+    return default
 
 
 def _connections(manager: ProxmoxManagerService, connection_id: str = "") -> list[dict[str, Any]]:
@@ -95,11 +134,11 @@ def _hardware_from_config(config: dict[str, Any], resource_type: str) -> dict[st
                 }
             )
     return {
-        "cores": int(config.get("cores") or 0),
-        "sockets": int(config.get("sockets") or 1),
+        "cores": _safe_int(config.get("cores"), 0, minimum=0),
+        "sockets": _safe_int(config.get("sockets"), 1, minimum=1),
         "cpu_type": str(config.get("cpu") or config.get("cputype") or ""),
-        "memory_mb": int(config.get("memory") or 0),
-        "balloon_mb": int(config.get("balloon") or 0),
+        "memory_mb": _safe_int(config.get("memory"), 0, minimum=0),
+        "balloon_mb": _safe_int(config.get("balloon"), 0, minimum=0),
         "machine": str(config.get("machine") or ""),
         "bios": str(config.get("bios") or "seabios"),
         "agent": config.get("agent", ""),
@@ -121,8 +160,13 @@ def list_nodes(manager: ProxmoxManagerService, connection_id: str = "") -> dict[
             continue
         counts: dict[str, dict[str, int]] = {}
         for resource in resources:
+            if not isinstance(resource, dict):
+                continue
             bucket = counts.setdefault(str(resource.get("node") or ""), {"vms": 0, "lxc": 0})
             bucket["vms" if resource.get("type") == "qemu" else "lxc"] += 1
+        if not isinstance(raw_nodes, list):
+            errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": "Proxmox nodes response is invalid"})
+            continue
         for raw in raw_nodes:
             if not isinstance(raw, dict) or not raw.get("node"):
                 continue
@@ -133,22 +177,23 @@ def list_nodes(manager: ProxmoxManagerService, connection_id: str = "") -> dict[
             rootfs = _as_dict(status.get("rootfs"))
             cpuinfo = _as_dict(status.get("cpuinfo"))
             memory = _as_dict(status.get("memory"))
+            loadavg = status.get("loadavg")
             values.append(
                 {
                     "connection_id": connection["id"],
                     "connection_name": connection["name"],
                     "node": node_name,
                     "status": str(raw.get("status") or status.get("status") or "unknown"),
-                    "uptime": int(status.get("uptime") or raw.get("uptime") or 0),
-                    "cpu": float(status.get("cpu") or raw.get("cpu") or 0),
-                    "maxcpu": int(cpuinfo.get("cpus") or raw.get("maxcpu") or 0),
-                    "mem": int(memory.get("used") or raw.get("mem") or 0),
-                    "maxmem": int(memory.get("total") or raw.get("maxmem") or 0),
-                    "storage_used": int(rootfs.get("used") or raw.get("disk") or 0),
-                    "storage_total": int(rootfs.get("total") or raw.get("maxdisk") or 0),
+                    "uptime": _safe_int(status.get("uptime") or raw.get("uptime"), 0, minimum=0),
+                    "cpu": _safe_float(status.get("cpu") or raw.get("cpu"), 0.0, minimum=0.0),
+                    "maxcpu": _safe_int(cpuinfo.get("cpus") or raw.get("maxcpu"), 0, minimum=0),
+                    "mem": _safe_int(memory.get("used") or raw.get("mem"), 0, minimum=0),
+                    "maxmem": _safe_int(memory.get("total") or raw.get("maxmem"), 0, minimum=0),
+                    "storage_used": _safe_int(rootfs.get("used") or raw.get("disk"), 0, minimum=0),
+                    "storage_total": _safe_int(rootfs.get("total") or raw.get("maxdisk"), 0, minimum=0),
                     "kernel": str(status.get("kversion") or ""),
                     "proxmox_version": str(status.get("pveversion") or ""),
-                    "load_average": list(status.get("loadavg") or []),
+                    "load_average": list(loadavg)[:16] if isinstance(loadavg, (list, tuple)) else [],
                     "vms": counts.get(node_name, {}).get("vms", 0),
                     "lxc": counts.get(node_name, {}).get("lxc", 0),
                     "error": status_error,
@@ -162,7 +207,7 @@ def node_details(manager: ProxmoxManagerService, connection_id: str, node: str) 
     client = manager._client(connection)
     encoded = urllib.parse.quote(node, safe="")
     known = client.get("nodes") or []
-    if not any(isinstance(item, dict) and str(item.get("node") or "") == node for item in known):
+    if not isinstance(known, list) or not any(isinstance(item, dict) and str(item.get("node") or "") == node for item in known):
         raise KeyError("Proxmox node not found")
     paths = {
         "status": f"nodes/{encoded}/status",
@@ -191,6 +236,9 @@ def list_storage(manager: ProxmoxManagerService, connection_id: str = "") -> dic
         except ProxmoxApiError as error:
             errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": str(error)})
             continue
+        if not isinstance(raw_nodes, list):
+            errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": "Proxmox nodes response is invalid"})
+            continue
         for node in raw_nodes:
             if not isinstance(node, dict) or not node.get("node"):
                 continue
@@ -200,11 +248,14 @@ def list_storage(manager: ProxmoxManagerService, connection_id: str = "") -> dic
             if storage_error:
                 errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": storage_error})
                 continue
-            for item in raw_storage or []:
+            if not isinstance(raw_storage, list):
+                errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": f"Invalid storage response for {node_name}"})
+                continue
+            for item in raw_storage:
                 if not isinstance(item, dict):
                     continue
-                total = int(item.get("total") or 0)
-                used = int(item.get("used") or 0)
+                total = _safe_int(item.get("total"), 0, minimum=0)
+                used = _safe_int(item.get("used"), 0, minimum=0)
                 values.append(
                     {
                         "connection_id": connection["id"],
@@ -212,14 +263,14 @@ def list_storage(manager: ProxmoxManagerService, connection_id: str = "") -> dic
                         "node": node_name,
                         "storage": str(item.get("storage") or ""),
                         "type": str(item.get("type") or ""),
-                        "status": "available" if item.get("active", 1) else "unavailable",
+                        "status": "available" if _safe_bool(item.get("active"), True) else "unavailable",
                         "total": total,
                         "used": used,
-                        "free": int(item.get("avail") or max(0, total - used)),
+                        "free": _safe_int(item.get("avail"), max(0, total - used), minimum=0),
                         "utilization": (used / total) if total else 0.0,
-                        "shared": bool(item.get("shared")),
+                        "shared": _safe_bool(item.get("shared"), False),
                         "content": str(item.get("content") or ""),
-                        "enabled": bool(item.get("enabled", 1)),
+                        "enabled": _safe_bool(item.get("enabled"), True),
                     }
                 )
     return {"storage": values, "errors": errors, "total": len(values)}
@@ -235,6 +286,9 @@ def cluster_health(manager: ProxmoxManagerService, connection_id: str = "") -> d
         except ProxmoxApiError as error:
             errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": str(error)})
             continue
+        if not isinstance(status, list):
+            errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": "Proxmox cluster status response is invalid"})
+            continue
         ha_resources, ha_resource_error = _safe_get(client, "cluster/ha/resources")
         ha_groups, ha_group_error = _safe_get(client, "cluster/ha/groups")
         cluster_row = next((item for item in status if isinstance(item, dict) and item.get("type") == "cluster"), {})
@@ -249,12 +303,12 @@ def cluster_health(manager: ProxmoxManagerService, connection_id: str = "") -> d
                 "connection_id": connection["id"],
                 "connection_name": connection["name"],
                 "name": str(cluster_row.get("name") or connection["name"]),
-                "quorate": bool(cluster_row.get("quorate", 1)),
+                "quorate": _safe_bool(cluster_row.get("quorate"), True),
                 "nodes": node_rows,
-                "votes": sum(int(item.get("votes") or 0) for item in node_rows),
-                "online_nodes": sum(bool(item.get("online", item.get("status") == "online")) for item in node_rows),
-                "ha_resources": [dict(item) for item in (ha_resources or []) if isinstance(item, dict)],
-                "ha_groups": [dict(item) for item in (ha_groups or []) if isinstance(item, dict)],
+                "votes": sum(_safe_int(item.get("votes"), 0, minimum=0) for item in node_rows),
+                "online_nodes": sum(_safe_bool(item.get("online"), str(item.get("status") or "") == "online") for item in node_rows),
+                "ha_resources": [dict(item) for item in ha_resources if isinstance(item, dict)] if isinstance(ha_resources, list) else [],
+                "ha_groups": [dict(item) for item in ha_groups if isinstance(item, dict)] if isinstance(ha_groups, list) else [],
                 "errors": errors_map,
             }
         )
@@ -262,7 +316,14 @@ def cluster_health(manager: ProxmoxManagerService, connection_id: str = "") -> d
 
 
 def _resource(manager: ProxmoxManagerService, connection: dict[str, Any], vmid: int) -> dict[str, Any]:
-    resource = next((item for item in manager._resources(connection) if int(item.get("vmid") or -1) == vmid), None)
+    resource = next(
+        (
+            item
+            for item in manager._resources(connection)
+            if isinstance(item, dict) and _safe_int(item.get("vmid"), -1, minimum=0) == vmid
+        ),
+        None,
+    )
     if resource is None:
         raise KeyError("Proxmox VM not found")
     return resource
@@ -320,24 +381,28 @@ def templates(manager: ProxmoxManagerService, connection_id: str = "") -> dict[s
         except ProxmoxApiError as error:
             errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": str(error)})
             continue
+        if not isinstance(raw, list):
+            errors.append({"connection_id": str(connection["id"]), "connection_name": str(connection["name"]), "error": "Proxmox template response is invalid"})
+            continue
         for item in raw:
-            if not isinstance(item, dict) or not bool(item.get("template")):
+            if not isinstance(item, dict) or not _safe_bool(item.get("template"), False):
                 continue
             resource_type = manager._resource_type(item)
-            if not resource_type:
+            vmid = _safe_int(item.get("vmid"), -1, minimum=0)
+            if not resource_type or vmid < 0:
                 continue
             values.append(
                 {
                     "connection_id": connection["id"],
                     "connection_name": connection["name"],
-                    "vmid": int(item["vmid"]),
-                    "name": str(item.get("name") or f"{resource_type}-{item['vmid']}"),
+                    "vmid": vmid,
+                    "name": str(item.get("name") or f"{resource_type}-{vmid}"),
                     "node": str(item.get("node") or ""),
                     "type": resource_type,
                     "tags": manager._parse_proxmox_tags(item.get("tags")),
-                    "maxcpu": int(item.get("maxcpu") or 0),
-                    "maxmem": int(item.get("maxmem") or 0),
-                    "maxdisk": int(item.get("maxdisk") or 0),
+                    "maxcpu": _safe_int(item.get("maxcpu"), 0, minimum=0),
+                    "maxmem": _safe_int(item.get("maxmem"), 0, minimum=0),
+                    "maxdisk": _safe_int(item.get("maxdisk"), 0, minimum=0),
                 }
             )
     return {"templates": values, "errors": errors, "total": len(values)}
@@ -349,6 +414,8 @@ def backups(manager: ProxmoxManagerService, connection_id: str, vmid: int) -> di
     nodes = client.get("nodes") or []
     values: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    if not isinstance(nodes, list):
+        return {"backups": values, "errors": [{"node": "", "storage": "", "error": "Proxmox nodes response is invalid"}], "total": 0}
     for node in nodes:
         if not isinstance(node, dict) or not node.get("node"):
             continue
@@ -358,7 +425,10 @@ def backups(manager: ProxmoxManagerService, connection_id: str, vmid: int) -> di
         if store_error:
             errors.append({"node": node_name, "storage": "", "error": store_error})
             continue
-        for store in stores or []:
+        if not isinstance(stores, list):
+            errors.append({"node": node_name, "storage": "", "error": "Proxmox storage response is invalid"})
+            continue
+        for store in stores:
             if not isinstance(store, dict) or not store.get("storage"):
                 continue
             content = str(store.get("content") or "")
@@ -370,20 +440,23 @@ def backups(manager: ProxmoxManagerService, connection_id: str, vmid: int) -> di
             if item_error:
                 errors.append({"node": node_name, "storage": storage_name, "error": item_error})
                 continue
-            for item in items or []:
+            if not isinstance(items, list):
+                errors.append({"node": node_name, "storage": storage_name, "error": "Proxmox backup response is invalid"})
+                continue
+            for item in items:
                 if not isinstance(item, dict):
                     continue
                 volid = str(item.get("volid") or "")
                 match = _BACKUP_VMID.search(volid)
-                if not match or int(match.group(1)) != vmid:
+                if not match or _safe_int(match.group(1), -1) != vmid:
                     continue
                 values.append(
                     {
                         "backup": volid.rsplit("/", 1)[-1],
                         "volid": volid,
                         "vmid": vmid,
-                        "date": int(item.get("ctime") or 0),
-                        "size": int(item.get("size") or 0),
+                        "date": _safe_int(item.get("ctime"), 0, minimum=0),
+                        "size": _safe_int(item.get("size"), 0, minimum=0),
                         "storage": storage_name,
                         "node": node_name,
                     }
