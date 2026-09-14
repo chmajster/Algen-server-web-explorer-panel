@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from app import transport_settings
 from app.alerts import delivery as alert_delivery
 from app.app_store import state as app_state
+from app.ldap_authentication.repository import LdapAuthenticationRepository
 from app.modules.ansible_controller import awx
 from app.modules.hosts_manager import agent as hosts_agent
 from app.modules.ldap_manager.repository import LdapManagerRepository
@@ -114,3 +115,42 @@ def test_ldap_manager_corrupted_persisted_connection_is_safely_normalized(tmp_pa
     assert value["operation_timeout"] == 15.0
     assert value["created_at"] == 0.0
     assert value["updated_at"] == 0.0
+
+
+def test_ldap_authentication_corrupted_persisted_state_does_not_break_settings(tmp_path: Path) -> None:
+    repository = LdapAuthenticationRepository(tmp_path / "ldap-auth.sqlite3")
+    with repository.connect() as connection:
+        connection.execute(
+            """
+            UPDATE ldap_auth_settings_v2 SET
+                enabled='broken',directory_type='bogus',failover_strategy='bogus',security_mode='bogus',
+                verify_tls='broken',connect_timeout='nan',operation_timeout='not-a-number',group_cache_ttl_seconds='huge'
+            WHERE id=1
+            """
+        )
+        connection.execute(
+            "INSERT INTO ldap_auth_servers(id,host,port,priority,enabled,position) VALUES(?,?,?,?,?,?)",
+            ("bad", "ldap.example", "bad", 10, 1, 0),
+        )
+        connection.execute(
+            "INSERT INTO ldap_auth_servers(id,host,port,priority,enabled,position) VALUES(?,?,?,?,?,?)",
+            ("good", "ldap2.example", 636, 5, 1, 1),
+        )
+        connection.execute(
+            "INSERT INTO ldap_auth_group_mappings(id,group_dn,role,allow_json,deny_json,priority,updated_at,updated_by) VALUES(?,?,?,?,?,?,?,?)",
+            ("mapping", "cn=ops,dc=example,dc=com", "user", "[]", "[]", "broken", 1, "admin"),
+        )
+
+    settings = repository.settings()
+    mappings = repository.mappings()
+
+    assert settings["enabled"] is False
+    assert settings["directory_type"] == "auto"
+    assert settings["failover_strategy"] == "priority"
+    assert settings["security_mode"] == "starttls"
+    assert settings["verify_tls"] is True
+    assert settings["connect_timeout"] == 5.0
+    assert settings["operation_timeout"] == 10.0
+    assert settings["group_cache_ttl_seconds"] == 300
+    assert settings["servers"] == [{"id": "good", "host": "ldap2.example", "port": 636, "priority": 5, "enabled": True}]
+    assert mappings[0]["priority"] == 100
