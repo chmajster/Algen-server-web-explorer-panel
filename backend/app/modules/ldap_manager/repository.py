@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -13,10 +14,38 @@ from typing import Any
 from ...config import get_config
 from ..secrets_manager import SecretInput, service as secrets_service
 from ...sqlite_utils import ClosingConnection
-from .models import ConnectionInput
+from .models import ConnectionInput, ConnectionServer
 
 
 SECRET_MODULE = "ldap-manager"
+
+
+def _safe_float(value: object, default: float, *, minimum: float = 0.0, maximum: float | None = None) -> float:
+    if value is None or isinstance(value, bool):
+        return default
+    if not isinstance(value, (str, int, float)):
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if not math.isfinite(number) or number < minimum or (maximum is not None and number > maximum):
+        return default
+    return number
+
+
+def _safe_bool(value: object, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"1", "true"}:
+            return True
+        if normalized in {"0", "false"}:
+            return False
+    return default
 
 
 class LdapManagerRepository:
@@ -64,12 +93,21 @@ class LdapManagerRepository:
             pass
 
     @staticmethod
-    def _decode_servers(raw: str) -> list[dict[str, Any]]:
+    def _decode_servers(raw: object) -> list[dict[str, Any]]:
         try:
-            value = json.loads(raw)
-        except ValueError:
+            value = json.loads(str(raw or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
             return []
-        return value if isinstance(value, list) else []
+        if not isinstance(value, list):
+            return []
+        servers: list[dict[str, Any]] = []
+        for item in value[:32]:
+            try:
+                server = ConnectionServer.model_validate(item)
+            except ValueError:
+                continue
+            servers.append(server.model_dump(mode="json"))
+        return servers
 
     @classmethod
     def _public(cls, row: sqlite3.Row, *, include_secret_id: bool = False) -> dict[str, Any]:
@@ -77,17 +115,17 @@ class LdapManagerRepository:
             "id": str(row["id"]),
             "name": str(row["name"]),
             "directory_type": str(row["directory_type"]),
-            "servers": cls._decode_servers(str(row["servers_json"])),
+            "servers": cls._decode_servers(row["servers_json"]),
             "security_mode": str(row["security_mode"]),
-            "verify_tls": bool(row["verify_tls"]),
+            "verify_tls": _safe_bool(row["verify_tls"], True),
             "ca_certificate": str(row["ca_certificate"]),
             "base_dn": str(row["base_dn"]),
             "bind_dn": str(row["bind_dn"]),
-            "bind_password_configured": bool(row["bind_secret_id"]),
-            "connect_timeout": float(row["connect_timeout"]),
-            "operation_timeout": float(row["operation_timeout"]),
-            "created_at": float(row["created_at"]),
-            "updated_at": float(row["updated_at"]),
+            "bind_password_configured": bool(str(row["bind_secret_id"] or "")),
+            "connect_timeout": _safe_float(row["connect_timeout"], 5.0, minimum=0.5, maximum=60.0),
+            "operation_timeout": _safe_float(row["operation_timeout"], 15.0, minimum=0.5, maximum=120.0),
+            "created_at": _safe_float(row["created_at"], 0.0),
+            "updated_at": _safe_float(row["updated_at"], 0.0),
             "updated_by": str(row["updated_by"]),
         }
         if include_secret_id:
@@ -143,7 +181,7 @@ class LdapManagerRepository:
             )
         if not secret_id:
             raise ValueError("LDAP Manager connection requires its own bind password")
-        created_at = float(existing["created_at"]) if existing else now
+        created_at = _safe_float(existing.get("created_at") if existing else None, now) if existing else now
         servers = [item.model_dump(mode="json") for item in payload.servers]
         with self._lock, self.connect() as connection:
             connection.execute(
