@@ -746,3 +746,48 @@ def test_installer_does_not_add_ubuntu_ppa_on_debian(tmp_path):
     )
     assert result.returncode != 0
     assert "Python 3.14 packages are unavailable for debian bookworm" in result.stdout
+
+
+def test_recovery_revision_does_not_resolve_main(tmp_path):
+    revision = "b" * 40
+    result = _run_harness(tmp_path, f'''
+        git() {{ exit 99; }}
+        parse_args --revision {revision} --existing-action update --yes
+        resolve_remote_source_revision
+        [[ "$SOURCE_REVISION" == "{revision}" ]]
+        [[ "$ARCHIVE_URL" == "$REPO_URL/archive/{revision}.tar.gz" ]]
+        [[ "$UPDATE_CONFIG" == "no" ]]
+    ''')
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("argument", ["main", "../main", "--help", "abc;id", "A" * 40, "a" * 39])
+def test_recovery_installer_rejects_invalid_revisions(tmp_path, argument):
+    import shlex
+
+    result = _run_harness(tmp_path, f"parse_args --revision {shlex.quote(argument)}")
+    assert result.returncode != 0
+    assert "--revision must be" in result.stdout
+
+
+def test_recovery_installer_requires_revision_value(tmp_path):
+    result = _run_harness(tmp_path, "parse_args --revision")
+    assert result.returncode != 0
+    assert "--revision requires a value" in result.stdout
+
+
+def test_recovery_download_bypasses_local_checkout(tmp_path):
+    revision = "c" * 40
+    result = _run_harness(tmp_path, f'''
+        REQUESTED_REVISION="{revision}"
+        INSTALL_DIR="$TEST_ROOT/install"
+        ACTION="update"
+        # cwd is a source checkout; an unpinned install would use it directly.
+        curl() {{ printf '%s\\n' "$*" > "$TEST_ROOT/curl-args"; }}
+        tar() {{ mkdir -p "$WORK_DIR/Algen-server-web-explorer-panel-test/backend/app"; touch "$WORK_DIR/Algen-server-web-explorer-panel-test/backend/app/main.py"; }}
+        prepare_source
+        [[ "$SOURCE_REVISION" == "{revision}" ]]
+        grep -Fq "/archive/{revision}.tar.gz" "$TEST_ROOT/curl-args"
+        [[ "$SOURCE_DIR" != "$PWD" ]]
+    ''')
+    assert result.returncode == 0, result.stdout + result.stderr

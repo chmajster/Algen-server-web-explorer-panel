@@ -220,3 +220,17 @@ describe("UpdateStatusPage", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 });
+describe("recovery action visibility", () => {
+  it.each(["idle", "waiting", "preparing", "running", "completed"] as const)("hides recovery for %s", (state) => {
+    render(<UpdateStatusPage value={progress({ state })} connectionError={false} t={t} onRetry={vi.fn()} onReturn={vi.fn()} onLogin={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "updateRecovery.title" })).not.toBeInTheDocument();
+  });
+
+  it("shows recovery after failure only with update permission", () => {
+    const props = { value: progress({ state: "failed" }), connectionError: false, t, onRetry: vi.fn(), onReturn: vi.fn(), onLogin: vi.fn() };
+    const { rerender } = render(<UpdateStatusPage {...props} canRetry />);
+    expect(screen.getByRole("button", { name: "updateRecovery.title" })).toBeInTheDocument();
+    rerender(<UpdateStatusPage {...props} canRetry={false} />);
+    expect(screen.queryByRole("button", { name: "updateRecovery.title" })).not.toBeInTheDocument();
+  });
+});

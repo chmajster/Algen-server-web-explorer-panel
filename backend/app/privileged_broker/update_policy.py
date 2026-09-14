@@ -4,6 +4,7 @@ import grp
 import json
 import os
 import pwd
+import re
 import shlex
 import time
 import urllib.error
@@ -42,11 +43,16 @@ def _result(request: BrokerRequest, result: base.CommandResult) -> BrokerRespons
 
 
 def _update_service(payload: dict[str, Any], runner: base.Runner) -> base.CommandResult:
-    extra = set(payload) - {"update_config", "npm_audit_fix"}
+    extra = set(payload) - {"update_config", "npm_audit_fix", "revision"}
     if extra:
         raise base.PolicyError(f"unsupported parameters: {', '.join(sorted(extra))}")
     update_config = payload.get("update_config", False)
     npm_audit_fix = payload.get("npm_audit_fix", False)
+    revision = payload.get("revision")
+    if revision is not None and (not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision)):
+        raise base.PolicyError("invalid recovery revision")
+    if revision is not None and (update_config or npm_audit_fix):
+        raise base.PolicyError("recovery must preserve configuration and dependencies")
     if not isinstance(update_config, bool) or not isinstance(npm_audit_fix, bool):
         raise base.PolicyError("invalid update options")
 
@@ -86,6 +92,8 @@ def _update_service(payload: dict[str, Any], runner: base.Runner) -> base.Comman
         raise RuntimeError("webnas group is unavailable") from error
 
     command = [base._resolve_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
+    if revision is not None:
+        command.extend(["--revision", revision])
     if update_config:
         command.append("--update-config")
     if npm_audit_fix:

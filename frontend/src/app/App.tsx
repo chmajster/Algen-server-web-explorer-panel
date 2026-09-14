@@ -343,6 +343,11 @@ export function App({ reloadPage = reloadWindow }: { reloadPage?: () => void } =
       onRetry={() => {
         void api.runAutoUpdate(false).then((value) => { setDismissedFailureId(""); setUpdateProgress(value); }).catch(() => void refreshUpdateProgress());
       }}
+      onRecoveryStarted={(value) => {
+        setDismissedFailureId("");
+        setUpdateConnectionError(false);
+        setUpdateProgress(value);
+      }}
       onReturn={() => {
         setDismissedFailureId(updateProgress.id || "latest");
         window.history.replaceState({}, "", "/");

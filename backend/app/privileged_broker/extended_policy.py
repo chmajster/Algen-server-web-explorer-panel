@@ -644,9 +644,14 @@ def _storage_probe(payload: dict[str, Any], runner: base.Runner) -> base.Command
 
 
 def _update_service(payload: dict[str, Any], runner: base.Runner) -> base.CommandResult:
-    _payload_keys(payload, {"update_config", "npm_audit_fix"})
+    _payload_keys(payload, {"update_config", "npm_audit_fix", "revision"})
     update_config = payload.get("update_config", False)
     npm_audit_fix = payload.get("npm_audit_fix", False)
+    revision = payload.get("revision")
+    if revision is not None and (not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision)):
+        raise base.PolicyError("invalid recovery revision")
+    if revision is not None and (update_config or npm_audit_fix):
+        raise base.PolicyError("recovery must preserve configuration and dependencies")
     if not isinstance(update_config, bool) or not isinstance(npm_audit_fix, bool):
         raise base.PolicyError("invalid update options")
     config = get_config()
@@ -682,6 +687,8 @@ def _update_service(payload: dict[str, Any], runner: base.Runner) -> base.Comman
     except KeyError as error:
         raise RuntimeError("webnas group is unavailable") from error
     command = [base._resolve_tool("bash"), str(installer), "--existing-action", "update", "--yes"]
+    if revision is not None:
+        command.extend(["--revision", revision])
     if update_config:
         command.append("--update-config")
     if npm_audit_fix:
