@@ -39,4 +39,11 @@ describe("syncPresentation", () => {
     expect(result.tone).toBe("warning");
     expect(result.target).not.toBe("sources");
   });
+
+  it.each(["inactive", "dead", "failed", "disabled"])("does not mark a %s server-only service active", (service_state) => {
+    const result = syncPresentation({ ...base, role: "server", synchronized: false, service_state });
+    expect(result.title).toBe("Serwer NTP nieaktywny");
+    expect(result.tone).toBe("warning");
+    expect(result.target).toBe("config");
+  });
 });
