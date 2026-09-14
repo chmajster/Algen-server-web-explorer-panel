@@ -99,7 +99,7 @@ def test_ldap_manager_corrupted_persisted_connection_is_safely_normalized(tmp_pa
                 "cn=bind,dc=example,dc=com",
                 "secret-id",
                 "nan",
-                {"bad": True},
+                "not-a-number",
                 "inf",
                 -10,
                 "admin",
