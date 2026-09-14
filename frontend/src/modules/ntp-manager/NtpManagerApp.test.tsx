@@ -116,7 +116,7 @@ describe("NTP Manager workspace", () => {
     expect(screen.getByRole("button", { name: "Przesuń time.example.org w górę" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Edytuj" }));
     fireEvent.change(screen.getByLabelText("Edytuj serwer NTP"), { target: { value: "time2.example.org" } });
-    fireEvent.click(screen.getByRole("button", { name: "Zapisz", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Zapisz$/ }));
     await waitFor(() => expect(ntpManagerClient.update).toHaveBeenCalledWith("time.example.org", expect.objectContaining({ server: "time2.example.org", kind: "server", enabled: true })));
   });
 
