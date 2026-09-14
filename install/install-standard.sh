@@ -49,6 +49,7 @@ USB_STATE_DIR="/run/webnas/usb-mounts"
 WORK_DIR=""
 SOURCE_DIR=""
 SOURCE_REVISION=""
+REQUESTED_REVISION=""
 APT_TEMP_DIR=""
 APT_SOURCE_OPTIONS=()
 APT_METADATA_REFRESHED="no"
@@ -96,6 +97,7 @@ Options:
   --no-firewall           Do not configure ufw/firewalld
   --skip-build            Deprecated; application installs require a matching frontend build
   --npm-audit-fix         Run npm audit fix before building the frontend
+  --revision SHA         Install an exact 40-character repository commit (recovery)
   --allow-proxmox-host-install
                           Explicitly allow restricted installation on a Proxmox VE host
   --grant-journal-access  Add the service user to systemd-journal for system log access
@@ -200,6 +202,12 @@ parse_args() {
         SERVICE_USER="$2"
         SERVICE_USER_EXPLICIT="yes"
         NON_INTERACTIVE="yes"
+        shift 2
+        ;;
+      --revision)
+        [[ $# -ge 2 ]] || fail "--revision requires a value"
+        [[ "$2" =~ ^[0-9a-f]{40}$ ]] || fail "--revision must be a full lowercase 40-character commit SHA"
+        REQUESTED_REVISION="$2"
         shift 2
         ;;
       --yes|-y)
@@ -578,8 +586,13 @@ ensure_download_tools() {
 
 resolve_remote_source_revision() {
   local revision=""
-  revision="$(git ls-remote "${REPO_URL}.git" refs/heads/main 2>/dev/null | awk 'NR == 1 {print $1}')"
-  [[ "$revision" =~ ^[0-9a-fA-F]{40,64}$ ]] || fail "Could not resolve the WebNAS main branch revision"
+  if [[ -n "$REQUESTED_REVISION" ]]; then
+    [[ "$REQUESTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || fail "Invalid recovery revision"
+    revision="$REQUESTED_REVISION"
+  else
+    revision="$(git ls-remote "${REPO_URL}.git" refs/heads/main 2>/dev/null | awk 'NR == 1 {print $1}')"
+    [[ "$revision" =~ ^[0-9a-fA-F]{40,64}$ ]] || fail "Could not resolve the WebNAS main branch revision"
+  fi
   SOURCE_REVISION="$revision"
   ARCHIVE_URL="${REPO_URL}/archive/${SOURCE_REVISION}.tar.gz"
 }
@@ -768,7 +781,7 @@ prepare_source() {
   fi
   resolved_script_dir="$(readlink -f "$source_root" 2>/dev/null || printf '%s' "$source_root")"
   resolved_install_dir="$(readlink -f "$INSTALL_DIR" 2>/dev/null || printf '%s' "$INSTALL_DIR")"
-  if [[ -n "$source_root" && -f "${source_root}/backend/app/main.py" && -f "${source_root}/frontend/package.json" ]]; then
+  if [[ -z "$REQUESTED_REVISION" && -n "$source_root" && -f "${source_root}/backend/app/main.py" && -f "${source_root}/frontend/package.json" ]]; then
     if [[ "$resolved_script_dir" == "$resolved_install_dir" && "$ACTION" != "install" ]]; then
       warn "Installer is running from the current application directory; downloading a fresh source archive before ${ACTION}"
     else
