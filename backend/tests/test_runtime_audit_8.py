@@ -13,6 +13,7 @@ from app.alerts import delivery as alert_delivery
 from app.app_store import state as app_state
 from app.modules.ansible_controller import awx
 from app.modules.hosts_manager import agent as hosts_agent
+from app.modules.ldap_manager.repository import LdapManagerRepository
 from app.modules.proxmox_manager import ProxmoxApiClient
 from app.modules.proxmox_manager import secure_client as proxmox_secure
 
@@ -74,3 +75,42 @@ def test_transport_gateway_rejects_type_corrupted_port_without_crashing(
         transport_settings._require_standard_gateway()
 
     assert error.value.status_code == 409
+
+
+def test_ldap_manager_corrupted_persisted_connection_is_safely_normalized(tmp_path: Path) -> None:
+    repository = LdapManagerRepository(tmp_path / "ldap-manager.sqlite3")
+    with repository.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO ldap_manager_connections(
+                id,name,directory_type,servers_json,security_mode,verify_tls,ca_certificate,base_dn,bind_dn,
+                bind_secret_id,connect_timeout,operation_timeout,created_at,updated_at,updated_by
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "broken",
+                "Broken",
+                "generic",
+                json.dumps(["bad", {"host": "ldap.example", "port": "bad"}, {"host": "ldap.example", "port": 389, "priority": 5}]),
+                "starttls",
+                "not-a-bool",
+                "",
+                "dc=example,dc=com",
+                "cn=bind,dc=example,dc=com",
+                "secret-id",
+                "nan",
+                {"bad": True},
+                "inf",
+                -10,
+                "admin",
+            ),
+        )
+
+    value = repository.get("broken")
+
+    assert value["servers"] == [{"host": "ldap.example", "port": 389, "priority": 5}]
+    assert value["verify_tls"] is True
+    assert value["connect_timeout"] == 5.0
+    assert value["operation_timeout"] == 15.0
+    assert value["created_at"] == 0.0
+    assert value["updated_at"] == 0.0
