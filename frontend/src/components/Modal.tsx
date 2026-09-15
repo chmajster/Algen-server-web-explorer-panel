@@ -199,7 +199,7 @@ export function Modal({ title, children, onClose, footer, wide = false, closeLab
   useEffect(() => {
     if (minimized) return;
     function escape(event: KeyboardEvent) {
-      if (event.key === "Escape" && isActiveDialog(dialogToken)) {
+      if (event.key === "Escape" && !event.defaultPrevented && isActiveDialog(dialogToken)) {
         event.preventDefault();
         event.stopPropagation();
         onCloseRef.current();

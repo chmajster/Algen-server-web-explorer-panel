@@ -4,6 +4,15 @@ import { describe, expect, it, vi } from "vitest";
 import { ConfirmDialog, InputDialog, Modal } from "./Modal";
 
 describe("dialog window", () => {
+  it("leaves Escape to a nested control that has handled it", () => {
+    const close = vi.fn();
+    render(<Modal title="Nested control" onClose={close}><input aria-label="Search" onKeyDown={(event) => { if (event.key === "Escape") event.preventDefault(); }} /></Modal>);
+    fireEvent.keyDown(screen.getByLabelText("Search"), { key: "Escape" });
+    expect(close).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("closes with Escape and confirms without using a native dialog", () => {
     const close = vi.fn(); const confirm = vi.fn();
     const { rerender } = render(<ConfirmDialog title="Delete" message="Really?" confirmLabel="Delete" cancelLabel="Cancel" onConfirm={confirm} onClose={close} />);
