@@ -33,6 +33,19 @@ export type FileListResponse = {
   can_upload: boolean;
   can_delete: boolean;
 };
+export type FileSearchOptions = {
+  match_mode?: "contains" | "glob";
+  item_type?: "all" | "files" | "folders";
+  case_sensitive?: boolean;
+  show_hidden?: boolean;
+};
+export type FileSearchResponse = {
+  items: FileItem[];
+  scanned?: number;
+  skipped?: number;
+  truncated?: boolean;
+  reason?: "limit" | "entries" | "timeout" | null;
+};
 export type TextFileResponse = {
   path: string;
   content: string;

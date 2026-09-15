@@ -1,5 +1,5 @@
 import { apiUrl, request } from "../../../core/api/transport";
-import type { FileItem, FileListResponse, TextFileResponse } from "../../../core/api/contracts";
+import type { FileItem, FileListResponse, FileSearchOptions, FileSearchResponse, TextFileResponse } from "../../../core/api/contracts";
 
 export const filesClient = {
   list: (path?: string, params: Record<string, string | number | boolean | null | undefined> = {}) => {
@@ -24,7 +24,11 @@ export const filesClient = {
     body: JSON.stringify({ path, content, expected_mtime_ns }),
   }),
   stat: (path: string) => request<FileItem>(`/api/files/stat?path=${encodeURIComponent(path)}`),
-  search: (path: string, query: string) => request<{ items: FileItem[] }>(`/api/files/search?path=${encodeURIComponent(path)}&query=${encodeURIComponent(query)}`),
+  search: (path: string, query: string, options: FileSearchOptions = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ path, query });
+    Object.entries(options).forEach(([key, value]) => { if (value !== undefined) params.set(key, String(value)); });
+    return request<FileSearchResponse>(`/api/files/search?${params}`, { signal });
+  },
   upload: (path: string, file: File) => {
     const body = new FormData();
     body.set("path", path);

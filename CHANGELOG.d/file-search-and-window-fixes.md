@@ -1,0 +1,6 @@
+- Added recursive File Manager search with name patterns, file/folder, case and hidden-entry filters, full paths, open-containing-folder actions, and clipboard feedback in English and Polish.
+- Search now reports result, scan and time limits and skipped entries. Missing or inaccessible search roots return an error; directory symlinks are not traversed.
+- Scoped File Manager keyboard shortcuts and upload pickers to their own window, and preserved multi-selection for context-menu copy, cut and delete in both list and grid views.
+- Reset filtering to the first page, synchronized server-clamped pagination, and prevented stale directory responses and range-selection anchors from leaking into a new listing.
+- Fixed Cron Manager failures when the host timezone file contains an invalid IANA key; timezone detection now continues through its existing fallbacks.
+- Added worker/API/broker, component and desktop/mobile browser regression coverage.

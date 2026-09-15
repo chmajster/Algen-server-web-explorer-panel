@@ -23510,6 +23510,10 @@ export interface operations {
             query: {
                 path: string;
                 query: string;
+                match_mode?: "contains" | "glob";
+                item_type?: "all" | "files" | "folders";
+                case_sensitive?: boolean;
+                show_hidden?: boolean;
             };
             header?: never;
             path?: never;

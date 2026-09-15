@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import errno
+import fnmatch
 import grp
 import json
 import os
@@ -203,9 +204,15 @@ def list_directory(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def search_directory(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def search_directory(payload: dict[str, Any]) -> list[dict[str, Any]] | dict[str, Any]:
     root = Path(payload["path"])
-    query = str(payload["query"]).lower()
+    query = str(payload["query"])
+    case_sensitive = bool(payload.get("case_sensitive", False))
+    if not case_sensitive:
+        query = query.casefold()
+    match_mode = payload.get("match_mode", "contains")
+    item_type = payload.get("item_type", "all")
+    show_hidden = bool(payload.get("show_hidden", True))
     limit = min(max(1, int(payload.get("limit", DEFAULT_SEARCH_LIMIT))), DEFAULT_SEARCH_LIMIT)
     max_entries = min(max(1, int(payload.get("max_entries", DEFAULT_SEARCH_MAX_ENTRIES))), 1_000_000)
     timeout_seconds = min(max(0.1, float(payload.get("timeout_seconds", DEFAULT_SEARCH_TIMEOUT_SECONDS))), 60.0)
@@ -213,33 +220,63 @@ def search_directory(payload: dict[str, Any]) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     stack = [root]
     scanned = 0
+    skipped = 0
+    reason: str | None = None
 
-    while stack and len(results) < limit and scanned < max_entries:
+    while stack and reason is None:
         if time.monotonic() >= deadline:
+            reason = "timeout"
+            break
+        if scanned >= max_entries:
+            reason = "entries"
             break
         directory = stack.pop()
         try:
             with os.scandir(directory) as scan:
                 for entry in scan:
-                    scanned += 1
-                    if scanned > max_entries or time.monotonic() >= deadline:
+                    if time.monotonic() >= deadline:
+                        reason = "timeout"
                         break
+                    if scanned >= max_entries:
+                        reason = "entries"
+                        break
+                    scanned += 1
+                    if not show_hidden and entry.name.startswith("."):
+                        continue
                     path = Path(entry.path)
-                    if query in entry.name.lower():
-                        try:
-                            results.append(info(path))
-                        except OSError:
-                            continue
-                        if len(results) >= limit:
-                            break
                     try:
                         if entry.is_dir(follow_symlinks=False):
                             stack.append(path)
                     except OSError:
+                        skipped += 1
                         continue
+                    name = entry.name if case_sensitive else entry.name.casefold()
+                    matches = fnmatch.fnmatchcase(name, query) if match_mode == "glob" else query in name
+                    if not matches:
+                        continue
+                    try:
+                        item = info(path)
+                    except OSError:
+                        skipped += 1
+                        continue
+                    if item_type == "files" and item["is_dir"] or item_type == "folders" and not item["is_dir"]:
+                        continue
+                    # Inspect one extra match so exactly-full, complete searches
+                    # are not incorrectly reported as truncated.
+                    if len(results) == limit:
+                        reason = "limit"
+                        break
+                    results.append(item)
         except OSError:
+            if directory == root:
+                # A missing/inaccessible root is an error, not an empty result.
+                raise
+            skipped += 1
             continue
-    return results
+    results.sort(key=lambda item: (not item["is_dir"], item["name"].casefold(), item["path"]))
+    if not payload.get("include_summary"):
+        return results
+    return {"items": results, "scanned": scanned, "skipped": skipped, "truncated": reason is not None, "reason": reason}
 
 
 def copy_any(src: Path, dst: Path) -> None:
