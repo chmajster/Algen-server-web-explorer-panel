@@ -27,7 +27,7 @@ for (const width of [1440, 390]) {
     await expect(dialog.getByText(file.path)).toBeVisible();
     expect(Object.fromEntries(searchParams!)).toEqual({ path: "/home/e2e", query: "*.TXT", match_mode: "glob", item_type: "files", case_sensitive: "true", show_hidden: "false" });
     await expect(dialog.getByText(/The result limit was reached/)).toBeVisible();
-    await expect(dialog.getByText(/Skipped 1 items/)).toBeVisible();
+    await expect(dialog.getByText(/Skipped items: 1/)).toBeVisible();
     const bounds = await dialog.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
