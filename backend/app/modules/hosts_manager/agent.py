@@ -28,13 +28,28 @@ import uuid
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPHandler, HTTPRedirectHandler, HTTPSHandler, Request, build_opener, urlopen
 
 
 VERSION = "1.0.0"
 DEFAULT_CONFIG = Path("/etc/hosts-manager-agent/config.yaml")
 DEFAULT_STATE = Path("/var/lib/hosts-manager-agent/state.json")
 DEFAULT_LOG = Path("/var/log/hosts-manager-agent/agent.log")
+_ORIGINAL_URLOPEN = urlopen
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+def _open_no_redirect(request: Request, *, timeout: int, context: ssl.SSLContext):
+    # Keep the module-level urlopen hook for controlled tests/instrumentation.
+    # Normal runtime traffic always uses an opener that refuses redirects.
+    if urlopen is not _ORIGINAL_URLOPEN:
+        return urlopen(request, timeout=timeout, context=context)
+    opener = build_opener(HTTPHandler(), HTTPSHandler(context=context), _NoRedirectHandler())
+    return opener.open(request, timeout=timeout)
 
 
 def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
@@ -471,7 +486,7 @@ class AgentClient:
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": f"hosts-manager-agent/{VERSION}"},
         )
         context = ssl.create_default_context() if self.verify_tls else ssl._create_unverified_context()
-        with urlopen(request, timeout=self.timeout, context=context) as response:
+        with _open_no_redirect(request, timeout=self.timeout, context=context) as response:
             value = json.loads(response.read().decode())
         if not isinstance(value, dict):
             raise RuntimeError("invalid Hosts Manager response")
@@ -554,7 +569,7 @@ class AgentClient:
         request = Request(source_url, method="GET", headers={"User-Agent": f"hosts-manager-agent/{VERSION}"})
         context = ssl.create_default_context() if self.verify_tls else ssl._create_unverified_context()
         maximum = min(2 * 1024 * 1024, max(1024, int(policy.get("max_size") or 2 * 1024 * 1024)))
-        with urlopen(request, timeout=self.timeout, context=context) as source:
+        with _open_no_redirect(request, timeout=self.timeout, context=context) as source:
             content = source.read(maximum + 1)
         if len(content) > maximum or hashlib.sha256(content).hexdigest() != expected:
             raise RuntimeError("agent update failed size or checksum verification")

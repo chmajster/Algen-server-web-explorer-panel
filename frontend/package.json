@@ -24,19 +24,19 @@
     "@codemirror/state": "6.7.1",
     "codemirror": "6.0.2",
     "lucide-react": "0.552.0",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@playwright/test": "1.62.1",
+    "@playwright/test": "1.63.0",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.0",
     "@testing-library/user-event": "14.6.6",
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.7",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "@typescript-eslint/eslint-plugin": "8.69.0",
-    "@typescript-eslint/parser": "8.69.0",
+    "@typescript-eslint/parser": "8.70.0",
     "@vitejs/plugin-react": "6.1.1",
     "eslint": "10.9.1",
     "eslint-plugin-react-hooks": "7.1.1",
@@ -44,7 +44,7 @@
     "jsdom": "30.0.1",
     "openapi-typescript": "7.13.0",
     "typescript": "5.7.2",
-    "vite": "8.2.2",
+    "vite": "8.3.0",
     "vitest": "4.1.11"
   },
   "overrides": {

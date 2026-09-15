@@ -1,0 +1,557 @@
+from __future__ import annotations
+
+import json
+import socket
+import ssl
+from pathlib import Path
+from typing import Any, cast
+from urllib.parse import urlsplit
+
+import httpx
+import pytest
+from fastapi import HTTPException
+from pydantic import ValidationError
+
+from app import settings, update_coordination
+from app.ldap_authentication import connection as ldap_auth_connection
+from app.modules.ldap_manager import connection as ldap_manager_connection
+from app.modules.os_repositories import auth_proxy
+from app.modules.providers import DockerProvider
+from app.modules.providers import docker_registry_transport
+from app.modules.providers.infrastructure import MAX_API_RESPONSE, ApiConnectionProvider
+from app.modules.webhook_manager.models import WebhookInput
+from app.modules.webhook_manager.service import WebhookManagerService
+
+
+def _webhook_payload(**overrides):
+    payload = {
+        "name": "audit",
+        "url": "https://8.8.8.8/hook",
+        "events": ["fail2ban.ip_banned"],
+        "headers": {},
+        "auth_type": "none",
+        "auth_header_name": "X-API-Key",
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Bad Header": "value"},
+        {"Connection": "keep-alive"},
+        {"content-type": "text/plain"},
+        {"x-webnas-event": "forged.event"},
+        {"X-Test": "one", "x-test": "two"},
+        {"X-Test": "value\x01control"},
+    ],
+)
+def test_webhook_rejects_malformed_managed_and_ambiguous_headers(headers):
+    with pytest.raises(ValidationError):
+        WebhookInput.model_validate(_webhook_payload(headers=headers))
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["Bad Header", "Connection", "Content-Length", "x-webnas-signature", "User-Agent"],
+)
+def test_webhook_rejects_unsafe_auth_header_names(name):
+    with pytest.raises(ValidationError):
+        WebhookInput.model_validate(
+            _webhook_payload(auth_type="api_key_header", secret_id="secret", auth_header_name=name)
+        )
+
+
+def test_corrupted_persisted_webhook_is_disabled_before_delivery(tmp_path: Path):
+    service = WebhookManagerService(tmp_path / "webhooks.sqlite3")
+    with service.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO webhooks(
+                id,name,description,enabled,url,method,events_json,timeout_seconds,max_attempts,
+                headers_json,auth_type,secret_id,auth_header_name,signing_secret_id,
+                allow_private_networks,created_at,updated_at,created_by,updated_by
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "corrupt",
+                "corrupt",
+                "",
+                1,
+                "https://8.8.8.8/hook",
+                "POST\r\nX-Injected: yes",
+                '["fail2ban.ip_banned"]',
+                10,
+                3,
+                '{"Connection":"keep-alive"}',
+                "none",
+                None,
+                "X-API-Key",
+                None,
+                0,
+                "nan",
+                "inf",
+                "admin",
+                "admin",
+            ),
+        )
+
+    item = service.webhook("corrupt")
+    assert item is not None
+    assert item["enabled"] is False
+    assert item["configuration_valid"] is False
+    assert item["headers"] == {}
+    assert item["method"] == "POST"
+    assert item["created_at"] == 0.0
+    assert item["updated_at"] == 0.0
+    assert service.dashboard()["enabled_webhooks"] == 0
+
+
+def test_webhook_shutdown_does_not_enqueue_stale_stop_sentinel(tmp_path: Path):
+    service = WebhookManagerService(tmp_path / "webhooks.sqlite3")
+    service.startup()
+    service.shutdown()
+
+    assert service._queue.empty()
+
+    service.startup()
+    assert service._worker is not None
+    assert service._worker.is_alive()
+    service.shutdown()
+
+
+def test_webhook_shutdown_keeps_worker_reference_when_join_times_out(tmp_path: Path):
+    service = WebhookManagerService(tmp_path / "webhooks.sqlite3")
+
+    class BusyWorker:
+        def is_alive(self) -> bool:
+            return True
+
+        def join(self, timeout: float | None = None) -> None:
+            assert timeout == 3
+
+    worker = BusyWorker()
+    service._worker = cast(Any, worker)
+    service.shutdown()
+
+    assert service._worker is worker
+    service.startup()
+    assert service._worker is worker
+
+
+def test_authenticated_mirror_connection_uses_validated_address(monkeypatch: pytest.MonkeyPatch):
+    calls: list[tuple[tuple[str, int], float | object]] = []
+
+    class FakeSocket:
+        def close(self) -> None:
+            return None
+
+    def create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+        calls.append((address, timeout))
+        return FakeSocket()
+
+    monkeypatch.setattr(socket, "create_connection", create_connection)
+    connection = auth_proxy._connection_for(
+        urlsplit("http://mirror.example.invalid/repository"),
+        "203.0.113.10",
+        timeout=7,
+    )
+    connection.connect()
+
+    assert connection.host == "mirror.example.invalid"
+    assert calls == [(("203.0.113.10", 80), 7)]
+
+    tls_connection = auth_proxy._connection_for(
+        urlsplit("https://mirror.example.invalid/repository"),
+        "203.0.113.10",
+        timeout=7,
+    )
+    assert isinstance(tls_connection, auth_proxy._PinnedHTTPSConnection)
+    assert tls_connection._tls_context.minimum_version >= ssl.TLSVersion.TLSv1_2
+
+
+def test_module_api_request_uses_address_from_private_dns_validation(monkeypatch: pytest.MonkeyPatch):
+    provider = object.__new__(ApiConnectionProvider)
+    monkeypatch.setattr(provider, "connection", lambda: {"base_url": "http://api.internal/pihole"})
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.20.30.40", 80))],
+    )
+    selected: list[str] = []
+
+    class Response:
+        status = 200
+
+        def read(self, _amount: int = -1) -> bytes:
+            return b"{}"
+
+    class Connection:
+        def request(self, method: str, path: str, body=None, headers=None) -> None:
+            assert method == "GET"
+            assert path == "/pihole/health"
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    def pinned_connection(parsed, address: str, timeout: int):
+        selected.append(address)
+        assert parsed.hostname == "api.internal"
+        return cast(Any, Connection())
+
+    monkeypatch.setattr(provider, "_connection", pinned_connection)
+
+    assert provider._request("/health") == {}
+    assert selected == ["10.20.30.40"]
+
+
+def test_module_api_non_2xx_response_read_is_bounded(monkeypatch: pytest.MonkeyPatch):
+    provider = object.__new__(ApiConnectionProvider)
+    monkeypatch.setattr(provider, "connection", lambda: {"base_url": "http://api.internal"})
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.20.30.40", 80))],
+    )
+    reads: list[int] = []
+
+    class Response:
+        status = 500
+
+        def read(self, amount: int = -1) -> bytes:
+            reads.append(amount)
+            return b"error"
+
+    class Connection:
+        def request(self, method: str, path: str, body=None, headers=None) -> None:
+            return None
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(provider, "_connection", lambda *_args, **_kwargs: cast(Any, Connection()))
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        provider._request("/health")
+    assert reads == [MAX_API_RESPONSE + 1]
+
+
+def test_docker_registry_transport_is_installed_and_pins_validated_address(monkeypatch: pytest.MonkeyPatch):
+    assert DockerProvider._registry_fetch_json.__module__ == docker_registry_transport.__name__
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 80))],
+    )
+    parsed, addresses = docker_registry_transport._validated_target(
+        "http://registry.example/v2/_catalog",
+        "registry.example",
+        False,
+    )
+    assert parsed.hostname == "registry.example"
+    assert addresses == ["8.8.8.8"]
+
+    parsed_tls, tls_addresses = docker_registry_transport._validated_target(
+        "https://registry.example/v2/_catalog",
+        "registry.example:443",
+        True,
+    )
+    assert parsed_tls.hostname == "registry.example"
+    assert tls_addresses == ["8.8.8.8"]
+
+    calls: list[tuple[str, int]] = []
+    socket_timeouts: list[float] = []
+
+    class FakeSocket:
+        def settimeout(self, value: float) -> None:
+            socket_timeouts.append(value)
+
+        def close(self) -> None:
+            return None
+
+    def create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+        calls.append(address)
+        return FakeSocket()
+
+    monkeypatch.setattr(socket, "create_connection", create_connection)
+    connection = docker_registry_transport._PinnedHTTPConnection(
+        "registry.example",
+        80,
+        addresses[0],
+        timeout=8,
+    )
+    connection.connect()
+    assert connection.host == "registry.example"
+    assert calls == [("8.8.8.8", 80)]
+    assert socket_timeouts == [8]
+
+
+def test_docker_registry_transport_uses_connect_timeout_and_final_failure_type(monkeypatch: pytest.MonkeyPatch):
+    parsed = urlsplit("http://registry.example/v2/_catalog")
+    monkeypatch.setattr(
+        docker_registry_transport,
+        "_validated_target",
+        lambda *_args, **_kwargs: (parsed, ["8.8.8.8", "1.1.1.1"]),
+    )
+    timeouts: list[float] = []
+    encodings: list[str] = []
+
+    class FailingConnection:
+        def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
+            self.address = address
+            timeouts.append(timeout)
+
+        def request(self, method: str, target: str, body=None, headers=None) -> None:
+            encodings.append(headers["Accept-Encoding"])
+            if self.address == "8.8.8.8":
+                raise socket.timeout("first address timed out")
+            raise OSError("second address refused")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(docker_registry_transport, "_PinnedHTTPConnection", FailingConnection)
+    transport = docker_registry_transport._PinnedRegistryTransport(
+        expected_host="registry.example",
+        require_tls=False,
+        verify=True,
+        response_limit=1024,
+    )
+    request = httpx.Request(
+        "GET",
+        "http://registry.example/v2/_catalog",
+        extensions={"timeout": {"connect": 8.0}},
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        transport.handle_request(request)
+    assert timeouts == [8.0, 8.0]
+    assert encodings == ["identity", "identity"]
+
+
+def test_docker_registry_transport_rejects_compressed_response_before_decode(monkeypatch: pytest.MonkeyPatch):
+    parsed = urlsplit("http://registry.example/v2/_catalog")
+    monkeypatch.setattr(
+        docker_registry_transport,
+        "_validated_target",
+        lambda *_args, **_kwargs: (parsed, ["8.8.8.8"]),
+    )
+
+    class Response:
+        status = 200
+
+        def getheaders(self):
+            return [("Content-Encoding", "gzip")]
+
+        def read(self, amount: int = -1) -> bytes:
+            raise AssertionError("compressed response body must not be read")
+
+    class Connection:
+        def __init__(self, hostname: str, port: int, address: str, *, timeout: float) -> None:
+            return None
+
+        def request(self, method: str, target: str, body=None, headers=None) -> None:
+            assert headers["Accept-Encoding"] == "identity"
+
+        def getresponse(self) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(docker_registry_transport, "_PinnedHTTPConnection", Connection)
+    transport = docker_registry_transport._PinnedRegistryTransport(
+        expected_host="registry.example",
+        require_tls=False,
+        verify=True,
+        response_limit=1024,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        transport.handle_request(httpx.Request("GET", "http://registry.example/v2/_catalog"))
+    assert error.value.status_code == 502
+    assert error.value.detail["code"] == "UNSUPPORTED_REGISTRY_ENCODING"
+
+
+def test_ldap_authentication_pins_validated_addresses_and_disables_referrals(monkeypatch: pytest.MonkeyPatch):
+    endpoint = ldap_auth_connection.LdapEndpoint("ldap.example.test", 636)
+    monkeypatch.setattr(ldap_auth_connection, "resolve_host", lambda _endpoint: ["10.10.10.20"])
+    captured: dict[str, Any] = {}
+
+    class FakeConnection:
+        def __init__(self, server, **kwargs):
+            captured["server"] = server
+            captured["kwargs"] = kwargs
+
+        def open(self) -> None:
+            captured["opened"] = True
+
+        def start_tls(self) -> None:
+            captured["start_tls"] = True
+
+        def bind(self) -> None:
+            captured["bound"] = True
+
+    monkeypatch.setattr(ldap_auth_connection, "Connection", FakeConnection)
+    connection = ldap_auth_connection.connect(
+        {"security_mode": "ldaps", "verify_tls": False},
+        endpoint,
+        user="cn=service,dc=example,dc=test",
+        password="secret",
+    )
+
+    server = captured["server"]
+    assert connection is not None
+    assert server.host == "ldap.example.test"
+    assert server.allowed_referral_hosts == []
+    assert server.candidate_addresses()[0][4][0] == "10.10.10.20"
+    assert captured["kwargs"]["auto_referrals"] is False
+    assert captured["opened"] is True
+    assert captured["bound"] is True
+
+
+def test_ldap_manager_pins_validated_addresses_and_disables_referrals(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(ldap_manager_connection, "_bind_password", lambda *_args, **_kwargs: "secret")
+    monkeypatch.setattr(
+        ldap_manager_connection.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("10.20.30.40", 389))],
+    )
+    captured: dict[str, Any] = {}
+
+    class FakeConnection:
+        def __init__(self, server, **kwargs):
+            captured["server"] = server
+            captured["kwargs"] = kwargs
+
+        def open(self) -> None:
+            captured["opened"] = True
+
+        def start_tls(self) -> None:
+            captured["start_tls"] = True
+
+        def bind(self) -> None:
+            captured["bound"] = True
+
+        def unbind(self) -> None:
+            return None
+
+    monkeypatch.setattr(ldap_manager_connection, "Connection", FakeConnection)
+    bound = ldap_manager_connection.bind(
+        {
+            "servers": [{"host": "ldap.example.test", "port": 389}],
+            "bind_dn": "cn=service,dc=example,dc=test",
+            "security_mode": "plain",
+            "verify_tls": False,
+        }
+    )
+
+    server = captured["server"]
+    assert bound.endpoint == "ldap.example.test:389"
+    assert server.host == "ldap.example.test"
+    assert server.allowed_referral_hosts == []
+    assert server.candidate_addresses()[0][4][0] == "10.20.30.40"
+    assert captured["kwargs"]["auto_referrals"] is False
+    assert captured["opened"] is True
+    assert captured["bound"] is True
+
+
+def test_corrupted_update_request_numeric_fields_are_normalized(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    path = tmp_path / "update_request.json"
+    path.write_text(
+        json.dumps(
+            {
+                "id": "audit-update",
+                "state": "running",
+                "requested_at": "not-a-time",
+                "started_at": {"bad": True},
+                "finished_at": float("inf"),
+                "commit_date": -1,
+                "updated_at": "nan",
+                "progress": "not-a-number",
+                "log_offset": "bad-offset",
+                "acknowledged_users": "admin",
+                "steps": [
+                    {
+                        "id": "prepare",
+                        "status": "running",
+                        "started_at": "bad",
+                        "finished_at": {},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(update_coordination, "update_request_path", lambda: path)
+
+    state = update_coordination.read_update_request()
+
+    assert state["requested_at"] is None
+    assert state["started_at"] is None
+    assert state["finished_at"] is None
+    assert state["commit_date"] is None
+    assert state["updated_at"] is None
+    assert state["progress"] == 0
+    assert state["log_offset"] == 0
+    assert state["acknowledged_users"] == []
+    prepare = next(item for item in state["steps"] if item["id"] == "prepare")
+    assert prepare["started_at"] is None
+    assert prepare["finished_at"] is None
+
+
+def test_corrupted_auto_update_state_degrades_to_safe_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    path = tmp_path / "auto_update.json"
+    path.write_text(
+        json.dumps(
+            {
+                "check_enabled": "yes",
+                "enabled": 1,
+                "interval_hours": "forever",
+                "update_config": [],
+                "npm_audit_fix": {},
+                "last_checked": "bad",
+                "last_run": -1,
+                "last_error": {"secret": "must-not-be-stringified"},
+                "last_pid": "not-a-pid",
+                "next_check": "tomorrow",
+                "unexpected": "ignored",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "_auto_update_path", lambda: path)
+
+    state = settings._read_auto_update_state()
+
+    assert state == settings._default_auto_update_state()
+    assert "unexpected" not in state
+
+
+def test_corrupted_update_progress_rejects_invalid_unit_and_numeric_types():
+    progress = settings._normalize_update_progress(
+        {
+            "running": True,
+            "exit_code": "not-an-exit-code",
+            "started_at": "bad",
+            "finished_at": float("inf"),
+            "pid": "bad-pid",
+            "unit": "--root=/tmp/attacker.service",
+        }
+    )
+
+    assert progress == {
+        "running": True,
+        "exit_code": None,
+        "started_at": None,
+        "finished_at": None,
+        "pid": None,
+        "unit": None,
+    }

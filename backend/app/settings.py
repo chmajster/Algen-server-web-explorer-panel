@@ -697,6 +697,57 @@ def _default_auto_update_state() -> dict:
     }
 
 
+def _safe_persisted_number(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, (str, int, float)):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if number < 0 or number != number or number in {float("inf"), float("-inf")}:
+        return None
+    return number
+
+
+def _safe_persisted_int(value: object, *, minimum: int | None = None, maximum: int | None = None) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, (str, int, float)):
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if minimum is not None and number < minimum:
+        return None
+    if maximum is not None and number > maximum:
+        return None
+    return number
+
+
+def _normalize_auto_update_state(data: object) -> dict:
+    defaults = _default_auto_update_state()
+    if not isinstance(data, dict):
+        return defaults
+    state = defaults.copy()
+    for key in ("check_enabled", "enabled", "update_config", "npm_audit_fix"):
+        value = data.get(key)
+        if isinstance(value, bool):
+            state[key] = value
+    interval = _safe_persisted_int(data.get("interval_hours"), minimum=1, maximum=168)
+    if interval is not None:
+        state["interval_hours"] = interval
+    for key in ("last_checked", "last_run", "next_check"):
+        state[key] = _safe_persisted_number(data.get(key))
+    pid = _safe_persisted_int(data.get("last_pid"), minimum=1)
+    state["last_pid"] = pid
+    last_error = data.get("last_error")
+    state["last_error"] = str(last_error)[:1000] if isinstance(last_error, str) else ""
+    return state
+
+
 def _read_auto_update_state() -> dict:
     path = _auto_update_path()
     if not path.exists():
@@ -705,13 +756,11 @@ def _read_auto_update_state() -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return _default_auto_update_state()
-    if not isinstance(data, dict):
-        return _default_auto_update_state()
-    return {**_default_auto_update_state(), **data}
+    return _normalize_auto_update_state(data)
 
 
 def _write_auto_update_state(data: dict) -> dict:
-    state = {**_default_auto_update_state(), **data}
+    state = _normalize_auto_update_state(data)
     path = _auto_update_path()
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1230,18 +1279,31 @@ def _synchronize_update_steps(lines: list[str]) -> dict:
         return write_update_request(latest)
 
 
+def _normalize_update_progress(value: object) -> dict:
+    progress: dict = {"running": False, "exit_code": None, "started_at": None, "finished_at": None, "pid": None, "unit": None}
+    if not isinstance(value, dict):
+        return progress
+    progress["running"] = value.get("running") is True
+    progress["exit_code"] = _safe_persisted_int(value.get("exit_code"), minimum=-255, maximum=255)
+    progress["started_at"] = _safe_persisted_number(value.get("started_at"))
+    progress["finished_at"] = _safe_persisted_number(value.get("finished_at"))
+    progress["pid"] = _safe_persisted_int(value.get("pid"), minimum=1)
+    unit = value.get("unit")
+    if isinstance(unit, str) and SERVICE_RE.fullmatch(unit) and not unit.startswith("-"):
+        progress["unit"] = unit
+    return progress
+
+
 def _update_progress() -> dict:
     state = _read_auto_update_state()
     request_state = read_update_request()
     progress_path = _update_progress_path()
-    progress: dict = {"running": False, "exit_code": None, "started_at": None, "finished_at": None, "pid": None, "unit": None}
+    progress = _normalize_update_progress({})
     try:
         if progress_path.exists():
-            value = json.loads(progress_path.read_text(encoding="utf-8"))
-            if isinstance(value, dict):
-                progress.update({key: value.get(key) for key in progress})
-    except (OSError, json.JSONDecodeError):
-        pass
+            progress = _normalize_update_progress(json.loads(progress_path.read_text(encoding="utf-8")))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        progress = _normalize_update_progress({})
     if progress.get("running") and progress.get("unit"):
         try:
             active = (
@@ -1407,12 +1469,12 @@ def _run_auto_update_once(*, actor: str = "system", force: bool = False, update_
             if not state.get("check_enabled"):
                 return {"ok": True, "skipped": True, "reason": "disabled"}
             next_check = state.get("next_check")
-            if next_check and float(next_check) > now:
+            if next_check and next_check > now:
                 return {"ok": True, "skipped": True, "reason": "not_due", "next_check": next_check}
         state["last_checked"] = now
         try:
             status = _update_status()
-            interval = max(1, int(state.get("interval_hours") or 12))
+            interval = int(state["interval_hours"])
             if not status.get("available", True):
                 state.update({"last_error": status.get("error") or "Update status unavailable", "next_check": now + 3600})
                 _write_auto_update_state(state)

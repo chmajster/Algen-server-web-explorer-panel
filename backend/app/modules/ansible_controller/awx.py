@@ -8,6 +8,28 @@ import urllib.request
 from typing import Any
 
 
+_ORIGINAL_URLOPEN = urllib.request.urlopen
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+def _open_no_redirect(request: urllib.request.Request, *, timeout: int, context: ssl.SSLContext):
+    # Preserve explicit runtime/test instrumentation that replaces urlopen.
+    # Normal production traffic always uses a redirect-blocking opener.
+    current_urlopen = urllib.request.urlopen
+    if current_urlopen is not _ORIGINAL_URLOPEN:
+        return current_urlopen(request, timeout=timeout, context=context)
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPHandler(),
+        urllib.request.HTTPSHandler(context=context),
+        _NoRedirectHandler(),
+    )
+    return opener.open(request, timeout=timeout)
+
+
 class AwxClient:
     def __init__(self, url: str, token: str, *, verify_tls: bool = True, ca_certificate: str = "", timeout: int = 15) -> None:
         parsed = urllib.parse.urlsplit(url)
@@ -32,7 +54,7 @@ class AwxClient:
             headers={"Authorization": f"Bearer {self.token}", "Accept": "application/json", "Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout, context=self.context) as response:  # nosec B310 - URL origin validated above
+            with _open_no_redirect(request, timeout=self.timeout, context=self.context) as response:
                 value = json.loads(response.read(4 * 1024 * 1024).decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, ValueError) as error:
             raise RuntimeError(f"AWX request failed: {error}") from error
