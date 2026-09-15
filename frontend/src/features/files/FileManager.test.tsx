@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api";
 import { FileManager, isExternalFileTransfer } from "./FileManager";
@@ -68,17 +69,24 @@ describe("file manager behavior", () => {
   });
 
   it("applies keyboard shortcuts only in the focused explorer and preserves input editing", async () => {
+    const user = userEvent.setup();
     const props = { homePath: "/home/test", tasks: [], isAdmin: false, t, toast: vi.fn(), onUpload: vi.fn(), onOpenFolderWindow: vi.fn(), onShareSamba: vi.fn() };
     const { container } = render(<><FileManager {...props} /><FileManager {...props} /></>);
     await waitFor(() => expect(screen.getAllByText("alpha.txt")).toHaveLength(2));
     const [first, second] = Array.from(container.querySelectorAll<HTMLElement>(".file-manager"));
-    fireEvent.keyDown(within(first).getByLabelText("files.search"), { key: "a", ctrlKey: true });
+    await user.click(within(first).getByLabelText("files.search"));
+    await user.keyboard("{Control>}a{/Control}");
     expect(screen.queryByText(/2 selected/)).not.toBeInTheDocument();
-    fireEvent.keyDown(first.querySelector(".file-content")!, { key: "a", ctrlKey: true });
+    await user.click(first.querySelector(".file-row")!);
+    expect(first.querySelector(".file-row")).toHaveFocus();
+    await user.keyboard("{Control>}a{/Control}");
     expect(within(first).getByText(/2 selected/)).toBeInTheDocument();
     expect(within(second).queryByText(/2 selected/)).not.toBeInTheDocument();
-    fireEvent.keyDown(second.querySelector(".file-content")!, { key: "a", ctrlKey: true });
-    fireEvent.keyDown(first.querySelector(".file-content")!, { key: "Delete" });
+    await user.click(second.querySelector(".file-row")!);
+    expect(second.querySelector(".file-row")).toHaveFocus();
+    await user.keyboard("{Control>}a{/Control}");
+    await user.click(first.querySelector(".file-content")!);
+    await user.keyboard("{Delete}");
     expect(screen.getAllByRole("dialog", { name: "files.confirmDeleteTitle" })).toHaveLength(1);
     expect(screen.getByText("Delete 2 items?")).toBeInTheDocument();
   });

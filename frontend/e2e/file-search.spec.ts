@@ -1,6 +1,25 @@
 import { expect, test } from "@playwright/test";
 import { installMockApi, openDesktopApp } from "./mockApi";
 
+test("mouse-selected list rows receive rename and delete keyboard shortcuts", async ({ page }) => {
+  await installMockApi(page);
+  await page.goto("/");
+  await openDesktopApp(page, "File Manager");
+  const row = page.locator(".file-row").filter({ hasText: "readme.txt" });
+  await row.click();
+  await expect(row).toBeFocused();
+  await page.keyboard.press("F2");
+  const rename = page.getByRole("dialog", { name: "Rename", exact: true });
+  await expect(rename.getByLabel("New name")).toHaveValue("readme.txt");
+  await page.keyboard.press("Escape");
+  await expect(rename).toHaveCount(0);
+  await row.click();
+  await page.keyboard.press("Delete");
+  const deletion = page.getByRole("dialog", { name: "Confirm deletion" });
+  await expect(deletion).toHaveCount(1);
+  await expect(deletion.getByText("/home/e2e/readme.txt", { exact: true })).toBeVisible();
+});
+
 for (const width of [1440, 390]) {
   test(`recursive file search filters results and opens their folder at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
