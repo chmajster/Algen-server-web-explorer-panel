@@ -55,7 +55,7 @@ ALLOWED_PAYLOAD_KEYS: dict[str, frozenset[str]] = {
     "preview": frozenset({"path", "limit"}),
     "read_text": frozenset({"path"}),
     "write_text": frozenset({"path", "content", "expected_mtime_ns"}),
-    "search": frozenset({"path", "query", "limit", "max_entries", "timeout_seconds"}),
+    "search": frozenset({"path", "query", "limit", "max_entries", "timeout_seconds", "match_mode", "item_type", "case_sensitive", "show_hidden", "include_summary"}),
 }
 PATH_KEYS = frozenset({"path", "src", "dst"})
 TEMP_SUFFIXES = {"import_upload": ".upload", "export_download": ".download"}

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api";
 import { FileManager, isExternalFileTransfer } from "./FileManager";
@@ -10,7 +11,7 @@ vi.mock("../../api", () => ({
   api: {
     list: vi.fn(), tree: vi.fn(), mounts: vi.fn(), mountRoots: vi.fn(), localDisks: vi.fn(), appConfig: vi.fn(), stat: vi.fn(),
     copy: vi.fn(), move: vi.fn(), mkdir: vi.fn(), create: vi.fn(), rename: vi.fn(), delete: vi.fn(), upload: vi.fn(), preview: vi.fn(),
-    readText: vi.fn(), writeText: vi.fn(), chmod: vi.fn(), chown: vi.fn()
+    readText: vi.fn(), writeText: vi.fn(), chmod: vi.fn(), chown: vi.fn(), search: vi.fn()
   }
 }));
 
@@ -65,6 +66,74 @@ describe("file manager behavior", () => {
     expect(screen.getByText(/2 selected/)).toBeInTheDocument();
     fireEvent.click(screen.getByTitle("view.medium"));
     expect(localStorage.getItem("webnas_file_explorer_view")).toBe("medium");
+  });
+
+  it("applies keyboard shortcuts only in the focused explorer and preserves input editing", async () => {
+    const user = userEvent.setup();
+    const props = { homePath: "/home/test", tasks: [], isAdmin: false, t, toast: vi.fn(), onUpload: vi.fn(), onOpenFolderWindow: vi.fn(), onShareSamba: vi.fn() };
+    const { container } = render(<><FileManager {...props} /><FileManager {...props} /></>);
+    await waitFor(() => expect(screen.getAllByText("alpha.txt")).toHaveLength(2));
+    const [first, second] = Array.from(container.querySelectorAll<HTMLElement>(".file-manager"));
+    await user.click(within(first).getByLabelText("files.search"));
+    await user.keyboard("{Control>}a{/Control}");
+    expect(screen.queryByText(/2 selected/)).not.toBeInTheDocument();
+    await user.click(first.querySelector(".file-row")!);
+    expect(first.querySelector(".file-row")).toHaveFocus();
+    await user.keyboard("{Control>}a{/Control}");
+    expect(within(first).getByText(/2 selected/)).toBeInTheDocument();
+    expect(within(second).queryByText(/2 selected/)).not.toBeInTheDocument();
+    await user.click(second.querySelector(".file-row")!);
+    expect(second.querySelector(".file-row")).toHaveFocus();
+    await user.keyboard("{Control>}a{/Control}");
+    await user.click(first.querySelector(".file-content")!);
+    await user.keyboard("{Delete}");
+    expect(screen.getAllByRole("dialog", { name: "files.confirmDeleteTitle" })).toHaveLength(1);
+    expect(screen.getByText("Delete 2 items?")).toBeInTheDocument();
+  });
+
+  it.each(["list", "medium"])("keeps all selected items for context-menu actions in %s view", async (view) => {
+    localStorage.setItem("webnas_file_explorer_view", view);
+    const { container } = render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await screen.findByText("alpha.txt");
+    const entries = container.querySelectorAll(".file-entry");
+    fireEvent.click(entries[0]);
+    fireEvent.click(entries[1], { ctrlKey: true });
+    fireEvent.contextMenu(entries[1], { clientX: 40, clientY: 40 });
+    expect(screen.getByRole("menuitem", { name: "action.rename" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("menuitem", { name: "action.copy" }));
+    fireEvent.click(screen.getByTitle("action.paste"));
+    await waitFor(() => expect(api.copy).toHaveBeenCalledWith(files.map((file) => file.path), "/home/test"));
+    fireEvent.contextMenu(entries[1], { clientX: 40, clientY: 40 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "action.delete" }));
+    expect(screen.getByText("Delete 2 items?")).toBeInTheDocument();
+  });
+
+  it("opens the upload picker belonging to the window whose context menu was used", async () => {
+    const props = { homePath: "/home/test", tasks: [], isAdmin: false, t, toast: vi.fn(), onUpload: vi.fn(), onOpenFolderWindow: vi.fn(), onShareSamba: vi.fn() };
+    const { container } = render(<><FileManager {...props} /><FileManager {...props} /></>);
+    await waitFor(() => expect(screen.getAllByText("alpha.txt")).toHaveLength(2));
+    const inputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]');
+    const first = vi.spyOn(inputs[0], "click").mockImplementation(() => {});
+    const second = vi.spyOn(inputs[1], "click").mockImplementation(() => {});
+    fireEvent.contextMenu(container.querySelectorAll(".file-content")[1], { clientX: 40, clientY: 40 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "action.upload" }));
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
+  });
+
+  it("uses the server-clamped page for navigation and resets pagination when filtering", async () => {
+    const initial = await api.list("/home/test");
+    vi.mocked(api.list).mockResolvedValue({ ...initial, page: 1, total_pages: 3, total_items: 250 });
+    render(<FileManager homePath="/home/test" tasks={[]} isAdmin={false} t={t} toast={vi.fn()} onUpload={vi.fn()} onOpenFolderWindow={vi.fn()} onShareSamba={vi.fn()} />);
+    await screen.findByText("alpha.txt");
+    fireEvent.click(screen.getByRole("button", { name: "action.next" }));
+    await waitFor(() => expect(api.list).toHaveBeenCalledWith("/home/test", expect.objectContaining({ page: 2 })));
+    expect(screen.getByRole("button", { name: "action.previous" })).toBeDisabled();
+    vi.mocked(api.list).mockImplementation(async (_path, options) => ({ ...initial, page: Number(options?.page) || 1, total_pages: 3, total_items: 250 }));
+    fireEvent.click(screen.getByRole("button", { name: "action.next" }));
+    await screen.findByText("2 / 3");
+    fireEvent.change(screen.getByLabelText("files.search"), { target: { value: "alpha" } });
+    await waitFor(() => expect(api.list).toHaveBeenLastCalledWith("/home/test", expect.objectContaining({ page: 1, filter: "alpha" })));
   });
 
   it("sorts from a column header and opens the context menu", async () => {
@@ -254,7 +323,7 @@ describe("file manager behavior", () => {
     await screen.findByText("alpha.txt");
     const selected = [new File(["picked"], "picked.txt")];
 
-    fireEvent.change(document.getElementById("file-manager-upload")!, { target: { files: selected } });
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: selected } });
 
     expect(onUpload).toHaveBeenCalledWith(selected, "/home/test");
   });

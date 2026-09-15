@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from ....activity import ActivityCategory, ActivityStatus, record_activity
@@ -300,10 +300,25 @@ def write_text_file(payload: TextFileWriteRequest, user=Depends(csrf_user)):
 
 
 @router.get("/api/files/search")
-def search(path: str, query: str, user=Depends(current_user)):
+def search(
+    path: str,
+    query: str = Query(min_length=1, max_length=256),
+    match_mode: Literal["contains", "glob"] = "contains",
+    item_type: Literal["all", "files", "folders"] = "all",
+    case_sensitive: bool = False,
+    show_hidden: bool = False,
+    user=Depends(current_user),
+):
     authorize(user, "files.read")
+    if not query.strip():
+        raise HTTPException(422, "Search query must not be blank")
     target = resolve_user_path(user.username, path)
-    return {"items": run_user_op(user.username, "search", {"path": str(target), "query": query})}
+    result = run_user_op(user.username, "search", {
+        "path": str(target), "query": query, "match_mode": match_mode, "item_type": item_type,
+        "case_sensitive": case_sensitive, "show_hidden": show_hidden, "include_summary": True,
+    })
+    # Keep compatibility with an older worker during an in-place upgrade.
+    return result if isinstance(result, dict) else {"items": result}
 
 
 @router.get("/api/files/stat")
@@ -324,5 +339,4 @@ def chmod(payload: ChmodRequest, user=Depends(csrf_user)):
         result = run_user_op(user.username, "chmod", {"path": str(target), "mode": payload.mode})
     record_activity(ActivityCategory.file, "chmod", user.username, target=str(target), details={"mode": payload.mode}, source="files")
     return result
-
 

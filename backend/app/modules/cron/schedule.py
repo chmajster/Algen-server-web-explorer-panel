@@ -124,14 +124,14 @@ def server_timezone() -> tzinfo:
             name = path.read_text(encoding="utf-8", errors="replace").strip()
             if name:
                 return ZoneInfo(name)
-        except (OSError, ZoneInfoNotFoundError):
+        except (OSError, ValueError, ZoneInfoNotFoundError):
             pass
     try:
         target = Path("/etc/localtime").resolve(strict=True)
         marker = "/zoneinfo/"
         if marker in str(target):
             return ZoneInfo(str(target).split(marker, 1)[1])
-    except (OSError, ZoneInfoNotFoundError):
+    except (OSError, ValueError, ZoneInfoNotFoundError):
         pass
     return datetime.now().astimezone().tzinfo or UTC
 

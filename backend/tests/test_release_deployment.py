@@ -48,6 +48,9 @@ def deployment(tmp_path: Path, *, active: bool = True):
             "active_port": 15101,
             "active_release": str(old_release),
         }), encoding="utf-8")
+        systemd = tmp_path / "systemd"
+        systemd.mkdir()
+        (systemd / "webnas-privileged.service").write_text(f"[Service]\nExecStart={old_release}/backend/.venv/bin/python -m app.privileged_broker.server\n", encoding="utf-8")
     args = SimpleNamespace(
         root=root,
         release=release,
@@ -128,6 +131,8 @@ def test_blue_green_handover_validates_before_switch_and_drains_after_public_hea
     monkeypatch.setattr(release_module, "atomic_json", lambda *args, **kwargs: None)
 
     def run(*args, **kwargs):
+        if args[:3] == ("systemctl", "restart", "webnas-privileged.service"):
+            events.append("restart-broker")
         if args[:3] == ("systemctl", "stop", "webnas-backend-blue.service"):
             events.append("stop-old")
         return completed()
@@ -136,10 +141,68 @@ def test_blue_green_handover_validates_before_switch_and_drains_after_public_hea
     target.deploy()
 
     assert events.index("candidate-health:15102") < events.index("gateway:15102")
+    assert events.index("candidate-health:15102") < events.index("restart-broker") < events.index("gateway:15102")
     assert events.index("gateway:15102") < events.index("public-health")
     assert events.index("public-health") < events.index("stop-old")
     assert "phase:switching" in events
     assert "phase:draining" in events
+
+
+@pytest.mark.parametrize("active", [True, False])
+@pytest.mark.parametrize("failure", [None, "candidate", "broker", "public"])
+def test_deployment_loads_new_broker_policy_and_restores_previous_broker_on_failure(monkeypatch, tmp_path, active, failure):
+    target = deployment(tmp_path, active=active)
+    previous = target.previous_broker_unit
+    restarts = []
+    gateways = []
+    stopped = []
+    monkeypatch.setattr(target, "validate_files", lambda: None)
+    monkeypatch.setattr(target, "cleanup_releases", lambda: None)
+
+    def health(_port):
+        if failure == "candidate":
+            raise RuntimeError("candidate failed")
+
+    def public_health():
+        if failure == "public":
+            raise RuntimeError("public failed")
+
+    def gateway(port):
+        if port == target.new_port:
+            assert restarts and str(target.release) in restarts[-1]
+        gateways.append(port)
+
+    def run(*args, **kwargs):
+        if args[:3] == ("systemctl", "restart", "webnas-privileged.service"):
+            unit = target.broker_unit.read_text(encoding="utf-8")
+            restarts.append(unit)
+            if failure == "broker" and str(target.release) in unit:
+                raise RuntimeError("broker failed")
+        if args[:2] == ("systemctl", "stop"):
+            stopped.append(args[2])
+        return completed(1 if args[:3] == ("systemctl", "is-active", "--quiet") else 0)
+
+    monkeypatch.setattr(release_module, "command", run)
+    monkeypatch.setattr(target, "health", health)
+    monkeypatch.setattr(target, "public_health", public_health)
+    monkeypatch.setattr(target, "activate_nginx", gateway)
+    if failure:
+        with pytest.raises(RuntimeError, match=f"{failure} failed"):
+            target.deploy()
+        if previous is not None:
+            assert target.broker_unit.read_text(encoding="utf-8") == previous
+            assert restarts[-1] == previous
+        else:
+            assert not target.broker_unit.exists()
+            assert "webnas-privileged.service" in stopped
+        assert target.unit_name(target.new_slot) in stopped
+        if failure != "public":
+            assert target.new_port not in gateways
+    else:
+        target.deploy()
+        assert len(restarts) == 1
+        assert str(target.release) in restarts[0]
+        assert gateways == [target.new_port]
 
 
 def test_failed_candidate_health_never_switches_gateway_and_removes_candidate(monkeypatch, tmp_path: Path):

@@ -150,6 +150,8 @@ class Deployment:
         self.service_user = args.service_user
         self.drain_seconds = args.drain_seconds
         self.systemd_dir = args.systemd_dir.resolve()
+        self.broker_unit = self.systemd_dir / "webnas-privileged.service"
+        self.previous_broker_unit = self.broker_unit.read_text(encoding="utf-8") if self.broker_unit.exists() else None
         self.nginx_config = args.nginx_config.resolve()
         data_dir = Path(config_value(self.config, "paths", "data_dir", "/var/lib/webnas"))
         self.state_path = (args.state or data_dir / "settings" / "deployment.json").resolve()
@@ -525,7 +527,9 @@ class Deployment:
         raise RuntimeError(f"Public health check failed after handover: {last_error}")
 
     def rollback(self) -> None:
+        self.restore_broker()
         if not self.old_slot or not self.old_port or not self.old_release:
+            command("systemctl", "stop", self.unit_name(self.new_slot), check=False)
             if self.legacy_was_active:
                 command("systemctl", "stop", "nginx", check=False)
                 command("systemctl", "start", "webnas.service", check=False)
@@ -535,6 +539,16 @@ class Deployment:
         atomic_write(self.runtime_dir / "active-slot", f"{self.old_slot}\n", 0o644)
         command("systemctl", "stop", self.unit_name(self.new_slot), check=False)
         atomic_json(self.state_path, self.previous_state)
+
+    def restore_broker(self) -> None:
+        if self.previous_broker_unit is None:
+            command("systemctl", "stop", "webnas-privileged.service", check=False)
+            self.broker_unit.unlink(missing_ok=True)
+        else:
+            atomic_write(self.broker_unit, self.previous_broker_unit)
+        command("systemctl", "daemon-reload")
+        if self.previous_broker_unit is not None:
+            command("systemctl", "restart", "webnas-privileged.service")
 
     def cleanup_releases(self) -> None:
         keep = {self.release.resolve()}
@@ -567,13 +581,14 @@ class Deployment:
         self.update_phase("verifying", "Sprawdzanie wersji kandydującej.")
         self.validate_files()
         self.ensure_tls_certificate()
-        self.write_units()
-        self.write_slot_environment()
-        command("systemctl", "restart", self.unit_name(self.new_slot))
         try:
+            self.write_units()
+            self.write_slot_environment()
+            command("systemctl", "restart", self.unit_name(self.new_slot))
             self.health(self.new_port)
         except Exception:
             command("systemctl", "stop", self.unit_name(self.new_slot), check=False)
+            self.restore_broker()
             if self.release.is_relative_to(self.releases):
                 shutil.rmtree(self.release, ignore_errors=True)
             raise
@@ -585,6 +600,10 @@ class Deployment:
             # is stopped only after the candidate has passed every check.
             command("systemctl", "stop", "webnas.service")
         try:
+            # daemon-reload updates ExecStart but leaves an active broker's
+            # imported policy unchanged. Load the candidate policy before any
+            # public requests can reach the new backend; rollback restores both.
+            command("systemctl", "restart", "webnas-privileged.service")
             self.activate_nginx(self.new_port)
             self.switch_current(self.release)
             atomic_write(self.runtime_dir / "active-slot", f"{self.new_slot}\n", 0o644)
