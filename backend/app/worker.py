@@ -17,6 +17,7 @@ from typing import Any
 
 
 MAX_TEXT_FILE_BYTES = 1024 * 1024
+MAX_PREVIEW_BYTES = 1024 * 1024
 DEFAULT_SEARCH_LIMIT = 250
 DEFAULT_SEARCH_MAX_ENTRIES = 100_000
 DEFAULT_SEARCH_TIMEOUT_SECONDS = 15.0
@@ -41,6 +42,16 @@ def drop_privileges(username: str) -> None:
 
 def info(path: Path) -> dict:
     st = path.lstat()
+    # NFS/container files and files left by deleted accounts may retain IDs
+    # which NSS cannot resolve. Their metadata must still remain browsable.
+    try:
+        owner = pwd.getpwuid(st.st_uid).pw_name
+    except KeyError:
+        owner = str(st.st_uid)
+    try:
+        group = grp.getgrgid(st.st_gid).gr_name
+    except KeyError:
+        group = str(st.st_gid)
     is_symlink = path.is_symlink()
     is_dir = path.is_dir()
     target = ""
@@ -57,8 +68,8 @@ def info(path: Path) -> dict:
         "type": "folder" if is_dir else path.suffix.lower().lstrip(".") or "file",
         "is_dir": is_dir,
         "size": st.st_size,
-        "owner": pwd.getpwuid(st.st_uid).pw_name,
-        "group": grp.getgrgid(st.st_gid).gr_name,
+        "owner": owner,
+        "group": group,
         "mode": stat.filemode(st.st_mode),
         "permissions": oct(stat.S_IMODE(st.st_mode)),
         "modified": st.st_mtime,
@@ -102,8 +113,13 @@ def _matches_filter(item: dict[str, Any], query: str | None) -> bool:
 
 def _sort_value(item: dict[str, Any], sort_field: str) -> tuple[int, float, str]:
     if sort_field in {"modified", "mtime"}:
-        return (0, float(item.get("mtime") or item.get("modified") or 0), "")
-    value = item.get(sort_field) or ""
+        value = item.get("mtime")
+        if value is None:
+            value = item.get("modified")
+        return (0, float(value or 0), "")
+    value = item.get(sort_field)
+    if value is None:
+        value = ""
     if isinstance(value, str):
         return (1, 0, value.lower())
     if isinstance(value, (int, float)):
@@ -256,9 +272,23 @@ def fail_with_os_error(error: OSError) -> None:
     raise SystemExit(1)
 
 
+def _open_regular_file_descriptor(path: Path, flags: int) -> int:
+    # Reject known FIFOs/devices before open(): checking only after open can
+    # block indefinitely. Recheck the descriptor to cover a replacement race.
+    if not stat.S_ISREG(path.lstat().st_mode):
+        raise WorkerError("not_regular_file")
+    descriptor = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise WorkerError("not_regular_file")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
 def read_text_file(path: Path, max_bytes: int = MAX_TEXT_FILE_BYTES) -> dict:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags)
+    descriptor = _open_regular_file_descriptor(path, os.O_RDONLY)
     with os.fdopen(descriptor, "rb") as handle:
         details = os.fstat(handle.fileno())
         if not stat.S_ISREG(details.st_mode):
@@ -286,8 +316,7 @@ def write_text_file(path: Path, content: str, expected_mtime_ns: int | None, max
     encoded = content.encode("utf-8")
     if len(encoded) > max_bytes:
         raise WorkerError("file_too_large")
-    flags = os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags)
+    descriptor = _open_regular_file_descriptor(path, os.O_WRONLY)
     with os.fdopen(descriptor, "wb", buffering=0) as handle:
         details = os.fstat(handle.fileno())
         if not stat.S_ISREG(details.st_mode):
@@ -295,7 +324,12 @@ def write_text_file(path: Path, content: str, expected_mtime_ns: int | None, max
         if expected_mtime_ns is not None and details.st_mtime_ns != expected_mtime_ns:
             raise WorkerError("changed_on_disk")
         handle.seek(0)
-        handle.write(encoded)
+        remaining = memoryview(encoded)
+        while remaining:
+            written = handle.write(remaining)
+            if written is None or written <= 0:
+                raise OSError(errno.EIO, "Text file write made no progress")
+            remaining = remaining[written:]
         handle.truncate()
         os.fsync(handle.fileno())
         updated = os.fstat(handle.fileno())
@@ -388,8 +422,10 @@ def main() -> None:
         print(json.dumps({"ok": True, "tmp": str(tmp)}))
     elif op == "preview":
         path = Path(payload["path"])
-        limit = int(payload.get("limit", 1_048_576))
-        data = path.read_bytes()[:limit]
+        limit = max(0, min(int(payload.get("limit", MAX_PREVIEW_BYTES)), MAX_PREVIEW_BYTES))
+        descriptor = _open_regular_file_descriptor(path, os.O_RDONLY)
+        with os.fdopen(descriptor, "rb") as handle:
+            data = handle.read(limit)
         print(json.dumps({"content": base64.b64encode(data).decode("ascii")}))
     elif op == "read_text":
         print(json.dumps(read_text_file(Path(payload["path"]))))

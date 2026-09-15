@@ -9,6 +9,7 @@ from .dhcp import DhcpProvider
 from .dns import AdGuardHomeProvider, PiHoleProvider
 from .docker import DockerProvider
 from .docker_broker_transport import install_docker_broker_transport
+from .docker_registry_transport import install_docker_registry_transport
 from .docker_stop_behavior import install_docker_stop_behavior
 from .infrastructure import ApiConnectionProvider, CommandProvider
 from .home_assistant import HomeAssistantProvider
@@ -18,8 +19,10 @@ from .os_repositories import OsRepositoriesProvider
 from .samba import SambaProvider, parse_smb_conf
 
 install_docker_broker_transport(CommandProvider)
+install_docker_registry_transport(DockerProvider)
 install_docker_stop_behavior(DockerProvider)
 del install_docker_broker_transport
+del install_docker_registry_transport
 del install_docker_stop_behavior
 
 

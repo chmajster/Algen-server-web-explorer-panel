@@ -14,6 +14,13 @@ updates:
     open-pull-requests-limit: 5
   - package-ecosystem: npm
     directory: /frontend
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
     schedule:
       interval: weekly
       day: monday

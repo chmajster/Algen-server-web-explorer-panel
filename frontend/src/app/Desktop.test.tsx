@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ModuleSummary, type Task } from "../api";
 import { settingsFixture } from "../test/settings";
 import { Desktop } from "./Desktop";
@@ -44,6 +44,12 @@ const actionTask: Task = {
   retry_count: 0,
   errors: [],
 };
+
+beforeAll(async () => {
+  // Await the real settings module before timing UI interactions. A cold Vite
+  // transform on a busy runner can exceed findByRole's one-second deadline.
+  await import("../features/settings/SettingsApp");
+});
 
 beforeEach(() => {
   vi.restoreAllMocks();

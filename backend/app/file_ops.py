@@ -8,6 +8,7 @@ import os
 import pwd
 import subprocess
 import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -114,7 +115,13 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
         # delegates this exact worker launch to the root broker below.
         cmd = [sys.executable, "-m", "app.worker", "--user", "-", "--op", "-", "--payload", "-"]
         stdin_payload = _encode({"user": username, "op": op, "payload": payload})
-        result = subprocess.run(cmd, input=stdin_payload, capture_output=True, text=True, timeout=timeout, check=False)
+        try:
+            result = subprocess.run(cmd, input=stdin_payload, capture_output=True, text=True, timeout=timeout, check=False)
+        except subprocess.TimeoutExpired as error:
+            raise HTTPException(
+                504,
+                {"code": "file_worker_timeout", "message": "The file operation exceeded its time limit"},
+            ) from error
         if result.returncode != 0:
             raise _worker_http_error(result.stderr)
         try:
@@ -138,8 +145,13 @@ def run_user_op(username: str, op: str, payload: dict) -> object:
 
 def _item_sort_value(item: dict, sort: str) -> tuple[int, float, str]:
     if sort in {"modified", "mtime"}:
-        return (0, float(item.get("mtime") or item.get("modified") or 0), "")
-    value = item.get(sort) or ""
+        value = item.get("mtime")
+        if value is None:
+            value = item.get("modified")
+        return (0, float(value or 0), "")
+    value = item.get(sort)
+    if value is None:
+        value = ""
     if isinstance(value, str):
         return (1, 0, value.lower())
     if isinstance(value, (int, float)):
@@ -314,8 +326,15 @@ def download_response(username: str, path: str) -> FileResponse:
     assert_path_allowed(target, "download")
     tmp_dir = ensure_temp_dir()
     tmp = tmp_dir / f"{uuid4().hex}.download"
-    run_user_op(username, "export_download", {"src": str(target), "tmp": str(tmp)})
-    return FileResponse(tmp, filename=target.name, background=BackgroundTask(lambda: tmp.unlink(missing_ok=True)))
+    try:
+        run_user_op(username, "export_download", {"src": str(target), "tmp": str(tmp)})
+        return FileResponse(tmp, filename=target.name, background=BackgroundTask(lambda: tmp.unlink(missing_ok=True)))
+    except BaseException:
+        # A failed export can leave a partial copy; no response background task
+        # exists in this path. Preserve the original error if cleanup also fails.
+        with suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise
 
 
 def mime_for(path: str) -> str:

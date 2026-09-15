@@ -5,10 +5,12 @@ import socket
 import ssl
 import threading
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
 from ldap3 import NONE, Connection, Server, Tls
+from ldap3.core.exceptions import LDAPSocketOpenError
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +120,26 @@ def resolve_host(endpoint: LdapEndpoint) -> list[str]:
     return addresses
 
 
+def _pin_server_addresses(server: Server, endpoint: LdapEndpoint, addresses: list[str]) -> None:
+    if not addresses:
+        raise socket.gaierror("LDAP host resolved without usable addresses")
+    address_info: list[list[Any]] = []
+    for raw in addresses:
+        address = ipaddress.ip_address(raw)
+        if address.version == 6:
+            sockaddr: tuple[Any, ...] = (str(address), endpoint.port, 0, 0)
+            family = socket.AF_INET6
+        else:
+            sockaddr = (str(address), endpoint.port)
+            family = socket.AF_INET
+        address_info.append([family, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", sockaddr, None, None])
+    # ldap3 normally resolves Server.host lazily. Seed its documented candidate
+    # address cache so connect() uses exactly the already policy-checked IPs while
+    # Server.host remains the DNS hostname used for LDAPS/StartTLS verification.
+    setattr(server, "_address_info", address_info)
+    setattr(server, "_address_info_resolved_time", datetime.now())
+
+
 def tls_config(settings: dict[str, Any]) -> Tls:
     return Tls(
         validate=ssl.CERT_REQUIRED if bool(settings.get("verify_tls", True)) else ssl.CERT_NONE,
@@ -133,6 +155,12 @@ def connect(
     password: str,
     get_info: Any = NONE,
 ) -> Connection:
+    try:
+        addresses = resolve_host(endpoint)
+    except ValueError as error:
+        # Reject this endpoint before creating a socket, but let authentication
+        # failover proceed to other independently validated directory servers.
+        raise LDAPSocketOpenError("LDAP server resolved to a disallowed target") from error
     server = Server(
         endpoint.host,
         port=endpoint.port,
@@ -140,13 +168,16 @@ def connect(
         tls=tls_config(settings),
         connect_timeout=max(1, int(float(settings.get("connect_timeout") or 5.0))),
         get_info=get_info,
+        allowed_referral_hosts=[],
     )
+    _pin_server_addresses(server, endpoint, addresses)
     connection = Connection(
         server,
         user=user,
         password=password,
         receive_timeout=max(1, int(float(settings.get("operation_timeout") or 10.0))),
         raise_exceptions=True,
+        auto_referrals=False,
     )
     connection.open()
     if settings.get("security_mode") == "starttls":

@@ -38,7 +38,7 @@ def _require_standard_gateway() -> None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         port = int(payload.get("active_port") or 0) if isinstance(payload, dict) else 0
-    except (OSError, ValueError, json.JSONDecodeError):
+    except (OSError, TypeError, ValueError, OverflowError, json.JSONDecodeError):
         port = 0
     if port < 1 or port > 65535:
         raise HTTPException(409, "HTTPS settings require the standard nginx blue/green installation")

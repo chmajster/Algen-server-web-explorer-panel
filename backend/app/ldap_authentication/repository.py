@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -20,6 +21,51 @@ from .models import LdapAccessPolicyInput, LdapAuthenticationSettingsInput, Ldap
 AUTH_BIND_SECRET_NAME = "auth-ldap-bind-password"
 AUTH_SECRET_MODULE = "settings"
 SCHEMA_VERSION = 2
+
+
+def _safe_float(value: object, default: float, *, minimum: float = 0.0, maximum: float | None = None) -> float:
+    if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if not math.isfinite(number) or number < minimum or (maximum is not None and number > maximum):
+        return default
+    return number
+
+
+def _safe_int(value: object, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return default
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if minimum is not None and number < minimum:
+        return default
+    if maximum is not None and number > maximum:
+        return default
+    return number
+
+
+def _safe_bool(value: object, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"1", "true"}:
+            return True
+        if normalized in {"0", "false"}:
+            return False
+    return default
+
+
+def _safe_choice(value: object, allowed: set[str], default: str) -> str:
+    selected = str(value or "")
+    return selected if selected in allowed else default
 
 
 class LdapAuthenticationRepository:
@@ -225,40 +271,55 @@ class LdapAuthenticationRepository:
             rows = connection.execute(
                 "SELECT id,host,port,priority,enabled FROM ldap_auth_servers ORDER BY priority,position,id"
             ).fetchall()
-        return [dict(row) | {"enabled": bool(row["enabled"])} for row in rows]
+        result: list[dict[str, Any]] = []
+        for row in rows[:32]:
+            try:
+                item = LdapServerInput.model_validate(
+                    {
+                        "id": str(row["id"] or ""),
+                        "host": str(row["host"] or ""),
+                        "port": row["port"],
+                        "priority": row["priority"],
+                        "enabled": _safe_bool(row["enabled"], True),
+                    }
+                )
+            except ValueError:
+                continue
+            result.append(item.model_dump(mode="json"))
+        return result
 
     def settings(self, *, include_secret_id: bool = False) -> dict[str, Any]:
         row = self._settings_row()
         servers = self.servers()
         result = {
-            "enabled": bool(row["enabled"]),
-            "directory_type": str(row["directory_type"]),
+            "enabled": _safe_bool(row["enabled"], False),
+            "directory_type": _safe_choice(row["directory_type"], {"auto", "ldap", "active_directory", "freeipa"}, "auto"),
             "servers": servers,
             "server": str(servers[0]["host"]) if servers else "",
             "port": int(servers[0]["port"]) if servers else 389,
-            "failover_strategy": str(row["failover_strategy"]),
-            "dns_srv_domain": str(row["dns_srv_domain"]),
-            "security_mode": str(row["security_mode"]),
-            "verify_tls": bool(row["verify_tls"]),
-            "ca_certificate": str(row["ca_certificate"]),
-            "connect_timeout": float(row["connect_timeout"]),
-            "operation_timeout": float(row["operation_timeout"]),
-            "base_dn": str(row["base_dn"]),
-            "user_search_base": str(row["user_search_base"]),
-            "user_search_filter": str(row["user_search_filter"]),
-            "username_attribute": str(row["username_attribute"]),
-            "immutable_id_attribute": str(row["immutable_id_attribute"]),
-            "bind_dn": str(row["bind_dn"]),
-            "bind_password_configured": bool(row["bind_secret_id"]),
-            "display_name_attribute": str(row["display_name_attribute"]),
-            "email_attribute": str(row["email_attribute"]),
-            "group_search_base": str(row["group_search_base"]),
-            "group_search_filter": str(row["group_search_filter"]),
-            "group_membership_attribute": str(row["group_membership_attribute"]),
-            "group_cache_ttl_seconds": int(row["group_cache_ttl_seconds"]),
+            "failover_strategy": _safe_choice(row["failover_strategy"], {"priority", "round_robin"}, "priority"),
+            "dns_srv_domain": str(row["dns_srv_domain"] or "")[:512],
+            "security_mode": _safe_choice(row["security_mode"], {"ldap", "starttls", "ldaps"}, "starttls"),
+            "verify_tls": _safe_bool(row["verify_tls"], True),
+            "ca_certificate": str(row["ca_certificate"] or "")[:131072],
+            "connect_timeout": _safe_float(row["connect_timeout"], 5.0, minimum=0.5, maximum=60.0),
+            "operation_timeout": _safe_float(row["operation_timeout"], 10.0, minimum=0.5, maximum=120.0),
+            "base_dn": str(row["base_dn"] or "")[:2048],
+            "user_search_base": str(row["user_search_base"] or "")[:2048],
+            "user_search_filter": str(row["user_search_filter"] or "(uid={username})")[:4096],
+            "username_attribute": str(row["username_attribute"] or "uid")[:128],
+            "immutable_id_attribute": str(row["immutable_id_attribute"] or "")[:128],
+            "bind_dn": str(row["bind_dn"] or "")[:2048],
+            "bind_password_configured": bool(str(row["bind_secret_id"] or "")),
+            "display_name_attribute": str(row["display_name_attribute"] or "displayName")[:128],
+            "email_attribute": str(row["email_attribute"] or "mail")[:128],
+            "group_search_base": str(row["group_search_base"] or "")[:2048],
+            "group_search_filter": str(row["group_search_filter"] or "(|(member={dn})(uniqueMember={dn})(memberUid={username}))")[:4096],
+            "group_membership_attribute": str(row["group_membership_attribute"] or "memberOf")[:128],
+            "group_cache_ttl_seconds": _safe_int(row["group_cache_ttl_seconds"], 300, minimum=0, maximum=86400),
         }
         if include_secret_id:
-            result["bind_secret_id"] = str(row["bind_secret_id"])
+            result["bind_secret_id"] = str(row["bind_secret_id"] or "")
         return result
 
     def save(self, payload: LdapAuthenticationSettingsInput, actor: str, *, enabled: bool | None = None) -> dict[str, Any]:
@@ -343,17 +404,19 @@ class LdapAuthenticationRepository:
             rows = connection.execute(
                 "SELECT * FROM ldap_auth_group_mappings ORDER BY priority,group_dn"
             ).fetchall()
-        return [
-            {
-                "id": str(row["id"]),
-                "group_dn": str(row["group_dn"]),
-                "role": str(row["role"]),
-                "allow": self._json(row["allow_json"], []),
-                "deny": self._json(row["deny_json"], []),
-                "priority": int(row["priority"]),
-            }
-            for row in rows
-        ]
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            result.append(
+                {
+                    "id": str(row["id"]),
+                    "group_dn": str(row["group_dn"]),
+                    "role": str(row["role"]),
+                    "allow": self._json(row["allow_json"], []),
+                    "deny": self._json(row["deny_json"], []),
+                    "priority": _safe_int(row["priority"], 100, minimum=0, maximum=65535),
+                }
+            )
+        return result
 
     def save_mapping(self, payload: LdapGroupMappingInput, actor: str, mapping_id: str | None = None) -> dict[str, Any]:
         identifier = mapping_id or str(uuid.uuid4())
@@ -383,8 +446,9 @@ class LdapAuthenticationRepository:
             row = connection.execute("SELECT * FROM ldap_auth_access_policy WHERE id=1").fetchone()
         if not row:
             return {"mode": "allow_all", "allow_groups": [], "deny_groups": []}
+        mode = str(row["mode"] or "allow_all")
         return {
-            "mode": str(row["mode"]),
+            "mode": mode if mode in {"allow_all", "mapped_groups"} else "allow_all",
             "allow_groups": self._json(row["allow_groups_json"], []),
             "deny_groups": self._json(row["deny_groups_json"], []),
         }
@@ -435,8 +499,8 @@ class LdapAuthenticationRepository:
         if existing is None and legacy and str(legacy["immutable_id"]).startswith("legacy:"):
             existing = legacy
         previous_username = str(existing["username"]) if existing else ""
-        first_seen = float(existing["first_seen_at"]) if existing else now
-        last_login = now if logged_in else float(existing["last_login_at"]) if existing else 0.0
+        first_seen = _safe_float(existing.get("first_seen_at") if existing else None, now) if existing else now
+        last_login = now if logged_in else _safe_float(existing.get("last_login_at") if existing else None, 0.0)
         with self._lock, self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if existing and str(existing["immutable_id"]) != immutable_id:
