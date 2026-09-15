@@ -418,7 +418,7 @@ describe("file manager behavior", () => {
 
     fireEvent.click(screen.getByRole("menuitem", { name: "files.editText" }));
 
-    await waitFor(() => expect(api.readText).toHaveBeenCalledWith("/home/test/alpha.txt"));
+    await waitFor(() => expect(api.readText).toHaveBeenCalledWith("/home/test/alpha.txt", expect.any(AbortSignal)));
     expect(screen.getByRole("dialog", { name: /files.textEditor/ })).toBeInTheDocument();
   });
 });

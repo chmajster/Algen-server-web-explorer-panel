@@ -18,7 +18,7 @@ export const filesClient = {
   delete: (path: string | string[]) => request<{ task_id: string; task_ids?: string[] }>("/api/files/delete", { method: "POST", body: JSON.stringify(Array.isArray(path) ? { paths: path } : { path }) }),
   trash: (path: string) => request("/api/files/trash", { method: "POST", body: JSON.stringify({ path }) }),
   preview: (path: string) => request<{ path: string; mime: string; content_base64: string }>(`/api/files/preview?path=${encodeURIComponent(path)}`),
-  readText: (path: string) => request<TextFileResponse>(`/api/files/text?path=${encodeURIComponent(path)}`),
+  readText: (path: string, signal?: AbortSignal) => request<TextFileResponse>(`/api/files/text?path=${encodeURIComponent(path)}`, { signal }),
   writeText: (path: string, content: string, expected_mtime_ns: string) => request<Omit<TextFileResponse, "content"> & { ok: boolean }>("/api/files/text", {
     method: "PUT",
     body: JSON.stringify({ path, content, expected_mtime_ns }),
