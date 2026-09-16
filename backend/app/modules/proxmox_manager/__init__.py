@@ -5,6 +5,10 @@ from .secure_client import HardenedProxmoxApiClient
 
 setattr(_service_module, "ProxmoxApiClient", HardenedProxmoxApiClient)
 
+from .resource_hardening import install_resource_hardening as _install_resource_hardening
+
+_install_resource_hardening()
+
 ProxmoxApiClient = HardenedProxmoxApiClient
 ProxmoxApiError = _service_module.ProxmoxApiError
 ProxmoxManagerService = _service_module.ProxmoxManagerService
