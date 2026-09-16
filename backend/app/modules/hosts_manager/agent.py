@@ -35,6 +35,7 @@ VERSION = "1.0.0"
 DEFAULT_CONFIG = Path("/etc/hosts-manager-agent/config.yaml")
 DEFAULT_STATE = Path("/var/lib/hosts-manager-agent/state.json")
 DEFAULT_LOG = Path("/var/log/hosts-manager-agent/agent.log")
+MAX_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
 _ORIGINAL_URLOPEN = urlopen
 
 
@@ -58,6 +59,24 @@ def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
     except (OSError, ValueError, TypeError):
         return dict(default)
     return value if isinstance(value, dict) else dict(default)
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _bounded_int(value: Any, default: int, *, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if minimum <= parsed <= maximum else default
+
+
+def _strict_bool(value: Any, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
 
 
 def write_private_json(path: Path, value: dict[str, Any]) -> None:
@@ -466,19 +485,26 @@ class AgentClient:
         self.log_path = log_path
         self.config = read_json(config_path, {})
         self.state = read_json(state_path, {})
-        server = self.config.get("server", {})
-        agent = self.config.get("agent", {})
+        server = _mapping(self.config.get("server"))
+        agent = _mapping(self.config.get("agent"))
         self.server_url = str(server.get("url", "")).rstrip("/")
-        self.timeout = int(server.get("timeout_seconds", 15))
-        self.verify_tls = bool(server.get("verify_tls", True))
-        self.heartbeat_interval = int(agent.get("heartbeat_interval", 30))
-        self.report_interval = int(agent.get("report_interval", 300))
-        self.max_retries = int(agent.get("max_retries", 10))
+        self.timeout = _bounded_int(server.get("timeout_seconds"), 15, minimum=1, maximum=120)
+        self.verify_tls = _strict_bool(server.get("verify_tls"), True)
+        self.heartbeat_interval = _bounded_int(agent.get("heartbeat_interval"), 30, minimum=1, maximum=3600)
+        self.report_interval = _bounded_int(agent.get("report_interval"), 300, minimum=1, maximum=86400)
+        self.max_retries = _bounded_int(agent.get("max_retries"), 10, minimum=0, maximum=100)
 
     def _request(self, path: str, body: dict[str, Any], token: str) -> dict[str, Any]:
         parsed_server = urlsplit(self.server_url)
-        if parsed_server.scheme not in {"http", "https"} or not parsed_server.hostname or parsed_server.username or parsed_server.password:
-            raise RuntimeError("Hosts Manager server URL must use HTTP or HTTPS")
+        if (
+            parsed_server.scheme not in {"http", "https"}
+            or not parsed_server.hostname
+            or parsed_server.username
+            or parsed_server.password
+            or parsed_server.query
+            or parsed_server.fragment
+        ):
+            raise RuntimeError("Hosts Manager server URL must use HTTP or HTTPS without credentials, query, or fragment")
         request = Request(
             f"{self.server_url}{path}",
             data=json.dumps(body).encode(),
@@ -487,13 +513,20 @@ class AgentClient:
         )
         context = ssl.create_default_context() if self.verify_tls else ssl._create_unverified_context()
         with _open_no_redirect(request, timeout=self.timeout, context=context) as response:
-            value = json.loads(response.read().decode())
+            raw = response.read(MAX_HTTP_RESPONSE_BYTES + 1)
+        if len(raw) > MAX_HTTP_RESPONSE_BYTES:
+            raise RuntimeError("Hosts Manager response exceeded the safety limit")
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+            raise RuntimeError("invalid Hosts Manager response") from error
         if not isinstance(value, dict):
             raise RuntimeError("invalid Hosts Manager response")
         return value
 
     def register(self) -> None:
-        token = str(self.config.get("authentication", {}).get("enrollment_token", ""))
+        authentication = _mapping(self.config.get("authentication"))
+        token = str(authentication.get("enrollment_token", ""))
         if not token:
             raise RuntimeError("enrollment token is missing")
         installation_id = str(self.state.get("installation_id") or uuid.uuid4())
@@ -516,19 +549,24 @@ class AgentClient:
             "installation_id": installation_id,
             "agent_version": VERSION,
         }, token)
-        credentials = result.get("agent_credentials") or {}
-        if not credentials.get("agent_id") or not credentials.get("token"):
+        credentials = result.get("agent_credentials")
+        if not isinstance(credentials, dict):
+            raise RuntimeError("server did not return agent credentials")
+        agent_id = credentials.get("agent_id")
+        agent_token = credentials.get("token")
+        host_id = credentials.get("host_id")
+        if not all(isinstance(value, str) and value for value in (agent_id, agent_token, host_id)):
             raise RuntimeError("server did not return agent credentials")
         self.state = {
             "installation_id": installation_id,
-            "host_id": credentials["host_id"],
-            "agent_id": credentials["agent_id"],
-            "token": credentials["token"],
-            "identity_hash": credentials.get("identity_hash", ""),
+            "host_id": host_id,
+            "agent_id": agent_id,
+            "token": agent_token,
+            "identity_hash": str(credentials.get("identity_hash") or ""),
             "registered_at": time.time(),
         }
         write_private_json(self.state_path, self.state)
-        authentication = dict(self.config.get("authentication", {}))
+        authentication = _mapping(self.config.get("authentication"))
         authentication.pop("enrollment_token", None)
         self.config["authentication"] = authentication
         write_private_json(self.config_path, self.config)
@@ -542,13 +580,13 @@ class AgentClient:
             "status": status,
             "error": error,
         }, self.state["token"])
-        if response.get("enforce_tls"):
+        if response.get("enforce_tls") is True:
             self.verify_tls = True
         self.apply_update_policy(response)
 
     def apply_update_policy(self, response: dict[str, Any]) -> None:
         policy = response.get("agent_update")
-        if not isinstance(policy, dict) or not policy.get("enabled"):
+        if not isinstance(policy, dict) or policy.get("enabled") is not True:
             return
         expected = str(policy.get("sha256") or "")
         if not re.fullmatch(r"[a-f0-9]{64}", expected):
@@ -563,17 +601,26 @@ class AgentClient:
             return
         source_url = str(policy.get("url") or f"{self.server_url}/api/modules/hosts-manager/agent/source")
         parsed_source = urlsplit(source_url)
-        if parsed_source.scheme not in {"http", "https"} or not parsed_source.hostname or parsed_source.username or parsed_source.password:
-            logging.error("agent update URL does not use HTTP or HTTPS")
+        if (
+            parsed_source.scheme not in {"http", "https"}
+            or not parsed_source.hostname
+            or parsed_source.username
+            or parsed_source.password
+            or parsed_source.fragment
+        ):
+            logging.error("agent update URL does not use a valid HTTP or HTTPS target")
             return
         request = Request(source_url, method="GET", headers={"User-Agent": f"hosts-manager-agent/{VERSION}"})
         context = ssl.create_default_context() if self.verify_tls else ssl._create_unverified_context()
-        maximum = min(2 * 1024 * 1024, max(1024, int(policy.get("max_size") or 2 * 1024 * 1024)))
+        maximum = _bounded_int(policy.get("max_size"), MAX_HTTP_RESPONSE_BYTES, minimum=1024, maximum=MAX_HTTP_RESPONSE_BYTES)
         with _open_no_redirect(request, timeout=self.timeout, context=context) as source:
             content = source.read(maximum + 1)
         if len(content) > maximum or hashlib.sha256(content).hexdigest() != expected:
             raise RuntimeError("agent update failed size or checksum verification")
-        text = content.decode("utf-8")
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise RuntimeError("agent update is not valid UTF-8") from error
         compile(text, str(current_path), "exec")
         temporary = current_path.with_suffix(".update")
         temporary.write_bytes(content)
@@ -647,7 +694,7 @@ def main() -> int:
         print(VERSION)
         return 0
     runtime_config = read_json(args.config, {})
-    logging_config = runtime_config.get("logging", {})
+    logging_config = _mapping(runtime_config.get("logging"))
     configured_log = str(logging_config.get("file", ""))
     log_path = Path(configured_log) if args.log == DEFAULT_LOG and configured_log else args.log
     configure_logging(log_path, str(logging_config.get("level", "INFO")))
