@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import time
 from functools import lru_cache
@@ -15,6 +16,30 @@ _LATEST_HOST_ROWS = {
     "host_reports": "created_at",
     "host_identity_salts": "generated_at",
 }
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_nonnegative_int(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def _safe_timestamp(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return 0.0
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    return parsed if math.isfinite(parsed) and parsed >= 0 else 0.0
 
 
 class HostRegistryService(BaseHostRegistryService):
@@ -195,7 +220,7 @@ class HostRegistryService(BaseHostRegistryService):
             item["group_ids"] = [group["id"] for group in groups]
 
             facts_record = facts_by_host.get(host_id)
-            item["facts"] = facts_record.get("facts", {}) if facts_record else {}
+            item["facts"] = _mapping(facts_record.get("facts", {})) if facts_record else {}
 
             agent_record = agents_by_host.get(host_id)
             agent = (
@@ -204,7 +229,7 @@ class HostRegistryService(BaseHostRegistryService):
                 else None
             )
             if agent:
-                last_heartbeat = float(agent.get("last_heartbeat_at") or 0)
+                last_heartbeat = _safe_timestamp(agent.get("last_heartbeat_at"))
                 if last_heartbeat and now - last_heartbeat > max(heartbeat_interval * 3, 60):
                     agent["status"] = "offline"
                     item["connection_status"] = "offline"
@@ -214,7 +239,7 @@ class HostRegistryService(BaseHostRegistryService):
             item["agent_status"] = str(agent["status"]) if agent else "not_installed"
 
             report_record = reports_by_host.get(host_id)
-            report = report_record.get("report", {}) if report_record else {}
+            report = _mapping(report_record.get("report", {})) if report_record else {}
             item["latest_report"] = report
 
             identity = identities_by_host.get(host_id)
@@ -227,16 +252,16 @@ class HostRegistryService(BaseHostRegistryService):
             environment_ref = str(item.get("environment") or "")
             item["environment_details"] = environments_by_ref.get(environment_ref) if environment_ref else None
 
-            basic = report.get("basic", {}) if isinstance(report, dict) else {}
-            packages = report.get("packages", {}) if isinstance(report, dict) else {}
+            basic = _mapping(report.get("basic"))
+            packages = _mapping(report.get("packages"))
             item["distribution"] = basic.get("distribution") or item["facts"].get("distribution", "")
             item["system_version"] = basic.get("system_version") or item["facts"].get(
                 "distribution_version",
                 "",
             )
             item["agent_version"] = (agent or {}).get("agent_version", "")
-            item["available_updates"] = int(packages.get("available_updates_count") or 0)
-            item["security_updates"] = int(packages.get("security_updates_count") or 0)
+            item["available_updates"] = _safe_nonnegative_int(packages.get("available_updates_count"))
+            item["security_updates"] = _safe_nonnegative_int(packages.get("security_updates_count"))
 
             if not item.get("active"):
                 item["status"] = "disabled"
