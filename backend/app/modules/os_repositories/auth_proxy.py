@@ -115,7 +115,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
                 if response.status in {301, 302, 303, 307, 308} and response.getheader("Location"):
                     target = urljoin(target, response.getheader("Location") or "")
-                    response.read()
+                    # Redirect bodies are irrelevant to the proxy. Do not drain an
+                    # untrusted upstream body: closing the response/connection avoids
+                    # an unbounded allocation before the redirect is revalidated.
+                    response.close()
                     connection.close()
                     continue
                 self.send_response(response.status)
