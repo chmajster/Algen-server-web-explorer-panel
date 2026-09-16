@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import os
 import re
 import shutil
@@ -94,9 +95,24 @@ def _atomic_json(path: Path, value: object) -> None:
 
 def _read_json(path: Path, default: Any) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return default
+    if isinstance(default, dict) and not isinstance(value, dict):
+        return dict(default)
+    if isinstance(default, list) and not isinstance(value, list):
+        return list(default)
+    return value
+
+
+def _safe_timestamp(value: Any, default: float = 0.0) -> float:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if math.isfinite(parsed) and parsed >= 0 else default
 
 
 def _validate_ifname(value: str) -> str:
@@ -600,7 +616,16 @@ def detect_provider() -> tuple[NetworkProvider, list[str]]:
 
 
 def _managed_state() -> dict[str, Any]:
-    return _read_json(_state_root() / "state.json", {"interfaces": {}, "dns": None, "routes": {}, "traffic": {}})
+    defaults: dict[str, Any] = {"interfaces": {}, "dns": None, "routes": {}, "traffic": {}}
+    raw = _read_json(_state_root() / "state.json", defaults)
+    if not isinstance(raw, dict):
+        return defaults
+    return {
+        "interfaces": raw.get("interfaces") if isinstance(raw.get("interfaces"), dict) else {},
+        "dns": raw.get("dns") if isinstance(raw.get("dns"), dict) else None,
+        "routes": raw.get("routes") if isinstance(raw.get("routes"), dict) else {},
+        "traffic": raw.get("traffic") if isinstance(raw.get("traffic"), dict) else {},
+    }
 
 
 def _commands_for_generic(change: NetworkChange) -> list[list[str]]:
@@ -957,7 +982,8 @@ def apply_plan(plan_id: str, actor: str, confirmation_phrase: str) -> dict[str, 
         if _active_transaction():
             raise HTTPException(409, "A network transaction is awaiting confirmation")
         plan = _read_json(_state_root() / "plans" / f"{plan_id}.json", None)
-        if not isinstance(plan, dict) or plan.get("actor") != actor or float(plan.get("expires_at", 0)) < time.time():
+        expires_at = _safe_timestamp(plan.get("expires_at")) if isinstance(plan, dict) else 0.0
+        if not isinstance(plan, dict) or plan.get("actor") != actor or not expires_at or expires_at < time.time():
             raise HTTPException(404, "Network plan is missing or expired")
         if plan.get("required_phrase") and confirmation_phrase != plan["required_phrase"]:
             raise HTTPException(400, "The high-risk confirmation phrase is incorrect")
@@ -1044,9 +1070,10 @@ def transaction_status(transaction_id: str) -> dict[str, Any]:
         raise HTTPException(404, "Network transaction was not found")
     now = time.time()
     state = str(value.get("state") or "failed")
-    deadline = float(value.get("deadline_at", value.get("deadline", 0)))
+    deadline = _safe_timestamp(value.get("deadline_at", value.get("deadline", 0)))
     expired_pending = state == "pending_confirmation" and now >= deadline
     status = "rollback_pending" if expired_pending else state
+    reachable = value.get("reachable_addresses")
     return {
         **value,
         "transaction_id": transaction_id,
@@ -1056,18 +1083,19 @@ def transaction_status(transaction_id: str) -> dict[str, Any]:
         "rollback_started": state == "rollback_started",
         "rolled_back": state == "rolled_back",
         "failed": state == "failed",
-        "created_at": float(value.get("created_at", value.get("started_at", 0))),
+        "created_at": _safe_timestamp(value.get("created_at", value.get("started_at", 0))),
         "deadline_at": deadline,
         "remaining_seconds": max(0, deadline - now),
         "current_server_time": now,
         "server_time": now,
-        "reachable_addresses": list(value.get("reachable_addresses") or []),
+        "reachable_addresses": list(reachable) if isinstance(reachable, list) else [],
     }
 
 
 def _allow_transaction_origin(request: Request, response: Response, transaction: dict[str, Any]) -> None:
     origin = request.headers.get("origin", "").rstrip("/")
-    approved = {str(value).rstrip("/") for value in transaction.get("reachable_addresses", [])}
+    approved_values = transaction.get("reachable_addresses")
+    approved = {str(value).rstrip("/") for value in approved_values} if isinstance(approved_values, list) else set()
     if origin and origin in approved:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
@@ -1082,7 +1110,8 @@ def confirm_transaction(transaction_id: str, actor: str) -> dict[str, Any]:
     if not active or active.get("id") != transaction_id:
         raise HTTPException(404, "No pending network transaction")
     now = time.time()
-    if now >= float(active.get("deadline_at", active.get("deadline", 0))):
+    deadline = _safe_timestamp(active.get("deadline_at", active.get("deadline", 0)))
+    if not deadline or now >= deadline:
         raise HTTPException(409, "The network transaction expired; rollback cannot be cancelled")
     active.update({"state": "confirmed", "status": "confirmed", "confirmed_at": now, "confirmed_by": actor})
     _atomic_json(_state_root() / "transactions" / transaction_id / "transaction.json", active)
@@ -1107,16 +1136,17 @@ def _rollback_transaction(transaction_id: str, actor: str = "system", automatic:
     active.update({"state": "rollback_started", "status": "rollback_started", "rollback_started_at": time.time(), "automatic": automatic})
     _atomic_json(directory / "transaction.json", active)
     record_activity(ActivityCategory.configuration, "network_rollback_started", actor, target=str(active.get("target") or ""), status=ActivityStatus.info, details={"provider": active.get("provider"), "transaction_id": transaction_id, "automatic": automatic, "confirmation_timeout_seconds": active.get("confirmation_timeout_seconds")}, source="network")
-    for raw_path, content in snapshot.get("files", {}).items():
+    files = snapshot.get("files") if isinstance(snapshot.get("files"), dict) else {}
+    for raw_path, content in files.items():
         path = Path(raw_path)
         if content is None:
             path.unlink(missing_ok=True)
         else:
             path.write_text(str(content), encoding="utf-8")
     restore_unit = "/etc/systemd/system/webnas-network-managed.service"
-    if restore_unit in snapshot.get("files", {}) and shutil.which("systemctl"):
+    if restore_unit in files and shutil.which("systemctl"):
         systemctl = shutil.which("systemctl") or "systemctl"
-        if snapshot["files"][restore_unit] is None:
+        if files[restore_unit] is None:
             _run_command([systemctl, "disable", "webnas-network-managed.service"], timeout=10)
         _run_command([systemctl, "daemon-reload"], timeout=10)
     change_data = snapshot.get("change")
@@ -1131,14 +1161,16 @@ def _rollback_transaction(transaction_id: str, actor: str = "system", automatic:
                         _run_command(command, timeout=20)
         except (ValueError, TypeError):
             pass
-    _atomic_json(_state_root() / "state.json", snapshot.get("state", {}))
+    snapshot_state = snapshot.get("state") if isinstance(snapshot.get("state"), dict) else {}
+    _atomic_json(_state_root() / "state.json", snapshot_state)
     provider_id = str(active.get("provider") or "")
     if provider_id == "networkmanager":
         nmcli = shutil.which("nmcli") or "nmcli"
         commands = [[nmcli, "connection", "reload"]]
+        active_nm_uuids = snapshot.get("active_nm_uuids") if isinstance(snapshot.get("active_nm_uuids"), list) else []
         commands.extend(
             [nmcli, "connection", "up", "uuid", identifier]
-            for identifier in snapshot.get("active_nm_uuids", [])
+            for identifier in active_nm_uuids
             if re.fullmatch(r"[0-9a-fA-F-]{36}", str(identifier))
         )
     elif provider_id == "netplan":
