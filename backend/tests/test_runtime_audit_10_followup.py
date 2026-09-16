@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from app.modules.hosts_manager import agent as hosts_agent
+from app.modules.os_repositories import auth_proxy
 from app.modules.os_repositories.offline_hardening import validate_offline_manifest
 from app.modules.os_repositories.offline_models import OfflineBundleType
 from app.modules.os_repositories.offline_service import BUNDLE_FORMAT_VERSION, MAX_EXTRACTED_BYTES, OfflineRepositoryService
@@ -177,3 +180,76 @@ def test_offline_manifest_requires_delta_base_snapshot() -> None:
 
 def test_offline_hardening_is_installed_on_service_class() -> None:
     assert getattr(OfflineRepositoryService, "_runtime_audit_10_hardened", False) is True
+
+
+def test_authenticated_mirror_redirect_does_not_drain_untrusted_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    states: list[dict[str, Any]] = []
+
+    class Response:
+        def __init__(self, status: int, location: str | None = None) -> None:
+            self.status = status
+            self.location = location
+            self.closed = False
+            self.reads = 0
+
+        def getheader(self, name: str):
+            if name.lower() == "location":
+                return self.location
+            if name.lower() == "content-length" and self.status == 200:
+                return "2"
+            return None
+
+        def getheaders(self):
+            return [("Content-Length", "2")] if self.status == 200 else [("Content-Length", str(10**12))]
+
+        def read(self, amount: int = -1) -> bytes:
+            self.reads += 1
+            if self.status == 302:
+                raise AssertionError("redirect body must never be drained")
+            return b"{}" if self.reads == 1 else b""
+
+        def close(self) -> None:
+            self.closed = True
+
+    class Connection:
+        def __init__(self, response: Response) -> None:
+            self.response = response
+            self.closed = False
+
+        def request(self, *args, **kwargs) -> None:
+            return None
+
+        def getresponse(self) -> Response:
+            return self.response
+
+        def close(self) -> None:
+            self.closed = True
+
+    responses = [Response(302, "https://mirror.example/final"), Response(200)]
+    connections = [Connection(item) for item in responses]
+    monkeypatch.setattr(auth_proxy, "validate_mirror_url", lambda *args, **kwargs: ["192.0.2.10"])
+    monkeypatch.setattr(auth_proxy, "_connection_for", lambda *args, **kwargs: connections.pop(0))
+
+    handler = SimpleNamespace(
+        server=SimpleNamespace(
+            source_url="https://mirror.example/repo/",
+            authorization="Bearer secret",
+            allow_private_network=False,
+            allow_private_http=False,
+        ),
+        path="metadata",
+        headers={},
+        wfile=io.BytesIO(),
+        close_connection=False,
+        send_response=lambda status: states.append({"status": status}),
+        send_header=lambda name, value: None,
+        end_headers=lambda: None,
+        send_error=lambda status, message: pytest.fail(f"unexpected proxy error {status}: {message}"),
+    )
+
+    auth_proxy._ProxyHandler._forward(handler, False)
+
+    assert responses[0].closed is True
+    assert responses[0].reads == 0
+    assert states == [{"status": 200}]
+    assert handler.wfile.getvalue() == b"{}"
